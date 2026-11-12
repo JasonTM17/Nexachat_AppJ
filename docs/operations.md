@@ -1133,6 +1133,45 @@ records stay as compact versioned tombstones so existing change-feed cursors
 continue to work. Enable retention in a private/staging environment first and
 compare the dry-run counts with your organization's retention requirements.
 
+### Reconciling interrupted uploads
+
+Uploads store the object before a short database bind transaction. A failed or
+rolled-back bind attempts to delete that object; a cleanup failure is logged as
+`Could not delete stored file`. A process crash after storage succeeds and
+before the bind cannot run compensation. There is no durable upload ledger or
+automatic attachment-object sweep. The avatar sweep below is disabled by
+default and covers only `avatars/`.
+
+For a bounded reconciliation, use a maintenance window:
+
+1. Pause uploads and all writers that can adopt or remove file references
+   (message sends, profile/group changes, account deletion and retention), and
+   disable the avatar sweep. Drain in-flight requests and storage calls before
+   taking inventories; if draining cannot be proved, postpone deletion. Keep a
+   restorable database/object backup.
+2. Inventory only `attachments/` and `avatars/` in the configured storage root
+   or private bucket, recording exact key and last-modified time. Use local file
+   listing or the provider's paginated object inventory; do not expose private
+   objects or credentials. Start with one reviewed batch of at most 100 old
+   keys, with an age margin beyond the longest in-flight upload/incident window.
+   Age alone does not prove an orphan.
+3. Export **all** `message_attachments.storage_key` values, including unbound
+   uploads and rows attached to deleted messages. Also export non-null
+   `users.avatar_url` and `conversations.avatar_url`; normalize their URI paths
+   under `/api/v1/files/` to storage keys (including legacy absolute URLs,
+   queries and percent encoding). An attachment key may also be a group avatar.
+   Preserve every referenced key. Treat malformed/ambiguous references as a
+   reason to keep the object and investigate.
+4. Compare the inventories offline. Record candidate keys, timestamps and why
+   no row references them. Recheck those exact keys against a fresh database
+   export while writers remain paused. Back up/quarantine each approved object
+   before deleting it through the configured storage backend. Never infer that
+   an unbound attachment row or a recent object is disposable.
+5. Verify referenced objects still exist, retain the reconciliation receipt and
+   backups, then resume writers and restore prior scheduler settings. Restore a
+   mistakenly removed object at its exact key from backup. Do not delete DB rows
+   or enable a new sweeper as part of this procedure.
+
 ### Orphaned-avatar sweep
 
 User and group avatars are written under `avatars/`. Replacement and account

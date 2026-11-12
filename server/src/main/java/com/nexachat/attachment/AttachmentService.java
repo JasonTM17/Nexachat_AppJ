@@ -10,7 +10,9 @@ import com.nexachat.message.MessageAttachmentRepository;
 import com.nexachat.message.dto.AttachmentResponse;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -65,17 +67,20 @@ public class AttachmentService {
     private final StorageService storageService;
     private final UserRepository userRepository;
     private final UploadAdmission uploadAdmission;
+    private final TransactionTemplate bindTransaction;
 
     public AttachmentService(MessageAttachmentRepository attachmentRepository,
                              ConversationMemberRepository memberRepository,
                              StorageService storageService,
                              UserRepository userRepository,
-                             UploadAdmission uploadAdmission) {
+                             UploadAdmission uploadAdmission,
+                             PlatformTransactionManager transactionManager) {
         this.attachmentRepository = attachmentRepository;
         this.memberRepository = memberRepository;
         this.storageService = storageService;
         this.userRepository = userRepository;
         this.uploadAdmission = uploadAdmission;
+        this.bindTransaction = new TransactionTemplate(transactionManager);
     }
 
     /**
@@ -107,7 +112,7 @@ public class AttachmentService {
      *                      upload admission gate is saturated),
      *                      {@code USER_NOT_FOUND}
      */
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public AttachmentResponse upload(UUID ownerId, MultipartFile file,
                                      Integer width, Integer height, Integer duration,
                                      String blurHash) {
@@ -145,10 +150,11 @@ public class AttachmentService {
                 }
             }
 
-            // Serialize with account deletion before writing the external file.
-            User owner = userRepository.findByIdForUpdate(ownerId)
+            // Preserve owner-before-storage error precedence without holding a
+            // transaction/row lock across external I/O. Bind revalidates below.
+            User candidate = userRepository.findById(ownerId)
                     .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
-            if (owner.getDeletedAt() != null) {
+            if (candidate.getDeletedAt() != null) {
                 throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
             }
 
@@ -156,20 +162,18 @@ public class AttachmentService {
             // a disguised executable dies there with MIME_NOT_ALLOWED.
             StorageService.StoredFile stored = storageService.store(
                     STORAGE_SUBDIR, file.getOriginalFilename(), file.getContentType(), bytes);
-            boolean transactionActive = TransactionSynchronizationManager.isSynchronizationActive();
-            StorageTransactionCleanup.deleteOnRollback(storageService, stored.storageKey());
-            try {
+            return StorageTransactionCleanup.bind(storageService, stored.storageKey(), bindTransaction, () -> {
+                User owner = userRepository.findByIdForUpdate(ownerId)
+                        .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+                if (owner.getDeletedAt() != null) {
+                    throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+                }
                 MessageAttachment attachment = MessageAttachment.upload(
                         owner, stored.storageKey(), sanitizeOriginalName(file.getOriginalFilename()),
                         stored.mimeType(), stored.sizeBytes(), width, height, duration, validatedBlurHash);
                 attachmentRepository.save(attachment);
                 return toResponse(attachment);
-            } catch (RuntimeException | Error ex) {
-                if (!transactionActive) {
-                    storageService.deleteIfExists(stored.storageKey());
-                }
-                throw ex;
-            }
+            });
         }
     }
 

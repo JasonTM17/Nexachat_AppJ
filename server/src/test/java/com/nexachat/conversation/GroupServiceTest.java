@@ -94,7 +94,9 @@ class GroupServiceTest {
                 messageService, eventPublisher, storageService,
                 avatarReferenceCoordinator,
                 new UploadAdmission(16, 1000),
-                simpUserRegistry, simpleBrokerMessageHandler);
+                simpUserRegistry, simpleBrokerMessageHandler, transactionManager());
+        lenient().when(userRepository.findByIdForUpdate(adminId)).thenReturn(Optional.of(admin()));
+        lenient().when(storageService.exists(anyString())).thenReturn(true);
         // Group writers now take the conversation row at entry; the unit
         // fixtures describe the row through findById, so the locked lookup
         // reuses that answer instead of repeating twenty stubs.
@@ -103,6 +105,11 @@ class GroupServiceTest {
     }
 
     // ------------------------------------------------------------- fixtures
+
+    private org.springframework.transaction.PlatformTransactionManager transactionManager() {
+        return new org.springframework.jdbc.datasource.DataSourceTransactionManager(
+                mock(javax.sql.DataSource.class, org.mockito.Mockito.RETURNS_DEEP_STUBS));
+    }
 
     private User userWithId(UUID id, String phone, String displayName) {
         User user = User.create(phone, "hash", displayName);
@@ -892,7 +899,7 @@ class GroupServiceTest {
         GroupService limited = new GroupService(
                 conversationRepository, memberRepository, userRepository, attachmentRepository,
                 messageService, eventPublisher, storageService, avatarReferenceCoordinator,
-                admission, simpUserRegistry, simpleBrokerMessageHandler);
+                admission, simpUserRegistry, simpleBrokerMessageHandler, transactionManager());
 
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);

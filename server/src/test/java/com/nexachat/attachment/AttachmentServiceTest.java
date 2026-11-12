@@ -59,10 +59,13 @@ class AttachmentServiceTest {
         attachmentService = new AttachmentService(
                 attachmentRepository, memberRepository, storageService, userRepository,
                 new UploadAdmission(UploadAdmission.DEFAULT_MAX_CONCURRENT,
-                        UploadAdmission.DEFAULT_ACQUIRE_TIMEOUT_MILLIS));
+                        UploadAdmission.DEFAULT_ACQUIRE_TIMEOUT_MILLIS),
+                new org.springframework.jdbc.datasource.DataSourceTransactionManager(
+                        mock(javax.sql.DataSource.class, org.mockito.Mockito.RETURNS_DEEP_STUBS)));
         lenient().when(storageService.resolveUrl(anyString()))
                 .thenAnswer(i -> "/api/v1/files/" + i.getArgument(0));
         lenient().when(userRepository.findByIdForUpdate(ownerId)).thenReturn(Optional.of(user(ownerId)));
+        lenient().when(userRepository.findById(ownerId)).thenReturn(Optional.of(user(ownerId)));
     }
 
     private static StorageService.StreamHandle handle(byte[] content) {

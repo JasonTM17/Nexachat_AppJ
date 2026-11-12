@@ -55,12 +55,19 @@ class AvatarControllerTest {
     void setUp() {
         controller = new AvatarController(storageService, userRepository, referenceCoordinator,
                 new UploadAdmission(UploadAdmission.DEFAULT_MAX_CONCURRENT,
-                        UploadAdmission.DEFAULT_ACQUIRE_TIMEOUT_MILLIS));
+                        UploadAdmission.DEFAULT_ACQUIRE_TIMEOUT_MILLIS), transactionManager());
+        org.mockito.Mockito.lenient().when(userRepository.findById(userId)).thenReturn(Optional.of(user()));
+        org.mockito.Mockito.lenient().when(storageService.exists(anyString())).thenReturn(true);
     }
 
     private MultipartFile pngFile() {
         return new org.springframework.mock.web.MockMultipartFile(
                 "file", "me.png", "image/png", PNG_BYTES);
+    }
+
+    private org.springframework.transaction.PlatformTransactionManager transactionManager() {
+        return new org.springframework.jdbc.datasource.DataSourceTransactionManager(
+                mock(javax.sql.DataSource.class, org.mockito.Mockito.RETURNS_DEEP_STUBS));
     }
 
     private User user() {
@@ -87,7 +94,7 @@ class AvatarControllerTest {
     @Test
     void uploadAvatar_beyondUploadAdmission_rejectsExtraCaller() throws Exception {
         AvatarController limited = new AvatarController(
-                storageService, userRepository, referenceCoordinator, new UploadAdmission(1, 200));
+                storageService, userRepository, referenceCoordinator, new UploadAdmission(1, 200), transactionManager());
         when(userRepository.findByIdForUpdate(userId)).thenReturn(Optional.of(user()));
         when(storageService.resolveUrl(anyString()))
                 .thenAnswer(i -> "/api/v1/files/" + i.getArgument(0));
@@ -127,7 +134,7 @@ class AvatarControllerTest {
     void uploadAvatar_clientAbort_releasesTheSlot() throws Exception {
         UploadAdmission admission = new UploadAdmission(1, 200);
         AvatarController limited = new AvatarController(
-                storageService, userRepository, referenceCoordinator, admission);
+                storageService, userRepository, referenceCoordinator, admission, transactionManager());
         MultipartFile aborted = mock(MultipartFile.class);
         when(aborted.isEmpty()).thenReturn(false);
         when(aborted.getSize()).thenReturn(1024L);
@@ -145,8 +152,7 @@ class AvatarControllerTest {
     void uploadAvatar_storageFailure_releasesTheSlot() {
         UploadAdmission admission = new UploadAdmission(1, 200);
         AvatarController limited = new AvatarController(
-                storageService, userRepository, referenceCoordinator, admission);
-        when(userRepository.findByIdForUpdate(userId)).thenReturn(Optional.of(user()));
+                storageService, userRepository, referenceCoordinator, admission, transactionManager());
         when(storageService.store(eq("avatars"), any(), any(), any(byte[].class)))
                 .thenThrow(ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Failed to store file"));
 

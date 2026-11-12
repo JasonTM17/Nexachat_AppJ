@@ -61,11 +61,14 @@ class AttachmentUploadAdmissionTest {
     void setUp() {
         admission = new UploadAdmission(2, 200);
         attachmentService = new AttachmentService(
-                attachmentRepository, memberRepository, storageService, userRepository, admission);
+                attachmentRepository, memberRepository, storageService, userRepository, admission,
+                new org.springframework.jdbc.datasource.DataSourceTransactionManager(
+                        mock(javax.sql.DataSource.class, org.mockito.Mockito.RETURNS_DEEP_STUBS)));
         lenient().when(storageService.resolveUrl(anyString()))
                 .thenAnswer(i -> "/api/v1/files/" + i.getArgument(0));
         lenient().when(userRepository.findByIdForUpdate(ownerId))
                 .thenReturn(Optional.of(user(ownerId)));
+        lenient().when(userRepository.findById(ownerId)).thenReturn(Optional.of(user(ownerId)));
     }
 
     private static User user(UUID id) {
@@ -182,7 +185,9 @@ class AttachmentUploadAdmissionTest {
     void thousandSequentialUploads_doNotLeakPermits() {
         UploadAdmission singleSlot = new UploadAdmission(1, 0);
         AttachmentService service = new AttachmentService(
-                attachmentRepository, memberRepository, storageService, userRepository, singleSlot);
+                attachmentRepository, memberRepository, storageService, userRepository, singleSlot,
+                new org.springframework.jdbc.datasource.DataSourceTransactionManager(
+                        mock(javax.sql.DataSource.class, org.mockito.Mockito.RETURNS_DEEP_STUBS)));
         when(storageService.store(anyString(), anyString(), anyString(), any(byte[].class)))
                 .thenReturn(storedFile());
 
