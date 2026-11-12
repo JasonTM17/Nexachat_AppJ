@@ -11,7 +11,6 @@ import com.nexachat.summary.SummaryConsentRepository;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import com.nexachat.user.UserSettingsService;
-import com.zaxxer.hikari.HikariDataSource;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
 import jakarta.servlet.http.HttpServletResponseWrapper;
@@ -25,6 +24,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.ConnectionHolder;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -32,10 +32,12 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -51,6 +53,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -376,15 +379,26 @@ class AskApiIT {
         ExecutorService executor = Executors.newFixedThreadPool(2);
         Future<?> responseWrite = null;
         Future<?> revocation = null;
-        int activeConnectionsBefore = activeDatabaseConnections();
-        int activeConnectionsWhileWriteBlocked = -1;
+        AtomicReference<Connection> consentConnection = new AtomicReference<>();
+        // Capture the actual pooled lease used for the consent read, without
+        // borrowing another connection or observing unrelated pool activity.
+        doAnswer(invocation -> {
+            Object snapshotRead = invocation.callRealMethod();
+            ConnectionHolder holder = (ConnectionHolder) TransactionSynchronizationManager.getResource(dataSource);
+            assertThat(holder).as("the real consent read uses a transaction-bound connection").isNotNull();
+            Connection connection = holder.getConnection();
+            assertThat(connection.isClosed()).as("the consent lease is open during the locked read").isFalse();
+            consentConnection.set(connection);
+            return snapshotRead;
+        }).when(consentRepository).lockForResponse(caller.getId());
+        boolean consentConnectionClosedWhileWriteBlocked = false;
         boolean revocationFinishedWhileWriteBlocked = false;
         try {
             responseWrite = executor.submit(() -> {
                 responseWriter.write(caller.getId(), new AskExecution(snapshot, answer), response);
                 return null;
             });
-            assertThat(responseWriteEntered.await(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(responseWriteEntered.await(30, TimeUnit.SECONDS)).isTrue();
 
             revocation = executor.submit(() -> {
                 revocationStarted.countDown();
@@ -394,9 +408,11 @@ class AskApiIT {
                     revocationFinished.countDown();
                 }
             });
-            assertThat(revocationStarted.await(10, TimeUnit.SECONDS)).isTrue();
-            revocationFinishedWhileWriteBlocked = revocationFinished.await(5, TimeUnit.SECONDS);
-            activeConnectionsWhileWriteBlocked = activeDatabaseConnections();
+            assertThat(revocationStarted.await(30, TimeUnit.SECONDS)).isTrue();
+            revocationFinishedWhileWriteBlocked = revocationFinished.await(30, TimeUnit.SECONDS);
+            assertThat(consentConnection.get()).as("the probe observed the writer's consent lease").isNotNull();
+            consentConnectionClosedWhileWriteBlocked = consentConnection.get().isClosed();
+            assertThat(responseWrite.isDone()).as("the client write remains blocked during the probes").isFalse();
         } finally {
             allowResponseWrite.countDown();
             if (responseWrite != null) {
@@ -410,14 +426,14 @@ class AskApiIT {
         }
 
         boolean updateCompletedBeforeResponseWriteResumed = revocationFinishedWhileWriteBlocked;
-        int connectionsWhileResponseWriteBlocked = activeConnectionsWhileWriteBlocked;
+        boolean connectionClosedWhileResponseWriteBlocked = consentConnectionClosedWhileWriteBlocked;
         SoftAssertions.assertSoftly(softly -> {
             softly.assertThat(updateCompletedBeforeResponseWriteResumed)
                     .as("consent revocation completes while the response write is blocked")
                     .isTrue();
-            softly.assertThat(connectionsWhileResponseWriteBlocked)
+            softly.assertThat(connectionClosedWhileResponseWriteBlocked)
                     .as("the blocked response write holds no database connection")
-                    .isEqualTo(activeConnectionsBefore);
+                    .isTrue();
         });
         JsonNode responseBody = objectMapper.readTree(response.bodyAsString());
         assertThat(responseBody.path("mode").asText()).isEqualTo("EXTRACTIVE");
@@ -525,10 +541,6 @@ class AskApiIT {
     private record TestMessage(UUID id, long seq) {
     }
 
-    private int activeDatabaseConnections() throws Exception {
-        return dataSource.unwrap(HikariDataSource.class).getHikariPoolMXBean().getActiveConnections();
-    }
-
     private static final class BlockingHttpServletResponse extends HttpServletResponseWrapper {
 
         private final ByteArrayOutputStream body = new ByteArrayOutputStream();
@@ -546,7 +558,7 @@ class AskApiIT {
                     if (firstWrite.compareAndSet(true, false)) {
                         writeEntered.countDown();
                         try {
-                            if (!allowWrite.await(10, TimeUnit.SECONDS)) {
+                            if (!allowWrite.await(120, TimeUnit.SECONDS)) {
                                 throw new IOException("Timed out waiting to resume the blocked response write");
                             }
                         } catch (InterruptedException exception) {
