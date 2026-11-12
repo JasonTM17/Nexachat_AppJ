@@ -57,6 +57,26 @@ def _write_backup(
 
 
 class RestoreNegativeTest(unittest.TestCase):
+    def test_restore_psql_argv_never_embeds_password(self) -> None:
+        secret = "restore-secret-never-on-argv"
+        cmd = restore.build_restore_psql_argv("nexachat-db-1", "nexachat", "nexachat_restore_v12")
+        for token in cmd:
+            self.assertNotIn(secret, token)
+
+    def test_requires_restore_pg_container_for_import(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest_path = _write_backup(Path(tmp) / "bundle")
+            storage = Path(tmp) / "empty-storage"
+            storage.mkdir()
+            env = {
+                "RESTORE_DB_USER": "nexachat",
+                "RESTORE_STORAGE_ROOT": str(storage),
+            }
+            with mock.patch.dict("os.environ", env, clear=True):
+                with self.assertRaises(SystemExit) as ctx:
+                    restore.run_restore(manifest_path, "nexachat_restore_v12", False, False)
+                self.assertIn("RESTORE_PG_CONTAINER", str(ctx.exception))
+
     def test_rejects_incomplete_backup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             backup_dir = Path(tmp)
@@ -76,11 +96,15 @@ class RestoreNegativeTest(unittest.TestCase):
             storage.mkdir()
             (storage / "leftover.bin").write_bytes(b"x")
             manifest_path = _write_backup(Path(tmp) / "bundle")
-            env = {"RESTORE_STORAGE_ROOT": str(storage), "RESTORE_DB_USER": "nexachat", "RESTORE_DB_PASSWORD": "x"}
+            env = {
+                "RESTORE_STORAGE_ROOT": str(storage),
+                "RESTORE_DB_USER": "nexachat",
+                "RESTORE_PG_CONTAINER": "nexachat-db-1",
+            }
             with mock.patch.dict("os.environ", env, clear=False):
                 with mock.patch.object(restore, "assert_empty_database"):
                     with self.assertRaises(SystemExit):
-                        restore.run_restore(manifest_path, "nexachat_restore_v12", True, False)
+                        restore.run_restore(manifest_path, "nexachat_restore_v12", False, False)
 
     def test_corrupt_object_hash(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

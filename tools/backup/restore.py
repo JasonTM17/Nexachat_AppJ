@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 
 from manifest import (
@@ -37,28 +38,38 @@ def parse_db_target(target: str) -> str:
     return target
 
 
-def restore_db_host() -> tuple[str, str]:
-    host = os.environ.get("RESTORE_DB_HOST", "localhost")
-    port = os.environ.get("RESTORE_DB_PORT", "5433")
-    if host not in {"localhost", "127.0.0.1"}:
-        raise SystemExit("Restore is limited to localhost databases.")
-    return host, port
+def restore_pg_container() -> str:
+    container = os.environ.get("RESTORE_PG_CONTAINER")
+    if not container:
+        raise SystemExit("Set RESTORE_PG_CONTAINER for local database restore.")
+    return container
 
 
-def read_db_password() -> tuple[str, str]:
+def read_db_user() -> str:
     user = os.environ.get("RESTORE_DB_USER") or os.environ.get("DATABASE_USER")
-    password = os.environ.get("RESTORE_DB_PASSWORD")
-    if not password:
-        file_path = os.environ.get("RESTORE_DB_PASSWORD_FILE") or os.environ.get("DATABASE_PASSWORD_FILE")
-        if file_path:
-            password = Path(file_path).read_text(encoding="utf-8").strip()
-    if not user or not password:
-        raise SystemExit("RESTORE_DB_USER and password env/file are required.")
-    return user, password
+    if not user:
+        raise SystemExit("RESTORE_DB_USER is required.")
+    return user
 
 
-def assert_empty_database(db_name: str, host: str, port: str, user: str, password: str) -> None:
-    container = os.environ.get("BACKUP_PG_CONTAINER", "nexachat-db-1")
+def build_restore_psql_argv(container: str, user: str, db_name: str) -> list[str]:
+    return [
+        "docker",
+        "exec",
+        "-i",
+        container,
+        "psql",
+        "-U",
+        user,
+        "-d",
+        db_name,
+        "-v",
+        "ON_ERROR_STOP=1",
+    ]
+
+
+def assert_empty_database(db_name: str, user: str) -> None:
+    container = restore_pg_container()
     sql = (
         "SELECT count(*)::text FROM pg_tables "
         "WHERE schemaname NOT IN ('pg_catalog','information_schema');"
@@ -103,12 +114,13 @@ def verify_manifest_hashes(backup_dir: Path, payload: dict) -> None:
         raise SystemExit("Manifest reconciliation is not complete.")
 
 
-def restore_database(db_name: str, backup_dir: Path, payload: dict, user: str, password: str) -> None:
-    container = os.environ.get("BACKUP_PG_CONTAINER", "nexachat-db-1")
+def restore_database(db_name: str, backup_dir: Path, payload: dict, user: str) -> None:
+    container = restore_pg_container()
     dump = backup_dir / payload["database"]["dump_file"]
+    cmd = build_restore_psql_argv(container, user, db_name)
     with dump.open("rb") as dump_handle:
         proc = subprocess.run(
-            ["docker", "exec", "-i", container, "psql", "-U", user, "-d", db_name, "-v", "ON_ERROR_STOP=1"],
+            cmd,
             stdin=dump_handle,
             capture_output=True,
             check=False,
@@ -119,12 +131,13 @@ def restore_database(db_name: str, backup_dir: Path, payload: dict, user: str, p
 
 def restore_objects(backup_dir: Path, payload: dict, storage_root: Path) -> None:
     objects_dir = backup_dir / OBJECTS_DIR
+    root = storage_root.expanduser().resolve()
     for key, meta in payload.get("objects", {}).items():
         if not is_canonical_storage_key(key):
             raise SystemExit(f"Manifest contains unsafe key {key!r}")
         source = objects_dir / str(meta["backup_name"])
-        dest = (storage_root / key).resolve()
-        if not str(dest).startswith(str(storage_root.resolve())):
+        dest = (root / key).resolve()
+        if not dest.is_relative_to(root):
             raise SystemExit(f"Traversal blocked for {key!r}")
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, dest)
@@ -136,6 +149,12 @@ def run_restore(
     require_empty: bool,
     verify_only: bool,
 ) -> None:
+    if require_empty:
+        warnings.warn(
+            "--require-empty is always enforced and the flag is ignored",
+            DeprecationWarning,
+            stacklevel=2,
+        )
     backup_dir = manifest_arg.parent.resolve()
     assert_complete_backup(backup_dir)
     payload = load_manifest(manifest_path(backup_dir))
@@ -144,19 +163,17 @@ def run_restore(
     except ValueError as err:
         raise SystemExit(str(err)) from err
     db_name = parse_db_target(target)
-    host, port = restore_db_host()
-    user, password = read_db_password()
+    user = read_db_user()
     storage_root = Path(
         os.environ.get("RESTORE_STORAGE_ROOT") or os.environ.get("NEXACHAT_STORAGE_ROOT") or "./data/uploads"
-    ).expanduser()
+    )
     verify_manifest_hashes(backup_dir, payload)
     if verify_only:
         LOGGER.info("verify-only OK for %s", backup_dir)
         return
-    if require_empty:
-        assert_empty_database(db_name, host, port, user, password)
-        assert_empty_storage(storage_root)
-    restore_database(db_name, backup_dir, payload, user, password)
+    assert_empty_database(db_name, user)
+    assert_empty_storage(storage_root)
+    restore_database(db_name, backup_dir, payload, user)
     restore_objects(backup_dir, payload, storage_root)
     LOGGER.info("restore complete db=%s objects=%s", db_name, len(payload.get("objects", {})))
 
@@ -165,7 +182,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="NexaChat paired backup restore (local fixture)")
     parser.add_argument("--manifest", required=True, type=Path, help="Path to manifest.json")
     parser.add_argument("--target", required=True, help="Allowlisted restore DB name (nexachat_restore_*)")
-    parser.add_argument("--require-empty", action="store_true", help="Require empty DB and storage")
+    parser.add_argument(
+        "--require-empty",
+        action="store_true",
+        help="Deprecated: restore always requires an empty DB and storage dir",
+    )
     parser.add_argument("--verify", action="store_true", help="Verify hashes only; do not import")
     return parser
 

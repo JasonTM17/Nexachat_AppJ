@@ -37,7 +37,7 @@ export BACKUP_DB_USER=nexachat
 export BACKUP_DB_PASSWORD_FILE=/path/to/local-password.txt
 export NEXACHAT_STORAGE_PROVIDER=local
 export NEXACHAT_STORAGE_ROOT=./data/uploads
-export BACKUP_PG_CONTAINER=nexachat-db-1   # optional: exec pg_dump/psql in compose db
+export BACKUP_PG_CONTAINER=nexachat-db-1   # optional: exec psql inventory in compose db
 
 python tools/backup/backup.py --target fixture --output /tmp/nexachat-backup --quiesced
 ```
@@ -46,24 +46,28 @@ Behavior:
 
 - Requires `--quiesced` and zero active DB writers (fails closed on concurrent capture).
 - Uses a lock file (`.capture.lock`) and writes `complete.marker` **after** manifest + objects.
-- `pg_dump` runs from a client image whose major version is ≥ the source (default `postgres:18`).
-- Manifest records format version, dump SHA-256, per-object SHA-256, and reference reconciliation.
+- `pg_dump` always runs from the Postgres client image `BACKUP_PGDOCKER_IMAGE` (default
+  `postgres:18`), reaching the host database via `host.docker.internal` on Windows/macOS
+  or the configured host. Client major must be ≥ server major; both are recorded in the manifest.
+- Passwords are passed via subprocess/docker environment only (`-e PGPASSWORD` without a value
+  on argv).
+- Manifest records format version, dump SHA-256, per-object SHA-256, reference reconciliation,
+  and PostgreSQL client/server majors.
 
 ## Restore
 
 Restore is limited to an **empty** allowlisted localhost database whose name starts with
-`nexachat_restore_`, plus an empty storage directory.
+`nexachat_restore_`, plus an **empty** storage directory. Emptiness is always enforced
+(`--require-empty` is deprecated and ignored).
 
 ```bash
 export RESTORE_DB_USER=nexachat
-export RESTORE_DB_PASSWORD_FILE=/path/to/local-password.txt
+export RESTORE_PG_CONTAINER=nexachat-db-1
 export RESTORE_STORAGE_ROOT=/tmp/nexachat-restore-uploads
-export BACKUP_PG_CONTAINER=nexachat-db-1
 
 python tools/backup/restore.py \
   --manifest /tmp/nexachat-backup/manifest.json \
   --target nexachat_restore_v12 \
-  --require-empty \
   --verify
 ```
 
@@ -71,15 +75,16 @@ Omit `--verify` only after a successful verify pass. There is no flag to target 
 
 ## Local rehearsal
 
-1. Create `nexachat_v12_backup_src` on the shared compose Postgres container and load `demo/seed.sql`.
-2. Place a few files under the local storage root and bind them in `message_attachments` if needed.
-3. Run backup with `--quiesced` while the app container is stopped.
-4. Create empty `nexachat_restore_v12` and an empty storage directory; run restore.
-5. Start the server JAR against the restored DB/storage on a private port; fetch message history and one media URL.
+Strict fixture (matches JAR Flyway HEAD):
 
-When the database came from `pg_dump`, set `SPRING_FLYWAY_ENABLED=false` and ensure the dump schema
-matches the JAR (or run Flyway on an empty database before capture). A dump from an older running
-instance may not match a newer worktree binary.
+1. Create empty `nexachat_v12_backup_src` on the compose Postgres container.
+2. Boot the worktree server JAR once against that database so Flyway migrates to HEAD, then stop it.
+3. Load `demo/seed.sql`.
+4. Upload one attachment through `POST /api/v1/attachments` and send a `FILE` message referencing it.
+5. Run backup with `--quiesced` while the app is stopped.
+6. Create empty `nexachat_restore_v12` and an empty storage directory; run restore.
+7. Boot the same JAR on a private port (e.g. 18081) with restored DB/storage; log in as a seed user,
+   fetch conversation history, and download the attachment. Compare its SHA-256 with the manifest.
 
 Record total backup bytes, wall duration, and the recovery point timestamp from `manifest.json`.
 
@@ -90,4 +95,5 @@ python -m unittest discover -s tools/backup -p "test_*.py"
 ```
 
 Negative coverage includes interrupted capture, corrupt/missing objects, non-empty targets,
-traversal keys, active writers, manifest version mismatch, and log redaction of secrets.
+traversal keys, active writers, manifest version mismatch, log redaction of secrets, and
+guards that database passwords never appear on subprocess argv.
