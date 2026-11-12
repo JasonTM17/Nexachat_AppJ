@@ -34,7 +34,9 @@ public record MessageResponse(
         Instant editedAt,
         Instant deletedAt,
         List<MessageMentionResponse> mentions,
-        boolean mentionAll
+        boolean mentionAll,
+        Long changeVersion,
+        Long generation
 ) {
 
     public MessageResponse(UUID id, UUID conversationId, Long seq, UUID senderId,
@@ -44,6 +46,17 @@ public record MessageResponse(
                            Instant createdAt, Instant editedAt, Instant deletedAt) {
         this(id, conversationId, seq, senderId, senderDisplayName, type, content,
                 clientMessageId, replyToId, replyTo, attachments, reactions,
-                createdAt, editedAt, deletedAt, List.of(), false);
+                createdAt, editedAt, deletedAt, List.of(), false, null, null);
+    }
+
+    public MessageResponse(UUID id, UUID conversationId, Long seq, UUID senderId,
+                           String senderDisplayName, String type, String content,
+                           UUID clientMessageId, UUID replyToId, ReplyRefResponse replyTo,
+                           List<AttachmentResponse> attachments, List<ReactionView> reactions,
+                           Instant createdAt, Instant editedAt, Instant deletedAt,
+                           List<MessageMentionResponse> mentions, boolean mentionAll) {
+        this(id, conversationId, seq, senderId, senderDisplayName, type, content,
+                clientMessageId, replyToId, replyTo, attachments, reactions,
+                createdAt, editedAt, deletedAt, mentions, mentionAll, null, null);
     }
 }

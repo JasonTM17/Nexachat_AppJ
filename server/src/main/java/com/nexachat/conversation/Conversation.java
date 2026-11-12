@@ -71,6 +71,14 @@ public class Conversation {
     @Column(name = "last_message_seq")
     private Long lastMessageSeq;
 
+    /** Updated atomically by the sync allocator, never by a managed entity flush. */
+    @Column(name = "change_version", nullable = false, insertable = false, updatable = false)
+    private Long changeVersion;
+
+    /** Reconciliation epoch, maintained only by explicit recovery SQL. */
+    @Column(name = "sync_generation", nullable = false, insertable = false, updatable = false)
+    private Long syncGeneration;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -136,6 +144,14 @@ public class Conversation {
 
     public Long getLastMessageSeq() {
         return lastMessageSeq;
+    }
+
+    public Long getChangeVersion() {
+        return changeVersion;
+    }
+
+    public Long getSyncGeneration() {
+        return syncGeneration;
     }
 
     public Instant getCreatedAt() {

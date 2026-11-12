@@ -3,6 +3,7 @@ package com.nexachat.message;
 import com.nexachat.attachment.StorageService;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.message.dto.MessageRow;
@@ -69,6 +70,10 @@ class SystemMessageTest {
         lenient().when(attachmentRepository.findByMessage_IdIn(any())).thenReturn(List.of());
         lenient().when(reactionRepository.findRowsByMessageIdIn(any())).thenReturn(List.of());
         lenient().when(messageRepository.findReplyRefsByIdIn(any())).thenReturn(List.of());
+        lenient().when(conversationRepository.findByIdForUpdate(any()))
+                .thenReturn(Optional.of(mock(Conversation.class)));
+        lenient().when(conversationRepository.incrementChangeVersion(any())).thenReturn(1);
+        lenient().when(conversationRepository.findChangeVersion(any())).thenReturn(1L);
     }
 
     @Test
@@ -80,7 +85,7 @@ class SystemMessageTest {
         MessageRow stored = new MessageRow(
                 UUID.randomUUID(), conversationId, 77L, actorId, "Admin",
                 Message.Type.SYSTEM, "Admin added Bob", UUID.randomUUID(),
-                null, Instant.now(), null, null);
+                null, Instant.now(), null, null, false, 1L, 1L);
         when(messageRepository.findRowBySenderAndClientMessageId(eq(actorId), any()))
                 .thenReturn(Optional.of(stored));
 
@@ -89,6 +94,8 @@ class SystemMessageTest {
 
         assertThat(response.type()).isEqualTo("SYSTEM");
         assertThat(response.seq()).isEqualTo(77L);
+        assertThat(response.changeVersion()).isEqualTo(1L);
+        assertThat(response.generation()).isEqualTo(1L);
 
         ArgumentCaptor<String> type = ArgumentCaptor.forClass(String.class);
         verify(messageRepository).insertIgnoringDuplicateKey(
@@ -97,6 +104,7 @@ class SystemMessageTest {
         assertThat(type.getValue()).isEqualTo("SYSTEM");
 
         verify(conversationRepository).advanceLastMessage(conversationId, stored.id(), 77L);
+        verify(conversationRepository).incrementChangeVersion(conversationId);
         verify(memberRepository).advanceReadWatermark(conversationId, actorId, 77L);
 
         ArgumentCaptor<MessageCreatedEvent> event = ArgumentCaptor.forClass(MessageCreatedEvent.class);
@@ -149,6 +157,7 @@ class SystemMessageTest {
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NOT_MEMBER);
         assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
+        verify(conversationRepository, never()).incrementChangeVersion(any());
         verify(messageRepository, never()).insertIgnoringDuplicateKey(
                 any(), any(), any(), any(), any(), any());
     }

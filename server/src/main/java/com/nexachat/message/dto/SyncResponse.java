@@ -8,8 +8,13 @@ import java.util.UUID;
 
 public record SyncResponse(
         List<ConversationDelta> deltas,
-        Instant serverTime
+        Instant serverTime,
+        @JsonInclude(JsonInclude.Include.NON_NULL) Integer syncVersion
 ) {
+    public SyncResponse(List<ConversationDelta> deltas, Instant serverTime) {
+        this(deltas, serverTime, null);
+    }
+
     /**
      * One conversation's delta. The trailing {@code muted}/{@code mutedUntil}/
      * {@code archived}/{@code pinned}/{@code pinnedAt} block is the
@@ -47,7 +52,32 @@ public record SyncResponse(
             @JsonInclude(JsonInclude.Include.NON_NULL) Instant mutedUntil,
             boolean archived,
             boolean pinned,
-            @JsonInclude(JsonInclude.Include.NON_NULL) Instant pinnedAt
+            @JsonInclude(JsonInclude.Include.NON_NULL) Instant pinnedAt,
+            @JsonInclude(JsonInclude.Include.NON_NULL) List<MessageResponse> changes,
+            @JsonInclude(JsonInclude.Include.NON_NULL) Long changeCursor,
+            @JsonInclude(JsonInclude.Include.NON_NULL) Boolean changeHasMore,
+            @JsonInclude(JsonInclude.Include.NON_NULL) Long changeUpperBound,
+            @JsonInclude(JsonInclude.Include.NON_NULL) Boolean reset,
+            @JsonInclude(JsonInclude.Include.NON_NULL) Long generation
     ) {
+        public ConversationDelta(UUID conversationId,
+                                 List<MessageResponse> newMessages,
+                                 List<MessageResponse> editedMessages,
+                                 List<UUID> deletedMessageIds,
+                                 List<ReactionUpdatedPayload> reactionUpdates,
+                                 Long maxSeq,
+                                 boolean hasMore,
+                                 Long reactionCursor,
+                                 boolean reactionsFullRefresh,
+                                 boolean muted,
+                                 Instant mutedUntil,
+                                 boolean archived,
+                                 boolean pinned,
+                                 Instant pinnedAt) {
+            this(conversationId, newMessages, editedMessages, deletedMessageIds,
+                    reactionUpdates, maxSeq, hasMore, reactionCursor, reactionsFullRefresh,
+                    muted, mutedUntil, archived, pinned, pinnedAt,
+                    null, null, null, null, null, null);
+        }
     }
 }

@@ -31,6 +31,8 @@ import com.nexachat.message.dto.ReplyRefRow;
 import com.nexachat.message.dto.SendMessageRequest;
 import com.nexachat.message.dto.SyncRequest;
 import com.nexachat.message.dto.SyncResponse;
+import com.nexachat.message.dto.SyncFence;
+import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,18 +62,16 @@ import java.util.stream.Collectors;
  * idempotency, cursor history, and the read watermark (plan §10.2 note: WS and
  * the REST fallback both come through here, logic is never duplicated).
  *
- * <p><b>Sequencing</b> (DDL ambiguity resolved): {@code messages.seq} is a
- * GLOBAL {@code BIGSERIAL} — the DB sequence assigns it at INSERT, so no
- * per-conversation counter or locking is needed. Concurrent senders simply
- * draw distinct seqs; commit order can interleave but within one conversation
- * seq order is still monotonic, and gaps are harmless (plan §9.3.1).
+ * <p><b>Legacy ordering</b>: {@code messages.seq} remains a GLOBAL
+ * {@code BIGSERIAL}, assigned by the DB at INSERT. V2 completion uses the
+ * separate per-conversation change revision allocated under C's row lock;
+ * legacy history and inbox pointers continue to use {@code seq}.
  * {@code conversations.last_message_*} is a denormalized pointer updated in
  * the same tx, never the seq source.
  *
- * <p><b>Idempotency</b>: {@code INSERT ... ON CONFLICT (sender_id,
- * client_message_id) DO NOTHING} — race-safe at the DB level (no
- * check-then-insert window); a dedup hit re-reads and re-broadcasts the
- * existing row so a retrying sender still gets its SENT signal.
+ * <p><b>Idempotency</b>: a transaction-scoped key lock and the unique
+ * constraint serialize retries before revision allocation. A dedup hit
+ * re-reads and re-broadcasts the existing row so the sender still gets SENT.
  *
  * <p><b>Broadcast</b>: nothing is pushed inside the transaction — a Spring
  * event is published and {@link MessageBroadcastListener} fans out
@@ -86,6 +86,12 @@ public class MessageService {
     static final int MAX_PAGE_LIMIT = 100;
     static final int DEFAULT_PAGE_LIMIT = 30;
 
+    /** Legacy {@code POST /sync} per-conversation row ceiling (new/edited/deleted paths). */
+    public static final int SYNC_LIMIT_PER_CONV_MAX = 100;
+    public static final int SYNC_LIMIT_PER_CONV_DEFAULT = 50;
+    /** V2 negotiated change feed page ceiling (matches the shipped Android decoder). */
+    public static final int SYNC_V2_CHANGE_PAGE_MAX = 50;
+
     /** Cap on {@code attachmentIds} per send (phase-09) — bounds the bind work per message. */
     static final int MAX_ATTACHMENTS_PER_MESSAGE = 10;
     static final int MAX_CONTENT_LENGTH = 10_000;
@@ -97,6 +103,7 @@ public class MessageService {
     private final ReactionEventRepository reactionEventRepository;
     private final ConversationRepository conversationRepository;
     private final ConversationMemberRepository memberRepository;
+    private final UserRepository userRepository;
     private final PinnedMessageRepository pinnedMessageRepository;
     private final StorageService storageService;
     private final ApplicationEventPublisher eventPublisher;
@@ -112,6 +119,7 @@ public class MessageService {
                           ReactionEventRepository reactionEventRepository,
                           ConversationRepository conversationRepository,
                           ConversationMemberRepository memberRepository,
+                          UserRepository userRepository,
                           PinnedMessageRepository pinnedMessageRepository,
                           StorageService storageService,
                           ApplicationEventPublisher eventPublisher,
@@ -119,7 +127,7 @@ public class MessageService {
                           MessageRecallProperties recallProperties) {
         this(messageRepository, mentionRepository, attachmentRepository, reactionRepository, reactionEventRepository,
                 conversationRepository, memberRepository, pinnedMessageRepository, storageService,
-                eventPublisher, syncProperties, Clock.systemUTC(), recallProperties);
+                eventPublisher, syncProperties, Clock.systemUTC(), recallProperties, userRepository);
     }
 
     /** Compatibility constructor for isolated service tests that do not exercise mentions. */
@@ -184,6 +192,25 @@ public class MessageService {
                    SyncProperties syncProperties,
                    Clock clock,
                    MessageRecallProperties recallProperties) {
+        this(messageRepository, mentionRepository, attachmentRepository, reactionRepository,
+                reactionEventRepository, conversationRepository, memberRepository, pinnedMessageRepository,
+                storageService, eventPublisher, syncProperties, clock, recallProperties, null);
+    }
+
+    MessageService(MessageRepository messageRepository,
+                   MessageMentionRepository mentionRepository,
+                   MessageAttachmentRepository attachmentRepository,
+                   MessageReactionRepository reactionRepository,
+                   ReactionEventRepository reactionEventRepository,
+                   ConversationRepository conversationRepository,
+                   ConversationMemberRepository memberRepository,
+                   PinnedMessageRepository pinnedMessageRepository,
+                   StorageService storageService,
+                   ApplicationEventPublisher eventPublisher,
+                   SyncProperties syncProperties,
+                   Clock clock,
+                   MessageRecallProperties recallProperties,
+                   UserRepository userRepository) {
         this.messageRepository = messageRepository;
         this.mentionRepository = mentionRepository;
         this.attachmentRepository = attachmentRepository;
@@ -191,6 +218,7 @@ public class MessageService {
         this.reactionEventRepository = reactionEventRepository;
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
+        this.userRepository = userRepository;
         this.pinnedMessageRepository = pinnedMessageRepository;
         this.storageService = storageService;
         this.eventPublisher = eventPublisher;
@@ -221,31 +249,29 @@ public class MessageService {
         requireMember(conversationId, senderId);
         validatePayload(request);
 
-        var existing = messageRepository.findRowBySenderAndClientMessageId(
-                senderId, request.clientMessageId());
-        if (existing.isPresent()) {
-            return replayExisting(conversationId, existing.get());
-        }
-
         Message.Type type = parseType(request.type());
         List<UUID> attachmentIds = distinctIds(request.attachmentIds());
         validateAttachmentContract(type, attachmentIds);
         List<MessageAttachment> lockedAttachments = lockAttachments(attachmentIds);
-        if (!attachmentIds.isEmpty()) {
-            // A concurrent retry may have committed while this send waited for
-            // the upload row lock. Preserve idempotency before checking whether
-            // the now-bound attachment can be claimed by a different message.
-            var retry = messageRepository.findRowBySenderAndClientMessageId(
-                    senderId, request.clientMessageId());
-            if (retry.isPresent()) {
-                return replayExisting(conversationId, retry.get());
-            }
-        }
-        validateAttachmentsReady(senderId, type, attachmentIds, lockedAttachments);
         String content = normalizedContent(type, request.content());
+
+        // Parent lock order is user -> conversation -> message. Attachment
+        // claim locks above are part of the existing single-use upload path.
+        lockUserParent(senderId);
+        messageRepository.lockIdempotencyKey(senderId, request.clientMessageId());
+        lockConversationForWrite(conversationId);
+        requireMember(conversationId, senderId);
+        var retryAfterConversationLock = messageRepository.findRowBySenderAndClientMessageId(
+                senderId, request.clientMessageId());
+        if (retryAfterConversationLock.isPresent()) {
+            return replayExisting(conversationId, retryAfterConversationLock.get());
+        }
+
+        validateAttachmentsReady(senderId, type, attachmentIds, lockedAttachments);
         MentionState mentionState = validateMentions(conversationId, senderId, type, content,
                 request.mentions(), Boolean.TRUE.equals(request.mentionAll()));
         UUID replyToId = resolveReplyTo(conversationId, request.replyToId());
+        allocateChangeVersion(conversationId);
 
         int inserted = mentionState.mentionAll()
                 ? messageRepository.insertIgnoringDuplicateKeyWithMentionAll(
@@ -337,6 +363,7 @@ public class MessageService {
     @Transactional
     public MessageResponse edit(UUID userId, UUID conversationId, UUID messageId,
                                 EditMessageRequest request) {
+        lockConversationForWrite(conversationId);
         requireMember(conversationId, userId);
         Message message = messageRepository.findByIdForUpdate(messageId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
@@ -385,6 +412,7 @@ public class MessageService {
         if (message.getEditedAt() != null && !editedAt.isAfter(message.getEditedAt())) {
             editedAt = message.getEditedAt().plus(1, ChronoUnit.MICROS);
         }
+        message.setChangeVersion(allocateChangeVersion(conversationId));
         if (contentChanged) {
             message.editContent(normalized, editedAt);
         } else {
@@ -406,10 +434,8 @@ public class MessageService {
 
     @Transactional
     public void delete(UUID userId, UUID conversationId, UUID messageId) {
+        Conversation conversation = lockConversationForWrite(conversationId);
         requireMember(conversationId, userId);
-        Conversation conversation = conversationRepository.findByIdForUpdate(conversationId)
-                .orElseThrow(() -> ApiException.of(
-                        ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
         Message message = messageRepository.findByIdForUpdate(messageId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
         requireMessageConversation(message, conversationId);
@@ -432,6 +458,7 @@ public class MessageService {
 
         boolean wasLastMessage = isLastMessage(conversationId, messageId);
         Instant deletedAt = recalledAt.truncatedTo(ChronoUnit.MICROS);
+        message.setChangeVersion(allocateChangeVersion(conversationId));
         message.softDelete(deletedAt);
         if (mentionRepository != null) {
             mentionRepository.deleteByMessageId(messageId);
@@ -444,7 +471,8 @@ public class MessageService {
         MessageRow row = messageRepository.findRowById(messageId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
         eventPublisher.publishEvent(new MessageDeletedEvent(conversationId,
-                new MessageDeletedPayload(messageId, row.deletedAt())));
+                new MessageDeletedPayload(messageId, row.deletedAt(),
+                        row.changeVersion(), row.generation())));
         if (wasLastMessage) {
             publishLastMessageChanged(conversationId, "MESSAGE_DELETED");
         }
@@ -515,9 +543,14 @@ public class MessageService {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "System message content must not be blank");
         }
+        // Outer group/call writers establish every user parent lock before
+        // their conversation lock; this method takes/retains C before any
+        // membership query or auto-flushing write.
+        lockConversationForWrite(conversationId);
         requireMember(conversationId, actingUserId);
 
         UUID clientMessageId = UUID.randomUUID();
+        allocateChangeVersion(conversationId);
         messageRepository.insertIgnoringDuplicateKey(
                 conversationId, actingUserId, clientMessageId, Message.Type.SYSTEM.name(), content, null);
         MessageRow row = messageRepository
@@ -597,11 +630,14 @@ public class MessageService {
         if (request == null || request.watermarks() == null || request.watermarks().isEmpty()) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "watermarks list must not be empty");
         }
-        int limit = request.limitPerConv() != null ? Math.max(1, Math.min(request.limitPerConv(), 100)) : 50;
+        validateSyncVersionFields(request);
+        int limit = resolveSyncLimitPerConv(request.limitPerConv(), SYNC_LIMIT_PER_CONV_MAX);
         java.time.Instant since = request.since();
         // Captured BEFORE the queries: a row committed after its query ran but
         // before a later timestamp would be skipped by the next delta request.
         java.time.Instant requestTime = clock.instant();
+        Instant reactionRetentionCutoff = requestTime
+                .minus(syncProperties.getReactionRetentionDays(), ChronoUnit.DAYS);
 
         List<SyncRequest.ConversationWatermark> watermarks = request.watermarks();
         if (watermarks.size() > 100) {
@@ -620,8 +656,6 @@ public class MessageService {
         }
 
         if (since != null) {
-            Instant reactionRetentionCutoff = clock.instant().minus(
-                    syncProperties.getReactionRetentionDays(), ChronoUnit.DAYS);
             if (!since.isBefore(reactionRetentionCutoff)) {
                 List<UUID> reactionConversations = watermarks.stream()
                         .map(SyncRequest.ConversationWatermark::conversationId)
@@ -633,6 +667,12 @@ public class MessageService {
                     reactionEventRepository.lockConversationEvents(conversationId);
                 }
             }
+        }
+
+        if (isVersion2Request(request, watermarks)) {
+            int v2Limit = resolveSyncLimitPerConv(request.limitPerConv(), SYNC_V2_CHANGE_PAGE_MAX);
+            return syncDeltaV2(userId, watermarks, v2Limit, since, requestTime,
+                    reactionRetentionCutoff, flagsByConversation);
         }
 
         List<SyncResponse.ConversationDelta> deltas = new ArrayList<>();
@@ -725,6 +765,121 @@ public class MessageService {
         return new SyncResponse(deltas, requestTime);
     }
 
+    private static int resolveSyncLimitPerConv(Integer requested, int max) {
+        return requested != null
+                ? Math.max(1, Math.min(requested, max))
+                : SYNC_LIMIT_PER_CONV_DEFAULT;
+    }
+
+    private static void validateSyncVersionFields(SyncRequest request) {
+        if (request.syncVersion() != null && request.syncVersion() != 1 && request.syncVersion() != 2) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "syncVersion must be 1 or 2");
+        }
+        for (SyncRequest.ConversationWatermark watermark : request.watermarks()) {
+            if (watermark != null && watermark.changeCursor() != null && watermark.changeCursor() < 0) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "changeCursor must be a non-negative signed 64-bit integer");
+            }
+            if (watermark != null && watermark.generation() != null && watermark.generation() < 1) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "generation must be a positive signed 64-bit integer");
+            }
+        }
+    }
+
+    private boolean isVersion2Request(SyncRequest request,
+                                      List<SyncRequest.ConversationWatermark> watermarks) {
+        return syncProperties.isChangeCursorsEnabled()
+                && Integer.valueOf(2).equals(request.syncVersion())
+                && watermarks.stream().allMatch(watermark -> watermark.changeCursor() != null);
+    }
+
+    private SyncResponse syncDeltaV2(UUID userId,
+                                     List<SyncRequest.ConversationWatermark> watermarks,
+                                     int limit,
+                                     Instant since,
+                                     Instant requestTime,
+                                     Instant reactionRetentionCutoff,
+                                     Map<UUID, MemberFlagsRow> flagsByConversation) {
+        List<SyncResponse.ConversationDelta> deltas = new ArrayList<>();
+        for (SyncRequest.ConversationWatermark watermark : watermarks) {
+            UUID conversationId = watermark.conversationId();
+            MemberFlagsRow flags = flagsByConversation.get(conversationId);
+            if (flags == null) {
+                continue;
+            }
+
+            // This single plain projection both rechecks membership and captures
+            // H/G. It takes no conversation/message row lock after advisory locks.
+            SyncFence fence = messageRepository.findSyncFence(userId, conversationId).orElse(null);
+            if (fence == null) {
+                continue;
+            }
+
+            long requestedCursor = watermark.changeCursor();
+            Long requestedGeneration = watermark.generation();
+            boolean reset = requestedCursor > fence.changeUpperBound()
+                    || (requestedGeneration != null && requestedGeneration != fence.generation())
+                    || (requestedCursor > 0 && requestedGeneration == null);
+
+            List<MessageResponse> changes = List.of();
+            long nextCursor = 0;
+            boolean changeHasMore = false;
+            List<ReactionUpdatedPayload> reactionUpdates = List.of();
+            Long reactionCursor = null;
+            boolean reactionsFullRefresh = false;
+
+            if (!reset) {
+                List<MessageRow> rows = messageRepository.findChangesBetween(
+                        conversationId, requestedCursor, fence.changeUpperBound(),
+                        PageRequest.of(0, limit + 1));
+                changeHasMore = rows.size() > limit;
+                List<MessageRow> page = changeHasMore ? rows.subList(0, limit) : rows;
+                changes = hydrateResponses(page, userId);
+                nextCursor = changeHasMore
+                        ? page.get(page.size() - 1).changeVersion()
+                        : fence.changeUpperBound();
+
+                if (since != null) {
+                    if (since.isBefore(reactionRetentionCutoff)) {
+                        reactionsFullRefresh = true;
+                    } else {
+                        ReactionDelta reactionDelta = reactionUpdates(
+                                conversationId, since, watermark.reactionCursor());
+                        reactionUpdates = reactionDelta.updates();
+                        reactionCursor = reactionDelta.cursor();
+                    }
+                }
+            }
+
+            boolean hasMore = !reset && (changeHasMore || reactionCursor != null);
+            boolean muted = flags.isMutedAt(requestTime);
+            boolean pinned = flags.pinned();
+            deltas.add(new SyncResponse.ConversationDelta(
+                    conversationId,
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    reactionUpdates,
+                    messageRepository.findMaxSeqByConversationId(conversationId),
+                    hasMore,
+                    reactionCursor,
+                    reactionsFullRefresh,
+                    muted,
+                    flags.effectiveMutedUntil(requestTime),
+                    flags.archived(),
+                    pinned,
+                    pinned ? flags.pinnedAt() : null,
+                    changes,
+                    reset ? 0L : nextCursor,
+                    reset ? false : changeHasMore,
+                    fence.changeUpperBound(),
+                    reset,
+                    fence.generation()));
+        }
+        return new SyncResponse(deltas, requestTime, 2);
+    }
+
     /**
      * One bounded page of reaction updates for a conversation. The page is cut
      * at {@code maxReactionUpdates} events (so at most that many distinct
@@ -770,6 +925,27 @@ public class MessageService {
     }
 
     // ------------------------------------------------------------- internals
+
+    private void lockUserParent(UUID userId) {
+        if (userRepository != null) {
+            userRepository.lockForKeyShareSorted(List.of(userId));
+        }
+    }
+
+    private Conversation lockConversationForWrite(UUID conversationId) {
+        return conversationRepository.findByIdForUpdate(conversationId)
+                .orElseThrow(() -> ApiException.of(
+                        ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
+    }
+
+    /** Caller must already hold the conversation row lock through transaction completion. */
+    private long allocateChangeVersion(UUID conversationId) {
+        if (conversationRepository.incrementChangeVersion(conversationId) != 1) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR,
+                    "Message change version allocation failed");
+        }
+        return conversationRepository.findChangeVersion(conversationId);
+    }
 
     private void requireMember(UUID conversationId, UUID userId) {
         if (!memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)) {
@@ -823,7 +999,8 @@ public class MessageService {
         return new MessageRow(row.getId(), row.getConversationId(), row.getSeq(), row.getSenderId(),
                 row.getSenderDisplayName(), Message.Type.valueOf(row.getType()), row.getContent(),
                 row.getClientMessageId(), row.getReplyToId(), row.getCreatedAt(),
-                row.getEditedAt(), row.getDeletedAt(), Boolean.TRUE.equals(row.getMentionAll()));
+                row.getEditedAt(), row.getDeletedAt(), Boolean.TRUE.equals(row.getMentionAll()),
+                row.getChangeVersion(), row.getGeneration());
     }
 
     private record MentionRange(int start, int end, MessageMentionResponse mention) {
@@ -1132,7 +1309,7 @@ public class MessageService {
                 row.type().name(), deleted ? null : row.content(), row.clientMessageId(), row.replyToId(),
                 replyTo, deleted ? List.of() : attachments, deleted ? List.of() : reactions,
                 row.createdAt(), row.editedAt(), row.deletedAt(), deleted ? List.of() : mentions,
-                !deleted && row.mentionAll());
+                !deleted && row.mentionAll(), row.changeVersion(), row.generation());
     }
 
     /**

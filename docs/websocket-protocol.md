@@ -145,7 +145,7 @@ uses a separate `CallEvent` payload on `/user/queue/calls`; see
 |---|---|
 | `MESSAGE_CREATED` | Full `MessageResponse` payload (including `id`, `conversationId`, `seq`, `senderId`, `type`, content/tombstone fields, `mentions`, `mentionAll`, and timestamps) |
 | `MESSAGE_UPDATED` | full `MessageResponse` with edited `content`/`editedAt` and revalidated mention metadata |
-| `MESSAGE_DELETED` | `{messageId, deletedAt}`; clients apply a tombstone and clear cached content and attachments; deleted content is never rebroadcast |
+| `MESSAGE_DELETED` | `{messageId, deletedAt, changeVersion, generation}`; clients apply a tombstone and clear cached content and attachments; deleted content is never rebroadcast. `changeVersion` and `generation` are omitted together when the frame is unversioned |
 | `MESSAGE_DELIVERED` | `{userId, upToSeq}`; conversation id is in the envelope; indicates member has received up to `upToSeq` (renders 2 gray ticks on sender) |
 | `MESSAGE_READ` | `{userId, upToSeq}`; conversation id is in the envelope; indicates member has read up to `upToSeq` (renders 2 blue ticks on sender). Not broadcast when the reader has `showSeen=false`, and not delivered to a recipient whose own `showSeen=false` (reciprocal) |
 | `REACTION_UPDATED` | `{messageId, reactions:[{emoji, count, userIds}]}`; complete post-toggle reaction state for that message |
@@ -213,8 +213,9 @@ monotonic and cannot exceed the conversation's latest `seq`. In 1-1 chat,
 `messageSeq <= peerDeliveredSeq` renders 2 gray ticks (delivered);
 `messageSeq <= peerReadSeq` renders 2 blue ticks (seen/read) (`ChatBubbleRules.java`).
 
-**Message recall and tombstones.** `MESSAGE_DELETED` contains only the message
-id and deletion time. Clients must clear cached message content, mentions, and
+**Message recall and tombstones.** `MESSAGE_DELETED` contains the message
+id, deletion time, and, for a versioned recall, `changeVersion` and `generation`.
+Clients must clear cached message content, mentions, and
 attachments and render the tombstone; an inbox refresh or other data-only update
 must not restore content for a deleted message. Reconnect delta sync reports
 deleted message ids so clients can apply the same tombstone when they missed the

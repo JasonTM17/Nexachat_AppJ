@@ -137,6 +137,8 @@ class MessageSearchServiceTest {
             @Override public Instant getEditedAt() { return row.editedAt(); }
             @Override public Instant getDeletedAt() { return row.deletedAt(); }
             @Override public Boolean getMentionAll() { return row.mentionAll(); }
+            @Override public Long getChangeVersion() { return row.changeVersion(); }
+            @Override public Long getGeneration() { return row.generation(); }
         };
     }
 }
