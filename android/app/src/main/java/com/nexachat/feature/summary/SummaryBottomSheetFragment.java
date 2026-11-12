@@ -8,6 +8,9 @@ import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -115,6 +118,7 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
         setupScopeChips();
         setupModeChips();
         setupActions();
+        applyFooterInsets();
         consentRepository.aiSummaryConsent().observe(getViewLifecycleOwner(), consent -> {
             if (!userOverrodeMode && Boolean.TRUE.equals(consent)) {
                 preferAiMode = true;
@@ -229,6 +233,44 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
     private void updateConsentCard(boolean visible) {
         if (binding != null) {
             binding.summaryConsentCard.setVisibility(visible ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    private void applyFooterInsets() {
+        if (binding == null) return;
+        final int baseBottom = binding.summaryActions.getPaddingBottom();
+        ViewCompat.setOnApplyWindowInsetsListener(binding.getRoot(), (view, windowInsets) -> {
+            Insets ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime());
+            Insets bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars());
+            binding.summaryActions.setPadding(
+                    binding.summaryActions.getPaddingLeft(),
+                    binding.summaryActions.getPaddingTop(),
+                    binding.summaryActions.getPaddingRight(),
+                    baseBottom + Math.max(ime.bottom, bars.bottom));
+            return windowInsets;
+        });
+        binding.summaryActions.post(this::stackFooterIfNeeded);
+    }
+
+    private void stackFooterIfNeeded() {
+        if (binding == null) return;
+        int content = binding.summaryActions.getWidth()
+                - binding.summaryActions.getPaddingLeft()
+                - binding.summaryActions.getPaddingRight();
+        int sum = 0;
+        for (int i = 0; i < binding.summaryActions.getChildCount(); i++) {
+            sum += binding.summaryActions.getChildAt(i).getMeasuredWidth();
+        }
+        if (!SummaryFooterRules.stack(sum, content)
+                || binding.summaryActions.getOrientation() == LinearLayout.VERTICAL) {
+            return;
+        }
+        binding.summaryActions.setOrientation(LinearLayout.VERTICAL);
+        for (int i = 0; i < binding.summaryActions.getChildCount(); i++) {
+            View child = binding.summaryActions.getChildAt(i);
+            ViewGroup.LayoutParams params = child.getLayoutParams();
+            params.width = ViewGroup.LayoutParams.MATCH_PARENT;
+            child.setLayoutParams(params);
         }
     }
 
@@ -400,5 +442,15 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
         args.putStringArray(ARG_MESSAGE_IDS, ids);
         args.putLongArray(ARG_MESSAGE_SEQS, seqs);
         setCitationContext(seqMap, new HashSet<>(seqMap.keySet()));
+    }
+
+    /** Footer labels stack when their measured widths no longer fit the sheet. */
+    static final class SummaryFooterRules {
+        private SummaryFooterRules() {
+        }
+
+        static boolean stack(int measuredChildren, int contentWidth) {
+            return contentWidth > 0 && measuredChildren > contentWidth;
+        }
     }
 }
