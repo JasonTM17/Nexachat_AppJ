@@ -39,6 +39,11 @@ public interface ConversationDao {
     @Query("SELECT * FROM conversations WHERE id = :conversationId")
     Maybe<ConversationEntity> byId(String conversationId);
 
+    /** Synchronous membership read for short AppDatabase.runInTransaction guards. */
+    @Nullable
+    @Query("SELECT * FROM conversations WHERE id = :conversationId")
+    ConversationEntity byIdSync(String conversationId);
+
     @Query("UPDATE conversations SET labelIdsCsv = :labelIdsCsv WHERE id = :conversationId")
     Completable updateLabelIds(String conversationId, String labelIdsCsv);
 

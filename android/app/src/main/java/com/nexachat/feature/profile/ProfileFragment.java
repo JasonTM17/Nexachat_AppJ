@@ -1,7 +1,11 @@
 package com.nexachat.feature.profile;
 
+import android.Manifest;
+import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.text.InputType;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -16,6 +20,7 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 import androidx.appcompat.app.AlertDialog;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputEditText;
@@ -44,10 +49,13 @@ public final class ProfileFragment extends Fragment {
     private LinkedAccountsViewModel linkedAccountsViewModel;
     private AppSettingsViewModel settingsViewModel;
     private ActivityResultLauncher<String> avatarPicker;
+    private ActivityResultLauncher<String> notificationPermissionRequest;
     private boolean syncingAiConsent;
 
     public ProfileFragment() {
         avatarPicker = registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> { if (uri != null && viewModel != null) viewModel.uploadAvatar(uri); });
+        notificationPermissionRequest = registerForActivityResult(
+                new ActivityResultContracts.RequestPermission(), granted -> { });
     }
 
     @Nullable @Override public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle state) {
@@ -113,6 +121,9 @@ public final class ProfileFragment extends Fragment {
             binding.showSeen.setChecked(next);
             viewModel.setShowSeen(next);
         });
+        binding.notificationRow.setTitle(getString(R.string.settings_notifications));
+        binding.notificationRow.setLeadingIcon(R.drawable.ic_chat_bubble_outline);
+        binding.notificationRow.setOnClickListener(v -> openNotificationSettings());
         consentRepository.refresh();
         consentRepository.aiSummaryConsent().observe(getViewLifecycleOwner(), enabled -> {
             syncingAiConsent = true;
@@ -154,6 +165,31 @@ public final class ProfileFragment extends Fragment {
             binding.themeChipLight.setChecked(active == ThemeMode.LIGHT);
             binding.themeChipDark.setChecked(active == ThemeMode.DARK);
         });
+    }
+
+    private void openNotificationSettings() {
+        if (Build.VERSION.SDK_INT >= 33
+                && ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.POST_NOTIFICATIONS)
+                        != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            boolean requested = requireContext().getSharedPreferences(
+                    "notification_settings", android.content.Context.MODE_PRIVATE)
+                    .getBoolean("permission_requested", false);
+            if (!requested) {
+                requireContext().getSharedPreferences(
+                        "notification_settings", android.content.Context.MODE_PRIVATE)
+                        .edit().putBoolean("permission_requested", true).apply();
+                notificationPermissionRequest.launch(Manifest.permission.POST_NOTIFICATIONS);
+                return;
+            }
+        }
+        Intent settings = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, requireContext().getPackageName());
+        try {
+            startActivity(settings);
+        } catch (android.content.ActivityNotFoundException unavailable) {
+            startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + requireContext().getPackageName())));
+        }
     }
 
     private void render(ProfileViewModel.UiState state) {

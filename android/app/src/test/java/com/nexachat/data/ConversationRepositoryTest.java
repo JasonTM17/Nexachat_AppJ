@@ -1427,6 +1427,11 @@ public final class ConversationRepositoryTest {
         }
 
         @Override
+        public ConversationEntity byIdSync(String conversationId) {
+            return rows.get(conversationId);
+        }
+
+        @Override
         public Single<List<ConversationEntity>> byIds(List<String> ids) {
             return Single.fromCallable(() -> {
                 List<ConversationEntity> found = new ArrayList<>();

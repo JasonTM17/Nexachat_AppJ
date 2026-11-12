@@ -16,13 +16,13 @@ import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
 import com.nexachat.data.TimeAndJwt;
-import com.nexachat.data.SyncEngine;
 import com.nexachat.feature.reminder.ReminderPushEvents;
 import com.squareup.moshi.Moshi;
 import dagger.hilt.android.qualifiers.ApplicationContext;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import java.time.Instant;
 import java.util.function.LongSupplier;
 import java.util.Map.Entry;
 import java.util.Map;
@@ -62,49 +62,59 @@ public final class FcmMessageProcessor {
     }
 
     private final CallManager callManager;
-    private final SyncEngine syncEngine;
     private final Context context;
     private final IncomingCallLauncher callLauncher;
     private final ReminderPushEvents reminderPushEvents;
     private final TokenRefresher tokenRefresher;
     private final TokenStore tokenStore;
     private final Moshi moshi;
+    private final NotificationAdmission notificationAdmission;
+    private final NotificationWorkScheduler notificationWorkScheduler;
+    private final ForegroundConversationTracker foregroundConversationTracker;
     private final Scheduler ioScheduler;
     private final LongSupplier clock;
 
     @Inject
     public FcmMessageProcessor(
             @NonNull CallManager callManager,
-            @NonNull SyncEngine syncEngine,
             @NonNull @ApplicationContext Context context,
             @NonNull ReminderPushEvents reminderPushEvents,
             @NonNull TokenRefresher tokenRefresher,
             @NonNull TokenStore tokenStore,
-            @NonNull Moshi moshi) {
-        this(callManager, syncEngine, context, defaultLauncher(context), reminderPushEvents,
-                tokenRefresher, tokenStore, moshi, Schedulers.io(), System::currentTimeMillis);
+            @NonNull Moshi moshi,
+            @NonNull NotificationAdmission notificationAdmission,
+            @NonNull NotificationWorkScheduler notificationWorkScheduler,
+            @NonNull ForegroundConversationTracker foregroundConversationTracker) {
+        this(callManager, context, defaultLauncher(context), reminderPushEvents,
+                tokenRefresher, tokenStore, moshi, notificationAdmission,
+                notificationWorkScheduler, foregroundConversationTracker,
+                Schedulers.io(), System::currentTimeMillis);
     }
 
     @VisibleForTesting
     public FcmMessageProcessor(
             @NonNull CallManager callManager,
-            @NonNull SyncEngine syncEngine,
             @NonNull Context context,
             @NonNull IncomingCallLauncher callLauncher,
             @NonNull ReminderPushEvents reminderPushEvents,
             @NonNull TokenRefresher tokenRefresher,
             @NonNull TokenStore tokenStore,
             @NonNull Moshi moshi,
+            @NonNull NotificationAdmission notificationAdmission,
+            @NonNull NotificationWorkScheduler notificationWorkScheduler,
+            @NonNull ForegroundConversationTracker foregroundConversationTracker,
             @NonNull Scheduler ioScheduler,
             @NonNull LongSupplier clock) {
         this.callManager = callManager;
-        this.syncEngine = syncEngine;
         this.context = context.getApplicationContext();
         this.callLauncher = callLauncher;
         this.reminderPushEvents = reminderPushEvents;
         this.tokenRefresher = tokenRefresher;
         this.tokenStore = tokenStore;
         this.moshi = moshi;
+        this.notificationAdmission = notificationAdmission;
+        this.notificationWorkScheduler = notificationWorkScheduler;
+        this.foregroundConversationTracker = foregroundConversationTracker;
         this.ioScheduler = ioScheduler;
         this.clock = clock;
         this.tokenRefresher.sessionSignals().subscribe(signal -> {
@@ -322,29 +332,61 @@ public final class FcmMessageProcessor {
     private void handleReminder(@NonNull Map<String, String> data) {
         String reminderId = data.get("reminderId");
         String conversationId = data.get("conversationId");
-        if (!hasText(reminderId) || !hasText(conversationId)) {
+        String recipientId = data.get("recipientId");
+        String remindAt = data.get("remindAt");
+        if (!hasText(reminderId) || !hasText(conversationId)
+                || !hasText(recipientId) || !hasText(remindAt)) {
             return;
         }
-        reminderPushEvents.onReminderPush(conversationId);
+        try {
+            Instant.parse(remindAt);
+        } catch (RuntimeException malformedOccurrence) {
+            return;
+        }
+        notificationAdmission.admitPush(recipientId, conversationId)
+                .subscribeOn(ioScheduler)
+                .subscribe(session -> {
+                    if (!recipientId.equals(session.recipientId())) return;
+                    tokenRefresher.runIfSessionCurrent(session.sessionEpoch(), () -> {
+                        reminderPushEvents.onReminderPush(conversationId);
+                        if (foregroundConversationTracker.isForegroundConversation(conversationId)) return;
+                        notificationWorkScheduler.enqueue(NotificationWorkRequest.reminder(
+                                recipientId, session.sessionEpoch(), conversationId,
+                                reminderId, remindAt));
+                    });
+                }, ignored -> { });
     }
 
     private void handleNewMessage(@NonNull Map<String, String> data) {
         String conversationId = data.get("conversationId");
         String messageId = data.get("messageId");
+        String recipientId = data.get("recipientId");
         String rawSeq = data.get("seq");
-        if (!hasText(conversationId) || !hasText(messageId) || !hasText(rawSeq)) {
+        if (!hasText(conversationId) || !hasText(messageId)
+                || !hasText(recipientId) || !hasText(rawSeq)) {
             return;
         }
+        final long sequence;
         try {
-            if (Long.parseLong(rawSeq) <= 0L) {
+            sequence = Long.parseLong(rawSeq);
+            if (sequence <= 0L) {
                 return;
             }
         } catch (NumberFormatException malformedSequence) {
             return;
         }
-        syncEngine.sync()
-                .subscribeOn(Schedulers.io())
-                .subscribe(() -> { }, throwable -> { });
+        notificationAdmission.admitPush(recipientId, conversationId)
+                .subscribeOn(ioScheduler)
+                .subscribe(session -> {
+                    if (!recipientId.equals(session.recipientId())
+                            || foregroundConversationTracker.isForegroundConversation(conversationId)) {
+                        return;
+                    }
+                    tokenRefresher.runIfSessionCurrent(session.sessionEpoch(), () ->
+                            notificationWorkScheduler.enqueue(NotificationWorkRequest.message(
+                                    recipientId, session.sessionEpoch(), conversationId,
+                                    messageId, sequence)));
+                }, ignored -> { });
     }
 
     private static boolean hasText(@Nullable String value) {

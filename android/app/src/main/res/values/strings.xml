@@ -268,6 +268,13 @@
     <string name="settings_section_appearance">Appearance</string>
     <string name="settings_section_privacy">Privacy</string>
     <string name="settings_theme_title">Theme</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="message_notification_title">NexaChat</string>
+    <string name="message_notification_generic">You have a new message</string>
+    <string name="message_notification_channel">Messages</string>
+    <string name="reminder_notification_title">NexaChat</string>
+    <string name="reminder_notification_generic">A reminder is due</string>
+    <string name="reminder_notification_channel">Reminders</string>
     <string name="theme_system">System default</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
