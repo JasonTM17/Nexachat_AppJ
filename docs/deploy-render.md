@@ -205,7 +205,7 @@ manually to the service):
 | `FIREBASE_REALTIME_ENABLED` | `application.yml:307` | `false` |
 | `FIREBASE_DATABASE_URL` | `application.yml:309` | only when the bridge is enabled |
 | `NEXACHAT_GOOGLE_SIGNIN_ENABLED` | `application.yml:107` | `false`; all `/api/v1/auth/google/*` answer 404 while off |
-| `NEXACHAT_GOOGLE_SIGNUP_ENABLED` | (planned server property) | `false`; Google **account creation** — document now, wire in server separately |
+| `NEXACHAT_GOOGLE_SIGNUP_ENABLED` | `nexachat.google.signin.signup-enabled` | `false`; Google **account creation** from an unknown Google `sub`; needs sign-in enabled |
 | `NEXACHAT_GOOGLE_WEB_CLIENT_ID` | `application.yml:108` | secret when sign-in is enabled; expected ID token `aud` |
 | `NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` | `application.yml:110` | secret when sign-in is enabled; comma-separated Android OAuth IDs trusted as `azp` |
 | `NEXACHAT_GOOGLE_JWKS_URI` | `application.yml:111` | public Google JWKS URL; override only in tests |

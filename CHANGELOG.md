@@ -6,16 +6,77 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-13
+
+Minor release after `v1.1.2`: sign up and sign in with Google, bounded sync v2
+(Flyway V32 + Room 14), paired backup tooling, durable notifications, and the
+v2 visual refresh. Deploy the server before distributing the APK.
+See [docs/release-notes/v1.2.0.md](docs/release-notes/v1.2.0.md).
+
+### Server
+
+**Added**
+
+- `POST /auth/google` creates an account for an unknown Google `sub` (`201`,
+  `newAccount: true`) when `NEXACHAT_GOOGLE_SIGNUP_ENABLED=true`. The account
+  is never matched by email; creation needs a verified Google email; a taken
+  email answers `409 GOOGLE_EMAIL_IN_USE`. Flyway **V33** makes `password_hash`
+  nullable and requires an active user to have a phone, a password, or a
+  verified email.
+- Contacts by email: `POST /contacts {email}` and `GET /users/search?email=`
+  (exact match, verified and active users only).
+- Flyway **V32** and negotiated sync v2 on `POST /sync` (`syncVersion: 2`,
+  `changeCursor`, `changes`, `reset`, `generation`); legacy fields stay for v1.1
+  clients. `NEXACHAT_SYNC_CHANGE_CURSORS_ENABLED` (default `true`) disables it.
+- Paired PostgreSQL + object capture/restore CLI under `tools/backup/`.
+- Recipient-bound FCM payloads and one push per physical device.
+- Prometheus storage meters (`nexachat.storage.*`) with bounded labels.
+
+**Changed**
+
+- `PATCH /auth/password` answers `409 NO_PASSWORD_SET` for Google-only users.
+- Writers take advisory locks in a stable order; object bytes are stored before
+  the database bind transaction and removed when it rolls back.
+
+**Fixed**
+
+- Prometheus scrape `ClassCastException` on a tagged timer.
+- Backup `pg_dump` streaming and PG18 GUC handling.
+
 ### Android
 
-- v2 semantic color, type, shape, and spacing tokens for light and dark,
-  including pressed, disabled, media-metadata, and call-surface roles.
-- Shared bubble, composer, and state components follow those tokens. Inbox,
-  chat, settings, group detail, and the summary sheet use the P1 hierarchy.
-  Other screens inherit the tokens. The launcher and in-app mark are the Note
-  monogram. No versionCode change in this notes update.
+**Added**
 
-## [1.1.2] - 2026-11-12 (pending tag)
+- Continue with Google on the register and login screens, a complete-profile
+  screen after a new Google account, and a sign-in methods card in Profile.
+- Room **14** sync checkpoints and atomic v2 page apply with legacy fallback.
+- Message and reminder notifications through durable `WorkManager` work.
+- v2 semantic color, type, shape, and spacing tokens; shared bubble, composer,
+  and state components.
+
+**Fixed**
+
+- Reproduced UI defects (summary chips, unread badge, IME insets, group detail
+  states) and the label dialog double observer.
+- Sync recovery: duplicate ACK handling, reaction ordering, tracking release.
+
+### Documentation
+
+- Added `docs/backup-recovery.md`, `docs/free-tier-observability.md`,
+  `docs/android-sync.md`; manual Render deploy sequence with per-key env updates.
+
+### Security
+
+- Google accounts are keyed by `sub`, never linked by email.
+- Backup tools read secrets from env or `*_FILE`, never argv.
+- Reminder push payloads carry an opaque `occurrence` instead of `remindAt`.
+
+### Known limitations
+
+- A Google-only account cannot add a phone or a password in this release.
+- Message summaries are not purged when a message is recalled.
+
+## [1.1.2] - 2026-11-12
 
 Logo-only release: the Note mark replaces the legacy logo on the Android
 launcher, splash, sign-in, notifications, and the public website. No in-app

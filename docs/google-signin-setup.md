@@ -40,7 +40,7 @@ Spring binds `nexachat.google.signin.*` in
 | `NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` | Required when enabled; **comma-separated** Android OAuth client IDs trusted as token `azp` |
 | `NEXACHAT_GOOGLE_JWKS_URI` | Optional; default Google's JWKS URL (override only in tests) |
 | `NEXACHAT_GOOGLE_NONCE_TTL_SECONDS` | Optional; single-use nonce lifetime (default `300`) |
-| `NEXACHAT_GOOGLE_SIGNUP_ENABLED` | Planned for Google **account creation** (default `false`); server property wiring ships separately — set only after that release |
+| `NEXACHAT_GOOGLE_SIGNUP_ENABLED` | Google **account creation** from an unknown Google `sub` (default `false`); requires sign-in enabled and a verified Google email |
 
 `GoogleSignInProperties` and `GoogleSignInConfiguration` require a non-blank web
 client ID and at least one Android client ID when sign-in is enabled; startup
@@ -128,8 +128,9 @@ wrong SHA-1 on the matching Android OAuth client.
    `200` with a nonce when enabled, `404` when disabled.
 4. Build and install a debug APK with `GOOGLE_WEB_CLIENT_ID` set. Sign in on an
    emulator or device whose Google account is allowed on your consent screen.
-   The account must already be **linked** on NexaChat (current main behaviour)
-   unless `NEXACHAT_GOOGLE_SIGNUP_ENABLED` is implemented and turned on.
+   The account must already be **linked** on NexaChat unless
+   `NEXACHAT_GOOGLE_SIGNUP_ENABLED=true`, which creates a new account on first
+   sign-in (`201`, `newAccount: true`).
 
 Automated tests use a local JWKS and test client IDs (`GoogleTestKeys`); they do
 not call Google.
@@ -142,9 +143,9 @@ Render Dashboard (**Environment**) or with the Render API (**one PUT per key**).
 See [docs/deploy-render.md](deploy-render.md) §5. Redeploy after changing
 secrets.
 
-Keep `NEXACHAT_GOOGLE_SIGNUP_ENABLED=false` on production until the signup
-server feature ships; document the flag in `.env.example` so operators know the
-name.
+Set `NEXACHAT_GOOGLE_SIGNUP_ENABLED=true` only after the server build carrying
+Flyway V33 is live. While it is `false`, an unknown Google account is refused
+with `GOOGLE_ACCOUNT_NOT_LINKED`.
 
 ## Related docs
 
