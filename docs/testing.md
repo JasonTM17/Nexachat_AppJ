@@ -34,6 +34,23 @@ across runs. If both Maven processes use this checkout, also pass a different
 `-Dnexachat.test.build-directory=target/<run-name>` to each command so their
 compiled classes and reports stay separate.
 
+### Sync cursor rollback drill (opt-in)
+
+`SyncCursorRollbackIT` is skipped in ordinary `mvn verify` runs. Enable it only
+when rehearsing sync v2 forward recovery on a disposable PostgreSQL server:
+
+```powershell
+$env:NEXACHAT_ROLLBACK_DRILL = '1'
+$env:V31_SERVER_JAR = '<path to frozen V31 server jar>'
+$env:V31_SOURCE_SHA = '9216773920fc59684564170eebde13b33ca7fbc1'
+```
+
+With `NEXACHAT_ROLLBACK_DRILL=1`, a missing or invalid `V31_SERVER_JAR` or
+`V31_SOURCE_SHA` still fails the test (fail-closed). The helper script
+[`server/scripts/rehearse-sync-v2-rollback.ps1`](../server/scripts/rehearse-sync-v2-rollback.ps1)
+builds the frozen V31 artifact, sets these variables, and runs the drill. Contract
+context lives in [docs/api-contract.md](api-contract.md) (sync v2 rollback section).
+
 ## Firebase rules tests
 
 The optional Firebase Realtime Database candidate has an offline rules contract
