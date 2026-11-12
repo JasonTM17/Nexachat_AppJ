@@ -15,33 +15,32 @@
 
     <springProperty scope="context" name="rootLevel" source="logging.level.root" defaultValue="INFO"/>
 
-    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-            <level>${CONSOLE_LOG_THRESHOLD}</level>
-        </filter>
-        <encoder>
-            <pattern>${CONSOLE_LOG_PATTERN}</pattern>
-            <charset>${CONSOLE_LOG_CHARSET}</charset>
-        </encoder>
-    </appender>
-
-    <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-            <level>${CONSOLE_LOG_THRESHOLD}</level>
-        </filter>
-        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
-            <layout class="com.nexachat.observability.RedactingJsonLayout"/>
-        </encoder>
-    </appender>
+    <springProfile name="!json-logs">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+                <level>${CONSOLE_LOG_THRESHOLD}</level>
+            </filter>
+            <encoder>
+                <pattern>${CONSOLE_LOG_PATTERN}</pattern>
+                <charset>${CONSOLE_LOG_CHARSET}</charset>
+            </encoder>
+        </appender>
+        <root level="${rootLevel}">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
 
     <springProfile name="json-logs">
-        <property name="consoleAppender" value="JSON_CONSOLE"/>
+        <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+                <level>${CONSOLE_LOG_THRESHOLD}</level>
+            </filter>
+            <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+                <layout class="com.nexachat.observability.RedactingJsonLayout"/>
+            </encoder>
+        </appender>
+        <root level="${rootLevel}">
+            <appender-ref ref="JSON_CONSOLE"/>
+        </root>
     </springProfile>
-    <springProfile name="!json-logs">
-        <property name="consoleAppender" value="CONSOLE"/>
-    </springProfile>
-
-    <root level="${rootLevel}">
-        <appender-ref ref="${consoleAppender}"/>
-    </root>
 </configuration>
