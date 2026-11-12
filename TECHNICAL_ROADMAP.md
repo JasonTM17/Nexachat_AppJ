@@ -1076,7 +1076,7 @@ Trong quá trình hiện thực hóa lộ trình kỹ thuật, 5 rủi ro kỹ t
 - **Kịch bản rủi ro**: Người dùng đang thực hiện cuộc gọi WebRTC thì bước ra khỏi nhà, điện thoại tự động ngắt Wi-Fi và chuyển sang mạng di động 4G. Địa chỉ IP máy khách thay đổi, khiến socket STOMP cũ bị đứt. Hiện trạng codebase chứa 3 điểm gãy chí mạng:
   1. `CallManager.java:590` ngay lập tức gọi `finish(CallEndReason.FAILED)` khi socket báo hiệu đứt, giải phóng toàn bộ PeerConnection trong vòng vài mili-giây.
   2. `WebRtcMediaEngine.java:486` có timeout trạng thái `DISCONNECTED` chỉ 5.0 giây, ngắn hơn thời gian chuyển vùng sóng di động thực tế (6 - 10 giây).
-  3. Máy chủ `CallDisconnectListener.java:138` chỉ đợi 50ms rồi kiểm tra presence và gọi `callService.disconnect(userId)`, broadcast `CALL_ENDED` tới đối tác đầu xa làm rớt cuộc gọi.
+  3. Máy chủ `CallDisconnectListener.java:53` / `CallTimeoutScheduler.java:144` chỉ đợi 50ms rồi kiểm tra presence và gọi `callService.disconnect(userId)`, broadcast `CALL_ENDED` tới đối tác đầu xa làm rớt cuộc gọi.
 - **Phương án kỹ thuật giảm thiểu**:
   - Đồng bộ hóa 3 Trụ cột Ân hạn 15 giây (Synchronized 15s Grace Period):
     - **Client**: `CallManager` chuyển sang `CallState.RECONNECTING_NETWORK`, giữ nguyên luồng media và timer, đệm tín hiệu signaling nội bộ trong `pendingOutboundSignals`. Khi STOMP kết nối lại, kích hoạt `mediaEngine.restartIce()` và xả hàng đợi.
