@@ -128,11 +128,7 @@ class UploadAdmissionFlowIT {
     }
 
     private void deleteUploaders() {
-        jdbcTemplate.update(
-                "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE phone LIKE '+84956%')");
-        jdbcTemplate.update(
-                "DELETE FROM message_attachments WHERE owner_id IN (SELECT id FROM users WHERE phone LIKE '+84956%')");
-        jdbcTemplate.update("DELETE FROM users WHERE phone LIKE '+84956%'");
+        ItPhoneRanges.clean(jdbcTemplate, UploadAdmissionFlowIT.class);
     }
 
     @BeforeEach

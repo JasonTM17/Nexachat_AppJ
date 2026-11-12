@@ -80,17 +80,7 @@ class InteractionFlowIT {
 
     @BeforeAll
     void registerUsers() throws Exception {
-        // Ordered cleanup respecting FKs: pinned_messages.pinned_by has NO
-        // cascade, then conversations (cascades messages → reactions/pins),
-        // then attachments by owner, then the users themselves.
-        String like = "phone LIKE '+8492%'";
-        jdbcTemplate.update(
-                "DELETE FROM pinned_messages WHERE pinned_by IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update(
-                "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update(
-                "DELETE FROM message_attachments WHERE owner_id IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update("DELETE FROM users WHERE " + like);
+        ItPhoneRanges.clean(jdbcTemplate, InteractionFlowIT.class);
         String tag = "ITN" + System.nanoTime();
         alice = registerUser(tag + " Alice");
         bob = registerUser(tag + " Bob");

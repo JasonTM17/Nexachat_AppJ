@@ -88,18 +88,12 @@ class AuthFlowIT {
      */
     @BeforeEach
     void cleanItUsers() {
-        // All IT-generated phones start +8490 except the demo seeds +849000*.
-        String like = "phone LIKE '+8490%' AND phone NOT LIKE '+849000%'";
-        jdbcTemplate.update(
-                "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update(
-                "DELETE FROM message_attachments WHERE owner_id IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update("DELETE FROM users WHERE " + like);
+        ItPhoneRanges.clean(jdbcTemplate, AuthFlowIT.class);
     }
 
     @Test
     void registerLoginRefreshReuse() throws Exception {
-        String phone = "+84905551122";
+        String phone = "+84815001122";
 
         // 1. Register → 201 with the full token payload.
         MvcResult registered = postJson("/api/v1/auth/register",

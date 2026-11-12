@@ -105,7 +105,7 @@ class AccountDeletionAttachmentLockOrderIT {
 
     @BeforeEach
     void reset() {
-        jdbcTemplate.update("TRUNCATE users CASCADE");
+        ItPhoneRanges.clean(jdbcTemplate, AccountDeletionAttachmentLockOrderIT.class);
     }
 
     @AfterEach

@@ -111,12 +111,7 @@ class AttachmentFlowIT {
 
     @BeforeAll
     void registerUsers() throws Exception {
-        // +8491 phones belong to this suite — sibling ITs use other prefixes.
-        jdbcTemplate.update(
-                "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE phone LIKE '+8491%')");
-        jdbcTemplate.update(
-                "DELETE FROM message_attachments WHERE owner_id IN (SELECT id FROM users WHERE phone LIKE '+8491%')");
-        jdbcTemplate.update("DELETE FROM users WHERE phone LIKE '+8491%'");
+        ItPhoneRanges.clean(jdbcTemplate, AttachmentFlowIT.class);
         String tag = "ITA" + System.nanoTime();
         alice = registerUser(tag + " Alice");
         bob = registerUser(tag + " Bob");

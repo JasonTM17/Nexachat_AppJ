@@ -143,6 +143,7 @@ class MultipartTempFileIT {
 
     @AfterAll
     void cleanUp() throws IOException {
+        ItPhoneRanges.clean(jdbcTemplate, MultipartTempFileIT.class);
         deleteRecursively(SCRATCH_PARENT);
         deleteRecursively(STORAGE_ROOT);
     }

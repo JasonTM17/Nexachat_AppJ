@@ -1,12 +1,20 @@
 package com.nexachat.testutil;
 
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/** Shared, non-overlapping phone ranges for server integration tests. */
+/** Shared, non-overlapping phone ranges and FK-ordered fixture cleanup for server ITs. */
 public final class ItPhoneRanges {
 
     private static final Map<String, String> PREFIXES = Map.ofEntries(
@@ -120,8 +128,88 @@ public final class ItPhoneRanges {
         return FIXTURE_PHONES.computeIfAbsent(key, ignored -> nextPhone(integrationTest));
     }
 
+    /**
+     * Removes rows owned by this suite in FK order. Conversations include rows
+     * created by the suite's users, joined by them, or containing their messages.
+     */
+    public static void clean(JdbcTemplate jdbcTemplate, Class<?> integrationTest, String... additionalPhones) {
+        String prefix = prefixFor(integrationTest) + "%";
+        NamedParameterJdbcTemplate named = new NamedParameterJdbcTemplate(jdbcTemplate);
+        MapSqlParameterSource userParams = new MapSqlParameterSource("prefix", prefix);
+        StringBuilder userSql = new StringBuilder("SELECT id FROM users WHERE phone LIKE :prefix");
+        List<String> extras = new ArrayList<>();
+        if (additionalPhones != null) {
+            for (String phone : additionalPhones) {
+                if (phone != null && !phone.isBlank()) {
+                    extras.add(phone);
+                }
+            }
+        }
+        if (!extras.isEmpty()) {
+            userSql.append(" OR phone IN (:additionalPhones)");
+            userParams.addValue("additionalPhones", extras);
+        }
+
+        List<java.util.UUID> userIds = named.query(userSql.toString(), userParams,
+                (resultSet, rowNum) -> uuid(resultSet, "id"));
+        if (userIds.isEmpty()) {
+            return;
+        }
+
+        MapSqlParameterSource scope = new MapSqlParameterSource("userIds", userIds);
+        List<java.util.UUID> conversationIds = named.query("""
+                        SELECT DISTINCT conversation_id AS id
+                        FROM (
+                            SELECT c.id AS conversation_id
+                            FROM conversations c
+                            LEFT JOIN conversation_members cm ON cm.conversation_id = c.id
+                            WHERE c.created_by IN (:userIds) OR cm.user_id IN (:userIds)
+                            UNION
+                            SELECT m.conversation_id
+                            FROM messages m
+                            WHERE m.sender_id IN (:userIds)
+                        ) owned_conversations
+                        """,
+                scope, (resultSet, rowNum) -> uuid(resultSet, "id"));
+
+        String messageScope = "sender_id IN (:userIds)";
+        String conversationScope = "FALSE";
+        if (!conversationIds.isEmpty()) {
+            scope.addValue("conversationIds", conversationIds);
+            messageScope += " OR conversation_id IN (:conversationIds)";
+            conversationScope = "conversation_id IN (:conversationIds)";
+        }
+        String messageIds = "SELECT id FROM messages WHERE (" + messageScope + ")";
+
+        named.update("DELETE FROM message_attachments WHERE owner_id IN (:userIds) OR message_id IN ("
+                + messageIds + ")", scope);
+        named.update("DELETE FROM message_reactions WHERE user_id IN (:userIds) OR message_id IN ("
+                + messageIds + ")", scope);
+        named.update("DELETE FROM reaction_events WHERE user_id IN (:userIds) OR " + conversationScope
+                + " OR message_id IN (" + messageIds + ")", scope);
+        named.update("DELETE FROM pinned_messages WHERE pinned_by IN (:userIds) OR " + conversationScope
+                + " OR message_id IN (" + messageIds + ")", scope);
+        named.update("DELETE FROM messages WHERE " + messageScope, scope);
+        named.update("DELETE FROM conversation_members WHERE user_id IN (:userIds) OR " + conversationScope, scope);
+        if (!conversationIds.isEmpty()) {
+            named.update("DELETE FROM conversations WHERE id IN (:conversationIds)", scope);
+        }
+        // These user FKs are not ON DELETE CASCADE. Conversation cleanup removes the
+        // rows that belong to this suite's conversations; these deletes clear any
+        // remaining reference before the users themselves go.
+        named.update("DELETE FROM poll_votes WHERE user_id IN (:userIds)", scope);
+        named.update("DELETE FROM polls WHERE created_by IN (:userIds) OR closed_by IN (:userIds)", scope);
+        named.update("DELETE FROM group_invite_links WHERE created_by IN (:userIds)"
+                + " OR revoked_by IN (:userIds)", scope);
+        named.update("DELETE FROM group_join_requests WHERE reviewed_by IN (:userIds)", scope);
+        named.update("DELETE FROM users WHERE id IN (:userIds)", scope);
+    }
+
     public static Map<String, String> registeredPrefixes() {
         return Map.copyOf(PREFIXES);
     }
 
+    private static java.util.UUID uuid(ResultSet resultSet, String column) throws SQLException {
+        return resultSet.getObject(column, java.util.UUID.class);
+    }
 }

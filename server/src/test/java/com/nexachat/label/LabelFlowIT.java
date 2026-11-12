@@ -87,7 +87,7 @@ class LabelFlowIT {
 
     @BeforeEach
     void resetPrivateDatabaseAndRegisterUsers() throws Exception {
-        jdbcTemplate.update("TRUNCATE users CASCADE");
+        ItPhoneRanges.clean(jdbcTemplate, LabelFlowIT.class);
         owner = registerUser("Label owner");
         member = registerUser("Conversation member");
         outsider = registerUser("Non-member");

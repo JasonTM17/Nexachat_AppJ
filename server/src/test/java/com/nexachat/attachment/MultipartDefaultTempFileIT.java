@@ -127,6 +127,7 @@ class MultipartDefaultTempFileIT {
 
     @AfterAll
     void cleanUp() throws IOException {
+        ItPhoneRanges.clean(jdbcTemplate, MultipartDefaultTempFileIT.class);
         deleteRecursively(TOMCAT_BASE);
         deleteRecursively(STORAGE_ROOT);
     }

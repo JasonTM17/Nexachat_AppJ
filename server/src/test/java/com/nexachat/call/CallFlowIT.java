@@ -108,14 +108,7 @@ class CallFlowIT {
 
     @BeforeAll
     void registerTestUsers() throws Exception {
-        String like = "phone LIKE '" + PHONE_PREFIX + "%'";
-        jdbcTemplate.update(
-                "DELETE FROM pinned_messages WHERE pinned_by IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update(
-                "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update(
-                "DELETE FROM message_attachments WHERE owner_id IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update("DELETE FROM users WHERE " + like);
+        ItPhoneRanges.clean(jdbcTemplate, CallFlowIT.class);
 
         alice = registerUser("Call Alice");
         bob = registerUser("Call Bob");

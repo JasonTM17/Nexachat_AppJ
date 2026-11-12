@@ -83,15 +83,7 @@ class GroupInviteFlowIT {
 
     @BeforeAll
     void setupFixtures() throws Exception {
-        String like = "phone LIKE '+8497%'";
-        jdbcTemplate.update("DELETE FROM group_invite_bans WHERE conversation_id IN "
-                + "(SELECT id FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + "))");
-        jdbcTemplate.update("DELETE FROM group_join_requests WHERE conversation_id IN "
-                + "(SELECT id FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + "))");
-        jdbcTemplate.update("DELETE FROM group_invite_links WHERE conversation_id IN "
-                + "(SELECT id FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + "))");
-        jdbcTemplate.update("DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update("DELETE FROM users WHERE " + like);
+        ItPhoneRanges.clean(jdbcTemplate, GroupInviteFlowIT.class);
 
         String tag = "INV" + System.nanoTime();
         alice = createTestUser(tag + " Alice");

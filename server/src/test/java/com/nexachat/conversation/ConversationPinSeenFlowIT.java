@@ -118,10 +118,7 @@ class ConversationPinSeenFlowIT {
 
     @BeforeAll
     void registerUsers() throws Exception {
-        jdbcTemplate.update(
-                "DELETE FROM conversations WHERE created_by IN"
-                        + " (SELECT id FROM users WHERE phone LIKE '+84916%')");
-        jdbcTemplate.update("DELETE FROM users WHERE phone LIKE '+84916%'");
+        ItPhoneRanges.clean(jdbcTemplate, ConversationPinSeenFlowIT.class);
         String tag = "ITPS" + System.nanoTime();
         alice = registerUser(tag + " Alice");
         bob = registerUser(tag + " Bob");

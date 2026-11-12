@@ -85,6 +85,7 @@ class ReminderFlowIT {
 
     @BeforeAll
     void registerUsers() throws Exception {
+        ItPhoneRanges.clean(jdbcTemplate, ReminderFlowIT.class);
         String tag = "RMF" + System.nanoTime();
         alice = registerUser(tag + " Alice");
         bob = registerUser(tag + " Bob");

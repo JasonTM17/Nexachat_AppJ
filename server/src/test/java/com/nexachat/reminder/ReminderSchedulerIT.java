@@ -104,6 +104,7 @@ class ReminderSchedulerIT {
 
     @BeforeAll
     void registerUsers() throws Exception {
+        ItPhoneRanges.clean(jdbcTemplate, ReminderSchedulerIT.class);
         String tag = "RMS" + System.nanoTime();
         alice = registerUser(tag + " Alice");
         bob = registerUser(tag + " Bob");
