@@ -89,12 +89,20 @@ public final class LinkedAccountsViewModel extends ViewModel {
         requestUnlink(password);
     }
 
+    /**
+     * Placeholder that satisfies {@code @NotBlank} on the unlink body. A blank
+     * password is rejected as {@code VALIDATION_FAILED} and never reaches the
+     * server branch that answers {@code LAST_SIGN_IN_METHOD} for an account
+     * with no password hash.
+     */
+    static final String GOOGLE_ONLY_UNLINK_PASSWORD = "-";
+
     /** Google-only accounts: server rejects unlink with {@code LAST_SIGN_IN_METHOD}. */
     public void unlinkWithoutPassword() {
         if (currentState().isWorking()) {
             return;
         }
-        requestUnlink(" ");
+        requestUnlink(GOOGLE_ONLY_UNLINK_PASSWORD);
     }
 
     public void consumeError() {

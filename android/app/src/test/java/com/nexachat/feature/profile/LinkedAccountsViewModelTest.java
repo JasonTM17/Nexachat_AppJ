@@ -181,6 +181,7 @@ public final class LinkedAccountsViewModelTest {
                 ((ApiError.Unknown) viewModel.getUiState().getValue().getInlineError()).getCode());
         assertNull(viewModel.getUiState().getValue().getError());
         assertTrue(viewModel.getUiState().getValue().isLinked());
+        verify(repository).unlinkGoogle(LinkedAccountsViewModel.GOOGLE_ONLY_UNLINK_PASSWORD);
     }
 
     @Test
