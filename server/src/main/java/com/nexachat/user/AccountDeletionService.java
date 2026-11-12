@@ -11,6 +11,8 @@ import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.GroupService;
 import com.nexachat.notification.UserDeviceTokenRepository;
 import com.nexachat.auth.TokenService;
+import com.nexachat.recovery.EmailOtpService;
+import com.nexachat.recovery.OtpPurpose;
 import com.nexachat.ws.StompRevocationFence;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,6 +58,7 @@ public class AccountDeletionService {
     private final ApplicationEventPublisher eventPublisher;
     private final AccountDeletionCoordination coordination;
     private final StompRevocationFence revocationFence;
+    private final EmailOtpService emailOtpService;
 
     public AccountDeletionService(UserRepository userRepository,
                                   PasswordEncoder passwordEncoder,
@@ -71,7 +74,8 @@ public class AccountDeletionService {
                                   AccountDeletionJdbcSupport jdbcSupport,
                                   ApplicationEventPublisher eventPublisher,
                                   AccountDeletionCoordination coordination,
-                                  StompRevocationFence revocationFence) {
+                                  StompRevocationFence revocationFence,
+                                  EmailOtpService emailOtpService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
@@ -87,19 +91,34 @@ public class AccountDeletionService {
         this.eventPublisher = eventPublisher;
         this.coordination = coordination;
         this.revocationFence = revocationFence;
+        this.emailOtpService = emailOtpService;
     }
 
     @Transactional
     public void deleteAccount(UUID userId, String password) {
+        deleteAccount(userId, password, null);
+    }
+
+    /**
+     * Deletes the account. A password hash still requires {@code password};
+     * {@code code} is ignored in that case. An account with no hash requires a
+     * live DELETE_ACCOUNT code for its own verified email.
+     */
+    @Transactional
+    public void deleteAccount(UUID userId, String password, String code) {
         revocationFence.holdWriteUntilTransactionCompletion(userId);
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
         if (user.getDeletedAt() != null) {
             throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
         }
-        String hash = user.getPasswordHash();
-        if (hash == null || hash.isBlank() || !passwordEncoder.matches(password, hash)) {
-            throw ApiException.of(ApiErrorCode.WRONG_PASSWORD, "Current password is incorrect");
+        if (user.hasPassword()) {
+            if (password == null || password.isBlank()
+                    || !passwordEncoder.matches(password, user.getPasswordHash())) {
+                throw ApiException.of(ApiErrorCode.WRONG_PASSWORD, "Current password is incorrect");
+            }
+        } else if (!emailOtpService.consume(user, OtpPurpose.DELETE_ACCOUNT, code)) {
+            throw ApiException.of(ApiErrorCode.INVALID_OR_EXPIRED_CODE, "Code is invalid or expired");
         }
 
         deleteLockedAccount(user);

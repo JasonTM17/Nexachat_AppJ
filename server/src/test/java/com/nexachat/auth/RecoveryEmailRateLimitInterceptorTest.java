@@ -31,6 +31,7 @@ class RecoveryEmailRateLimitInterceptorTest {
 
         assertLimited(interceptor, "PUT", "/api/v1/users/me/email");
         assertLimited(interceptor, "POST", "/api/v1/users/me/email/verify");
+        assertLimited(interceptor, "POST", "/api/v1/users/me/deletion-code");
     }
 
     private static void assertLimited(RateLimitInterceptor interceptor, String method, String path) {

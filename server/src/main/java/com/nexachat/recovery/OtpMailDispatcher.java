@@ -32,6 +32,12 @@ public class OtpMailDispatcher {
         dispatch(purpose, prepareRequest, onFailure);
     }
 
+    /** Sends a deletion code to the authenticated account's own verified email. */
+    public void dispatchAuthenticatedDeletion(Supplier<Optional<OtpMail>> prepareRequest,
+                                             Consumer<OtpMail> onFailure) {
+        dispatch(OtpPurpose.DELETE_ACCOUNT, prepareRequest, onFailure);
+    }
+
     /** Defers email ownership checks and delivery so the response does not reveal address ownership. */
     public void dispatchEmailVerification(Supplier<Optional<OtpMail>> prepareRequest,
                                          Consumer<OtpMail> onFailure) {

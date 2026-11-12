@@ -218,6 +218,11 @@ public class User {
         return email != null && emailVerifiedAt != null;
     }
 
+    /** True when this row has a password hash, including the deletion tombstone. */
+    public boolean hasPassword() {
+        return passwordHash != null && !passwordHash.isBlank();
+    }
+
     public void changeEmail(String email) {
         this.email = email;
         this.emailVerifiedAt = null;

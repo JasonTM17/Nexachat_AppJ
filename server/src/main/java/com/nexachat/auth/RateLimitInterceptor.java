@@ -24,6 +24,7 @@ import java.util.Map;
  *   <li>POST /api/v1/auth/refresh  — 30 requests / 5 min</li>
  *   <li>Public password-reset and account-deletion routes — 30 requests / 5 min each</li>
  *   <li>Authenticated recovery-email request and verification — 30 requests / 5 min each</li>
+ *   <li>POST /api/v1/users/me/deletion-code — 30 requests / 5 min</li>
  *   <li>POST /api/v1/auth/google/nonce — 30 requests / 5 min (only while the feature is on)</li>
  *   <li>POST /api/v1/auth/google       — 20 requests / 5 min (only while the feature is on)</li>
  * </ul>
@@ -56,6 +57,8 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             new Rule(HttpMethod.PUT, "recovery-email-request", "/api/v1/users/me/email",
                     30, Duration.ofMinutes(5)),
             new Rule(HttpMethod.POST, "recovery-email-confirm", "/api/v1/users/me/email/verify",
+                    30, Duration.ofMinutes(5)),
+            new Rule(HttpMethod.POST, "account-deletion-code", "/api/v1/users/me/deletion-code",
                     30, Duration.ofMinutes(5)));
 
     /**

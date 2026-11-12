@@ -1,9 +1,8 @@
 package com.nexachat.user.dto;
 
-import jakarta.validation.constraints.NotBlank;
-
 /**
- * DELETE /users/me body — current password is required to confirm deletion.
+ * DELETE /users/me body. An account with a password hash confirms with
+ * {@code password}. An account without one confirms with {@code code}.
  */
-public record DeleteAccountRequest(@NotBlank String password) {
+public record DeleteAccountRequest(String password, String code) {
 }

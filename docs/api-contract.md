@@ -196,14 +196,15 @@ These keys are Spring properties; override them with the matching
 | `REFRESH_RECOVERY_UNAVAILABLE` | 409 | Keyed retry cannot recover the original response; this error does not itself revoke the refresh family |
 | `REFRESH_SERVICE_UNAVAILABLE` | 503 | Replay-response encryption failed during rotation |
 | `UNAUTHORIZED` | 401 | Missing/invalid Bearer token |
-| `INVALID_OR_EXPIRED_CODE` | 400 | Recovery code is wrong, expired, consumed, or unavailable |
-| `WRONG_PASSWORD` | 401 | `oldPassword` did not match on password change, or the re-auth password did not match on link/unlink |
+| `INVALID_OR_EXPIRED_CODE` | 400 | Recovery code is wrong, expired, consumed, or unavailable. Also returned when a passwordless account asks `POST /users/me/deletion-code` without a verified email (`EMAIL_NOT_VERIFIED` is not a code) |
+| `WRONG_PASSWORD` | 401 | `oldPassword` did not match on password change, the re-auth password did not match on link/unlink, or the password did not match on `DELETE /users/me` |
 | `GOOGLE_SIGN_IN_FAILED` | 401 | The Google ID token failed signature/issuer/audience/expiry/nonce verification |
 | `GOOGLE_ACCOUNT_NOT_LINKED` | 404 | The Google account is not linked to a NexaChat account |
 | `GOOGLE_ACCOUNT_ALREADY_LINKED` | 409 | That Google account (or another one for this user) is already linked |
 | `LAST_SIGN_IN_METHOD` | 409 | Unlinking would leave the account with no password to sign in with |
 | `GOOGLE_EMAIL_IN_USE` | 409 | Google sign-up refused because that verified email already belongs to another active account |
 | `NO_PASSWORD_SET` | 409 | Password change refused because the account has no password hash |
+| `PASSWORD_REQUIRED` | 409 | `POST /users/me/deletion-code` refused because the account has a password hash |
 | `FORBIDDEN` | 403 | Authenticated but not allowed |
 | `PHONE_EXISTS` | 409 | Register: phone already registered |
 | `EMAIL_ALREADY_IN_USE` | 409 | Recovery email is already verified on another active account |
@@ -439,7 +440,7 @@ conditional `UPDATE` in its own transaction, so a failed sign-in cannot release
 a nonce for replay.
 
 `AuthResponse` = `{user: UserResponse, accessToken, accessTokenExpiresIn, refreshToken, recallWindowSeconds, groupAdminMayRecallAfterWindow, newAccount?}` (`newAccount` only on `201` from Google sign-up).
-`UserResponse` = `{id, phone?, displayName, avatarUrl}` (`phone` omitted when null). Rate limits: per client
+`UserResponse` = `{id, phone?, displayName, avatarUrl, passwordSet}` (`phone` omitted when null; `passwordSet` is true when a password hash exists). Rate limits: per client
 IP, register and login 10 req / 5 min and refresh 30 req / 5 min; the Google
 nonce endpoint allows 30 req / 5 min and Google sign-in 20 req / 5 min; register
 and login are additionally limited per phone number to 20 req / 5 min. Link and
@@ -455,7 +456,7 @@ account hash (it still pays one dummy bcrypt compare for timing).
 
 **Token revocation (Flyway V11):** `POST /auth/logout`, `POST /auth/logout-all`, `PATCH /auth/password`, password reset, and `DELETE /users/me` stamp the user's access-token revocation cutoff (`users.tokens_valid_after`) and evict the user's entry from `AccessTokenValidityCache`. Any access token whose `iat` is at or before that cutoff is immediately rejected on subsequent REST requests and WebSocket STOMP CONNECT frames with `401 TOKEN_INVALID`.
 
-**Account deletion (Flyway V26):** `DELETE /users/me` tombstones the row (`users.deleted_at`), clears the phone for re-registration, replaces the password hash, clears the recovery email and all `email_otps` rows, removes contacts/device tokens/private labels/pending group-join requests and any linked Google identity plus its account-owned link nonces, scrubs AI consent, per-user request limits and per-conversation ask/summary caches, and deletes unbound uploads and the avatar after commit. It removes the user from every group (if the deleting user is the only admin while other members remain, the earliest remaining member by `joined_at` — tie-break by user id — is promoted to admin in the same transaction before the leave; when they are the last member, the group is left empty like self-leave), keeps direct conversations and sent messages for the peer, and returns a neutral public profile (`displayName` = `Deleted account`, `phone` omitted, `deleted: true` on `UserResponse` and `ConversationMemberView`). A retry with the same access token after success returns `401 TOKEN_INVALID` (the token is rejected before the handler runs). Self-leave (`POST …/leave`) keeps blocking a sole admin with other members present.
+**Account deletion (Flyway V26):** `DELETE /users/me` confirms with `password` when a password hash exists and with `code` from `POST /users/me/deletion-code` when it does not, then tombstones the row (`users.deleted_at`), clears the phone for re-registration, replaces the password hash, clears the recovery email and all `email_otps` rows, removes contacts/device tokens/private labels/pending group-join requests and any linked Google identity plus its account-owned link nonces, scrubs AI consent, per-user request limits and per-conversation ask/summary caches, and deletes unbound uploads and the avatar after commit. It removes the user from every group (if the deleting user is the only admin while other members remain, the earliest remaining member by `joined_at` — tie-break by user id — is promoted to admin in the same transaction before the leave; when they are the last member, the group is left empty like self-leave), keeps direct conversations and sent messages for the peer, and returns a neutral public profile (`displayName` = `Deleted account`, `phone` omitted, `deleted: true` on `UserResponse` and `ConversationMemberView`). A retry with the same access token after success returns `401 TOKEN_INVALID` (the token is rejected before the handler runs). Self-leave (`POST …/leave`) keeps blocking a sole admin with other members present.
 
 ## Users — `/api/v1/users`
 
@@ -463,7 +464,8 @@ account hash (it still pays one dummy bcrypt compare for timing).
 |---|---|---|---|---|
 | `GET /users/me` | Bearer | — | `200` `MyProfileResponse` = `{id, phone, displayName, avatarUrl, email, emailVerified}` | `UNAUTHORIZED` 401 |
 | `PATCH /users/me` | Bearer | `{displayName?}` — absent/null keeps current name, blank is rejected; ≤60 chars | `200` `UserResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
-| `DELETE /users/me` | Bearer | `{password}` — current password required | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `TOKEN_INVALID` 401 (retry with the same access token after a successful delete) · `RATE_LIMITED` 429 (10/5 min per user, shared with `PATCH /auth/password`) · `USER_NOT_FOUND` 404 (only when the handler runs for an already-deleted row without a rejected token) |
+| `DELETE /users/me` | Bearer | `{password?, code?}` — an account with a password hash requires `password` (`code` is ignored); an account without a password hash requires `code` | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `INVALID_OR_EXPIRED_CODE` 400 · `TOKEN_INVALID` 401 (retry with the same access token after a successful delete) · `RATE_LIMITED` 429 (10/5 min per user, shared with `PATCH /auth/password`) · `USER_NOT_FOUND` 404 (only when the handler runs for an already-deleted row without a rejected token) |
+| `POST /users/me/deletion-code` | Bearer | no body | `202` empty; sends a `DELETE_ACCOUNT` code to the caller's own verified email | `UNAUTHORIZED` 401 · `PASSWORD_REQUIRED` 409 · `INVALID_OR_EXPIRED_CODE` 400 (no verified email) · `MAIL_UNAVAILABLE` 503 · `RATE_LIMITED` 429 (60s resend cooldown, 10/5 min per user, 5/5 min per email, 30/5 min per IP) |
 | `PUT /users/me/email` | Bearer | `{email}` — normalized to lowercase and trimmed; sends a verification code | `202` empty | `VALIDATION_FAILED` 400 · `EMAIL_ALREADY_IN_USE` 409 · `MAIL_UNAVAILABLE` 503 · `RATE_LIMITED` 429 |
 | `POST /users/me/email/verify` | Bearer | `{code}` — six-digit code | `200` `{email, verified:true}` | `INVALID_OR_EXPIRED_CODE` 400 · `EMAIL_ALREADY_IN_USE` 409 |
 | `DELETE /users/me/email` | Bearer | — | `204` empty | `UNAUTHORIZED` 401 |
@@ -474,7 +476,7 @@ account hash (it still pays one dummy bcrypt compare for timing).
 
 The alias routes `POST /devices/token` and `DELETE /devices/token` run the same handlers as the `/users/device-token` rows above, with identical bodies and responses.
 
-`UserResponse` is `{id, phone, displayName, avatarUrl, deleted}`. Recovery email fields are returned only by the authenticated owner's `GET /users/me`; they are not included in search or other users' views. `GET /users/search?phone=` returns `phone`; display-name (`?q=`) hits omit `phone` unless the matched user is already one of the caller's contacts. `GET /users/search?email=` never includes the caller and never returns raw email (same `UserResponse` shape as phone hits).
+`UserResponse` is `{id, phone, displayName, avatarUrl, deleted, passwordSet}`. `passwordSet` is true when a password hash exists. Recovery email fields are returned only by the authenticated owner's `GET /users/me`; they are not included in search or other users' views. `GET /users/me` stays `MyProfileResponse` and does not include `passwordSet`. `GET /users/search?phone=` returns `phone`; display-name (`?q=`) hits omit `phone` unless the matched user is already one of the caller's contacts. `GET /users/search?email=` never includes the caller and never returns raw email (same `UserResponse` shape as phone hits).
 
 ### Public account deletion recovery
 
@@ -482,6 +484,8 @@ The alias routes `POST /devices/token` and `DELETE /devices/token` run the same 
 |---|---|---|---|---|
 | `POST /account-deletion/request` | Public | `{phone}` | `202` `{}` for every phone; sends a code only to an active account with a verified recovery email | `RATE_LIMITED` 429 |
 | `POST /account-deletion/confirm` | Public | `{phone, code}` | `204` empty; deletes through the same service as `DELETE /users/me` | `INVALID_OR_EXPIRED_CODE` 400 · `RATE_LIMITED` 429 |
+
+`POST /users/me/deletion-code` is the authenticated path for an account with no password hash. It uses the same six-digit `DELETE_ACCOUNT` code, 10-minute TTL, five-attempt cap, single use, and 60-second resend cooldown. A password hash gets `409 PASSWORD_REQUIRED` and the code is not sent. Limits are 10 requests / 5 minutes per user, 5 / 5 minutes per email address, and 30 / 5 minutes per IP.
 
 Within their rate-limit allowance, password-reset and account-deletion request responses are identical for existing, unknown, deleted, and no-verified-email accounts. Phone lookup and OTP issuance run on a bounded background executor so response timing does not depend on account or email state. OTPs are six digits, expire after 10 minutes, allow at most five wrong attempts, and have a 60-second resend cooldown per user and purpose. A newly issued code invalidates prior unconsumed codes of that purpose. Stored codes are HMAC-SHA256 digests; verification uses a constant-time comparison. Public endpoints have independent 30/5-minute IP buckets; request routes also allow 10/5 minutes and confirmation routes 20/5 minutes per normalized phone. Only the two account-deletion routes above accept browser CORS from exact origins in `NEXACHAT_CORS_ALLOWED_ORIGINS`; password-reset and authenticated routes do not enable CORS.
 

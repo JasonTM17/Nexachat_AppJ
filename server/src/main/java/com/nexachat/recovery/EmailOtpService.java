@@ -77,6 +77,47 @@ public class EmailOtpService {
         return Optional.of(issueLocked(user, purpose, user.getEmail(), now));
     }
 
+    /**
+     * The verified email of an active account that has no password.
+     * A password hash is {@code PASSWORD_REQUIRED}. No verified email reuses
+     * {@code INVALID_OR_EXPIRED_CODE} because {@code EMAIL_NOT_VERIFIED} is not
+     * an existing code and the OTP confirm path already uses this one when the
+     * address cannot receive a code.
+     */
+    @Transactional(readOnly = true)
+    public String passwordlessVerifiedEmail(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
+        if (user.getDeletedAt() != null) {
+            throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+        }
+        if (user.hasPassword()) {
+            throw passwordRequired();
+        }
+        if (!user.hasVerifiedEmail()) {
+            throw unverifiedEmail();
+        }
+        return user.getEmail();
+    }
+
+    public void requireSendCooldown(UUID userId, OtpPurpose purpose) {
+        requireCooldownElapsed(userId, purpose, clock.instant());
+    }
+
+    @Transactional
+    public OtpMail issueAuthenticatedDeletionCode(UUID userId) {
+        User user = lockActiveUser(userId);
+        if (user.hasPassword()) {
+            throw passwordRequired();
+        }
+        if (!user.hasVerifiedEmail()) {
+            throw unverifiedEmail();
+        }
+        Instant now = clock.instant();
+        requireCooldownElapsed(userId, OtpPurpose.DELETE_ACCOUNT, now);
+        return issueLocked(user, OtpPurpose.DELETE_ACCOUNT, user.getEmail(), now);
+    }
+
     @Transactional
     public String verifyEmail(UUID userId, String code) {
         User user = lockActiveUser(userId);
@@ -222,5 +263,14 @@ public class EmailOtpService {
 
     private static ApiException invalidCode() {
         return ApiException.of(ApiErrorCode.INVALID_OR_EXPIRED_CODE, "Code is invalid or expired");
+    }
+
+    private static ApiException passwordRequired() {
+        return ApiException.of(ApiErrorCode.PASSWORD_REQUIRED,
+                "This account must be deleted with its password");
+    }
+
+    private static ApiException unverifiedEmail() {
+        return ApiException.of(ApiErrorCode.INVALID_OR_EXPIRED_CODE, "A verified email is required");
     }
 }
