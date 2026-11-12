@@ -114,6 +114,7 @@
     <string name="action_remove_contact">Xóa liên hệ</string>
     <string name="action_message">Nhắn tin</string>
     <string name="action_save">Lưu</string>
+    <string name="action_save_changes">Lưu thay đổi</string>
     <string name="action_cancel">Hủy</string>
     <string name="action_close">Đóng</string>
     <string name="action_logout">Đăng xuất</string>

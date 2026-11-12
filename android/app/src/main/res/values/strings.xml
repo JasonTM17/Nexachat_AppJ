@@ -114,6 +114,7 @@
     <string name="action_remove_contact">Remove contact</string>
     <string name="action_message">Message</string>
     <string name="action_save">Save</string>
+    <string name="action_save_changes">Save changes</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_close">Close</string>
     <string name="action_logout">Sign out</string>

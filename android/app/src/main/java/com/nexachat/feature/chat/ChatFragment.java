@@ -461,6 +461,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         binding.composerBar.sendButton.setVisibility(showSend ? View.VISIBLE : View.GONE);
         binding.composerBar.sendButton.setEnabled(showSend);
         binding.composerBar.micButton.setVisibility(showSend ? View.GONE : View.VISIBLE);
+        if (showSend) {
+            ChatComposerEditPresentation.applySendButton(
+                    binding.composerBar.sendButton, editingMessage != null);
+        }
     }
 
     @SuppressLint("ClickableViewAccessibility")
