@@ -1,5 +1,7 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.conversation.InboxService;
@@ -178,7 +180,7 @@ class AuthorizationSqlBudgetIT {
 
     private TestUser createUser(String displayName) {
         int suffix = PHONE_SEQUENCE.incrementAndGet();
-        String phone = "+849055" + String.format("%07d", Math.floorMod(suffix, 10_000_000));
+        String phone = ItPhoneRanges.nextPhone(AuthorizationSqlBudgetIT.class);
         User user = userRepository.saveAndFlush(User.create(phone, "x".repeat(60), displayName));
         return new TestUser(user.getId(), jwtService.generateAccessToken(user));
     }

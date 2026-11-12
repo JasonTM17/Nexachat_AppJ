@@ -1,5 +1,7 @@
 package com.nexachat.message;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeAll;
@@ -49,8 +51,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * delta query; and a shared device token surviving a second account's
  * registration.
  *
- * <p>{@code PER_CLASS}: users register once. Test phones use the {@code +8497%}
- * prefix — distinct from sibling suites so no cleanup deletes their rows.
+ * <p>{@code PER_CLASS}: users register once under the range assigned to this
+ * suite by {@code ItPhoneRanges}.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
@@ -113,7 +115,7 @@ class ReactionDeltaIdempotencyIT {
     }
 
     private TestUser registerUser(String displayName) throws Exception {
-        String phone = "+8497" + String.format("%07d", (int) (Math.random() * 10_000_000));
+        String phone = ItPhoneRanges.nextPhone(ReactionDeltaIdempotencyIT.class);
         MvcResult result = mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(

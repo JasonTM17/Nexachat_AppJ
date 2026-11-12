@@ -1,5 +1,7 @@
 package com.nexachat.conversation;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -41,7 +43,6 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -160,8 +161,7 @@ class ConversationPinSeenFlowIT {
     }
 
     private static String randomPhone() {
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-        return "+84916" + String.format("%06d", random.nextInt(1_000_000));
+        return ItPhoneRanges.nextPhone(ConversationPinSeenFlowIT.class);
     }
 
     private TestUser registerUser(String displayName) throws Exception {

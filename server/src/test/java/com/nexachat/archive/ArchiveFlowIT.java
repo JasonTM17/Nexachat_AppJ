@@ -1,5 +1,7 @@
 package com.nexachat.archive;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.auth.JwtProperties;
@@ -52,8 +54,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * (the REST send path has its own dedicated happy-path case) so the suite does
  * not fight the 30-messages/10s send rate limit.
  *
- * <p>{@code PER_CLASS}: users register once; the {@code +8495} phone prefix is
- * reserved for this suite.
+ * <p>{@code PER_CLASS}: users register once under the phone range assigned to
+ * this suite by {@code ItPhoneRanges}.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
@@ -128,7 +130,7 @@ class ArchiveFlowIT {
     }
 
     private static String randomPhone() {
-        return "+8495" + String.format("%07d", PHONE_SEQ.incrementAndGet());
+        return ItPhoneRanges.nextPhone(ArchiveFlowIT.class);
     }
 
     private TestUser registerUser(String displayName) throws Exception {

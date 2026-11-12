@@ -1,5 +1,7 @@
 package com.nexachat.label;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.testutil.TestWaits;
@@ -529,6 +531,6 @@ class LabelFlowIT {
     }
 
     private static String randomPhone() {
-        return "+8493" + String.format("%07d", REGISTRATION_IP.incrementAndGet());
+        return ItPhoneRanges.nextPhone(LabelFlowIT.class);
     }
 }

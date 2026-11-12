@@ -1,5 +1,7 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -16,7 +18,7 @@ class ChangePasswordBcryptBoundIT extends SecurityITBase {
     @Test
     void changePassword_seventyThreeByteOldPassword_rejectsBcryptPrefixMatch() throws Exception {
         String password72 = "a".repeat(72);
-        Registered user = register("+84905551301", password72);
+        Registered user = register(ItPhoneRanges.phoneFor(ChangePasswordBcryptBoundIT.class, "+84905551301"), password72);
         String token = accessTokenIssuedBeforeRevocation(user.userId());
         String overLongOld = "a".repeat(73);
 
@@ -27,13 +29,13 @@ class ChangePasswordBcryptBoundIT extends SecurityITBase {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("WRONG_PASSWORD"));
 
-        postJson("/api/v1/auth/login", Map.of("phone", "+84905551301", "password", password72))
+        postJson("/api/v1/auth/login", Map.of("phone", ItPhoneRanges.phoneFor(ChangePasswordBcryptBoundIT.class, "+84905551301"), "password", password72))
                 .andExpect(status().isOk());
     }
 
     @Test
     void changePassword_overLongNewPassword_returnsValidationFailed() throws Exception {
-        Registered user = register("+84905551302");
+        Registered user = register(ItPhoneRanges.phoneFor(ChangePasswordBcryptBoundIT.class, "+84905551302"));
         String token = accessTokenIssuedBeforeRevocation(user.userId());
         String overLongNew = "b".repeat(73);
 

@@ -1,5 +1,7 @@
 package com.nexachat.robustness;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -49,8 +51,8 @@ class RangeAndNestedBodyRobustnessIT extends RobustnessITBase {
     @BeforeAll
     void seed() throws Exception {
         resetSharedFixtureDatabase();
-        alice = register("+84907600001", "Range Fuzz");
-        Registered peer = register("+84907600002", "Range Peer");
+        alice = register(ItPhoneRanges.phoneFor(RangeAndNestedBodyRobustnessIT.class, "+84907600001"), "Range Fuzz");
+        Registered peer = register(ItPhoneRanges.phoneFor(RangeAndNestedBodyRobustnessIT.class, "+84907600002"), "Range Peer");
         conversationId = openDirect(alice, peer.userId()).id();
 
         MvcResult uploaded = mockMvc.perform(multipart("/api/v1/attachments")

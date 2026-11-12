@@ -1,5 +1,6 @@
 package com.nexachat.attachment;
 
+import com.nexachat.testutil.ItPhoneRanges;
 import com.nexachat.ops.ScheduledLockIds;
 import com.nexachat.conversation.GroupService;
 import com.nexachat.conversation.dto.PatchGroupRequest;
@@ -322,13 +323,10 @@ class AvatarOrphanSweepIT {
 
     private UUID insertUser(String label) {
         UUID id = UUID.randomUUID();
-        String phoneTail = Long.toString(Math.floorMod(
-                UUID.randomUUID().getMostSignificantBits(), 10_000_000_000L));
-        phoneTail = "0".repeat(10 - phoneTail.length()) + phoneTail;
         jdbcTemplate.update("""
                 INSERT INTO users (id, phone, password_hash, display_name)
                 VALUES (?, ?, ?, ?)
-                """, id, "+849" + phoneTail, "x".repeat(60), "avatar-sweep-" + label);
+                """, id, ItPhoneRanges.nextPhone(AvatarOrphanSweepIT.class), "x".repeat(60), "avatar-sweep-" + label);
         return id;
     }
 

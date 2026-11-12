@@ -1,5 +1,7 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.nexachat.call.CallRegistry;
 import com.nexachat.call.CallService;
@@ -295,7 +297,7 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
             }
         }
 
-        Registered registered = register("+84905551801");
+        Registered registered = register(ItPhoneRanges.phoneFor(AuthorizationRouteMatrixIT.class, "+84905551801"));
         String expiredToken = expiredAccessToken(registered.userId());
         for (Route route : protectedRoutes) {
             assertTokenRejected(route, "malformed.access.token", ApiErrorCode.TOKEN_INVALID.getCode());
@@ -312,10 +314,10 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
     @Test
     void everyCatalogRouteIsDispatchedByItsExactProbeId() throws Exception {
         List<Route> routes = readMatrix();
-        String userPhone = "+84905551821";
+        String userPhone = ItPhoneRanges.phoneFor(AuthorizationRouteMatrixIT.class, "+84905551821");
         Registered user = register(userPhone);
         Registered operator = register(ADMIN_PHONE);
-        Registered peer = register("+84905551823");
+        Registered peer = register(ItPhoneRanges.phoneFor(AuthorizationRouteMatrixIT.class, "+84905551823"));
         var directResult = postJson("/api/v1/conversations/direct",
                         Map.of("userId", peer.userId().toString()), user.accessToken())
                 .andExpect(status().isCreated())
@@ -402,7 +404,7 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
     @Test
     void configuredOperatorAndOrdinaryUserHaveDifferentMetricsOutcomes() throws Exception {
         Registered admin = register(ADMIN_PHONE);
-        Registered ordinary = register("+84905551822");
+        Registered ordinary = register(ItPhoneRanges.phoneFor(AuthorizationRouteMatrixIT.class, "+84905551822"));
 
         getWithAuth("/actuator/metrics", admin.accessToken()).andExpect(status().isOk());
         getWithAuth("/actuator/metrics", ordinary.accessToken()).andExpect(status().isForbidden());
@@ -526,15 +528,15 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
     }
 
     private RoleFixtures createRoleFixtures() throws Exception {
-        Registered owner = register("+84905551901");
-        Registered member = register("+84905551902");
-        Registered otherMember = register("+84905551903");
-        Registered outsider = register("+84905551904");
-        Registered former = register("+84905551905");
-        Registered banned = register("+84905551906");
-        Registered directPeer = register("+84905551907");
-        Registered requester = register("+84905551908");
-        Registered invitee = register("+84905551909");
+        Registered owner = register(ItPhoneRanges.phoneFor(AuthorizationRouteMatrixIT.class, "+84905551901"));
+        Registered member = register(ItPhoneRanges.phoneFor(AuthorizationRouteMatrixIT.class, "+84905551902"));
+        Registered otherMember = register(ItPhoneRanges.phoneFor(AuthorizationRouteMatrixIT.class, "+84905551903"));
+        Registered outsider = register(ItPhoneRanges.phoneFor(AuthorizationRouteMatrixIT.class, "+84905551904"));
+        Registered former = register(ItPhoneRanges.phoneFor(AuthorizationRouteMatrixIT.class, "+84905551905"));
+        Registered banned = register(ItPhoneRanges.phoneFor(AuthorizationRouteMatrixIT.class, "+84905551906"));
+        Registered directPeer = register(ItPhoneRanges.phoneFor(AuthorizationRouteMatrixIT.class, "+84905551907"));
+        Registered requester = register(ItPhoneRanges.phoneFor(AuthorizationRouteMatrixIT.class, "+84905551908"));
+        Registered invitee = register(ItPhoneRanges.phoneFor(AuthorizationRouteMatrixIT.class, "+84905551909"));
 
         UUID groupId = createGroup(owner, "Route role probe group",
                 List.of(member.userId(), otherMember.userId(), former.userId(), banned.userId()));
@@ -936,9 +938,9 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
 
     @Test
     void roleMatrixSeparatesMembersAdminsFormerMembersBannedUsersAndDirectPeers() throws Exception {
-        Registered owner = register("+84905551802");
-        Registered member = register("+84905551803");
-        Registered outsider = register("+84905551804");
+        Registered owner = register(ItPhoneRanges.phoneFor(AuthorizationRouteMatrixIT.class, "+84905551802"));
+        Registered member = register(ItPhoneRanges.phoneFor(AuthorizationRouteMatrixIT.class, "+84905551803"));
+        Registered outsider = register(ItPhoneRanges.phoneFor(AuthorizationRouteMatrixIT.class, "+84905551804"));
         UUID groupId = createGroup(owner, "Authorization matrix group", List.of(member.userId()));
 
         getWithAuth(messagesPath(groupId), owner.accessToken()).andExpect(status().isOk());

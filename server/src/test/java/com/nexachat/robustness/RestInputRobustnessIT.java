@@ -1,5 +1,7 @@
 package com.nexachat.robustness;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -49,9 +51,9 @@ class RestInputRobustnessIT extends RobustnessITBase {
     @BeforeAll
     void seedFixture() throws Exception {
         resetSharedFixtureDatabase();
-        alice = register("+84907100001", "Alice Fuzz");
-        bob = register("+84907100002", "Bob Fuzz");
-        stranger = register("+84907100003", "Stranger Fuzz");
+        alice = register(ItPhoneRanges.phoneFor(RestInputRobustnessIT.class, "+84907100001"), "Alice Fuzz");
+        bob = register(ItPhoneRanges.phoneFor(RestInputRobustnessIT.class, "+84907100002"), "Bob Fuzz");
+        stranger = register(ItPhoneRanges.phoneFor(RestInputRobustnessIT.class, "+84907100003"), "Stranger Fuzz");
         conversationId = openDirect(alice, bob.userId()).id();
         messageId = sendText(alice, conversationId, "fixture seed");
     }

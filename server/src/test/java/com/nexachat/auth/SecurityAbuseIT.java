@@ -1,5 +1,7 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
@@ -61,7 +63,7 @@ class SecurityAbuseIT extends SecurityITBase {
 
     @Test
     void oversizedMultipartUploadIsRejected() throws Exception {
-        Registered user = register("+84905551602");
+        Registered user = register(ItPhoneRanges.phoneFor(SecurityAbuseIT.class, "+84905551602"));
         byte[] oversized = new byte[25 * 1024 * 1024 + 1];
         System.arraycopy(PNG_BYTES, 0, oversized, 0, PNG_BYTES.length);
         MockMultipartFile file = new MockMultipartFile("file", "huge.png", "image/png", oversized);
@@ -74,7 +76,7 @@ class SecurityAbuseIT extends SecurityITBase {
 
     @Test
     void filePathTraversalCannotReachFilesOutsideTheStorageRoot() throws Exception {
-        Registered user = register("+84905551603");
+        Registered user = register(ItPhoneRanges.phoneFor(SecurityAbuseIT.class, "+84905551603"));
 
         // A real file just outside the storage root: any traversal that
         // escaped the root would serve these bytes.
@@ -174,9 +176,9 @@ class SecurityAbuseIT extends SecurityITBase {
     // ------------------------------------------------------------------ setup
 
     private Conversation conversationWithMessage() throws Exception {
-        Registered alice = register("+84905551701");
-        Registered bob = register("+84905551702");
-        Registered carol = register("+84905551703");
+        Registered alice = register(ItPhoneRanges.phoneFor(SecurityAbuseIT.class, "+84905551701"));
+        Registered bob = register(ItPhoneRanges.phoneFor(SecurityAbuseIT.class, "+84905551702"));
+        Registered carol = register(ItPhoneRanges.phoneFor(SecurityAbuseIT.class, "+84905551703"));
 
         var direct = postJson("/api/v1/conversations/direct",
                 Map.of("userId", bob.userId().toString()), alice.accessToken())

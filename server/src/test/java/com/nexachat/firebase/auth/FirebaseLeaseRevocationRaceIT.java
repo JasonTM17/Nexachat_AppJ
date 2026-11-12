@@ -1,5 +1,7 @@
 package com.nexachat.firebase.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.nexachat.auth.AccessTokenRevocationService;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
@@ -85,7 +87,7 @@ class FirebaseLeaseRevocationRaceIT {
 
     @BeforeEach
     void createAccountAndResetFakes() {
-        String phone = "+8490" + String.format("%08d", Math.floorMod(System.nanoTime(), 100_000_000L));
+        String phone = ItPhoneRanges.nextPhone(FirebaseLeaseRevocationRaceIT.class);
         user = users.saveAndFlush(User.create(phone, "x".repeat(60), "Firebase lease race"));
         Instant issuedAt = Instant.now().minusSeconds(30);
         stalePrincipal = new JwtPrincipal(user.getId(), issuedAt, Instant.now().plusSeconds(900));

@@ -1,5 +1,7 @@
 package com.nexachat.message;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,7 +50,7 @@ class IdempotencyConcurrencyIT {
 
     @BeforeEach
     void createUser() {
-        String phone = "+8496" + String.format("%07d", Math.floorMod(userId.hashCode(), 10_000_000));
+        String phone = ItPhoneRanges.nextPhone(IdempotencyConcurrencyIT.class);
         jdbcTemplate.update("INSERT INTO users (id, phone, password_hash, display_name) VALUES (?, ?, ?, ?)",
                 userId, phone, "x".repeat(60), "Idempotency IT");
     }

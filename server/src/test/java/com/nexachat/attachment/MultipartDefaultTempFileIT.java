@@ -1,5 +1,7 @@
 package com.nexachat.attachment;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.MultipartConfigElement;
 import org.junit.jupiter.api.AfterAll;
@@ -15,6 +17,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -94,6 +97,8 @@ class MultipartDefaultTempFileIT {
     @Autowired
     private ObjectMapper objectMapper;
     @Autowired
+    private JdbcTemplate jdbcTemplate;
+    @Autowired
     private MultipartConfigElement multipartConfig;
 
     @MockitoBean
@@ -103,8 +108,7 @@ class MultipartDefaultTempFileIT {
 
     @BeforeAll
     void registerUploader() throws Exception {
-        String phone = "+8496" + String.format("%07d",
-                ThreadLocalRandom.current().nextInt(10_000_000));
+        String phone = ItPhoneRanges.nextPhone(MultipartDefaultTempFileIT.class);
         ResponseEntity<String> response = restTemplate.postForEntity("/api/v1/auth/register",
                 jsonEntity("""
                         {"phone":"%s","password":"secret123","displayName":"Default multipart IT"}

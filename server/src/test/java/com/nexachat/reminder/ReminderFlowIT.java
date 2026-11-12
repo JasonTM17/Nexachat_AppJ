@@ -1,5 +1,7 @@
 package com.nexachat.reminder;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeAll;
@@ -39,8 +41,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * CRUD and authorization coverage for the conversation reminder board.
  *
- * <p>Users use the {@code +8496} phone prefix so this suite never touches
- * another IT's fixtures. The background scheduler is disabled for the class;
+ * <p>Users use the range assigned to this suite by {@code ItPhoneRanges} so it
+ * never touches another IT's fixtures. The background scheduler is disabled for the class;
  * scheduler behaviour is covered by {@link ReminderSchedulerIT}.</p>
  */
 @SpringBootTest
@@ -49,7 +51,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ReminderFlowIT {
 
-    private static final String PHONE_PREFIX = "+8496";
+    private static final String PHONE_PREFIX = ItPhoneRanges.prefixFor(ReminderFlowIT.class);
 
     @DynamicPropertySource
     static void reminderProperties(DynamicPropertyRegistry registry) {
@@ -368,8 +370,7 @@ class ReminderFlowIT {
     // ----------------------------------------------------------------- helpers
 
     private TestUser registerUser(String displayName) throws Exception {
-        String phone = PHONE_PREFIX + String.format("%07d",
-                ThreadLocalRandom.current().nextInt(10_000_000));
+        String phone = ItPhoneRanges.nextPhone(ReminderFlowIT.class);
         MvcResult result = mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(

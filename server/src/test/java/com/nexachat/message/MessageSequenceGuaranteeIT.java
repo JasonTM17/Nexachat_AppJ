@@ -1,5 +1,7 @@
 package com.nexachat.message;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.common.error.ApiException;
@@ -325,8 +327,7 @@ class MessageSequenceGuaranteeIT {
     }
 
     private TestUser registerUser(String displayName) throws Exception {
-        String phone = "+8492" + (1 + ThreadLocalRandom.current().nextInt(9))
-                + String.format("%06d", ThreadLocalRandom.current().nextInt(1_000_000));
+        String phone = ItPhoneRanges.nextPhone(MessageSequenceGuaranteeIT.class);
         var result = mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(

@@ -1,5 +1,7 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,7 +45,7 @@ class AccessTokenRevocationIT extends SecurityITBase {
 
     @Test
     void logoutInvalidatesTheAccessTokenItWasUsedWith() throws Exception {
-        Registered user = register("+84905551201");
+        Registered user = register(ItPhoneRanges.phoneFor(AccessTokenRevocationIT.class, "+84905551201"));
         String issuedBeforeLogout = accessTokenIssuedBeforeRevocation(user.userId());
 
         getWithAuth("/api/v1/users/me", issuedBeforeLogout)
@@ -61,8 +63,8 @@ class AccessTokenRevocationIT extends SecurityITBase {
 
     @Test
     void logoutAllInvalidatesEveryAccessTokenOfTheUser() throws Exception {
-        Registered user = register("+84905551202");
-        Registered secondSession = login("+84905551202");
+        Registered user = register(ItPhoneRanges.phoneFor(AccessTokenRevocationIT.class, "+84905551202"));
+        Registered secondSession = login(ItPhoneRanges.phoneFor(AccessTokenRevocationIT.class, "+84905551202"));
         String firstToken = accessTokenIssuedBeforeRevocation(user.userId());
         String secondToken = accessTokenIssuedBeforeRevocation(secondSession.userId());
 
@@ -80,7 +82,7 @@ class AccessTokenRevocationIT extends SecurityITBase {
 
     @Test
     void passwordChangeInvalidatesExistingAccessTokensButKeepsRotationAlive() throws Exception {
-        Registered user = register("+84905551203");
+        Registered user = register(ItPhoneRanges.phoneFor(AccessTokenRevocationIT.class, "+84905551203"));
         String issuedBeforeChange = accessTokenIssuedBeforeRevocation(user.userId());
 
         pinCutoffAtOrAfterTokens(issuedBeforeChange);
@@ -111,8 +113,8 @@ class AccessTokenRevocationIT extends SecurityITBase {
 
     @Test
     void logoutOfOneSessionDoesNotRevokeAnotherSessionsRefreshToken() throws Exception {
-        Registered first = register("+84905551204");
-        Registered second = login("+84905551204");
+        Registered first = register(ItPhoneRanges.phoneFor(AccessTokenRevocationIT.class, "+84905551204"));
+        Registered second = login(ItPhoneRanges.phoneFor(AccessTokenRevocationIT.class, "+84905551204"));
         String firstToken = accessTokenIssuedBeforeRevocation(first.userId());
         String secondToken = accessTokenIssuedBeforeRevocation(second.userId());
 
@@ -148,7 +150,7 @@ class AccessTokenRevocationIT extends SecurityITBase {
 
     @Test
     void refreshTokenReuseInvalidatesPreviouslyIssuedAccessTokens() throws Exception {
-        Registered user = register("+84905551205");
+        Registered user = register(ItPhoneRanges.phoneFor(AccessTokenRevocationIT.class, "+84905551205"));
         ResultActions rotated = postJson("/api/v1/auth/refresh",
                 Map.of("refreshToken", user.refreshToken()));
         rotated.andExpect(status().isOk());
@@ -173,7 +175,7 @@ class AccessTokenRevocationIT extends SecurityITBase {
 
     @Test
     void logoutAllRejectsAccessTokenIssuedAtTheCutoffSecond() throws Exception {
-        Registered user = register("+84905551206");
+        Registered user = register(ItPhoneRanges.phoneFor(AccessTokenRevocationIT.class, "+84905551206"));
         Instant issuedAt = jwtService.parseAccessTokenClaims(user.accessToken()).issuedAt();
         cutoffClock.set(issuedAt);
 

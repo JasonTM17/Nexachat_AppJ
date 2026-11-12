@@ -1,5 +1,7 @@
 package com.nexachat.contact;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeAll;
@@ -26,7 +28,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -115,13 +116,11 @@ class ContactConversationIT {
     }
 
     /**
-     * Random-but-plausible VN mobile in E.164 ({@code +8490} + 7 digits, first
-     * non-zero) so re-runs never collide with rows committed by earlier runs
-     * on the shared dev database.
+     * Next phone in this suite's {@link com.nexachat.testutil.ItPhoneRanges} range,
+     * so re-runs never collide with rows committed by another suite.
      */
     private static String randomPhone() {
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-        return "+8490" + (1 + random.nextInt(9)) + String.format("%06d", random.nextInt(1_000_000));
+        return ItPhoneRanges.nextPhone(ContactConversationIT.class);
     }
 
     private record TestUser(UUID id, String phone, String displayName, String accessToken) {

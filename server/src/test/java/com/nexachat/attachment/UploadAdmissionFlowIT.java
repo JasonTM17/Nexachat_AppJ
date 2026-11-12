@@ -1,5 +1,7 @@
 package com.nexachat.attachment;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.common.error.ApiErrorCode;
@@ -108,7 +110,7 @@ class UploadAdmissionFlowIT {
     @BeforeAll
     void registerUploader() throws Exception {
         deleteUploaders();
-        String phone = "+84956" + String.format("%06d", PHONE_SEQ.incrementAndGet());
+        String phone = ItPhoneRanges.nextPhone(UploadAdmissionFlowIT.class);
         MvcResult result = mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(

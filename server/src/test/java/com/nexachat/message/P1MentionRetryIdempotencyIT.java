@@ -1,5 +1,7 @@
 package com.nexachat.message;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.auth.JwtService;
 import com.nexachat.user.User;
@@ -107,8 +109,7 @@ class P1MentionRetryIdempotencyIT {
     }
 
     private TestUser createTestUser(String displayName) {
-        String phone = "+8495" + String.format("%07d",
-                ThreadLocalRandom.current().nextInt(10_000_000));
+        String phone = ItPhoneRanges.nextPhone(P1MentionRetryIdempotencyIT.class);
         User user = User.create(phone, "hash", displayName);
         user = userRepository.saveAndFlush(user);
         return new TestUser(user.getId(), jwtService.generateAccessToken(user));

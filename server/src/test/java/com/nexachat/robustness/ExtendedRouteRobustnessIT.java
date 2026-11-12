@@ -1,5 +1,7 @@
 package com.nexachat.robustness;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -34,8 +36,8 @@ class ExtendedRouteRobustnessIT extends RobustnessITBase {
     @BeforeAll
     void seed() throws Exception {
         resetSharedFixtureDatabase();
-        user = register("+84907400001", "Extended");
-        Registered peer = register("+84907400002", "Peer");
+        user = register(ItPhoneRanges.phoneFor(ExtendedRouteRobustnessIT.class, "+84907400001"), "Extended");
+        Registered peer = register(ItPhoneRanges.phoneFor(ExtendedRouteRobustnessIT.class, "+84907400002"), "Peer");
         conversationId = openDirect(user, peer.userId()).id();
     }
 

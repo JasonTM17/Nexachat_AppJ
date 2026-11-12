@@ -1,5 +1,7 @@
 package com.nexachat.attachment;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeAll;
@@ -122,7 +124,7 @@ class AttachmentFlowIT {
     }
 
     private static String randomPhone() {
-        return "+8491" + String.format("%07d", PHONE_SEQ.incrementAndGet());
+        return ItPhoneRanges.nextPhone(AttachmentFlowIT.class);
     }
 
     private TestUser registerUser(String displayName) throws Exception {

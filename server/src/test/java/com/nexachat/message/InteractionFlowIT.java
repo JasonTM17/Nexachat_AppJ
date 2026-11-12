@@ -1,5 +1,7 @@
 package com.nexachat.message;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeAll;
@@ -20,7 +22,6 @@ import org.springframework.test.web.servlet.ResultActions;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -40,9 +41,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * + history (plus cross-conversation / missing reply targets).
  *
  * <p>{@code PER_CLASS}: users register once — the auth register bucket is
- * shared across the suite. Test phones use the {@code +8492%} prefix —
- * distinct from sibling suites ({@code +8490%}/{@code +8491%}) so no
- * {@code @BeforeAll} cleanup ever deletes another suite's rows.
+ * shared across the suite. Test phones use the range assigned to this suite by
+ * {@code ItPhoneRanges}, so cleanup cannot delete another suite's rows.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
@@ -98,8 +98,7 @@ class InteractionFlowIT {
     }
 
     private static String randomPhone() {
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-        return "+8492" + String.format("%07d", random.nextInt(10_000_000));
+        return ItPhoneRanges.nextPhone(InteractionFlowIT.class);
     }
 
     private TestUser registerUser(String displayName) throws Exception {

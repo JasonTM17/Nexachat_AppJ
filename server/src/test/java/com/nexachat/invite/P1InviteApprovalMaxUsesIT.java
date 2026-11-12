@@ -1,5 +1,7 @@
 package com.nexachat.invite;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.auth.JwtService;
 import com.nexachat.user.User;
@@ -38,10 +40,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("it")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class P1InviteApprovalMaxUsesIT {
-
-    /** Suite-owned prefix; {@code +8496} is reserved for reminder ITs. */
-    private static final String PHONE_PREFIX = "+8499";
-    private static final AtomicInteger PHONE_SEQ = new AtomicInteger(10_000);
 
     @DynamicPropertySource
     static void datasourceProps(DynamicPropertyRegistry registry) {
@@ -151,7 +149,7 @@ class P1InviteApprovalMaxUsesIT {
     }
 
     private TestUser createTestUser(String displayName) {
-        String phone = PHONE_PREFIX + String.format("%07d", PHONE_SEQ.incrementAndGet());
+        String phone = ItPhoneRanges.nextPhone(P1InviteApprovalMaxUsesIT.class);
         User user = User.create(phone, "hash", displayName);
         user = userRepository.saveAndFlush(user);
         return new TestUser(user.getId(), jwtService.generateAccessToken(user));

@@ -1,5 +1,7 @@
 package com.nexachat.user;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationMember;
 import com.nexachat.conversation.ConversationMemberRepository;
@@ -115,9 +117,9 @@ class AccountDeletionAttachmentLockOrderIT {
     void deletionSkipsAnAttachmentAnInFlightSendOwnsInsteadOfDeadlocking() throws Exception {
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             User deletingUser = userRepository.save(
-                    User.create("+84905553201", passwordEncoder.encode(PASSWORD), "Deleting User"));
+                    User.create(ItPhoneRanges.phoneFor(AccountDeletionAttachmentLockOrderIT.class, "+84905553291"), passwordEncoder.encode(PASSWORD), "Deleting User"));
             User otherMember = userRepository.save(
-                    User.create("+84905553202", passwordEncoder.encode(PASSWORD), "Other Member"));
+                    User.create(ItPhoneRanges.phoneFor(AccountDeletionAttachmentLockOrderIT.class, "+84905553292"), passwordEncoder.encode(PASSWORD), "Other Member"));
             deletingUserId = deletingUser.getId();
 
             Conversation conversation = conversationRepository.save(
