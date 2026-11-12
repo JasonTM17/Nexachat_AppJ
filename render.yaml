@@ -101,6 +101,12 @@ services:
       # still exist for /actuator/health/readiness.
       - key: STORAGE_ROOT
         value: /app/data/uploads
+      # Multipart scratch is created and probe-written at boot, so an
+      # unwritable path fails startup instead of the first upload
+      # (docs/operations.md, multipart section). /app is owned by the runtime
+      # user (server/Dockerfile:36).
+      - key: NEXACHAT_MULTIPART_TEMP_DIR
+        value: /app/data/multipart
       # Supabase Storage (S3 protocol, region ap-southeast-1, private bucket,
       # path-style) is the deployed store; Cloudflare R2 (region auto) is a
       # supported alternative. Names match application.yml storage.s3 block
