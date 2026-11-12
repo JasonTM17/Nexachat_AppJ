@@ -406,11 +406,50 @@ public final class AuthRepository {
 
     /** Exchanges a Google ID token for a session; persists it exactly like a password login. */
     @NonNull
-    public Single<Result<AuthResponse>> googleSignIn(
+    public Single<Result<AuthSessionResult>> googleSignIn(
             @NonNull String idToken,
             @NonNull String nonce) {
-        return Single.defer(() -> withServerReady(() -> persistOnSuccess(
-                authCall(authApi.googleSignIn(new GoogleSignInRequest(idToken, nonce))))));
+        return Single.defer(() -> withServerReady(() -> persistSessionResult(
+                googleAuthCall(authApi.googleSignIn(new GoogleSignInRequest(idToken, nonce))))));
+    }
+
+    @NonNull
+    private Single<Result<AuthSessionResult>> googleAuthCall(@NonNull Call<AuthResponse> call) {
+        return ApiResult.safeApiCall(call)
+                .map(result -> {
+                    if (result instanceof ApiResult.Success<?> success) {
+                        AuthResponse body = (AuthResponse) success.getBody();
+                        if (body == null) {
+                            return Result.<AuthSessionResult>failure(
+                                    new ApiError.Unknown("EMPTY_AUTH_RESPONSE"));
+                        }
+                        boolean created = success.getStatusCode() == 201 || body.isNewAccount();
+                        return new Result.Success<>(created
+                                ? AuthSessionResult.newAccount(body)
+                                : AuthSessionResult.existing(body));
+                    }
+                    return Result.<AuthSessionResult>failure(errorOf(result));
+                })
+                .subscribeOn(Schedulers.io());
+    }
+
+    @NonNull
+    private Single<Result<AuthSessionResult>> persistSessionResult(
+            Single<Result<AuthSessionResult>> request) {
+        return request.flatMap(result -> {
+            if (!(result instanceof Result.Success<?> success)) {
+                return Single.just(result);
+            }
+            AuthSessionResult session = (AuthSessionResult) success.getValue();
+            return persistOnSuccess(Single.just(new Result.Success<>(session.getResponse())))
+                    .flatMap(persisted -> {
+                        if (persisted instanceof Result.Success<?>) {
+                            return Single.just(new Result.Success<>(session));
+                        }
+                        ApiError error = ((Result.Failure<?>) persisted).getError();
+                        return Single.just(Result.<AuthSessionResult>failure(error));
+                    });
+        }).subscribeOn(Schedulers.io());
     }
 
     /** Links a Google account; the server verifies the password and the nonce. */

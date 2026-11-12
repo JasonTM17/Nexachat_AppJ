@@ -25,7 +25,7 @@ public final class LoginErrorBannerState {
         if (serverStarting) {
             return new LoginErrorBannerState(true, R.string.server_starting);
         }
-        if (error != null) {
+        if (error != null && !GoogleAuthErrors.isGoogleEmailInUse(error)) {
             return new LoginErrorBannerState(true, ApiErrorText.resource(error));
         }
         return sessionExpired

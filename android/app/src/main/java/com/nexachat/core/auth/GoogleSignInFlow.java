@@ -2,9 +2,9 @@ package com.nexachat.core.auth;
 
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
-import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.core.network.dto.GoogleNonceResponse;
 import com.nexachat.data.AuthRepository;
+import com.nexachat.data.AuthSessionResult;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -37,18 +37,19 @@ public class GoogleSignInFlow {
         return client.isConfigured();
     }
 
-    public Single<Result<AuthResponse>> signIn(android.content.Context activityContext) {
+    public Single<Result<AuthSessionResult>> signIn(android.content.Context activityContext) {
         if (!isConfigured()) {
-            return Single.just(Result.<AuthResponse>failure(unavailable()));
+            return Single.just(Result.<AuthSessionResult>failure(unavailable()));
         }
         return authRepository.requestGoogleNonce().flatMap(nonce -> {
             String value = nonceValue(nonce);
             if (value == null) {
-                return Single.just(Result.<AuthResponse>failure(errorOf(nonce)));
+                return Single.just(Result.<AuthSessionResult>failure(errorOf(nonce)));
             }
             return client.idToken(activityContext, value)
                     .flatMap(idToken -> authRepository.googleSignIn(idToken, value))
-                    .onErrorResumeNext(error -> Single.just(Result.<AuthResponse>failure(map(error))));
+                    .onErrorResumeNext(error -> Single.just(
+                            Result.<AuthSessionResult>failure(map(error))));
         });
     }
 
