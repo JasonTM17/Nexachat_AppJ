@@ -16,7 +16,9 @@
 #
 # Options:
 #   --label NAME          result folder name (required)
-#   --java-opts "..."     JAVA_OPTS for the run (default: render.yaml value)
+#   --java-opts "..."     JAVA_OPTS for the run (default: the render JVM fit
+#                         without the AppCDS archive; add --in-image-archive for
+#                         the deployed set)
 #   --archive PATH        AppCDS archive to mount at /app/application.jsa
 #   --in-image-archive    use the archive already baked at /app/application.jsa
 #   --image NAME          image tag (default: nexachat-jvm-footprint:local)
