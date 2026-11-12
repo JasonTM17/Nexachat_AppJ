@@ -244,6 +244,35 @@ python tools/e2e/reminder_clock.py occurrence <reminder-id>
 - `occurrence`: derives the 32-hex occurrence identifier carried by push payloads (`SHA-256(reminderId + '|' + remindAt.toEpochMilli())[:16].hex()`) matching `FcmReminderPushSender.occurrenceKey`.
 - Safety: refuses any database whose name does not contain `nexachat`, refuses non-local targets, and validates all IDs as UUIDs.
 
+## Stable journeys
+
+`device/stable_journeys.py` coordinates the phase 08 matrix using the existing
+adb UI, REST and STOMP helpers. It pins every adb call to `emulator-5554`,
+refuses production for these mutating journeys, and requires an evidence
+directory outside the repository for a real run. Account deletion is always
+ordered last and is limited to a disposable account.
+
+```bash
+python tools/e2e/device/stable_journeys.py --list
+python tools/e2e/device/stable_journeys.py --dry-run --rows auth-login,chat-send-receive
+python tools/e2e/device/stable_journeys.py --rows auth-login,chat-send-receive \
+    --evidence-dir <external-evidence-directory>
+python -m unittest discover -s tools/e2e/device -p "test_*.py"
+```
+
+The dry run prints structured adb argv and REST/STOMP requests without
+contacting a device or server. Each evidence row contains a JSON summary,
+sanitized REST/STOMP transcripts, screenshots and filtered logcat where the
+device is available. Unsupported rows carry an explicit capability reason.
+
+Results use `PASS`, `FAIL_PRODUCT` (an observed app assertion failed with
+evidence), `FAIL_HARNESS_OR_ENVIRONMENT` (for example readiness, APK or device
+failure), `BLOCKED_CAPABILITY` (the row cannot be asserted with the available
+approved tooling), and `NOT_RUN`. A failed row may be retried once; the final
+status and retry are recorded. The matrix and offline coordinator tests are in
+[`device/stable_journeys.py`](device/stable_journeys.py) and
+[`device/test_stable_journeys.py`](device/test_stable_journeys.py).
+
 ## Cleanup / side effects
 
 - `smoke_api.py` and `stomp_e2e.py` soft-delete every message they created (run
