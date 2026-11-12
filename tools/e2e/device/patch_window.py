@@ -294,9 +294,19 @@ def node_by_id(nodes: list[Node], suffix: str) -> Node | None:
 
 def ensure_device_account(ui: Device, evidence_dir: Path) -> None:
     adb("shell", "am", "start", "-n", f"{PACKAGE}/{MAIN_ACTIVITY_CLASS}", timeout=30)
-    time.sleep(3)
-    nodes = ui_nodes(ui)
-    sign_in = next((node for node in nodes if text_matches(node, ("Sign in", "Đăng nhập"))), None)
+    # Cold start passes through the splash; wait until the sign-in form or a
+    # signed-in screen is drawn instead of reading the first frame.
+    sign_in = None
+    nodes: list[Node] = []
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        nodes = ui_nodes(ui, timeout=10)
+        sign_in = next((node for node in nodes
+                        if text_matches(node, ("Sign in", "Đăng nhập"))), None)
+        if sign_in is not None or any(
+                text_matches(node, ("Profile", "Hồ sơ", "Chats", "Tin nhắn")) for node in nodes):
+            break
+        time.sleep(1)
     if sign_in is not None:
         phone = node_by_id(nodes, "phoneInput")
         password = node_by_id(nodes, "passwordInput")
@@ -308,9 +318,13 @@ def ensure_device_account(ui: Device, evidence_dir: Path) -> None:
         ui.type_text(DEVICE_ACCOUNT)
         ui.tap_node(password)
         ui.type_text(PASSWORD)
+        # Hide the keyboard so it cannot cover the button, then target the
+        # button by id: the form title can carry the same "Sign in" text.
+        adb("shell", "input", "keyevent", "4", check_result=False, timeout=15)
+        time.sleep(1)
         current = ui_nodes(ui)
-        action = next((node for node in current
-                       if text_matches(node, ("Sign in", "Đăng nhập"))), None)
+        action = node_by_id(current, "primaryAction") or next(
+            (node for node in current if text_matches(node, ("Sign in", "Đăng nhập"))), None)
         check(action is not None, "login action was not visible")
         ui.tap_node(action)
         deadline = time.monotonic() + 60
@@ -329,6 +343,11 @@ def ensure_device_account(ui: Device, evidence_dir: Path) -> None:
         ui.tap_node(profile)
         time.sleep(2)
         nodes = ui_nodes(ui)
+    if not any(node.text.strip() == "An" for node in nodes):
+        ui.screenshot(str(evidence_dir / "account-check-failure.png"))
+        (evidence_dir / "account-check-failure-nodes.txt").write_text(
+            "\n".join(f"{node.attrs.get('resource-id', '')} | {node.text}" for node in nodes),
+            encoding="utf-8")
     check(any(node.text.strip() == "An" for node in nodes),
           "emulator already has a session, but the visible account could not be verified as An")
     ui.screenshot(str(evidence_dir / "f4-device-home.png"))
@@ -640,6 +659,8 @@ def main() -> int:
     parser.add_argument("--db-container", default="nexachat_l1-db-1")
     parser.add_argument("--db-name", default="nexachat_l1")
     parser.add_argument("--evidence-dir", required=True)
+    parser.add_argument("--reset-app-data", action="store_true",
+                        help="clear the debug app's data first so the run signs in as An")
     args = parser.parse_args()
 
     evidence_dir = Path(args.evidence_dir).expanduser().resolve()
@@ -683,6 +704,10 @@ def main() -> int:
         existing = adb("shell", "pm", "path", PACKAGE, check_result=False)
         report["package_preinstalled"] = existing.startswith("package:")
         ensure_apk_installed(Path(args.apk).resolve())
+        report["app_data_reset"] = bool(args.reset_app_data)
+        if args.reset_app_data:
+            cleared = adb("shell", "pm", "clear", PACKAGE, check_result=False, timeout=30)
+            check(cleared.strip() == "Success", f"pm clear {PACKAGE} failed")
         original_permissions = grant_test_permissions()
         report["permissions_before_test"] = original_permissions
         ui = Device(SERIAL)  # Never inherit adb_ui.py's default 5558 serial.
