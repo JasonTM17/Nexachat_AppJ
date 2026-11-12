@@ -555,6 +555,7 @@
     <string name="error_google_already_linked">Tài khoản Google này đã được liên kết với một tài khoản khác.</string>
     <string name="error_google_no_account">Không tìm thấy tài khoản Google trên thiết bị này.</string>
     <string name="error_last_sign_in_method">Hãy đặt mật khẩu trước khi gỡ phương thức đăng nhập này.</string>
+    <string name="error_no_password_set">Tài khoản này chưa có mật khẩu.</string>
     <!-- Google signup auth -->
     <string name="auth_or_divider">hoặc</string>
     <string name="cd_continue_with_google">Tiếp tục với Google</string>

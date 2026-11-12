@@ -29,6 +29,7 @@ public final class ApiErrorText {
             if ("GOOGLE_ACCOUNT_ALREADY_LINKED".equals(code)) return R.string.error_google_already_linked;
             if ("GOOGLE_SIGN_IN_FAILED".equals(code)) return R.string.error_google_sign_in;
             if ("LAST_SIGN_IN_METHOD".equals(code)) return R.string.error_last_sign_in_method;
+            if ("NO_PASSWORD_SET".equals(code)) return R.string.error_no_password_set;
             if (com.nexachat.core.auth.GoogleSignInFlow.CODE_NO_ACCOUNT.equals(code)) {
                 return R.string.error_google_no_account;
             }

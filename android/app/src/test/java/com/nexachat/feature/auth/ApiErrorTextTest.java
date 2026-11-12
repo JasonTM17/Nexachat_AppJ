@@ -43,6 +43,8 @@ public final class ApiErrorTextTest {
                 new ApiError.Unknown("GOOGLE_SIGN_IN_FAILED", 401)));
         assertEquals(R.string.error_last_sign_in_method, ApiErrorText.resource(
                 new ApiError.Unknown("LAST_SIGN_IN_METHOD", 409)));
+        assertEquals(R.string.error_no_password_set, ApiErrorText.resource(
+                new ApiError.Unknown("NO_PASSWORD_SET", 409)));
         assertEquals(R.string.error_google_no_account, ApiErrorText.resource(
                 new ApiError.Unknown(com.nexachat.core.auth.GoogleSignInFlow.CODE_NO_ACCOUNT)));
     }
@@ -68,6 +70,7 @@ public final class ApiErrorTextTest {
             new ApiError.Unknown("GOOGLE_ACCOUNT_ALREADY_LINKED"),
             new ApiError.Unknown("GOOGLE_SIGN_IN_FAILED"),
             new ApiError.Unknown("LAST_SIGN_IN_METHOD"),
+            new ApiError.Unknown("NO_PASSWORD_SET"),
             new ApiError.Unknown(com.nexachat.core.auth.GoogleSignInFlow.CODE_NO_ACCOUNT),
         };
         for (ApiError error : errors) {
