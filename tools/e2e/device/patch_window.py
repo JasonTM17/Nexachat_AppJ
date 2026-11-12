@@ -88,7 +88,8 @@ def start_owned_avd(avd: str, evidence_dir: Path) -> tuple[bool, subprocess.Pope
         check(actual == avd, f"{SERIAL} is {actual or 'not a named AVD'}, expected {avd}")
         return False, None
 
-    sdk = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT") or r"D:\Android\Sdk"
+    sdk = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
+    check(bool(sdk), "set ANDROID_HOME or ANDROID_SDK_ROOT to the Android SDK")
     emulator = Path(sdk) / "emulator" / "emulator.exe"
     check(emulator.is_file(), f"Android emulator executable is missing: {emulator}")
     avds = run([str(emulator), "-list-avds"], timeout=20).stdout.splitlines()
