@@ -3,10 +3,12 @@ package com.nexachat.message;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.ConversationMemberRepository;
+import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.message.dto.ReactRequest;
 import com.nexachat.message.dto.ReactionRow;
 import com.nexachat.message.dto.ReactionSlice;
 import com.nexachat.message.dto.ReactionUpdatedPayload;
+import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -17,6 +19,7 @@ import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.UUID;
 
@@ -53,17 +56,23 @@ public class ReactionService {
     private final MessageReactionRepository reactionRepository;
     private final ReactionEventRepository reactionEventRepository;
     private final ConversationMemberRepository memberRepository;
+    private final ConversationRepository conversationRepository;
+    private final UserRepository userRepository;
     private final ApplicationEventPublisher eventPublisher;
 
     public ReactionService(MessageRepository messageRepository,
                            MessageReactionRepository reactionRepository,
                            ReactionEventRepository reactionEventRepository,
                            ConversationMemberRepository memberRepository,
+                           ConversationRepository conversationRepository,
+                           UserRepository userRepository,
                            ApplicationEventPublisher eventPublisher) {
         this.messageRepository = messageRepository;
         this.reactionRepository = reactionRepository;
         this.reactionEventRepository = reactionEventRepository;
         this.memberRepository = memberRepository;
+        this.conversationRepository = conversationRepository;
+        this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
     }
 
@@ -146,14 +155,29 @@ public class ReactionService {
     /**
      * Loads the message and enforces the reaction policy: the caller must be a
      * member of the message's conversation and the message must not be deleted.
-     * The row is locked for update so the toggle's delete/insert sequence is
-     * serialized against concurrent reactions on the same message.
+     *
+     * <p><b>Lock order:</b> the reacting user is locked {@code FOR KEY SHARE}
+     * first, then the message's conversation, then the message row itself. The
+     * non-locking projection only discovers the conversation id; membership,
+     * conversation presence and deletion state are revalidated after the locks
+     * are held. A plain non-locking entity read here would leave a stale managed
+     * {@code Message} behind and would take the message lock before the
+     * conversation lock, inverting the canonical order.
      */
     private Message requireReactableMessage(UUID userId, UUID messageId) {
+        Optional<UUID> knownConversationId = messageRepository.findConversationIdById(messageId);
+        userRepository.lockForKeyShareSorted(List.of(userId));
+        knownConversationId.ifPresent(id -> conversationRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> ApiException.of(
+                        ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found")));
         Message message = messageRepository.findByIdForUpdate(messageId)
                 .orElseThrow(() -> ApiException.of(
                         ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
         UUID conversationId = message.getConversation().getId();
+        if (knownConversationId.isPresent() && !knownConversationId.get().equals(conversationId)) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR,
+                    "Message conversation changed while locking the reaction");
+        }
         if (!memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)) {
             throw ApiException.of(ApiErrorCode.NOT_MEMBER, "Not a member of this conversation");
         }

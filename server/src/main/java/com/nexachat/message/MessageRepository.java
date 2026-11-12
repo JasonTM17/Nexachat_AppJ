@@ -23,6 +23,14 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query("SELECT m FROM Message m WHERE m.id = :messageId")
     Optional<Message> findByIdForUpdate(@Param("messageId") UUID messageId);
 
+    /**
+     * Read-only conversation discovery for lock ordering: a caller that must
+     * lock the conversation before the message uses this projection first, so
+     * the non-locking probe never leaves a managed {@link Message} behind.
+     */
+    @Query("SELECT m.conversation.id FROM Message m WHERE m.id = :messageId")
+    Optional<UUID> findConversationIdById(@Param("messageId") UUID messageId);
+
     /** Latest sequence within one conversation; zero for an empty conversation. */
     @Query("SELECT COALESCE(MAX(m.seq), 0) FROM Message m WHERE m.conversation.id = :conversationId")
     long findMaxSeqByConversationId(@Param("conversationId") UUID conversationId);

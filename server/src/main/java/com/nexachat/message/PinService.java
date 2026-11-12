@@ -11,6 +11,7 @@ import com.nexachat.message.dto.MessageResponse;
 import com.nexachat.message.dto.PinRequest;
 import com.nexachat.message.dto.PinUpdatedPayload;
 import com.nexachat.message.dto.PinnedMessageView;
+import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -59,6 +60,7 @@ public class PinService {
     private final MessageRepository messageRepository;
     private final PinnedMessageRepository pinRepository;
     private final MessageService messageService;
+    private final UserRepository userRepository;
     private final ApplicationEventPublisher eventPublisher;
 
     public PinService(ConversationRepository conversationRepository,
@@ -66,12 +68,14 @@ public class PinService {
                       MessageRepository messageRepository,
                       PinnedMessageRepository pinRepository,
                       MessageService messageService,
+                      UserRepository userRepository,
                       ApplicationEventPublisher eventPublisher) {
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.messageRepository = messageRepository;
         this.pinRepository = pinRepository;
         this.messageService = messageService;
+        this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
     }
 
@@ -134,8 +138,13 @@ public class PinService {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "messageId is required");
         }
         UUID messageId = request.messageId();
+        // Identity-first authorization stays first (no join on a foreign id);
+        // the pinning user is then locked FOR KEY SHARE before the conversation
+        // row so the pinned_messages user FK never inverts user -> conversation.
         ConversationMember member = requireMember(conversationId, userId);
+        userRepository.lockForKeyShareSorted(List.of(userId));
         Conversation conversation = lockConversation(conversationId);
+        member = requireMember(conversationId, userId);
         requirePinRole(conversation, member);
         requireConversationMessage(conversationId, messageId);
 
@@ -162,6 +171,7 @@ public class PinService {
     @Transactional
     public void unpin(UUID userId, UUID conversationId, UUID messageId) {
         ConversationMember member = requireMember(conversationId, userId);
+        userRepository.lockForKeyShareSorted(List.of(userId));
         Conversation conversation = lockConversation(conversationId);
         requirePinRole(conversation, member);
         // Same-conversation check as pin() — without it a member could
