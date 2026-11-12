@@ -6,13 +6,17 @@ import com.nexachat.notification.PushResult;
 import com.nexachat.notification.UserDeviceToken;
 import com.nexachat.notification.UserDeviceTokenRepository;
 import com.nexachat.observability.ObservabilityMetrics;
+import com.nexachat.user.User;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
@@ -83,9 +87,68 @@ class FcmReminderPushSenderTest {
         verify(metrics, times(1)).recordPushSend("SUCCESS");
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void aSharedDeviceTokenIsAddressedToTheAccountSignedInLast() {
+        UUID earlier = UUID.randomUUID();
+        UUID latest = UUID.randomUUID();
+        UserDeviceToken older = device("shared-token", earlier, Instant.parse("2026-11-10T08:00:00Z"));
+        UserDeviceToken newer = device("shared-token", latest, Instant.parse("2026-11-11T08:00:00Z"));
+        when(tokenRepository.findByUserIdIn(any())).thenReturn(List.of(older, newer));
+        when(fcmGateway.sendDataPush(eq("shared-token"), anyMap(), anyString(), anyLong()))
+                .thenReturn(CompletableFuture.completedFuture(PushResult.success("id")));
+
+        sender.send(delivery, List.of(earlier, latest));
+
+        ArgumentCaptor<Map<String, String>> payload = ArgumentCaptor.forClass(Map.class);
+        verify(fcmGateway, times(1))
+                .sendDataPush(eq("shared-token"), payload.capture(), eq("HIGH"), anyLong());
+        assertThat(payload.getValue()).containsEntry("recipientId", latest.toString());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void payloadCarriesAnOpaqueOccurrenceKeyInsteadOfTheSchedule() {
+        UUID recipient = UUID.randomUUID();
+        UserDeviceToken device = device("token-a", recipient, null);
+        when(tokenRepository.findByUserIdIn(any())).thenReturn(List.of(device));
+        when(fcmGateway.sendDataPush(anyString(), anyMap(), anyString(), anyLong()))
+                .thenReturn(CompletableFuture.completedFuture(PushResult.success("id")));
+
+        sender.send(delivery, List.of(recipient));
+
+        ArgumentCaptor<Map<String, String>> payload = ArgumentCaptor.forClass(Map.class);
+        verify(fcmGateway).sendDataPush(eq("token-a"), payload.capture(), eq("HIGH"), anyLong());
+        Map<String, String> data = payload.getValue();
+        assertThat(data)
+                .containsEntry("recipientId", recipient.toString())
+                .containsEntry("reminderId", delivery.reminderId().toString())
+                .containsEntry("occurrence", FcmReminderPushSender.occurrenceKey(delivery))
+                .doesNotContainKey("remindAt");
+        assertThat(data.get("occurrence")).matches("[0-9a-f]{32}");
+        assertThat(data.values()).noneMatch(value -> value.contains("2026-12-01"));
+
+        ReminderDelivery nextWeek = new ReminderDelivery(
+                delivery.reminderId(), delivery.conversationId(), delivery.title(),
+                delivery.remindAt().plusSeconds(7 * 24 * 3_600L), delivery.anchorAt(),
+                delivery.repeat(), delivery.claimToken());
+        assertThat(FcmReminderPushSender.occurrenceKey(nextWeek))
+                .isNotEqualTo(FcmReminderPushSender.occurrenceKey(delivery));
+        assertThat(FcmReminderPushSender.occurrenceKey(delivery))
+                .isEqualTo(FcmReminderPushSender.occurrenceKey(delivery));
+    }
+
     private static UserDeviceToken device(String token) {
+        return device(token, UUID.randomUUID(), null);
+    }
+
+    private static UserDeviceToken device(String token, UUID ownerId, Instant updatedAt) {
         UserDeviceToken device = mock(UserDeviceToken.class);
+        User owner = mock(User.class);
+        when(owner.getId()).thenReturn(ownerId);
         when(device.getToken()).thenReturn(token);
+        when(device.getUser()).thenReturn(owner);
+        when(device.getUpdatedAt()).thenReturn(updatedAt);
         return device;
     }
 }

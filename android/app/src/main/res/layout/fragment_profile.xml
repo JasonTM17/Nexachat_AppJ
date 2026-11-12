@@ -359,6 +359,17 @@
                     android:layout_marginStart="72dp"
                     android:background="?attr/colorOutlineVariant" />
 
+                <com.nexachat.core.ui.components.SettingsRowView
+                    android:id="@+id/notificationRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="72dp"
+                    android:background="?attr/colorOutlineVariant" />
+
                 <!-- Change password action -->
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/changePassword"

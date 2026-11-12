@@ -13,7 +13,6 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.event.TransactionPhase;
 
 import java.time.Clock;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -86,11 +85,10 @@ public class NotificationEventListener {
         event.message().mentions().forEach(mention -> mentionedMemberIds.add(mention.userId()));
         boolean mentionAll = event.message().mentionAll();
 
-        // One physical device can hold a token row per account; collect the
-        // offline recipients' tokens and de-duplicate by token value so a
-        // shared device receives the message exactly once.
-        Map<String, UserDeviceToken> tokensByValue = new LinkedHashMap<>();
-        Set<String> mentionedTokenValues = new HashSet<>();
+        // One physical device can hold a token row per account; it must receive
+        // the message once, addressed to the account signed in there.
+        Map<UUID, List<UserDeviceToken>> offlineRows = new LinkedHashMap<>();
+        Set<UUID> mentionedRecipients = new HashSet<>();
         for (UUID memberId : recipientIds) {
             if (memberId.equals(senderId)) {
                 continue;
@@ -101,32 +99,17 @@ public class NotificationEventListener {
                 continue;
             }
             if (!presenceState.isOnline(memberId)) {
-                for (UserDeviceToken token : tokenRepository.findByUserId(memberId)) {
-                    tokensByValue.putIfAbsent(token.getToken(), token);
-                    if (mentioned) {
-                        mentionedTokenValues.add(token.getToken());
-                    }
+                offlineRows.put(memberId, tokenRepository.findByUserId(memberId));
+                if (mentioned) {
+                    mentionedRecipients.add(memberId);
                 }
             }
         }
 
-        List<UserDeviceToken> mentionedTokens = new ArrayList<>();
-        List<UserDeviceToken> ordinaryTokens = new ArrayList<>();
-        tokensByValue.forEach((tokenValue, token) -> {
-            if (mentionedTokenValues.contains(tokenValue)) {
-                mentionedTokens.add(token);
-            } else {
-                ordinaryTokens.add(token);
-            }
-        });
-        if (!ordinaryTokens.isEmpty()) {
-            fcmPushService.sendNewMessageNotification(ordinaryTokens, conversationId,
-                    event.message().id(), event.message().seq(), event.message().senderDisplayName(), false);
-        }
-        if (!mentionedTokens.isEmpty()) {
-            fcmPushService.sendNewMessageNotification(mentionedTokens, conversationId,
-                    event.message().id(), event.message().seq(), event.message().senderDisplayName(), true);
-        }
+        DeviceTokenOwners.byCurrentOwner(offlineRows).forEach((recipientId, tokens) ->
+                fcmPushService.sendNewMessageNotification(recipientId, tokens, conversationId,
+                        event.message().id(), event.message().seq(),
+                        event.message().senderDisplayName(), mentionedRecipients.contains(recipientId)));
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)

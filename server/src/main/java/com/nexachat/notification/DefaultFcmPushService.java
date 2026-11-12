@@ -5,8 +5,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -54,19 +56,16 @@ public class DefaultFcmPushService implements FcmPushService {
     @Override
     @Transactional
     public void sendNewMessageNotification(UUID recipientId, UUID conversationId, UUID messageId,
-                                          long seq, String senderName) {
+                                          long seq, String senderName, boolean mentioned) {
+        if (recipientId == null) {
+            return;
+        }
         List<UserDeviceToken> tokens = tokenRepository.findByUserId(recipientId);
         if (tokens.isEmpty()) {
             return;
         }
-        sendNewMessageNotification(tokens, conversationId, messageId, seq, senderName);
-    }
-
-    @Override
-    @Transactional
-    public void sendNewMessageNotification(List<UserDeviceToken> tokens, UUID conversationId,
-                                          UUID messageId, long seq, String senderName) {
-        sendNewMessageNotification(tokens, conversationId, messageId, seq, senderName, false);
+        sendNewMessageNotification(
+                recipientId, tokens, conversationId, messageId, seq, senderName, mentioned);
     }
 
     @Override
@@ -78,10 +77,39 @@ public class DefaultFcmPushService implements FcmPushService {
             return;
         }
 
+        // A shared token may be registered to multiple accounts. Keep each
+        // account's audience explicit so the client can reject the other one.
+        Map<UUID, List<UserDeviceToken>> byRecipient = new LinkedHashMap<>();
+        for (UserDeviceToken token : tokens) {
+            if (token.getUser() == null || token.getUser().getId() == null) {
+                continue;
+            }
+            byRecipient.computeIfAbsent(token.getUser().getId(), ignored -> new ArrayList<>())
+                    .add(token);
+        }
+        byRecipient.forEach((recipientId, recipientTokens) -> sendNewMessageNotification(
+                recipientId, recipientTokens, conversationId, messageId, seq, senderName, mentioned));
+    }
+
+    @Override
+    @Transactional
+    public void sendNewMessageNotification(
+            UUID recipientId,
+            List<UserDeviceToken> tokens,
+            UUID conversationId,
+            UUID messageId,
+            long seq,
+            String senderName,
+            boolean mentioned) {
+        if (recipientId == null || tokens == null || tokens.isEmpty()) {
+            return;
+        }
+
         // Pointer only: the payload carries ids the app can use to sync, never
         // message content, which would sit in the push provider's store.
         Map<String, String> data = new HashMap<>();
         data.put("type", "NEW_MESSAGE");
+        data.put("recipientId", recipientId.toString());
         data.put("conversationId", conversationId.toString());
         data.put("messageId", messageId.toString());
         data.put("seq", String.valueOf(seq));

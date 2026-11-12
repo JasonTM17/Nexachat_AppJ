@@ -23,8 +23,11 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -107,11 +110,46 @@ class NotificationEventListenerTest {
         when(tokenRepository.findByUserId(recipientId)).thenReturn(List.of(token));
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void sharedDeviceTokenGetsOnePushForTheAccountSignedInLast() {
+        UUID secondRecipientId = UUID.randomUUID();
+        MessageResponse message = message(Message.Type.TEXT, 10L);
+        when(memberRepository.findMemberUserIds(conversationId))
+                .thenReturn(List.of(senderId, recipientId, secondRecipientId));
+        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
+                .thenReturn(List.of());
+        when(presenceState.isOnline(recipientId)).thenReturn(false);
+        when(presenceState.isOnline(secondRecipientId)).thenReturn(false);
+        UserDeviceToken older = sharedRow(Instant.parse("2026-11-10T08:00:00Z"));
+        UserDeviceToken newer = sharedRow(Instant.parse("2026-11-11T08:00:00Z"));
+        when(tokenRepository.findByUserId(recipientId)).thenReturn(List.of(older));
+        when(tokenRepository.findByUserId(secondRecipientId)).thenReturn(List.of(newer));
+
+        listener.onMessageCreated(new MessageCreatedEvent(conversationId, message));
+
+        ArgumentCaptor<List<UserDeviceToken>> tokens = ArgumentCaptor.forClass(List.class);
+        verify(fcmPushService).sendNewMessageNotification(eq(secondRecipientId), tokens.capture(),
+                eq(conversationId), eq(message.id()), eq(message.seq()),
+                eq(message.senderDisplayName()), eq(false));
+        assertThat(tokens.getValue()).containsExactly(newer);
+        verify(fcmPushService, never()).sendNewMessageNotification(eq(recipientId), any(List.class),
+                any(UUID.class), any(UUID.class), anyLong(), any(), anyBoolean());
+    }
+
+    private static UserDeviceToken sharedRow(Instant updatedAt) {
+        UserDeviceToken row = mock(UserDeviceToken.class);
+        when(row.getToken()).thenReturn("shared-device-token");
+        when(row.getUpdatedAt()).thenReturn(updatedAt);
+        return row;
+    }
+
     @SuppressWarnings("unchecked")
     private void assertSinglePush(MessageResponse message, boolean mentioned) {
         ArgumentCaptor<List<UserDeviceToken>> tokens = ArgumentCaptor.forClass(List.class);
-        verify(fcmPushService).sendNewMessageNotification(tokens.capture(), eq(conversationId),
-                eq(message.id()), eq(message.seq()), eq(message.senderDisplayName()), eq(mentioned));
+        verify(fcmPushService).sendNewMessageNotification(eq(recipientId), tokens.capture(),
+                eq(conversationId), eq(message.id()), eq(message.seq()),
+                eq(message.senderDisplayName()), eq(mentioned));
         assertThat(tokens.getValue()).hasSize(1);
     }
 

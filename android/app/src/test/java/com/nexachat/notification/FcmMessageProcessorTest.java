@@ -17,10 +17,8 @@ import com.nexachat.call.core.IncomingCallPushData;
 import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
-import com.nexachat.data.SyncEngine;
 import com.nexachat.feature.reminder.ReminderPushEvents;
 import com.squareup.moshi.Moshi;
-import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
@@ -41,13 +39,15 @@ public final class FcmMessageProcessorTest {
     private static final String RECIPIENT_ID = "user-me";
 
     private CallManager callManager;
-    private SyncEngine syncEngine;
     private Context context;
     private FcmMessageProcessor.IncomingCallLauncher launcher;
     private ReminderPushEvents reminderPushEvents;
     private TokenRefresher tokenRefresher;
     private TokenStore tokenStore;
     private Moshi moshi;
+    private NotificationAdmission notificationAdmission;
+    private NotificationWorkScheduler notificationWorkScheduler;
+    private ForegroundConversationTracker foregroundConversationTracker;
     private AtomicLong clock;
     private AtomicReference<IncomingCallPushData> lastAdmittedPush;
     private FcmMessageProcessor processor;
@@ -55,13 +55,15 @@ public final class FcmMessageProcessorTest {
     @Before
     public void setUp() {
         callManager = mock(CallManager.class);
-        syncEngine = mock(SyncEngine.class);
         context = mock(Context.class);
         launcher = mock(FcmMessageProcessor.IncomingCallLauncher.class);
         reminderPushEvents = new ReminderPushEvents();
         tokenRefresher = mock(TokenRefresher.class);
         tokenStore = mock(TokenStore.class);
         moshi = new Moshi.Builder().build();
+        notificationAdmission = mock(NotificationAdmission.class);
+        notificationWorkScheduler = mock(NotificationWorkScheduler.class);
+        foregroundConversationTracker = mock(ForegroundConversationTracker.class);
         clock = new AtomicLong(1_800_000_000_000L);
         lastAdmittedPush = new AtomicReference<>();
         when(context.getApplicationContext()).thenReturn(context);
@@ -75,6 +77,9 @@ public final class FcmMessageProcessorTest {
                 });
         when(tokenStore.readTokens()).thenReturn(Maybe.just(
                 new Tokens(jwt(RECIPIENT_ID), clock.get() + 60_000L, "refresh")));
+        when(notificationAdmission.admitPush(anyString(), anyString())).thenAnswer(invocation ->
+                Maybe.just(new NotificationAdmission.NotificationSession(
+                        invocation.getArgument(0), SESSION_EPOCH)));
         when(callManager.admitIncomingPush(
                         anyString(), anyString(), anyString(), anyString(), anyLong(),
                         anyString(), anyLong(), anyLong(), any(BooleanSupplier.class)))
@@ -102,13 +107,15 @@ public final class FcmMessageProcessorTest {
 
         processor = new FcmMessageProcessor(
                 callManager,
-                syncEngine,
                 context,
                 launcher,
                 reminderPushEvents,
                 tokenRefresher,
                 tokenStore,
                 moshi,
+                notificationAdmission,
+                notificationWorkScheduler,
+                foregroundConversationTracker,
                 Schedulers.trampoline(),
                 clock::get);
     }
@@ -119,7 +126,7 @@ public final class FcmMessageProcessorTest {
         processor.processDataPayload(Map.of());
 
         verifyNoIncomingAdmission();
-        verify(syncEngine, never()).sync();
+        verify(notificationWorkScheduler, never()).enqueue(any());
     }
 
     @Test
@@ -232,17 +239,35 @@ public final class FcmMessageProcessorTest {
     }
 
     @Test
-    public void processNewMessageTriggersSyncEngine() {
+    public void legacyMessagePayloadWithoutRecipientFailsClosed() {
         Map<String, String> data = new HashMap<>();
         data.put("type", FcmMessageProcessor.TYPE_NEW_MESSAGE);
         data.put("conversationId", "conversation-1");
         data.put("messageId", "message-1");
         data.put("seq", "1");
 
-        when(syncEngine.sync()).thenReturn(Completable.complete());
         processor.processDataPayload(data);
 
-        verify(syncEngine).sync();
+        verify(notificationAdmission, never()).admitPush(anyString(), anyString());
+        verify(notificationWorkScheduler, never()).enqueue(any());
+    }
+
+    @Test
+    public void recipientBoundMessageSchedulesUniqueWorkForCurrentEpoch() {
+        processor.processDataPayload(Map.of(
+                "type", FcmMessageProcessor.TYPE_NEW_MESSAGE,
+                "recipientId", RECIPIENT_ID,
+                "conversationId", "conversation-1",
+                "messageId", "message-1",
+                "seq", "8"));
+
+        org.mockito.ArgumentCaptor<NotificationWorkRequest> request =
+                org.mockito.ArgumentCaptor.forClass(NotificationWorkRequest.class);
+        verify(notificationWorkScheduler).enqueue(request.capture());
+        org.junit.Assert.assertEquals(
+                "msg:" + RECIPIENT_ID + ":" + SESSION_EPOCH + ":message-1",
+                request.getValue().uniqueWorkName());
+        verify(notificationAdmission).admitPush(RECIPIENT_ID, "conversation-1");
     }
 
     @Test
@@ -264,11 +289,11 @@ public final class FcmMessageProcessorTest {
                 "seq", "zero"));
 
         verifyNoIncomingAdmission();
-        verify(syncEngine, never()).sync();
+        verify(notificationWorkScheduler, never()).enqueue(any());
     }
 
     @Test
-    public void reminderPushRefreshesTheConversationBoardWithoutSyncOrCall() {
+    public void reminderWithoutRecipientFailsClosed() {
         java.util.List<String> refreshed = new java.util.ArrayList<>();
         io.reactivex.rxjava3.disposables.Disposable subscription =
                 reminderPushEvents.conversationIds().subscribe(refreshed::add);
@@ -276,22 +301,33 @@ public final class FcmMessageProcessorTest {
                 "type", FcmMessageProcessor.TYPE_REMINDER,
                 "reminderId", "reminder-1",
                 "conversationId", "conversation-1",
-                "title", "Họp team",
-                "remindAt", "2026-12-01T02:00:00Z",
+                "occurrence", "0123456789abcdef0123456789abcdef",
                 "repeat", "WEEKLY"));
 
-        org.junit.Assert.assertEquals(java.util.List.of("conversation-1"), refreshed);
-        processor.processDataPayload(Map.of(
-                "type", FcmMessageProcessor.TYPE_REMINDER,
-                "conversationId", "conversation-1"));
-        org.junit.Assert.assertEquals(java.util.List.of("conversation-1"), refreshed);
+        org.junit.Assert.assertEquals(java.util.List.of(), refreshed);
         subscription.dispose();
         verifyNoIncomingAdmission();
-        verify(syncEngine, never()).sync();
+        verify(notificationWorkScheduler, never()).enqueue(any());
     }
 
     @Test
-    public void acceptsALongVietnameseReminderTitleWithinItsOwnPayloadLimit() {
+    public void reminderWithoutOccurrenceTimeFailsClosed() {
+        java.util.List<String> refreshed = new java.util.ArrayList<>();
+        io.reactivex.rxjava3.disposables.Disposable subscription =
+                reminderPushEvents.conversationIds().subscribe(refreshed::add);
+        processor.processDataPayload(Map.of(
+                "type", FcmMessageProcessor.TYPE_REMINDER,
+                "recipientId", RECIPIENT_ID,
+                "reminderId", "reminder-1",
+                "conversationId", "conversation-1"));
+
+        org.junit.Assert.assertTrue(refreshed.isEmpty());
+        subscription.dispose();
+        verify(notificationWorkScheduler, never()).enqueue(any());
+    }
+
+    @Test
+    public void admittedReminderSchedulesItsSpecificOccurrence() {
         java.util.List<String> refreshed = new java.util.ArrayList<>();
         io.reactivex.rxjava3.disposables.Disposable subscription =
                 reminderPushEvents.conversationIds().subscribe(refreshed::add);
@@ -299,16 +335,17 @@ public final class FcmMessageProcessorTest {
                 "type", FcmMessageProcessor.TYPE_REMINDER,
                 "reminderId", "reminder-1",
                 "conversationId", "conversation-1",
-                "title", "ắ".repeat(160),
-                "remindAt", "2026-12-01T02:00:00Z",
+                "recipientId", RECIPIENT_ID,
+                "occurrence", "0123456789abcdef0123456789abcdef",
                 "repeat", "WEEKLY"));
         org.junit.Assert.assertEquals(java.util.List.of("conversation-1"), refreshed);
-        processor.processDataPayload(Map.of(
-                "type", FcmMessageProcessor.TYPE_REMINDER,
-                "reminderId", "reminder-2",
-                "conversationId", "conversation-1",
-                "title", "ắ".repeat(700)));
-        org.junit.Assert.assertEquals(java.util.List.of("conversation-1"), refreshed);
+        org.mockito.ArgumentCaptor<NotificationWorkRequest> request =
+                org.mockito.ArgumentCaptor.forClass(NotificationWorkRequest.class);
+        verify(notificationWorkScheduler).enqueue(request.capture());
+        org.junit.Assert.assertEquals(
+                "rem:" + RECIPIENT_ID + ":" + SESSION_EPOCH
+                        + ":reminder-1:0123456789abcdef0123456789abcdef",
+                request.getValue().uniqueWorkName());
         subscription.dispose();
     }
 
@@ -322,7 +359,7 @@ public final class FcmMessageProcessorTest {
                 "callerName", "x".repeat(600)));
 
         verifyNoIncomingAdmission();
-        verify(syncEngine, never()).sync();
+        verify(notificationWorkScheduler, never()).enqueue(any());
     }
 
     private Map<String, String> callInvite(

@@ -1,5 +1,6 @@
 package com.nexachat.reminder;
 
+import com.nexachat.notification.DeviceTokenOwners;
 import com.nexachat.notification.DeviceTokenService;
 import com.nexachat.notification.FcmGateway;
 import com.nexachat.notification.PushResult;
@@ -11,12 +12,16 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -64,22 +69,30 @@ public class FcmReminderPushSender implements ReminderPushSender {
             return;
         }
 
-        Map<String, String> data = new HashMap<>();
-        data.put("type", "REMINDER");
-        data.put("reminderId", reminder.reminderId().toString());
-        data.put("conversationId", reminder.conversationId().toString());
-        data.put("repeat", reminder.repeat().name());
-
-        // One physical device can hold a token row per account; the same token
-        // must receive this reminder once.
-        Set<String> dispatched = new HashSet<>();
+        // One physical device can hold a token row per account; it receives the
+        // reminder once, addressed to the account signed in there.
+        String occurrence = occurrenceKey(reminder);
         List<String> tokenValues = new ArrayList<>();
         List<CompletableFuture<PushResult>> futures = new ArrayList<>();
+        Map<UUID, List<UserDeviceToken>> rowsByAccount = new LinkedHashMap<>();
         for (UserDeviceToken device : devices) {
-            String token = device.getToken();
-            if (!dispatched.add(token)) {
-                continue;
+            if (device.getUser() != null && device.getUser().getId() != null) {
+                rowsByAccount.computeIfAbsent(device.getUser().getId(), ignored -> new ArrayList<>())
+                        .add(device);
             }
+        }
+        List<Map.Entry<UUID, UserDeviceToken>> targets = new ArrayList<>();
+        DeviceTokenOwners.byCurrentOwner(rowsByAccount).forEach((accountId, owned) ->
+                owned.forEach(device -> targets.add(Map.entry(accountId, device))));
+        for (Map.Entry<UUID, UserDeviceToken> target : targets) {
+            String token = target.getValue().getToken();
+            Map<String, String> data = new HashMap<>();
+            data.put("type", "REMINDER");
+            data.put("recipientId", target.getKey().toString());
+            data.put("reminderId", reminder.reminderId().toString());
+            data.put("conversationId", reminder.conversationId().toString());
+            data.put("occurrence", occurrence);
+            data.put("repeat", reminder.repeat().name());
             try {
                 CompletableFuture<PushResult> future =
                         fcmGateway.sendDataPush(token, data, "HIGH", DEFAULT_TTL_SECONDS);
@@ -119,8 +132,23 @@ public class FcmReminderPushSender implements ReminderPushSender {
                         reminder.reminderId(), failure.getClass().getSimpleName());
             }
         }
-        log.info("Reminder {} push attempted for {} device token(s)",
+        log.info("Reminder {} push attempted for {} recipient target(s)",
                 reminder.reminderId(), futures.size());
+    }
+
+    /**
+     * A stable, opaque key for one firing of a reminder. The client uses it to
+     * show each occurrence once; it does not carry the schedule in readable form.
+     */
+    static String occurrenceKey(ReminderDelivery reminder) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest((reminder.reminderId() + "|" + reminder.remindAt().toEpochMilli())
+                    .getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash, 0, 16);
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is unavailable", impossible);
+        }
     }
 
     private void removeUnregisteredToken(String tokenValue) {

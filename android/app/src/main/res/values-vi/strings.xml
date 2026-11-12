@@ -266,6 +266,13 @@
     <string name="settings_section_appearance">Giao diện</string>
     <string name="settings_section_privacy">Quyền riêng tư</string>
     <string name="settings_theme_title">Chủ đề</string>
+    <string name="settings_notifications">Thông báo</string>
+    <string name="message_notification_title">Tin nhắn mới</string>
+    <string name="message_notification_generic">Bạn có tin nhắn mới</string>
+    <string name="message_notification_channel">Tin nhắn</string>
+    <string name="reminder_notification_title">Nhắc nhở</string>
+    <string name="reminder_notification_generic">Đến giờ nhắc</string>
+    <string name="reminder_notification_channel">Lời nhắc</string>
     <string name="theme_system">Theo hệ thống</string>
     <string name="theme_light">Sáng</string>
     <string name="theme_dark">Tối</string>

@@ -83,6 +83,7 @@ class FcmPushServiceTest {
         assertThat(push.token()).isEqualTo("fcm-token-abc-123");
         assertThat(push.priority()).isEqualTo("HIGH");
         assertThat(push.data().get("type")).isEqualTo("NEW_MESSAGE");
+        assertThat(push.data().get("recipientId")).isEqualTo(userId.toString());
         assertThat(push.data().get("conversationId")).isEqualTo(conversationId.toString());
         assertThat(push.data().get("messageId")).isEqualTo(messageId.toString());
         assertThat(push.data().get("seq")).isEqualTo("105");
@@ -402,6 +403,8 @@ class FcmPushServiceTest {
         List<MockFcmGateway.SentPush> sent = mockGateway.getSentPushes();
         assertThat(sent).hasSize(1);
         assertThat(sent.get(0).token()).isEqualTo("shared-device-token");
+        assertThat(sent.get(0).data().get("recipientId"))
+                .isIn(memberA.toString(), memberB.toString());
     }
 
     // ------------------------------------------------------------ mute gating

@@ -68,6 +68,7 @@ import com.nexachat.feature.inbox.InboxUiState;
 import com.nexachat.feature.inbox.InboxViewModel;
 import com.nexachat.feature.inbox.ConversationPreferenceMenu;
 import com.nexachat.feature.label.LabelDialogFragment;
+import com.nexachat.notification.ForegroundConversationTracker;
 import com.nexachat.summary.SummaryResponse;
 import com.nexachat.summary.SummaryScope;
 import com.nexachat.summary.SummaryUiState;
@@ -81,10 +82,12 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import javax.inject.Inject;
 
 /** View-based direct/group chat. The ViewModel remains the owner of message state and actions. */
 @AndroidEntryPoint
 public final class ChatFragment extends androidx.fragment.app.Fragment implements MessageActionListener {
+    @Inject ForegroundConversationTracker foregroundConversationTracker;
     private static final String ARG_CONVERSATION_ID = "conversationId";
     private static final String ARG_ARCHIVE_JUMP_MESSAGE_ID = "archiveJumpMessageId";
     private static final int MENU_ASK = 1;
@@ -1294,7 +1297,20 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         ChatInteractionsViews.showForwardPicker(requireContext(), rows, id -> viewModel.forwardMessage(message.getId(), id));
     }
 
+    @Override public void onResume() {
+        super.onResume();
+        if (!conversationId.isBlank()) {
+            foregroundConversationTracker.onConversationResumed(conversationId);
+        }
+    }
+
+    @Override public void onPause() {
+        foregroundConversationTracker.onConversationPaused(conversationId);
+        super.onPause();
+    }
+
     @Override public void onDestroyView() {
+        foregroundConversationTracker.onConversationPaused(conversationId);
         subscriptions.clear();
         if (recordingTimerRunnable != null) {
             recordingHandler.removeCallbacks(recordingTimerRunnable);
