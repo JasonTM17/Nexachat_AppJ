@@ -23,7 +23,9 @@ public record MessageRow(
         Instant createdAt,
         Instant editedAt,
         Instant deletedAt,
-        boolean mentionAll
+        boolean mentionAll,
+        Long changeVersion,
+        Long generation
 ) {
 
     public MessageRow(UUID id, UUID conversationId, Long seq, UUID senderId,
@@ -31,6 +33,14 @@ public record MessageRow(
                       UUID clientMessageId, UUID replyToId, Instant createdAt,
                       Instant editedAt, Instant deletedAt) {
         this(id, conversationId, seq, senderId, senderDisplayName, type, content,
-                clientMessageId, replyToId, createdAt, editedAt, deletedAt, false);
+                clientMessageId, replyToId, createdAt, editedAt, deletedAt, false, null, null);
+    }
+
+    public MessageRow(UUID id, UUID conversationId, Long seq, UUID senderId,
+                      String senderDisplayName, Message.Type type, String content,
+                      UUID clientMessageId, UUID replyToId, Instant createdAt,
+                      Instant editedAt, Instant deletedAt, boolean mentionAll) {
+        this(id, conversationId, seq, senderId, senderDisplayName, type, content,
+                clientMessageId, replyToId, createdAt, editedAt, deletedAt, mentionAll, null, null);
     }
 }

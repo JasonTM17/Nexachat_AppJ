@@ -31,6 +31,7 @@ import com.nexachat.message.dto.ReplyRefRow;
 import com.nexachat.message.dto.SendMessageRequest;
 import com.nexachat.message.dto.SyncRequest;
 import com.nexachat.message.dto.SyncResponse;
+import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,18 +61,16 @@ import java.util.stream.Collectors;
  * idempotency, cursor history, and the read watermark (plan §10.2 note: WS and
  * the REST fallback both come through here, logic is never duplicated).
  *
- * <p><b>Sequencing</b> (DDL ambiguity resolved): {@code messages.seq} is a
- * GLOBAL {@code BIGSERIAL} — the DB sequence assigns it at INSERT, so no
- * per-conversation counter or locking is needed. Concurrent senders simply
- * draw distinct seqs; commit order can interleave but within one conversation
- * seq order is still monotonic, and gaps are harmless (plan §9.3.1).
+ * <p><b>Legacy ordering</b>: {@code messages.seq} remains a GLOBAL
+ * {@code BIGSERIAL}, assigned by the DB at INSERT. V2 completion uses the
+ * separate per-conversation change revision allocated under C's row lock;
+ * legacy history and inbox pointers continue to use {@code seq}.
  * {@code conversations.last_message_*} is a denormalized pointer updated in
  * the same tx, never the seq source.
  *
- * <p><b>Idempotency</b>: {@code INSERT ... ON CONFLICT (sender_id,
- * client_message_id) DO NOTHING} — race-safe at the DB level (no
- * check-then-insert window); a dedup hit re-reads and re-broadcasts the
- * existing row so a retrying sender still gets its SENT signal.
+ * <p><b>Idempotency</b>: a transaction-scoped key lock and the unique
+ * constraint serialize retries before revision allocation. A dedup hit
+ * re-reads and re-broadcasts the existing row so the sender still gets SENT.
  *
  * <p><b>Broadcast</b>: nothing is pushed inside the transaction — a Spring
  * event is published and {@link MessageBroadcastListener} fans out
@@ -97,6 +96,7 @@ public class MessageService {
     private final ReactionEventRepository reactionEventRepository;
     private final ConversationRepository conversationRepository;
     private final ConversationMemberRepository memberRepository;
+    private final UserRepository userRepository;
     private final PinnedMessageRepository pinnedMessageRepository;
     private final StorageService storageService;
     private final ApplicationEventPublisher eventPublisher;
@@ -112,6 +112,7 @@ public class MessageService {
                           ReactionEventRepository reactionEventRepository,
                           ConversationRepository conversationRepository,
                           ConversationMemberRepository memberRepository,
+                          UserRepository userRepository,
                           PinnedMessageRepository pinnedMessageRepository,
                           StorageService storageService,
                           ApplicationEventPublisher eventPublisher,
@@ -119,7 +120,7 @@ public class MessageService {
                           MessageRecallProperties recallProperties) {
         this(messageRepository, mentionRepository, attachmentRepository, reactionRepository, reactionEventRepository,
                 conversationRepository, memberRepository, pinnedMessageRepository, storageService,
-                eventPublisher, syncProperties, Clock.systemUTC(), recallProperties);
+                eventPublisher, syncProperties, Clock.systemUTC(), recallProperties, userRepository);
     }
 
     /** Compatibility constructor for isolated service tests that do not exercise mentions. */
@@ -184,6 +185,25 @@ public class MessageService {
                    SyncProperties syncProperties,
                    Clock clock,
                    MessageRecallProperties recallProperties) {
+        this(messageRepository, mentionRepository, attachmentRepository, reactionRepository,
+                reactionEventRepository, conversationRepository, memberRepository, pinnedMessageRepository,
+                storageService, eventPublisher, syncProperties, clock, recallProperties, null);
+    }
+
+    MessageService(MessageRepository messageRepository,
+                   MessageMentionRepository mentionRepository,
+                   MessageAttachmentRepository attachmentRepository,
+                   MessageReactionRepository reactionRepository,
+                   ReactionEventRepository reactionEventRepository,
+                   ConversationRepository conversationRepository,
+                   ConversationMemberRepository memberRepository,
+                   PinnedMessageRepository pinnedMessageRepository,
+                   StorageService storageService,
+                   ApplicationEventPublisher eventPublisher,
+                   SyncProperties syncProperties,
+                   Clock clock,
+                   MessageRecallProperties recallProperties,
+                   UserRepository userRepository) {
         this.messageRepository = messageRepository;
         this.mentionRepository = mentionRepository;
         this.attachmentRepository = attachmentRepository;
@@ -191,6 +211,7 @@ public class MessageService {
         this.reactionEventRepository = reactionEventRepository;
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
+        this.userRepository = userRepository;
         this.pinnedMessageRepository = pinnedMessageRepository;
         this.storageService = storageService;
         this.eventPublisher = eventPublisher;
@@ -221,31 +242,29 @@ public class MessageService {
         requireMember(conversationId, senderId);
         validatePayload(request);
 
-        var existing = messageRepository.findRowBySenderAndClientMessageId(
-                senderId, request.clientMessageId());
-        if (existing.isPresent()) {
-            return replayExisting(conversationId, existing.get());
-        }
-
         Message.Type type = parseType(request.type());
         List<UUID> attachmentIds = distinctIds(request.attachmentIds());
         validateAttachmentContract(type, attachmentIds);
         List<MessageAttachment> lockedAttachments = lockAttachments(attachmentIds);
-        if (!attachmentIds.isEmpty()) {
-            // A concurrent retry may have committed while this send waited for
-            // the upload row lock. Preserve idempotency before checking whether
-            // the now-bound attachment can be claimed by a different message.
-            var retry = messageRepository.findRowBySenderAndClientMessageId(
-                    senderId, request.clientMessageId());
-            if (retry.isPresent()) {
-                return replayExisting(conversationId, retry.get());
-            }
-        }
-        validateAttachmentsReady(senderId, type, attachmentIds, lockedAttachments);
         String content = normalizedContent(type, request.content());
+
+        // Parent lock order is user -> conversation -> message. Attachment
+        // claim locks above are part of the existing single-use upload path.
+        lockUserParent(senderId);
+        messageRepository.lockIdempotencyKey(senderId, request.clientMessageId());
+        lockConversationForWrite(conversationId);
+        requireMember(conversationId, senderId);
+        var retryAfterConversationLock = messageRepository.findRowBySenderAndClientMessageId(
+                senderId, request.clientMessageId());
+        if (retryAfterConversationLock.isPresent()) {
+            return replayExisting(conversationId, retryAfterConversationLock.get());
+        }
+
+        validateAttachmentsReady(senderId, type, attachmentIds, lockedAttachments);
         MentionState mentionState = validateMentions(conversationId, senderId, type, content,
                 request.mentions(), Boolean.TRUE.equals(request.mentionAll()));
         UUID replyToId = resolveReplyTo(conversationId, request.replyToId());
+        allocateChangeVersion(conversationId);
 
         int inserted = mentionState.mentionAll()
                 ? messageRepository.insertIgnoringDuplicateKeyWithMentionAll(
@@ -337,6 +356,7 @@ public class MessageService {
     @Transactional
     public MessageResponse edit(UUID userId, UUID conversationId, UUID messageId,
                                 EditMessageRequest request) {
+        lockConversationForWrite(conversationId);
         requireMember(conversationId, userId);
         Message message = messageRepository.findByIdForUpdate(messageId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
@@ -385,6 +405,7 @@ public class MessageService {
         if (message.getEditedAt() != null && !editedAt.isAfter(message.getEditedAt())) {
             editedAt = message.getEditedAt().plus(1, ChronoUnit.MICROS);
         }
+        message.setChangeVersion(allocateChangeVersion(conversationId));
         if (contentChanged) {
             message.editContent(normalized, editedAt);
         } else {
@@ -406,10 +427,8 @@ public class MessageService {
 
     @Transactional
     public void delete(UUID userId, UUID conversationId, UUID messageId) {
+        Conversation conversation = lockConversationForWrite(conversationId);
         requireMember(conversationId, userId);
-        Conversation conversation = conversationRepository.findByIdForUpdate(conversationId)
-                .orElseThrow(() -> ApiException.of(
-                        ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
         Message message = messageRepository.findByIdForUpdate(messageId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
         requireMessageConversation(message, conversationId);
@@ -432,6 +451,7 @@ public class MessageService {
 
         boolean wasLastMessage = isLastMessage(conversationId, messageId);
         Instant deletedAt = recalledAt.truncatedTo(ChronoUnit.MICROS);
+        message.setChangeVersion(allocateChangeVersion(conversationId));
         message.softDelete(deletedAt);
         if (mentionRepository != null) {
             mentionRepository.deleteByMessageId(messageId);
@@ -515,9 +535,14 @@ public class MessageService {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "System message content must not be blank");
         }
+        // Outer group/call writers establish every user parent lock before
+        // their conversation lock; this method takes/retains C before any
+        // membership query or auto-flushing write.
+        lockConversationForWrite(conversationId);
         requireMember(conversationId, actingUserId);
 
         UUID clientMessageId = UUID.randomUUID();
+        allocateChangeVersion(conversationId);
         messageRepository.insertIgnoringDuplicateKey(
                 conversationId, actingUserId, clientMessageId, Message.Type.SYSTEM.name(), content, null);
         MessageRow row = messageRepository
@@ -771,6 +796,27 @@ public class MessageService {
 
     // ------------------------------------------------------------- internals
 
+    private void lockUserParent(UUID userId) {
+        if (userRepository != null) {
+            userRepository.lockForKeyShareSorted(List.of(userId));
+        }
+    }
+
+    private Conversation lockConversationForWrite(UUID conversationId) {
+        return conversationRepository.findByIdForUpdate(conversationId)
+                .orElseThrow(() -> ApiException.of(
+                        ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
+    }
+
+    /** Caller must already hold the conversation row lock through transaction completion. */
+    private long allocateChangeVersion(UUID conversationId) {
+        if (conversationRepository.incrementChangeVersion(conversationId) != 1) {
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR,
+                    "Message change version allocation failed");
+        }
+        return conversationRepository.findChangeVersion(conversationId);
+    }
+
     private void requireMember(UUID conversationId, UUID userId) {
         if (!memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)) {
             throw ApiException.of(ApiErrorCode.NOT_MEMBER, "Not a member of this conversation");
@@ -823,7 +869,8 @@ public class MessageService {
         return new MessageRow(row.getId(), row.getConversationId(), row.getSeq(), row.getSenderId(),
                 row.getSenderDisplayName(), Message.Type.valueOf(row.getType()), row.getContent(),
                 row.getClientMessageId(), row.getReplyToId(), row.getCreatedAt(),
-                row.getEditedAt(), row.getDeletedAt(), Boolean.TRUE.equals(row.getMentionAll()));
+                row.getEditedAt(), row.getDeletedAt(), Boolean.TRUE.equals(row.getMentionAll()),
+                row.getChangeVersion(), row.getGeneration());
     }
 
     private record MentionRange(int start, int end, MessageMentionResponse mention) {
@@ -1132,7 +1179,7 @@ public class MessageService {
                 row.type().name(), deleted ? null : row.content(), row.clientMessageId(), row.replyToId(),
                 replyTo, deleted ? List.of() : attachments, deleted ? List.of() : reactions,
                 row.createdAt(), row.editedAt(), row.deletedAt(), deleted ? List.of() : mentions,
-                !deleted && row.mentionAll());
+                !deleted && row.mentionAll(), row.changeVersion(), row.generation());
     }
 
     /**

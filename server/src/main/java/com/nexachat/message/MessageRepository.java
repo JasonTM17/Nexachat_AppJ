@@ -31,14 +31,25 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query("SELECT m.conversation.id FROM Message m WHERE m.id = :messageId")
     Optional<UUID> findConversationIdById(@Param("messageId") UUID messageId);
 
+    /** Serialize only identical sender/client keys before the conversation lock. */
+    @Query(value = """
+            WITH lock_acquired AS MATERIALIZED (
+                SELECT pg_advisory_xact_lock(hashtextextended(
+                    CAST(:senderId AS text) || ':' || CAST(:clientMessageId AS text), 0))
+            )
+            SELECT 1 FROM lock_acquired
+            """, nativeQuery = true)
+    Integer lockIdempotencyKey(@Param("senderId") UUID senderId,
+                               @Param("clientMessageId") UUID clientMessageId);
+
     /** Latest sequence within one conversation; zero for an empty conversation. */
     @Query("SELECT COALESCE(MAX(m.seq), 0) FROM Message m WHERE m.conversation.id = :conversationId")
     long findMaxSeqByConversationId(@Param("conversationId") UUID conversationId);
 
     /**
-     * THE send path (plan §9.3.2): a single native statement that is race-safe
-     * by construction — a concurrent retry blocks on the conflicting row until
-     * the winner commits, then inserts nothing.
+     * Native send insert. The caller holds the idempotency advisory key and
+     * conversation row lock; the unique constraint remains the final guard
+     * against writers that do not use this path.
      *
      * <p>Nullable parameters are CAST so PostgreSQL can type the bind values
      * when they arrive as NULL (an uncast {@code ?} of unknown type is rejected
@@ -48,9 +59,11 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
      */
     @Modifying
     @Query(value = """
-            INSERT INTO messages (conversation_id, sender_id, client_message_id, type, content, reply_to_id)
-            VALUES (:conversationId, :senderId, :clientMessageId, :type,
-                    CAST(:content AS text), CAST(:replyToId AS uuid))
+            INSERT INTO messages
+                (conversation_id, sender_id, client_message_id, type, content, reply_to_id, change_version)
+            SELECT :conversationId, :senderId, :clientMessageId, :type,
+                   CAST(:content AS text), CAST(:replyToId AS uuid), c.change_version
+            FROM conversations c WHERE c.id = :conversationId
             ON CONFLICT (sender_id, client_message_id) DO NOTHING
             """, nativeQuery = true)
     int insertIgnoringDuplicateKey(@Param("conversationId") UUID conversationId,
@@ -63,9 +76,11 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Modifying
     @Query(value = """
             INSERT INTO messages
-                (conversation_id, sender_id, client_message_id, type, content, reply_to_id, mention_all)
-            VALUES (:conversationId, :senderId, :clientMessageId, :type,
-                    CAST(:content AS text), CAST(:replyToId AS uuid), :mentionAll)
+                (conversation_id, sender_id, client_message_id, type, content, reply_to_id, mention_all,
+                 change_version)
+            SELECT :conversationId, :senderId, :clientMessageId, :type,
+                   CAST(:content AS text), CAST(:replyToId AS uuid), :mentionAll, c.change_version
+            FROM conversations c WHERE c.id = :conversationId
             ON CONFLICT (sender_id, client_message_id) DO NOTHING
             """, nativeQuery = true)
     int insertIgnoringDuplicateKeyWithMentionAll(@Param("conversationId") UUID conversationId,
@@ -84,7 +99,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.sender.id = :senderId AND m.clientMessageId = :clientMessageId
             """)
@@ -95,7 +110,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.id = :messageId
             """)
@@ -111,7 +126,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.conversation.id = :conversationId
               AND (:beforeSeq IS NULL OR m.seq < :beforeSeq)
@@ -130,7 +145,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.conversation.id = :conversationId
               AND m.seq > :afterSeq
@@ -144,7 +159,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.conversation.id = :conversationId
               AND m.seq <= :lastSeq
@@ -178,8 +193,10 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
                    m.type AS type, m.content AS content,
                    m.client_message_id AS "clientMessageId", reply.id AS "replyToId",
                    m.created_at AS "createdAt", m.edited_at AS "editedAt",
-                   m.deleted_at AS "deletedAt", m.mention_all AS "mentionAll"
+                   m.deleted_at AS "deletedAt", m.mention_all AS "mentionAll",
+                   m.change_version AS "changeVersion", c.sync_generation AS generation
             FROM messages m
+            JOIN conversations c ON c.id = m.conversation_id
             JOIN users u ON u.id = m.sender_id
             LEFT JOIN messages reply ON reply.id = m.reply_to_id
             WHERE m.conversation_id = :conversationId
@@ -199,7 +216,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.id IN :ids
             """)

@@ -18,7 +18,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Maps {@code messages} (V1__init.sql).
+ * Maps {@code messages} (V1__init.sql plus the additive V32 change revision).
  *
  * <p>Sequencing model (plan §9.3.1): {@code seq} is a GLOBAL {@code BIGSERIAL} —
  * assigned by the database sequence at INSERT, monotonic forever, independent of
@@ -85,6 +85,9 @@ public class Message {
     @Column(name = "mention_all", nullable = false)
     private boolean mentionAll;
 
+    @Column(name = "change_version", nullable = false)
+    private long changeVersion;
+
     /** Nullable self-reference: the message this one replies to (creative feature). */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "reply_to_id")
@@ -135,6 +138,10 @@ public class Message {
         return mentionAll;
     }
 
+    public long getChangeVersion() {
+        return changeVersion;
+    }
+
     public Message getReplyTo() {
         return replyTo;
     }
@@ -158,6 +165,10 @@ public class Message {
 
     public void setMentionAll(boolean mentionAll) {
         this.mentionAll = mentionAll;
+    }
+
+    public void setChangeVersion(long changeVersion) {
+        this.changeVersion = changeVersion;
     }
 
     public void softDelete(Instant deletedAt) {

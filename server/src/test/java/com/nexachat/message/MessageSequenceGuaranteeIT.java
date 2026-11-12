@@ -3,6 +3,8 @@ package com.nexachat.message;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.conversation.GroupService;
+import com.nexachat.conversation.dto.AddMemberRequest;
 import com.nexachat.message.dto.MessageResponse;
 import com.nexachat.message.dto.SendMessageRequest;
 import org.awaitility.Awaitility;
@@ -70,6 +72,8 @@ class MessageSequenceGuaranteeIT {
     @Autowired
     private MessageService messageService;
     @Autowired
+    private GroupService groupService;
+    @Autowired
     private JdbcTemplate jdbcTemplate;
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -80,6 +84,7 @@ class MessageSequenceGuaranteeIT {
     private TestUser alice;
     private TestUser bob;
     private TestUser carol;
+    private TestUser dave;
 
     @BeforeAll
     void registerUsers() throws Exception {
@@ -87,6 +92,7 @@ class MessageSequenceGuaranteeIT {
         alice = registerUser(tag + " Alice");
         bob = registerUser(tag + " Bob");
         carol = registerUser(tag + " Carol");
+        dave = registerUser(tag + " Dave");
     }
 
     @Test
@@ -136,6 +142,51 @@ class MessageSequenceGuaranteeIT {
                 Integer.class, conversationId, clientMessageId);
         assertThat(rowCount).isEqualTo(1);
         assertThat(seqBefore).isLessThan(created.seq());
+    }
+
+    @Test
+    void sendEditRecallAllocateDistinctTransactionalChangeVersions() throws Exception {
+        UUID conversationId = createGroup(alice, "Change-version-" + System.nanoTime(), bob);
+        groupService.addMembers(alice.id(), conversationId,
+                new AddMemberRequest(List.of(carol.id(), dave.id())));
+        List<Long> systemVersions = jdbcTemplate.queryForList("""
+                SELECT change_version FROM messages
+                WHERE conversation_id = ? AND type = 'SYSTEM'
+                ORDER BY change_version
+                """, Long.class, conversationId);
+        assertThat(systemVersions).containsExactly(1L, 2L, 3L);
+        long startingVersion = jdbcTemplate.queryForObject(
+                "SELECT change_version FROM conversations WHERE id = ?", Long.class, conversationId);
+        assertThat(startingVersion).isEqualTo(3L);
+        UUID clientMessageId = UUID.randomUUID();
+
+        MessageResponse created = messageService.send(alice.id(), conversationId,
+                new SendMessageRequest(clientMessageId, "TEXT", "original", null, List.of())).message();
+        assertThat(created.changeVersion()).isEqualTo(startingVersion + 1);
+        assertThat(created.generation()).isEqualTo(1L);
+
+        MessageResponse replay = messageService.send(alice.id(), conversationId,
+                new SendMessageRequest(clientMessageId, "TEXT", "original", null, List.of())).message();
+        assertThat(replay.id()).isEqualTo(created.id());
+        assertThat(replay.changeVersion()).isEqualTo(created.changeVersion());
+
+        MessageResponse edited = messageService.edit(alice.id(), conversationId, created.id(), "updated");
+        assertThat(edited.changeVersion()).isEqualTo(startingVersion + 2);
+        MessageResponse noOpEdit = messageService.edit(alice.id(), conversationId, created.id(), " updated ");
+        assertThat(noOpEdit.changeVersion()).isEqualTo(edited.changeVersion());
+
+        messageService.delete(alice.id(), conversationId, created.id());
+        Long persistedMessageVersion = jdbcTemplate.queryForObject(
+                "SELECT change_version FROM messages WHERE id = ?", Long.class, created.id());
+        Long persistedConversationVersion = jdbcTemplate.queryForObject(
+                "SELECT change_version FROM conversations WHERE id = ?", Long.class, conversationId);
+        assertThat(persistedMessageVersion).isEqualTo(startingVersion + 3);
+        assertThat(persistedConversationVersion).isEqualTo(startingVersion + 3);
+
+        messageService.delete(alice.id(), conversationId, created.id());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT change_version FROM conversations WHERE id = ?", Long.class, conversationId))
+                .isEqualTo(startingVersion + 3);
     }
 
     @Test

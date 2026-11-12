@@ -29,14 +29,22 @@ public interface ConversationRepository extends JpaRepository<Conversation, UUID
                                   Pageable pageable);
 
     /**
-     * {@code SELECT ... FOR UPDATE} on the conversation row — serializes
-     * pin/unpin for the ≤ 3 ceiling (phase-10): a racing {@code pin()} waits
-     * on this lock, then re-reads the count after the winner commits, so two
-     * concurrent pins cannot both pass the limit check.
+     * {@code SELECT ... FOR UPDATE} on the conversation row. Writers retain
+     * this lock through commit when they need per-conversation serialization.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT c FROM Conversation c WHERE c.id = :id")
     Optional<Conversation> findByIdForUpdate(@Param("id") UUID id);
+
+    /** Increment the high-water revision; callers hold {@code findByIdForUpdate} until commit. */
+    @Modifying(flushAutomatically = true)
+    @Query(value = "UPDATE conversations SET change_version = change_version + 1 WHERE id = :id",
+            nativeQuery = true)
+    int incrementChangeVersion(@Param("id") UUID id);
+
+    /** Read the value produced by {@link #incrementChangeVersion}; bypasses the managed entity snapshot. */
+    @Query(value = "SELECT change_version FROM conversations WHERE id = :id", nativeQuery = true)
+    long findChangeVersion(@Param("id") UUID id);
 
     /**
      * Denormalized inbox pointers (plan §9.3.5), advanced inside the send

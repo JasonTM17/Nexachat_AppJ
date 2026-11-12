@@ -3,6 +3,7 @@ package com.nexachat.message;
 import com.nexachat.attachment.StorageService;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.message.dto.MessagePageResponse;
@@ -74,13 +75,18 @@ class MessageServiceTest {
         lenient().when(attachmentRepository.findByMessage_IdIn(any())).thenReturn(List.of());
         lenient().when(reactionRepository.findRowsByMessageIdIn(any())).thenReturn(List.of());
         lenient().when(messageRepository.findReplyRefsByIdIn(any())).thenReturn(List.of());
+        lenient().when(conversationRepository.findByIdForUpdate(any()))
+                .thenReturn(Optional.of(mock(Conversation.class)));
+        lenient().when(conversationRepository.incrementChangeVersion(any())).thenReturn(1);
+        lenient().when(conversationRepository.findChangeVersion(any())).thenReturn(1L);
         lenient().when(storageService.resolveUrl(anyString())).thenAnswer(i -> "/api/v1/files/" + i.getArgument(0));
     }
 
     private MessageRow row(long seq) {
         return new MessageRow(
                 UUID.randomUUID(), conversationId, seq, senderId, "Sender Name",
-                Message.Type.TEXT, "hello", clientMessageId, null, Instant.now(), null, null);
+                Message.Type.TEXT, "hello", clientMessageId, null, Instant.now(), null, null,
+                false, 1L, 1L);
     }
 
     private SendMessageRequest request() {
@@ -114,10 +120,13 @@ class MessageServiceTest {
         assertThat(result.message().seq()).isEqualTo(42);
         assertThat(result.message().senderDisplayName()).isEqualTo("Sender Name");
         assertThat(result.message().clientMessageId()).isEqualTo(clientMessageId);
+        assertThat(result.message().changeVersion()).isEqualTo(1L);
+        assertThat(result.message().generation()).isEqualTo(1L);
 
         verify(messageRepository).insertIgnoringDuplicateKey(
                 conversationId, senderId, clientMessageId, "TEXT", "hello", null);
         verify(conversationRepository).advanceLastMessage(conversationId, stored.id(), 42L);
+        verify(conversationRepository).incrementChangeVersion(conversationId);
         verify(memberRepository).advanceReadWatermark(conversationId, senderId, 42L);
 
         ArgumentCaptor<MessageCreatedEvent> event = ArgumentCaptor.forClass(MessageCreatedEvent.class);
@@ -196,6 +205,7 @@ class MessageServiceTest {
         assertThat(result.message().seq()).isEqualTo(stored.seq());
         // No state mutation on the dedup path…
         verify(conversationRepository, never()).advanceLastMessage(any(), any(), anyLong());
+        verify(conversationRepository, never()).incrementChangeVersion(any());
         // …but the retry signal is re-broadcast so the sender can reach SENT.
         ArgumentCaptor<MessageCreatedEvent> event = ArgumentCaptor.forClass(MessageCreatedEvent.class);
         verify(eventPublisher).publishEvent(event.capture());
@@ -209,17 +219,17 @@ class MessageServiceTest {
         memberOk();
         MessageRow winner = row(43);
         when(messageRepository.findRowBySenderAndClientMessageId(senderId, clientMessageId))
-                .thenReturn(Optional.empty())
                 .thenReturn(Optional.of(winner));
-        when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
-                .thenReturn(0);
 
         MessageService.SendResult result = messageService.send(senderId, conversationId, request());
 
         assertThat(result.created()).isFalse();
         assertThat(result.message().id()).isEqualTo(winner.id());
-        // The insert lost the race, so the winner's push is the only one.
+        // The transaction-scoped key lock lets this recheck observe the winner
+        // before allocating a version or attempting another insert.
         verify(conversationRepository, never()).advanceLastMessage(any(), any(), anyLong());
+        verify(conversationRepository, never()).incrementChangeVersion(any());
+        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any());
         ArgumentCaptor<MessageCreatedEvent> event = ArgumentCaptor.forClass(MessageCreatedEvent.class);
         verify(eventPublisher).publishEvent(event.capture());
         assertThat(event.getValue().message().id()).isEqualTo(winner.id());
@@ -239,6 +249,7 @@ class MessageServiceTest {
                 () -> messageService.send(senderId, conversationId, request()));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        verify(conversationRepository, never()).incrementChangeVersion(any());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
@@ -359,7 +370,7 @@ class MessageServiceTest {
         when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
                 .thenReturn(1);
         when(messageRepository.findRowBySenderAndClientMessageId(senderId, clientMessageId))
-                .thenReturn(Optional.empty(), Optional.empty(), Optional.of(stored));
+                .thenReturn(Optional.empty(), Optional.of(stored));
         when(messageRepository.getReferenceById(stored.id())).thenReturn(newMessageWithId(stored.id()));
         when(attachmentRepository.findAllByIdForUpdateOrderById(List.of(attachmentId)))
                 .thenReturn(List.of(attachment));
