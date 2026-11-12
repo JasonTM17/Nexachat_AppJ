@@ -1,5 +1,7 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
@@ -50,8 +52,8 @@ class AccountDeletionFirebaseProjectionIT extends SecurityITBase {
     @Test
     void deletedAccountLosesBridgeAccessAndEveryCapturedFirebaseMirror() throws Exception {
         firebase.seed("control/enabled", true);
-        Registered deleted = registerUser("+84905553111", "secret123");
-        Registered peer = registerUser("+84905553112", "secret123");
+        Registered deleted = registerUser(ItPhoneRanges.phoneFor(AccountDeletionFirebaseProjectionIT.class, "+84905553191"), "secret123");
+        Registered peer = registerUser(ItPhoneRanges.phoneFor(AccountDeletionFirebaseProjectionIT.class, "+84905553192"), "secret123");
         UUID conversationId = openDirect(deleted, peer);
 
         UUID bridgeId = UUID.randomUUID();

@@ -1,5 +1,7 @@
 package com.nexachat.ws;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.testutil.TestWaits;
@@ -245,7 +247,7 @@ class WsPayloadSecurityIT {
     }
 
     private TestUser registerUser(String displayName) throws Exception {
-        String phone = "+8498" + String.format("%07d", ThreadLocalRandom.current().nextInt(10_000_000));
+        String phone = ItPhoneRanges.nextPhone(WsPayloadSecurityIT.class);
         MvcResult result = mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(

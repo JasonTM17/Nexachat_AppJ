@@ -1,5 +1,7 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 
@@ -18,7 +20,7 @@ class GoogleSignInDisabledIT extends SecurityITBase {
 
     @Test
     void everyGoogleEndpointAnswers404WhileDisabled() throws Exception {
-        Registered user = register("+84905556011");
+        Registered user = register(ItPhoneRanges.phoneFor(GoogleSignInDisabledIT.class, "+84905556011"));
 
         postJson("/api/v1/auth/google/nonce", Map.of())
                 .andExpect(status().isNotFound())

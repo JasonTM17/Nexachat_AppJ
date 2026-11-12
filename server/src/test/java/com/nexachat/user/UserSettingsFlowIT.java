@@ -1,5 +1,6 @@
 package com.nexachat.user;
 
+import com.nexachat.testutil.ItPhoneRanges;
 import com.nexachat.auth.JwtService;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.summary.PreparedSummaryProvider;
@@ -31,7 +32,6 @@ import java.net.InetSocketAddress;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -115,8 +115,8 @@ class UserSettingsFlowIT {
 
     @BeforeEach
     void createUser() {
-        String suffix = String.format(Locale.ROOT, "%09d", Math.floorMod(System.nanoTime(), 1_000_000_000L));
-        user = userRepository.saveAndFlush(User.create("+849" + suffix, "x".repeat(60), "Settings fixture"));
+        user = userRepository.saveAndFlush(User.create(
+                ItPhoneRanges.nextPhone(UserSettingsFlowIT.class), "x".repeat(60), "Settings fixture"));
         accessToken = jwtService.generateAccessToken(user);
     }
 

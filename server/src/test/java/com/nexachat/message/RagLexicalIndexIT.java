@@ -1,5 +1,7 @@
 package com.nexachat.message;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -44,7 +46,7 @@ class RagLexicalIndexIT {
         UUID userId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
         String directKey = "rag-trgm-" + conversationId;
-        String phone = "+8493" + String.format("%07d", (int) (Math.random() * 10_000_000));
+        String phone = ItPhoneRanges.nextPhone(RagLexicalIndexIT.class);
         try {
             jdbcTemplate.update("INSERT INTO users (id, phone, password_hash, display_name)"
                     + " VALUES (?, ?, 'x', 'RAG Trigram Indexer')", userId, phone);

@@ -1,5 +1,7 @@
 package com.nexachat.reminder;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.notification.MockFcmGateway;
@@ -58,7 +60,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ReminderSchedulerIT {
 
-    private static final String PHONE_PREFIX = "+8496";
+    private static final String PHONE_PREFIX = ItPhoneRanges.prefixFor(ReminderSchedulerIT.class);
 
     @DynamicPropertySource
     static void reminderProperties(DynamicPropertyRegistry registry) {
@@ -102,6 +104,7 @@ class ReminderSchedulerIT {
 
     @BeforeAll
     void registerUsers() throws Exception {
+        ItPhoneRanges.clean(jdbcTemplate, ReminderSchedulerIT.class);
         String tag = "RMS" + System.nanoTime();
         alice = registerUser(tag + " Alice");
         bob = registerUser(tag + " Bob");
@@ -401,8 +404,7 @@ class ReminderSchedulerIT {
     }
 
     private TestUser registerUser(String displayName) throws Exception {
-        String phone = PHONE_PREFIX + String.format("%07d",
-                ThreadLocalRandom.current().nextInt(10_000_000));
+        String phone = ItPhoneRanges.nextPhone(ReminderSchedulerIT.class);
         MvcResult result = mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(

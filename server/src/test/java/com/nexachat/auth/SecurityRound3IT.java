@@ -1,5 +1,7 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;
@@ -31,7 +33,7 @@ class SecurityRound3IT extends SecurityITBase {
         // but bcrypt only hashes the first 72 bytes.
         String password = "é".repeat(40);
         postJson("/api/v1/auth/register", Map.of(
-                "phone", "+84924400011",
+                "phone", ItPhoneRanges.phoneFor(SecurityRound3IT.class, "+84924400011"),
                 "password", password,
                 "displayName", "Sec User"))
                 .andExpect(status().isBadRequest())
@@ -40,7 +42,7 @@ class SecurityRound3IT extends SecurityITBase {
 
     @Test
     void accessTokenWithoutAudienceIsRejected() throws Exception {
-        Registered user = register("+84924400012");
+        Registered user = register(ItPhoneRanges.phoneFor(SecurityRound3IT.class, "+84924400012"));
         SecretKey key = Keys.hmacShaKeyFor(jwtProperties.secret().getBytes(StandardCharsets.UTF_8));
         String unbound = Jwts.builder()
                 .subject(user.userId().toString())
@@ -57,8 +59,8 @@ class SecurityRound3IT extends SecurityITBase {
 
     @Test
     void groupAvatarRejectsOffOriginUrl() throws Exception {
-        Registered owner = register("+84924400013");
-        Registered member = register("+84924400014");
+        Registered owner = register(ItPhoneRanges.phoneFor(SecurityRound3IT.class, "+84924400013"));
+        Registered member = register(ItPhoneRanges.phoneFor(SecurityRound3IT.class, "+84924400014"));
         var created = postJson("/api/v1/conversations/group",
                 Map.of("title", "sec3", "memberIds", List.of(member.userId().toString())),
                 owner.accessToken())
@@ -76,7 +78,7 @@ class SecurityRound3IT extends SecurityITBase {
 
     @Test
     void textPlainHtmlAndSvgUploadsAreRejected() throws Exception {
-        Registered user = register("+84924400015");
+        Registered user = register(ItPhoneRanges.phoneFor(SecurityRound3IT.class, "+84924400015"));
         byte[] svg = "<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>"
                 .getBytes(StandardCharsets.UTF_8);
         byte[] html = "<html><script>alert(1)</script></html>".getBytes(StandardCharsets.UTF_8);
@@ -95,9 +97,9 @@ class SecurityRound3IT extends SecurityITBase {
 
     @Test
     void loginWithNulInPasswordDoesNotAuthenticate() throws Exception {
-        register("+84924400016", "secret123");
+        register(ItPhoneRanges.phoneFor(SecurityRound3IT.class, "+84924400016"), "secret123");
         postJson("/api/v1/auth/login", Map.of(
-                "phone", "+84924400016",
+                "phone", ItPhoneRanges.phoneFor(SecurityRound3IT.class, "+84924400016"),
                 "password", "secret123\u0000ignored"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("INVALID_CREDENTIALS"));

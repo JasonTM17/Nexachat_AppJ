@@ -1,5 +1,7 @@
 package com.nexachat.robustness;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -48,8 +50,8 @@ class MultipartInputRobustnessIT extends RobustnessITBase {
     @BeforeAll
     void seed() throws Exception {
         resetSharedFixtureDatabase();
-        alice = register("+84907500001", "Multipart Fuzz");
-        peer = register("+84907500002", "Multipart Peer");
+        alice = register(ItPhoneRanges.phoneFor(MultipartInputRobustnessIT.class, "+84907500001"), "Multipart Fuzz");
+        peer = register(ItPhoneRanges.phoneFor(MultipartInputRobustnessIT.class, "+84907500002"), "Multipart Peer");
         MvcResult group = postJson("/api/v1/conversations/group",
                 Map.of("title", "Avatar Matrix", "memberIds", List.of(peer.userId().toString())),
                 alice.accessToken())

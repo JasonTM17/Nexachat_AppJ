@@ -1,5 +1,7 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -44,11 +46,11 @@ class SensitiveRequestLoggingIT extends SecurityITBase {
     @Test
     void loginRegisterSendAndUploadOmitPasswordsTokensAndMessageBodies() throws Exception {
         String password = "SecretPass-253!";
-        String phone = "+84969990253";
+        String phone = ItPhoneRanges.phoneFor(SensitiveRequestLoggingIT.class, "+84969990253");
         String messageBody = "ops-log-probe-253-do-not-log";
 
         Registered alice = register(phone, password);
-        Registered bob = register("+84969990254", "OtherPass-253!");
+        Registered bob = register(ItPhoneRanges.phoneFor(SensitiveRequestLoggingIT.class, "+84969990254"), "OtherPass-253!");
 
         var direct = postJson("/api/v1/conversations/direct",
                         Map.of("userId", bob.userId().toString()), alice.accessToken())

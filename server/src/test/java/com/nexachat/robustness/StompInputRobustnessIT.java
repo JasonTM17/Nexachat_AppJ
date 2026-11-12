@@ -1,5 +1,7 @@
 package com.nexachat.robustness;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.ws.dto.WsErrorResponse;
@@ -37,7 +39,6 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -100,7 +101,7 @@ class StompInputRobustnessIT {
 
     @BeforeEach
     void connect() throws Exception {
-        String phone = "+8498" + String.format("%07d", ThreadLocalRandom.current().nextInt(10_000_000));
+        String phone = ItPhoneRanges.nextPhone(StompInputRobustnessIT.class);
         var reg = mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
@@ -110,7 +111,7 @@ class StompInputRobustnessIT {
         accessToken = body.get("accessToken").asText();
         UUID userId = UUID.fromString(body.get("user").get("id").asText());
 
-        String peerPhone = "+8498" + String.format("%07d", ThreadLocalRandom.current().nextInt(10_000_000));
+        String peerPhone = ItPhoneRanges.nextPhone(StompInputRobustnessIT.class);
         var peerReg = mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(

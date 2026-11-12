@@ -1,5 +1,7 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -76,7 +78,7 @@ class RefreshRotationReplayIT extends SecurityITBase {
 
     @Test
     void retryAfterLostResponseReturnsTheOriginalResponse() throws Exception {
-        Registered session = register("+84905552751");
+        Registered session = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552751"));
         String key = UUID.randomUUID().toString();
 
         MvcResult first = postRefresh(session.refreshToken(), key)
@@ -97,7 +99,7 @@ class RefreshRotationReplayIT extends SecurityITBase {
 
     @Test
     void concurrentIdenticalRequestsShareOneCommittedPair() throws Exception {
-        Registered session = register("+84905552752");
+        Registered session = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552752"));
         String key = UUID.randomUUID().toString();
         CountDownLatch firstOwnsUserLock = new CountDownLatch(1);
         CountDownLatch secondIsWaitingForUserLock = new CountDownLatch(1);
@@ -143,7 +145,7 @@ class RefreshRotationReplayIT extends SecurityITBase {
 
     @Test
     void distinctOrMissingKeyOnSpentPredecessorKeepsStrictReuseBehavior() throws Exception {
-        Registered distinct = register("+84905552753");
+        Registered distinct = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552753"));
         String firstKey = UUID.randomUUID().toString();
         postRefresh(distinct.refreshToken(), firstKey).andExpect(status().isOk());
         postRefresh(distinct.refreshToken(), UUID.randomUUID().toString())
@@ -151,7 +153,7 @@ class RefreshRotationReplayIT extends SecurityITBase {
                 .andExpect(jsonPath("$.error.code").value("TOKEN_REUSED"));
         assertThat(liveRowCount(distinct.userId())).isZero();
 
-        Registered missing = register("+84905552754");
+        Registered missing = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552754"));
         postRefresh(missing.refreshToken(), UUID.randomUUID().toString()).andExpect(status().isOk());
         postRefresh(missing.refreshToken(), null)
                 .andExpect(status().isUnauthorized())
@@ -161,9 +163,9 @@ class RefreshRotationReplayIT extends SecurityITBase {
 
     @Test
     void sameKeyIsScopedToEachPredecessorAndAccount() throws Exception {
-        Registered accountA = register("+84905552755");
-        Registered secondDeviceA = login("+84905552755");
-        Registered accountB = register("+84905552756");
+        Registered accountA = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552755"));
+        Registered secondDeviceA = login(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552755"));
+        Registered accountB = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552756"));
         String key = UUID.randomUUID().toString();
 
         JsonNode responseA = response(postRefresh(accountA.refreshToken(), key).andExpect(status().isOk()).andReturn());
@@ -182,7 +184,7 @@ class RefreshRotationReplayIT extends SecurityITBase {
 
     @Test
     void malformedBlankNonV4OrNoncanonicalKeysFailBeforeMutation() throws Exception {
-        Registered session = register("+84905552757");
+        Registered session = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552757"));
         List<String> malformed = List.of("", " ", "123e4567-e89b-12d3-a456-426614174000",
                 "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA", "a".repeat(37));
 
@@ -202,7 +204,7 @@ class RefreshRotationReplayIT extends SecurityITBase {
 
     @Test
     void replayRecoveryUsesDatabaseTimeDespiteApplicationClockSkew() throws Exception {
-        Registered session = register("+84905552758");
+        Registered session = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552758"));
         String key = UUID.randomUUID().toString();
         postRefresh(session.refreshToken(), key).andExpect(status().isOk());
         Instant rotatedAt = jdbcTemplate.queryForObject(
@@ -222,7 +224,7 @@ class RefreshRotationReplayIT extends SecurityITBase {
 
     @Test
     void clearedExpiredCiphertextRetainsKnownKeyTombstone() throws Exception {
-        Registered session = register("+84905552759");
+        Registered session = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552759"));
         String key = UUID.randomUUID().toString();
         postRefresh(session.refreshToken(), key).andExpect(status().isOk());
         jdbcTemplate.update("UPDATE refresh_tokens SET replay_until = clock_timestamp() "
@@ -246,7 +248,7 @@ class RefreshRotationReplayIT extends SecurityITBase {
 
     @Test
     void cleanupUsesDatabaseTimeInsteadOfApplicationClock() throws Exception {
-        Registered session = register("+84905552773");
+        Registered session = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552773"));
         postRefresh(session.refreshToken(), UUID.randomUUID().toString()).andExpect(status().isOk());
         replayClock.set(Instant.parse("2100-01-01T00:00:00Z"));
 
@@ -264,7 +266,7 @@ class RefreshRotationReplayIT extends SecurityITBase {
 
     @Test
     void advancedLoggedOutOrExpiredSuccessorCannotBeRecovered() throws Exception {
-        Registered advanced = register("+84905552760");
+        Registered advanced = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552760"));
         String firstKey = UUID.randomUUID().toString();
         JsonNode firstResponse = response(postRefresh(advanced.refreshToken(), firstKey)
                 .andExpect(status().isOk()).andReturn());
@@ -274,7 +276,7 @@ class RefreshRotationReplayIT extends SecurityITBase {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("REFRESH_RECOVERY_UNAVAILABLE"));
 
-        Registered loggedOut = register("+84905552761");
+        Registered loggedOut = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552761"));
         String logoutKey = UUID.randomUUID().toString();
         JsonNode logoutResponse = response(postRefresh(loggedOut.refreshToken(), logoutKey)
                 .andExpect(status().isOk()).andReturn());
@@ -288,7 +290,7 @@ class RefreshRotationReplayIT extends SecurityITBase {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("REFRESH_RECOVERY_UNAVAILABLE"));
 
-        Registered expired = register("+84905552762");
+        Registered expired = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552762"));
         String expiredKey = UUID.randomUUID().toString();
         postRefresh(expired.refreshToken(), expiredKey).andExpect(status().isOk());
         jdbcTemplate.update("UPDATE refresh_tokens child SET expires_at = clock_timestamp() "
@@ -301,18 +303,18 @@ class RefreshRotationReplayIT extends SecurityITBase {
 
     @Test
     void missingEncryptionKeyUsesLegacyStrictRotation() throws Exception {
-        assertUnavailableEncryptionKeyUsesLegacyStrictRotation("", "+84905552763");
+        assertUnavailableEncryptionKeyUsesLegacyStrictRotation("", ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552763"));
     }
 
     @Test
     void malformedEncryptionKeyUsesLegacyStrictRotation() throws Exception {
-        assertUnavailableEncryptionKeyUsesLegacyStrictRotation("not-base64", "+84905552772");
+        assertUnavailableEncryptionKeyUsesLegacyStrictRotation("not-base64", ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552772"));
     }
 
     @Test
     void knownExpiredTokenRevokesOtherSessionsAndInvalidatesTheirCachedResponses() throws Exception {
-        Registered cached = register("+84905552769");
-        Registered expiring = login("+84905552769");
+        Registered cached = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552769"));
+        Registered expiring = login(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552769"));
         String key = UUID.randomUUID().toString();
         postRefresh(cached.refreshToken(), key).andExpect(status().isOk());
         jdbcTemplate.update("UPDATE refresh_tokens SET expires_at = clock_timestamp() WHERE token_hash = ?",
@@ -329,7 +331,7 @@ class RefreshRotationReplayIT extends SecurityITBase {
 
     @Test
     void changedKeyAndTamperedPayloadReturnNonrevokingRecoveryUnavailable() throws Exception {
-        Registered changed = register("+84905552764");
+        Registered changed = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552764"));
         String changedKey = UUID.randomUUID().toString();
         postRefresh(changed.refreshToken(), changedKey).andExpect(status().isOk());
         replayProperties.setKey(java.util.Base64.getEncoder().encodeToString(new byte[32]));
@@ -341,7 +343,7 @@ class RefreshRotationReplayIT extends SecurityITBase {
         assertThat(liveRowCount(changed.userId())).isEqualTo(1);
 
         replayProperties.setKey(SYNTHETIC_KEY);
-        Registered tampered = register("+84905552765");
+        Registered tampered = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552765"));
         String tamperedKey = UUID.randomUUID().toString();
         postRefresh(tampered.refreshToken(), tamperedKey).andExpect(status().isOk());
         jdbcTemplate.update("UPDATE refresh_tokens SET replay_ciphertext = "
@@ -355,7 +357,7 @@ class RefreshRotationReplayIT extends SecurityITBase {
 
     @Test
     void rollbackBeforeCommitAllowsOneRetryAndPostCommitFaultRecoversOriginal() throws Exception {
-        Registered rollback = register("+84905552766");
+        Registered rollback = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552766"));
         String rollbackKey = UUID.randomUUID().toString();
         boundaryProbe.armOnce(RefreshReplayConfiguration.Boundary.AFTER_ROTATION_STORED,
                 RefreshReplayConfiguration.Operation.ROTATE, event -> { throw new PlannedFailure(); });
@@ -366,7 +368,7 @@ class RefreshRotationReplayIT extends SecurityITBase {
         assertThat(refreshRowCount(rollback.userId())).isEqualTo(2);
         assertThat(liveRowCount(rollback.userId())).isEqualTo(1);
 
-        Registered committed = register("+84905552767");
+        Registered committed = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552767"));
         String committedKey = UUID.randomUUID().toString();
         AtomicBoolean failOnce = new AtomicBoolean();
         boundaryProbe.armOnce(RefreshReplayConfiguration.Boundary.AFTER_REFRESH_TRANSACTION_COMMIT,
@@ -388,7 +390,7 @@ class RefreshRotationReplayIT extends SecurityITBase {
 
     @Test
     void keyedRetriesStillConsumeTheExistingIpRateLimit() throws Exception {
-        Registered session = register("+84905552768");
+        Registered session = register(ItPhoneRanges.phoneFor(RefreshRotationReplayIT.class, "+84905552768"));
         String key = UUID.randomUUID().toString();
         for (int attempt = 0; attempt < 30; attempt++) {
             postRefresh(session.refreshToken(), key, remoteAddr("203.0.113.75")).andExpect(status().isOk());

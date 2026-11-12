@@ -1,5 +1,7 @@
 package com.nexachat.conversation;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.message.MessageService;
@@ -28,7 +30,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -90,10 +91,7 @@ class ConversationMuteArchiveFlowIT {
 
     @BeforeAll
     void registerUsers() throws Exception {
-        String like = "phone LIKE '+8490%' AND phone NOT LIKE '+849000%'";
-        jdbcTemplate.update(
-                "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update("DELETE FROM users WHERE " + like);
+        ItPhoneRanges.clean(jdbcTemplate, ConversationMuteArchiveFlowIT.class);
         String tag = "ITMA" + System.nanoTime();
         alice = registerUser(tag + " Alice");
         bob = registerUser(tag + " Bob");
@@ -104,15 +102,11 @@ class ConversationMuteArchiveFlowIT {
 
     @AfterAll
     void removeUsers() {
-        String like = "phone LIKE '+8490%' AND phone NOT LIKE '+849000%'";
-        jdbcTemplate.update(
-                "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update("DELETE FROM users WHERE " + like);
+        ItPhoneRanges.clean(jdbcTemplate, ConversationMuteArchiveFlowIT.class);
     }
 
     private static String randomPhone() {
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-        return "+8490" + (1 + random.nextInt(9)) + String.format("%06d", random.nextInt(1_000_000));
+        return ItPhoneRanges.nextPhone(ConversationMuteArchiveFlowIT.class);
     }
 
     private TestUser registerUser(String displayName) throws Exception {

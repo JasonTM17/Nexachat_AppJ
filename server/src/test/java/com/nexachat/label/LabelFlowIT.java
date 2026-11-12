@@ -1,5 +1,7 @@
 package com.nexachat.label;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.testutil.TestWaits;
@@ -85,7 +87,7 @@ class LabelFlowIT {
 
     @BeforeEach
     void resetPrivateDatabaseAndRegisterUsers() throws Exception {
-        jdbcTemplate.update("TRUNCATE users CASCADE");
+        ItPhoneRanges.clean(jdbcTemplate, LabelFlowIT.class);
         owner = registerUser("Label owner");
         member = registerUser("Conversation member");
         outsider = registerUser("Non-member");
@@ -529,6 +531,6 @@ class LabelFlowIT {
     }
 
     private static String randomPhone() {
-        return "+8493" + String.format("%07d", REGISTRATION_IP.incrementAndGet());
+        return ItPhoneRanges.nextPhone(LabelFlowIT.class);
     }
 }

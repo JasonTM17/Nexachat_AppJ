@@ -1,5 +1,7 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import org.junit.jupiter.api.Test;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -22,7 +24,7 @@ class RagStatsAuthorizationIT extends SecurityITBase {
 
     @Test
     void ragStatsIsForbiddenForANonAdminUser() throws Exception {
-        Registered user = register("+84905551401");
+        Registered user = register(ItPhoneRanges.phoneFor(RagStatsAuthorizationIT.class, "+84905551401"));
 
         mockMvc.perform(get("/api/v1/rag/stats").header("Authorization", "Bearer " + user.accessToken()))
                 .andExpect(status().isForbidden())

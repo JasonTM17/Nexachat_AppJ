@@ -1,5 +1,7 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -39,7 +41,7 @@ class CorsAndHeadersIT extends SecurityITBase {
 
     @Test
     void corsIsNotEnabledForAuthenticatedApiRoutes() throws Exception {
-        Registered user = register("+84905551501");
+        Registered user = register(ItPhoneRanges.phoneFor(CorsAndHeadersIT.class, "+84905551501"));
 
         mockMvc.perform(get("/api/v1/users/me")
                         .header(HttpHeaders.ORIGIN, ALLOWED_ORIGIN)
@@ -69,7 +71,7 @@ class CorsAndHeadersIT extends SecurityITBase {
 
     @Test
     void protectedResponsesCarryNosniffWithoutCachingSecrets() throws Exception {
-        Registered user = register("+84905551502");
+        Registered user = register(ItPhoneRanges.phoneFor(CorsAndHeadersIT.class, "+84905551502"));
 
         mockMvc.perform(get("/api/v1/users/me")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + user.accessToken()))
@@ -89,7 +91,7 @@ class CorsAndHeadersIT extends SecurityITBase {
         mockMvc.perform(get("/actuator/beans"))
                 .andExpect(status().isUnauthorized());
 
-        Registered user = register("+84905551503");
+        Registered user = register(ItPhoneRanges.phoneFor(CorsAndHeadersIT.class, "+84905551503"));
         // A non-admin user is refused; only operator phones may reach management endpoints.
         mockMvc.perform(get("/actuator/beans")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + user.accessToken()))

@@ -1,5 +1,7 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.user.User;
@@ -86,18 +88,12 @@ class AuthFlowIT {
      */
     @BeforeEach
     void cleanItUsers() {
-        // All IT-generated phones start +8490 except the demo seeds +849000*.
-        String like = "phone LIKE '+8490%' AND phone NOT LIKE '+849000%'";
-        jdbcTemplate.update(
-                "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update(
-                "DELETE FROM message_attachments WHERE owner_id IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update("DELETE FROM users WHERE " + like);
+        ItPhoneRanges.clean(jdbcTemplate, AuthFlowIT.class);
     }
 
     @Test
     void registerLoginRefreshReuse() throws Exception {
-        String phone = "+84905551122";
+        String phone = "+84815001122";
 
         // 1. Register → 201 with the full token payload.
         MvcResult registered = postJson("/api/v1/auth/register",
@@ -156,7 +152,7 @@ class AuthFlowIT {
 
     @Test
     void concurrentRefreshRotationAllowsOneWinnerAndRevokesTheFamily() throws Exception {
-        String phone = "+84905557788";
+        String phone = "+84815007788";
         MvcResult registered = postJson("/api/v1/auth/register",
                 Map.of("phone", phone, "password", "secret123", "displayName", "Race User"))
                 .andExpect(status().isCreated())
@@ -202,13 +198,13 @@ class AuthFlowIT {
     @Test
     void wrongLoginIs401Not404() throws Exception {
         // Unknown phone → 401 INVALID_CREDENTIALS (never 404 — anti-enumeration).
-        postJson("/api/v1/auth/login", Map.of("phone", "+84905553344", "password", "secret123"))
+        postJson("/api/v1/auth/login", Map.of("phone", "+84815003344", "password", "secret123"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("INVALID_CREDENTIALS"))
                 .andExpect(jsonPath("$.error.message").isString());
 
         // Known phone + wrong password → the SAME code/status.
-        String phone = "+84905553355";
+        String phone = "+84815003355";
         postJson("/api/v1/auth/register",
                 Map.of("phone", phone, "password", "secret123", "displayName", "Known User"))
                 .andExpect(status().isCreated());
@@ -221,7 +217,7 @@ class AuthFlowIT {
     @Test
     void duplicatePhoneIs409() throws Exception {
         Map<String, String> body =
-                Map.of("phone", "+84905554466", "password", "secret123", "displayName", "Dup User");
+                Map.of("phone", "+84815004466", "password", "secret123", "displayName", "Dup User");
 
         postJson("/api/v1/auth/register", body).andExpect(status().isCreated());
         postJson("/api/v1/auth/register", body)
@@ -249,7 +245,7 @@ class AuthFlowIT {
     @Test
     void accessTokenForDeletedUserIsRejected() throws Exception {
         User user = userRepository.saveAndFlush(
-                User.create("+84905558881", "x".repeat(60), "Deleted User"));
+                User.create("+84815008881", "x".repeat(60), "Deleted User"));
         String accessToken = jwtService.generateAccessToken(user);
         userRepository.deleteById(user.getId());
         userRepository.flush();

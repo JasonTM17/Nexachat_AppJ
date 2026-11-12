@@ -1,5 +1,7 @@
 package com.nexachat.conversation;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterAll;
@@ -53,7 +55,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 import static org.awaitility.Awaitility.await;
@@ -78,9 +79,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * last-member empty-group rule, PATCH rename, and the
  * {@code CONVERSATION_UPDATED} inbox push reaching a newly added member.
  *
- * <p>Test users carry the {@code +8491%} phone prefix — distinct from
- * {@code MessageFlowIT}'s {@code +8490%} so the two suites never delete each
- * other's fixtures on a shared dev database.
+ * <p>Test users use the phone range assigned to this suite by
+ * {@code ItPhoneRanges}, so cleanup cannot remove another suite's fixtures.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
@@ -134,12 +134,7 @@ class GroupFlowIT {
 
     @BeforeAll
     void registerUsers() throws Exception {
-        String like = "phone LIKE '+8491%'";
-        jdbcTemplate.update(
-                "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update(
-                "DELETE FROM message_attachments WHERE owner_id IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update("DELETE FROM users WHERE " + like);
+        ItPhoneRanges.clean(jdbcTemplate, GroupFlowIT.class);
         String tag = "ITG" + System.nanoTime();
         alice = registerUser(tag + " Alice");
         bob = registerUser(tag + " Bob");
@@ -153,8 +148,7 @@ class GroupFlowIT {
     }
 
     private static String randomPhone() {
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-        return "+8491" + String.format("%07d", random.nextInt(10_000_000));
+        return ItPhoneRanges.nextPhone(GroupFlowIT.class);
     }
 
     private TestUser registerUser(String displayName) throws Exception {

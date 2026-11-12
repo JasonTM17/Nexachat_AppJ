@@ -1,5 +1,7 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.nexachat.auth.google.GoogleTestKeys;
 import com.nexachat.auth.google.JwksServer;
@@ -50,7 +52,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(GoogleSignInIT.DeletionPauseConfiguration.class)
 class GoogleSignInIT extends SecurityITBase {
 
-    private static final String PHONE = "+84905556001";
+    private static final String PHONE = ItPhoneRanges.phoneFor(GoogleSignInIT.class, "+84905556001");
     private static final JwksServer JWKS = JwksServer.start(List.of(GoogleTestKeys.keyA()));
 
     @DynamicPropertySource
@@ -169,7 +171,7 @@ class GoogleSignInIT extends SecurityITBase {
     @Test
     void publicSignInNonceCannotBeReusedToLinkUnderAnotherAccount() throws Exception {
         Registered first = register(PHONE);
-        Registered second = register("+84905556012");
+        Registered second = register(ItPhoneRanges.phoneFor(GoogleSignInIT.class, "+84905556012"));
         String nonce = issueNonce();
 
         link(second, GoogleTestKeys.token(nonce), nonce)
@@ -184,7 +186,7 @@ class GoogleSignInIT extends SecurityITBase {
     @Test
     void linkNonceCannotBeUsedUnderAnotherAuthenticatedAccount() throws Exception {
         Registered nonceOwner = register(PHONE);
-        Registered other = register("+84905556013");
+        Registered other = register(ItPhoneRanges.phoneFor(GoogleSignInIT.class, "+84905556013"));
         String nonce = issueLinkNonce(nonceOwner);
 
         link(other, GoogleTestKeys.token(nonce), nonce)
@@ -277,7 +279,7 @@ class GoogleSignInIT extends SecurityITBase {
     @Test
     void oneGoogleAccountCannotBeLinkedToTwoUsers() throws Exception {
         Registered first = register(PHONE);
-        Registered second = register("+84905556002");
+        Registered second = register(ItPhoneRanges.phoneFor(GoogleSignInIT.class, "+84905556002"));
         String nonce = issueLinkNonce(first);
         link(first, GoogleTestKeys.token(nonce), nonce).andExpect(status().isNoContent());
 
@@ -290,7 +292,7 @@ class GoogleSignInIT extends SecurityITBase {
     @Test
     void concurrentLinksCannotAssignOneGoogleAccountToTwoUsers() throws Exception {
         Registered first = register(PHONE);
-        Registered second = register("+84905556002");
+        Registered second = register(ItPhoneRanges.phoneFor(GoogleSignInIT.class, "+84905556002"));
         String firstNonce = issueLinkNonce(first);
         String secondNonce = issueLinkNonce(second);
         String firstToken = GoogleTestKeys.token(firstNonce);
@@ -378,7 +380,7 @@ class GoogleSignInIT extends SecurityITBase {
     @Test
     void linkedIdentitiesAreListedForTheOwnerOnly() throws Exception {
         Registered owner = register(PHONE);
-        Registered other = register("+84905556003");
+        Registered other = register(ItPhoneRanges.phoneFor(GoogleSignInIT.class, "+84905556003"));
         String nonce = issueLinkNonce(owner);
         link(owner, GoogleTestKeys.token(nonce), nonce).andExpect(status().isNoContent());
 

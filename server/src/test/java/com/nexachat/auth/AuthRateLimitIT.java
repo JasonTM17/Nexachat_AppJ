@@ -1,5 +1,6 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -14,7 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class AuthRateLimitIT extends SecurityITBase {
 
-    private static final String PHONE = "+84905551301";
+    private static final String PHONE = ItPhoneRanges.nextPhone(AuthRateLimitIT.class);
 
     @Test
     void loginIsLimitedPerPhoneEvenWhenTheClientIpChanges() throws Exception {
@@ -54,7 +55,7 @@ class AuthRateLimitIT extends SecurityITBase {
     @Test
     void distinctPhonesAreNotBlockedByThePerPhoneLimit() throws Exception {
         for (int attempt = 0; attempt < 25; attempt++) {
-            String phone = "+8490555" + String.format("%04d", 2000 + attempt);
+            String phone = ItPhoneRanges.nextPhone(AuthRateLimitIT.class);
             postJson("/api/v1/auth/login", Map.of("phone", phone, "password", "wrongpass9"),
                             null, remoteAddr("10.22.0." + attempt))
                     .andExpect(status().isUnauthorized());

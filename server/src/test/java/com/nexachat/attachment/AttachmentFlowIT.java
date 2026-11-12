@@ -1,5 +1,7 @@
 package com.nexachat.attachment;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeAll;
@@ -109,12 +111,7 @@ class AttachmentFlowIT {
 
     @BeforeAll
     void registerUsers() throws Exception {
-        // +8491 phones belong to this suite — sibling ITs use other prefixes.
-        jdbcTemplate.update(
-                "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE phone LIKE '+8491%')");
-        jdbcTemplate.update(
-                "DELETE FROM message_attachments WHERE owner_id IN (SELECT id FROM users WHERE phone LIKE '+8491%')");
-        jdbcTemplate.update("DELETE FROM users WHERE phone LIKE '+8491%'");
+        ItPhoneRanges.clean(jdbcTemplate, AttachmentFlowIT.class);
         String tag = "ITA" + System.nanoTime();
         alice = registerUser(tag + " Alice");
         bob = registerUser(tag + " Bob");
@@ -122,7 +119,7 @@ class AttachmentFlowIT {
     }
 
     private static String randomPhone() {
-        return "+8491" + String.format("%07d", PHONE_SEQ.incrementAndGet());
+        return ItPhoneRanges.nextPhone(AttachmentFlowIT.class);
     }
 
     private TestUser registerUser(String displayName) throws Exception {

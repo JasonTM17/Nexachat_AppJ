@@ -1,5 +1,7 @@
 package com.nexachat.call;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.testutil.TestWaits;
@@ -67,9 +69,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class CallFlowIT {
 
     private static final long TIMEOUT_SECONDS = 10;
-    private static final String PHONE_PREFIX = "+8498";
-    private static final AtomicInteger PHONE_SEQ = new AtomicInteger(40_000);
-
     @DynamicPropertySource
     static void datasourceProps(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", () -> env("IT_DB_URL", "jdbc:postgresql://localhost:5433/nexachat"));
@@ -109,14 +108,7 @@ class CallFlowIT {
 
     @BeforeAll
     void registerTestUsers() throws Exception {
-        String like = "phone LIKE '" + PHONE_PREFIX + "%'";
-        jdbcTemplate.update(
-                "DELETE FROM pinned_messages WHERE pinned_by IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update(
-                "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update(
-                "DELETE FROM message_attachments WHERE owner_id IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update("DELETE FROM users WHERE " + like);
+        ItPhoneRanges.clean(jdbcTemplate, CallFlowIT.class);
 
         alice = registerUser("Call Alice");
         bob = registerUser("Call Bob");
@@ -456,7 +448,7 @@ class CallFlowIT {
     }
 
     private TestUser registerUser(String displayName) throws Exception {
-        String phone = PHONE_PREFIX + String.format("%07d", PHONE_SEQ.incrementAndGet());
+        String phone = ItPhoneRanges.nextPhone(CallFlowIT.class);
         MvcResult result = mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(

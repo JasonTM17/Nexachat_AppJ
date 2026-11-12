@@ -1,5 +1,7 @@
 package com.nexachat.archive;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.auth.JwtProperties;
@@ -52,8 +54,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * (the REST send path has its own dedicated happy-path case) so the suite does
  * not fight the 30-messages/10s send rate limit.
  *
- * <p>{@code PER_CLASS}: users register once; the {@code +8495} phone prefix is
- * reserved for this suite.
+ * <p>{@code PER_CLASS}: users register once under the phone range assigned to
+ * this suite by {@code ItPhoneRanges}.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
@@ -111,14 +113,7 @@ class ArchiveFlowIT {
 
     @BeforeAll
     void registerUsers() throws Exception {
-        String like = "phone LIKE '+8495%'";
-        jdbcTemplate.update(
-                "DELETE FROM pinned_messages WHERE pinned_by IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update(
-                "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update(
-                "DELETE FROM message_attachments WHERE owner_id IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update("DELETE FROM users WHERE " + like);
+        ItPhoneRanges.clean(jdbcTemplate, ArchiveFlowIT.class);
 
         String tag = "ITA" + System.nanoTime();
         alice = registerUser(tag + " Alice");
@@ -128,7 +123,7 @@ class ArchiveFlowIT {
     }
 
     private static String randomPhone() {
-        return "+8495" + String.format("%07d", PHONE_SEQ.incrementAndGet());
+        return ItPhoneRanges.nextPhone(ArchiveFlowIT.class);
     }
 
     private TestUser registerUser(String displayName) throws Exception {

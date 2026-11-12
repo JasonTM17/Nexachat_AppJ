@@ -1,5 +1,7 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.nexachat.recovery.EmailOtpService;
 import com.nexachat.recovery.OtpMail;
@@ -70,8 +72,8 @@ class RefreshRevocationRaceIT extends SecurityITBase {
 
     @Test
     void legacyBulkUpdateScheduleDemonstratesThePreFixInvisibleChild() throws Exception {
-        Registered first = register("+84905552801");
-        Registered rotating = login("+84905552801");
+        Registered first = register(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552801"));
+        Registered rotating = login(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552801"));
         UUID childId = UUID.randomUUID();
         String childHash = TokenService.sha256Hex(UUID.randomUUID().toString());
         Instant now = replayClock.instant().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
@@ -151,8 +153,8 @@ class RefreshRevocationRaceIT extends SecurityITBase {
 
     @Test
     void sharedUserLockMakesLogoutAllRevokeAChildCommittedByAnotherRotation() throws Exception {
-        Registered first = register("+84905552802");
-        Registered rotating = login("+84905552802");
+        Registered first = register(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552802"));
+        Registered rotating = login(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552802"));
         String key = UUID.randomUUID().toString();
         CountDownLatch childCreated = new CountDownLatch(1);
         CountDownLatch releaseRotation = new CountDownLatch(1);
@@ -190,7 +192,7 @@ class RefreshRevocationRaceIT extends SecurityITBase {
 
     @Test
     void passwordResetHoldingUserLockMakesConcurrentRefreshFailAfterRevocation() throws Exception {
-        Registered user = register("+84905552813");
+        Registered user = register(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552813"));
         jdbcTemplate.update("UPDATE users SET email = ?, email_verified_at = ? WHERE id = ?",
                 "reset-race@example.com", Timestamp.from(Instant.now()), user.userId());
         OtpMail reset = emailOtpService.issueForPublicRequest(user.userId(), OtpPurpose.RESET_PASSWORD)
@@ -211,7 +213,7 @@ class RefreshRevocationRaceIT extends SecurityITBase {
         try {
             Future<Integer> passwordReset = executor.submit(() -> postJson(
                     "/api/v1/auth/password-reset/confirm",
-                    Map.of("phone", "+84905552813", "code", reset.code(), "newPassword", "reset-race123"))
+                    Map.of("phone", ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552813"), "code", reset.code(), "newPassword", "reset-race123"))
                     .andReturn().getResponse().getStatus());
             await(resetOwnsUserLock);
 
@@ -232,17 +234,17 @@ class RefreshRevocationRaceIT extends SecurityITBase {
 
         assertThat(liveRows(user.userId())).isZero();
         getWithAuth("/api/v1/users/me", user.accessToken()).andExpect(status().isUnauthorized());
-        postJson("/api/v1/auth/login", Map.of("phone", "+84905552813", "password", "secret123"))
+        postJson("/api/v1/auth/login", Map.of("phone", ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552813"), "password", "secret123"))
                 .andExpect(status().isUnauthorized());
-        postJson("/api/v1/auth/login", Map.of("phone", "+84905552813", "password", "reset-race123"))
+        postJson("/api/v1/auth/login", Map.of("phone", ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552813"), "password", "reset-race123"))
                 .andExpect(status().isOk());
     }
 
     @Test
     void reuseRevocationWaitsForOtherSessionRotationAndIncludesItsChild() throws Exception {
-        Registered reused = register("+84905552803");
+        Registered reused = register(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552803"));
         assertThat(postRefresh(reused.refreshToken(), null).andReturn().getResponse().getStatus()).isEqualTo(200);
-        Registered rotating = login("+84905552803");
+        Registered rotating = login(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552803"));
         String key = UUID.randomUUID().toString();
         CountDownLatch childCreated = new CountDownLatch(1);
         CountDownLatch releaseRotation = new CountDownLatch(1);
@@ -281,8 +283,8 @@ class RefreshRevocationRaceIT extends SecurityITBase {
 
     @Test
     void stalePredecessorLogoutRevokesItsFullChainAndPreservesAnotherDevice() throws Exception {
-        Registered first = register("+84905552804");
-        Registered otherDevice = login("+84905552804");
+        Registered first = register(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552804"));
+        Registered otherDevice = login(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552804"));
         JsonNode second = response(postRefresh(first.refreshToken(), null).andExpect(status().isOk()).andReturn());
         JsonNode third = response(postRefresh(second.path("refreshToken").asText(), null)
                 .andExpect(status().isOk()).andReturn());
@@ -298,8 +300,8 @@ class RefreshRevocationRaceIT extends SecurityITBase {
 
     @Test
     void logoutOnDistinctDevicePreservesCommittedReplayForSurvivingLineage() throws Exception {
-        Registered rotatingDevice = register("+84905552812");
-        Registered logoutDevice = login("+84905552812");
+        Registered rotatingDevice = register(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552812"));
+        Registered logoutDevice = login(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552812"));
         String requestKey = UUID.randomUUID().toString();
 
         JsonNode committed = response(postRefresh(rotatingDevice.refreshToken(), requestKey)
@@ -316,8 +318,8 @@ class RefreshRevocationRaceIT extends SecurityITBase {
 
     @Test
     void concurrentRotateAndStaleLogoutSerializeBeforeInvalidatingReplay() throws Exception {
-        Registered first = register("+84905552805");
-        Registered otherDevice = login("+84905552805");
+        Registered first = register(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552805"));
+        Registered otherDevice = login(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552805"));
         String key = UUID.randomUUID().toString();
         CountDownLatch childCreated = new CountDownLatch(1);
         CountDownLatch releaseRotation = new CountDownLatch(1);
@@ -365,8 +367,8 @@ class RefreshRevocationRaceIT extends SecurityITBase {
 
     @Test
     void unknownOrForeignLogoutTokenRemainsAnOwnershipCheckedNoOp() throws Exception {
-        Registered owner = register("+84905552806");
-        Registered foreign = register("+84905552807");
+        Registered owner = register(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552806"));
+        Registered foreign = register(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552807"));
 
         postJson("/api/v1/auth/logout", Map.of("refreshToken", foreign.refreshToken()), owner.accessToken())
                 .andExpect(status().isNoContent());
@@ -376,8 +378,8 @@ class RefreshRevocationRaceIT extends SecurityITBase {
 
     @Test
     void passwordRetryWithOldBodyPreservesRotatedDescendantAndRevokesOtherDevices() throws Exception {
-        Registered current = register("+84905552808");
-        Registered otherDevice = login("+84905552808");
+        Registered current = register(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552808"));
+        Registered otherDevice = login(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552808"));
         JsonNode rotated = response(postRefresh(current.refreshToken(), UUID.randomUUID().toString())
                 .andExpect(status().isOk()).andReturn());
 
@@ -394,8 +396,8 @@ class RefreshRevocationRaceIT extends SecurityITBase {
 
     @Test
     void unknownOrForeignPasswordKeepValueExemptsNoSession() throws Exception {
-        Registered unknown = register("+84905552809");
-        login("+84905552809");
+        Registered unknown = register(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552809"));
+        login(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552809"));
         patchWithAuth("/api/v1/auth/password", Map.of(
                         "oldPassword", "secret123",
                         "newPassword", "new-secret456",
@@ -403,8 +405,8 @@ class RefreshRevocationRaceIT extends SecurityITBase {
                 .andExpect(status().isNoContent());
         assertThat(liveRows(unknown.userId())).isZero();
 
-        Registered owner = register("+84905552810");
-        Registered foreign = register("+84905552811");
+        Registered owner = register(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552810"));
+        Registered foreign = register(ItPhoneRanges.phoneFor(RefreshRevocationRaceIT.class, "+84905552811"));
         patchWithAuth("/api/v1/auth/password", Map.of(
                         "oldPassword", "secret123",
                         "newPassword", "new-secret456",

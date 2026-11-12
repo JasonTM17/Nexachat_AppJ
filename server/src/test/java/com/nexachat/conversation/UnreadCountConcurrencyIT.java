@@ -1,5 +1,7 @@
 package com.nexachat.conversation;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeAll;
@@ -122,8 +124,7 @@ class UnreadCountConcurrencyIT {
     }
 
     private TestUser registerUser(String displayName) throws Exception {
-        String phone = "+8490" + (1 + ThreadLocalRandom.current().nextInt(9))
-                + String.format("%06d", ThreadLocalRandom.current().nextInt(1_000_000));
+        String phone = ItPhoneRanges.nextPhone(UnreadCountConcurrencyIT.class);
         var result = mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(

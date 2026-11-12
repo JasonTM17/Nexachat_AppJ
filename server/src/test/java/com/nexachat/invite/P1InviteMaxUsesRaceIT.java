@@ -1,5 +1,7 @@
 package com.nexachat.invite;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.auth.JwtService;
 import com.nexachat.testutil.TestWaits;
@@ -266,8 +268,7 @@ class P1InviteMaxUsesRaceIT {
     }
 
     private TestUser createTestUser(String displayName) {
-        String phone = "+8494" + String.format("%07d",
-                ThreadLocalRandom.current().nextInt(10_000_000));
+        String phone = ItPhoneRanges.nextPhone(P1InviteMaxUsesRaceIT.class);
         User user = User.create(phone, "hash", displayName);
         user = userRepository.saveAndFlush(user);
         return new TestUser(user.getId(), jwtService.generateAccessToken(user));

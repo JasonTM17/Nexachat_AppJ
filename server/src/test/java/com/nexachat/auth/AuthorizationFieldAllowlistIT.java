@@ -1,5 +1,7 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -23,10 +25,10 @@ class AuthorizationFieldAllowlistIT extends SecurityITBase {
 
     @Test
     void mainDtoResponsesContainOnlyContractFieldsAndCallerScopedSecrets() throws Exception {
-        Registered owner = register("+84905551701");
-        Registered member = register("+84905551702");
-        Registered requester = register("+84905551703");
-        String memberPhone = "+84905551702";
+        Registered owner = register(ItPhoneRanges.phoneFor(AuthorizationFieldAllowlistIT.class, "+84905551791"));
+        Registered member = register(ItPhoneRanges.phoneFor(AuthorizationFieldAllowlistIT.class, "+84905551792"));
+        Registered requester = register(ItPhoneRanges.phoneFor(AuthorizationFieldAllowlistIT.class, "+84905551793"));
+        String memberPhone = ItPhoneRanges.phoneFor(AuthorizationFieldAllowlistIT.class, "+84905551792");
 
         JsonNode profile = objectMapper.readTree(getWithAuth("/api/v1/users/me", owner.accessToken())
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());

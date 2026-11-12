@@ -1,5 +1,7 @@
 package com.nexachat.message;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.message.dto.MessageResponse;
@@ -48,7 +50,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -128,12 +129,7 @@ class MessageFlowIT {
 
     @BeforeAll
     void registerUsers() throws Exception {
-        String like = "phone LIKE '+8490%' AND phone NOT LIKE '+849000%'";
-        jdbcTemplate.update(
-                "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update(
-                "DELETE FROM message_attachments WHERE owner_id IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update("DELETE FROM users WHERE " + like);
+        ItPhoneRanges.clean(jdbcTemplate, MessageFlowIT.class);
         String tag = "ITM" + System.nanoTime();
         alice = registerUser(tag + " Alice");
         bob = registerUser(tag + " Bob");
@@ -147,8 +143,7 @@ class MessageFlowIT {
     }
 
     private static String randomPhone() {
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-        return "+8490" + (1 + random.nextInt(9)) + String.format("%06d", random.nextInt(1_000_000));
+        return ItPhoneRanges.nextPhone(MessageFlowIT.class);
     }
 
     private TestUser registerUser(String displayName) throws Exception {

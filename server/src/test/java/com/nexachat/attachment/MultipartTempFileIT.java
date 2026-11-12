@@ -1,5 +1,7 @@
 package com.nexachat.attachment;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.common.error.ApiErrorCode;
@@ -19,6 +21,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -110,6 +113,8 @@ class MultipartTempFileIT {
     @Autowired
     private ObjectMapper objectMapper;
     @Autowired
+    private JdbcTemplate jdbcTemplate;
+    @Autowired
     private MultipartConfigElement multipartConfig;
 
     @MockitoBean
@@ -119,8 +124,7 @@ class MultipartTempFileIT {
 
     @BeforeAll
     void registerUploader() throws Exception {
-        String phone = "+8497" + String.format("%07d",
-                ThreadLocalRandom.current().nextInt(10_000_000));
+        String phone = ItPhoneRanges.nextPhone(MultipartTempFileIT.class);
         ResponseEntity<String> response = restTemplate.postForEntity("/api/v1/auth/register",
                 jsonEntity("""
                         {"phone":"%s","password":"secret123","displayName":"Multipart IT"}
@@ -139,6 +143,7 @@ class MultipartTempFileIT {
 
     @AfterAll
     void cleanUp() throws IOException {
+        ItPhoneRanges.clean(jdbcTemplate, MultipartTempFileIT.class);
         deleteRecursively(SCRATCH_PARENT);
         deleteRecursively(STORAGE_ROOT);
     }

@@ -1,5 +1,7 @@
 package com.nexachat.auth;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.nexachat.attachment.AttachmentService;
 import com.nexachat.attachment.AvatarController;
@@ -108,7 +110,7 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void concurrentProfilePatchCannotReviveTombstone() throws Exception {
-        Registered user = register("+84905553101", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553101"), "secret123");
         CountDownLatch patchMayProceed = new CountDownLatch(1);
         pause.whenBeforeTombstone = () -> {
             patchMayProceed.countDown();
@@ -163,7 +165,7 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void deletionSetsAccessTokenCutoffAndRevokesRefreshTokens() throws Exception {
-        Registered user = register("+84905553102", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553102"), "secret123");
         deleteMe(user.accessToken(), "secret123").andExpect(status().isNoContent());
 
         assertThat(jdbcTemplate.queryForObject(
@@ -177,7 +179,7 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void refreshWaitingBehindDeletionFailsAsInvalidWithoutCreatingASession() throws Exception {
-        Registered user = register("+84905553119", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553119"), "secret123");
         CountDownLatch deletionAtTombstone = new CountDownLatch(1);
         CountDownLatch refreshAtOwnerLock = new CountDownLatch(1);
         CountDownLatch allowRefreshToLockOwner = new CountDownLatch(1);
@@ -239,7 +241,7 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void recoveryOtpDeletionWaitingLoginCannotIssueSession() throws Exception {
-        Registered user = register("+84905553120", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553120"), "secret123");
         jdbcTemplate.update("UPDATE users SET email = ?, email_verified_at = ? WHERE id = ?",
                 "delete-login-race@example.com", Timestamp.from(Instant.now()), user.userId());
         OtpMail deletionCode = emailOtpService.issueForPublicRequest(user.userId(), OtpPurpose.DELETE_ACCOUNT)
@@ -260,12 +262,12 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
         try {
             Future<Integer> deletion = executor.submit(() -> postJson(
                     "/api/v1/account-deletion/confirm",
-                    Map.of("phone", "+84905553120", "code", deletionCode.code()))
+                    Map.of("phone", ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553120"), "code", deletionCode.code()))
                     .andReturn().getResponse().getStatus());
             assertThat(deletionAtTombstone.await(30, TimeUnit.SECONDS)).isTrue();
 
             Future<org.springframework.test.web.servlet.MvcResult> login = executor.submit(() -> postJson(
-                    "/api/v1/auth/login", Map.of("phone", "+84905553120", "password", "secret123"))
+                    "/api/v1/auth/login", Map.of("phone", ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553120"), "password", "secret123"))
                     .andReturn());
             TestWaits.until("login to wait on the account row held by recovery deletion",
                     () -> userLockWaiterCount() > 0);
@@ -291,7 +293,7 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void deletionRejectsPreviouslyIssuedAccessTokenOnStompConnect() throws Exception {
-        Registered user = register("+84905553117", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553117"), "secret123");
         deleteMe(user.accessToken(), "secret123").andExpect(status().isNoContent());
 
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
@@ -305,8 +307,8 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void deletionScrubsAiTablesAndCaches() throws Exception {
-        Registered user = register("+84905553103", "secret123");
-        Registered peer = register("+84905553104", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553103"), "secret123");
+        Registered peer = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553104"), "secret123");
         UUID conversationId = openDirect(user, peer);
         UUID groupId = createGroup(user, List.of(peer.userId()));
 
@@ -377,7 +379,7 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void deletionAdvancesAiConsentEpochWhenConsentWasAlreadyFalse() throws Exception {
-        Registered user = register("+84905553105", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553105"), "secret123");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT ai_summary_consent FROM users WHERE id = ?", Boolean.class, user.userId())).isFalse();
         assertThat(jdbcTemplate.queryForObject(
@@ -393,9 +395,9 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void concurrentGroupAddCannotOutliveAccountDeletion() throws Exception {
-        Registered victim = register("+84905553201", "secret123");
-        Registered admin = register("+84905553202", "secret123");
-        Registered existing = register("+84905553203", "secret123");
+        Registered victim = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553201"), "secret123");
+        Registered admin = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553202"), "secret123");
+        Registered existing = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553203"), "secret123");
         UUID groupId = createGroup(admin, List.of(existing.userId()));
 
         assertAccountDeletionWinsRace(victim, () -> postJson(
@@ -408,8 +410,8 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void concurrentGroupCreationCannotIncludeDeletingUser() throws Exception {
-        Registered victim = register("+84905553204", "secret123");
-        Registered actor = register("+84905553205", "secret123");
+        Registered victim = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553204"), "secret123");
+        Registered actor = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553205"), "secret123");
 
         assertAccountDeletionWinsRace(victim, () -> postJson(
                 "/api/v1/conversations/group",
@@ -423,8 +425,8 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void concurrentDirectCreationCannotIncludeDeletingUser() throws Exception {
-        Registered victim = register("+84905553206", "secret123");
-        Registered actor = register("+84905553207", "secret123");
+        Registered victim = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553206"), "secret123");
+        Registered actor = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553207"), "secret123");
 
         assertAccountDeletionWinsRace(victim, () -> postJson(
                 "/api/v1/conversations/direct",
@@ -438,9 +440,9 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void concurrentDirectInviteJoinCannotOutliveAccountDeletion() throws Exception {
-        Registered victim = register("+84905553208", "secret123");
-        Registered owner = register("+84905553209", "secret123");
-        Registered existing = register("+84905553210", "secret123");
+        Registered victim = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553208"), "secret123");
+        Registered owner = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553209"), "secret123");
+        Registered existing = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553210"), "secret123");
         UUID groupId = createGroup(owner, List.of(existing.userId()));
         String inviteToken = createInviteLink(owner, groupId, false);
 
@@ -453,9 +455,9 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void concurrentApprovalInviteJoinCannotPersistRequestAfterDeletionCleanup() throws Exception {
-        Registered victim = register("+84905553211", "secret123");
-        Registered owner = register("+84905553212", "secret123");
-        Registered existing = register("+84905553213", "secret123");
+        Registered victim = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553211"), "secret123");
+        Registered owner = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553212"), "secret123");
+        Registered existing = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553213"), "secret123");
         UUID groupId = createGroup(owner, List.of(existing.userId()));
         String inviteToken = createInviteLink(owner, groupId, true);
 
@@ -470,9 +472,9 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void concurrentApprovalCannotAddPendingUserAfterDeletionCleanup() throws Exception {
-        Registered victim = register("+84905553214", "secret123");
-        Registered owner = register("+84905553215", "secret123");
-        Registered existing = register("+84905553216", "secret123");
+        Registered victim = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553214"), "secret123");
+        Registered owner = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553215"), "secret123");
+        Registered existing = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553216"), "secret123");
         UUID groupId = createGroup(owner, List.of(existing.userId()));
         String inviteToken = createInviteLink(owner, groupId, true);
         var join = postJson("/api/v1/invite-links/" + inviteToken + "/join",
@@ -494,8 +496,8 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void deletedUserCannotBeAddedToGroupOrDirect() throws Exception {
-        Registered victim = register("+84905553105", "secret123");
-        Registered actor = register("+84905553106", "secret123");
+        Registered victim = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553105"), "secret123");
+        Registered actor = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553106"), "secret123");
         deleteMe(victim.accessToken(), "secret123").andExpect(status().isNoContent());
 
         postJson("/api/v1/conversations/direct", Map.of("userId", victim.userId().toString()),
@@ -512,7 +514,7 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void deletionRemovesUnboundUploadsLabelsAndPasswordHash() throws Exception {
-        Registered user = register("+84905553107", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553107"), "secret123");
         UUID attachmentId = UUID.randomUUID();
         StorageService.StoredFile stored = storageService.store(
                 "attachments", "secret.png", "image/png", PNG_BYTES);
@@ -525,7 +527,7 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
         jdbcTemplate.update(
                 "INSERT INTO conversation_labels (id, user_id, name, color_id) VALUES (?, ?, 'Private', 'INDIGO')",
                 labelId, user.userId());
-        Registered peer = register("+84905553118", "secret123");
+        Registered peer = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553118"), "secret123");
         UUID conversationId = openDirect(user, peer);
         jdbcTemplate.update("""
                 INSERT INTO conversation_label_assignments (conversation_id, user_id, label_id)
@@ -552,7 +554,7 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void concurrentAttachmentUploadCannotOutliveDeletionCleanup() throws Exception {
-        Registered user = register("+84905553217", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553217"), "secret123");
         Set<String> attachmentsBefore = storedKeys("attachments");
 
         assertAccountDeletionWinsRace(user, () -> uploadAttachment(user));
@@ -565,7 +567,7 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void attachmentUploadDeletesStoredFileWhenDatabaseTransactionRollsBack() throws Exception {
-        Registered user = register("+84905553218", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553218"), "secret123");
         java.util.concurrent.atomic.AtomicReference<String> uploadedUrl =
                 new java.util.concurrent.atomic.AtomicReference<>();
 
@@ -586,7 +588,7 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void avatarReplacementDeletesOldFileAfterCommit() throws Exception {
-        Registered user = register("+84905553219", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553219"), "secret123");
         String firstUrl = uploadAvatar(user).getResponse().getContentAsString();
         String firstAvatarUrl = objectMapper.readTree(firstUrl).get("avatarUrl").asText();
         String firstKey = storageKeyFromUrl(firstAvatarUrl);
@@ -606,7 +608,7 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void avatarReplacementRollbackKeepsOldFileAndDeletesNewFile() throws Exception {
-        Registered user = register("+84905553220", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553220"), "secret123");
         String firstBody = uploadAvatar(user).getResponse().getContentAsString();
         String firstUrl = objectMapper.readTree(firstBody).get("avatarUrl").asText();
         String firstKey = storageKeyFromUrl(firstUrl);
@@ -636,7 +638,7 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void concurrentAvatarUploadRejectedByDeletionLeavesNoStoredFile() throws Exception {
-        Registered user = register("+84905553221", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553221"), "secret123");
         Set<String> avatarsBefore = storedKeys("avatars");
 
         assertAccountDeletionWinsRace(user, () -> uploadAvatarStatus(user));
@@ -648,7 +650,7 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void avatarFileIsDeletedOnlyAfterAccountDeletionTransactionCommits() throws Exception {
-        Registered user = register("+84905553119", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553119"), "secret123");
         StorageService.StoredFile avatar = storageService.store(
                 "avatars", "avatar.png", "image/png", PNG_BYTES);
         jdbcTemplate.update("UPDATE users SET avatar_url = ? WHERE id = ?",
@@ -674,8 +676,8 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void accountDeletionKeepsAvatarFileStillReferencedByAGroup() throws Exception {
-        Registered user = register("+84905553222", "secret123");
-        Registered peer = register("+84905553223", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553222"), "secret123");
+        Registered peer = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553223"), "secret123");
         UUID groupId = createGroup(user, List.of(peer.userId()));
         String avatarBody = uploadAvatar(user).getResponse().getContentAsString();
         String avatarUrl = objectMapper.readTree(avatarBody).path("avatarUrl").asText();
@@ -699,8 +701,8 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void avatarReplacementKeepsOldFileStillReferencedByAGroup() throws Exception {
-        Registered user = register("+84905553224", "secret123");
-        Registered peer = register("+84905553225", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553224"), "secret123");
+        Registered peer = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553225"), "secret123");
         UUID groupId = createGroup(user, List.of(peer.userId()));
         String firstBody = uploadAvatar(user).getResponse().getContentAsString();
         String firstUrl = objectMapper.readTree(firstBody).path("avatarUrl").asText();
@@ -724,8 +726,8 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void groupLeaveOnDeletionUsesDeletedAccountSentinel() throws Exception {
-        Registered admin = register("+84905553108", "secret123");
-        Registered member = register("+84905553109", "secret123");
+        Registered admin = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553108"), "secret123");
+        Registered member = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553109"), "secret123");
         setDisplayName(member.userId(), "Real Member Name");
         UUID groupId = createGroup(admin, List.of(member.userId()));
 
@@ -739,7 +741,7 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void repeatedDeleteWithSameTokenReturnsTokenInvalid() throws Exception {
-        Registered user = register("+84905553110", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553110"), "secret123");
         deleteMe(user.accessToken(), "secret123").andExpect(status().isNoContent());
 
         deleteMe(user.accessToken(), "secret123")
@@ -749,8 +751,8 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void deletedUserResponseIncludesDeletedFlagAndOmitsPhone() throws Exception {
-        Registered user = register("+84905553111", "secret123");
-        Registered peer = register("+84905553112", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553111"), "secret123");
+        Registered peer = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553112"), "secret123");
         UUID conversationId = openDirect(user, peer);
 
         deleteMe(user.accessToken(), "secret123").andExpect(status().isNoContent());
@@ -779,7 +781,7 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void refreshAfterDeletionIsRejected() throws Exception {
-        Registered user = register("+84905553113", "secret123");
+        Registered user = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553113"), "secret123");
         String refreshToken = user.refreshToken();
         deleteMe(user.accessToken(), "secret123").andExpect(status().isNoContent());
 
@@ -793,9 +795,9 @@ class AccountDeletionD4RegressionIT extends SecurityITBase {
 
     @Test
     void pendingJoinRequestRemovedOnDeletion() throws Exception {
-        Registered owner = register("+84905553114", "secret123");
-        Registered requester = register("+84905553115", "secret123");
-        Registered placeholder = register("+84905553116", "secret123");
+        Registered owner = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553114"), "secret123");
+        Registered requester = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553115"), "secret123");
+        Registered placeholder = register(ItPhoneRanges.phoneFor(AccountDeletionD4RegressionIT.class, "+84905553116"), "secret123");
         UUID groupId = createGroup(owner, List.of(placeholder.userId()));
         String inviteToken = createInviteLink(owner, groupId);
         var join = postJson("/api/v1/invite-links/" + inviteToken + "/join", Map.of(), requester.accessToken())

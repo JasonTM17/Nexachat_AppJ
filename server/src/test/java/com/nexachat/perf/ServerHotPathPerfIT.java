@@ -1,5 +1,7 @@
 package com.nexachat.perf;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.auth.JwtService;
@@ -191,7 +193,7 @@ class ServerHotPathPerfIT {
   }
 
   private TestUser createUser(String displayName) {
-    String phone = "+849066" + String.format("%07d", Math.floorMod(System.nanoTime(), 10_000_000));
+    String phone = ItPhoneRanges.nextPhone(ServerHotPathPerfIT.class);
     User user = userRepository.saveAndFlush(User.create(phone, "x".repeat(60), displayName));
     return new TestUser(user.getId(), jwtService.generateAccessToken(user));
   }

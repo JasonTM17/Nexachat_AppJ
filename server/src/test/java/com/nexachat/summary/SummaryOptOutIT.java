@@ -1,5 +1,6 @@
 package com.nexachat.summary;
 
+import com.nexachat.testutil.ItPhoneRanges;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.auth.JwtService;
@@ -249,7 +250,7 @@ class SummaryOptOutIT {
     }
 
     private User createUser(String displayName) {
-        String phone = "+849" + String.format("%09d", Math.floorMod(System.nanoTime(), 1_000_000_000L));
+        String phone = ItPhoneRanges.nextPhone(SummaryOptOutIT.class);
         return userRepository.save(User.create(phone, "x".repeat(60), displayName));
     }
 

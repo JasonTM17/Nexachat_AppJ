@@ -1,5 +1,7 @@
 package com.nexachat.config;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -146,8 +148,7 @@ class RequestBodySizeLimitChunkedIT {
     }
 
     private static String randomPhone() {
-        return "+849" + String.format("%08d",
-                ThreadLocalRandom.current().nextInt(100_000_000));
+        return ItPhoneRanges.nextPhone(RequestBodySizeLimitChunkedIT.class);
     }
 
     private static byte[] bytes(int size) {

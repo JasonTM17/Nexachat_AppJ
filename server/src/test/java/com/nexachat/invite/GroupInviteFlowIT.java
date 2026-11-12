@@ -1,5 +1,7 @@
 package com.nexachat.invite;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeAll;
@@ -26,7 +28,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -82,15 +83,7 @@ class GroupInviteFlowIT {
 
     @BeforeAll
     void setupFixtures() throws Exception {
-        String like = "phone LIKE '+8497%'";
-        jdbcTemplate.update("DELETE FROM group_invite_bans WHERE conversation_id IN "
-                + "(SELECT id FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + "))");
-        jdbcTemplate.update("DELETE FROM group_join_requests WHERE conversation_id IN "
-                + "(SELECT id FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + "))");
-        jdbcTemplate.update("DELETE FROM group_invite_links WHERE conversation_id IN "
-                + "(SELECT id FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + "))");
-        jdbcTemplate.update("DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
-        jdbcTemplate.update("DELETE FROM users WHERE " + like);
+        ItPhoneRanges.clean(jdbcTemplate, GroupInviteFlowIT.class);
 
         String tag = "INV" + System.nanoTime();
         alice = createTestUser(tag + " Alice");
@@ -101,8 +94,7 @@ class GroupInviteFlowIT {
     }
 
     private static String randomPhone() {
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-        return "+8497" + String.format("%07d", random.nextInt(10_000_000));
+        return ItPhoneRanges.nextPhone(GroupInviteFlowIT.class);
     }
 
     private TestUser createTestUser(String displayName) {
