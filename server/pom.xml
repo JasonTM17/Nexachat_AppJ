@@ -32,6 +32,38 @@
         <nexachat.test.build-directory>target</nexachat.test.build-directory>
     </properties>
 
+    <!--
+      flyway-parent declares a GitHub Packages repository for its commercial
+      database modules. We use only flyway-core/flyway-database-postgresql from
+      Maven Central, and the repository rejects anonymous metadata requests with
+      HTTP 401 during plugin-prefix resolution. Disable it by id so Maven does
+      not query it; the Central copies still resolve normally.
+    -->
+    <repositories>
+        <repository>
+            <id>flyway-community-db-support</id>
+            <url>https://maven.pkg.github.com/flyway/flyway-community-db-support</url>
+            <releases>
+                <enabled>false</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+    <pluginRepositories>
+        <pluginRepository>
+            <id>flyway-community-db-support</id>
+            <url>https://maven.pkg.github.com/flyway/flyway-community-db-support</url>
+            <releases>
+                <enabled>false</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </pluginRepository>
+    </pluginRepositories>
+
     <dependencyManagement>
         <dependencies>
             <dependency>
