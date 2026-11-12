@@ -95,6 +95,11 @@ class GroupServiceTest {
                 avatarReferenceCoordinator,
                 new UploadAdmission(16, 1000),
                 simpUserRegistry, simpleBrokerMessageHandler);
+        // Group writers now take the conversation row at entry; the unit
+        // fixtures describe the row through findById, so the locked lookup
+        // reuses that answer instead of repeating twenty stubs.
+        lenient().when(conversationRepository.findByIdForUpdate(any()))
+                .thenAnswer(invocation -> conversationRepository.findById(invocation.getArgument(0)));
     }
 
     // ------------------------------------------------------------- fixtures

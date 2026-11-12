@@ -7,6 +7,7 @@ import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.message.CallSystemMessageWriter;
+import com.nexachat.user.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
@@ -39,6 +40,7 @@ public class CallService {
     private final ConversationMemberRepository memberRepository;
     private final RateLimitService rateLimitService;
     private final CallSystemMessageWriter systemMessageWriter;
+    private final UserRepository userRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final CallIceConfig iceConfig;
     private final ReentrantReadWriteLock registryAccessLock = new ReentrantReadWriteLock(true);
@@ -50,6 +52,7 @@ public class CallService {
                        ConversationMemberRepository memberRepository,
                        RateLimitService rateLimitService,
                        CallSystemMessageWriter systemMessageWriter,
+                       UserRepository userRepository,
                        ApplicationEventPublisher eventPublisher,
                        @Value("${nexachat.calls.ice-servers:stun:stun.l.google.com:19302}") String iceServers) {
         this.registry = registry;
@@ -58,6 +61,7 @@ public class CallService {
         this.memberRepository = memberRepository;
         this.rateLimitService = rateLimitService;
         this.systemMessageWriter = systemMessageWriter;
+        this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
         List<String> urls = List.of(iceServers.split(",")).stream()
                 .map(String::trim).filter(url -> !url.isEmpty()).toList();
@@ -261,6 +265,11 @@ public class CallService {
     }
 
     private void persist(CallSession call) {
+        // The call record references the conversation and both participants.
+        // Lock the participant parents first (fixed UUID order) so the deferred
+        // call-record flush cannot take a conversation key-share before them.
+        userRepository.lockForKeyShareSorted(
+                java.util.List.of(call.callerId(), call.calleeId()));
         recordRepository.save(CallRecord.from(call));
         eventPublisher.publishEvent(new CallStatusProjectionEvent(call));
     }

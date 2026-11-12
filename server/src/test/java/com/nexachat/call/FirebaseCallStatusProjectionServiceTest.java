@@ -188,7 +188,8 @@ class FirebaseCallStatusProjectionServiceTest {
                 .thenReturn(new RateLimitService.Consumption(true, 0));
         when(records.save(any(CallRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
         return new CallService(registry, records, conversations, members, rateLimits,
-                systemMessages, events, "stun:stun.l.google.com:19302");
+                systemMessages, mock(com.nexachat.user.UserRepository.class), events,
+                "stun:stun.l.google.com:19302");
     }
 
     private static final class RecordingRtdbClient implements FirebaseRtdbClient {

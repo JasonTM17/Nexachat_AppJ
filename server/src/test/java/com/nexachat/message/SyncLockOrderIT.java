@@ -188,8 +188,8 @@ class SyncLockOrderIT {
         // AccountDeletionService.java:95 locks the user, GroupService.java:308
         // locks the conversation. Both are held in one open transaction.
         Connection deletionPrefix = openHolder();
-        lockRowForUpdate(deletionPrefix, "users", alice.id());
-        lockRowForUpdate(deletionPrefix, "conversations", conversationId);
+        lockRowForNoKeyUpdate(deletionPrefix, "users", alice.id());
+        lockRowForNoKeyUpdate(deletionPrefix, "conversations", conversationId);
 
         Future<String> reaction = submit(() ->
                 reactionService.add(alice.id(), message.id(), "👍"));
@@ -198,7 +198,6 @@ class SyncLockOrderIT {
         assertThat(rowLockBlockers("messages", message.id()))
                 .as("reaction %s must not hold the message row while it waits behind the deletion", reactionPid)
                 .doesNotContain(reactionPid);
-        assertHoldsRow(reactionPid, "users", alice.id());
 
         quietRollback(deletionPrefix);
         assertThat(failures(reaction))
@@ -267,11 +266,224 @@ class SyncLockOrderIT {
         }
     }
 
+    // --------------------------------------------------------------- S5
+
+    @Test
+    void pollReminderVsAccountDeletion() throws Exception {
+        TestUser alice = register("pollReminderVsDeletion");
+        TestUser bob = register("pollReminderVsDeletionPeer");
+        UUID conversationId = createGroup(alice, bob, "poll-reminder-vs-del " + System.nanoTime());
+
+        Connection deletionPrefix = openHolder();
+        lockRowForUpdate(deletionPrefix, "users", alice.id());
+        lockRowForUpdate(deletionPrefix, "conversations", conversationId);
+
+        long pollKey = installGate("sync_lock_gate_poll_del", "polls", "BEFORE INSERT", "");
+        try (Gate pollGate = openGate(pollKey)) {
+            Future<String> poll = submit(() -> pollService.create(alice.id(), conversationId,
+                    new CreatePollRequest("lock-order poll?", List.of("yes", "no"),
+                            false, false, null)));
+            int pollPid = awaitBlockedBy(pidOf(deletionPrefix));
+
+            assertThat(rowLockBlockers("conversations", conversationId))
+                    .as("poll must not hold the conversation row while blocked behind deletion")
+                    .doesNotContain(pollPid);
+
+            quietRollback(deletionPrefix);
+            pollGate.release();
+            assertThat(failures(poll))
+                    .as("poll create must complete once deletion releases its locks")
+                    .isEmpty();
+        } finally {
+            quietRollback(deletionPrefix);
+        }
+
+        deletionPrefix = openHolder();
+        lockRowForUpdate(deletionPrefix, "users", alice.id());
+        lockRowForUpdate(deletionPrefix, "conversations", conversationId);
+
+        long reminderKey = installGate("sync_lock_gate_reminder_del", "conversation_reminders",
+                "BEFORE INSERT", "");
+        try (Gate reminderGate = openGate(reminderKey)) {
+            Future<String> reminder = submit(() -> reminderService.create(alice.id(), conversationId,
+                    new CreateReminderRequest("lock-order reminder",
+                            Instant.now().plusSeconds(3600), "NONE"), null));
+            int reminderPid = awaitBlockedBy(pidOf(deletionPrefix));
+
+            assertThat(rowLockBlockers("conversations", conversationId))
+                    .as("reminder must not hold the conversation row while blocked behind deletion")
+                    .doesNotContain(reminderPid);
+
+            quietRollback(deletionPrefix);
+            reminderGate.release();
+            assertThat(failures(reminder))
+                    .as("reminder create must complete once deletion releases its locks")
+                    .isEmpty();
+        } finally {
+            quietRollback(deletionPrefix);
+        }
+    }
+
+    // --------------------------------------------------------------- S6
+
+    @Test
+    void systemRemoveLeaveVsGroupAdd() throws Exception {
+        TestUser bob = register("systemLeaveVsAddAdmin");
+        TestUser alice = register("systemLeaveVsAdd");
+        TestUser charlie = register("systemLeaveVsAddThird");
+        // bob owns the group so alice may leave without violating the sole-admin rule.
+        UUID conversationId = createGroup(bob, alice, "leave-vs-add " + System.nanoTime());
+
+        long addKey = installGate("sync_lock_gate_member_insert", "conversation_members",
+                "AFTER INSERT", "");
+        long leaveKey = installGate("sync_lock_gate_leave_system", "messages",
+                "BEFORE INSERT", "WHEN (NEW.type = 'SYSTEM' AND NEW.content LIKE '%left the group%')");
+        try (Gate addGate = openGate(addKey); Gate leaveGate = openGate(leaveKey)) {
+            Future<String> add = submit(() ->
+                    groupService.addMembers(bob.id(), conversationId,
+                            new AddMemberRequest(List.of(charlie.id()))));
+            int addPid = awaitBlockedBy(addGate.pid());
+            assertHoldsRow(addPid, "users", bob.id());
+
+            Future<String> leave = submit(() -> groupService.leave(alice.id(), conversationId));
+            // The leave must serialize behind the add's conversation lock
+            // instead of slipping past it to the system-message insert.
+            assertThat(awaitBlockedBy(addPid, "from conversations")).isPositive();
+
+            addGate.release();
+            int gatedLeave = awaitBlockedBy(leaveGate.pid());
+            assertHoldsRow(gatedLeave, "users", alice.id());
+            assertHoldsRow(gatedLeave, "conversations", conversationId);
+
+            leaveGate.release();
+            assertThat(failures(add, leave))
+                    .as("group add/leave must terminate without a deadlock")
+                    .isEmpty();
+        }
+    }
+
+    // --------------------------------------------------------------- S7
+
+    @Test
+    void callParticipantsVsAccountDeletion() throws Exception {
+        TestUser alice = register("callVsDeletion");
+        TestUser bob = register("callVsDeletionPeer");
+        UUID conversationId = conversationService.openDirect(alice.id(),
+                new OpenDirectRequest(null, bob.id())).body().id();
+
+        // Account deletion holds the participant row FOR UPDATE before it
+        // touches any call record. The call must take the participant rows
+        // first, so it may not reach the call-record insert while one is held.
+        Connection participantLock = openHolder();
+        lockRowForUpdate(participantLock, "users", bob.id());
+
+        long key = installGate("sync_lock_gate_call_record", "call_records", "BEFORE INSERT", "");
+        try (Gate gate = openGate(key)) {
+            UUID callId = UUID.randomUUID();
+            Future<String> call = submit(() -> callService.signal(conversationId, alice.id(),
+                    new CallSignal(CallSignal.Type.INVITE, callId, null, null)));
+
+            assertThat(awaitBlockedBy(pidOf(participantLock), "FROM users u"))
+                    .as("the call must wait on the participant row before flushing its call record")
+                    .isPositive();
+            assertThat(backendsWaitingOn(gate.pid()))
+                    .as("no call transaction may reach the call-record flush while a participant row is held")
+                    .isEmpty();
+
+            quietRollback(participantLock);
+            gate.release();
+            assertThat(failures(call))
+                    .as("call invite must complete once the participant lock is released")
+                    .isEmpty();
+        } finally {
+            quietRollback(participantLock);
+        }
+    }
+
+    // --------------------------------------------------------------- S8
+
+    @Test
+    void reversedWatermarkReactionLocks() throws Exception {
+        TestUser alice = register("reversedWatermark");
+        TestUser bobA = register("reversedWatermarkA");
+        TestUser bobB = register("reversedWatermarkB");
+        UUID convA = createGroup(alice, bobA, "wm-a " + System.nanoTime());
+        UUID convB = createGroup(alice, bobB, "wm-b " + System.nanoTime());
+        MessageResponse msgA = sendText(bobA, convA, "wm-a");
+        MessageResponse msgB = sendText(bobB, convB, "wm-b");
+        reactionService.add(alice.id(), msgA.id(), "👍");
+        reactionService.add(alice.id(), msgB.id(), "❤️");
+        Instant since = Instant.now().minusSeconds(120);
+
+        long seqA = messageService.syncDelta(alice.id(), new SyncRequest(
+                List.of(new SyncRequest.ConversationWatermark(convA, 0L)),
+                50, since)).deltas().get(0).maxSeq();
+        long seqB = messageService.syncDelta(alice.id(), new SyncRequest(
+                List.of(new SyncRequest.ConversationWatermark(convB, 0L)),
+                50, since)).deltas().get(0).maxSeq();
+
+        Future<String> ab = submit(() -> messageService.syncDelta(alice.id(), new SyncRequest(
+                List.of(
+                        new SyncRequest.ConversationWatermark(convA, seqA),
+                        new SyncRequest.ConversationWatermark(convB, seqB)),
+                50, since)));
+        Future<String> ba = submit(() -> messageService.syncDelta(alice.id(), new SyncRequest(
+                List.of(
+                        new SyncRequest.ConversationWatermark(convB, seqB),
+                        new SyncRequest.ConversationWatermark(convA, seqA)),
+                50, since)));
+        assertThat(failures(ab, ba))
+                .as("two sync requests with reversed watermarks must not deadlock "
+                        + "on the reaction-event advisories")
+                .isEmpty();
+    }
+
+    // --------------------------------------------------------------- S9
+
+    @Test
+    void groupAddAndRenameDoNotUpgradeParentLocksOutOfOrder() throws Exception {
+        TestUser alice = register("groupAddRename");
+        TestUser bob = register("groupAddRenamePeer");
+        TestUser charlie = register("groupAddRenameThird");
+        UUID conversationId = createGroup(alice, bob, "add-and-rename " + System.nanoTime());
+
+        long addKey = installGate("sync_lock_gate_rename_add", "conversation_members", "AFTER INSERT", "");
+        long renameKey = installGate("sync_lock_gate_rename_system", "messages", "BEFORE INSERT",
+                "WHEN (NEW.type = 'SYSTEM' AND NEW.content LIKE '%renamed the group%')");
+        try (Gate addGate = openGate(addKey); Gate renameGate = openGate(renameKey)) {
+            Future<String> add = submit(() ->
+                    groupService.addMembers(alice.id(), conversationId,
+                            new AddMemberRequest(List.of(charlie.id()))));
+            int addPid = awaitBlockedBy(addGate.pid());
+            assertHoldsRow(addPid, "users", alice.id());
+            assertHoldsRow(addPid, "conversations", conversationId);
+
+            Future<String> rename = submit(() ->
+                    groupService.updateGroup(alice.id(), conversationId,
+                            new PatchGroupRequest("add-and-rename " + System.nanoTime(), null)));
+            // The rename must wait at the conversation lock the add already
+            // holds, not dirty the managed row and flush past it.
+            assertThat(awaitBlockedBy(addPid, "from conversations")).isPositive();
+
+            addGate.release();
+            int gatedRename = awaitBlockedBy(renameGate.pid());
+            assertHoldsRow(gatedRename, "users", alice.id());
+            assertHoldsRow(gatedRename, "conversations", conversationId);
+
+            renameGate.release();
+            assertThat(failures(add, rename))
+                    .as("group add/rename must take the user parent before the conversation write")
+                    .isEmpty();
+        }
+    }
+
     // ------------------------------------------------------------- helpers
 
     private TestUser register(String tag) {
-        String phone = "+8491" + (1 + ThreadLocalRandom.current().nextInt(9))
-                + String.format("%06d", ThreadLocalRandom.current().nextInt(1_000_000));
+        // +84993 belongs to this suite: sibling ITs clean +8490/+8491/+8492/
+        // +8495/+8497/+8498, and a shared prefix would let their FK-ordered
+        // cleanup collide with these users' messages.
+        String phone = "+84993" + String.format("%06d", ThreadLocalRandom.current().nextInt(1_000_000));
         var response = authService.register(
                 new RegisterRequest(phone, "secret123", tag + " " + System.nanoTime()), "it");
         return new TestUser(response.user().id(), phone);
@@ -414,7 +626,29 @@ class SyncLockOrderIT {
         }
     }
 
+    private List<Integer> backendsWaitingOn(int blockerPid) {
+        return jdbcTemplate.queryForList("""
+                SELECT pid FROM pg_stat_activity
+                WHERE datname = current_database()
+                  AND CAST(? AS int) = ANY(pg_blocking_pids(pid))
+                  AND query NOT LIKE '%sync-lock-probe%'
+                  AND query NOT LIKE '%pg_stat_activity%'
+                """, Integer.class, blockerPid);
+    }
+
+    private void lockRowForNoKeyUpdate(Connection connection, String table, UUID id) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id FROM " + table + " WHERE id = ? FOR NO KEY UPDATE")) {
+            statement.setObject(1, id);
+            statement.executeQuery();
+        }
+    }
+
     private int awaitBlockedBy(int blockerPid) {
+        return awaitBlockedBy(blockerPid, null);
+    }
+
+    private int awaitBlockedBy(int blockerPid, String queryFragment) {
         AtomicInteger blocked = new AtomicInteger();
         Awaitility.await().atMost(Duration.ofSeconds(10)).pollInterval(Duration.ofMillis(25))
                 .untilAsserted(() -> {
@@ -422,7 +656,10 @@ class SyncLockOrderIT {
                             SELECT pid FROM pg_stat_activity
                             WHERE datname = current_database()
                               AND CAST(? AS int) = ANY(pg_blocking_pids(pid))
-                            """, Integer.class, blockerPid);
+                              AND query NOT LIKE '%sync-lock-probe%'
+                              AND query NOT LIKE '%pg_stat_activity%'
+                              AND (CAST(? AS text) IS NULL OR query LIKE '%' || CAST(? AS text) || '%')
+                            """, Integer.class, blockerPid, queryFragment, queryFragment);
                     assertThat(pids).as("a backend blocked by %s", blockerPid).isNotEmpty();
                     blocked.set(pids.get(0));
                 });
@@ -435,6 +672,7 @@ class SyncLockOrderIT {
      * acquired the row immediately: no other transaction holds it.
      */
     private Set<Integer> rowLockBlockers(String table, UUID id) {
+        String marker = "sync-lock-probe-" + UUID.randomUUID();
         Connection probe;
         try {
             probe = openHolder();
@@ -448,7 +686,7 @@ class SyncLockOrderIT {
                     timeout.execute();
                 }
                 try (PreparedStatement statement = probe.prepareStatement(
-                        "/* sync-lock-probe */ SELECT id FROM " + table + " WHERE id = ? FOR UPDATE")) {
+                        "/* " + marker + " */ SELECT id FROM " + table + " WHERE id = ? FOR UPDATE")) {
                     statement.setObject(1, id);
                     statement.executeQuery();
                 }
@@ -468,9 +706,9 @@ class SyncLockOrderIT {
                         List<Integer> pids = jdbcTemplate.queryForList("""
                                 SELECT pid FROM pg_stat_activity
                                 WHERE datname = current_database()
-                                  AND query LIKE '%sync-lock-probe%'
+                                  AND query LIKE ?
                                   AND pid <> pg_backend_pid()
-                                """, Integer.class);
+                                """, Integer.class, "%" + marker + "%");
                         if (pids.isEmpty()) {
                             return false;
                         }

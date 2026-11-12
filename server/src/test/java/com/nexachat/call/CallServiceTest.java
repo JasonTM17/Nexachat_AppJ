@@ -67,7 +67,8 @@ class CallServiceTest {
         when(rateLimitService.tryConsume(any(), anyLong(), any())).thenReturn(
                 new RateLimitService.Consumption(true, 0));
         service = new CallService(registry, recordRepository, conversationRepository,
-                memberRepository, rateLimitService, systemMessageWriter, eventPublisher,
+                memberRepository, rateLimitService, systemMessageWriter,
+                mock(com.nexachat.user.UserRepository.class), eventPublisher,
                 "stun:stun.l.google.com:19302");
     }
 
@@ -268,7 +269,8 @@ class CallServiceTest {
         };
         registry = new CallRegistry(advancingClock, 45_000);
         service = new CallService(registry, recordRepository, conversationRepository,
-                memberRepository, rateLimitService, systemMessageWriter, eventPublisher,
+                memberRepository, rateLimitService, systemMessageWriter,
+                mock(com.nexachat.user.UserRepository.class), eventPublisher,
                 "stun:stun.l.google.com:19302");
         UUID callId = UUID.randomUUID();
         service.signal(conversationId, callerId,

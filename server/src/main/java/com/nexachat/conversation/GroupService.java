@@ -206,6 +206,10 @@ public class GroupService {
         List<UUID> userIdsToLock = new ArrayList<>(userIds);
         userIdsToLock.add(callerId);
         Map<UUID, User> lockedUsers = lockActiveUsers(userIdsToLock);
+        // The user parents are held first; take the conversation row as a full
+        // lock at entry so the member INSERT (conversation FK) and the SYSTEM
+        // lines cannot perform a key-share -> write upgrade later.
+        conversation = lockGroup(conversationId);
         List<User> candidates = userIds.stream().map(lockedUsers::get).toList();
 
         Set<UUID> existing = new HashSet<>(memberRepository.findMemberUserIds(conversationId));
@@ -247,7 +251,7 @@ public class GroupService {
         Map<UUID, User> lockedUsers = lockActiveUsers(userIdsToLock);
         User user = lockedUsers.get(userId);
 
-        Conversation conversation = requireGroup(conversationId);
+        Conversation conversation = lockGroup(conversationId);
         if (memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)) {
             return; // Idempotent no-op
         }
@@ -282,7 +286,10 @@ public class GroupService {
      */
     @Transactional
     public void removeMember(UUID callerId, UUID conversationId, UUID targetUserId) {
-        Conversation conversation = requireGroup(conversationId);
+        // The SYSTEM line's sender FK takes the acting user key-share; take it
+        // before the conversation lock instead of after it.
+        userRepository.lockForKeyShareSorted(List.of(callerId));
+        Conversation conversation = lockGroup(conversationId);
         removeMemberInternal(conversation, callerId, targetUserId, false);
     }
 
@@ -293,7 +300,8 @@ public class GroupService {
      */
     @Transactional
     public void leave(UUID callerId, UUID conversationId) {
-        Conversation conversation = requireGroup(conversationId);
+        userRepository.lockForKeyShareSorted(List.of(callerId));
+        Conversation conversation = lockGroup(conversationId);
         removeMemberInternal(conversation, callerId, callerId, false);
     }
 
@@ -305,10 +313,11 @@ public class GroupService {
      */
     @Transactional
     public void leaveForAccountDeletion(UUID userId, UUID conversationId) {
-        conversationRepository.findByIdForUpdate(conversationId)
-                .orElseThrow(() -> ApiException.of(
-                        ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
-        Conversation conversation = requireGroup(conversationId);
+        // AccountDeletionService already holds this user row FOR UPDATE; the
+        // explicit key-share documents and keeps the user -> conversation order
+        // for any other caller of this entry point.
+        userRepository.lockForKeyShareSorted(List.of(userId));
+        Conversation conversation = lockGroup(conversationId);
         removeMemberInternal(conversation, userId, userId, true);
     }
 
@@ -444,22 +453,25 @@ public class GroupService {
                     "Provide title and/or avatarUrl");
         }
 
+        // Lock order: avatar advisory -> attachment -> acting user -> conversation.
+        // Nothing is dirtied before all four are held, so the managed-entity
+        // flush during postSystemMessage cannot upgrade a key-share lock.
         boolean renamed = false;
+        String newTitle = null;
         if (request.title() != null) {
-            String newTitle = normalizeTitle(request.title());
+            newTitle = normalizeTitle(request.title());
             renamed = !newTitle.equals(conversation.getTitle());
-            if (renamed) {
-                conversation.changeTitle(newTitle);
-            }
         }
-        if (request.avatarUrl() != null) {
+        boolean avatarProvided = request.avatarUrl() != null;
+        String normalizedAvatarUrl = null;
+        if (avatarProvided) {
             avatarReferenceCoordinator.lockForTransaction();
             String avatarUrl = request.avatarUrl().trim();
             if (avatarUrl.length() > MAX_AVATAR_URL_LENGTH) {
                 throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                         "avatarUrl must be at most " + MAX_AVATAR_URL_LENGTH + " characters");
             }
-            String normalizedAvatarUrl = avatarUrl.isEmpty()
+            normalizedAvatarUrl = avatarUrl.isEmpty()
                     ? null
                     : AvatarUrlPolicy.toRelativeFilesUrl(avatarUrl);
             if (normalizedAvatarUrl != null) {
@@ -470,6 +482,13 @@ public class GroupService {
                     throw ApiException.of(ApiErrorCode.ATTACHMENT_NOT_FOUND, "Avatar file not found");
                 }
             }
+        }
+        userRepository.lockForKeyShareSorted(List.of(callerId));
+        conversation = lockGroup(conversationId);
+        if (renamed) {
+            conversation.changeTitle(newTitle);
+        }
+        if (avatarProvided) {
             conversation.changeAvatarUrl(normalizedAvatarUrl);
         }
 
@@ -523,6 +542,22 @@ public class GroupService {
 
     private Conversation requireGroup(UUID conversationId) {
         Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> ApiException.of(
+                        ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
+        if (conversation.getType() != Conversation.Type.GROUP) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "Group operations only apply to GROUP conversations");
+        }
+        return conversation;
+    }
+
+    /**
+     * Full conversation lock at entry for group writers. Taking it once, after
+     * the user parents, avoids a later FK key-share followed by a write-mode
+     * upgrade on the same row.
+     */
+    private Conversation lockGroup(UUID conversationId) {
+        Conversation conversation = conversationRepository.findByIdForUpdate(conversationId)
                 .orElseThrow(() -> ApiException.of(
                         ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
         if (conversation.getType() != Conversation.Type.GROUP) {
