@@ -187,13 +187,15 @@ production.
 `STORAGE_ROOT`. For persistent object storage, set it to `s3` and configure
 `NEXACHAT_STORAGE_S3_ENDPOINT`, `NEXACHAT_STORAGE_S3_BUCKET`,
 `NEXACHAT_STORAGE_S3_ACCESS_KEY_ID`, and
-`NEXACHAT_STORAGE_S3_SECRET_ACCESS_KEY`. R2 uses region `auto`; its endpoint is
-`https://<ACCOUNT_ID>.r2.cloudflarestorage.com`. Create an R2 API token limited
-to object read/write on this bucket and keep both credentials in the runtime
-secret store. See Cloudflare's [R2 S3 setup](https://developers.cloudflare.com/r2/get-started/s3/)
-and [S3 API compatibility](https://developers.cloudflare.com/r2/api/s3/api/)
-guides for token setup, endpoint and region details. The server uses
-path-style requests and keeps the bucket private.
+`NEXACHAT_STORAGE_S3_SECRET_ACCESS_KEY`. The deployed production topology uses
+**Supabase Storage** (S3-compatible protocol, region `ap-southeast-1`, private
+bucket, path-style) with endpoint
+`https://<project-ref>.storage.supabase.co/storage/v1/s3`. **Cloudflare R2** is a
+supported alternative using region `auto` and endpoint
+`https://<account-id>.r2.cloudflarestorage.com`. Create an S3 access key / R2 API
+token limited to object read/write on this bucket and keep credentials in the runtime
+secret store. The server enforces path-style requests (`forcePathStyle(true)`)
+and keeps the bucket private.
 
 Multipart parts are written to disk before the controller runs
 (`spring.servlet.multipart.file-size-threshold: 0B`). They go to
@@ -211,7 +213,7 @@ the attempt deadline may not exceed the call deadline, and non-positive
 values fail startup.
 
 Downloads continue through `/api/v1/files/{key}` after the server's existing
-authorization checks; responses do not contain an R2 bucket URL. The avatar
+authorization checks; responses do not contain an S3/Supabase/R2 bucket URL. The avatar
 orphan sweep lists `avatars/` objects through paginated S3 ListObjectsV2 calls.
 The Compose `app-uploads` volume is used only by the `local` provider.
 
@@ -832,7 +834,7 @@ point the Compose and Dockerfile health checks at it too.
   (details hidden).
 - `diskSpace` — free space at `nexachat.storage.root` with a configurable
   threshold (`MANAGEMENT_DISK_THRESHOLD`, default `1GB`). This checks local
-  runtime disk space; it does not measure S3/R2 bucket capacity.
+  runtime disk space; it does not measure S3/Supabase/R2 bucket capacity.
 - `ping` — liveness.
 
 Two groups are exposed and both are public:

@@ -1,7 +1,8 @@
 # Render Blueprint for the NexaChat API (owner decision 2026-11-11).
 #
 # One Free web service built from server/Dockerfile, with Neon Postgres and
-# Cloudflare R2 (S3) behind it. Render Free is 0.1 CPU / 512 MB, has an
+# Supabase Storage (S3 protocol, region ap-southeast-1; Cloudflare R2
+# alternative) behind it. Render Free is 0.1 CPU / 512 MB, has an
 # ephemeral filesystem and sleeps after 15 minutes without traffic. The
 # `render` Spring profile (server/src/main/resources/application-render.yml)
 # tunes Tomcat and Hikari for that box; JAVA_OPTS below tunes the JVM.
@@ -100,17 +101,17 @@ services:
       # still exist for /actuator/health/readiness.
       - key: STORAGE_ROOT
         value: /app/data/uploads
-      # R2 via the S3-compatible provider added by brief 336 S1
-      # (feat/server-s3-storage). Do not deploy before that branch is merged:
-      # until then the server ignores these keys and uploads stay ephemeral.
-      # Names match S1's application.yml storage.s3 block; S1 always uses
-      # path-style addressing for R2, so there is no path-style env var.
+      # Supabase Storage (S3 protocol, region ap-southeast-1, private bucket,
+      # path-style) is the deployed store; Cloudflare R2 (region auto) is a
+      # supported alternative. Names match application.yml storage.s3 block
+      # (server/src/main/resources/application.yml:148-153); S3StorageConfiguration
+      # always uses path-style addressing.
       - key: NEXACHAT_STORAGE_PROVIDER
         value: s3
       - key: NEXACHAT_STORAGE_S3_ENDPOINT
         sync: false
       - key: NEXACHAT_STORAGE_S3_REGION
-        value: auto
+        value: ap-southeast-1
       - key: NEXACHAT_STORAGE_S3_BUCKET
         value: nexachat-uploads
       - key: NEXACHAT_STORAGE_S3_ACCESS_KEY_ID
