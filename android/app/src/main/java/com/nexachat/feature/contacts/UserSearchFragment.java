@@ -134,9 +134,11 @@ public final class UserSearchFragment extends Fragment {
             for (Contact c : state.getContacts()) {
                 contactUsers.add(new UserDto(
                         c.getUserId(),
-                        c.getPhone() == null ? "" : c.getPhone(),
+                        c.getPhone(),
                         c.getPrimaryLabel(),
-                        c.getAvatarUrl()));
+                        c.getAvatarUrl(),
+                        c.getEmail(),
+                        c.getEmailVerified()));
             }
             users = contactUsers;
         }
@@ -249,15 +251,18 @@ public final class UserSearchFragment extends Fragment {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        TextView phone = new TextView(requireContext());
-        phone.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium);
-        phone.setGravity(Gravity.CENTER_HORIZONTAL);
-        phone.setText(user.getPhone());
-        LinearLayout.LayoutParams phoneLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        phoneLp.bottomMargin = spaceMd;
-        root.addView(phone, phoneLp);
+        String identityLine = com.nexachat.core.common.PersonContactSubtitle.subtitle(user);
+        if (identityLine != null && !identityLine.isBlank()) {
+            TextView phone = new TextView(requireContext());
+            phone.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium);
+            phone.setGravity(Gravity.CENTER_HORIZONTAL);
+            phone.setText(identityLine);
+            LinearLayout.LayoutParams phoneLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            phoneLp.bottomMargin = spaceMd;
+            root.addView(phone, phoneLp);
+        }
 
         ApiError detailError = state.getDetailError();
         if (detailError != null) {

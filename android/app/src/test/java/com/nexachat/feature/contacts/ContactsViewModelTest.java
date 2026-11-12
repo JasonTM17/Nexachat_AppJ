@@ -236,6 +236,26 @@ public final class ContactsViewModelTest {
     }
 
     @Test
+    public void emailLookupUsesSearchByEmailAndAddsWithEmailBody() {
+        UserDto byEmail = new UserDto(
+                "u-2", null, "Gmail User", null, "friend@gmail.com", true);
+        when(repository.searchByEmail(anyString()))
+                .thenReturn(Single.just(new Result.Success<>(List.of(byEmail))));
+        when(repository.addContactByEmail(anyString()))
+                .thenReturn(Single.just(new Result.Success<>(
+                        new Contact("u-2", null, "Gmail User", null, null, null,
+                                "friend@gmail.com", true))));
+        viewModel.onAddPhoneChange("friend@gmail.com");
+
+        viewModel.findUserForAdd();
+        viewModel.confirmAdd();
+
+        verify(repository, times(1)).searchByEmail("friend@gmail.com");
+        verify(repository, times(1)).addContactByEmail("friend@gmail.com");
+        assertTrue(viewModel.getUiState().getValue().isAddDone());
+    }
+
+    @Test
     public void addingSignedInPhoneUsesDedicatedErrorWithoutCallingServer() {
         when(repository.getMe()).thenReturn(Single.just(new Result.Success<>(
                 new UserDto("me", "+84912345678", "Me", null))));

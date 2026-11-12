@@ -391,10 +391,57 @@
             app:strokeColor="?attr/colorOutlineVariant"
             app:strokeWidth="1dp">
 
-            <com.nexachat.core.ui.components.SettingsRowView
-                android:id="@+id/recoveryEmailRow"
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content" />
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <com.nexachat.core.ui.components.SettingsRowView
+                    android:id="@+id/recoveryEmailRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <View
+                    android:id="@+id/signInMethodGoogleDivider"
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="72dp"
+                    android:background="?attr/colorOutlineVariant"
+                    android:visibility="gone" />
+
+                <com.nexachat.core.ui.components.SettingsRowView
+                    android:id="@+id/googleAccountRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="@dimen/min_touch_target"
+                    android:visibility="gone" />
+
+                <View
+                    android:id="@+id/signInMethodPhoneDivider"
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="72dp"
+                    android:background="?attr/colorOutlineVariant"
+                    android:visibility="gone" />
+
+                <com.nexachat.core.ui.components.SettingsRowView
+                    android:id="@+id/signInMethodPhoneRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="@dimen/min_touch_target"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/signInMethodsError"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:accessibilityLiveRegion="polite"
+                    android:paddingHorizontal="16dp"
+                    android:paddingBottom="12dp"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?attr/colorError"
+                    android:visibility="gone" />
+            </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
         <!-- Sign out Group Card in Error styling (16dp radius) -->
@@ -421,20 +468,6 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
-
-                <com.nexachat.core.ui.components.SettingsRowView
-                    android:id="@+id/googleAccountRow"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:visibility="gone" />
-
-                <View
-                    android:id="@+id/googleAccountDivider"
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="72dp"
-                    android:background="?attr/colorOutlineVariant"
-                    android:visibility="gone" />
 
                 <com.nexachat.core.ui.components.SettingsRowView
                     android:id="@+id/logoutRow"

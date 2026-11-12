@@ -123,9 +123,15 @@ public final class ContactsViewModel extends ViewModel {
             return;
         }
         updateState(current -> current.withLoading(true).withError(null).withSearched(true));
-        Single<Result<List<UserDto>>> request = isPhoneQuery(query)
-                ? contactsRepository.searchByPhone(query)
-                : contactsRepository.searchByName(query);
+        Single<Result<List<UserDto>>> request;
+        if (isPhoneQuery(query)) {
+            request = contactsRepository.searchByPhone(query);
+        } else if (AddContactInputDetector.containsEmailHint(query)) {
+            request = contactsRepository.searchByEmail(
+                    AddContactInputDetector.normalizeEmail(query));
+        } else {
+            request = contactsRepository.searchByName(query);
+        }
         disposables.add(request.subscribeOn(Schedulers.io())
                 .subscribe(
                         result -> updateState(current -> result instanceof Result.Success<?> success
@@ -148,15 +154,26 @@ public final class ContactsViewModel extends ViewModel {
                 .withAddDone(false));
     }
 
-    /** Finds a user for confirmation before adding by phone. */
+    /** Finds a user for confirmation before adding by phone or email. */
     public void findUserForAdd() {
         UiState state = currentState();
-        String phone = trimWhitespace(state.getAddPhone());
-        if (phone.isEmpty() || state.isAddSearching()) {
+        String raw = trimWhitespace(state.getAddPhone());
+        if (raw.isEmpty() || state.isAddSearching()) {
+            return;
+        }
+        AddContactInputDetector.Kind kind = AddContactInputDetector.classify(raw);
+        if (kind == AddContactInputDetector.Kind.INVALID) {
+            updateState(current -> current.withAddError(
+                    AddContactInputDetector.containsEmailHint(raw)
+                            ? ApiError.RecoveryEmailInvalid.INSTANCE
+                            : new ApiError.Unknown("USER_NOT_FOUND")));
             return;
         }
         updateState(current -> current.withAddSearching(true).withAddError(null).withAddResult(null));
-        disposables.add(contactsRepository.searchByPhone(phone)
+        Single<Result<List<UserDto>>> lookup = kind == AddContactInputDetector.Kind.EMAIL
+                ? contactsRepository.searchByEmail(AddContactInputDetector.normalizeEmail(raw))
+                : contactsRepository.searchByPhone(raw);
+        disposables.add(lookup
                 .subscribeOn(Schedulers.io())
                 .subscribe(
                         result -> updateState(current -> {
@@ -176,17 +193,35 @@ public final class ContactsViewModel extends ViewModel {
                                 .withAddError(new ApiError.Network(error.getMessage())))));
     }
 
-    /** Adds the confirmed user, or retries from the entered phone. */
+    /** Adds the confirmed user, or retries from the entered phone or email. */
     public void confirmAdd() {
         UiState state = currentState();
-        String phone = state.getAddResult() == null
-                ? trimWhitespace(state.getAddPhone())
-                : state.getAddResult().getPhone();
-        if (phone.isEmpty() || state.isAdding()) {
+        if (state.isAdding()) {
+            return;
+        }
+        if (state.getAddResult() != null) {
+            updateState(current -> current.withAdding(true).withAddError(null));
+            submitAddForUser(state.getAddResult(), false);
+            return;
+        }
+        String raw = trimWhitespace(state.getAddPhone());
+        if (raw.isEmpty()) {
+            return;
+        }
+        AddContactInputDetector.Kind kind = AddContactInputDetector.classify(raw);
+        if (kind == AddContactInputDetector.Kind.INVALID) {
+            updateState(current -> current.withAddError(
+                    AddContactInputDetector.containsEmailHint(raw)
+                            ? ApiError.RecoveryEmailInvalid.INSTANCE
+                            : new ApiError.Unknown("USER_NOT_FOUND")));
             return;
         }
         updateState(current -> current.withAdding(true).withAddError(null));
-        submitAddContact(phone, false);
+        if (kind == AddContactInputDetector.Kind.EMAIL) {
+            submitAddContactByEmail(AddContactInputDetector.normalizeEmail(raw), false);
+        } else {
+            submitAddContact(raw, false);
+        }
     }
 
     /** Resets the add-by-phone flow when its sheet is dismissed. */
@@ -225,7 +260,9 @@ public final class ContactsViewModel extends ViewModel {
                 contact.getUserId(),
                 contact.getPhone(),
                 contact.getDisplayName(),
-                null);
+                null,
+                contact.getEmail(),
+                contact.getEmailVerified());
         updateState(state -> state
                 .withDetailUser(user)
                 .withDetailContact(contact)
@@ -301,7 +338,7 @@ public final class ContactsViewModel extends ViewModel {
             return;
         }
         updateState(current -> current.withDetailBusy(true).withDetailError(null));
-        submitAddContact(user.getPhone(), true);
+        submitAddForUser(user, true);
     }
 
     /** Opens the selected user's direct conversation and emits navigation. */
@@ -328,6 +365,54 @@ public final class ContactsViewModel extends ViewModel {
                         },
                         error -> updateState(current -> current.withDetailBusy(false)
                                 .withDetailError(new ApiError.Network(error.getMessage())))));
+    }
+
+    private void submitAddForUser(UserDto user, boolean detail) {
+        if (user.getPhone() != null && !user.getPhone().isBlank()) {
+            submitAddContact(user.getPhone(), detail);
+            return;
+        }
+        if (user.hasVerifiedRecoveryEmail()) {
+            submitAddContactByEmail(user.getEmail(), detail);
+            return;
+        }
+        updateState(current -> detail
+                ? current.withDetailBusy(false).withDetailError(new ApiError.Unknown("USER_NOT_FOUND"))
+                : current.withAdding(false).withAddError(new ApiError.Unknown("USER_NOT_FOUND")));
+    }
+
+    private void submitAddContactByEmail(String email, boolean detail) {
+        disposables.add(contactsRepository.getMe()
+                .subscribeOn(Schedulers.io())
+                .flatMap(meResult -> {
+                    if (meResult instanceof Result.Success<?> success) {
+                        UserDto me = (UserDto) success.getValue();
+                        if (SelfContactGuard.isOwnEmail(email, me.getEmail())) {
+                            return Single.just(Result.<Contact>failure(
+                                    new ApiError.Unknown(SelfContactGuard.ERROR_CODE)));
+                        }
+                    }
+                    return contactsRepository.addContactByEmail(email);
+                })
+                .subscribe(
+                        result -> updateState(current -> {
+                            if (detail) {
+                                return result instanceof Result.Success<?> success
+                                        ? current.withDetailBusy(false)
+                                                .withDetailContact((Contact) success.getValue())
+                                        : current.withDetailBusy(false).withDetailError(
+                                                ((Result.Failure<?>) result).getError());
+                            }
+                            return result instanceof Result.Success<?>
+                                    ? current.withAdding(false).withAddDone(true)
+                                    : current.withAdding(false).withAddError(
+                                            ((Result.Failure<?>) result).getError());
+                        }),
+                        error -> updateState(current -> detail
+                                ? current.withDetailBusy(false).withDetailError(
+                                        new ApiError.Network(error.getMessage()))
+                                : current.withAdding(false).withAddError(
+                                        new ApiError.Network(error.getMessage())))));
     }
 
     private void submitAddContact(String phone, boolean detail) {
