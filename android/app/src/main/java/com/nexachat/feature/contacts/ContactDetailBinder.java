@@ -108,10 +108,6 @@ final class ContactDetailBinder {
         boundTitle = null;
     }
 
-    static boolean closesViewModelOnDismiss(boolean dismissFromViewTeardown) {
-        return !dismissFromViewTeardown;
-    }
-
     private void bindContent(@NonNull LinearLayout root, @NonNull ContactsViewModel.UiState state) {
         Content content = contentFor(state);
         if (content == null) {

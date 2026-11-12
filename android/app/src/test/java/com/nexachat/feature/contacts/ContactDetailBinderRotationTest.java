@@ -1,9 +1,7 @@
 package com.nexachat.feature.contacts;
 
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
 
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.data.Contact;
@@ -17,16 +15,6 @@ public final class ContactDetailBinderRotationTest {
 
     private static final String USER_ID = "u-1";
     private static final String PHONE = "+84912345678";
-
-    @Test
-    public void viewTeardownDoesNotCloseDetailSelection() {
-        assertFalse(ContactDetailBinder.closesViewModelOnDismiss(true));
-    }
-
-    @Test
-    public void userDismissClosesDetailSelection() {
-        assertTrue(ContactDetailBinder.closesViewModelOnDismiss(false));
-    }
 
     @Test
     public void configurationChangeLeavesDetailReadyForOneDialog() {
