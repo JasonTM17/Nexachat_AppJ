@@ -1,5 +1,7 @@
 package com.nexachat.message;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.message.dto.MessageResponse;
@@ -34,7 +36,6 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -307,8 +308,7 @@ class MessageCommitOrderIT {
     }
 
     private TestUser registerUser(String displayName) throws Exception {
-        String phone = "+8494" + (1 + ThreadLocalRandom.current().nextInt(9))
-                + String.format("%06d", ThreadLocalRandom.current().nextInt(1_000_000));
+        String phone = ItPhoneRanges.nextPhone(MessageCommitOrderIT.class);
         var result = mockMvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(

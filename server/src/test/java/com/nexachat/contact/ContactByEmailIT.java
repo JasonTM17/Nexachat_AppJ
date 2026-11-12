@@ -2,6 +2,7 @@ package com.nexachat.contact;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.testutil.ItPhoneRanges;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -23,7 +24,6 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -68,7 +68,7 @@ class ContactByEmailIT {
 
     @BeforeAll
     void registerUsers() throws Exception {
-        String like = "phone LIKE '+8491%'";
+        String like = "phone LIKE '" + ItPhoneRanges.prefixFor(ContactByEmailIT.class) + "%'";
         jdbcTemplate.update(
                 "DELETE FROM conversations WHERE created_by IN (SELECT id FROM users WHERE " + like + ")");
         jdbcTemplate.update("DELETE FROM contacts WHERE owner_id IN (SELECT id FROM users WHERE " + like + ")");
@@ -83,8 +83,7 @@ class ContactByEmailIT {
     }
 
     private static String randomPhone() {
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-        return "+8491" + (1 + random.nextInt(9)) + String.format("%06d", random.nextInt(1_000_000));
+        return ItPhoneRanges.nextPhone(ContactByEmailIT.class);
     }
 
     private TestUser registerUser(String displayName) throws Exception {
@@ -202,7 +201,8 @@ class ContactByEmailIT {
         MvcResult byPhone = mockMvc.perform(post("/api/v1/contacts")
                         .header("Authorization", "Bearer " + alice.accessToken())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("phone", "+84919999999"))))
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "phone", ItPhoneRanges.prefixFor(ContactByEmailIT.class) + "999998"))))
                 .andExpect(status().isNotFound())
                 .andReturn();
 
@@ -231,7 +231,8 @@ class ContactByEmailIT {
 
         TestUser rateLimitUser = registerUser("RateLimitAlice");
         for (int i = 0; i < 30; i++) {
-            String unknownPhone = "+8490" + (1 + (i % 9)) + String.format("%06d", 200000 + i);
+            String unknownPhone = ItPhoneRanges.prefixFor(ContactByEmailIT.class)
+                    + String.format("%06d", 990000 + i);
             mockMvc.perform(post("/api/v1/contacts")
                             .header("Authorization", "Bearer " + rateLimitUser.accessToken())
                             .contentType(MediaType.APPLICATION_JSON)
@@ -241,7 +242,8 @@ class ContactByEmailIT {
         mockMvc.perform(post("/api/v1/contacts")
                         .header("Authorization", "Bearer " + rateLimitUser.accessToken())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("phone", "+84909999999"))))
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "phone", ItPhoneRanges.prefixFor(ContactByEmailIT.class) + "999999"))))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"));
     }

@@ -1,5 +1,7 @@
 package com.nexachat.message;
 
+import com.nexachat.testutil.ItPhoneRanges;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.testutil.PostgresTestDatabase;
@@ -32,7 +34,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
@@ -319,8 +320,7 @@ class SyncCursorRollbackIT {
     }
 
     private static TestUser register(RuntimeServer runtime, String displayName) throws Exception {
-        String phone = "+8497" + (1 + ThreadLocalRandom.current().nextInt(9))
-                + String.format("%06d", ThreadLocalRandom.current().nextInt(1_000_000));
+        String phone = ItPhoneRanges.nextPhone(SyncCursorRollbackIT.class);
         JsonNode response = requestJson(runtime, "POST", "/api/v1/auth/register", null,
                 Map.of("phone", phone, "password", "secret123", "displayName", displayName), 201);
         return new TestUser(UUID.fromString(response.get("user").get("id").asText()),

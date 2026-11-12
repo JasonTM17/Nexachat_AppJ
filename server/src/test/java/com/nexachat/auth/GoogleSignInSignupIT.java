@@ -2,6 +2,7 @@ package com.nexachat.auth;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.nexachat.auth.google.GoogleTestKeys;
+import com.nexachat.testutil.ItPhoneRanges;
 import com.nexachat.auth.google.JwksServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -86,7 +87,7 @@ class GoogleSignInSignupIT extends SecurityITBase {
         // This class enables signup; disable per-request is not available — use a fresh
         // subject against the default-disabled sibling coverage in GoogleSignInIT.
         // Here we assert email conflict instead of re-testing flag off.
-        Registered phoneUser = register("+84905556101");
+        Registered phoneUser = register(ItPhoneRanges.nextPhone(GoogleSignInSignupIT.class));
         jdbcTemplate.update(
                 "UPDATE users SET email = ?, email_verified_at = now() WHERE id = ?",
                 GoogleTestKeys.EMAIL.toLowerCase(), phoneUser.userId());

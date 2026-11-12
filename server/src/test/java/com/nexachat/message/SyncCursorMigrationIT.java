@@ -1,5 +1,6 @@
 package com.nexachat.message;
 
+import com.nexachat.testutil.ItPhoneRanges;
 import com.nexachat.testutil.PostgresTestDatabase;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
@@ -153,7 +154,7 @@ class SyncCursorMigrationIT {
         UUID tombstoneMessageId = UUID.fromString("00000000-0000-0000-0000-000000000022");
         UUID secondConversationMessageId = UUID.fromString("00000000-0000-0000-0000-000000000023");
         jdbc.update("INSERT INTO users (id, phone, password_hash, display_name) VALUES (?, ?, 'x', 'Sync')",
-                userId, "+84912345678");
+                userId, ItPhoneRanges.prefixFor(SyncCursorMigrationIT.class) + "000001");
         insertConversation(jdbc, firstConversationId, userId, "populated-a");
         insertConversation(jdbc, secondConversationId, userId, "populated-b");
         insertConversation(jdbc, emptyConversationId, userId, "empty");

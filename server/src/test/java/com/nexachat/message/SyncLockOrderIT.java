@@ -1,6 +1,7 @@
 package com.nexachat.message;
 
 import com.nexachat.auth.AuthService;
+import com.nexachat.testutil.ItPhoneRanges;
 import com.nexachat.auth.dto.RegisterRequest;
 import com.nexachat.call.CallService;
 import com.nexachat.call.CallSignal;
@@ -47,7 +48,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -534,10 +534,7 @@ class SyncLockOrderIT {
     // ------------------------------------------------------------- helpers
 
     private TestUser register(String tag) {
-        // +84993 belongs to this suite: sibling ITs clean +8490/+8491/+8492/
-        // +8495/+8497/+8498, and a shared prefix would let their FK-ordered
-        // cleanup collide with these users' messages.
-        String phone = "+84993" + String.format("%06d", ThreadLocalRandom.current().nextInt(1_000_000));
+        String phone = ItPhoneRanges.nextPhone(SyncLockOrderIT.class);
         var response = authService.register(
                 new RegisterRequest(phone, "secret123", tag + " " + System.nanoTime()), "it");
         return new TestUser(response.user().id(), phone);

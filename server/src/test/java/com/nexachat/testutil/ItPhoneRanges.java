@@ -87,6 +87,17 @@ public final class ItPhoneRanges {
             Map.entry("com.nexachat.robustness.RestInputRobustnessIT", "+84886"),
             Map.entry("com.nexachat.robustness.ExtendedRouteRobustnessIT", "+84887"),
             Map.entry("com.nexachat.user.AccountDeletionAttachmentLockOrderIT", "+84888"),
+            Map.entry("com.nexachat.attachment.StorageOutsideTransactionIT", "+84830"),
+            Map.entry("com.nexachat.auth.GoogleSignInSignupIT", "+84831"),
+            Map.entry("com.nexachat.auth.MembershipGuardMatrixIT", "+84832"),
+            Map.entry("com.nexachat.contact.ContactByEmailIT", "+84833"),
+            Map.entry("com.nexachat.message.MessageCommitOrderIT", "+84834"),
+            Map.entry("com.nexachat.message.SyncCursorCompatibilityIT", "+84835"),
+            Map.entry("com.nexachat.message.SyncCursorMigrationIT", "+84836"),
+            Map.entry("com.nexachat.message.SyncCursorRollbackIT", "+84837"),
+            Map.entry("com.nexachat.message.SyncLockOrderIT", "+84838"),
+            Map.entry("com.nexachat.message.SyncMutationPagingIT", "+84839"),
+            Map.entry("com.nexachat.message.SyncV2ChangePageClampIT", "+84889"),
             // Brief 375 owns these two suites. AskApiIT inserts "+849" + 9 digits, and
             // SearchTrigramIndexIT keeps "+8493". Neither file is edited here, so every
             // other suite uses a +848xx range that overlaps neither stem.

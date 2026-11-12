@@ -1,6 +1,7 @@
 package com.nexachat.attachment;
 
 import com.nexachat.common.dto.JwtPrincipal;
+import com.nexachat.testutil.ItPhoneRanges;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.GroupService;
@@ -97,7 +98,7 @@ class StorageOutsideTransactionIT {
         owner = UUID.randomUUID();
         group = UUID.randomUUID();
         jdbc.update("INSERT INTO users(id,phone,password_hash,display_name) VALUES (?,?,?,'s2 owner')",
-                owner, "+8" + Long.toString(System.nanoTime()).substring(3), "x".repeat(60));
+                owner, ItPhoneRanges.nextPhone(StorageOutsideTransactionIT.class), "x".repeat(60));
         jdbc.update("INSERT INTO conversations(id,type,title,created_by) VALUES (?,'GROUP','s2 group',?)", group, owner);
         jdbc.update("INSERT INTO conversation_members(conversation_id,user_id,role) VALUES (?,?,'ADMIN')", group, owner);
         executor = Executors.newSingleThreadExecutor();

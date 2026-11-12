@@ -2,6 +2,7 @@ package com.nexachat.auth;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.nexachat.common.error.ApiErrorCode;
+import com.nexachat.testutil.ItPhoneRanges;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -150,10 +151,10 @@ class MembershipGuardMatrixIT extends SecurityITBase {
 
     @Test
     void directConversationMembersKeepAccessToEveryDirectCapableOperation() throws Exception {
-        Registered owner = register("+84905602101");
-        Registered peer = register("+84905602102");
-        Registered outsider = register("+84905602103");
-        Registered groupOwner = register("+84905602104");
+        Registered owner = register(ItPhoneRanges.nextPhone(MembershipGuardMatrixIT.class));
+        Registered peer = register(ItPhoneRanges.nextPhone(MembershipGuardMatrixIT.class));
+        Registered outsider = register(ItPhoneRanges.nextPhone(MembershipGuardMatrixIT.class));
+        Registered groupOwner = register(ItPhoneRanges.nextPhone(MembershipGuardMatrixIT.class));
         UUID directId = openDirect(owner, peer.userId());
         UUID groupId = createGroup(groupOwner, List.of(outsider.userId()));
         UUID directMessageId = sendText(directId, owner, "direct admission control");
@@ -229,7 +230,7 @@ class MembershipGuardMatrixIT extends SecurityITBase {
 
     @Test
     void archiveBrowserValidatesItsQueryBeforeResolvingTheConversation() throws Exception {
-        Registered caller = register("+84905602201");
+        Registered caller = register(ItPhoneRanges.nextPhone(MembershipGuardMatrixIT.class));
         UUID unknown = UUID.randomUUID();
 
         mockMvc.perform(MockMvcRequestBuilders
@@ -295,9 +296,9 @@ class MembershipGuardMatrixIT extends SecurityITBase {
 
     @Test
     void groupOnlyRoutesDisagreeAboutTypeVersusMembershipOrder() throws Exception {
-        Registered owner = register("+84905602301");
-        Registered peer = register("+84905602302");
-        Registered outsider = register("+84905602303");
+        Registered owner = register(ItPhoneRanges.nextPhone(MembershipGuardMatrixIT.class));
+        Registered peer = register(ItPhoneRanges.nextPhone(MembershipGuardMatrixIT.class));
+        Registered outsider = register(ItPhoneRanges.nextPhone(MembershipGuardMatrixIT.class));
         UUID directId = openDirect(owner, peer.userId());
 
         // GroupService: existence, then type, then membership.
@@ -343,13 +344,13 @@ class MembershipGuardMatrixIT extends SecurityITBase {
     // --------------------------------------------------------------- fixtures
 
     private Fixtures fixtures() throws Exception {
-        Registered owner = register("+84905602001");
-        Registered member = register("+84905602002");
-        Registered otherMember = register("+84905602003");
-        Registered outsider = register("+84905602004");
-        Registered removed = register("+84905602005");
-        Registered directPeer = register("+84905602006");
-        Registered invitee = register("+84905602007");
+        Registered owner = register(ItPhoneRanges.nextPhone(MembershipGuardMatrixIT.class));
+        Registered member = register(ItPhoneRanges.nextPhone(MembershipGuardMatrixIT.class));
+        Registered otherMember = register(ItPhoneRanges.nextPhone(MembershipGuardMatrixIT.class));
+        Registered outsider = register(ItPhoneRanges.nextPhone(MembershipGuardMatrixIT.class));
+        Registered removed = register(ItPhoneRanges.nextPhone(MembershipGuardMatrixIT.class));
+        Registered directPeer = register(ItPhoneRanges.nextPhone(MembershipGuardMatrixIT.class));
+        Registered invitee = register(ItPhoneRanges.nextPhone(MembershipGuardMatrixIT.class));
 
         UUID groupId = createGroup(owner,
                 List.of(member.userId(), otherMember.userId(), removed.userId()));
