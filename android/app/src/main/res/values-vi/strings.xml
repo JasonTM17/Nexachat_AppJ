@@ -487,7 +487,8 @@
 
     <plurals name="chat_unread_divider">
         <item quantity="other">%d tin nhắn chưa đọc</item>
-        <plurals name="inbox_unread_messages">
+    </plurals>
+    <plurals name="inbox_unread_messages">
         <item quantity="other">%d tin nhắn chưa đọc</item>
     </plurals>
     <!-- System events (group membership, title) -->

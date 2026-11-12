@@ -493,7 +493,8 @@
     <plurals name="chat_unread_divider">
         <item quantity="one">%d unread message</item>
         <item quantity="other">%d unread messages</item>
-        <plurals name="inbox_unread_messages">
+    </plurals>
+    <plurals name="inbox_unread_messages">
         <item quantity="one">%d unread message</item>
         <item quantity="other">%d unread messages</item>
     </plurals>
