@@ -63,7 +63,17 @@ public class UserController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteMe(@AuthenticationPrincipal JwtPrincipal principal,
                          @Valid @RequestBody DeleteAccountRequest request) {
-        accountDeletionService.deleteAccount(requireUserId(principal), request.password());
+        accountDeletionService.deleteAccount(requireUserId(principal), request.password(), request.code());
+    }
+
+    /**
+     * Sends a DELETE_ACCOUNT code to the caller's own verified email.
+     * Accounts that already have a password use {@code DELETE /users/me} instead.
+     */
+    @PostMapping("/me/deletion-code")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public void requestDeletionCode(@AuthenticationPrincipal JwtPrincipal principal) {
+        emailRecoveryService.requestDeletionCode(requireUserId(principal));
     }
 
     @PutMapping("/me/email")

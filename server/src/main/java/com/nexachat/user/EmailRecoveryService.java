@@ -76,6 +76,21 @@ public class EmailRecoveryService {
         otpService.removeEmail(userId);
     }
 
+    /**
+     * Sends a DELETE_ACCOUNT code to the caller's own verified email.
+     * Password accounts are refused before any limit or mail work.
+     */
+    public void requestDeletionCode(UUID userId) {
+        String email = otpService.passwordlessVerifiedEmail(userId);
+        requireMailAvailable();
+        otpService.requireSendCooldown(userId, OtpPurpose.DELETE_ACCOUNT);
+        enforceLimit("deletion-code|account|" + userId, ACCOUNT_REQUEST_CAPACITY);
+        enforceLimit("deletion-code|address|" + sha256Hex(email), EMAIL_REQUEST_CAPACITY);
+        mailDispatcher.dispatchAuthenticatedDeletion(
+                () -> Optional.of(otpService.issueAuthenticatedDeletionCode(userId)),
+                mail -> otpService.cancel(mail.otpId()));
+    }
+
     private void requireMailAvailable() {
         if (!mailSender.isAvailable()) {
             throw mailUnavailable();

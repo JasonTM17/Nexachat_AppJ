@@ -11,19 +11,21 @@ import java.util.UUID;
  * Deliberately excludes passwordHash; entities never leave the service layer.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public record UserResponse(UUID id, String phone, String displayName, String avatarUrl, boolean deleted) {
+public record UserResponse(UUID id, String phone, String displayName, String avatarUrl,
+                           boolean deleted, boolean passwordSet) {
 
     public static UserResponse from(User user) {
         boolean deleted = user.getDeletedAt() != null;
         String phone = deleted ? null : user.getPhone();
         String displayName = deleted ? DeletedAccountPolicy.DISPLAY_NAME : user.getDisplayName();
-        return new UserResponse(user.getId(), phone, displayName, user.getAvatarUrl(), deleted);
+        return new UserResponse(user.getId(), phone, displayName, user.getAvatarUrl(),
+                deleted, user.hasPassword());
     }
 
     /** {@code includePhone} false omits the number from display-name discovery hits. */
     public static UserResponse forSearchResult(User user, boolean includePhone) {
         UserResponse response = from(user);
         return new UserResponse(response.id(), includePhone ? response.phone() : null,
-                response.displayName(), response.avatarUrl(), response.deleted());
+                response.displayName(), response.avatarUrl(), response.deleted(), response.passwordSet());
     }
 }
