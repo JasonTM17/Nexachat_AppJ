@@ -35,6 +35,21 @@ python tools/e2e/perf_e2e.py             # ~2 min: 550-message corpus + latency
 python tools/e2e/summary/summary_e2e.py    # AI summary API (fixture +849000003xx)
 ```
 
+### Local mail sink (Mailpit)
+
+For OTP journeys (`otp-forgot-password`, `account-deletion`), start a disposable Mailpit
+instance, point the server at it, and read the 6-digit code from the captured message:
+
+```bash
+python tools/e2e/mail_sink.py start          # container nexachat-e2e-mailpit
+python tools/e2e/mail_sink.py env              # NEXACHAT_MAIL_PROVIDER + MAIL_SMTP_*
+# export those vars, restart the server, trigger the OTP flow, then:
+python tools/e2e/mail_sink.py otp user@example.com
+python tools/e2e/mail_sink.py stop
+```
+
+Offline checks: `python -m unittest tools/e2e/test_mail_sink.py`
+
 Optional: `--base-url http://host:8080` on any script; `--bulk/--samples` for
 `perf_e2e.py`.
 
