@@ -25,11 +25,32 @@
             app:title="">
 
             <LinearLayout
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:layout_gravity="start|center_vertical"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
+
+                <ImageButton
+                    android:id="@+id/inboxContactsButton"
+                    android:layout_width="@dimen/min_touch_target"
+                    android:layout_height="@dimen/min_touch_target"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/contacts_title"
+                    android:src="@drawable/ic_people"
+                    app:tint="?attr/colorPrimary" />
+
+                <TextView
+                    android:id="@+id/inboxBrandTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="0dp"
+                    android:layout_weight="1"
+                    android:accessibilityHeading="true"
+                    android:gravity="center"
+                    android:text="@string/inbox_title"
+                    android:textAppearance="?attr/textAppearanceTitleLarge"
+                    android:textColor="?attr/colorOnSurface"
+                    tools:targetApi="p" />
 
                 <com.nexachat.core.ui.components.AvatarView
                     android:id="@+id/inboxUserAvatar"
@@ -39,27 +60,15 @@
                     android:contentDescription="@string/profile_title"
                     android:focusable="true" />
 
-                <TextView
-                    android:id="@+id/inboxBrandTitle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
-                    android:accessibilityHeading="true"
-                    android:text="@string/inbox_title"
-                    android:textAppearance="?attr/textAppearanceTitleLarge"
-                    android:textColor="?attr/colorOnSurface"
-                    tools:targetApi="p" />
+                <ImageButton
+                    android:id="@+id/moreButton"
+                    android:layout_width="@dimen/min_touch_target"
+                    android:layout_height="@dimen/min_touch_target"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/inbox_more_options"
+                    android:src="@drawable/ic_more_vert"
+                    app:tint="?attr/colorOnSurfaceVariant" />
             </LinearLayout>
-
-            <ImageButton
-                android:id="@+id/moreButton"
-                android:layout_width="@dimen/min_touch_target"
-                android:layout_height="@dimen/min_touch_target"
-                android:layout_gravity="end|center_vertical"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/inbox_more_options"
-                android:src="@drawable/ic_more_vert"
-                app:tint="?attr/colorOnSurfaceVariant" />
         </com.google.android.material.appbar.MaterialToolbar>
 
         <com.google.android.material.card.MaterialCardView
@@ -67,14 +76,14 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:minHeight="@dimen/min_touch_target"
-            android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="8dp"
+            android:layout_marginHorizontal="@dimen/space_md"
+            android:layout_marginTop="@dimen/space_xs"
+            android:layout_marginBottom="@dimen/space_sm"
             android:clickable="true"
             android:contentDescription="@string/inbox_search_hint"
             android:focusable="true"
-            app:cardBackgroundColor="?attr/colorSurfaceContainer"
-            app:cardCornerRadius="@dimen/corner_full"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+            app:cardCornerRadius="@dimen/corner_md"
             app:cardElevation="0dp"
             app:strokeWidth="0dp">
 
@@ -267,21 +276,17 @@
             android:visibility="gone" />
     </FrameLayout>
 
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/createGroupFab"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
         android:layout_gravity="bottom|end"
-        android:layout_marginEnd="16dp"
-        android:layout_marginBottom="24dp"
+        android:layout_marginEnd="@dimen/space_md"
+        android:layout_marginBottom="@dimen/space_lg"
         android:contentDescription="@string/inbox_new_chat"
-        android:minHeight="56dp"
-        android:paddingHorizontal="20dp"
-        android:text="@string/inbox_new_chat"
-        android:textAppearance="?attr/textAppearanceLabelLarge"
         app:backgroundTint="?attr/colorPrimary"
-        app:elevation="@dimen/elevation_level2"
-        app:icon="@drawable/ic_chat_bubble_outline"
-        app:iconTint="?attr/colorOnPrimary"
-        app:shapeAppearanceOverlay="@style/ShapeAppearance.NexaChat.Large" />
+        app:elevation="@dimen/elevation_level3"
+        app:shapeAppearanceOverlay="@style/ShapeAppearance.NexaChat.Large"
+        app:srcCompat="@drawable/ic_edit_compose"
+        app:tint="?attr/colorOnPrimary" />
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

@@ -8,9 +8,9 @@
     android:focusable="true"
     android:minHeight="@dimen/inbox_row_min_height"
     android:paddingStart="@dimen/space_md"
-    android:paddingTop="@dimen/space_inset"
+    android:paddingTop="@dimen/space_sm"
     android:paddingEnd="@dimen/space_md"
-    android:paddingBottom="@dimen/space_inset">
+    android:paddingBottom="@dimen/space_sm">
 
     <com.nexachat.core.ui.components.AvatarView
         android:id="@+id/avatar"
@@ -25,7 +25,7 @@
         android:id="@+id/title"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="12dp"
+        android:layout_marginStart="@dimen/space_inset"
         android:layout_marginEnd="8dp"
         android:ellipsize="end"
         android:maxLines="1"

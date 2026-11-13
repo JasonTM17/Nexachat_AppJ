@@ -10,7 +10,6 @@ import android.os.Bundle;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.util.TypedValue;
-import android.animation.ValueAnimator;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -100,6 +99,8 @@ public final class InboxFragment extends Fragment {
         binding.inboxUserAvatar.setOnlineStatus(true);
         binding.inboxUserAvatar.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.profileFragment));
+        binding.inboxContactsButton.setOnClickListener(
+                v -> NavHostFragment.findNavController(this).navigate(R.id.contactsFragment));
         binding.moreButton.setOnClickListener(this::showInboxMenu);
         layoutManager = new LinearLayoutManager(requireContext());
         binding.conversationList.setLayoutManager(layoutManager);
@@ -107,18 +108,6 @@ public final class InboxFragment extends Fragment {
         paginationScrollListener = new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
-                if (binding != null && dy != 0) {
-                    boolean extend = dy < 0;
-                    if (extend != binding.createGroupFab.isExtended()) {
-                        if (!ValueAnimator.areAnimatorsEnabled()) {
-                            binding.createGroupFab.setExtended(extend);
-                        } else if (extend) {
-                            binding.createGroupFab.extend();
-                        } else {
-                            binding.createGroupFab.shrink();
-                        }
-                    }
-                }
                 maybeLoadMore();
             }
         };
@@ -545,7 +534,7 @@ public final class InboxFragment extends Fragment {
             binding.filterUnreadChip.setText(R.string.inbox_filter_unread);
         }
 
-        int surfaceContainerColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorSurfaceContainer);
+        int surfaceContainerColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorSurfaceContainerLow);
         int onSurfaceVariantColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
         int outlineColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorOutlineVariant);
 
