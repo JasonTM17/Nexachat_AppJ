@@ -3,6 +3,7 @@ package com.nexachat.core.ui.components;
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -33,29 +34,12 @@ public class EmptyStateView extends FrameLayout {
         column.setGravity(Gravity.CENTER);
         int pad = getResources().getDimensionPixelSize(R.dimen.space_xl);
         column.setPadding(pad, pad, pad, pad);
-        LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
-        addView(column, lp);
+        addView(column, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
-        iconView = new ImageView(context);
-        int iconSize = (int) (72 * getResources().getDisplayMetrics().density);
-        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(iconSize, iconSize);
-        iconLp.bottomMargin = getResources().getDimensionPixelSize(R.dimen.space_md);
-        iconView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-        column.addView(iconView, iconLp);
-
-        messageView = new TextView(context);
-        messageView.setGravity(Gravity.CENTER);
-        column.addView(messageView, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        actionButton = new MaterialButton(context);
-        actionButton.setVisibility(GONE);
-        int min = getResources().getDimensionPixelSize(R.dimen.min_touch_target);
-        actionButton.setMinHeight(min);
-        column.addView(actionButton, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+        LayoutInflater.from(context).inflate(R.layout.view_empty_state, column, true);
+        iconView = column.findViewById(R.id.emptyIcon);
+        messageView = column.findViewById(R.id.emptyMessage);
+        actionButton = column.findViewById(R.id.emptyAction);
     }
 
     public void setMessage(CharSequence message) {

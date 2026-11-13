@@ -3,8 +3,8 @@ package com.nexachat.core.ui.components;
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.Nullable;
@@ -32,25 +32,9 @@ public class ErrorStateView extends FrameLayout {
         column.setPadding(pad, pad, pad, pad);
         addView(column, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
-        ImageView icon = new ImageView(context);
-        int iconSize = getResources().getDimensionPixelSize(R.dimen.min_touch_target);
-        icon.setImageResource(R.drawable.ic_warning);
-        icon.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-        column.addView(icon, new LinearLayout.LayoutParams(iconSize, iconSize));
-
-        messageView = new TextView(context);
-        messageView.setGravity(Gravity.CENTER);
-        column.addView(messageView, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        retryButton = new MaterialButton(context);
-        retryButton.setText(R.string.action_retry);
-        retryButton.setVisibility(GONE);
-        retryButton.setMinHeight(getResources().getDimensionPixelSize(R.dimen.min_touch_target));
-        column.addView(retryButton, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
+        LayoutInflater.from(context).inflate(R.layout.view_error_state, column, true);
+        messageView = column.findViewById(R.id.errorMessage);
+        retryButton = column.findViewById(R.id.retryButton);
     }
 
     public void setMessage(CharSequence message) {
