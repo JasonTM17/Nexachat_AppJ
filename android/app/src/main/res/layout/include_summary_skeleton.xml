@@ -10,25 +10,25 @@
     <View
         android:layout_width="match_parent"
         android:layout_height="72dp"
-        android:background="?attr/colorSurfaceContainerHigh" />
+        android:background="@drawable/bg_skeleton_block" />
 
     <View
         android:layout_width="120dp"
         android:layout_height="18dp"
-        android:layout_marginTop="20dp"
-        android:background="?attr/colorSurfaceContainerHigh" />
+        android:layout_marginTop="@dimen/space_md"
+        android:background="@drawable/bg_skeleton_block" />
 
     <View
         android:layout_width="match_parent"
         android:layout_height="14dp"
-        android:layout_marginTop="10dp"
-        android:background="?attr/colorSurfaceContainerHigh" />
+        android:layout_marginTop="@dimen/space_sm"
+        android:background="@drawable/bg_skeleton_block" />
 
     <View
         android:layout_width="match_parent"
         android:layout_height="14dp"
-        android:layout_marginTop="8dp"
-        android:background="?attr/colorSurfaceContainerHigh" />
+        android:layout_marginTop="@dimen/space_sm"
+        android:background="@drawable/bg_skeleton_block" />
 
     <com.google.android.material.progressindicator.LinearProgressIndicator
         android:id="@+id/summarySkeletonBar"

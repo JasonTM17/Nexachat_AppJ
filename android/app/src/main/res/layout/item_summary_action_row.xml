@@ -7,8 +7,8 @@
     android:gravity="top"
     android:minHeight="@dimen/min_touch_target"
     android:orientation="horizontal"
-    android:paddingHorizontal="4dp"
-    android:paddingVertical="6dp">
+    android:paddingHorizontal="@dimen/space_xs"
+    android:paddingVertical="@dimen/space_sm">
 
     <CheckBox
         android:id="@+id/summaryActionCheck"
@@ -34,7 +34,7 @@
             android:id="@+id/summaryActionMeta"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
+            android:layout_marginTop="@dimen/space_xs"
             android:textAppearance="?attr/textAppearanceLabelSmall"
             android:textColor="?attr/colorPrimary"
             android:visibility="gone" />

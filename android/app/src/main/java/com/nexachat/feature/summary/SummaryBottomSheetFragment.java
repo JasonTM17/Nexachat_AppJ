@@ -3,6 +3,7 @@ package com.nexachat.feature.summary;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.view.ContextThemeWrapper;
 import android.os.Bundle;
 import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
@@ -157,16 +158,14 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
         ChipGroup group = binding.summaryScopeChips;
         group.removeAllViews();
         Context context = requireContext();
-        float density = context.getResources().getDisplayMetrics().density;
         for (SummaryScope scope : SummaryScope.values()) {
-            Chip chip = new Chip(context);
+            Chip chip = new Chip(
+                    new ContextThemeWrapper(context, R.style.Widget_NexaChat_Chip_Filter),
+                    null,
+                    R.style.Widget_NexaChat_Chip_Filter);
             chip.setTag(scope);
             chip.setCheckable(true);
             chip.setCheckedIconVisible(false);
-            chip.setChipBackgroundColorResource(R.color.stitch_chip_bg_tint);
-            chip.setChipStrokeColorResource(R.color.stitch_chip_stroke_color);
-            chip.setChipStrokeWidth(density);
-            chip.setTextColor(ContextCompat.getColorStateList(context, R.color.stitch_chip_text_color));
             chip.setText(scopeLabel(scope));
             chip.setOnClickListener(v -> {
                 if (!(v.getTag() instanceof SummaryScope selected)) {
@@ -350,9 +349,20 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
             binder.bind(binding.summaryContent, state.getSummary());
         }
 
-        boolean canAct = SummaryUiRules.canShareOrCopy(state.getStatus(), state.getSummary());
-        binding.summaryCopy.setEnabled(canAct);
-        binding.summaryShare.setEnabled(canAct);
+        if (loading) {
+            binding.summaryRegenerate.setEnabled(false);
+            binding.summaryCopy.setEnabled(false);
+            binding.summaryShare.setEnabled(false);
+        } else if (error) {
+            binding.summaryRegenerate.setEnabled(true);
+            binding.summaryCopy.setEnabled(true);
+            binding.summaryShare.setEnabled(true);
+        } else {
+            boolean canAct = SummaryUiRules.canShareOrCopy(state.getStatus(), state.getSummary());
+            binding.summaryRegenerate.setEnabled(true);
+            binding.summaryCopy.setEnabled(canAct);
+            binding.summaryShare.setEnabled(canAct);
+        }
     }
 
     private void handleCitationClick(@NonNull String messageId) {

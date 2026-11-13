@@ -118,30 +118,20 @@
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/summaryModeLocal"
-                style="@style/Widget.Material3.Chip.Filter"
+                style="@style/Widget.NexaChat.Chip.Filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:checked="true"
                 android:text="@string/summary_badge_local"
-                android:textColor="@color/stitch_chip_text_color"
-                app:checkedIconVisible="false"
-                app:chipBackgroundColor="@color/stitch_chip_bg_tint"
-                app:chipCornerRadius="18dp"
-                app:chipStrokeColor="@color/stitch_chip_stroke_color"
-                app:chipStrokeWidth="1dp" />
+                app:checkedIconVisible="false" />
 
             <com.google.android.material.chip.Chip
                 android:id="@+id/summaryModeAi"
-                style="@style/Widget.Material3.Chip.Filter"
+                style="@style/Widget.NexaChat.Chip.Filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/summary_badge_ai"
-                android:textColor="@color/stitch_chip_text_color"
-                app:checkedIconVisible="false"
-                app:chipBackgroundColor="@color/stitch_chip_bg_tint"
-                app:chipCornerRadius="18dp"
-                app:chipStrokeColor="@color/stitch_chip_stroke_color"
-                app:chipStrokeWidth="1dp" />
+                app:checkedIconVisible="false" />
         </com.google.android.material.chip.ChipGroup>
 
         <LinearLayout
@@ -150,7 +140,7 @@
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="@dimen/space_md"
             android:layout_marginTop="@dimen/space_xs"
-            android:background="?attr/colorSurfaceContainerLow"
+            android:background="@drawable/bg_summary_card"
             android:orientation="vertical"
             android:padding="@dimen/space_md"
             android:visibility="gone">
