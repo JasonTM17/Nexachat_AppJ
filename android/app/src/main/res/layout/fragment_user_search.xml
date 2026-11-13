@@ -34,11 +34,11 @@
             android:layout_marginHorizontal="@dimen/space_md"
             android:layout_marginTop="@dimen/space_sm"
             android:hint="@string/search_label"
-            app:boxBackgroundColor="?attr/colorSurfaceContainer"
-            app:boxCornerRadiusBottomEnd="28dp"
-            app:boxCornerRadiusBottomStart="28dp"
-            app:boxCornerRadiusTopEnd="28dp"
-            app:boxCornerRadiusTopStart="28dp"
+            app:boxBackgroundColor="?attr/colorSurfaceContainerHigh"
+            app:boxCornerRadiusBottomEnd="@dimen/corner_full"
+            app:boxCornerRadiusBottomStart="@dimen/corner_full"
+            app:boxCornerRadiusTopEnd="@dimen/corner_full"
+            app:boxCornerRadiusTopStart="@dimen/corner_full"
             app:boxStrokeWidth="0dp"
             app:endIconContentDescription="@string/cd_clear_search"
             app:endIconMode="clear_text"
@@ -67,7 +67,7 @@
             android:layout_marginBottom="@dimen/space_xs"
             android:text="@string/contacts_title"
             android:textAppearance="?attr/textAppearanceLabelLarge"
-            android:textColor="?attr/colorPrimary"
+            android:textColor="?attr/colorOnSurfaceVariant"
             android:visibility="gone" />
 
         <androidx.recyclerview.widget.RecyclerView
