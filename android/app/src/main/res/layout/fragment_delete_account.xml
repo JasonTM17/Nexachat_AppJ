@@ -118,6 +118,18 @@
             android:visibility="gone" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/profileLoadRetry"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="16dp"
+            android:minHeight="@dimen/min_touch_target"
+            android:text="@string/action_retry"
+            android:visibility="gone"
+            app:cornerRadius="12dp" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/confirmDelete"
             style="@style/Widget.Material3.Button"
             android:layout_width="match_parent"

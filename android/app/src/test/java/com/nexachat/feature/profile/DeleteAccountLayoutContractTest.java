@@ -37,6 +37,14 @@ public final class DeleteAccountLayoutContractTest {
         assertEquals("@drawable/ic_visibility", endIcon);
     }
 
+    @Test
+    public void profileLoadRetryUsesSharedRetryString() throws Exception {
+        Element retry = requireId("fragment_delete_account.xml", "profileLoadRetry");
+        assertEquals("gone", retry.getAttributeNS(ANDROID, "visibility").toLowerCase());
+        assertEquals("@string/action_retry", retry.getAttributeNS(ANDROID, "text"));
+        assertMinTouchTarget(retry);
+    }
+
     private static void assertMinTouchTarget(Element node) {
         String minHeight = node.getAttributeNS(ANDROID, "minHeight");
         assertTrue(minHeight.contains("min_touch_target") || minHeight.endsWith("48dp"));

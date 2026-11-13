@@ -46,9 +46,98 @@ public final class DeleteAccountViewModelTest {
         return new DeleteAccountViewModel(authRepository, contactsRepository, coordinator, true);
     }
 
+    private DeleteAccountViewModel viewModelWithProfileLoad() {
+        return new DeleteAccountViewModel(authRepository, contactsRepository, coordinator, false);
+    }
+
     @After
     public void tearDown() {
         RxJavaPlugins.reset();
+    }
+
+    @Test
+    public void beforeProfileLoadsCredentialModeStaysUnknown() {
+        when(contactsRepository.getMe()).thenReturn(Single.never());
+        DeleteAccountViewModel viewModel = viewModelWithProfileLoad();
+
+        DeleteAccountViewModel.UiState state = viewModel.getUiState().getValue();
+        assertFalse(state.isProfileLoaded());
+        assertFalse(state.usesPasswordFlow());
+        assertTrue(state.isProfileLoading());
+
+        viewModel.submit();
+        viewModel.sendDeletionCode();
+        verify(authRepository, never()).deleteAccount(anyString());
+        verify(authRepository, never()).deleteAccountWithCode(anyString());
+        verify(authRepository, never()).requestAccountDeletionCode();
+    }
+
+    @Test
+    public void failedProfileLoadKeepsCredentialUnknownWithError() {
+        ApiError networkError = new ApiError.Network("offline");
+        when(contactsRepository.getMe()).thenReturn(Single.just(Result.failure(networkError)));
+
+        DeleteAccountViewModel viewModel = viewModelWithProfileLoad();
+        DeleteAccountViewModel.UiState state = viewModel.getUiState().getValue();
+
+        assertFalse(state.isProfileLoaded());
+        assertFalse(state.isProfileLoading());
+        assertFalse(state.usesPasswordFlow());
+        assertEquals(networkError, state.getError());
+        viewModel.submit();
+        verify(authRepository, never()).deleteAccount(anyString());
+        verify(authRepository, never()).deleteAccountWithCode(anyString());
+    }
+
+    @Test
+    public void profileLoadErrorRetrySucceedsForPasswordlessAccount() {
+        UserDto googleOnly =
+                new UserDto("u1", null, "Demo", null, "a@b.c", true, false);
+        ApiError networkError = new ApiError.Network("offline");
+        when(contactsRepository.getMe())
+                .thenReturn(Single.just(Result.failure(networkError)))
+                .thenReturn(Single.just(new Result.Success<>(googleOnly)));
+
+        DeleteAccountViewModel viewModel = viewModelWithProfileLoad();
+        assertEquals(networkError, viewModel.getUiState().getValue().getError());
+
+        viewModel.retryLoadProfile();
+
+        DeleteAccountViewModel.UiState state = viewModel.getUiState().getValue();
+        assertTrue(state.isProfileLoaded());
+        assertFalse(state.usesPasswordFlow());
+        assertNull(state.getError());
+        verify(contactsRepository, times(2)).getMe();
+    }
+
+    @Test
+    public void profileLoadErrorRetrySucceedsForPasswordAccount() {
+        UserDto passwordUser =
+                new UserDto("u1", "+1", "Demo", null, null, null, true);
+        ApiError networkError = new ApiError.Network("offline");
+        when(contactsRepository.getMe())
+                .thenReturn(Single.just(Result.failure(networkError)))
+                .thenReturn(Single.just(new Result.Success<>(passwordUser)));
+
+        DeleteAccountViewModel viewModel = viewModelWithProfileLoad();
+        viewModel.retryLoadProfile();
+
+        DeleteAccountViewModel.UiState state = viewModel.getUiState().getValue();
+        assertTrue(state.isProfileLoaded());
+        assertTrue(state.usesPasswordFlow());
+        assertNull(state.getError());
+    }
+
+    @Test
+    public void profileLoadNetworkErrorKeepsCredentialUnknown() {
+        when(contactsRepository.getMe()).thenReturn(Single.error(new RuntimeException("socket")));
+
+        DeleteAccountViewModel viewModel = viewModelWithProfileLoad();
+        DeleteAccountViewModel.UiState state = viewModel.getUiState().getValue();
+
+        assertFalse(state.isProfileLoaded());
+        assertFalse(state.usesPasswordFlow());
+        assertTrue(state.getError() instanceof ApiError.Network);
     }
 
     @Test
