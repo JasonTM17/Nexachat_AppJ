@@ -25,6 +25,13 @@ public final class InboxRowTypographySourceTest {
         assertFalse(source.contains("setTypeface(null"));
     }
 
+    @Test
+    public void conversationListAdapter_allowsTwoLinesAtFontScaleOnePointThree() throws Exception {
+        String source = readAdapterSource();
+        assertTrue(source.contains("fontScale >= 1.3f ? 2 : 1"));
+        assertFalse(source.contains("fontScale >= 1.5f ? 2 : 1"));
+    }
+
     private static String readTypoSource() throws Exception {
         return new String(Files.readAllBytes(locate(
                 "src/main/java/com/nexachat/feature/inbox/InboxRowTypography.java",

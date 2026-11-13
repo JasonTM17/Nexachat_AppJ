@@ -313,6 +313,7 @@ public final class ChatInteractionsViews {
 
     public static void bindPinnedBanner(@NonNull View root, @NonNull String text, @NonNull Runnable jump) {
         ((TextView) root.findViewById(R.id.pinnedText)).setText(text);
+        root.setContentDescription(root.getContext().getString(R.string.pinned_title) + ", " + text);
         root.setOnClickListener(v -> jump.run());
         root.setVisibility(View.VISIBLE);
     }

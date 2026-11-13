@@ -68,6 +68,10 @@ public final class ContactListAdapter extends ListAdapter<Contact, ContactListAd
         void bind(@NonNull Contact contact, @NonNull Listener listener) {
             String label = contact.getPrimaryLabel();
             name.setText(label);
+            float fontScale = itemView.getResources().getConfiguration().fontScale;
+            boolean largeType = fontScale >= 1.3f;
+            name.setMaxLines(largeType ? 2 : 1);
+            name.setEllipsize(largeType ? null : android.text.TextUtils.TruncateAt.END);
             if (phone != null) {
                 String subtitle = PersonContactSubtitle.subtitle(contact);
                 if (subtitle != null && !subtitle.isBlank()) {

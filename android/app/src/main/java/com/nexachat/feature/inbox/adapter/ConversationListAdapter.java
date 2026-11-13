@@ -143,8 +143,8 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             String displayTitle = ConversationPreviewHelper.displayTitle(itemView.getContext(), conversation);
             title.setText(displayTitle);
             float fontScale = itemView.getResources().getConfiguration().fontScale;
-            title.setMaxLines(fontScale >= 1.5f ? 2 : 1);
-            preview.setMaxLines(fontScale >= 1.5f ? 2 : 1);
+            title.setMaxLines(fontScale >= 1.3f ? 2 : 1);
+            preview.setMaxLines(fontScale >= 1.3f ? 2 : 1);
             avatar.setName(displayTitle);
             avatar.setAvatarUrl(conversation.getDisplayAvatar());
             Boolean onlineStatus = InboxBadgeRules.resolveOnlineStatus(conversation);

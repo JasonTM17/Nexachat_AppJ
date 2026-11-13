@@ -38,7 +38,8 @@
             android:layout_marginStart="@dimen/space_sm"
             android:layout_weight="1"
             android:ellipsize="end"
-            android:maxLines="1"
+            android:importantForAccessibility="no"
+            android:maxLines="2"
             android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="?attr/colorOnSurface" />
     </LinearLayout>

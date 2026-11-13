@@ -68,6 +68,10 @@ public final class UserSearchAdapter extends ListAdapter<UserDto, UserSearchAdap
 
         void bind(@NonNull UserDto user, @NonNull Listener listener) {
             name.setText(user.getDisplayName());
+            float fontScale = itemView.getResources().getConfiguration().fontScale;
+            boolean largeType = fontScale >= 1.3f;
+            name.setMaxLines(largeType ? 2 : 1);
+            name.setEllipsize(largeType ? null : android.text.TextUtils.TruncateAt.END);
             String line = PersonContactSubtitle.subtitle(user);
             if (line == null || line.isBlank()) {
                 subtitle.setVisibility(android.view.View.GONE);
