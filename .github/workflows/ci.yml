@@ -112,6 +112,10 @@ jobs:
           bash tools/test-release-version.sh
           bash tools/test-sign-release-url-guard.sh
           bash tools/test-vercel-ignore-command.sh
+      - name: Test additional hermetic Python tooling
+        run: |
+          python -m unittest tools/test_compose_env_contract.py tools/backup/test_backup.py tools/backup/test_restore.py tools/e2e/test_evidence_labels.py tools/e2e/test_reminder_clock.py tools/e2e/device/test_inject_push.py tools/e2e/device/test_patch_window.py tools/e2e/device/test_stable_journeys.py tools/e2e/new_features/test_features_live.py tools/e2e/p0/test_p0_helpers.py tools/e2e/p0/test_p0_live.py tools/e2e/summary/test_summary_e2e.py tools/gif/test_record.py
+          python -m unittest discover -s tools/e2e/calls -p 'test_*.py'
       - name: Check Android layout accessibility
         run: python tools/check-android-a11y.py
       - name: Test API contract checker
