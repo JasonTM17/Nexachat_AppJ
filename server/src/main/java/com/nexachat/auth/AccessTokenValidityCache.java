@@ -3,11 +3,13 @@ package com.nexachat.auth;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -45,41 +47,49 @@ public class AccessTokenValidityCache {
 
     private final Map<UUID, Entry> entries = new LinkedHashMap<>(16, 0.75f, true);
     private final int maxEntries;
-    private final long ttlNanos;
+    private final Duration ttl;
+    private final Clock clock;
     private final Object lock = new Object();
     private long generation;
 
     @org.springframework.beans.factory.annotation.Autowired
     public AccessTokenValidityCache(
             JwtProperties jwtProperties,
-            @Value("${nexachat.security.validity-cache-ttl-seconds:60}") long ttlSeconds) {
-        // Never cache longer than the token can live: a stale "valid" answer
-        // must not outlive the access token it was computed for.
-        long capSeconds = jwtProperties.accessTtlSeconds();
-        long effectiveSeconds = Math.max(1, Math.min(ttlSeconds, capSeconds));
-        this.maxEntries = DEFAULT_MAX_ENTRIES;
-        this.ttlNanos = Duration.ofSeconds(effectiveSeconds).toNanos();
+            @Value("${nexachat.security.validity-cache-ttl-seconds:60}") long ttlSeconds,
+            Clock clock) {
+        this(jwtProperties, ttlSeconds, DEFAULT_MAX_ENTRIES, clock);
     }
 
     AccessTokenValidityCache(JwtProperties jwtProperties, long ttlSeconds, int maxEntries) {
+        this(jwtProperties, ttlSeconds, maxEntries, Clock.systemUTC());
+    }
+
+    AccessTokenValidityCache(
+            JwtProperties jwtProperties,
+            long ttlSeconds,
+            int maxEntries,
+            Clock clock) {
+        // Never cache longer than the token can live: a stale "valid" answer
+        // must not outlive the access token it was computed for.
         long capSeconds = jwtProperties.accessTtlSeconds();
         long effectiveSeconds = Math.max(1, Math.min(ttlSeconds, capSeconds));
         if (maxEntries < 1) {
             throw new IllegalArgumentException("Validity cache bounds must be positive");
         }
         this.maxEntries = maxEntries;
-        this.ttlNanos = Duration.ofSeconds(effectiveSeconds).toNanos();
+        this.ttl = Duration.ofSeconds(effectiveSeconds);
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     /** @return the cached validity, or empty when absent or expired */
     public Optional<Validity> get(UUID userId) {
-        long now = System.nanoTime();
+        Instant now = clock.instant();
         synchronized (lock) {
             Entry entry = entries.get(userId);
             if (entry == null) {
                 return Optional.empty();
             }
-            if (now - entry.cachedAtNanos >= ttlNanos) {
+            if (!now.isBefore(entry.cachedAt.plus(ttl))) {
                 entries.remove(userId);
                 return Optional.empty();
             }
@@ -88,7 +98,7 @@ public class AccessTokenValidityCache {
     }
 
     public void put(UUID userId, Validity validity) {
-        long now = System.nanoTime();
+        Instant now = clock.instant();
         synchronized (lock) {
             putLocked(userId, validity, now);
         }
@@ -107,7 +117,7 @@ public class AccessTokenValidityCache {
             if (generation != expectedGeneration) {
                 return false;
             }
-            putLocked(userId, validity, System.nanoTime());
+            putLocked(userId, validity, clock.instant());
             return true;
         }
     }
@@ -133,16 +143,16 @@ public class AccessTokenValidityCache {
         }
     }
 
-    private void evictExpired(long now) {
+    private void evictExpired(Instant now) {
         Iterator<Map.Entry<UUID, Entry>> iterator = entries.entrySet().iterator();
         while (iterator.hasNext()) {
-            if (now - iterator.next().getValue().cachedAtNanos >= ttlNanos) {
+            if (!now.isBefore(iterator.next().getValue().cachedAt.plus(ttl))) {
                 iterator.remove();
             }
         }
     }
 
-    private void putLocked(UUID userId, Validity validity, long now) {
+    private void putLocked(UUID userId, Validity validity, Instant now) {
         if (entries.size() >= maxEntries && !entries.containsKey(userId)) {
             evictExpired(now);
             if (entries.size() >= maxEntries) {
@@ -156,11 +166,11 @@ public class AccessTokenValidityCache {
 
     private static final class Entry {
         private final Validity validity;
-        private final long cachedAtNanos;
+        private final Instant cachedAt;
 
-        private Entry(Validity validity, long cachedAtNanos) {
+        private Entry(Validity validity, Instant cachedAt) {
             this.validity = validity;
-            this.cachedAtNanos = cachedAtNanos;
+            this.cachedAt = cachedAt;
         }
     }
 }
