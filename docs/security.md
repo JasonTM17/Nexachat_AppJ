@@ -285,7 +285,9 @@ the implementing source file.
 
 ## 7. Account deletion and data retention
 
-- In-app deletion is `DELETE /api/v1/users/me` with the current password
+- In-app deletion is `DELETE /api/v1/users/me` with the current password; accounts
+  without a password confirm deletion with the emailed code from
+  `POST /api/v1/users/me/deletion-code`
   (`AccountDeletionService.java`, Flyway V26 `users.deleted_at`). Success revokes
   every refresh token, stamps the access-token cutoff, unregisters device tokens,
   removes contacts (both directions), clears per-user AI opt-outs and rate-limit
