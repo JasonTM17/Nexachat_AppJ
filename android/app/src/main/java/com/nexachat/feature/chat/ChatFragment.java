@@ -980,9 +980,14 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         int oldCount = adapter.getItemCount();
         boolean wasAtBottom = manager == null || oldCount == 0 || manager.findLastVisibleItemPosition() >= oldCount - 3;
         String anchorId = null;
+        int anchorOffset = 0;
         if (manager != null && oldCount > 0) {
             int anchor = manager.findFirstVisibleItemPosition();
-            if (anchor >= 0 && anchor < oldCount) anchorId = adapter.getCurrentList().get(anchor).getStableId();
+            View anchorView = manager.findViewByPosition(anchor);
+            if (anchor >= 0 && anchor < oldCount && anchorView != null) {
+                anchorId = adapter.getCurrentList().get(anchor).getStableId();
+                anchorOffset = manager.getDecoratedTop(anchorView) - binding.messageList.getPaddingTop();
+            }
         }
         long effectivePeerReadSeq = state != null && state.isShowSeen() ? state.getPeerReadSeq() : 0L;
         long localReadSeq = resolveUnreadDividerLocalReadSeq();
@@ -1012,12 +1017,16 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 dividerCount);
         cacheUnreadDividerAdapterPositions(rows, messages, localReadSeq);
         String stableAnchor = anchorId;
+        int stableAnchorOffset = anchorOffset;
         boolean dividerShown = showDivider;
         adapter.submitList(rows, () -> {
             if (binding == null || rows.isEmpty()) return;
             if (wasAtBottom) binding.messageList.scrollToPosition(rows.size() - 1);
             else if (stableAnchor != null) {
-                for (int i = 0; i < rows.size(); i++) if (stableAnchor.equals(rows.get(i).getStableId())) { binding.messageList.scrollToPosition(i); break; }
+                for (int i = 0; i < rows.size(); i++) if (stableAnchor.equals(rows.get(i).getStableId())) {
+                    manager.scrollToPositionWithOffset(i, stableAnchorOffset);
+                    break;
+                }
             }
             LinearLayoutManager layoutManager = (LinearLayoutManager) binding.messageList.getLayoutManager();
             if (dividerShown && wasAtBottom) {
