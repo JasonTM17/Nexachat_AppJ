@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="?attr/selectableItemBackground"
-    android:gravity="center_vertical"
+    android:gravity="top"
     android:minHeight="@dimen/min_touch_target"
     android:orientation="horizontal"
     android:paddingHorizontal="@dimen/space_md"
@@ -31,7 +31,6 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:maxLines="2"
         android:textAppearance="?attr/textAppearanceTitleMedium"
         android:textColor="?attr/colorOnSurface" />
 </LinearLayout>
