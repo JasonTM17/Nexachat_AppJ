@@ -594,8 +594,8 @@ public final class ConversationRepository implements AutoCloseable {
     }
 
     /**
-     * Self-leave. The DAO has no delete-by-id operation, so clear and refill
-     * the conversation table from the authoritative inbox after server success.
+     * Self-leave. After the server accepts it, drop only this conversation's
+     * cached row, history, and sync cursor. The rest of the inbox stays put.
      */
     @NonNull
     public Single<Result<Void>> leaveGroup(@NonNull String conversationId) {
@@ -604,7 +604,17 @@ public final class ConversationRepository implements AutoCloseable {
                     if (result instanceof Result.Failure<?>) {
                         return Single.<Result<Void>>just(Result.cast(result));
                     }
-                    return conversationDao.clear().andThen(refreshInbox());
+                    return currentUserIdOptional().flatMap(myId -> Completable.fromAction(() -> {
+                        synchronized (inboxPagingLock) {
+                            locallyCreatedIds.remove(conversationId);
+                            inboxWalkIds.remove(conversationId);
+                        }
+                        String ownerUserId = myId.orElse("");
+                        appDatabase.runInTransaction(() ->
+                                LocalConversationCleaner.deleteInTransaction(
+                                        appDatabase, conversationId, ownerUserId));
+                    }).subscribeOn(Schedulers.io()).andThen(Single.fromCallable(
+                            ConversationRepository::successVoid)));
                 })
                 .subscribeOn(Schedulers.io()));
     }

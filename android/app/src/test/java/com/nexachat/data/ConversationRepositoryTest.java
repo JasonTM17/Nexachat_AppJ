@@ -23,6 +23,9 @@ import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.ConversationEntity;
 import com.nexachat.core.database.ConversationWatermark;
 import com.nexachat.core.database.MessageDao;
+import com.nexachat.core.database.MessageEntity;
+import com.nexachat.core.database.SyncCursorDao;
+import com.nexachat.core.database.SyncCursorEntity;
 import com.nexachat.core.database.OutboxDao;
 import com.nexachat.core.database.PinDao;
 import com.nexachat.core.database.ReactionDao;
@@ -1305,6 +1308,53 @@ public final class ConversationRepositoryTest {
         List<String> ids = summaries.stream().map(ConversationSummary::getId).toList();
 
         assertEquals(List.of("c2", "c3", "c1", "u2", "u1"), ids);
+    }
+
+    @Test
+    public void leaveGroupDeletesOnlyTheLeftConversation() throws Exception {
+        Map<String, MessageEntity> messages = new LinkedHashMap<>();
+        Map<String, SyncCursorEntity> cursors = new LinkedHashMap<>();
+        messages.put("m-left", new MessageEntity(
+                "m-left", "group-left", 4L, "peer", "Peer", "TEXT", "left",
+                null, null, null, null, 4L, null, null, null));
+        messages.put("m-kept", new MessageEntity(
+                "m-kept", "group-kept", 9L, "peer", "Peer", "TEXT", "kept",
+                null, null, null, null, 9L, null, null, null));
+        cursors.put(MY_ID + ":group-left", new SyncCursorEntity(
+                MY_ID, "group-left", 1, 4, null, null, null, false));
+        cursors.put(MY_ID + ":group-kept", new SyncCursorEntity(
+                MY_ID, "group-kept", 1, 9, null, null, null, false));
+        when(messageDao.deleteForConversation(any())).thenAnswer(invocation -> Completable.fromAction(() -> {
+            String id = invocation.getArgument(0);
+            messages.values().removeIf(row -> id.equals(row.getConversationId()));
+        }));
+        SyncCursorDao cursorDao = org.mockito.Mockito.mock(SyncCursorDao.class);
+        when(appDatabase.syncCursorDao()).thenReturn(cursorDao);
+        doAnswer(invocation -> {
+            cursors.remove(invocation.getArgument(0) + ":" + invocation.getArgument(1));
+            return null;
+        }).when(cursorDao).delete(any(), any());
+        dao().upsert(conversation("group-left", 4)).blockingAwait();
+        dao().upsert(withPreferences(conversation("group-kept", 9), false, null, true, false))
+                .blockingAwait();
+        when(groupApi.leaveGroup("group-left")).thenReturn(asCall(Response.success(
+                ResponseBody.create(okhttp3.MediaType.parse("application/json"), "{}"))));
+        when(messageApi.getConversations(any(), any())).thenReturn(asCall(Response.error(
+                500, ResponseBody.create(okhttp3.MediaType.parse("text/plain"), "inbox down"))));
+
+        buildRepository();
+        Result<Void> result = repository.leaveGroup("group-left").blockingGet();
+
+        assertTrue(dao().rows.containsKey("group-kept"));
+        assertTrue(dao().rows.get("group-kept").isArchived());
+        assertTrue(messages.containsKey("m-kept"));
+        assertTrue(cursors.containsKey(MY_ID + ":group-kept"));
+        assertFalse(dao().rows.containsKey("group-left"));
+        assertFalse(messages.containsKey("m-left"));
+        assertFalse(cursors.containsKey(MY_ID + ":group-left"));
+        verify(messageApi, never()).getConversations(any(), any());
+        verify(messageApi, never()).getArchivedConversations(any(), any());
+        assertTrue(result instanceof Result.Success<?>);
     }
 
     private FakeConversationDao dao() {
