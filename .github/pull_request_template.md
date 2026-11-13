@@ -23,6 +23,8 @@
 - [ ] Commands and results are listed below / Đã ghi lệnh và kết quả bên dưới
 - [ ] Tests and documentation updated where needed / Đã cập nhật kiểm thử và tài liệu khi cần
 - [ ] No secrets or personal data are included / Không có bí mật hoặc dữ liệu cá nhân
+- [ ] Verified changes against `docs/architecture/api-contract.md` / `docs/architecture/websocket-protocol.md` (if transport contracts changed).
+- [ ] Updated `docs/architecture/architecture.md` or relevant feature documentation (if system boundaries or behavior changed).
 
 <!-- Commands and results / Lệnh và kết quả -->
 

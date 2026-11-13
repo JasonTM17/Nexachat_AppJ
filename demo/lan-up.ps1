@@ -130,6 +130,6 @@ Write-Host @"
    android/local.properties -> API_BASE_URL=http://${LanIp}:8080
    (or: ./gradlew -PapiBaseUrl=http://${LanIp}:8080 assembleDebug)
    emulator default http://10.0.2.2:8080 already works.
- Details + troubleshooting: docs/operations.md
+ Details + troubleshooting: docs/operations/operations.md
 ==================================================================
 "@

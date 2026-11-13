@@ -2,7 +2,7 @@ package com.nexachat.summary;
 
 import java.util.List;
 
-/** Immutable response model matching {@code docs/ai-summary.md}. */
+/** Immutable response model matching {@code docs/architecture/ai-summary.md}. */
 public final class SummaryResponse {
     private final String summaryId;
     private final String conversationId;

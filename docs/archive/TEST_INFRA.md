@@ -1,4 +1,4 @@
-> **Historical survey (2026-11-08).** Current contracts: [`docs/architecture.md`](docs/architecture.md), [`docs/api-contract.md`](docs/api-contract.md), [`docs/testing.md`](docs/testing.md).
+> **Historical survey (2026-11-08).** Current contracts: [`docs/architecture/architecture.md`](../architecture/architecture.md), [`docs/architecture/api-contract.md`](../architecture/api-contract.md), [`docs/quality/testing.md`](../quality/testing.md).
 
 # KIẾN TRÚC & PHƯƠNG PHÁP LUẬN KIỂM THỬ E2E TOÀN DIỆN (TEST INFRASTRUCTURE)
 ## HỆ THỐNG TIN NHẮN & CUỘC GỌI BẢO MẬT THỜI GIAN THỰC NEXACHAT (P0 PRODUCTION ENGINEERING)
@@ -6,7 +6,7 @@
 - **Dự án**: NexaChat
 - **Kho lưu trữ**: Thư mục gốc dự án (`.`)
 - **Ràng buộc công nghệ**: 100% Pure Java 21 LTS (0 file Kotlin `.kt`/`.kts`), 0 leaked secrets, 0 broken markdown links.
-- **Tài liệu tham chiếu cơ sở**: [README.md](README.md), [TECHNICAL_ROADMAP.md](TECHNICAL_ROADMAP.md), [docs/api-contract.md](docs/api-contract.md), [docs/websocket-protocol.md](docs/websocket-protocol.md), [docs/calls.md](docs/calls.md).
+- **Tài liệu tham chiếu cơ sở**: [README.md](../../README.md), [docs/archive/TECHNICAL_ROADMAP.md](TECHNICAL_ROADMAP.md), [docs/architecture/api-contract.md](../architecture/api-contract.md), [docs/architecture/websocket-protocol.md](../architecture/websocket-protocol.md), [docs/architecture/calls.md](../architecture/calls.md).
 - **Mã hiệu tài liệu**: `NEXA-TEST-INFRA-2026-V1`
 - **Ngày ban hành**: 08/11/2026
 
@@ -18,7 +18,7 @@
 Hạ tầng kiểm thử E2E của NexaChat được xây dựng dựa trên triết lý **Opaque-Box (Kiểm thử Hộp mờ / Hộp đen đặc tả)**. Khác với kiểm thử đơn vị nội bộ (white-box unit testing) vốn phụ thuộc chặt chẽ vào cấu trúc lớp, tên biến private hay phương thức cục bộ, kiểm thử hộp mờ tuân thủ các nguyên tắc cốt lõi:
 
 1. **Độc lập hoàn toàn với mã thực thi nội bộ (Implementation-Agnostic)**:
-   - Mọi ca kiểm thử được dẫn xuất trực tiếp từ tài liệu yêu cầu sản phẩm [TECHNICAL_ROADMAP.md](TECHNICAL_ROADMAP.md) và hợp đồng giao tiếp (REST API JSON schemas, STOMP wire protocols, SQLite/Room DDL specifications, và các máy trạng thái chuẩn).
+   - Mọi ca kiểm thử được dẫn xuất trực tiếp từ tài liệu yêu cầu sản phẩm [docs/archive/TECHNICAL_ROADMAP.md](TECHNICAL_ROADMAP.md) và hợp đồng giao tiếp (REST API JSON schemas, STOMP wire protocols, SQLite/Room DDL specifications, và các máy trạng thái chuẩn).
    - Kiểm thử không bẫy lỗi hay ràng buộc vào tên lớp cụ thể của bên triển khai, nhờ đó ngăn ngừa hiện tượng "kiểm thử dễ vỡ" (brittle tests) khi tái cấu trúc mã nguồn.
 2. **Nguồn chân lý đầu ra có thẩm quyền (Authoritative Oracles)**:
    - Đầu ra kỳ vọng của mỗi ca kiểm thử được tính toán từ các chuẩn toán học và giao thức tiêu chuẩn:

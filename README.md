@@ -18,7 +18,7 @@ message sending available offline.
 
 The Android sync consumer uses Room 14 and negotiates the upcoming sync v2
 contract. Until the V32 server is integrated it explicitly uses legacy sync;
-[client checkpoints and verification limits](docs/android-sync.md) describe that boundary.
+[client checkpoints and verification limits](docs/architecture/android-sync.md) describe that boundary.
 
 ## Demo & UI Showcase (Dark & Light Mode)
 
@@ -69,7 +69,7 @@ Direct and group chat, phone search, Vietnamese and English UI, light and dark t
 ## Quick start
 
 Before the first start, copy `.env.example` to `.env` and replace the local
-database password and JWT secret placeholders; see [docs/operations.md](docs/operations.md).
+database password and JWT secret placeholders; see [docs/operations/operations.md](docs/operations/operations.md).
 
 ```bash
 docker compose up -d db app                                    # backend + PostgreSQL 16
@@ -83,7 +83,7 @@ Windows (PowerShell): same Compose and seed steps; `.\demo\lan-up.ps1` automates
 Health check: `curl http://localhost:8080/actuator/health` → `{"status":"UP"}`.
 Pre-built APK download: [nexachat.io.vn/download.html](https://nexachat.io.vn/download.html) · [GitHub Releases](https://github.com/JasonTM17/Nexachat_AppJ/releases).
 Setup, testing and deployment guides: [CONTRIBUTING.md](CONTRIBUTING.md) ·
-[docs/operations.md](docs/operations.md).
+[docs/operations/operations.md](docs/operations/operations.md).
 
 ## Features
 
@@ -93,11 +93,11 @@ Architecture, protocol contracts, and security boundaries are documented in
 | Domain / Capability | Shipped | Where |
 |---|---|---|
 | Account & Auth | Register / login (E.164 phone, bcrypt 12), JWT + rotating refresh tokens with reuse detection, logout / logout-all, change password, access-token revocation cutoff (`tokens_valid_after`, V11), keyed refresh replay (V25) | `server/auth`, `app/feature/auth`, `core/storage` |
-| Google Sign-In | Link-first OpenID Connect via Google's public JWKS; `POST /auth/google` also registers when `NEXACHAT_GOOGLE_SIGNUP_ENABLED=true` (V28/V33); client IDs from env; single-use nonces; Android Credential Manager | `server/auth/google`, `app/core/auth`, `docs/operations.md`, `docs/known-limitations.md` |
-| Account Recovery & Email OTP | Recovery email verification, password reset OTP, account deletion OTP via HMAC-SHA256 digests (V27), cooldown & rate limits, pluggable `MailSender` (SMTP, Resend, local Mailpit for dev) | `server/recovery`, `server/mail`, `app/feature/profile`, `docs/operations.md` |
-| Self-Service Account Deletion | Soft-delete / tombstoning (V26), E.164 phone released for re-registration, session invalidation, group auto-leave with admin promotion, PII/avatar scrubbed, historical messages preserved under neutral `Deleted account` label; in-app (`DELETE /api/v1/users/me`) and web flow (`site/delete-account.html`) | `server/user`, `site/delete-account.html`, `app/feature/profile`, `docs/operations.md` |
-| Realtime & Ephemeral Routing | STOMP over WebSocket as default for presence, typing, delivery/read receipts; candidate Firebase RTDB bridge and projections (flags off by default, STOMP fallback via `EphemeralStateRouter`) | `server/firebase`, `app/core/realtime/ephemeral`, `docs/firebase-realtime.md` |
-| Static Site & App Links | Bilingual static site on Vercel with Digital Asset Links (`.well-known/assetlinks.json`), self-service web account deletion (`site/delete-account.html`), strict CSP, and repo-owned Vercel build-skip `ignoreCommand` | `site/`, `site/vercel.json`, `docs/domain-and-app-links.md`, `site/README.md` |
+| Google Sign-In | Link-first OpenID Connect via Google's public JWKS; `POST /auth/google` also registers when `NEXACHAT_GOOGLE_SIGNUP_ENABLED=true` (V28/V33); client IDs from env; single-use nonces; Android Credential Manager | `server/auth/google`, `app/core/auth`, `docs/operations/operations.md`, `docs/quality/known-limitations.md` |
+| Account Recovery & Email OTP | Recovery email verification, password reset OTP, account deletion OTP via HMAC-SHA256 digests (V27), cooldown & rate limits, pluggable `MailSender` (SMTP, Resend, local Mailpit for dev) | `server/recovery`, `server/mail`, `app/feature/profile`, `docs/operations/operations.md` |
+| Self-Service Account Deletion | Soft-delete / tombstoning (V26), E.164 phone released for re-registration, session invalidation, group auto-leave with admin promotion, PII/avatar scrubbed, historical messages preserved under neutral `Deleted account` label; in-app (`DELETE /api/v1/users/me`) and web flow (`site/delete-account.html`) | `server/user`, `site/delete-account.html`, `app/feature/profile`, `docs/operations/operations.md` |
+| Realtime & Ephemeral Routing | STOMP over WebSocket as default for presence, typing, delivery/read receipts; candidate Firebase RTDB bridge and projections (flags off by default, STOMP fallback via `EphemeralStateRouter`) | `server/firebase`, `app/core/realtime/ephemeral`, `docs/architecture/firebase-realtime.md` |
+| Static Site & App Links | Bilingual static site on Vercel with Digital Asset Links (`.well-known/assetlinks.json`), self-service web account deletion (`site/delete-account.html`), strict CSP, and repo-owned Vercel build-skip `ignoreCommand` | `site/`, `site/vercel.json`, `docs/operations/domain-and-app-links.md`, `site/README.md` |
 | Contacts & Discovery | Phone-number search, add/remove contact, alias names | `server/user`, `server/contact`, `app/feature/contacts` |
 | Direct Chat & Offline Outbox | 1-1 messaging, optimistic send, account-scoped durable offline outbox (Room v14) with WorkManager drain, caller-owned inbox labels, 2-tick delivery & read receipts, delta sync with `reaction_events` (V10), typing indicator, history paging | `server/message`, `server/ws`, `app/feature/chat`, `app/data` |
 | Message Management & Search | Edit own text messages, soft-delete own messages, conversation-scoped text search accelerated by GIN trigram index (V8), presence controls and direct-peer status | `server/message`, `server/presence`, `app/feature/chat`, `app/feature/profile` |
@@ -110,7 +110,7 @@ Architecture, protocol contracts, and security boundaries are documented in
 | Conversation Labels | Private per-user labels with per-conversation assignment (V18); Android label dialog | `server/label`, `app/feature/label` |
 | Group Invite Links | Hashed invite links, safe preview, join requests and admin approval (V20), with Android manage/join screens | `server/invite`, `app/feature/invite` |
 | Message Recall Window | Server-enforced 24 h author recall window with `409 RECALL_WINDOW_EXPIRED`; Android recall action in chat overflow | `server/message`, `app/feature/chat` |
-| Muted Push Policy | `NEW_MESSAGE` pushes are muted, with exceptions for mentions/@all, events about the recipient and `CALL_INVITE` | `server/notification`, `docs/operations.md` |
+| Muted Push Policy | `NEW_MESSAGE` pushes are muted, with exceptions for mentions/@all, events about the recipient and `CALL_INVITE` | `server/notification`, `docs/operations/operations.md` |
 | Group Chat & Admin | Create group, add/remove/leave members, admin roles, rename, system messages | `server/conversation`, `app/feature/group` |
 | Theme & Privacy Preferences | Local `SYSTEM` / `LIGHT` / `DARK` theme and server-backed show-presence preference | `core/ui`, `app/feature/profile`, `server/user` |
 | Multimedia & File Sharing | Image compression (1920px bound, GPS scrub), BlurHash placeholders (V8), authenticated Glide + 2GB cache, Range downloads (206/416), ISO-BMFF track sniffing (`audio/mp4` voice notes), inline voice player with waveform, 25MB cap | `server/attachment`, `app/feature/media`, `app/feature/chat/voice` |
@@ -120,9 +120,9 @@ Architecture, protocol contracts, and security boundaries are documented in
 | Rich Interactions (Reply, Reactions, Pins, Forward) | Reply/quote + emoji reactions with server idempotency (`PUT`/`DELETE`, V10) + pinned messages (≤3, group-admin), text-only forward | `server/message`, `app/feature/chat/ChatInteractionsViews.java`, `core/ui/ForwardFilter` |
 | 1-to-1 Voice Calls (WebRTC) | 1-1 audio calls: STOMP signaling, ICE config, server call history, Android call screens with dark gradient and pulse ring, localized call log | `server/call`, `app/call` |
 | AI Conversation Summary | Extractive local engine + optional OpenAI-compatible LLM (Gemini primary `gemini-3.1-flash-lite`, DeepSeek `deepseek-flash` fallback) behind consent, citations, Android summary UI | `server/summary`, `app/summary`, `app/feature/summary` |
-| Conversation RAG ("Ask this chat") | Server-side QA API (`POST /conversations/{id}/ask`, V9), Android Ask screen, hybrid BM25 + vector search, MMR diversification, citation validation, local lexical fallback, admin-only telemetry `/rag/stats` | `server/rag`, `app/feature/ask`, `docs/rag.md`, `tools/rag-eval` |
+| Conversation RAG ("Ask this chat") | Server-side QA API (`POST /conversations/{id}/ask`, V9), Android Ask screen, hybrid BM25 + vector search, MMR diversification, citation validation, local lexical fallback, admin-only telemetry `/rag/stats` | `server/rag`, `app/feature/ask`, `docs/architecture/rag.md`, `tools/rag-eval` |
 | Push Notifications | FCM HTTP v1 OAuth2 service-account authentication (server), Android device token registration and persisted sync cursor | `server/notification`, `app/notification` |
-| Design System & Quality Gates | Material 3 Dark/Light themes, ≥48dp touch targets, shared state components, automated server/client test suites, R8 mapping check (`tools/checks/check-release-r8-mapping.py`), site tests (`site/check.py`, `tools/site-tests`), and markdown link check | `core/ui`, `server/src/test`, `app/src/test`, `docs/testing.md` |
+| Design System & Quality Gates | Material 3 Dark/Light themes, ≥48dp touch targets, shared state components, automated server/client test suites, R8 mapping check (`tools/checks/check-release-r8-mapping.py`), site tests (`site/check.py`, `tools/site-tests`), and markdown link check | `core/ui`, `server/src/test`, `app/src/test`, `docs/quality/testing.md` |
 
 ## Architecture
 
@@ -164,8 +164,8 @@ services (`MessageService.send` serves the `@MessageMapping` and the REST
 POST identically). Persist-before-broadcast: events fan out only
 `AFTER_COMMIT`, so a received frame always describes a committed row. Client
 side, Room is the only render source — WS frames are written through, never
-rendered directly. Rationale and diagrams: [docs/architecture.md](docs/architecture.md) ·
-[docs/websocket-protocol.md](docs/websocket-protocol.md) · [docs/api-contract.md](docs/api-contract.md).
+rendered directly. Rationale and diagrams: [docs/architecture/architecture.md](docs/architecture/architecture.md) ·
+[docs/architecture/websocket-protocol.md](docs/architecture/websocket-protocol.md) · [docs/architecture/api-contract.md](docs/architecture/api-contract.md).
 
 ## Tech stack
 
@@ -184,7 +184,7 @@ rendered directly. Rationale and diagrams: [docs/architecture.md](docs/architect
 Design system: tokens, component states and the XML layout mapping are in
 [docs/design/design-notes.md](docs/design/design-notes.md); live emulator
 Dark & Light Mode showcase frames are indexed in
-[docs/media/README.md](docs/media/README.md) ([docs/media/screens/](docs/media/screens/)).
+[docs/media/README.md](docs/media/README.md) ([docs/media/screens/](docs/media/screens)).
 
 ## Prerequisites
 
@@ -199,7 +199,7 @@ Dark & Light Mode showcase frames are indexed in
 ## Quickstart — server
 
 Before starting Compose, configure the root `.env` from `.env.example` as
-described in [docs/operations.md](docs/operations.md).
+described in [docs/operations/operations.md](docs/operations/operations.md).
 
 **Containerized (everything in Docker):**
 
@@ -219,7 +219,7 @@ For testing email OTP recovery and deletion locally without external SMTP creden
 run local [Mailpit](https://github.com/axllent/mailpit) (`docker run -d --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit`)
 and set `NEXACHAT_MAIL_PROVIDER=smtp`, `MAIL_SMTP_HOST=localhost`, `MAIL_SMTP_PORT=1025` in `.env`.
 Open `http://localhost:8025` to view incoming OTP codes. Google sign-in is disabled by default
-(`NEXACHAT_GOOGLE_SIGNIN_ENABLED=false`); see [docs/operations.md](docs/operations.md) for enabling it with public JWKS validation.
+(`NEXACHAT_GOOGLE_SIGNIN_ENABLED=false`); see [docs/operations/operations.md](docs/operations/operations.md) for enabling it with public JWKS validation.
 
 Health check: `curl http://localhost:8080/actuator/health` → `{"status":"UP"}`.
 REST base: `http://localhost:8080/api/v1` · WebSocket: `ws://localhost:8080/ws`.
@@ -280,7 +280,7 @@ Seeded by `demo/seed.sql` — **demo only, never use these credentials elsewhere
 The seed creates a DIRECT chat (An↔Binh), a sample group conversation, contacts and
 unread badges; it is re-runnable (`ON CONFLICT DO NOTHING`). The local stack runs
 entirely on LAN — no internet needed; runtime setup and backup notes are in
-[docs/operations.md](docs/operations.md). Note the debug
+[docs/operations/operations.md](docs/operations/operations.md). Note the debug
 build and the local-smoke variant permit LAN cleartext — release blocks it
 (`app/src/main/res/xml/network_security_config.xml`).
 
@@ -313,7 +313,7 @@ bash tools/rag-eval/run-benchmark.sh
 ```
 
 Configure a dedicated test database with `IT_DB_URL`, `IT_DB_USER` and
-`IT_DB_PASSWORD`; see [docs/testing.md](docs/testing.md) for the setup and
+`IT_DB_PASSWORD`; see [docs/quality/testing.md](docs/quality/testing.md) for the setup and
 concurrent-run guidance. CI runs the server and Android suites, Android lint,
 and a committed-secret scan on every PR and push to `main`/`develop`.
 
@@ -337,10 +337,16 @@ nexachat/
 │  ├─ src/main/resources/db/migration/V1–V20, V22, V24–V33 # Flyway migrations
 │  └─ Dockerfile + pom.xml
 ├─ site/      Static site on Vercel (delete-account web flow, assetlinks, check.py, vercel.json)
-├─ docs/      architecture, API/STOMP contracts, security, operations (index: docs/README.md)
-│  ├─ design/       design tokens + design-system references
-│  ├─ media/        Dark & Light Mode showcase frames (docs/media/README.md)
-│  └─ evidence/     local interaction captures (gitignored)
+├─ docs/      audience-grouped documentation (index: docs/README.md)
+│  ├─ architecture/   system design, REST/STOMP/RTC/AI contracts
+│  ├─ operations/     local Compose, deploy, runbooks, backups, observability
+│  ├─ release/         Play Store, Android CI release, release checklist
+│  ├─ quality/        security architecture, testing gates, known limitations
+│  ├─ archive/        historical survey notes (TECHNICAL_ROADMAP, TEST_*)
+│  ├─ release-notes/   per-tag operator notes (release tooling reads this path)
+│  ├─ design/         design tokens + design-system references
+│  ├─ media/          Dark & Light Mode showcase frames
+│  └─ evidence/       local interaction captures (gitignored)
 ├─ demo/      seed.sql + LAN bootstrap scripts (lan-up.sh / lan-up.ps1, backup.sh)
 ├─ tools/     checks/ · release/ · ops/ · demo/ · backup/ · domain/ · e2e/ · firebase-rules/ · perf/ · site-tests/ · rag-eval/ · summary-eval/
 ├─ .github/   workflows/ci.yml · pull_request_template.md · ISSUE_TEMPLATE/
@@ -351,21 +357,21 @@ nexachat/
 ## Documentation
 
 The canonical, grouped index is [docs/README.md](docs/README.md). Key entry
-points: [docs/architecture.md](docs/architecture.md) ·
-[docs/api-contract.md](docs/api-contract.md) ·
-[docs/websocket-protocol.md](docs/websocket-protocol.md) ·
-[docs/calls.md](docs/calls.md) ·
-[docs/ai-summary.md](docs/ai-summary.md) ·
-[docs/security.md](docs/security.md) ·
-[docs/operations.md](docs/operations.md) ·
-[docs/firebase-realtime.md](docs/firebase-realtime.md) ·
-[docs/domain-and-app-links.md](docs/domain-and-app-links.md) ·
-[docs/play-store-data-safety.md](docs/play-store-data-safety.md) ·
-[docs/testing.md](docs/testing.md) ·
-[docs/release-checklist.md](docs/release-checklist.md) ·
+points: [docs/architecture/architecture.md](docs/architecture/architecture.md) ·
+[docs/architecture/api-contract.md](docs/architecture/api-contract.md) ·
+[docs/architecture/websocket-protocol.md](docs/architecture/websocket-protocol.md) ·
+[docs/architecture/calls.md](docs/architecture/calls.md) ·
+[docs/architecture/ai-summary.md](docs/architecture/ai-summary.md) ·
+[docs/quality/security.md](docs/quality/security.md) ·
+[docs/operations/operations.md](docs/operations/operations.md) ·
+[docs/architecture/firebase-realtime.md](docs/architecture/firebase-realtime.md) ·
+[docs/operations/domain-and-app-links.md](docs/operations/domain-and-app-links.md) ·
+[docs/release/play-store-data-safety.md](docs/release/play-store-data-safety.md) ·
+[docs/quality/testing.md](docs/quality/testing.md) ·
+[docs/release/release-checklist.md](docs/release/release-checklist.md) ·
 [site/README.md](site/README.md) ·
 [docs/media/README.md](docs/media/README.md) ·
-[docs/known-limitations.md](docs/known-limitations.md) ·
+[docs/quality/known-limitations.md](docs/quality/known-limitations.md) ·
 [CONTRIBUTING.md](CONTRIBUTING.md) · [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
@@ -382,4 +388,4 @@ Released under the [MIT License](LICENSE).
 NexaChat is designed and operated as a single-node real-time messaging deployment;
 architectural trade-offs and non-goals (in-memory SimpleBroker topology, LAN
 cleartext debug/localSmoke profiles, and external credentials required for live FCM delivery, E2EE, and OTP) are documented in
-[docs/known-limitations.md](docs/known-limitations.md).
+[docs/quality/known-limitations.md](docs/quality/known-limitations.md).

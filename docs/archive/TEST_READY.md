@@ -1,4 +1,4 @@
-> **Historical survey (2026-11-08).** Current contracts: [`docs/architecture.md`](docs/architecture.md), [`docs/api-contract.md`](docs/api-contract.md), [`docs/testing.md`](docs/testing.md).
+> **Historical survey (2026-11-08).** Current contracts: [`docs/architecture/architecture.md`](../architecture/architecture.md), [`docs/architecture/api-contract.md`](../architecture/api-contract.md), [`docs/quality/testing.md`](../quality/testing.md).
 
 # BÁO CÁO SẴN SÀNG KIỂM THỬ E2E (TEST READY SPECIFICATION)
 ## HỆ THỐNG TIN NHẮN & CUỘC GỌI BẢO MẬT THỜI GIAN THỰC NEXACHAT (P0 PRODUCTION ENGINEERING)
@@ -6,7 +6,7 @@
 - **Dự án**: NexaChat
 - **Kho lưu trữ**: Thư mục gốc dự án (`.`)
 - **Ràng buộc công nghệ**: 100% Pure Java 21 LTS (0 file Kotlin `.kt`/`.kts`), 0 leaked secrets, 0 broken markdown links.
-- **Tài liệu tham chiếu cơ sở**: [README.md](README.md), [TECHNICAL_ROADMAP.md](TECHNICAL_ROADMAP.md), [TEST_INFRA.md](TEST_INFRA.md).
+- **Tài liệu tham chiếu cơ sở**: [README.md](../../README.md), [docs/archive/TECHNICAL_ROADMAP.md](TECHNICAL_ROADMAP.md), [docs/archive/TEST_INFRA.md](TEST_INFRA.md).
 - **Mã hiệu tài liệu**: `NEXA-TEST-READY-2026-V1`
 - **Ngày ban hành**: 08/11/2026
 - **Trạng thái**: Đã kiểm chứng (Verified)
@@ -19,7 +19,7 @@ Hạ tầng kiểm thử toàn diện E2E cho giai đoạn P0 (Giai đoạn 1 - 
 
 Mọi ca kiểm thử đều tuân thủ nghiêm ngặt nguyên tắc:
 1. **100% Pure Java 21 LTS**: Tuyệt đối không sử dụng bất kỳ file Kotlin (.kt / .kts) nào.
-2. **Opaque-Box Testing**: Kiểm thử độc lập với tên lớp nội bộ, bám sát các hợp đồng giao tiếp, lược đồ dữ liệu, tiêu chuẩn RFC và máy trạng thái trong [TECHNICAL_ROADMAP.md](TECHNICAL_ROADMAP.md).
+2. **Opaque-Box Testing**: Kiểm thử độc lập với tên lớp nội bộ, bám sát các hợp đồng giao tiếp, lược đồ dữ liệu, tiêu chuẩn RFC và máy trạng thái trong [docs/archive/TECHNICAL_ROADMAP.md](TECHNICAL_ROADMAP.md).
 3. **0 Leaked Secrets & 0 Broken Links**: Độc lập trong môi trường CI/CD không có secrets sống và toàn vẹn liên kết tài liệu.
 
 ---
@@ -64,7 +64,7 @@ java tools/e2e/P0E2ETestRunner.java
 ```
 
 ### 2.2 Phương thức 2: Chạy qua Maven Test Suite (Tích hợp CI/CD & Spring Boot)
-Các lệnh kiểm thử Maven và script E2E hiện hành: [`docs/testing.md`](docs/testing.md).
+Các lệnh kiểm thử Maven và script E2E hiện hành: [`docs/quality/testing.md`](../quality/testing.md).
 
 ---
 

@@ -9,7 +9,7 @@ Run commands from the repository root unless a package README says otherwise. Th
 | `checks/android-a11y-baseline.json` | Legacy finding allow-list consumed by `python tools/checks/check-android-a11y.py`. | `repo-hygiene` (through checker) | N/A |
 | `checks/check-android-a11y.py` | Scan Android layouts: `python tools/checks/check-android-a11y.py`. | `repo-hygiene` | Python command works in PowerShell |
 | `checks/check-android-strings.py` | Check Vi/En string parity: `python tools/checks/check-android-strings.py`; `--self-test` runs embedded checks. | `repo-hygiene` | Python command works in PowerShell |
-| `checks/check-api-contract.py` | Compare server routes with `docs/api-contract.md`: run with no arguments; `--self-test` tests the parser. | `repo-hygiene` (both modes) | Python command works in PowerShell |
+| `checks/check-api-contract.py` | Compare server routes with `docs/architecture/api-contract.md`: run with no arguments; `--self-test` tests the parser. | `repo-hygiene` (both modes) | Python command works in PowerShell |
 | `checks/check-markdown-links.py` | Validate relative Markdown links: `python tools/checks/check-markdown-links.py [PATH ...]`. | `repo-hygiene` | Python command works in PowerShell |
 | `checks/check-release-r8-mapping.py` | Check release APK mapping after a release build: `python tools/checks/check-release-r8-mapping.py`. | `android-release` | Python command works in PowerShell |
 | `checks/test_check_android_a11y.py` | Unit tests for the Android accessibility checker: `python -m unittest tools/checks/test_check_android_a11y.py`. | `repo-hygiene` | Python command works in PowerShell |

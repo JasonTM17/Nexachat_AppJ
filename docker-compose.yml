@@ -82,20 +82,20 @@ services:
       FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
       FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
       # Firebase realtime auth bridge (opt-in). The bridge reuses FCM_PROJECT_ID
-      # and FCM_SERVICE_ACCOUNT_JSON; see docs/operations.md.
+      # and FCM_SERVICE_ACCOUNT_JSON; see docs/operations/operations.md.
       FIREBASE_REALTIME_ENABLED: ${FIREBASE_REALTIME_ENABLED:-false}
       FIREBASE_REALTIME_DEFAULT: ${FIREBASE_REALTIME_DEFAULT:-stomp}
       FIREBASE_CALL_STATUS_ENABLED: ${FIREBASE_CALL_STATUS_ENABLED:-false}
       FIREBASE_DATABASE_URL: ${FIREBASE_DATABASE_URL:-}
       FIREBASE_CONNECT_TIMEOUT_SECONDS: ${FIREBASE_CONNECT_TIMEOUT_SECONDS:-5}
       FIREBASE_READ_TIMEOUT_SECONDS: ${FIREBASE_READ_TIMEOUT_SECONDS:-10}
-      # Orphaned-avatar sweep (opt-in, dry-run — see docs/operations.md)
+      # Orphaned-avatar sweep (opt-in, dry-run — see docs/operations/operations.md)
       NEXACHAT_AVATAR_SWEEP_ENABLED: ${NEXACHAT_AVATAR_SWEEP_ENABLED:-false}
       NEXACHAT_AVATAR_SWEEP_DRY_RUN: ${NEXACHAT_AVATAR_SWEEP_DRY_RUN:-true}
       NEXACHAT_AVATAR_SWEEP_BATCH_SIZE: ${NEXACHAT_AVATAR_SWEEP_BATCH_SIZE:-100}
       NEXACHAT_AVATAR_SWEEP_MIN_AGE_HOURS: ${NEXACHAT_AVATAR_SWEEP_MIN_AGE_HOURS:-24}
       NEXACHAT_AVATAR_SWEEP_INTERVAL_MS: ${NEXACHAT_AVATAR_SWEEP_INTERVAL_MS:-86400000}
-      # Retention cleanup (opt-in; all job switches default off — see docs/operations.md)
+      # Retention cleanup (opt-in; all job switches default off — see docs/operations/operations.md)
       NEXACHAT_RETENTION_ENABLED: ${NEXACHAT_RETENTION_ENABLED:-false}
       NEXACHAT_RETENTION_DRY_RUN: ${NEXACHAT_RETENTION_DRY_RUN:-true}
       NEXACHAT_RETENTION_BATCH_SIZE: ${NEXACHAT_RETENTION_BATCH_SIZE:-100}

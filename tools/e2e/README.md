@@ -1,7 +1,7 @@
 # NexaChat end-to-end scripts
 
 Real-traffic verification of the message-lifecycle and presence contract against a
-running backend (`docs/api-contract.md`, `docs/websocket-protocol.md`). They are
+running backend (`docs/architecture/api-contract.md`, `docs/architecture/websocket-protocol.md`). They are
 demo/CI smoke tools, not part of the app build.
 
 ## Live E2E evidence vs illustrative fixture

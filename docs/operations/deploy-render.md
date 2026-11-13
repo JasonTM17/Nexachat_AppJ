@@ -216,13 +216,13 @@ Line numbers reflect the current server codebase on main.
 OAuth client IDs are **not** stored in git. After the Blueprint creates the
 service, set production values by hand: Render Dashboard → **Environment**, or
 the Render REST API with **one `PUT` per key** (same pattern as other secrets in
-[docs/production-runbook.md](production-runbook.md)). Keys declared with
-`sync: false` in [render.yaml](../render.yaml) (`NEXACHAT_GOOGLE_WEB_CLIENT_ID`,
+[docs/operations/production-runbook.md](production-runbook.md)). Keys declared with
+`sync: false` in [render.yaml](../../render.yaml) (`NEXACHAT_GOOGLE_WEB_CLIENT_ID`,
 `NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS`) must be filled before enabling sign-in.
 Combine debug and release Android OAuth client IDs into a single
 `NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` value (comma-separated); the server does
 not read separate debug/release env var names. Step-by-step console setup:
-[docs/google-signin-setup.md](google-signin-setup.md).
+[docs/operations/google-signin-setup.md](google-signin-setup.md).
 
 To turn push on, set `FCM_PROJECT_ID` and `FCM_SERVICE_ACCOUNT_JSON`, then
 change `FCM_ENABLED` to `true` and redeploy. Enabling FCM with empty

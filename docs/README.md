@@ -1,70 +1,79 @@
-# NexaChat Documentation Index
+# NexaChat documentation index
 
-Every engineering document in the repository, grouped by domain. Start with
-[README.md](../README.md) for the product overview and quick start.
+Start here to navigate engineering documentation by audience. The product overview and
+quick start remain in [README.md](../README.md).
 
-## Overview & architecture
+## Contributors
 
-| Doc | Contents |
+| Document | Summary |
 |---|---|
-| [README.md](../README.md) | Product overview, Modern Dark/Light UI showcase, capability map, quick start, repo layout |
-| [docs/architecture.md](architecture.md) | Container, module and send-message sequence diagrams; modular monolith rationale, Flyway V1–V20 + V22 + V24–V33, account deletion, recovery email OTP, Google sign-in and signup, sync change cursors, and ephemeral state routing |
-| [docs/known-limitations.md](known-limitations.md) | Architectural scope and documented engineering trade-offs |
-| [docs/play-store-data-safety.md](play-store-data-safety.md) | Google Play Data safety form disclosures, privacy policy declarations, collection scopes, and account deletion handling |
+| [architecture/architecture.md](architecture/architecture.md) | Modular monolith layout, Flyway migrations, sync cursors, and sequence diagrams. |
+| [architecture/api-contract.md](architecture/api-contract.md) | REST `/api/v1` route inventory, feature matrix, and migration history. |
+| [architecture/websocket-protocol.md](architecture/websocket-protocol.md) | STOMP destinations, envelopes, delivery guarantees, and rate limits. |
+| [architecture/android-sync.md](architecture/android-sync.md) | Android sync v2 checkpoints, Room 13→14, and legacy sync boundary. |
+| [architecture/calls.md](architecture/calls.md) | WebRTC call signaling, STOMP events, and Android call UI. |
+| [architecture/firebase-realtime.md](architecture/firebase-realtime.md) | Optional Firebase RTDB presence/typing bridge (STOMP default). |
+| [architecture/ai-summary.md](architecture/ai-summary.md) | Conversation catch-up summary engines, consent, and citations. |
+| [architecture/rag.md](architecture/rag.md) | “Ask this chat” retrieval, hybrid search, and eval harness. |
+| [quality/testing.md](quality/testing.md) | Server/Android test setup, CI gates, E2E scripts, and site checks. |
+| [quality/known-limitations.md](quality/known-limitations.md) | Documented trade-offs, free-tier limits, and audit caveats. |
+| [design/design-notes.md](design/design-notes.md) | Material 3 tokens and XML layout mapping. |
+| [design/stitch/DESIGN.md](design/stitch/DESIGN.md) | Stitch design-system specification. |
+| [media/README.md](media/README.md) | Dark/light UI showcase frame index. |
+| [CONTRIBUTING.md](../CONTRIBUTING.md) | JDK 21 build gates, branching, and PR checklist. |
 
-## API, realtime & AI contracts
+## Operators
 
-| Doc | Contents |
+| Document | Summary |
 |---|---|
-| [docs/api-contract.md](api-contract.md) | REST API contract (`/api/v1`) with a feature matrix, migration history and operational notes, covering auth, conversations, messages, reminders, polls, labels, invites, attachments, calls and summary routes |
-| [docs/websocket-protocol.md](websocket-protocol.md) | STOMP over WebSocket (`/ws`) destinations, event envelope, delivery guarantees and rate limits |
-| [docs/android-sync.md](android-sync.md) | Android sync v2 checkpoints, Room migration 13→14, and reconciliation against server change cursors |
-| [docs/calls.md](calls.md) | 1-to-1 WebRTC voice call signaling, call events, ICE configuration, call history and Android UI |
-| [docs/firebase-realtime.md](firebase-realtime.md) | Opt-in Firebase RTDB presence/typing bridge (disabled by default, STOMP default): data model, rules install, offline emulator contract matrix, CI job and known rule gaps |
-| [docs/ai-summary.md](ai-summary.md) | Conversation catch-up summary contract, local extractive & OpenAI-compatible (Gemini-tested) LLM engines, citation guard and consent model |
-| [docs/rag.md](rag.md) | Conversation RAG QA contract ("Ask this chat"), hybrid BM25 + vector retrieval, MMR diversification, citation validation, eval benchmark |
+| [operations/operations.md](operations/operations.md) | Docker Compose, environment variables, Mailpit, OAuth, and R8 checks. |
+| [operations/production-runbook.md](operations/production-runbook.md) | Render/Neon/Supabase/Vercel production topology and incident playbooks. |
+| [operations/deploy-render.md](operations/deploy-render.md) | First deploy on Render Free + Neon + object storage. |
+| [operations/backup-recovery.md](operations/backup-recovery.md) | Local PostgreSQL and attachment backup/restore (`tools/backup/`). |
+| [operations/free-tier-observability.md](operations/free-tier-observability.md) | Capacity meters, PromQL, and free-tier monitoring checks. |
+| [operations/domain-and-app-links.md](operations/domain-and-app-links.md) | DNS, Vercel site, App Links, and signing fingerprints. |
+| [operations/google-signin-setup.md](operations/google-signin-setup.md) | Google Cloud OAuth clients and Android client IDs. |
+| [demo/seed.sql](../demo/seed.sql) | Re-runnable demo accounts and sample conversations. |
+| [demo/lan-up.sh](../demo/lan-up.sh), [demo/lan-up.ps1](../demo/lan-up.ps1) | LAN stack bootstrap (Bash / PowerShell). |
+| [site/README.md](../site/README.md) | Static site, web account deletion, and `site/check.py`. |
 
-## Security & operations
+## Release managers
 
-| Doc | Contents |
+| Document | Summary |
 |---|---|
-| [docs/security.md](security.md) | Security architecture — authentication, authorization, storage, rate limits, Google sign-in (OpenID Connect), recovery email OTPs, and account deletion / tombstoning |
-| [docs/operations.md](operations.md) | Operator setup, Docker Compose runtime configuration, environment variables, Mailpit dev mail sink, Google OAuth setup, Firebase rollout gates, and R8 keep rules check |
-| [docs/free-tier-observability.md](free-tier-observability.md) | Storage capacity meters, PromQL, alert rules, and manual Render/Neon/Supabase free-tier checks |
-| [docs/google-signin-setup.md](google-signin-setup.md) | Google Cloud OAuth clients, env var names (comma-separated Android IDs), Android `GOOGLE_WEB_CLIENT_ID`, local and Render testing |
-| [docs/deploy-render.md](deploy-render.md) | First public release on Render Free + Neon + Supabase Storage (R2 alternative): Blueprint, env vars, custom domain, cold starts |
-| [docs/domain-and-app-links.md](domain-and-app-links.md) | Domain, DNS, Vercel and Android App Links runbook: propagation checks, device testing, signing fingerprint, Vercel build-skip (`ignoreCommand`), and token rotation |
-| [docs/production-runbook.md](production-runbook.md) | Production topology, Render/Neon/Supabase/Firebase/Vercel operations, cold-start handling, secret rotation checklist, and free-tier limits |
-| [docs/backup-recovery.md](backup-recovery.md) | Paired PostgreSQL and attachment backup/restore for local stacks (`tools/backup/`) |
-| [docs/testing.md](testing.md) | Server test setup, PostgreSQL requirements, Firebase rules tests, E2E scripts, site validation, R8 release mapping check, and Mailpit dev setup |
-| [tools/release/README.md](../tools/release/README.md) | Upload keystore setup, signed release APK build and `apksigner` verification |
-| [demo/seed.sql](../demo/seed.sql) | Re-runnable demo accounts, contacts and sample conversations |
-| [demo/lan-up.sh](../demo/lan-up.sh), [demo/lan-up.ps1](../demo/lan-up.ps1) | Local LAN stack bootstrap (Git Bash / PowerShell) |
-| [demo/backup.sh](../demo/backup.sh) | PostgreSQL database backup utility |
+| [release/release-checklist.md](release/release-checklist.md) | Preconditions, gates, signing, smoke tests, and rollback. |
+| [release/android-release.md](release/android-release.md) | GitHub Actions signed APK workflow and keystore secrets. |
+| [release/play-store-data-safety.md](release/play-store-data-safety.md) | Play Console Data safety form mapping. |
+| [tools/release/README.md](../tools/release/README.md) | Upload keystore setup and `apksigner` verification. |
+| [CHANGELOG.md](../CHANGELOG.md) | Keep a Changelog release history. |
+| [release-notes/](release-notes/) | Per-tag operator notes (`docs/release-notes/<tag>.md`; tooling reads this path). |
 
-## Site & web verification
+## Security and quality
 
-| Doc | Contents |
+| Document | Summary |
 |---|---|
-| [site/README.md](../site/README.md) | Static site (`nexachat.io.vn`), Digital Asset Links (`.well-known/assetlinks.json`), web account deletion flow (`delete-account.html`), security headers, and `check.py` |
-| [tools/site-tests/README.md](../tools/site-tests/README.md) | Headless DOM-shim unit tests for `site/delete-account.js` (validation, OTP transitions, rate limits, URL credential hygiene) |
+| [quality/security.md](quality/security.md) | AuthN/Z, storage, rate limits, Google OIDC, OTP, and account deletion. |
+| [quality/testing.md](quality/testing.md) | Test databases, Firebase rules tests, and hygiene scripts. |
+| [quality/known-limitations.md](quality/known-limitations.md) | Engineering scope boundaries and residual risks. |
+| [tools/site-tests/README.md](../tools/site-tests/README.md) | Headless tests for `site/delete-account.js`. |
 
-## Design & UI showcase
+## Archive (historical surveys)
 
-| Doc | Contents |
+| Document | Summary |
 |---|---|
-| [docs/design/design-notes.md](design/design-notes.md) | Design tokens, component states and XML layout mapping |
-| [docs/design/stitch/DESIGN.md](design/stitch/DESIGN.md) | Design system specification and guidelines |
-| [docs/design/stitch/screens/](design/stitch/screens/) | HTML design references and exported design comps |
-| [docs/media/README.md](media/README.md) | Live emulator Dark (`#0B0E17`) & Light (`#F8FAFC`) Mode UI showcase index |
-| [docs/media/screens/](media/screens/) | Captured Dark & Light Mode showcase and core workflow PNGs (`01..17`) |
+| [archive/TECHNICAL_ROADMAP.md](archive/TECHNICAL_ROADMAP.md) | 2026-11-08 publication-grade technical survey (superseded by live docs). |
+| [archive/TEST_INFRA.md](archive/TEST_INFRA.md) | Historical test-infrastructure survey notes. |
+| [archive/TEST_READY.md](archive/TEST_READY.md) | Historical test-readiness survey notes. |
 
-## Contributing & release history
+## Where does X live?
 
-| Doc | Contents |
+| Question | Location |
 |---|---|
-| [CONTRIBUTING.md](../CONTRIBUTING.md) | Setup, JDK 21 LTS build & test gates, repository layout, branching and PR rules |
-| [docs/release-checklist.md](release-checklist.md) | Release preconditions, server and Android gates, R8 mapping verification (`tools/checks/check-release-r8-mapping.py`), signing, rollout, smoke tests and rollback |
-| [docs/android-release.md](android-release.md) | GitHub Actions signed APK release, signing secrets, certificate fingerprints, tags and checksum verification |
-| [CHANGELOG.md](../CHANGELOG.md) | Release history and unreleased changes |
-| [docs/release-notes/](release-notes/) | Versioned release note pages (v1.1.x–v1.2.x) |
+| REST route list and `/api/v1` contract? | [architecture/api-contract.md](architecture/api-contract.md) |
+| WebSocket/STOMP destinations? | [architecture/websocket-protocol.md](architecture/websocket-protocol.md) |
+| Environment variables and Docker Compose? | [operations/operations.md](operations/operations.md) |
+| Production incident runbook? | [operations/production-runbook.md](operations/production-runbook.md) |
+| How do I run tests locally? | [quality/testing.md](quality/testing.md) |
+| Security model and threat boundaries? | [quality/security.md](quality/security.md) |
+| Release checklist before tagging? | [release/release-checklist.md](release/release-checklist.md) |
+| Play Store / Data safety disclosures? | [release/play-store-data-safety.md](release/play-store-data-safety.md) |

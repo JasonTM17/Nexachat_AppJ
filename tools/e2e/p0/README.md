@@ -14,7 +14,7 @@ Standard library + `websocket-client` (already used by `tools/e2e/stomp_e2e.py`)
 ## 1. Prerequisites and Backend Setup
 
 1. **Backend Server**: Ensure the NexaChat backend is built and running at `http://localhost:8080`.
-   Refer to the canonical setup instructions in [`docs/operations.md`](../../../docs/operations.md).
+   Refer to the canonical setup instructions in [`docs/operations/operations.md`](../../../docs/operations/operations.md).
 2. **Python Environment**: Python 3.9+ with `websocket-client` installed.
 
 ---

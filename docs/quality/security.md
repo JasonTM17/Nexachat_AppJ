@@ -112,7 +112,7 @@ the implementing source file.
   projections. The rules candidate has an offline emulator contract suite and a credential-free CI
   job (`tools/firebase-rules`, `firebase-rules`); review the two MEDIUM rule gaps it records
   (multi-device last-seen exposure and the DIRECT-only reader-edge invariant) in
-  `docs/firebase-realtime.md`. Projection correctness, real Firebase Auth/IAM exchange and device
+  `docs/architecture/firebase-realtime.md`. Projection correctness, real Firebase Auth/IAM exchange and device
   behavior remain rollout gates.
 
 ## 3. Transport authorization
@@ -241,7 +241,7 @@ the implementing source file.
   polls 10/min create / 120/min vote / 30/min manage, invite resolve 60/min and
   join 20/min (also keyed per client IP to blunt token guessing), reminders
   30/min create, and message edit/delete 30/min plus search 60/min. Keys and
-  defaults are in [`docs/api-contract.md`](api-contract.md#operational-notes).
+  defaults are in [`docs/architecture/api-contract.md`](../architecture/api-contract.md#operational-notes).
 - STOMP SEND is per-user as well, with independent buckets: 30 messages /
   10 s (`stomp:messages:<userId>`), 60 typing frames / 10 s
   (`stomp:typing:<userId>`), and 120 receipt acknowledgment frames / 10 s

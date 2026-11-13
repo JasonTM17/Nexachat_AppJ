@@ -6,6 +6,10 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Documentation reorganised into architecture, operations, release, quality and archive folders; see [docs/README.md](docs/README.md).
+
 ## [1.2.5] - 2026-11-13
 
 Fix release after a full review of the Android app, server, website and docs.
@@ -232,8 +236,8 @@ See [docs/release-notes/v1.2.0.md](docs/release-notes/v1.2.0.md).
 
 ### Documentation
 
-- Added `docs/backup-recovery.md`, `docs/free-tier-observability.md`,
-  `docs/android-sync.md`; manual Render deploy sequence with per-key env updates.
+- Added `docs/operations/backup-recovery.md`, `docs/operations/free-tier-observability.md`,
+  `docs/architecture/android-sync.md`; manual Render deploy sequence with per-key env updates.
 
 ### Security
 
@@ -599,9 +603,9 @@ GitHub Releases and `site/download.html`.
 
 - Release notes for v1.1.0 (`docs/release-notes/v1.1.0.md`) in Vietnamese and English.
 - Firebase rollout guide (`docs/firebase-rollout.md`) and updated realtime
-  architecture (`docs/firebase-realtime.md`) covering presence privacy v2,
+  architecture (`docs/architecture/firebase-realtime.md`) covering presence privacy v2,
   call status paths, and safe rollout order.
-- Play Store Data Safety mapping (`docs/play-store-data-safety.md`) updated for
+- Play Store Data Safety mapping (`docs/release/play-store-data-safety.md`) updated for
   Firebase RTDB ephemeral transport, recovery email, and account deletion.
 - Architecture, REST API contract, STOMP protocol, security, operations,
   testing, calls, AI summary, RAG, known-limitations and design-system

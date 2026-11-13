@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_PATH = REPO_ROOT / "docker-compose.yml"
 ENV_EXAMPLE_PATH = REPO_ROOT / ".env.example"
 
-# Compose default per docs/operations.md (Compose default column) and application.yml
+# Compose default per docs/operations/operations.md (Compose default column) and application.yml
 # where operations.md omits a row (e.g. Google signup).
 DOCUMENTED_APP_SETTINGS: dict[str, str | None] = {
     "NEXACHAT_STORAGE_PROVIDER": "local",

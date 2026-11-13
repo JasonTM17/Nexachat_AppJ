@@ -1,4 +1,4 @@
-> **Historical survey (2026-11-08).** Current contracts: [`docs/architecture.md`](docs/architecture.md), [`docs/api-contract.md`](docs/api-contract.md), [`docs/testing.md`](docs/testing.md).
+> **Historical survey (2026-11-08).** Current contracts: [`docs/architecture/architecture.md`](../architecture/architecture.md), [`docs/architecture/api-contract.md`](../architecture/api-contract.md), [`docs/quality/testing.md`](../quality/testing.md).
 
 # BÁO CÁO KHẢO SÁT KỸ THUẬT TOÀN DIỆN & LỘ TRÌNH PHÁT TRIỂN PRODUCTION (TECHNICAL ROADMAP)
 ## HỆ THỐNG TIN NHẮN & CUỘC GỌI BẢO MẬT THỜI GIAN THỰC NEXACHAT
@@ -33,15 +33,15 @@ Mục tiêu của báo cáo này là:
 
 ### 1.4 Danh mục Tài liệu Tham chiếu Kiến trúc
 Báo cáo kỹ thuật này đối chiếu trực tiếp với hệ thống tài liệu kiến trúc cơ sở của dự án:
-- [README.md](README.md): Hướng dẫn khởi tạo và tổng quan kiến trúc hệ thống NexaChat.
-- [docs/architecture.md](docs/architecture.md): Thiết kế kiến trúc tổng thể Backend Spring Boot và Android Client.
-- [docs/known-limitations.md](docs/known-limitations.md): Danh mục các giới hạn kỹ thuật và khiếm khuyết hạ tầng đã ghi nhận.
-- [docs/api-contract.md](docs/api-contract.md): Đặc tả hợp đồng API REST, phân trang con trỏ và mã phản hồi lỗi.
-- [docs/websocket-protocol.md](docs/websocket-protocol.md): Đặc tả giao thức khung tin nhắn STOMP và sự kiện thời gian thực.
-- [docs/calls.md](docs/calls.md): Luồng báo hiệu cuộc gọi P2P WebRTC 1-1 và vòng đời trạng thái cuộc gọi.
-- [docs/ai-summary.md](docs/ai-summary.md): Thiết kế phân tầng 3 cấp độ tóm tắt AI và cơ chế tự ngắt chuyển vùng (circuit breaker).
-- [docs/security.md](docs/security.md): Mô hình đe dọa an ninh, lưu trữ khóa Keystore-AES và kiểm soát tốc độ truy cập.
-- [docs/operations.md](docs/operations.md): Quy trình triển khai Docker Compose, quản lý biến môi trường và vận hành máy chủ.
+- [README.md](../../README.md): Hướng dẫn khởi tạo và tổng quan kiến trúc hệ thống NexaChat.
+- [docs/architecture/architecture.md](../architecture/architecture.md): Thiết kế kiến trúc tổng thể Backend Spring Boot và Android Client.
+- [docs/quality/known-limitations.md](../quality/known-limitations.md): Danh mục các giới hạn kỹ thuật và khiếm khuyết hạ tầng đã ghi nhận.
+- [docs/architecture/api-contract.md](../architecture/api-contract.md): Đặc tả hợp đồng API REST, phân trang con trỏ và mã phản hồi lỗi.
+- [docs/architecture/websocket-protocol.md](../architecture/websocket-protocol.md): Đặc tả giao thức khung tin nhắn STOMP và sự kiện thời gian thực.
+- [docs/architecture/calls.md](../architecture/calls.md): Luồng báo hiệu cuộc gọi P2P WebRTC 1-1 và vòng đời trạng thái cuộc gọi.
+- [docs/architecture/ai-summary.md](../architecture/ai-summary.md): Thiết kế phân tầng 3 cấp độ tóm tắt AI và cơ chế tự ngắt chuyển vùng (circuit breaker).
+- [docs/quality/security.md](../quality/security.md): Mô hình đe dọa an ninh, lưu trữ khóa Keystore-AES và kiểm soát tốc độ truy cập.
+- [docs/operations/operations.md](../operations/operations.md): Quy trình triển khai Docker Compose, quản lý biến môi trường và vận hành máy chủ.
 
 ---
 
@@ -707,7 +707,7 @@ Toàn bộ 16 đề xuất tính năng dưới đây được phân loại theo 
   - Tốn kém chi phí băng thông máy chủ TURN khi chuyển tiếp luồng media thoại/video.
 
 ##### B. Mức độ cần thiết cho Production:
-- **CAO (HIGH - P1)**. Khắc phục triệt để hạn chế đã ghi nhận tại `docs/known-limitations.md`.
+- **CAO (HIGH - P1)**. Khắc phục triệt để hạn chế đã ghi nhận tại `docs/quality/known-limitations.md`.
 
 ##### C. Độ phức tạp kỹ thuật:
 - **Cao (High)**: Xử lý trạng thái ICE negotiation và bắt tay lại SDP offer/answer trong luồng nền.
@@ -1113,7 +1113,7 @@ Get-ChildItem -Path "." -Recurse -Include *.kt, *.kts | Measure-Object
 Xác thực rằng tài liệu này và toàn bộ tài liệu trong kho lưu trữ không có bất kỳ liên kết nội bộ nào bị gãy:
 ```powershell
 # Chạy công cụ kiểm tra liên kết của dự án
-python tools/checks/check-markdown-links.py README.md docs/ TECHNICAL_ROADMAP.md
+python tools/checks/check-markdown-links.py README.md docs/ docs/archive/TECHNICAL_ROADMAP.md
 ```
 *Kết quả kỳ vọng*: `PASS: no broken relative links` (Mã thoát 0).
 

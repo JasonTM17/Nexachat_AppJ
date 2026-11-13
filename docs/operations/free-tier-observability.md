@@ -1,7 +1,7 @@
 # Free-tier capacity observability
 
 This is the manual companion to the server metrics in
-[docs/operations.md](operations.md). The server can measure its own work, but it
+[docs/operations/operations.md](operations.md). The server can measure its own work, but it
 cannot read a provider's quota. The provider consoles remain the source of truth
 for current limits and usage; this document intentionally does not repeat quota
 numbers that can change without a code change.
@@ -44,7 +44,7 @@ required by the Prometheus tag-key rule.
 
 The Hikari, JVM, process and HTTP meters are Spring Boot Actuator meters and are
 not duplicated by this instrumentation. See
-[docs/operations.md](operations.md#observability) for the exposure and
+[docs/operations/operations.md](operations.md#observability) for the exposure and
 authentication rules. Keep `MANAGEMENT_EXPOSURE` at `health` unless a scraper
 needs `metrics`/`prometheus`, and keep the management address on loopback.
 
@@ -83,7 +83,7 @@ The timers publish histogram buckets, so average latency is also available from
 the `_sum` and `_count` series if a dashboard prefers it.
 
 The example alerts in
-[tools/observability/prometheus-alerts.yml](../tools/observability/prometheus-alerts.yml)
+[tools/observability/prometheus-alerts.yml](../../tools/observability/prometheus-alerts.yml)
 use the same series. Validate changed rules with the current Prometheus release:
 
 ```sh

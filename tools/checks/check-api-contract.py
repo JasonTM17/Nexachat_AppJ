@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail when a server controller route is missing from docs/api-contract.md.
+"""Fail when a server controller route is missing from docs/architecture/api-contract.md.
 
 The REST route inventory is derived statically from the Spring controller
 sources (class-level @RequestMapping prefix plus method-level @*Mapping
@@ -25,7 +25,7 @@ import unittest
 from pathlib import Path
 
 CONTROLLER_DIR = Path("server/src/main/java")
-CONTRACT = Path("docs/api-contract.md")
+CONTRACT = Path("docs/architecture/api-contract.md")
 
 MAPPING_ANNOTATIONS = {
     "GetMapping": ("GET",),
@@ -206,7 +206,7 @@ class ApiContractCheckerSelfTest(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
-            contract = Path("docs/api-contract.md")
+            contract = Path("docs/architecture/api-contract.md")
             contract_path = root / contract
             contract_path.parent.mkdir(parents=True)
             contract_path.write_text(
@@ -253,7 +253,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default=".", help="repository root")
     parser.add_argument("--contract", default=str(CONTRACT),
-                        help="contract path relative to --root (default: docs/api-contract.md)")
+                        help="contract path relative to --root (default: docs/architecture/api-contract.md)")
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument(
         "--self-test", action="store_true", help="run the built-in checker self-tests"

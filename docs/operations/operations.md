@@ -220,7 +220,7 @@ The Compose `app-uploads` volume is used only by the `local` provider.
 ### Feature configuration and retention
 
 The V12–V20 feature flags, rate limits and ceilings are listed in
-[`docs/api-contract.md`](api-contract.md#operational-notes). The operational
+[`docs/architecture/api-contract.md`](../architecture/api-contract.md#operational-notes). The operational
 schedulers and retention windows are:
 
 | Property | Default | Meaning |
@@ -274,7 +274,7 @@ on the first send.
 #### Google service-account credentials
 
 Both FCM and the Firebase bridge read the key through
-[`GoogleServiceAccountCredentialsFactory`](../server/src/main/java/com/nexachat/google/GoogleServiceAccountCredentialsFactory.java).
+[`GoogleServiceAccountCredentialsFactory`](../../server/src/main/java/com/nexachat/google/GoogleServiceAccountCredentialsFactory.java).
 `FCM_SERVICE_ACCOUNT_JSON` must be a service-account private-key JSON: either
 the JSON document itself or a readable path to it. The document must contain
 `"type": "service_account"`, `client_email`, `token_uri` and `private_key`;
@@ -285,7 +285,7 @@ Firebase bridge.
 
 The key must belong to the project in `FCM_PROJECT_ID`, the same project as
 `android/app/google-services.json`.
-[`FirebaseRealtimeConfiguration`](../server/src/main/java/com/nexachat/firebase/config/FirebaseRealtimeConfiguration.java)
+[`FirebaseRealtimeConfiguration`](../../server/src/main/java/com/nexachat/firebase/config/FirebaseRealtimeConfiguration.java)
 requires `FCM_PROJECT_ID` when the bridge is enabled and rejects a key whose
 `project_id` differs; FCM sends would also fail against the wrong project.
 
@@ -328,7 +328,7 @@ Before enabling the bridge in a Firebase project:
    region. Keep the database in locked mode during setup.
 2. Review and install the complete rules candidate at
    `tools/firebase-rules/database.rules.json`. The rules contract, its offline
-   emulator suite and its tests are documented in [firebase-realtime.md](firebase-realtime.md);
+   emulator suite and its tests are documented in [firebase-realtime.md](../architecture/firebase-realtime.md);
    the `firebase-rules` CI job runs that suite without credentials.
 3. Configure a project budget and billing alerts, then monitor database reads,
    writes, and download volume during a staged rollout.
@@ -395,7 +395,7 @@ same interpolation rule as `FCM_ENABLED` above).
 The bridge also needs `FCM_PROJECT_ID` and the service-account key in
 `FCM_SERVICE_ACCOUNT_JSON`, even while `FCM_ENABLED=false`. To mount a key file
 instead of inlining it, use the opt-in
-[`docker-compose.firebase.yml`](../docker-compose.firebase.yml) override. It
+[`docker-compose.firebase.yml`](../../docker-compose.firebase.yml) override. It
 mounts the host file read-only at `/run/secrets/nexachat-firebase.json` and
 points `FCM_SERVICE_ACCOUNT_JSON` there:
 
@@ -699,7 +699,7 @@ proxy connects from when TLS terminates in front of the JVM. Render's values are
   polls 10/min create / 120/min vote / 30/min manage, invite resolve 60/min and
   join 20/min (also per client IP), reminders 30/min create, message edit/delete
   30/min and search 60/min. Keys and defaults are in
-  [`docs/api-contract.md`](api-contract.md#operational-notes).
+  [`docs/architecture/api-contract.md`](../architecture/api-contract.md#operational-notes).
 - JSON request bodies larger than `nexachat.security.max-json-body-bytes`
   (env `NEXACHAT_MAX_JSON_BODY_BYTES`, default 1 MiB) are rejected with
   `413 PAYLOAD_TOO_LARGE` before the dispatcher parses them. Multipart uploads
@@ -1002,7 +1002,7 @@ LAN address printed by the demo script and be on the same network.
 Back up before replacing the app image. Flyway applies versioned migrations
 through V33 on app startup and they are forward-only: add a new SQL migration; never
 edit one already applied to a database. The full migration list with intent is in
-[`docs/api-contract.md`](api-contract.md#migration-history); the migrations after
+[`docs/architecture/api-contract.md`](../architecture/api-contract.md#migration-history); the migrations after
 V11 introduce:
 
 - `V12__conversation_member_mute_archive.sql`: per-member `muted` /
@@ -1333,7 +1333,7 @@ examples whose effects were intentionally not triggered during the audit.
 | `(cd server && mvn -B verify)` | NOT_RUN — full suite not run by this worker |
 | `(cd android && ./gradlew testDebugUnitTest lintDebug assembleDebug --no-daemon --no-parallel --max-workers=1)` | NOT_RUN — another Gradle daemon was BUSY |
 | Android release build `android/gradlew.bat :app:assembleRelease -PskipSigning --no-parallel --max-workers=2` | PASS — unsigned APK generated (`app-release-unsigned.apk`, 28.58 MB), R8 full mode minification and resource shrinking enabled, 0 errors |
-| `python -B tools/checks/check-markdown-links.py docs/operations.md` | PASS — no broken relative links |
+| `python -B tools/checks/check-markdown-links.py docs/operations/operations.md` | PASS — no broken relative links |
 | `python -B tools/checks/check-markdown-links.py` | PASS — 56 relative links checked across 43 files |
 | `bash -n demo/*.sh tools/*.sh` | PASS |
 | PowerShell parser and `--help` checks for the four `.ps1` scripts | PASS |

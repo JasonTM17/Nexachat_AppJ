@@ -8,7 +8,7 @@
 # tunes Tomcat and Hikari for that box; JAVA_OPTS below tunes the JVM.
 #
 # Blueprint reference: https://render.com/docs/blueprint-spec
-# Owner guide: docs/deploy-render.md
+# Owner guide: docs/operations/deploy-render.md
 
 services:
   - type: web
@@ -18,7 +18,7 @@ services:
     region: singapore
     branch: main
     # autoDeployTrigger applies only to a Blueprint-managed service. Production was
-    # created via Render API with auto-deploy off (see docs/deploy-render.md).
+    # created via Render API with auto-deploy off (see docs/operations/deploy-render.md).
     autoDeployTrigger: commit
     dockerfilePath: ./server/Dockerfile
     dockerContext: ./server
@@ -58,7 +58,7 @@ services:
       # ---- Database (Neon Postgres) ----------------------------------------
       # Use the DIRECT Neon connection string, not the "-pooler" one: Flyway
       # and ScheduledAdvisoryLock use session-level advisory locks, which
-      # PgBouncer transaction mode does not support. See docs/deploy-render.md.
+      # PgBouncer transaction mode does not support. See docs/operations/deploy-render.md.
       - key: DATABASE_URL
         sync: false
       - key: DATABASE_USER
@@ -86,7 +86,7 @@ services:
       # 10.0.0.0/8. Trusting that range lets the resolver read Cloudflare's
       # overwritten CF-Connecting-IP, so each client gets its own rate-limit
       # bucket. If Render moves the peer off this range, buckets fall back to
-      # the shared proxy peer (safe, just coarse). See docs/deploy-render.md.
+      # the shared proxy peer (safe, just coarse). See docs/operations/deploy-render.md.
       - key: NEXACHAT_TRUSTED_PROXY_CIDRS
         value: "10.0.0.0/8"
       # Cloudflare overwrites this single-value header on traffic to a Render
@@ -104,7 +104,7 @@ services:
         value: /app/data/uploads
       # Multipart scratch is created and probe-written at boot, so an
       # unwritable path fails startup instead of the first upload
-      # (docs/operations.md, multipart section). /app is owned by the runtime
+      # (docs/operations/operations.md, multipart section). /app is owned by the runtime
       # user (server/Dockerfile:36).
       - key: NEXACHAT_MULTIPART_TEMP_DIR
         value: /app/data/multipart

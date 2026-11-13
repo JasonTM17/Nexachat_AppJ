@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Pure Java 21 LTS, zero external dependencies (standard JDK only).
  * Runs 81 in-process checks on locally constructed data; no server, database, or
  * Android build participates. Not live end-to-end acceptance evidence — see
- * docs/testing.md and tools/e2e/README.md for API/STOMP runners against a real backend.
+ * docs/quality/testing.md and tools/e2e/README.md for API/STOMP runners against a real backend.
  *
  * Usage:
  *   java tools/e2e/P0E2ETestRunner.java

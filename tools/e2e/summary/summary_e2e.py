@@ -8,7 +8,7 @@ Usage:
     python tools/e2e/summary/summary_e2e.py [--base-url http://localhost:8080]
     python tools/e2e/summary/summary_e2e.py --with-rate-limit
 
-See docs/ai-summary.md for the contract.
+See docs/architecture/ai-summary.md for the contract.
 """
 
 from __future__ import annotations
@@ -100,7 +100,7 @@ def response_contains_redacted_pii(text: str) -> bool:
 
 
 def contract_requires_response_redaction(generated_by: str) -> bool:
-    """docs/ai-summary.md redacts outbound LLM input only; validated LLM output strips links."""
+    """docs/architecture/ai-summary.md redacts outbound LLM input only; validated LLM output strips links."""
     return generated_by == "LLM"
 
 

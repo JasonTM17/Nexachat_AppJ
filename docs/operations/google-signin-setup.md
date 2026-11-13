@@ -3,8 +3,8 @@
 End-to-end checklist for enabling **Sign in with Google** on NexaChat. The
 Android app uses Google's Credential Manager with a **Web application** OAuth
 client ID; the server verifies ID tokens with Google's public JWKS (no client
-secret). For REST contract details see [docs/api-contract.md](api-contract.md);
-for security rules see [docs/security.md](security.md).
+secret). For REST contract details see [docs/architecture/api-contract.md](../architecture/api-contract.md);
+for security rules see [docs/quality/security.md](../quality/security.md).
 
 ## Google Cloud Console
 
@@ -24,7 +24,7 @@ for security rules see [docs/security.md](security.md).
      - **Debug** — package name `com.nexachat.debug`; register the SHA-1 of the **debug signing key** (see
        [Android OAuth fingerprints](#android-oauth-fingerprints)).
      - **Release** — package name `com.nexachat`; register the SHA-1 of your **upload/release signing key**
-       (see [docs/android-release.md](android-release.md)).
+       (see [docs/release/android-release.md](../release/android-release.md)).
      Each Android OAuth client has its own client ID string. The server does not
      read those IDs from separate env vars; list both in one place (below).
 
@@ -108,7 +108,7 @@ keytool -list -v -keystore "$env:USERPROFILE\.android\debug.keystore" -alias and
 Use the **SHA-1** line on the **debug** Android OAuth client in Google Cloud.
 
 **Release** (signed APK / Play-style builds): use the upload keystore from
-[docs/android-release.md](android-release.md) (`keytool -list -v -keystore ...`).
+[docs/release/android-release.md](../release/android-release.md) (`keytool -list -v -keystore ...`).
 Use that SHA-1 on the **release** Android OAuth client.
 
 If Google sign-in fails only on one build type, the usual cause is a missing or
@@ -137,10 +137,10 @@ not call Google.
 
 ## Production (Render)
 
-Blueprint keys live in [render.yaml](../render.yaml). Private client IDs use
+Blueprint keys live in [render.yaml](../../render.yaml). Private client IDs use
 `sync: false`. After the first Blueprint apply, set production values in the
 Render Dashboard (**Environment**) or with the Render API (**one PUT per key**).
-See [docs/deploy-render.md](deploy-render.md) §5. Redeploy after changing
+See [docs/operations/deploy-render.md](deploy-render.md) §5. Redeploy after changing
 secrets.
 
 Set `NEXACHAT_GOOGLE_SIGNUP_ENABLED=true` only after the server build carrying
@@ -149,7 +149,7 @@ with `GOOGLE_ACCOUNT_NOT_LINKED`.
 
 ## Related docs
 
-- [docs/android-release.md](android-release.md) — release keystore SHA-1 for the
+- [docs/release/android-release.md](../release/android-release.md) — release keystore SHA-1 for the
   release Android OAuth client
-- [docs/deploy-render.md](deploy-render.md) — Render env table and secrets
-- [docs/operations.md](operations.md) — full environment variable matrix
+- [docs/operations/deploy-render.md](deploy-render.md) — Render env table and secrets
+- [docs/operations/operations.md](operations.md) — full environment variable matrix

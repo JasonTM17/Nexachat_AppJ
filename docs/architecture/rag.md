@@ -16,7 +16,7 @@ four modes:
 | `LLM` | The retrieved, redacted, budgeted context is sent to the configured LLM | yes (only with consent) |
 
 The route is `POST /api/v1/conversations/{id}/ask`; see
-[`docs/api-contract.md`](api-contract.md) for the wire format.
+[`docs/architecture/api-contract.md`](api-contract.md) for the wire format.
 
 ## Retrieval pipeline
 

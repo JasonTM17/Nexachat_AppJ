@@ -47,9 +47,9 @@ $env:V31_SOURCE_SHA = '9216773920fc59684564170eebde13b33ca7fbc1'
 
 With `NEXACHAT_ROLLBACK_DRILL=1`, a missing or invalid `V31_SERVER_JAR` or
 `V31_SOURCE_SHA` still fails the test (fail-closed). The helper script
-[`server/scripts/rehearse-sync-v2-rollback.ps1`](../server/scripts/rehearse-sync-v2-rollback.ps1)
+[`server/scripts/rehearse-sync-v2-rollback.ps1`](../../server/scripts/rehearse-sync-v2-rollback.ps1)
 builds the frozen V31 artifact, sets these variables, and runs the drill. Contract
-context lives in [docs/api-contract.md](api-contract.md) (sync v2 rollback section).
+context lives in [docs/architecture/api-contract.md](../architecture/api-contract.md) (sync v2 rollback section).
 
 ## Firebase rules tests
 
@@ -69,13 +69,13 @@ npm test
 A failed assertion makes `firebase emulators:exec` exit non-zero. The isolated
 CI job `firebase-rules` runs the same command. Scope, data model and the two
 MEDIUM known rule gaps are documented in
-[docs/firebase-realtime.md](firebase-realtime.md).
+[docs/architecture/firebase-realtime.md](../architecture/firebase-realtime.md).
 
 ## Live end-to-end scripts
 
 These Python runners (and their thin shell wrappers) are the supported live E2E
 evidence against a running backend. They hit real HTTP and, where noted, STOMP
-WebSocket endpoints (`docs/api-contract.md`, `docs/websocket-protocol.md`).
+WebSocket endpoints (`docs/architecture/api-contract.md`, `docs/architecture/websocket-protocol.md`).
 
 | Script | Role |
 | --- | --- |
@@ -91,7 +91,7 @@ WebSocket endpoints (`docs/api-contract.md`, `docs/websocket-protocol.md`).
 `tools/e2e/P0E2ETestRunner.java` is an **illustrative synthetic fixture** only: it
 runs 81 JDK-only assertions on locally constructed data without starting the server
 or Android app. Do not treat its output as live E2E acceptance. See
-[`tools/e2e/README.md`](../tools/e2e/README.md).
+[`tools/e2e/README.md`](../../tools/e2e/README.md).
 
 `tools/e2e/final/final_live.py` covers the checks that need a disposable stack:
 parallel joins at `maxUses`, revoke during a join, approval limits, recall
@@ -158,7 +158,7 @@ python tools/checks/check-release-r8-mapping.py
 `tools/checks/check-release-r8-mapping.py` inspects `mapping.txt` and `usage.txt` to verify
 that ProGuard/R8 did not rename or remove reflection-dependent wire models
 (Retrofit APIs, Moshi/Gson DTOs, Room DAOs/migrations, Google ID token credentials,
-and WorkManager workers). See [docs/release-checklist.md](release-checklist.md).
+and WorkManager workers). See [docs/release/release-checklist.md](../release/release-checklist.md).
 
 String parity:
 
@@ -189,7 +189,7 @@ cd tools/site-tests && npm test
 - `tools/site-tests`: Runs 23 automated tests against `site/delete-account.js` covering
   form validation, OTP step transitions, rate-limit messages (429), error states, and URL
   parameter safety (ensuring phone and OTP credentials are never exposed in query strings).
-  See [tools/site-tests/README.md](../tools/site-tests/README.md).
+  See [tools/site-tests/README.md](../../tools/site-tests/README.md).
 
 ## Markdown link verification
 

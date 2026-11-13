@@ -34,7 +34,7 @@ used by distributed APKs.
 ## Google OAuth clients (sign-in)
 
 NexaChat's **Sign in with Google** flow uses three OAuth client IDs in Google
-Cloud (see [docs/google-signin-setup.md](google-signin-setup.md)):
+Cloud (see [docs/operations/google-signin-setup.md](../operations/google-signin-setup.md)):
 
 | Credential type | Where it is used |
 |---|---|

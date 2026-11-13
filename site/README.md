@@ -59,7 +59,7 @@ In `site/vercel.json`, the deployment ignore command is configured as:
 ```json
 "ignoreCommand": "bash -c 'p=$VERCEL_GIT_PREVIOUS_SHA; [ -n \"$p\" ] && git cat-file -e \"$p^{commit}\" 2>/dev/null || exit 1; git diff --quiet \"$p\" \"${VERCEL_GIT_COMMIT_SHA:-HEAD}\" -- . 2>/dev/null && exit 0; exit 1'"
 ```
-This ensures multi-commit pushes do not mistakenly skip builds when changes touch `site/`, while skipping builds safely when only non-site files change. See [docs/domain-and-app-links.md](../docs/domain-and-app-links.md#8-vercel-build-skip-ignorecommand) for details.
+This ensures multi-commit pushes do not mistakenly skip builds when changes touch `site/`, while skipping builds safely when only non-site files change. See [docs/operations/domain-and-app-links.md](../docs/operations/domain-and-app-links.md#8-vercel-build-skip-ignorecommand) for details.
 
 ## Site Validation & Testing
 

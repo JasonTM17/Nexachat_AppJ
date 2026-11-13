@@ -14,7 +14,7 @@ are implemented in the codebase. However, the feature remains **disabled by defa
 `firebaseRealtimeEnabled=false`, `firebaseCallStatusEnabled=false`), and STOMP over WebSocket remains the authoritative and default
 realtime transport for presence and typing indicators. Do not install the rules or enable
 `FIREBASE_REALTIME_ENABLED` for real users until every rollout gate below is
-met. `docs/operations.md` owns the environment variables and the Compose
+met. `docs/operations/operations.md` owns the environment variables and the Compose
 caveat; this page owns the rules contract, its tests and the known gaps.
 
 ## Data model

@@ -16,7 +16,7 @@ repository alone.
   `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`, `JWT_SECRET`
   (32+ bytes, not the repository development value), `STORAGE_ROOT`; optional
   FCM, summary LLM and RAG keys as decided by the owner (`.env.example`,
-  `docs/operations.md` §Configuration).
+  `docs/operations/operations.md` §Configuration).
 - [ ] **owner** Decide the semver tag (`v<MAJOR>.<MINOR>.<PATCH>`), update
   `CHANGELOG.md` and release notes (`docs/release-notes/v<MAJOR>.<MINOR>.<PATCH>.md`),
   and decide whether this release goes to Google Play.
@@ -117,7 +117,7 @@ applies pending migrations on that boot. There is no separate migration command.
    and disk space.
 4. Do not deploy an older commit against a newer schema unless the migration
    was reviewed as backward-compatible. If a migration fails, restore the
-   pre-upgrade backup (`docs/operations.md` §Upgrade).
+   pre-upgrade backup (`docs/operations/operations.md` §Upgrade).
 
 ## 4. Production Release Sequence
 
@@ -140,7 +140,7 @@ Follow the verified sequence:
   environment variables against `render.yaml`. Apply each added or changed value
   (for example `JAVA_OPTS`, `NEXACHAT_MULTIPART_TEMP_DIR`) with one call per key,
   or edit that key in the Dashboard, before deploying
-  (see [docs/deploy-render.md](deploy-render.md)):
+  (see [docs/operations/deploy-render.md](../operations/deploy-render.md)):
   ```bash
   curl -fsS -X PUT -H "Authorization: Bearer <RENDER_API_KEY>" -H "Content-Type: application/json" \
     -d '{"value": "<VALUE>"}' https://api.render.com/v1/services/<service-id>/env-vars/<KEY>
@@ -163,7 +163,7 @@ Follow the verified sequence:
   curl -fsS https://api.nexachat.io.vn/actuator/health
   curl -fsS https://api.nexachat.io.vn/actuator/health/readiness
   ```
-- [ ] **7. Smoke tests** — Run [tools/ops/prod-smoke.sh](../tools/ops/prod-smoke.sh) read-only, then with write verification:
+- [ ] **7. Smoke tests** — Run [tools/ops/prod-smoke.sh](../../tools/ops/prod-smoke.sh) read-only, then with write verification:
   ```bash
   bash tools/ops/prod-smoke.sh https://api.nexachat.io.vn
   bash tools/ops/prod-smoke.sh https://api.nexachat.io.vn --write
@@ -238,5 +238,5 @@ production does not pull it. Render builds from `server/Dockerfile`.
 | FCM service account and `google-services.json` | External Firebase project; not in repository. |
 | Summary LLM / RAG embedding API keys | Optional paid providers; disabled by default. |
 | Play Console upload, App Signing fingerprint, data-safety form | Store account and legal/product decisions. |
-| Vercel production deploy and DNS | Deployment account; see `docs/domain-and-app-links.md`. |
+| Vercel production deploy and DNS | Deployment account; see `docs/operations/domain-and-app-links.md`. |
 | Semver tag, release notes, enable/disable feature flags | Product decision. |

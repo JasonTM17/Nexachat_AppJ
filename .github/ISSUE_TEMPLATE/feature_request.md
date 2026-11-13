@@ -20,6 +20,7 @@ assignees: ""
 
 ## Checklist / Xác nhận
 
-- [ ] Fits project scope / Phù hợp phạm vi dự án
+- [ ] Fits project scope (see `docs/quality/known-limitations.md`) / Phù hợp phạm vi dự án
+- [ ] EN/VI strings are planned for any new user-facing copy / Đã lên kế hoạch chuỗi EN/VI cho nội dung người dùng mới
 - [ ] Tests and documentation are considered / Đã tính đến kiểm thử và tài liệu
 - [ ] No secrets or personal data are included / Không có bí mật hoặc dữ liệu cá nhân

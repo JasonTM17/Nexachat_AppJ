@@ -90,12 +90,12 @@ and expects one from the server every 10 s.
 | C→S | `/app/conversations/{id}/delivered` | SEND | `{upToSeq}` (delivery watermark ack) |
 | C→S | `/app/chat.delivery.ack` | SEND | `{conversationId,upToSeq}` (delivery ack alias) |
 | C→S | `/app/chat.read.ack` | SEND | `{conversationId,upToSeq}` (read ack alias) |
-| C→S | `/app/calls/{conversationId}/signal` | SEND | call signal JSON; see [`docs/calls.md`](calls.md) |
+| C→S | `/app/calls/{conversationId}/signal` | SEND | call signal JSON; see [`docs/architecture/calls.md`](calls.md) |
 | S→C | `/topic/conversations.{id}` | SUBSCRIBE | event envelope (§5); authorized by membership |
 | S→C | `/user/queue/inbox` | SUBSCRIBE | event envelope |
 | S→C | `/user/queue/errors` | SUBSCRIBE | `{code,clientMessageId?}` |
 | S→C | `/user/queue/presence` | SUBSCRIBE | `USER_ONLINE` / `USER_OFFLINE` envelope |
-| S→C | `/user/queue/calls` | SUBSCRIBE | `CallEvent` JSON; see [`docs/calls.md`](calls.md) |
+| S→C | `/user/queue/calls` | SUBSCRIBE | `CallEvent` JSON; see [`docs/architecture/calls.md`](calls.md) |
 
 Both chat-level acknowledgement aliases are authorized against the payload's
 `conversationId` before dispatch. The connection user must still be a current
@@ -135,7 +135,7 @@ Notes:
 
 Conversation and presence events use the following envelope (call signaling
 uses a separate `CallEvent` payload on `/user/queue/calls`; see
-[`docs/calls.md`](calls.md)):
+[`docs/architecture/calls.md`](calls.md)):
 
 ```json
 {"eventType": "MESSAGE_CREATED", "conversationId": "42…", "serverTs": "2026-11-04T10:31:05.123Z", "payload": {}}

@@ -20,7 +20,7 @@ import java.util.Map;
 import org.junit.Test;
 
 /**
- * Wire shapes from docs/api-contract.md. Reflective Java beans must preserve
+ * Wire shapes from docs/architecture/api-contract.md. Reflective Java beans must preserve
  * the expected values when a field is absent.
  */
 public final class DtoWireRoundTripTest {

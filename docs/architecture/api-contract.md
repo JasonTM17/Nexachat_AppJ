@@ -4,8 +4,8 @@
 > controllers under `server/src/main/java/com/nexachat/`; run
 > `python tools/checks/check-api-contract.py` to fail when a controller route is
 > missing from this file (or a documented route no longer exists).
-> The WebSocket / STOMP contract is documented in [`docs/websocket-protocol.md`](websocket-protocol.md).
-> Conversation RAG is detailed in [`docs/rag.md`](rag.md) (server API and Android Ask screen available).
+> The WebSocket / STOMP contract is documented in [`docs/architecture/websocket-protocol.md`](websocket-protocol.md).
+> Conversation RAG is detailed in [`docs/architecture/rag.md`](rag.md) (server API and Android Ask screen available).
 
 ## Domain index
 
@@ -129,7 +129,7 @@ These keys are Spring properties; override them with the matching
 `NEXACHAT_*` environment variable (relaxed binding) or a profile-specific
 `application.yml`. The full operator table — `DATABASE_*`, `JWT_SECRET`,
 `FCM_*`, summary/RAG and management settings — is in
-[`docs/operations.md`](operations.md#configuration).
+[`docs/operations/operations.md`](../operations/operations.md#configuration).
 
 ### Feature defaults and ceilings
 
@@ -585,7 +585,7 @@ rows first, then `lastMessageSeq DESC` within each group); the pin ceiling is
 five conversations per user and applies only to NEW pins, so re-pinning an
 already pinned conversation is an idempotent `204` even at the ceiling.
 A muted conversation suppresses the recipient's `NEW_MESSAGE` data push (see
-[Push notifications](operations.md#push-notifications-fcm)); the conversation
+[Push notifications](../operations/operations.md#push-notifications-fcm)); the conversation
 still receives messages, read/delivery receipts and live WebSocket events, and
 `unreadCount` keeps advancing. **Push rule:** every `NEW_MESSAGE` push is gated
 by mute, including `SYSTEM` messages (group membership and title notices). A
@@ -646,7 +646,7 @@ rejected.
 members' `MESSAGE_READ` receipts. The caller's own `lastReadSeq` and
 `unreadCount` still advance exactly as before, and `MESSAGE_DELIVERED` receipts
 are unaffected. This is enforced server-side in both directions; see
-[`docs/websocket-protocol.md`](websocket-protocol.md#6-delivery-guarantees).
+[`docs/architecture/websocket-protocol.md`](websocket-protocol.md#6-delivery-guarantees).
 Provider selection uses persisted `users.ai_summary_consent`, and the LLM
 adapter rechecks consent immediately before an outbound request, so revoking
 consent after selection prevents that request. The account-level consent is
@@ -1008,7 +1008,7 @@ For each authorized v2 watermark, the server captures the conversation's current
 The first reconciliation uses `changeCursor: 0` and omits `generation`. A cursor ahead of `H`, a positive cursor with no generation, or any generation mismatch returns a reset-only delta: `reset=true`, the current `generation` and `changeUpperBound`, `changeCursor: 0`, empty change and reaction payloads, and `hasMore=false`. The client restarts reconciliation from cursor zero with the returned generation. The switch is `nexachat.sync.change-cursors-enabled` (`NEXACHAT_SYNC_CHANGE_CURSORS_ENABLED`); disabling it makes even a v2 request use the legacy response path without v2 fields. `MESSAGE_CREATED` and `MESSAGE_UPDATED` carry `changeVersion` and `generation` on `MessageResponse`. `MESSAGE_DELETED` carries the same pair with `messageId` and `deletedAt` so a versioned client can apply the tombstone.
 
 The V31/V32 forward-recovery drill is a PowerShell script:
-[`server/scripts/rehearse-sync-v2-rollback.ps1`](../server/scripts/rehearse-sync-v2-rollback.ps1).
+[`server/scripts/rehearse-sync-v2-rollback.ps1`](../../server/scripts/rehearse-sync-v2-rollback.ps1).
 It builds the frozen V31 artifact from the phase base SHA, starts V32 and V31 against one temporary database, injects a pre-commit rebuild failure, then proves generation reset and reconciliation. The drill creates and drops only uniquely named test databases on the PostgreSQL server selected by `IT_DB_URL`; it does not target a hosted database.
 
 Watermarks for unknown conversations, or conversations the caller is not (or no longer) a member of, are omitted from `deltas` without an error. `editedMessages`, `deletedMessageIds` and `reactionUpdates` are populated only when `since` is supplied; a request without `since` returns `newMessages` only. `maxSeq` is the conversation's current maximum sequence even when `hasMore=true`.
@@ -1050,7 +1050,7 @@ group calls are out of scope. Signaling never carries audio bytes — WebRTC med
 is negotiated client-side after acceptance.
 
 The full lifecycle diagram, STOMP payload shapes, timeouts, limitations and E2E
-verification live in [`docs/calls.md`](calls.md). This section lists every route
+verification live in [`docs/architecture/calls.md`](calls.md). This section lists every route
 and the error surfaces verified from `CallRestController`, `CallController`,
 `CallService`, and `CallFlowIT` / `CallTimeoutSchedulerGraceTest`.
 
@@ -1071,7 +1071,7 @@ call has ended; otherwise it is omitted/null. Items are newest-first by
 
 Each terminal call also writes one `SYSTEM` chat message
 `CALL|<END_REASON>|<durationSeconds>|<callerUserId>` (older rows may omit the
-caller id); see [`docs/calls.md`](calls.md#design-note).
+caller id); see [`docs/architecture/calls.md`](calls.md#design-note).
 
 **Fast-path offer (`GET /calls/{callId}/offer`).** The registry may hold one
 SDP offer per ringing/active `callId` for REST retrieval (intended for FCM wake /
@@ -1103,7 +1103,7 @@ signaling; media offer/answer still flows through `SDP` frames after `ACCEPT`.
 - Other control frames (`ACCEPT`, `REJECT`, `CANCEL`, `END`) must not include SDP/ICE.
 
 Server `CallEvent` envelopes and terminal `reason` / `durationSeconds` fields are
-specified in [`docs/calls.md`](calls.md#stomp-frames).
+specified in [`docs/architecture/calls.md`](calls.md#stomp-frames).
 
 ### Call state machine (signaling)
 
@@ -1123,7 +1123,7 @@ specified in [`docs/calls.md`](calls.md#stomp-frames).
 
 Concurrent control and registry mutations serialize on a fair per-node lock;
 SDP/ICE relay holds a read lock for the same transaction span (see limitations in
-[`docs/calls.md`](calls.md)).
+[`docs/architecture/calls.md`](calls.md)).
 
 ### STOMP error codes (`/user/queue/errors`)
 
@@ -1166,7 +1166,7 @@ offers are removed with the session (`CallRegistry`).
 The server also exposes `POST /api/v1/conversations/{conversationId}/summary`.
 The route is implemented in `SummaryController` and is shipped. The request and
 response shapes, consent rules and provider behavior are specified in
-[`docs/ai-summary.md`](ai-summary.md). The server requires conversation membership
+[`docs/architecture/ai-summary.md`](ai-summary.md). The server requires conversation membership
 and at least five usable messages. The response includes `contextOmitted`, a
 neutral flag that is `true` only when the external LLM produced the summary and
 some messages were excluded because their authors opted out in that
@@ -1176,7 +1176,7 @@ conversation; the local engine may still use those messages.
 
 `POST /api/v1/conversations/{conversationId}/ask` (Bearer, conversation member)
 answers a question about the caller's own conversation. The design, privacy
-rules and cost controls are specified in [`docs/rag.md`](rag.md). The server API
+rules and cost controls are specified in [`docs/architecture/rag.md`](rag.md). The server API
 and Android Ask screen are available.
 
 Request:
@@ -1236,7 +1236,7 @@ absent and every path answers `404 NOT_FOUND` like any unknown route. All three
 require a Bearer access token and answer `Cache-Control: no-store`; they never
 carry message bodies through Firebase. STOMP remains the default realtime
 transport; the RTDB data model, rules and rollout gates live in
-[`docs/firebase-realtime.md`](firebase-realtime.md).
+[`docs/architecture/firebase-realtime.md`](firebase-realtime.md).
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
@@ -1265,12 +1265,12 @@ above apply unchanged:
 - Delivery receipt: `SEND /app/conversations/{id}/delivered` (or `/app/chat.delivery.ack`)
 - Read receipt: `SEND /app/conversations/{id}/read` (or `/app/chat.read.ack`) — broadcast as `MESSAGE_READ` only when the reader shares seen; hidden recipients do not receive peers' receipts (see the settings section)
 - The chat-level receipt aliases carry `conversationId` in their payload. The server verifies current membership in that conversation before dispatch; a missing or malformed ID continues to payload conversion/validation and cannot advance a watermark.
-- Call signaling: `SEND /app/calls/{id}/signal` (details in [`docs/calls.md`](calls.md))
+- Call signaling: `SEND /app/calls/{id}/signal` (details in [`docs/architecture/calls.md`](calls.md))
 - Events: `SUBSCRIBE /topic/conversations.{id}` and `/user/queue/inbox`
 - Errors: `SUBSCRIBE /user/queue/errors` → `{code, clientMessageId?}`; a rate-limited message frame returns `{"code":"RATE_LIMITED","clientMessageId":"<uuid>"}`, while a rate-limited typing frame omits `clientMessageId`.
 
 Message SEND is limited to 30 per 10 seconds per authenticated user by default (`nexachat.rate-limit.stomp.messages-per-window`, `nexachat.rate-limit.stomp.window-seconds`). Typing SEND is separately limited to 60 per 10 seconds (`nexachat.rate-limit.stomp.typing-per-window`, `nexachat.rate-limit.stomp.typing-window-seconds`). Excess frames are dropped and return `RATE_LIMITED` on `/user/queue/errors` without closing the session.
 
 The full destination table, event envelope and frame contracts live in
-[`docs/websocket-protocol.md`](websocket-protocol.md) — see its §4 Destinations
+[`docs/architecture/websocket-protocol.md`](websocket-protocol.md) — see its §4 Destinations
 and §5 Event envelope. This file intentionally does not duplicate them.

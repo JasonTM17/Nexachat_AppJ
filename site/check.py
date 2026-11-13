@@ -1504,9 +1504,9 @@ def test_delete_account_web_deployment_contract():
         else:
             log_pass("delete-account API meta and CSP connect-src form a consistent pair")
 
-    ops_path = os.path.join(REPO_DIR, "docs", "operations.md")
+    ops_path = os.path.join(REPO_DIR, "docs", "operations", "operations.md")
     if not os.path.isfile(ops_path):
-        failures.append("Missing docs/operations.md for web-deletion deploy notes")
+        failures.append("Missing docs/operations/operations.md for web-deletion deploy notes")
     else:
         with open(ops_path, "r", encoding="utf-8") as f:
             ops_body = f.read()
@@ -1517,7 +1517,7 @@ def test_delete_account_web_deployment_contract():
             "delete-account.html",
         ):
             if needle not in ops_body:
-                failures.append(f"docs/operations.md must document web deletion deploy item: {needle}")
+                failures.append(f"docs/operations/operations.md must document web deletion deploy item: {needle}")
 
     if not failures:
         log_pass("Web account-deletion flow: meta/script gate, default CSP, operations deploy notes")

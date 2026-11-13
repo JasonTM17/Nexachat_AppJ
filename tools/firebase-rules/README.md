@@ -15,4 +15,4 @@ The first run downloads the pinned database emulator JAR into
 `firebase emulators:exec`.
 
 Scope, data model, CI job and the known rule gaps:
-[docs/firebase-realtime.md](../../docs/firebase-realtime.md).
+[docs/architecture/firebase-realtime.md](../../docs/architecture/firebase-realtime.md).

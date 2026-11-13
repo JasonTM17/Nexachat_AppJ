@@ -42,7 +42,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 `demo/lan-up.sh` (Git Bash) or `demo/lan-up.ps1` (PowerShell) performs steps
 1–2, detects the LAN IP, and prints the URLs and demo accounts. See
-[docs/operations.md](docs/operations.md) for deployment and runtime configuration details.
+[docs/operations/operations.md](docs/operations/operations.md) for deployment and runtime configuration details.
 
 To point a physical device at the backend, add one line to
 `android/local.properties` and rebuild (debug builds allow cleartext):
@@ -87,7 +87,7 @@ android/app/src/main/java/com/nexachat/
   summary/                    Java summary ViewModel + repository layer
 server/src/main/resources/db/migration/   Flyway V1–V20, V22, V24–V33 (no V21/V23)
 android/gradle/libs.versions.toml         dependency version catalog
-docs/                                     architecture, contracts, security, operations
+docs/                                     architecture · operations · release · quality · archive (see docs/README.md)
 demo/                                     seed.sql + LAN bootstrap scripts
 tools/                                    release signing, link checks, E2E and summary evaluation scripts
 ```

@@ -5,11 +5,11 @@
 > `/api/v1` + STOMP over WebSocket → Spring Boot 3.5.16 modular monolith → PostgreSQL 16
 > (Flyway V1–V20 + V22 + V24–V33; V21/V23 reserved) + local or S3-compatible file storage. Conversation RAG is available through the
 > server API (`POST /api/v1/conversations/{id}/ask`) and Android Ask screen
-> ([docs/rag.md](rag.md)).
+> ([docs/architecture/rag.md](rag.md)).
 > Call signaling shares STOMP (`server/call`,
 > `app/call/core/StompCallSignalingClient.java`), paired with Android call screens
 > (`CallActivity`, `IncomingCallActivity`) and WebRTC audio (`WebRtcMediaEngine`);
-> see [docs/calls.md](calls.md).
+> see [docs/architecture/calls.md](calls.md).
 
 ## 1. Container diagram (§7.1 — sơ đồ tổng)
 
@@ -282,7 +282,7 @@ sequenceDiagram
 - **Ephemeral state router (STOMP default, opt-in Firebase):** Android `EphemeralStateRouter`
   manages presence and typing subscriptions. While STOMP is always active and the default,
   an optional Firebase RTDB bridge and projection writer (`server/firebase/**`,
-  `docs/firebase-realtime.md`) can be enabled via configuration flags (default off).
+  `docs/architecture/firebase-realtime.md`) can be enabled via configuration flags (default off).
 
 Theme mode (`SYSTEM`, `LIGHT`, `DARK`) and locale are local Android settings;
 they are applied by the app and are not persisted as server account settings.
