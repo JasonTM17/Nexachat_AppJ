@@ -93,9 +93,6 @@ public final class ReminderViewModel extends ViewModel {
 
     /** Re-reads the list after a resume or a matching REMINDER push. */
     public void refresh() {
-        if (refreshError != null) {
-            return;
-        }
         requestList(true);
     }
 
@@ -109,6 +106,7 @@ public final class ReminderViewModel extends ViewModel {
             return;
         }
         refreshError = null;
+        publish();
         requestList(true);
     }
 

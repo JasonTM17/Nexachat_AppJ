@@ -189,7 +189,7 @@ public final class ReminderViewModelTest {
     }
 
     @Test
-    public void silentRefreshFailureKeepsRemindersBlocksAutoRefreshAndRecoversOnRetry() {
+    public void silentRefreshFailureKeepsRemindersAndRecoversOnTheNextRefresh() {
         FakeRepository repository = new FakeRepository();
         repository.nextList = List.of(reminder("r-1", "Họp team", SOON, true));
         ReminderViewModel viewModel = createViewModel(repository);
@@ -204,11 +204,9 @@ public final class ReminderViewModelTest {
         assertNull(failed.getLoadError());
 
         int loads = repository.loads;
-        viewModel.refresh();
-        assertEquals(loads, repository.loads);
-
         repository.loadFailure = null;
-        viewModel.retryRefresh();
+        viewModel.refresh();
+        assertEquals(loads + 1, repository.loads);
         ReminderUiState recovered = viewModel.getUiState().getValue();
         assertNull(recovered.getRefreshError());
         assertEquals(1, recovered.getReminders().size());

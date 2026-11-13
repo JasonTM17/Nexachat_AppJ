@@ -144,6 +144,7 @@ public final class PollViewModel extends ViewModel {
             return;
         }
         refreshError = null;
+        publish();
         requestChanges(0);
     }
 
@@ -342,8 +343,7 @@ public final class PollViewModel extends ViewModel {
 
     /** Exposed for tests and for the fragment's resume timer. */
     public void refreshChanges() {
-        if (!group || !loaded || loading || changesInFlight || loadError != null
-                || refreshError != null) {
+        if (!group || !loaded || loading || changesInFlight || loadError != null) {
             return;
         }
         requestChanges(0);

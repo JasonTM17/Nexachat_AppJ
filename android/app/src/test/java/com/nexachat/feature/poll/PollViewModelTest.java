@@ -181,7 +181,7 @@ public final class PollViewModelTest {
     }
 
     @Test
-    public void cachedChangeRefreshFailureKeepsPollsExposesRetryAndBlocksTimerSpam() {
+    public void cachedChangeRefreshFailureKeepsPollsAndRecoversOnTheNextRefresh() {
         FakeRepository repository = new FakeRepository();
         repository.nextPage = new PollPage(List.of(
                 poll("p-1", "other", PollStatus.OPEN, null,
@@ -201,11 +201,16 @@ public final class PollViewModelTest {
 
         int changesBefore = repository.changes.size();
         viewModel.refreshChanges();
-        assertEquals(changesBefore, repository.changes.size());
-
-        viewModel.retryRefresh();
         assertEquals(changesBefore + 1, repository.changes.size());
         repository.changes.get(changesBefore).succeed(new PollChanges(List.of(), 1L, false));
+        assertNull(viewModel.getUiState().getValue().getRefreshError());
+
+        viewModel.refreshChanges();
+        repository.changes.get(changesBefore + 1).fail(PollRepository.Failure.OFFLINE);
+        assertEquals(PollRepository.Failure.OFFLINE, viewModel.getUiState().getValue().getRefreshError());
+        int beforeRetry = repository.changes.size();
+        viewModel.retryRefresh();
+        assertEquals(beforeRetry + 1, repository.changes.size());
         assertNull(viewModel.getUiState().getValue().getRefreshError());
     }
 
