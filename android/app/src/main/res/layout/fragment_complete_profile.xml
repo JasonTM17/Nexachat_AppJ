@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-  xmlns:tools="http://schemas.android.com/tools"
-  android:layout_width="match_parent"
-  android:layout_height="match_parent"
-  android:background="?android:attr/colorBackground">
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground">
 
   <ScrollView
     android:layout_width="match_parent"
@@ -16,7 +16,7 @@
       android:layout_height="wrap_content"
       android:gravity="center"
       android:orientation="vertical"
-      android:padding="24dp">
+      android:padding="@dimen/space_lg">
 
       <LinearLayout
         android:id="@+id/completeProfileColumn"
@@ -41,14 +41,15 @@
           android:id="@+id/completeProfileTitle"
           android:layout_width="wrap_content"
           android:layout_height="wrap_content"
-          android:layout_marginTop="20dp"
-          android:layout_marginBottom="24dp"
+          android:layout_marginTop="@dimen/space_md"
+          android:layout_marginBottom="@dimen/space_lg"
           android:accessibilityHeading="true"
-          tools:targetApi="p"
+          android:fontFamily="@font/manrope"
           android:text="@string/complete_profile_title"
           android:textAppearance="?attr/textAppearanceHeadlineMedium"
           android:textColor="?attr/colorOnSurface"
-          android:textStyle="bold" />
+          android:textFontWeight="700"
+          tools:targetApi="p" />
 
         <com.nexachat.core.ui.components.AvatarView
           android:id="@+id/completeProfileAvatar"
@@ -58,15 +59,12 @@
 
         <com.google.android.material.textfield.TextInputLayout
           android:id="@+id/displayNameLayout"
-          style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+          style="@style/Widget.NexaChat.TextInputLayout.Auth"
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
-          android:layout_marginTop="24dp"
+          android:layout_marginTop="@dimen/space_lg"
           android:hint="@string/complete_profile_display_name_label"
-          app:boxCornerRadiusBottomEnd="12dp"
-          app:boxCornerRadiusBottomStart="12dp"
-          app:boxCornerRadiusTopEnd="12dp"
-          app:boxCornerRadiusTopStart="12dp">
+          app:startIconDrawable="@drawable/ic_person_outline">
 
           <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/displayNameInput"
@@ -80,9 +78,9 @@
         <com.google.android.material.card.MaterialCardView
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
-          android:layout_marginTop="16dp"
+          android:layout_marginTop="@dimen/space_md"
           app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
-          app:cardCornerRadius="12dp"
+          app:cardCornerRadius="@dimen/corner_md"
           app:cardElevation="0dp"
           app:strokeColor="?attr/colorOutlineVariant"
           app:strokeWidth="1dp">
@@ -93,8 +91,8 @@
             android:gravity="center_vertical"
             android:minHeight="@dimen/min_touch_target"
             android:orientation="horizontal"
-            android:paddingHorizontal="16dp"
-            android:paddingVertical="12dp">
+            android:paddingHorizontal="@dimen/space_md"
+            android:paddingVertical="@dimen/space_inset">
 
             <ImageView
               android:layout_width="24dp"
@@ -108,7 +106,7 @@
               android:id="@+id/completeProfileEmail"
               android:layout_width="0dp"
               android:layout_height="wrap_content"
-              android:layout_marginStart="12dp"
+              android:layout_marginStart="@dimen/space_inset"
               android:layout_weight="1"
               android:ellipsize="end"
               android:maxLines="1"
@@ -120,7 +118,7 @@
               android:id="@+id/completeProfileEmailVerified"
               android:layout_width="20dp"
               android:layout_height="20dp"
-              android:layout_marginStart="8dp"
+              android:layout_marginStart="@dimen/space_sm"
               android:contentDescription="@string/cd_complete_profile_email_verified"
               android:src="@drawable/ic_check_circle"
               app:tint="?attr/colorPrimary" />
@@ -130,9 +128,12 @@
               style="@style/Widget.Material3.Chip.Assist"
               android:layout_width="wrap_content"
               android:layout_height="wrap_content"
-              android:layout_marginStart="8dp"
+              android:layout_marginStart="@dimen/space_sm"
+              android:clickable="false"
+              android:focusable="false"
               android:text="@string/complete_profile_google_chip"
               app:chipIcon="@drawable/ic_google_g"
+              app:chipIconTint="@null"
               app:chipIconVisible="true" />
           </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -141,20 +142,26 @@
           android:id="@+id/completeProfileError"
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
-          android:layout_marginTop="12dp"
+          android:layout_marginTop="@dimen/space_md"
           android:accessibilityLiveRegion="polite"
-          android:textColor="?attr/colorError"
+          android:background="@drawable/bg_auth_inline_error"
+          android:drawablePadding="@dimen/space_sm"
+          android:drawableStart="@drawable/ic_error_outline"
+          android:drawableTint="?attr/colorError"
+          android:padding="@dimen/space_inset"
+          android:textAppearance="?attr/textAppearanceBodyMedium"
+          android:textColor="?attr/colorOnErrorContainer"
           android:visibility="gone" />
 
         <com.google.android.material.button.MaterialButton
           android:id="@+id/completeProfileContinue"
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
-          android:layout_marginTop="24dp"
-          android:minHeight="@dimen/min_touch_target"
+          android:layout_marginTop="@dimen/space_lg"
+          android:minHeight="56dp"
           android:text="@string/action_continue"
           android:textStyle="bold"
-          app:cornerRadius="12dp" />
+          app:cornerRadius="@dimen/corner_md" />
       </LinearLayout>
     </LinearLayout>
   </ScrollView>
