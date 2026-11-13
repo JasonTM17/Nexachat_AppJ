@@ -103,7 +103,7 @@ public class RagEmbeddingService {
         if (!properties.isEnabled() || !properties.getIndex().isBackfillEnabled()) {
             return 0;
         }
-        EmbeddingProvider provider = providers.primary();
+        EmbeddingProvider provider = backfillProvider();
         String model = provider.id();
         int budget = Math.max(1, properties.getIndex().getBackfillRatePerMinute());
         int batchSize = Math.max(1, Math.min(properties.getEmbedding().getBatchSize(), budget));
@@ -114,7 +114,7 @@ public class RagEmbeddingService {
                 break;
             }
             try {
-                ensureVectorsWith(provider, batch, batch.size());
+                ensureVectorsWith(provider, batch, batch.size(), true);
                 indexed += batch.size();
             } catch (EmbeddingProviderException exception) {
                 break;
@@ -123,7 +123,19 @@ public class RagEmbeddingService {
         return indexed;
     }
 
+    private EmbeddingProvider backfillProvider() {
+        if (providers.externalUsable()) {
+            return providers.local();
+        }
+        return providers.primary();
+    }
+
     private VectorOutcome ensureVectorsWith(EmbeddingProvider provider, List<RagMessage> messages, int limit) {
+        return ensureVectorsWith(provider, messages, limit, provider == providers.primary());
+    }
+
+    private VectorOutcome ensureVectorsWith(
+            EmbeddingProvider provider, List<RagMessage> messages, int limit, boolean persist) {
         if (messages == null || messages.isEmpty()) {
             return new VectorOutcome(Map.of(), provider.id());
         }
@@ -188,7 +200,7 @@ public class RagEmbeddingService {
                 cache.put(model, message.id(), vector);
                 result.put(message.id(), vector);
             }
-            if (provider == providers.primary()) {
+            if (persist) {
                 index.saveVectors(model, provider.dimension(), batch, savedVectors, savedHashes);
                 stats.recordIndexedMessages(batch.size());
             }
