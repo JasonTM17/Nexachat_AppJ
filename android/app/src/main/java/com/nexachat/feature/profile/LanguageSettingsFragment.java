@@ -33,7 +33,7 @@ public final class LanguageSettingsFragment extends Fragment {
             RadioButton button = new RadioButton(requireContext());
             button.setId(View.generateViewId());
             button.setText(labels[i]);
-            button.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyLarge);
+            button.setTextAppearance(R.style.TextAppearance_NexaChat_BodyLarge);
             button.setMinHeight(getResources().getDimensionPixelSize(R.dimen.min_touch_target));
             button.setPadding(padH, padV, padH, padV);
             button.setChecked(selected == options[i]);

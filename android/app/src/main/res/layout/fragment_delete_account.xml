@@ -56,7 +56,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/sendDeletionCode"
-            style="@style/Widget.Material3.Button"
+            style="@style/Widget.NexaChat.Button"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="@dimen/space_md"
@@ -129,7 +129,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/confirmDelete"
-            style="@style/Widget.Material3.Button"
+            style="@style/Widget.NexaChat.Button"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="@dimen/space_md"
@@ -148,7 +148,7 @@
             android:layout_marginHorizontal="@dimen/space_md"
             android:layout_marginTop="@dimen/space_md"
             android:accessibilityLiveRegion="polite"
-            android:contentDescription="@string/delete_account_confirm"
+            android:contentDescription="@string/voice_status_loading"
             android:indeterminate="true"
             android:visibility="gone"
             app:indicatorColor="?attr/colorError" />

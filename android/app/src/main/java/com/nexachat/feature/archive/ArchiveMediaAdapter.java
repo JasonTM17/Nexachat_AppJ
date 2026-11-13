@@ -4,6 +4,9 @@ import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.view.LayoutInflater;
+import android.widget.ImageView;
+import androidx.appcompat.content.res.AppCompatResources;
+import com.google.android.material.color.MaterialColors;
 import android.view.View;
 import android.view.ViewGroup;
 import androidx.annotation.NonNull;
@@ -84,7 +87,7 @@ public final class ArchiveMediaAdapter
             @Nullable ArchivePage.Attachment attachment) {
         if (attachment == null) {
             Glide.with(binding.archiveThumbnail).clear(binding.archiveThumbnail);
-            binding.archiveThumbnail.setImageResource(R.drawable.ic_image);
+            showTintedImagePlaceholder(binding.archiveThumbnail);
             return;
         }
         AttachmentBlurHashRegistry.remember(attachment.getId(), attachment.getBlurHash());
@@ -111,8 +114,23 @@ public final class ArchiveMediaAdapter
                 .load(absoluteUrl)
                 .centerCrop()
                 .placeholder(placeholder)
-                .error(R.drawable.ic_image)
+                .error(tintedImagePlaceholder(binding.archiveThumbnail))
                 .into(binding.archiveThumbnail);
+    }
+
+    private static void showTintedImagePlaceholder(@NonNull ImageView target) {
+        target.setImageDrawable(tintedImagePlaceholder(target));
+    }
+
+    @NonNull
+    private static Drawable tintedImagePlaceholder(@NonNull ImageView target) {
+        Drawable drawable = AppCompatResources.getDrawable(target.getContext(), R.drawable.ic_image);
+        Objects.requireNonNull(drawable, "ic_image");
+        drawable = drawable.mutate();
+        int tint = MaterialColors.getColor(
+                target, com.google.android.material.R.attr.colorOnSurfaceVariant);
+        drawable.setTint(tint);
+        return drawable;
     }
 
     @Nullable

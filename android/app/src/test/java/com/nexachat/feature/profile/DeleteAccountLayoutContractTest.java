@@ -45,6 +45,13 @@ public final class DeleteAccountLayoutContractTest {
         assertMinTouchTarget(retry);
     }
 
+    @Test
+    public void busyProgressAnnouncesLoadingNotDestructiveCommand() throws Exception {
+        Element progress = requireId("fragment_delete_account.xml", "deleteProgress");
+        assertEquals("polite", progress.getAttributeNS(ANDROID, "accessibilityLiveRegion"));
+        assertEquals("@string/voice_status_loading", progress.getAttributeNS(ANDROID, "contentDescription"));
+    }
+
     private static void assertMinTouchTarget(Element node) {
         String minHeight = node.getAttributeNS(ANDROID, "minHeight");
         boolean token = minHeight.contains("min_touch_target");
