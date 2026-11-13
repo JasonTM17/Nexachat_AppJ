@@ -261,7 +261,7 @@ public final class AuthJourneyBackStackTest {
         setField(form, "viewModel", vm);
         invoke(form, "navigateToCompleteProfile");
         assertEquals(R.id.completeProfileFragment, nav.getCurrentDestination().getId());
-        invoke(new CompleteProfileFragment(), "openSignedInDestination");
+        finishOnboarding(false);
     }
 
     private void switchToRegisterAndBack() {
