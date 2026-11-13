@@ -13,6 +13,7 @@ import android.widget.TextView;
 import androidx.annotation.DrawableRes;
 import androidx.annotation.Nullable;
 import androidx.core.widget.ImageViewCompat;
+import com.google.android.material.color.MaterialColors;
 import com.nexachat.R;
 
 /**
@@ -98,10 +99,34 @@ public class SettingsRowView extends LinearLayout {
         }
     }
 
+    public void setTrailingEmphasis(boolean emphasized) {
+        if (valueView != null) {
+            int colorAttr = emphasized
+                    ? com.google.android.material.R.attr.colorPrimary
+                    : com.google.android.material.R.attr.colorOnSurfaceVariant;
+            valueView.setTextColor(MaterialColors.getColor(valueView, colorAttr));
+            valueView.setMaxLines(
+                    emphasized && getResources().getConfiguration().fontScale >= 1.3f ? 2 : 1);
+            valueView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        }
+    }
+
     public void setLeadingIcon(@DrawableRes int iconRes) {
         if (iconView != null && iconTileView != null) {
             if (iconRes != 0) {
                 iconView.setImageResource(iconRes);
+                iconTileView.setVisibility(VISIBLE);
+            } else {
+                iconTileView.setVisibility(GONE);
+            }
+        }
+    }
+
+    public void setLeadingIconUntinted(@DrawableRes int iconRes) {
+        if (iconView != null && iconTileView != null) {
+            if (iconRes != 0) {
+                iconView.setImageResource(iconRes);
+                ImageViewCompat.setImageTintList(iconView, null);
                 iconTileView.setVisibility(VISIBLE);
             } else {
                 iconTileView.setVisibility(GONE);

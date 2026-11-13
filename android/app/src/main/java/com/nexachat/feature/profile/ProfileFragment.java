@@ -2,6 +2,7 @@ package com.nexachat.feature.profile;
 
 import android.Manifest;
 import android.content.Intent;
+import android.content.res.ColorStateList;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -28,6 +29,7 @@ import com.google.android.material.textfield.TextInputLayout;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
+import com.google.android.material.color.MaterialColors;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.network.dto.UserDto;
@@ -152,7 +154,7 @@ public final class ProfileFragment extends Fragment {
         binding.deleteAccountRow.setOnClickListener(v ->
                 NavHostFragment.findNavController(this).navigate(R.id.deleteAccountFragment));
         binding.googleAccountRow.setTitle(getString(R.string.sign_in_method_google));
-        binding.googleAccountRow.setLeadingIcon(R.drawable.ic_account_circle);
+        binding.googleAccountRow.setLeadingIconUntinted(R.drawable.ic_google_g);
         binding.googleAccountRow.setShowChevron(false);
         binding.googleAccountRow.setOnClickListener(v -> onGoogleAccountClicked());
         binding.signInMethodPhoneRow.setTitle(getString(R.string.sign_in_method_phone));
@@ -268,6 +270,7 @@ public final class ProfileFragment extends Fragment {
                     ? getString(R.string.action_unlink_google_short)
                     : getString(R.string.action_link_google_short);
             binding.googleAccountRow.setTrailingValue(action);
+            binding.googleAccountRow.setTrailingEmphasis(true);
             String cdEmail = googleEmail != null ? googleEmail : getString(R.string.settings_google_not_linked);
             binding.googleAccountRow.setContentDescription(
                     getString(R.string.cd_sign_in_method_google) + ", " + cdEmail + ", " + action);
@@ -460,6 +463,9 @@ public final class ProfileFragment extends Fragment {
         float radius = getResources().getDimension(R.dimen.corner_md);
         layout.setBoxCornerRadii(radius, radius, radius, radius);
         layout.setHint(getString(hint));
+        layout.setStartIconDrawable(R.drawable.ic_lock);
+        layout.setStartIconTintList(ColorStateList.valueOf(MaterialColors.getColor(
+                layout, com.google.android.material.R.attr.colorOnSurfaceVariant)));
         layout.setEndIconMode(TextInputLayout.END_ICON_PASSWORD_TOGGLE);
         layout.setEndIconContentDescription(getString(R.string.cd_password_visibility));
         TextInputEditText input = new TextInputEditText(layout.getContext());

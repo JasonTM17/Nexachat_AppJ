@@ -447,10 +447,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:accessibilityLiveRegion="polite"
-                    android:paddingHorizontal="16dp"
-                    android:paddingBottom="12dp"
+                    android:layout_marginHorizontal="@dimen/space_md"
+                    android:layout_marginBottom="@dimen/space_inset"
+                    android:background="@drawable/bg_auth_inline_error"
+                    android:drawableStart="@drawable/ic_error_outline"
+                    android:drawableTint="?attr/colorError"
+                    android:drawablePadding="@dimen/space_sm"
+                    android:padding="@dimen/space_inset"
                     android:textAppearance="?attr/textAppearanceBodyMedium"
-                    android:textColor="?attr/colorError"
+                    android:textColor="?attr/colorOnErrorContainer"
                     android:visibility="gone" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
