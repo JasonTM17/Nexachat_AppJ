@@ -8,6 +8,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.service.notification.StatusBarNotification;
 import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
@@ -66,6 +67,27 @@ public final class MessageNotifications {
 
     public static int notificationId(String recipientId, String conversationId) {
         return stableId("message:" + recipientId + ":" + conversationId);
+    }
+
+    public void dismissForSessionEnd() {
+        dismissChannel(context, CHANNEL_ID);
+    }
+
+    /** Enumerate persisted alerts too; in-memory ids disappear on process death. */
+    static void dismissChannel(Context context, String channelId) {
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        if (manager == null) return;
+        try {
+            StatusBarNotification[] alerts = manager.getActiveNotifications();
+            if (alerts == null) return;
+            for (StatusBarNotification alert : alerts) {
+                if (channelId.equals(alert.getNotification().getChannelId())) {
+                    manager.cancel(alert.getTag(), alert.getId());
+                }
+            }
+        } catch (SecurityException unavailable) {
+            // Notification access must not prevent token cleanup or session navigation.
+        }
     }
 
     private PendingIntent contentIntent(NotificationWorkRequest request, int requestCode) {

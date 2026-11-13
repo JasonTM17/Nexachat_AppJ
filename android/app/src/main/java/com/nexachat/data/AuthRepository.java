@@ -29,10 +29,13 @@ import com.nexachat.core.network.dto.RegisterRequest;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.feature.auth.LoginNotice;
 import com.nexachat.notification.DeviceTokenRegistrationManager;
+import com.nexachat.notification.MessageNotifications;
+import com.nexachat.notification.ReminderNotifications;
 import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.Objects;
 import java.util.Optional;
@@ -53,6 +56,9 @@ import retrofit2.Call;
  */
 @Singleton
 public final class AuthRepository {
+
+    // SessionEvents and this repository share the application singleton lifetime.
+    private final CompositeDisposable notificationObservers = new CompositeDisposable();
 
     private final AuthApi authApi;
     @Nullable private final UserApi userApi;
@@ -203,6 +209,20 @@ public final class AuthRepository {
         this.moshi = null;
         this.loginNotice = null;
         this.serverWakeGate = null;
+    }
+
+    /** Hilt also installs this at splash restore, including after a process restart. */
+    @Inject
+    void observeSessionNotifications(MessageNotifications messages, ReminderNotifications reminders) {
+        notificationObservers.add(Flowable.merge(
+                        sessionEvents.getEvents(), sessionEvents.getLifecycleEvents())
+                .filter(event -> event instanceof SessionEvents.Event.SessionClosing
+                        || event instanceof SessionEvents.Event.LoggedOut
+                        || event instanceof SessionEvents.Event.ReauthenticationRequired)
+                .subscribe(event -> {
+                    messages.dismissForSessionEnd();
+                    reminders.dismissForSessionEnd();
+                }));
     }
 
     @NonNull

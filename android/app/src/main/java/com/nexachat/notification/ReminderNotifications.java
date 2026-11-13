@@ -69,6 +69,10 @@ public final class ReminderNotifications {
         }
     }
 
+    public void dismissForSessionEnd() {
+        MessageNotifications.dismissChannel(context, CHANNEL_ID);
+    }
+
     private void ensureChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = context.getSystemService(NotificationManager.class);
