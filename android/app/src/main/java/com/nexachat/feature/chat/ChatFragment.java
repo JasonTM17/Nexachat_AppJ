@@ -748,7 +748,13 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         applyLargeTypeToolbar();
         renderConversationState();
         binding.chatError.setVisibility(state.getError() == null ? View.GONE : View.VISIBLE);
-        if (state.getError() != null) binding.chatError.setText(ChatErrorText.messageId(state.getError()));
+        if (state.getError() != null) {
+            binding.chatErrorMessage.setText(ChatErrorText.messageId(state.getError()));
+        }
+        ChatViewModel.ChatError chatError = state.getChatError();
+        binding.chatErrorRetry.setVisibility(state.canRetryError()
+                ? View.VISIBLE : View.GONE);
+        binding.chatErrorRetry.setOnClickListener(ignored -> viewModel.retryChatError());
         renderPinned();
         renderReplyEditBanner();
         renderAttachments();
@@ -800,8 +806,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         }
         if (ChatEmptyPolicy.showError(hasError, hasMessages)) {
             binding.errorState.setMessage(getString(ChatErrorText.messageId(state.getError())));
-            binding.errorState.setOnRetry(ChatViewModel.isInitialHistoryErrorRetryable(state.getError())
-                    ? () -> viewModel.reloadInitialHistory()
+            ChatViewModel.ChatError chatError = state.getChatError();
+            boolean canRetryInitialHistory = chatError != null
+                    && chatError.getOperation() == ChatViewModel.ErrorOperation.INITIAL_HISTORY
+                    && state.canRetryError();
+            binding.errorState.setOnRetry(canRetryInitialHistory
+                    ? () -> viewModel.retryChatError()
                     : null);
         }
     }

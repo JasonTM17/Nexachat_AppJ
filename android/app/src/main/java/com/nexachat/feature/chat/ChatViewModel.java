@@ -67,6 +67,13 @@ import javax.inject.Inject;
 @HiltViewModel
 public final class ChatViewModel extends ViewModel {
 
+    public enum ErrorOperation {
+        INITIAL_HISTORY,
+        OLDER_PAGE,
+        SEND,
+        OTHER
+    }
+
     public static final long TYPING_SEND_INTERVAL_MS = 3_000L;
     public static final long PEER_TYPING_TTL_MS = 5_000L;
     public static final int MIN_SEARCH_CHARS = 2;
@@ -209,8 +216,35 @@ public final class ChatViewModel extends ViewModel {
         if (!state.getMessages().isEmpty() || !state.getSending().isEmpty() || initialHistoryReloadInFlight) {
             return;
         }
+        beginInitialHistoryReload();
+    }
+
+    /** Retries only the operation carried by the current chat error. */
+    public void retryChatError() {
+        UiState state = currentUiState();
+        ChatError error = state.getChatError();
+        if (error == null || !state.canRetryError()) {
+            return;
+        }
+        switch (error.getOperation()) {
+            case INITIAL_HISTORY -> {
+                if (!currentUiState().isLoading()) {
+                    beginInitialHistoryReload();
+                }
+            }
+            case OLDER_PAGE -> loadOlder(error.getOldestSequence());
+            case SEND -> retryFailed(error.getClientMessageId());
+            case OTHER -> { }
+        }
+    }
+
+    private void beginInitialHistoryReload() {
+        if (initialHistoryReloadInFlight) {
+            return;
+        }
         initialHistoryReloadInFlight = true;
-        updateUiState(current -> current.withError(null).withLoading(true));
+        updateUiState(current -> current.withoutErrorIf(ErrorOperation.INITIAL_HISTORY, null, null)
+                .withLoading(true));
         initialHistoryDisposable.set(refreshInitialHistoryPage()
                 .doFinally(() -> initialHistoryReloadInFlight = false)
                 .subscribe(this::applyInitialHistoryPage, this::applyInitialHistoryFailure));
@@ -391,15 +425,18 @@ public final class ChatViewModel extends ViewModel {
     private void applyInitialHistoryPage(Result<com.nexachat.core.network.dto.MessagePageDto> result) {
         if (result instanceof Result.Success<?> success
                 && success.getValue() instanceof com.nexachat.core.network.dto.MessagePageDto page) {
-            updateUiState(state -> state.withHasMore(page.getHasMore()));
+            updateUiState(state -> state.withoutErrorIf(ErrorOperation.INITIAL_HISTORY, null, null)
+                    .withHasMore(page.getHasMore()));
         } else if (result instanceof Result.Failure<?> failure) {
-            updateUiState(state -> state.withError(failure.getError()));
+            updateUiState(state -> state.withHistoryError(
+                    failure.getError(), ErrorOperation.INITIAL_HISTORY, null));
         }
         updateUiState(state -> state.withLoading(false));
     }
 
     private void applyInitialHistoryFailure(Throwable error) {
-        updateUiState(state -> state.withError(toApiError(error)));
+        updateUiState(state -> state.withHistoryError(
+                toApiError(error), ErrorOperation.INITIAL_HISTORY, null));
         updateUiState(state -> state.withLoading(false));
     }
 
@@ -689,7 +726,8 @@ public final class ChatViewModel extends ViewModel {
         disposables.add(send
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(() -> { }, this::surfaceStreamFailure));
+                .subscribe(() -> clearUiError(ErrorOperation.SEND, null, null),
+                        error -> updateUiState(current -> current.withSendError(toApiError(error), null))));
     }
 
     /** Tap a FAILED bubble to requeue it in the outbox. */
@@ -697,7 +735,9 @@ public final class ChatViewModel extends ViewModel {
         disposables.add(messageRepository.retry(clientMessageId)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(() -> { }, this::surfaceStreamFailure));
+                .subscribe(() -> clearUiError(ErrorOperation.SEND, null, clientMessageId),
+                        error -> updateUiState(state -> state.withSendError(
+                                toApiError(error), clientMessageId))));
     }
 
     /** Loads a bounded history window before emitting the one-shot scroll target. */
@@ -1126,10 +1166,13 @@ public final class ChatViewModel extends ViewModel {
 
     /** Loads one older page using the oldest currently rendered sequence. */
     public void loadOlder() {
+        loadOlder(minimumSequence(currentUiState().getMessages()));
+    }
+
+    private void loadOlder(@Nullable Long oldest) {
         if (loadingOlder) {
             return;
         }
-        Long oldest = minimumSequence(currentUiState().getMessages());
         if (oldest == null) {
             return;
         }
@@ -1141,13 +1184,16 @@ public final class ChatViewModel extends ViewModel {
                     loadingOlder = false;
                     if (result instanceof Result.Success<?> success
                             && success.getValue() instanceof com.nexachat.core.network.dto.MessagePageDto page) {
-                        updateUiState(state -> state.withHasMore(page.getHasMore()));
+                        updateUiState(state -> state.withoutErrorIf(ErrorOperation.OLDER_PAGE, oldest, null)
+                                .withHasMore(page.getHasMore()));
                     } else if (result instanceof Result.Failure<?> failure) {
-                        updateUiState(state -> state.withError(failure.getError()));
+                        updateUiState(state -> state.withHistoryError(
+                                failure.getError(), ErrorOperation.OLDER_PAGE, oldest));
                     }
                 }, error -> {
                     loadingOlder = false;
-                    surfaceStreamFailure(error);
+                    updateUiState(state -> state.withHistoryError(
+                            toApiError(error), ErrorOperation.OLDER_PAGE, oldest));
                 }));
     }
 
@@ -1171,6 +1217,11 @@ public final class ChatViewModel extends ViewModel {
 
     private void surfaceStreamFailure(Throwable error) {
         updateUiState(state -> state.withError(toApiError(error)));
+    }
+
+    private void clearUiError(
+            ErrorOperation operation, @Nullable Long oldestSequence, @Nullable String clientMessageId) {
+        updateUiState(state -> state.withoutErrorIf(operation, oldestSequence, clientMessageId));
     }
 
     private static ApiError toApiError(Throwable error) {
@@ -1260,6 +1311,48 @@ public final class ChatViewModel extends ViewModel {
         }
     }
 
+    /** Error plus the exact operation context that is safe to retry. */
+    public static final class ChatError {
+        private final ApiError error;
+        private final ErrorOperation operation;
+        @Nullable private final Long oldestSequence;
+        @Nullable private final String clientMessageId;
+
+        private ChatError(
+                ApiError error,
+                ErrorOperation operation,
+                @Nullable Long oldestSequence,
+                @Nullable String clientMessageId) {
+            this.error = Objects.requireNonNull(error, "error");
+            this.operation = Objects.requireNonNull(operation, "operation");
+            if (operation != ErrorOperation.OLDER_PAGE && oldestSequence != null) {
+                throw new IllegalArgumentException("Only an older-page error has a sequence cursor");
+            }
+            if (operation == ErrorOperation.OLDER_PAGE && oldestSequence == null) {
+                throw new IllegalArgumentException("An older-page error needs its sequence cursor");
+            }
+            if (operation != ErrorOperation.SEND && clientMessageId != null) {
+                throw new IllegalArgumentException("Only a send error has a client message id");
+            }
+            this.oldestSequence = oldestSequence;
+            this.clientMessageId = clientMessageId;
+        }
+
+        public ApiError getError() { return error; }
+        public ErrorOperation getOperation() { return operation; }
+        @Nullable public Long getOldestSequence() { return oldestSequence; }
+        @Nullable public String getClientMessageId() { return clientMessageId; }
+
+        public boolean canRetry() {
+            return switch (operation) {
+                case INITIAL_HISTORY -> isInitialHistoryErrorRetryable(error);
+                case OLDER_PAGE -> oldestSequence != null && isInitialHistoryErrorRetryable(error);
+                case SEND -> clientMessageId != null && !clientMessageId.isBlank();
+                case OTHER -> false;
+            };
+        }
+    }
+
     /** Immutable chat render state. Lists are defensively copied at creation. */
     public static final class UiState {
         private final boolean loading;
@@ -1272,7 +1365,7 @@ public final class ChatViewModel extends ViewModel {
         private final boolean canPin;
         private final boolean connected;
         private final boolean hasMore;
-        @Nullable private final ApiError error;
+        @Nullable private final ChatError chatError;
         private final List<PendingAttachment> pendingAttachments;
         @Nullable private final ReplyTarget replyTarget;
         private final List<ChatMessage> pins;
@@ -1303,7 +1396,7 @@ public final class ChatViewModel extends ViewModel {
                 boolean canPin,
                 boolean connected,
                 boolean hasMore,
-                @Nullable ApiError error,
+                @Nullable ChatError chatError,
                 List<PendingAttachment> pendingAttachments,
                 @Nullable ReplyTarget replyTarget,
                 List<ChatMessage> pins,
@@ -1323,7 +1416,7 @@ public final class ChatViewModel extends ViewModel {
             this.canPin = canPin;
             this.connected = connected;
             this.hasMore = hasMore;
-            this.error = error;
+            this.chatError = chatError;
             this.pendingAttachments = List.copyOf(pendingAttachments);
             this.replyTarget = replyTarget;
             this.pins = List.copyOf(pins);
@@ -1351,7 +1444,23 @@ public final class ChatViewModel extends ViewModel {
         public boolean getConnected() { return connected; }
         public boolean isHasMore() { return hasMore; }
         public boolean getHasMore() { return hasMore; }
-        @Nullable public ApiError getError() { return error; }
+        @Nullable public ApiError getError() { return chatError == null ? null : chatError.getError(); }
+        @Nullable public ChatError getChatError() { return chatError; }
+        public boolean canRetryError() {
+            if (chatError == null || !chatError.canRetry()) {
+                return false;
+            }
+            if (chatError.getOperation() != ErrorOperation.SEND) {
+                return true;
+            }
+            for (ChatMessage message : messages) {
+                if (Objects.equals(chatError.getClientMessageId(), message.getClientMessageId())
+                        && message.getStatus() == DeliveryStatus.FAILED) {
+                    return true;
+                }
+            }
+            return false;
+        }
         public List<PendingAttachment> getPendingAttachments() { return pendingAttachments; }
         @Nullable public ReplyTarget getReplyTarget() { return replyTarget; }
         public List<ChatMessage> getPins() { return pins; }
@@ -1376,7 +1485,7 @@ public final class ChatViewModel extends ViewModel {
                     .filter(message -> message.getStatus() != DeliveryStatus.SENT)
                     .collect(java.util.stream.Collectors.toList());
             return copy(loading, nextMessages, pending, input, peerTyping, peerName, group,
-                    canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
+                    canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
                     showSeen, conversationPinned);
         }
@@ -1387,7 +1496,7 @@ public final class ChatViewModel extends ViewModel {
                     displayName == null || displayName.isBlank() ? null : displayName,
                     conversation.isGroup(),
                     !conversation.isGroup() || "ADMIN".equals(conversation.getMyRole()),
-                    connected, hasMore, error, pendingAttachments, replyTarget, pins,
+                    connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     conversation.getPeerReadSeq(), conversation.getPeerDeliveredSeq(),
                     conversation.getPeerPresence(),
                     blankToNull(conversation.getOtherUserId()),
@@ -1397,70 +1506,96 @@ public final class ChatViewModel extends ViewModel {
 
         private UiState withInput(String nextInput) {
             return copy(loading, messages, sending, nextInput, peerTyping, peerName, group,
-                    canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
+                    canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
                     showSeen, conversationPinned);
         }
 
         private UiState withPeerTyping(boolean nextPeerTyping) {
             return copy(loading, messages, sending, input, nextPeerTyping, peerName, group,
-                    canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
+                    canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
                     showSeen, conversationPinned);
         }
 
         private UiState withConnected(boolean nextConnected) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
-                    canPin, nextConnected, hasMore, error, pendingAttachments, replyTarget, pins,
+                    canPin, nextConnected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
                     showSeen, conversationPinned);
         }
 
         private UiState withHasMore(boolean nextHasMore) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
-                    canPin, connected, nextHasMore, error, pendingAttachments, replyTarget, pins,
+                    canPin, connected, nextHasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
                     showSeen, conversationPinned);
         }
 
         private UiState withLoading(boolean nextLoading) {
             return copy(nextLoading, messages, sending, input, peerTyping, peerName, group,
-                    canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
+                    canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
                     showSeen, conversationPinned);
         }
 
         private UiState withError(@Nullable ApiError nextError) {
+            return withChatError(nextError == null
+                    ? null : new ChatError(nextError, ErrorOperation.OTHER, null, null));
+        }
+
+        private UiState withHistoryError(
+                ApiError nextError, ErrorOperation operation, @Nullable Long oldestSequence) {
+            return withChatError(new ChatError(nextError, operation, oldestSequence, null));
+        }
+
+        private UiState withSendError(ApiError nextError, @Nullable String clientMessageId) {
+            return withChatError(new ChatError(nextError, ErrorOperation.SEND, null, clientMessageId));
+        }
+
+        private UiState withChatError(@Nullable ChatError nextChatError) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
-                    canPin, connected, hasMore, nextError, pendingAttachments, replyTarget, pins,
+                    canPin, connected, hasMore, nextChatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
                     showSeen, conversationPinned);
         }
 
+        private UiState withoutErrorIf(
+                ErrorOperation operation,
+                @Nullable Long oldestSequence,
+                @Nullable String clientMessageId) {
+            if (chatError == null || chatError.getOperation() != operation
+                    || !Objects.equals(chatError.getOldestSequence(), oldestSequence)
+                    || !Objects.equals(chatError.getClientMessageId(), clientMessageId)) {
+                return this;
+            }
+            return withChatError(null);
+        }
+
         private UiState withPendingAttachments(List<PendingAttachment> pending) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
-                    canPin, connected, hasMore, error, pending, replyTarget, pins,
+                    canPin, connected, hasMore, chatError, pending, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
                     showSeen, conversationPinned);
         }
 
         private UiState withReplyTarget(@Nullable ReplyTarget target) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
-                    canPin, connected, hasMore, error, pendingAttachments, target, pins,
+                    canPin, connected, hasMore, chatError, pendingAttachments, target, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
                     showSeen, conversationPinned);
         }
 
         private UiState withPins(List<ChatMessage> nextPins) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
-                    canPin, connected, hasMore, error, pendingAttachments, replyTarget, nextPins,
+                    canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, nextPins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
                     showSeen, conversationPinned);
         }
 
         private UiState withShowSeen(boolean nextShowSeen) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
-                    canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
+                    canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
                     nextShowSeen, conversationPinned);
         }
@@ -1476,7 +1611,7 @@ public final class ChatViewModel extends ViewModel {
                 boolean canPin,
                 boolean connected,
                 boolean hasMore,
-                @Nullable ApiError error,
+                @Nullable ChatError chatError,
                 List<PendingAttachment> pendingAttachments,
                 @Nullable ReplyTarget replyTarget,
                 List<ChatMessage> pins,
@@ -1487,7 +1622,7 @@ public final class ChatViewModel extends ViewModel {
                 boolean showSeen,
                 boolean conversationPinned) {
             return new UiState(loading, messages, sending, input, peerTyping, peerName, group,
-                    canPin, connected, hasMore, error, pendingAttachments, replyTarget, pins,
+                    canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
                     showSeen, conversationPinned);
         }

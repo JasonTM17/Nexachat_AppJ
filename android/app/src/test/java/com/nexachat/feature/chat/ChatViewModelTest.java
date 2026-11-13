@@ -901,6 +901,132 @@ public final class ChatViewModelTest {
     }
 
     @Test
+    public void initialHistoryInlineRetryKeepsItsKindAndReloadsTheTopPage() {
+        when(messageRepository.refreshHistory(CONVERSATION_ID, null))
+                .thenReturn(Single.just(Result.failure(new ApiError.Network("down"))),
+                        Single.just(new Result.Success<>(new MessagePageDto())));
+        messagesFlow.onNext(List.of(message("m-1", 1L, true)));
+        Mockito.clearInvocations(messageRepository);
+        ChatViewModel failedVm = newViewModel(
+                new SavedStateHandle(Map.of("conversationId", CONVERSATION_ID)));
+
+        assertEquals(ChatViewModel.ErrorOperation.INITIAL_HISTORY,
+                failedVm.getUiState().getValue().getChatError().getOperation());
+        assertTrue(failedVm.getUiState().getValue().getChatError().canRetry());
+
+        failedVm.retryChatError();
+
+        verify(messageRepository, times(2)).refreshHistory(CONVERSATION_ID, null);
+        assertNull(failedVm.getUiState().getValue().getError());
+    }
+
+    @Test
+    public void olderPageInlineRetryReusesTheFailedSequenceWhenMessagesChange() {
+        messagesFlow.onNext(List.of(message("m-8", 8L, true)));
+        when(messageRepository.refreshHistory(CONVERSATION_ID, 8L))
+                .thenReturn(Single.just(Result.failure(new ApiError.Network("down"))),
+                        Single.just(new Result.Success<>(new MessagePageDto())));
+
+        viewModel.loadOlder();
+
+        assertEquals(ChatViewModel.ErrorOperation.OLDER_PAGE,
+                state().getChatError().getOperation());
+        assertEquals(Long.valueOf(8L), state().getChatError().getOldestSequence());
+        assertTrue(state().canRetryError());
+        messagesFlow.onNext(List.of(message("m-10", 10L, true)));
+        viewModel.retryChatError();
+
+        verify(messageRepository, times(2)).refreshHistory(CONVERSATION_ID, 8L);
+        assertNull(state().getError());
+    }
+
+    @Test
+    public void failedMessageRetryReplacesOtherErrorAndKeepsItsClientId() {
+        ApiError priorError = new ApiError.Unknown("PIN_LIMIT");
+        interactionFlow.onNext(priorError);
+        messagesFlow.onNext(List.of(message("m-7", 7L, true, DeliveryStatus.FAILED, "cm-7")));
+        when(messageRepository.retry("cm-7"))
+                .thenReturn(Completable.error(new IllegalStateException("offline")),
+                        Completable.complete());
+
+        viewModel.retryFailed("cm-7");
+
+        assertEquals(ChatViewModel.ErrorOperation.SEND, state().getChatError().getOperation());
+        assertEquals("cm-7", state().getChatError().getClientMessageId());
+        assertTrue(state().getChatError().canRetry());
+        assertTrue(state().canRetryError());
+
+        viewModel.retryChatError();
+
+        verify(messageRepository, times(2)).retry("cm-7");
+        assertNull(state().getError());
+        assertNull(state().getChatError());
+    }
+
+    @Test
+    public void failedMessageRetryIsHiddenWhenItsMessageIsNoLongerFailed() {
+        messagesFlow.onNext(List.of(message("m-7", 7L, true, DeliveryStatus.SENT, "cm-7")));
+        when(messageRepository.retry("cm-7"))
+                .thenReturn(Completable.error(new IllegalStateException("offline")));
+
+        viewModel.retryFailed("cm-7");
+
+        assertEquals("cm-7", state().getChatError().getClientMessageId());
+        assertFalse(state().canRetryError());
+        Mockito.clearInvocations(messageRepository);
+
+        viewModel.retryChatError();
+
+        verify(messageRepository, never()).retry(anyString());
+    }
+
+    @Test
+    public void sendFailureWithoutMessageIdDoesNotOfferUnsafeInlineRetry() {
+        when(messageRepository.send(anyString(), any(), any(), anyString(), any()))
+                .thenReturn(Completable.error(new IllegalStateException("offline")));
+        viewModel.onInputChange("hello");
+
+        viewModel.send();
+
+        assertEquals(ChatViewModel.ErrorOperation.SEND, state().getChatError().getOperation());
+        assertNull(state().getChatError().getClientMessageId());
+        assertFalse(state().getChatError().canRetry());
+        assertFalse(state().canRetryError());
+    }
+
+    @Test
+    public void otherErrorKindCannotBeRetried() {
+        interactionFlow.onNext(new ApiError.Unknown("PIN_LIMIT"));
+
+        assertEquals(ChatViewModel.ErrorOperation.OTHER, state().getChatError().getOperation());
+        assertFalse(state().getChatError().canRetry());
+        assertFalse(state().canRetryError());
+        Mockito.clearInvocations(messageRepository);
+
+        viewModel.retryChatError();
+
+        verify(messageRepository, never()).retry(anyString());
+        verify(messageRepository, never()).refreshHistory(anyString(), nullable(Long.class));
+    }
+
+    @Test
+    public void processRecreationDoesNotRestoreRetryTarget() {
+        SavedStateHandle handle = new SavedStateHandle(Map.of("conversationId", CONVERSATION_ID));
+        when(messageRepository.retry("cm-process"))
+                .thenReturn(Completable.error(new IllegalStateException("offline")));
+        ChatViewModel failedVm = newViewModel(handle);
+        failedVm.retryFailed("cm-process");
+
+        assertEquals(ChatViewModel.ErrorOperation.SEND,
+                failedVm.getUiState().getValue().getChatError().getOperation());
+
+        ChatViewModel recreated = newViewModel(handle);
+
+        assertNull(recreated.getUiState().getValue().getError());
+        assertNull(recreated.getUiState().getValue().getChatError());
+    }
+
+    @Test
     public void peerPresenceComesFromDirectConversationSummary() {
         PeerPresence presence = new PeerPresence(true, 1_700_000_000_000L);
         conversationFlow.onNext(Optional.of(summary("DIRECT", null, null, presence)));
