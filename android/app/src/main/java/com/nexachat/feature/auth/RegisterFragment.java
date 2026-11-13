@@ -33,8 +33,7 @@ public final class RegisterFragment extends Fragment {
 
     @Override public void onViewCreated(@NonNull View view, @Nullable Bundle state) {
         viewModel = new ViewModelProvider(this).get(AuthViewModel.class);
-        returnInviteToken = getArguments() == null
-                ? null : getArguments().getString("returnInviteToken");
+        returnInviteToken = AuthNav.returnInviteToken(getArguments());
         binding.nameInput.addTextChangedListener(watcher(viewModel::onDisplayNameChange));
         binding.phoneInput.addTextChangedListener(watcher(viewModel::onPhoneChange));
         binding.passwordInput.addTextChangedListener(watcher(viewModel::onPasswordChange));
@@ -47,10 +46,10 @@ public final class RegisterFragment extends Fragment {
         binding.authOrDivider.getRoot().setVisibility(googleVisibility);
         binding.googleSignIn.setOnClickListener(v -> viewModel.googleSignIn(requireActivity()));
         View.OnClickListener openLogin = v -> {
-            Bundle args = inviteReturnArgs();
+            Bundle args = AuthNav.inviteReturnArgs(returnInviteToken);
             NavHostFragment.findNavController(this).navigate(
                     R.id.loginFragment,
-                    args.isEmpty() ? null : args,
+                    args,
                     AuthNav.authTabSwitchOptions());
         };
         binding.secondaryAction.setOnClickListener(openLogin);
@@ -72,14 +71,7 @@ public final class RegisterFragment extends Fragment {
             return;
         }
         if (event == AuthViewModel.Event.LoggedIn) {
-            int destination = returnInviteToken == null
-                    ? R.id.inboxFragment : R.id.inviteJoinFragment;
-            Bundle args = returnInviteToken == null ? null : new Bundle();
-            if (args != null) {
-                args.putString("token", returnInviteToken);
-            }
-            NavHostFragment.findNavController(this).navigate(
-                    destination, args, AuthNav.signedInOptions());
+            AuthNav.openSignedIn(NavHostFragment.findNavController(this), returnInviteToken);
         }
     }
 
@@ -88,7 +80,8 @@ public final class RegisterFragment extends Fragment {
             return;
         }
         NavHostFragment.findNavController(this).navigate(
-                R.id.completeProfileFragment, null, AuthNav.signedInOptions());
+                R.id.completeProfileFragment, AuthNav.inviteReturnArgs(returnInviteToken),
+                AuthNav.signedInOptions());
     }
 
     private void submit() {
@@ -102,11 +95,6 @@ public final class RegisterFragment extends Fragment {
         else binding.confirmPasswordLayout.setError(getString(R.string.error_password_mismatch));
     }
 
-    private Bundle inviteReturnArgs() {
-        Bundle args = new Bundle();
-        if (returnInviteToken != null) args.putString("returnInviteToken", returnInviteToken);
-        return args;
-    }
     private TextWatcher watcher(java.util.function.Consumer<String> change) { return new TextWatcher() {
         @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
         @Override public void onTextChanged(CharSequence s, int start, int before, int count) { if (!rendering) change.accept(s.toString()); }

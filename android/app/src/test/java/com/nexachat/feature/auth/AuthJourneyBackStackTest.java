@@ -7,6 +7,16 @@ import android.content.Context;
 import android.os.Bundle;
 import android.util.Log;
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
+import androidx.activity.OnBackPressedDispatcher;
+import androidx.fragment.app.FragmentActivity;
+import androidx.lifecycle.Lifecycle;
+import androidx.lifecycle.LifecycleOwner;
+import androidx.lifecycle.LifecycleRegistry;
+import androidx.lifecycle.MutableLiveData;
+import androidx.lifecycle.ViewModelProvider;
+import android.view.View;
+import com.nexachat.databinding.FragmentCompleteProfileBinding;
+import org.mockito.ArgumentCaptor;
 import androidx.navigation.NavBackStackEntry;
 import androidx.navigation.NavController;
 import androidx.navigation.NavDestination;
@@ -124,13 +134,134 @@ public final class AuthJourneyBackStackTest {
         assertOnlyAuthenticatedDestination(R.id.inboxFragment);
     }
 
+    private static final String INVITE_TOKEN = "A".repeat(43);
+
+    @Test public void phoneLoginKeepsInviteDestination() throws Exception {
+        LoginFragment form = new LoginFragment();
+        setField(form, "returnInviteToken", INVITE_TOKEN);
+        invoke(form, "onAuthEvent", AuthViewModel.Event.LoggedIn);
+        assertInviteDestination();
+    }
+
+    @Test public void phoneRegisterKeepsInviteDestination() throws Exception {
+        nav.navigate(R.id.registerFragment, null, AuthNav.authTabSwitchOptions());
+        RegisterFragment form = new RegisterFragment();
+        setField(form, "returnInviteToken", INVITE_TOKEN);
+        invoke(form, "onAuthEvent", AuthViewModel.Event.LoggedIn);
+        assertInviteDestination();
+    }
+
+    @Test public void newGoogleLoginCarriesInviteToOnboarding() throws Exception {
+        openGoogleWithInvite(new LoginFragment());
+        assertOnboardingInviteArgument();
+    }
+
+    @Test public void newGoogleRegisterCarriesInviteToOnboarding() throws Exception {
+        nav.navigate(R.id.registerFragment, null, AuthNav.authTabSwitchOptions());
+        openGoogleWithInvite(new RegisterFragment());
+        assertOnboardingInviteArgument();
+    }
+
+    @Test public void onboardingBackReturnsToInviteAfterArgumentRecreation() throws Exception {
+        openOnboardingWithInvite(INVITE_TOKEN);
+        finishOnboarding(true);
+        assertInviteDestination();
+    }
+
+    @Test public void onboardingContinueReturnsToInviteAfterArgumentRecreation() throws Exception {
+        openOnboardingWithInvite(INVITE_TOKEN);
+        finishOnboarding(false);
+        assertInviteDestination();
+    }
+
+    @Test public void onboardingWithoutInviteBackOpensInbox() throws Exception {
+        openOnboardingWithInvite(null);
+        finishOnboarding(true);
+        assertOnlyAuthenticatedDestination(R.id.inboxFragment);
+    }
+
+    @Test public void malformedInviteCannotBecomeAuthenticatedReturnDestination() throws Exception {
+        openOnboardingWithInvite("invalid/token");
+        finishOnboarding(false);
+        assertOnlyAuthenticatedDestination(R.id.inboxFragment);
+    }
+
+    private void openGoogleWithInvite(Object form) throws Exception {
+        setField(form, "returnInviteToken", INVITE_TOKEN);
+        AuthViewModel vm = mock(AuthViewModel.class);
+        when(vm.onCompleteProfileNavigationHandled()).thenReturn(true);
+        setField(form, "viewModel", vm);
+        invoke(form, "navigateToCompleteProfile");
+    }
+
+    private void assertOnboardingInviteArgument() {
+        assertEquals(R.id.completeProfileFragment, nav.getCurrentDestination().getId());
+        Bundle args = nav.getCurrentBackStackEntry().getArguments();
+        assertNotNull("Onboarding must receive the return route", args);
+        assertEquals(INVITE_TOKEN, args.getString("returnInviteToken"));
+    }
+
+    private void openOnboardingWithInvite(String token) {
+        Bundle args = new Bundle();
+        args.putString("returnInviteToken", token);
+        nav.navigate(R.id.completeProfileFragment, args, AuthNav.signedInOptions());
+    }
+
+    private void assertInviteDestination() {
+        assertEquals(R.id.inviteJoinFragment, nav.getCurrentDestination().getId());
+        assertEquals(INVITE_TOKEN, nav.getCurrentBackStackEntry().getArguments().getString("token"));
+        assertOnlyAuthenticatedDestination(R.id.inviteJoinFragment);
+    }
+
+    private void finishOnboarding(boolean back) throws Exception {
+        // A new Fragment instance receives copied entry arguments, as after recreation.
+        CompleteProfileFragment fragment = spy(new CompleteProfileFragment());
+        fragment.setArguments(new Bundle(nav.getCurrentBackStackEntry().getArguments()));
+        LifecycleOwner owner = mock(LifecycleOwner.class);
+        LifecycleRegistry lifecycle = new LifecycleRegistry(owner);
+        when(owner.getLifecycle()).thenReturn(lifecycle);
+        lifecycle.setCurrentState(Lifecycle.State.RESUMED);
+        doReturn(owner).when(fragment).getViewLifecycleOwner();
+        FragmentActivity activity = mock(FragmentActivity.class);
+        OnBackPressedDispatcher dispatcher = new OnBackPressedDispatcher();
+        when(activity.getOnBackPressedDispatcher()).thenReturn(dispatcher);
+        doReturn(activity).when(fragment).requireActivity();
+
+        var constructor = FragmentCompleteProfileBinding.class.getDeclaredConstructors()[0];
+        constructor.setAccessible(true);
+        Object[] views = java.util.Arrays.stream(constructor.getParameterTypes())
+                .map(type -> mock(type)).toArray();
+        FragmentCompleteProfileBinding binding = (FragmentCompleteProfileBinding) constructor.newInstance(views);
+        setField(fragment, "binding", binding);
+        CompleteProfileViewModel vm = mock(CompleteProfileViewModel.class);
+        MutableLiveData<CompleteProfileViewModel.Event> events = new MutableLiveData<>();
+        when(vm.getUiState()).thenReturn(new MutableLiveData<>());
+        when(vm.getEvents()).thenReturn(events);
+        doAnswer(call -> { events.setValue(CompleteProfileViewModel.Event.Continue); return null; })
+                .when(vm).continueToInbox();
+        try (var providers = mockConstruction(ViewModelProvider.class,
+                (provider, context) -> when(provider.get(CompleteProfileViewModel.class)).thenReturn(vm))) {
+            fragment.onViewCreated(mock(View.class), null);
+            if (back) {
+                dispatcher.onBackPressed();
+                verify(vm, never()).continueToInbox();
+            } else {
+                ArgumentCaptor<View.OnClickListener> click = ArgumentCaptor.forClass(View.OnClickListener.class);
+                verify(binding.completeProfileContinue).setOnClickListener(click.capture());
+                click.getValue().onClick(binding.completeProfileContinue);
+                verify(vm).continueToInbox();
+            }
+        }
+        lifecycle.setCurrentState(Lifecycle.State.DESTROYED);
+    }
+
     private void completeGoogle(Object form) throws Exception {
         AuthViewModel vm = mock(AuthViewModel.class);
         when(vm.onCompleteProfileNavigationHandled()).thenReturn(true);
         setField(form, "viewModel", vm);
         invoke(form, "navigateToCompleteProfile");
         assertEquals(R.id.completeProfileFragment, nav.getCurrentDestination().getId());
-        invoke(new CompleteProfileFragment(), "openInbox");
+        invoke(new CompleteProfileFragment(), "openSignedInDestination");
     }
 
     private void switchToRegisterAndBack() {

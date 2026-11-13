@@ -38,7 +38,13 @@
     <fragment
         android:id="@+id/completeProfileFragment"
         android:name="com.nexachat.feature.auth.CompleteProfileFragment"
-        android:label="@string/complete_profile_title" />
+        android:label="@string/complete_profile_title">
+        <argument
+            android:name="returnInviteToken"
+            android:defaultValue="@null"
+            app:argType="string"
+            app:nullable="true" />
+    </fragment>
 
     <fragment
         android:id="@+id/forgotPasswordFragment"

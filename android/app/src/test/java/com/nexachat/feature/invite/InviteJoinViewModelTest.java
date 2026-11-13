@@ -53,6 +53,23 @@ public final class InviteJoinViewModelTest {
     }
 
     @Test
+    public void signInReturnTokenReopensPreviewInRecreatedViewModel() {
+        repository.preview = Single.error(new InviteApiException(InviteFailure.SIGN_IN_REQUIRED));
+        viewModel.open(URL);
+        String returnedToken = viewModel.inviteTokenForSignIn();
+        assertEquals(InviteFailure.SIGN_IN_REQUIRED, state().getFailure());
+
+        repository.preview = Single.just(FakeInviteRepository.preview(false, false));
+        InviteJoinViewModel recreated = new InviteJoinViewModel(repository);
+        recreated.open(InviteLinkParser.shareUrl(returnedToken, null).orElseThrow());
+
+        assertEquals("A".repeat(43), recreated.inviteTokenForSignIn());
+        assertEquals(InviteJoinUiState.Status.PREVIEW, recreated.getState().getValue().getStatus());
+        assertEquals(2, repository.previewCalls);
+        assertEquals(0, repository.joinCalls);
+    }
+
+    @Test
     public void previewShowsOnlySafeGroupFieldsAndAlreadyMemberState() {
         repository.preview = Single.just(FakeInviteRepository.preview(true, false));
 

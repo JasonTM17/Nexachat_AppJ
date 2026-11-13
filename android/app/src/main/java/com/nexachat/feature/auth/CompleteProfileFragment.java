@@ -57,20 +57,20 @@ public final class CompleteProfileFragment extends Fragment {
                 new OnBackPressedCallback(true) {
                     @Override
                     public void handleOnBackPressed() {
-                        openInbox();
+                        openSignedInDestination();
                     }
                 });
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
         viewModel.getEvents().observe(getViewLifecycleOwner(), event -> {
             if (event == CompleteProfileViewModel.Event.Continue) {
-                openInbox();
+                openSignedInDestination();
             }
         });
     }
 
-    private void openInbox() {
-        NavHostFragment.findNavController(this).navigate(
-                R.id.inboxFragment, null, AuthNav.signedInOptions());
+    private void openSignedInDestination() {
+        AuthNav.openSignedIn(NavHostFragment.findNavController(this),
+                AuthNav.returnInviteToken(getArguments()));
     }
 
     @Nullable

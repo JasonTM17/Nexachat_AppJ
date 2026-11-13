@@ -38,8 +38,7 @@ public final class LoginFragment extends Fragment {
 
     @Override public void onViewCreated(@NonNull View view, @Nullable Bundle state) {
         viewModel = new ViewModelProvider(this).get(AuthViewModel.class);
-        returnInviteToken = getArguments() == null
-                ? null : getArguments().getString("returnInviteToken");
+        returnInviteToken = AuthNav.returnInviteToken(getArguments());
         sessionExpired = getArguments() != null
                 && getArguments().getBoolean("showSessionExpired", false);
         binding.phoneInput.addTextChangedListener(watcher(viewModel::onPhoneChange));
@@ -53,10 +52,10 @@ public final class LoginFragment extends Fragment {
         binding.googleSignIn.setOnClickListener(v -> viewModel.googleSignIn(requireActivity()));
         binding.secondaryAction.setText(R.string.action_create_account);
         View.OnClickListener openRegister = v -> {
-            Bundle args = inviteReturnArgs();
+            Bundle args = AuthNav.inviteReturnArgs(returnInviteToken);
             NavHostFragment.findNavController(this).navigate(
                     R.id.registerFragment,
-                    args.isEmpty() ? null : args,
+                    args,
                     AuthNav.authTabSwitchOptions());
         };
         binding.secondaryAction.setOnClickListener(openRegister);
@@ -106,14 +105,7 @@ public final class LoginFragment extends Fragment {
             return;
         }
         if (event == AuthViewModel.Event.LoggedIn) {
-            int destination = returnInviteToken == null
-                    ? R.id.inboxFragment : R.id.inviteJoinFragment;
-            Bundle args = returnInviteToken == null ? null : new Bundle();
-            if (args != null) {
-                args.putString("token", returnInviteToken);
-            }
-            NavHostFragment.findNavController(this).navigate(
-                    destination, args, AuthNav.signedInOptions());
+            AuthNav.openSignedIn(NavHostFragment.findNavController(this), returnInviteToken);
         }
     }
 
@@ -122,7 +114,8 @@ public final class LoginFragment extends Fragment {
             return;
         }
         NavHostFragment.findNavController(this).navigate(
-                R.id.completeProfileFragment, null, AuthNav.signedInOptions());
+                R.id.completeProfileFragment, AuthNav.inviteReturnArgs(returnInviteToken),
+                AuthNav.signedInOptions());
     }
 
     private TextWatcher watcher(java.util.function.Consumer<String> change) { return new TextWatcher() {
@@ -139,11 +132,6 @@ public final class LoginFragment extends Fragment {
         viewModel.login();
     }
 
-    private Bundle inviteReturnArgs() {
-        Bundle args = new Bundle();
-        if (returnInviteToken != null) args.putString("returnInviteToken", returnInviteToken);
-        return args;
-    }
 
     private void render(AuthViewModel.UiState state) {
         rendering = true;
