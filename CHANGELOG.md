@@ -6,6 +6,33 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-13
+
+Patch release after `v1.2.0`: a Google-only account can delete itself with an
+email code. No new migration. Deploy the server before distributing the APK.
+See [docs/release-notes/v1.2.1.md](docs/release-notes/v1.2.1.md).
+
+### Server
+
+**Added**
+
+- `POST /users/me/deletion-code` (authenticated, `202`) emails a 6-digit code
+  (10 min, 5 attempts, single use, 60 s cooldown) to the verified email of a
+  passwordless account; `409 PASSWORD_REQUIRED` for accounts with a password.
+- `DELETE /users/me` accepts `{password?, code?}`.
+- `GET /users/me` returns `passwordSet`.
+
+### Android
+
+**Fixed**
+
+- Account deletion works for Google-only accounts through the email code flow.
+
+### Known limitations
+
+- A Google-only account cannot add a phone number or set a password.
+- Message summaries are not purged when a message is recalled.
+
 ## [1.2.0] - 2026-11-13
 
 Minor release after `v1.1.2`: sign up and sign in with Google, bounded sync v2
