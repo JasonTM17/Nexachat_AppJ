@@ -447,8 +447,16 @@ public final class SyncEngine {
             if (current == null) return candidate;
             Instant currentInstant = parseServerTime(current);
             Instant candidateInstant = parseServerTime(candidate);
-            if (currentInstant == null) return candidateInstant == null ? current : candidate;
-            return candidateInstant != null && candidateInstant.isBefore(currentInstant) ? candidate : current;
+            if (currentInstant == null || candidateInstant == null) {
+                // Opaque sync cursors advance on the last successful batch;
+                // legacy edit/recall pages use ISO-8601 timestamps and keep the earliest.
+                if (currentInstant == null && candidateInstant == null) {
+                    return candidate;
+                }
+                if (currentInstant == null) return candidate;
+                return current;
+            }
+            return candidateInstant.isBefore(currentInstant) ? candidate : current;
         });
     }
 
@@ -619,17 +627,11 @@ public final class SyncEngine {
                             List<MessageEntity> newEntities = new ArrayList<>();
                             List<String> reactionMsgIds = new ArrayList<>();
                             List<MessageReactionEntity> reactionEntities = new ArrayList<>();
-                            int incoming = 0;
 
                             for (MessageDto dto : delta.getNewMessages()) {
                                 MessageEntity entity = toEntity(dto, conversationId);
                                 if (entity != null) {
-                                    boolean isNew = messageDao.byId(entity.getId()).blockingGet() == null;
                                     newEntities.add(entity);
-                                    if (isNew && entity.getDeletedAtEpochMs() == null
-                                            && !myUserId.equals(entity.getSenderId())) {
-                                        incoming++;
-                                    }
                                     if (dto.getReactions() != null && !dto.getReactions().isEmpty()) {
                                         reactionMsgIds.add(entity.getId());
                                         for (ReactionSummaryDto summary : dto.getReactions()) {
@@ -650,23 +652,6 @@ public final class SyncEngine {
                                         last.getSenderDisplayName() != null ? last.getSenderDisplayName() : "",
                                         last.getCreatedAt()
                                 ).blockingAwait();
-                            }
-                            if (incoming > 0) {
-                                conversationDao.incrementUnread(conversationId, incoming).blockingAwait();
-                            }
-                            for (MessageEntity entity : newEntities) {
-                                if (entity.getClientMessageId() == null
-                                        || !myUserId.equals(entity.getSenderId())) {
-                                    continue;
-                                }
-                                MessageEntity committed = messageDao.byId(entity.getId()).blockingGet();
-                                if (committed != null && myUserId.equals(committed.getSenderId())
-                                        && conversationId.equals(committed.getConversationId())
-                                        && (committed.getClientMessageId() == null
-                                        || entity.getClientMessageId().equals(committed.getClientMessageId()))) {
-                                    appDatabase.outboxDao().delete(
-                                            entity.getClientMessageId(), myUserId).blockingAwait();
-                                }
                             }
                             if (!reactionMsgIds.isEmpty()) {
                                 reactionDao.replaceForMessagesInTransaction(reactionMsgIds, reactionEntities);

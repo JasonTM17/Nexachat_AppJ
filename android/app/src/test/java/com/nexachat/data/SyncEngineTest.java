@@ -4,7 +4,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -100,11 +99,9 @@ public final class SyncEngineTest {
         when(tokenStore.saveSyncServerTime(anyString(), anyString())).thenReturn(Completable.complete());
         when(conversationDao.bumpPeerReadSeq(anyString(), anyLong())).thenReturn(Completable.complete());
         when(conversationDao.bumpPeerDeliveredSeq(anyString(), anyLong())).thenReturn(Completable.complete());
-        when(messageDao.byId(anyString())).thenReturn(Maybe.empty());
         when(messageDao.update(any(MessageEntity.class))).thenReturn(Completable.complete());
         when(messageDao.upsertAll(anyList())).thenReturn(Completable.complete());
         when(messageDao.clearReplySnippets(anyString())).thenReturn(Completable.complete());
-        when(conversationDao.incrementUnread(anyString(), anyInt())).thenReturn(Completable.complete());
         when(conversationDao.updateLastMessageContent(anyString(), anyLong(), anyString()))
                 .thenReturn(Completable.complete());
         when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong()))
@@ -119,7 +116,6 @@ public final class SyncEngineTest {
         outboxDao = mock(OutboxDao.class);
         when(pinDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
         when(outboxDao.deleteForConversation(anyString(), anyString())).thenReturn(Completable.complete());
-        when(outboxDao.delete(anyString(), anyString())).thenReturn(Completable.complete());
         when(appDatabase.pinDao()).thenReturn(pinDao);
         when(appDatabase.outboxDao()).thenReturn(outboxDao);
         when(appDatabase.messageDao()).thenReturn(messageDao);
