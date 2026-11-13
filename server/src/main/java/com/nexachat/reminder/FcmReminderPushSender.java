@@ -22,8 +22,10 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -46,6 +48,12 @@ public class FcmReminderPushSender implements ReminderPushSender {
     private final DeviceTokenService deviceTokenService;
     private final ObservabilityMetrics metrics;
     private final long pushTimeoutMs;
+    /**
+     * Targets accepted for an occurrence that still has a retryable miss.
+     * Cleared once that occurrence meets the delivery policy. A restarted
+     * process does not have this set, so a target may be pushed again.
+     */
+    private final Set<SettledTarget> settledTargets = ConcurrentHashMap.newKeySet();
 
     public FcmReminderPushSender(UserDeviceTokenRepository tokenRepository,
                                  FcmGateway fcmGateway,
@@ -84,8 +92,12 @@ public class FcmReminderPushSender implements ReminderPushSender {
         List<Map.Entry<UUID, UserDeviceToken>> targets = new ArrayList<>();
         DeviceTokenOwners.byCurrentOwner(rowsByAccount).forEach((accountId, owned) ->
                 owned.forEach(device -> targets.add(Map.entry(accountId, device))));
+        boolean retryable = false;
         for (Map.Entry<UUID, UserDeviceToken> target : targets) {
             String token = target.getValue().getToken();
+            if (settledTargets.contains(new SettledTarget(occurrence, token))) {
+                continue;
+            }
             Map<String, String> data = new HashMap<>();
             data.put("type", "REMINDER");
             data.put("recipientId", target.getKey().toString());
@@ -100,40 +112,61 @@ public class FcmReminderPushSender implements ReminderPushSender {
                 futures.add(future);
             } catch (RuntimeException failure) {
                 metrics.recordPushSend("ERROR");
+                retryable = true;
                 log.warn("Reminder {}: FCM dispatch failed ({})",
                         reminder.reminderId(), failure.getClass().getSimpleName());
             }
         }
 
         long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.max(1L, pushTimeoutMs));
+        boolean interrupted = false;
         for (int i = 0; i < futures.size(); i++) {
             String token = tokenValues.get(i);
             try {
                 long remaining = Math.max(0L, deadlineNanos - System.nanoTime());
                 PushResult result = futures.get(i).get(remaining, TimeUnit.NANOSECONDS);
-                if (result.success()) {
+                if (result != null && result.success()) {
                     metrics.recordPushSend("SUCCESS");
-                } else if (result.unregistered()) {
+                    settledTargets.add(new SettledTarget(occurrence, token));
+                } else if (result != null && result.unregistered()) {
                     metrics.recordPushSend("UNREGISTERED");
                     removeUnregisteredToken(token);
+                    settledTargets.add(new SettledTarget(occurrence, token));
                 } else {
                     metrics.recordPushSend("FAILURE");
+                    retryable = true;
                 }
             } catch (TimeoutException timeout) {
                 metrics.recordPushSend("ERROR");
+                retryable = true;
                 log.warn("Reminder {}: FCM push timed out", reminder.reminderId());
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
+            } catch (InterruptedException interruptedWait) {
+                interrupted = true;
+                Thread.interrupted();
                 metrics.recordPushSend("ERROR");
-                return;
+                retryable = true;
+                log.warn("Reminder {}: FCM push interrupted", reminder.reminderId());
             } catch (ExecutionException failure) {
                 metrics.recordPushSend("ERROR");
+                retryable = true;
                 log.warn("Reminder {}: FCM push failed ({})",
                         reminder.reminderId(), failure.getClass().getSimpleName());
             }
         }
+        if (!retryable) {
+            settledTargets.removeIf(settled -> occurrence.equals(settled.occurrence()));
+        }
         log.info("Reminder {} push attempted for {} recipient target(s)",
                 reminder.reminderId(), futures.size());
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+        }
+        if (retryable) {
+            throw new ReminderPushSender.RetryableDeliveryException();
+        }
+    }
+
+    private record SettledTarget(String occurrence, String token) {
     }
 
     /**

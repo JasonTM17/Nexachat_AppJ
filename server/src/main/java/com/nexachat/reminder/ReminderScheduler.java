@@ -32,7 +32,11 @@ import java.util.concurrent.ScheduledFuture;
  * <p>The database claim protocol remains the authority when two instances wake:
  * rows are locked with {@code FOR UPDATE SKIP LOCKED}, claimed with a lease
  * token, pushed to current members, then advanced under the row lock. The lease
- * makes a crash recoverable and preserves at-least-once delivery.</p>
+ * makes a crash recoverable and preserves at-least-once delivery. A retryable
+ * push failure does not advance the occurrence. The later attempt reuses the
+ * same occurrence identity; targets this process has already accepted are not
+ * pushed again, and a target whose result was not observed may be pushed
+ * again.</p>
  */
 @Component
 public class ReminderScheduler {
@@ -122,7 +126,16 @@ public class ReminderScheduler {
                 }
                 ReminderDelivery delivery = snapshot.get();
                 List<UUID> memberIds = memberRepository.findMemberUserIds(delivery.conversationId());
-                pushSender.send(delivery, memberIds);
+                try {
+                    pushSender.send(delivery, memberIds);
+                } catch (ReminderPushSender.RetryableDeliveryException failure) {
+                    // An interrupt while waiting on a push is a retryable miss,
+                    // not a request to stop the scheduler thread.
+                    Thread.interrupted();
+                    log.warn("Reminder {} delivery incomplete ({}); it will be retried after the claim lease",
+                            reminderId, failure.getClass().getSimpleName());
+                    continue;
+                }
                 if (claimService.advance(reminderId, claimToken)) {
                     advanced++;
                 }

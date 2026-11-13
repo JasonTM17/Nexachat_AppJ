@@ -17,6 +17,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
@@ -62,10 +63,12 @@ class FcmReminderPushSenderTest {
                 .thenReturn(CompletableFuture.completedFuture(
                         PushResult.unregistered("UNREGISTERED")));
 
-        sender.send(delivery, List.of(UUID.randomUUID(), UUID.randomUUID()));
+        assertThatThrownBy(() -> sender.send(delivery, List.of(UUID.randomUUID(), UUID.randomUUID())))
+                .isInstanceOf(ReminderPushSender.RetryableDeliveryException.class);
 
         // The unregistered token is token-2; the failed synchronous call for
-        // token-1 must not shift the token/future pairing.
+        // token-1 must not shift the token/future pairing. The failure is
+        // raised only after every target has been attempted.
         verify(deviceTokenService).unregisterToken("token-2");
         verify(deviceTokenService, never()).unregisterToken("token-1");
         verify(metrics).recordPushSend("ERROR");
