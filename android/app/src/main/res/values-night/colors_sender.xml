@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="sender_violet">#FFB3B3DA</color>
+    <color name="sender_blue">#FF94BED5</color>
+    <color name="sender_cyan">#FF8EC3C4</color>
+    <color name="sender_olive">#FFBABB92</color>
+    <color name="sender_bronze">#FFCFB192</color>
+</resources>

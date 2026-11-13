@@ -16,24 +16,24 @@ import static org.junit.Assert.assertTrue;
 public final class MessageBubbleSenderPaletteTest {
     private static final int[] EXPECTED_COLOR_RESOURCES = {
             R.color.colorPrimary,
-            R.color.colorTertiary,
-            R.color.slate_muted,
-            R.color.colorSecondary,
-            R.color.colorOnPrimaryContainer,
-            R.color.colorOnSecondaryContainer,
-            R.color.colorOnTertiaryContainer,
-            R.color.slate_on_secondary_container
+            R.color.sender_violet,
+            R.color.sender_blue,
+            R.color.sender_cyan,
+            R.color.sender_olive,
+            R.color.sender_bronze,
+            R.color.colorPrimary,
+            R.color.sender_blue
     };
 
     private static final String[] ROLE_NAMES = {
             "colorPrimary",
-            "colorTertiary",
-            "slate_muted",
-            "colorSecondary",
-            "colorOnPrimaryContainer",
-            "colorOnSecondaryContainer",
-            "colorOnTertiaryContainer",
-            "slate_on_secondary_container"
+            "sender_violet",
+            "sender_blue",
+            "sender_cyan",
+            "sender_olive",
+            "sender_bronze",
+            "colorPrimary",
+            "sender_blue"
     };
 
     @Test
@@ -47,7 +47,9 @@ public final class MessageBubbleSenderPaletteTest {
     @Test
     public void everySenderRoleMeetsTextContrastOnIncomingBubbleInBothThemes() throws Exception {
         for (String theme : new String[]{"values", "values-night"}) {
-            Map<String, String> colors = readColors(new File("src/main/res/" + theme + "/colors_nexachat.xml"));
+            Map<String, String> colors = readColors(
+                    new File("src/main/res/" + theme + "/colors_nexachat.xml"));
+            colors.putAll(readColors(new File("src/main/res/" + theme + "/colors_sender.xml")));
             int incomingBubble = parseColor(resolveColor("bubble_other", colors));
             for (String role : ROLE_NAMES) {
                 int foreground = parseColor(resolveColor(role, colors));

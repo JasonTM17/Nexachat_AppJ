@@ -53,6 +53,17 @@ public final class ContrastUnitTest {
             "nexa_outlined_button_text.xml"
     };
 
+    private static final String[] SENDER_PALETTE = {
+            "colorPrimary",
+            "sender_violet",
+            "sender_blue",
+            "sender_cyan",
+            "sender_olive",
+            "sender_bronze",
+            "colorPrimary",
+            "sender_blue"
+    };
+
     private File resDir;
 
     @Before
@@ -370,19 +381,21 @@ public final class ContrastUnitTest {
         assertContrastAtLeast(theme + ": read tick on outgoing bubble",
                 colors.get("chat_bubble_read_tick"), colors.get("bubble_mine"), 3.0);
 
-        String[] senderColors = {
-                "colorPrimary",
-                "colorTertiary",
-                "slate_muted",
-                "colorError",
-                "colorOnPrimaryContainer",
-                "colorOnSecondaryContainer",
-                "colorOnTertiaryContainer",
-                "colorOnErrorContainer"
+        assertEquals(theme + ": sender palette must contain eight slots", 8, SENDER_PALETTE.length);
+        String[] senderBackgrounds = {
+                "bubble_other",
+                "nexa_pressed_incoming",
+                "colorSecondaryContainer",
+                "colorErrorContainer"
         };
-        for (int index = 0; index < senderColors.length; index++) {
-            assertContrastAtLeast(theme + ": sender palette " + index + " on incoming bubble",
-                    colors.get(senderColors[index]), colors.get("bubble_other"), 4.5);
+        for (int index = 0; index < SENDER_PALETTE.length; index++) {
+            String senderColor = SENDER_PALETTE[index];
+            assertFalse(theme + ": sender palette must not use an error role: " + senderColor,
+                    senderColor.toLowerCase().contains("error"));
+            for (String background : senderBackgrounds) {
+                assertContrastAtLeast(theme + ": sender palette " + index + " on " + background,
+                        colors.get(senderColor), colors.get(background), 4.5);
+            }
         }
     }
 

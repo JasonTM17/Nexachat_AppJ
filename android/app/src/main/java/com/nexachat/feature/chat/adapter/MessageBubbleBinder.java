@@ -67,13 +67,13 @@ public final class MessageBubbleBinder {
             new ImageAttachmentBinding<>();
     private static final int[] SENDER_NAME_COLORS = {
             R.color.colorPrimary,
-            R.color.colorTertiary,
-            R.color.slate_muted,
-            R.color.colorSecondary,
-            R.color.colorOnPrimaryContainer,
-            R.color.colorOnSecondaryContainer,
-            R.color.colorOnTertiaryContainer,
-            R.color.slate_on_secondary_container
+            R.color.sender_violet,
+            R.color.sender_blue,
+            R.color.sender_cyan,
+            R.color.sender_olive,
+            R.color.sender_bronze,
+            R.color.colorPrimary,
+            R.color.sender_blue
     };
 
     private final DateFormat timeFormat;

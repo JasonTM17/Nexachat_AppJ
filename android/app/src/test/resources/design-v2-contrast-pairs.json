@@ -318,15 +318,15 @@
     {
       "theme": "light",
       "use": "Button / unread badge / send / FAB",
-      "foreground": "colorOnPrimary",
-      "background": "colorPrimary",
+      "foreground": "brand_on_fill",
+      "background": "brand_fill",
       "minimum": 4.5
     },
     {
       "theme": "light",
       "use": "Pressed button",
-      "foreground": "colorOnPrimary",
-      "background": "nexa_pressed_primary",
+      "foreground": "brand_on_fill",
+      "background": "brand_pressed",
       "minimum": 4.5
     },
     {
@@ -492,113 +492,113 @@
     },
     {
       "theme": "light",
-      "use": "Existing eight sender-name colors",
+      "use": "Sender name slot 0",
       "foreground": "colorPrimary",
       "background": "bubble_other",
       "minimum": 4.5
     },
     {
       "theme": "light",
-      "use": "Pressed sender-name colors",
+      "use": "Pressed sender name slot 0",
       "foreground": "colorPrimary",
       "background": "nexa_pressed_incoming",
       "minimum": 4.5
     },
     {
       "theme": "light",
-      "use": "Existing eight sender-name colors",
-      "foreground": "colorTertiary",
+      "use": "Sender name slot 1",
+      "foreground": "sender_violet",
       "background": "bubble_other",
       "minimum": 4.5
     },
     {
       "theme": "light",
-      "use": "Pressed sender-name colors",
-      "foreground": "colorTertiary",
+      "use": "Pressed sender name slot 1",
+      "foreground": "sender_violet",
       "background": "nexa_pressed_incoming",
       "minimum": 4.5
     },
     {
       "theme": "light",
-      "use": "Existing eight sender-name colors",
-      "foreground": "slate_muted",
+      "use": "Sender name slot 2",
+      "foreground": "sender_blue",
       "background": "bubble_other",
       "minimum": 4.5
     },
     {
       "theme": "light",
-      "use": "Pressed sender-name colors",
-      "foreground": "slate_muted",
+      "use": "Pressed sender name slot 2",
+      "foreground": "sender_blue",
       "background": "nexa_pressed_incoming",
       "minimum": 4.5
     },
     {
       "theme": "light",
-      "use": "Existing eight sender-name colors",
-      "foreground": "colorError",
+      "use": "Sender name slot 3",
+      "foreground": "sender_cyan",
       "background": "bubble_other",
       "minimum": 4.5
     },
     {
       "theme": "light",
-      "use": "Pressed sender-name colors",
-      "foreground": "colorError",
+      "use": "Pressed sender name slot 3",
+      "foreground": "sender_cyan",
       "background": "nexa_pressed_incoming",
       "minimum": 4.5
     },
     {
       "theme": "light",
-      "use": "Existing eight sender-name colors",
-      "foreground": "colorOnPrimaryContainer",
+      "use": "Sender name slot 4",
+      "foreground": "sender_olive",
       "background": "bubble_other",
       "minimum": 4.5
     },
     {
       "theme": "light",
-      "use": "Pressed sender-name colors",
-      "foreground": "colorOnPrimaryContainer",
+      "use": "Pressed sender name slot 4",
+      "foreground": "sender_olive",
       "background": "nexa_pressed_incoming",
       "minimum": 4.5
     },
     {
       "theme": "light",
-      "use": "Existing eight sender-name colors",
-      "foreground": "colorOnSecondaryContainer",
+      "use": "Sender name slot 5",
+      "foreground": "sender_bronze",
       "background": "bubble_other",
       "minimum": 4.5
     },
     {
       "theme": "light",
-      "use": "Pressed sender-name colors",
-      "foreground": "colorOnSecondaryContainer",
+      "use": "Pressed sender name slot 5",
+      "foreground": "sender_bronze",
       "background": "nexa_pressed_incoming",
       "minimum": 4.5
     },
     {
       "theme": "light",
-      "use": "Existing eight sender-name colors",
-      "foreground": "colorOnTertiaryContainer",
+      "use": "Sender name slot 6",
+      "foreground": "colorPrimary",
       "background": "bubble_other",
       "minimum": 4.5
     },
     {
       "theme": "light",
-      "use": "Pressed sender-name colors",
-      "foreground": "colorOnTertiaryContainer",
+      "use": "Pressed sender name slot 6",
+      "foreground": "colorPrimary",
       "background": "nexa_pressed_incoming",
       "minimum": 4.5
     },
     {
       "theme": "light",
-      "use": "Existing eight sender-name colors",
-      "foreground": "colorOnErrorContainer",
+      "use": "Sender name slot 7",
+      "foreground": "sender_blue",
       "background": "bubble_other",
       "minimum": 4.5
     },
     {
       "theme": "light",
-      "use": "Pressed sender-name colors",
-      "foreground": "colorOnErrorContainer",
+      "use": "Pressed sender name slot 7",
+      "foreground": "sender_blue",
       "background": "nexa_pressed_incoming",
       "minimum": 4.5
     },
@@ -1263,15 +1263,15 @@
     {
       "theme": "dark",
       "use": "Button / unread badge / send / FAB",
-      "foreground": "colorOnPrimary",
-      "background": "colorPrimary",
+      "foreground": "brand_on_fill",
+      "background": "brand_fill",
       "minimum": 4.5
     },
     {
       "theme": "dark",
       "use": "Pressed button",
-      "foreground": "colorOnPrimary",
-      "background": "nexa_pressed_primary",
+      "foreground": "brand_on_fill",
+      "background": "brand_pressed",
       "minimum": 4.5
     },
     {
@@ -1437,113 +1437,113 @@
     },
     {
       "theme": "dark",
-      "use": "Existing eight sender-name colors",
+      "use": "Sender name slot 0",
       "foreground": "colorPrimary",
       "background": "bubble_other",
       "minimum": 4.5
     },
     {
       "theme": "dark",
-      "use": "Pressed sender-name colors",
+      "use": "Pressed sender name slot 0",
       "foreground": "colorPrimary",
       "background": "nexa_pressed_incoming",
       "minimum": 4.5
     },
     {
       "theme": "dark",
-      "use": "Existing eight sender-name colors",
-      "foreground": "colorTertiary",
+      "use": "Sender name slot 1",
+      "foreground": "sender_violet",
       "background": "bubble_other",
       "minimum": 4.5
     },
     {
       "theme": "dark",
-      "use": "Pressed sender-name colors",
-      "foreground": "colorTertiary",
+      "use": "Pressed sender name slot 1",
+      "foreground": "sender_violet",
       "background": "nexa_pressed_incoming",
       "minimum": 4.5
     },
     {
       "theme": "dark",
-      "use": "Existing eight sender-name colors",
-      "foreground": "slate_muted",
+      "use": "Sender name slot 2",
+      "foreground": "sender_blue",
       "background": "bubble_other",
       "minimum": 4.5
     },
     {
       "theme": "dark",
-      "use": "Pressed sender-name colors",
-      "foreground": "slate_muted",
+      "use": "Pressed sender name slot 2",
+      "foreground": "sender_blue",
       "background": "nexa_pressed_incoming",
       "minimum": 4.5
     },
     {
       "theme": "dark",
-      "use": "Existing eight sender-name colors",
-      "foreground": "colorError",
+      "use": "Sender name slot 3",
+      "foreground": "sender_cyan",
       "background": "bubble_other",
       "minimum": 4.5
     },
     {
       "theme": "dark",
-      "use": "Pressed sender-name colors",
-      "foreground": "colorError",
+      "use": "Pressed sender name slot 3",
+      "foreground": "sender_cyan",
       "background": "nexa_pressed_incoming",
       "minimum": 4.5
     },
     {
       "theme": "dark",
-      "use": "Existing eight sender-name colors",
-      "foreground": "colorOnPrimaryContainer",
+      "use": "Sender name slot 4",
+      "foreground": "sender_olive",
       "background": "bubble_other",
       "minimum": 4.5
     },
     {
       "theme": "dark",
-      "use": "Pressed sender-name colors",
-      "foreground": "colorOnPrimaryContainer",
+      "use": "Pressed sender name slot 4",
+      "foreground": "sender_olive",
       "background": "nexa_pressed_incoming",
       "minimum": 4.5
     },
     {
       "theme": "dark",
-      "use": "Existing eight sender-name colors",
-      "foreground": "colorOnSecondaryContainer",
+      "use": "Sender name slot 5",
+      "foreground": "sender_bronze",
       "background": "bubble_other",
       "minimum": 4.5
     },
     {
       "theme": "dark",
-      "use": "Pressed sender-name colors",
-      "foreground": "colorOnSecondaryContainer",
+      "use": "Pressed sender name slot 5",
+      "foreground": "sender_bronze",
       "background": "nexa_pressed_incoming",
       "minimum": 4.5
     },
     {
       "theme": "dark",
-      "use": "Existing eight sender-name colors",
-      "foreground": "colorOnTertiaryContainer",
+      "use": "Sender name slot 6",
+      "foreground": "colorPrimary",
       "background": "bubble_other",
       "minimum": 4.5
     },
     {
       "theme": "dark",
-      "use": "Pressed sender-name colors",
-      "foreground": "colorOnTertiaryContainer",
+      "use": "Pressed sender name slot 6",
+      "foreground": "colorPrimary",
       "background": "nexa_pressed_incoming",
       "minimum": 4.5
     },
     {
       "theme": "dark",
-      "use": "Existing eight sender-name colors",
-      "foreground": "colorOnErrorContainer",
+      "use": "Sender name slot 7",
+      "foreground": "sender_blue",
       "background": "bubble_other",
       "minimum": 4.5
     },
     {
       "theme": "dark",
-      "use": "Pressed sender-name colors",
-      "foreground": "colorOnErrorContainer",
+      "use": "Pressed sender name slot 7",
+      "foreground": "sender_blue",
       "background": "nexa_pressed_incoming",
       "minimum": 4.5
     },

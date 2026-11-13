@@ -40,7 +40,7 @@ public final class InboxThemeContrastTest {
 
     @Test
     public void lightSurfaceAndAccentPairsMeetContrastTargets() throws Exception {
-        Map<String, String> colors = loadColors(new File(resDir, "values/colors_nexachat.xml"));
+        Map<String, String> colors = loadThemeColors(false);
         assertPair(colors, "colorOnSurface", "colorSurfaceContainer", 4.5);
         assertPair(colors, "colorOnSurface", "colorSurfaceContainerHigh", 4.5);
         assertPair(colors, "colorOnSurface", "colorSurfaceContainerHighest", 4.5);
@@ -53,8 +53,7 @@ public final class InboxThemeContrastTest {
 
     @Test
     public void darkSurfaceAndAccentPairsMeetContrastTargets() throws Exception {
-        Map<String, String> colors = loadColors(
-                new File(resDir, "values-night/colors_nexachat.xml"));
+        Map<String, String> colors = loadThemeColors(true);
         assertPair(colors, "colorOnSurface", "colorSurfaceContainer", 4.5);
         assertPair(colors, "colorOnSurface", "colorSurfaceContainerHigh", 4.5);
         assertPair(colors, "colorOnSurface", "colorSurfaceContainerHighest", 4.5);
@@ -66,9 +65,8 @@ public final class InboxThemeContrastTest {
     }
 
     /**
-     * Checked inbox filter chips fill with {@code colorPrimary}. In dark mode that
-     * primary is the pale mark {@code #DDA7CC}, so the checked label has to be
-     * {@code colorOnPrimary}.
+     * Checked inbox filter chips use the shared brand fill and on-fill roles in
+     * both themes; the night primary remains an accent for text, icons and strokes.
      */
     @Test
     public void checkedFilterChipTextOnPrimaryMeetsContrast() throws Exception {
@@ -89,12 +87,12 @@ public final class InboxThemeContrastTest {
                 filterStyle, "android:textColor", true, false);
         String pressedFillName = selectorColor(
                 filterStyle, "chipBackgroundColor", true, true);
-        Map<String, String> light = loadColors(new File(resDir, "values/colors_nexachat.xml"));
-        Map<String, String> dark = loadColors(new File(resDir, "values-night/colors_nexachat.xml"));
-        assertPair(dark, textName, "colorPrimary", 4.5);
-        assertPair(light, textName, "colorPrimary", 4.5);
-        assertEquals("checked filter label must use the on-primary token",
-                "colorOnPrimary", textName);
+        Map<String, String> light = loadThemeColors(false);
+        Map<String, String> dark = loadThemeColors(true);
+        assertPair(dark, textName, "brand_fill", 4.5);
+        assertPair(light, textName, "brand_fill", 4.5);
+        assertEquals("checked filter label must use the on-fill token",
+                "brand_on_fill", textName);
         assertPair(light, textName, pressedFillName, 4.5);
         assertPair(dark, textName, pressedFillName, 4.5);
     }
@@ -121,6 +119,15 @@ public final class InboxThemeContrastTest {
             resolved.put(name, value);
         }
         return resolved;
+    }
+
+    private Map<String, String> loadThemeColors(boolean night) throws Exception {
+        Map<String, String> colors = loadColors(new File(resDir, "values/colors_nexachat.xml"));
+        colors.putAll(loadColors(new File(resDir, "values/colors_brand_fill.xml")));
+        if (night) {
+            colors.putAll(loadColors(new File(resDir, "values-night/colors_nexachat.xml")));
+        }
+        return colors;
     }
 
     private String selectorColor(Element style, String itemName, boolean checked, boolean pressed)
