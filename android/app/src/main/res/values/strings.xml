@@ -607,4 +607,6 @@
     <string name="cd_sign_in_method_google">Google sign-in method</string>
     <string name="add_contact_title">Add contact</string>
     <string name="add_contact_field_label">Phone or email</string>
+    <!-- chat recovery -->
+    <string name="action_open_app_settings">Open settings</string>
 </resources>

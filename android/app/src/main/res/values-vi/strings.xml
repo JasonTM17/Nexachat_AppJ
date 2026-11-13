@@ -600,4 +600,6 @@
     <string name="cd_sign_in_method_google">Phương thức đăng nhập Google</string>
     <string name="add_contact_title">Thêm liên hệ</string>
     <string name="add_contact_field_label">Số điện thoại hoặc email</string>
+    <!-- chat recovery -->
+    <string name="action_open_app_settings">Mở cài đặt</string>
 </resources>

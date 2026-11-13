@@ -5,9 +5,11 @@ import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.content.ActivityNotFoundException;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.graphics.Typeface;
 import android.text.Editable;
 import android.text.Spannable;
@@ -33,6 +35,7 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
+import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import androidx.lifecycle.LiveData;
@@ -89,6 +92,8 @@ import javax.inject.Inject;
 @AndroidEntryPoint
 public final class ChatFragment extends androidx.fragment.app.Fragment implements MessageActionListener {
     @Inject ForegroundConversationTracker foregroundConversationTracker;
+    private static final String PREFS_VOICE_PERMISSION = "chat_voice_permission";
+    private static final String KEY_RECORD_AUDIO_REQUESTED = "record_audio_requested";
     private static final String ARG_CONVERSATION_ID = "conversationId";
     private static final String ARG_ARCHIVE_JUMP_MESSAGE_ID = "archiveJumpMessageId";
     private static final int MENU_ASK = 1;
@@ -148,11 +153,21 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                     new ActivityResultContracts.RequestPermission(),
                     isGranted -> {
                         if (binding == null) return;
-                        if (Boolean.TRUE.equals(isGranted)) {
-                            Snackbar.make(binding.getRoot(), R.string.voice_too_short, Snackbar.LENGTH_SHORT).show();
-                        } else {
-                            Snackbar.make(binding.getRoot(), R.string.voice_permission_required, Snackbar.LENGTH_LONG).show();
+                        boolean granted = Boolean.TRUE.equals(isGranted);
+                        boolean rationale = ActivityCompat.shouldShowRequestPermissionRationale(
+                                requireActivity(), Manifest.permission.RECORD_AUDIO);
+                        VoiceRecordPermissionHelper.ResultAction action =
+                                VoiceRecordPermissionHelper.permissionResultAction(
+                                        granted, rationale, recordAudioPermissionRequested());
+                        if (action == VoiceRecordPermissionHelper.ResultAction.NONE) {
+                            if (!VoiceRecordPermissionHelper.shouldBeginRecordingAfterPermissionGrant()) {
+                                Snackbar.make(binding.getRoot(), R.string.voice_too_short,
+                                        Snackbar.LENGTH_SHORT).show();
+                            }
+                            return;
                         }
+                        showVoicePermissionSnackbar(
+                                action == VoiceRecordPermissionHelper.ResultAction.PERMANENT_DENIAL_SNACKBAR);
                     });
 
     private VoiceRecorder voiceRecorder;
@@ -548,12 +563,67 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     }
 
     private boolean ensureRecordAudioPermission() {
-        if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.RECORD_AUDIO)
-                == PackageManager.PERMISSION_GRANTED) {
+        boolean granted = ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.RECORD_AUDIO)
+                == PackageManager.PERMISSION_GRANTED;
+        boolean rationale = ActivityCompat.shouldShowRequestPermissionRationale(
+                requireActivity(), Manifest.permission.RECORD_AUDIO);
+        VoiceRecordPermissionHelper.TapAction action = VoiceRecordPermissionHelper.tapAction(
+                granted, rationale, recordAudioPermissionRequested());
+        if (action == VoiceRecordPermissionHelper.TapAction.PROCEED) {
             return true;
         }
-        recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO);
+        if (action == VoiceRecordPermissionHelper.TapAction.SHOW_RATIONALE) {
+            showMicRationaleThenRequest();
+        } else if (action == VoiceRecordPermissionHelper.TapAction.REQUEST_PERMISSION) {
+            launchRecordAudioRequest();
+        } else if (action == VoiceRecordPermissionHelper.TapAction.OPEN_SETTINGS) {
+            showVoicePermissionSnackbar(true);
+        }
         return false;
+    }
+
+    private void launchRecordAudioRequest() {
+        markRecordAudioRequested();
+        recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO);
+    }
+
+    private void showMicRationaleThenRequest() {
+        new AlertDialog.Builder(requireContext())
+                .setMessage(R.string.call_mic_rationale)
+                .setPositiveButton(R.string.call_permission_continue,
+                        (dialog, which) -> launchRecordAudioRequest())
+                .setNegativeButton(R.string.call_permission_cancel, null)
+                .show();
+    }
+
+    private void showVoicePermissionSnackbar(boolean offerSettings) {
+        if (binding == null) return;
+        Snackbar snackbar = Snackbar.make(
+                binding.getRoot(), R.string.voice_permission_required, Snackbar.LENGTH_LONG);
+        if (offerSettings) {
+            snackbar.setAction(R.string.action_open_app_settings, v -> openAppSettings());
+        }
+        snackbar.show();
+    }
+
+    private void openAppSettings() {
+        try {
+            startActivity(new Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:" + requireContext().getPackageName())));
+        } catch (ActivityNotFoundException ignored) {
+            // No system handler; the snackbar already explained the requirement.
+        }
+    }
+
+    private boolean recordAudioPermissionRequested() {
+        return requireContext().getSharedPreferences(PREFS_VOICE_PERMISSION, android.content.Context.MODE_PRIVATE)
+                .getBoolean(KEY_RECORD_AUDIO_REQUESTED, false);
+    }
+
+    private void markRecordAudioRequested() {
+        requireContext().getSharedPreferences(PREFS_VOICE_PERMISSION, android.content.Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_RECORD_AUDIO_REQUESTED, true).apply();
     }
 
     private boolean beginVoiceRecording(@NonNull View source) {
