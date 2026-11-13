@@ -152,6 +152,8 @@
                             android:layout_height="wrap_content"
                             android:layout_marginEnd="@dimen/space_xs"
                             android:layout_weight="1"
+                            android:ellipsize="end"
+                            android:maxLines="2"
                             android:minHeight="@dimen/min_touch_target"
                             android:text="@string/invite_copy"
                             app:cornerRadius="12dp" />
@@ -163,6 +165,8 @@
                             android:layout_height="wrap_content"
                             android:layout_marginStart="@dimen/space_xs"
                             android:layout_weight="1"
+                            android:ellipsize="end"
+                            android:maxLines="2"
                             android:minHeight="@dimen/min_touch_target"
                             android:text="@string/invite_share"
                             app:cornerRadius="12dp" />
