@@ -48,8 +48,7 @@ public final class ReminderFragment extends Fragment {
             }
             ReminderEditorError error = event.consume();
             if (error != null) {
-                Snackbar.make(binding.getRoot(), ReminderText.editorError(error),
-                        Snackbar.LENGTH_LONG).show();
+                showSnackbar(ReminderText.editorError(error), null);
             }
         });
         viewModel.load();
@@ -101,13 +100,25 @@ public final class ReminderFragment extends Fragment {
         if (refreshError != null && hasRows && !blocked
                 && !Objects.equals(refreshError, lastRefreshSnackbarError)) {
             lastRefreshSnackbarError = refreshError;
-            Snackbar.make(binding.getRoot(), ReminderText.loadError(refreshError),
-                            Snackbar.LENGTH_LONG)
-                    .setAction(R.string.action_retry, ignored -> viewModel.retryRefresh())
-                    .show();
+            showSnackbar(ReminderText.loadError(refreshError),
+                    ignored -> viewModel.retryRefresh());
         } else if (refreshError == null) {
             lastRefreshSnackbarError = null;
         }
+    }
+
+    private void showSnackbar(int message, @Nullable View.OnClickListener action) {
+        if (binding == null) {
+            return;
+        }
+        Snackbar bar = Snackbar.make(binding.getRoot(), message, Snackbar.LENGTH_LONG);
+        if (binding.reminderAdd.getVisibility() == View.VISIBLE) {
+            bar.setAnchorView(binding.reminderAdd);
+        }
+        if (action != null) {
+            bar.setAction(R.string.action_retry, action);
+        }
+        bar.show();
     }
 
     private void showMenu(@NonNull Reminder reminder, @NonNull View anchor) {

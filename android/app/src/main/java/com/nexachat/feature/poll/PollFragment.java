@@ -93,8 +93,7 @@ public final class PollFragment extends Fragment {
             }
             PollActionError error = event.consume();
             if (error != null) {
-                Snackbar.make(binding.getRoot(), PollText.actionError(error),
-                        Snackbar.LENGTH_LONG).show();
+                showSnackbar(PollText.actionError(error), null);
             }
         });
         viewModel.load();
@@ -170,13 +169,25 @@ public final class PollFragment extends Fragment {
         if (refreshError != null && hasRows && !blocked
                 && !Objects.equals(refreshError, lastRefreshSnackbarError)) {
             lastRefreshSnackbarError = refreshError;
-            Snackbar.make(binding.getRoot(), PollText.loadError(refreshError),
-                            Snackbar.LENGTH_LONG)
-                    .setAction(R.string.action_retry, ignored -> viewModel.retryRefresh())
-                    .show();
+            showSnackbar(PollText.loadError(refreshError),
+                    ignored -> viewModel.retryRefresh());
         } else if (refreshError == null) {
             lastRefreshSnackbarError = null;
         }
+    }
+
+    private void showSnackbar(int message, @Nullable View.OnClickListener action) {
+        if (binding == null) {
+            return;
+        }
+        Snackbar bar = Snackbar.make(binding.getRoot(), message, Snackbar.LENGTH_LONG);
+        if (binding.pollAdd.getVisibility() == View.VISIBLE) {
+            bar.setAnchorView(binding.pollAdd);
+        }
+        if (action != null) {
+            bar.setAction(R.string.action_retry, action);
+        }
+        bar.show();
     }
 
     private void openCreateSheet() {
