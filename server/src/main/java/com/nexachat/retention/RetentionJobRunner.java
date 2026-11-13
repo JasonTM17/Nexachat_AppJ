@@ -1,6 +1,8 @@
 package com.nexachat.retention;
 
 import com.nexachat.message.SyncProperties;
+import com.nexachat.ops.ScheduledAdvisoryLock;
+import com.nexachat.ops.ScheduledLockIds;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +40,7 @@ public class RetentionJobRunner {
     private final RetentionPollCleaner pollCleaner;
     private final MeterRegistry meterRegistry;
     private final TransactionTemplate transactionTemplate;
+    private final ScheduledAdvisoryLock advisoryLock;
 
     public RetentionJobRunner(JdbcTemplate jdbcTemplate,
                               RetentionProperties properties,
@@ -45,20 +48,22 @@ public class RetentionJobRunner {
                               RetentionAttachmentCleaner attachmentCleaner,
                               RetentionPollCleaner pollCleaner,
                               MeterRegistry meterRegistry,
-                              PlatformTransactionManager transactionManager) {
+                              PlatformTransactionManager transactionManager,
+                              ScheduledAdvisoryLock advisoryLock) {
         this.jdbcTemplate = jdbcTemplate;
         this.properties = properties;
         this.syncProperties = syncProperties;
         this.attachmentCleaner = attachmentCleaner;
         this.pollCleaner = pollCleaner;
         this.meterRegistry = meterRegistry;
+        this.advisoryLock = advisoryLock;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.transactionTemplate.setTimeout(properties.getTransactionTimeoutSeconds());
     }
 
     @Scheduled(fixedDelayString = "${nexachat.retention.interval-ms:3600000}")
     public void scheduledSweep() {
-        runEnabledJobs();
+        advisoryLock.withLock(ScheduledLockIds.RETENTION_SWEEP, this::runEnabledJobs);
     }
 
     /** Returns no results while the global safety switch is off. */
