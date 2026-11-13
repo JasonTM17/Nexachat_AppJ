@@ -37,6 +37,10 @@ public final class GroupMemberAdapter extends ListAdapter<GroupMember, GroupMemb
         this.showRemove = showRemove;
     }
 
+    public static int removeMemberContentDescriptionRes() {
+        return R.string.group_remove_member_confirm;
+    }
+
     private static final DiffUtil.ItemCallback<GroupMember> DIFF = new DiffUtil.ItemCallback<GroupMember>() {
         @Override
         public boolean areItemsTheSame(@NonNull GroupMember oldItem, @NonNull GroupMember newItem) {
@@ -86,6 +90,8 @@ public final class GroupMemberAdapter extends ListAdapter<GroupMember, GroupMemb
             memberRole.setVisibility(member.isAdmin() ? View.VISIBLE : View.GONE);
             itemView.setOnClickListener(v -> listener.onMemberClick(member.getUserId()));
             removeMember.setVisibility(showRemove && !member.isAdmin() ? View.VISIBLE : View.GONE);
+            removeMember.setContentDescription(itemView.getContext().getString(
+                    removeMemberContentDescriptionRes(), member.getDisplayName()));
             removeMember.setOnClickListener(v -> listener.onRemoveMember(member.getUserId()));
         }
     }

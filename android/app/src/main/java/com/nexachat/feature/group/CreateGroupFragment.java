@@ -6,28 +6,21 @@ import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.CheckBox;
-import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.NavOptions;
 import androidx.navigation.fragment.NavHostFragment;
-import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.ListAdapter;
-import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.ui.CreateGroupListRules;
-import com.nexachat.core.ui.components.AvatarView;
-import com.nexachat.data.Contact;
 import com.nexachat.databinding.FragmentCreateGroupBinding;
+import com.nexachat.feature.group.adapter.SelectableContactAdapter;
 import dagger.hilt.android.AndroidEntryPoint;
 import java.util.Objects;
-import java.util.Set;
 
 /** Create a group from selected contacts and open its chat. */
 @AndroidEntryPoint
@@ -138,88 +131,5 @@ public final class CreateGroupFragment extends Fragment {
         memberAdapter = null;
         super.onDestroyView();
         binding = null;
-    }
-
-    private static final class SelectableContactAdapter
-            extends ListAdapter<Contact, SelectableContactAdapter.Holder> {
-
-        interface ToggleListener {
-            void onToggle(@NonNull String userId);
-        }
-
-        private final ToggleListener listener;
-        private Set<String> selectedIds = Set.of();
-
-        SelectableContactAdapter(@NonNull ToggleListener listener) {
-            super(DIFF);
-            this.listener = listener;
-        }
-
-        void submit(@NonNull java.util.List<Contact> contacts, @NonNull Set<String> selected) {
-            selectedIds = selected;
-            submitList(contacts);
-        }
-
-        private static final DiffUtil.ItemCallback<Contact> DIFF = new DiffUtil.ItemCallback<Contact>() {
-            @Override
-            public boolean areItemsTheSame(@NonNull Contact oldItem, @NonNull Contact newItem) {
-                return oldItem.getUserId().equals(newItem.getUserId());
-            }
-
-            @Override
-            public boolean areContentsTheSame(@NonNull Contact oldItem, @NonNull Contact newItem) {
-                return oldItem.equals(newItem) && oldItem.getUserId().equals(newItem.getUserId());
-            }
-        };
-
-        @NonNull
-        @Override
-        public Holder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            View row = LayoutInflater.from(parent.getContext())
-                    .inflate(R.layout.item_user_search, parent, false);
-            CheckBox checkBox = row.findViewById(R.id.selectionCheck);
-            checkBox.setVisibility(View.VISIBLE);
-            return new Holder(row, checkBox);
-        }
-
-        @Override
-        public void onBindViewHolder(@NonNull Holder holder, int position) {
-            Contact contact = getItem(position);
-            holder.bind(contact, selectedIds.contains(contact.getUserId()), listener);
-        }
-
-        static final class Holder extends RecyclerView.ViewHolder {
-            private final AvatarView avatar;
-            private final TextView name;
-            private final TextView subtitle;
-            private final CheckBox checkBox;
-
-            Holder(@NonNull View itemView, @NonNull CheckBox checkBox) {
-                super(itemView);
-                this.checkBox = checkBox;
-                avatar = itemView.findViewById(R.id.avatar);
-                name = itemView.findViewById(R.id.name);
-                subtitle = itemView.findViewById(R.id.subtitle);
-            }
-
-            void bind(@NonNull Contact contact, boolean selected, @NonNull ToggleListener listener) {
-                String label = contact.getPrimaryLabel();
-                name.setText(label);
-                String line = com.nexachat.core.common.PersonContactSubtitle.subtitle(contact);
-                if (line == null || line.isBlank()) {
-                    subtitle.setVisibility(android.view.View.GONE);
-                } else {
-                    subtitle.setVisibility(android.view.View.VISIBLE);
-                    subtitle.setText(line);
-                }
-                avatar.setName(label);
-                avatar.setAvatarUrl(contact.getAvatarUrl());
-                checkBox.setOnCheckedChangeListener(null);
-                checkBox.setChecked(selected);
-                View.OnClickListener toggle = v -> listener.onToggle(contact.getUserId());
-                itemView.setOnClickListener(toggle);
-                checkBox.setOnCheckedChangeListener((b, checked) -> listener.onToggle(contact.getUserId()));
-            }
-        }
     }
 }
