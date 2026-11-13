@@ -6,6 +6,35 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-13
+
+Android-only release after `v1.2.1`: restyled sign-in, register, complete-profile,
+sign-in-methods and delete-account screens. The server stays at `v1.2.1`; no
+migration, no new environment variable. See
+[docs/release-notes/v1.2.2.md](docs/release-notes/v1.2.2.md).
+
+### Android
+
+**Changed**
+
+- Login and Register share a segmented Sign in / Create account switch, leading
+  field icons, a shared error card and 8dp spacing.
+- The Google button shows the standard four-colour Google "G" instead of a
+  brand-tinted mark; the "or" divider hides together with the button.
+- Complete-profile, sign-in-methods card and delete-account screens use the
+  same field and error styles.
+
+**Fixed**
+
+- Delete account waits for the profile before choosing the password or email-code
+  flow, and offers Retry when the profile cannot load.
+- A cancelled Google chooser while linking no longer shows an error.
+- A missing Google Play services shows a specific message.
+- Wording: "link Google in Profile" instead of "Settings"; Vietnamese Google
+  sign-in error reads naturally.
+- Docs: OAuth setup lists `com.nexachat.debug` for debug and `com.nexachat` for
+  release builds.
+
 ## [1.2.1] - 2026-11-13
 
 Patch release after `v1.2.0`: a Google-only account can delete itself with an
