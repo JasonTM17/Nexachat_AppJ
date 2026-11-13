@@ -96,32 +96,32 @@ jobs:
         with:
           python-version: '3.13'
       - name: Check Markdown links
-        run: python tools/check-markdown-links.py
+        run: python tools/checks/check-markdown-links.py
       - name: Check static site
         run: python site/check.py
       - name: Check Android string resources
         run: |
-          python tools/check-android-strings.py --self-test
-          python tools/check-android-strings.py
+          python tools/checks/check-android-strings.py --self-test
+          python tools/checks/check-android-strings.py
       - name: Test release R8 mapping checker
-        run: python -m unittest tools/test_check_release_r8_mapping.py
+        run: python -m unittest tools/checks/test_check_release_r8_mapping.py
       - name: Test offline tool unit tests
         run: |
-          python -m unittest tools/test_check_android_a11y.py
-          python -B tools/test_seed_demo_chat.py
-          bash tools/test-release-version.sh
-          bash tools/test-sign-release-url-guard.sh
-          bash tools/test-vercel-ignore-command.sh
+          python -m unittest tools/checks/test_check_android_a11y.py
+          python -B tools/demo/test_seed_demo_chat.py
+          bash tools/release/test-release-version.sh
+          bash tools/release/test-sign-release-url-guard.sh
+          bash tools/release/test-vercel-ignore-command.sh
       - name: Test additional hermetic Python tooling
         run: |
-          python -m unittest tools/test_compose_env_contract.py tools/backup/test_backup.py tools/backup/test_restore.py tools/e2e/test_evidence_labels.py tools/e2e/test_reminder_clock.py tools/e2e/device/test_inject_push.py tools/e2e/device/test_patch_window.py tools/e2e/device/test_stable_journeys.py tools/e2e/new_features/test_features_live.py tools/e2e/p0/test_p0_helpers.py tools/e2e/p0/test_p0_live.py tools/e2e/summary/test_summary_e2e.py tools/gif/test_record.py
+          python -m unittest tools/checks/test_compose_env_contract.py tools/backup/test_backup.py tools/backup/test_restore.py tools/e2e/test_evidence_labels.py tools/e2e/test_reminder_clock.py tools/e2e/device/test_inject_push.py tools/e2e/device/test_patch_window.py tools/e2e/device/test_stable_journeys.py tools/e2e/new_features/test_features_live.py tools/e2e/p0/test_p0_helpers.py tools/e2e/p0/test_p0_live.py tools/e2e/summary/test_summary_e2e.py tools/gif/test_record.py
           python -m unittest discover -s tools/e2e/calls -p 'test_*.py'
       - name: Check Android layout accessibility
-        run: python tools/check-android-a11y.py
+        run: python tools/checks/check-android-a11y.py
       - name: Test API contract checker
-        run: python tools/check-api-contract.py --self-test
+        run: python tools/checks/check-api-contract.py --self-test
       - name: Check API contract routes
-        run: python tools/check-api-contract.py
+        run: python tools/checks/check-api-contract.py
       - name: Validate GitHub Actions workflows
         run: |
           curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash | bash -s -- 1.7.7
