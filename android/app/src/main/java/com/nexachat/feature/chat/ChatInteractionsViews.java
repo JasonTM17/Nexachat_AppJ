@@ -3,15 +3,15 @@ package com.nexachat.feature.chat;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.view.View;
 import android.view.LayoutInflater;
-import android.view.ViewGroup;
-import android.view.Gravity;
+import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
-import android.widget.ScrollView;
-import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import androidx.core.widget.ImageViewCompat;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -49,6 +49,22 @@ public final class ChatInteractionsViews {
         void forward(@NonNull ChatMessage message);
     }
 
+    private enum MessageActionKind {
+        REPLY, COPY, FORWARD, PIN, EDIT, DELETE
+    }
+
+    private static final class MessageActionEntry {
+        final String label;
+        final Runnable callback;
+        final MessageActionKind kind;
+
+        MessageActionEntry(String label, Runnable callback, MessageActionKind kind) {
+            this.label = label;
+            this.callback = callback;
+            this.kind = kind;
+        }
+    }
+
     public static void showMessageActions(
             @NonNull Context context,
             @NonNull ChatMessage message,
@@ -56,24 +72,28 @@ public final class ChatInteractionsViews {
             boolean pinned,
             @NonNull RecallWindowRules.DeleteAction deleteAction,
             @NonNull MessageActions actions) {
-        List<String> labels = new ArrayList<>();
-        List<Runnable> callbacks = new ArrayList<>();
+        List<MessageActionEntry> entries = new ArrayList<>();
         boolean sent = ChatBubbleRules.isMessageReplyable(message.getStatus()) && !message.isDeleted();
         if (sent) {
-            labels.add(context.getString(R.string.action_reply)); callbacks.add(() -> actions.reply(message));
+            entries.add(new MessageActionEntry(context.getString(R.string.action_reply),
+                    () -> actions.reply(message), MessageActionKind.REPLY));
         }
         if (message.getContent() != null && !message.getContent().isBlank() && !message.isDeleted()) {
-            labels.add(context.getString(R.string.action_copy)); callbacks.add(() -> copy(context, message.getContent()));
+            entries.add(new MessageActionEntry(context.getString(R.string.action_copy),
+                    () -> copy(context, message.getContent()), MessageActionKind.COPY));
         }
         if (sent && message.getContent() != null && !message.getContent().isBlank()
                 && ForwardFilter.canForward(message.getType(), message.isDeleted())) {
-            labels.add(context.getString(R.string.action_forward)); callbacks.add(() -> actions.forward(message));
+            entries.add(new MessageActionEntry(context.getString(R.string.action_forward),
+                    () -> actions.forward(message), MessageActionKind.FORWARD));
         }
         if (canPin && sent) {
-            labels.add(context.getString(pinned ? R.string.action_unpin : R.string.action_pin)); callbacks.add(() -> actions.pin(message));
+            entries.add(new MessageActionEntry(context.getString(pinned ? R.string.action_unpin : R.string.action_pin),
+                    () -> actions.pin(message), MessageActionKind.PIN));
         }
         if (message.getMine() && sent && "TEXT".equals(message.getType())) {
-            labels.add(context.getString(R.string.action_edit)); callbacks.add(() -> actions.edit(message));
+            entries.add(new MessageActionEntry(context.getString(R.string.action_edit),
+                    () -> actions.edit(message), MessageActionKind.EDIT));
         }
         if (deleteAction != RecallWindowRules.DeleteAction.NONE) {
             int actionLabel = switch (deleteAction) {
@@ -83,38 +103,35 @@ public final class ChatInteractionsViews {
                 case NONE -> throw new IllegalStateException("No delete action label");
                 default -> throw new IllegalStateException("Unknown delete action");
             };
-            labels.add(context.getString(actionLabel));
-            callbacks.add(() -> confirmDelete(context, message, deleteAction, actions));
+            entries.add(new MessageActionEntry(context.getString(actionLabel),
+                    () -> confirmDelete(context, message, deleteAction, actions), MessageActionKind.DELETE));
         }
         BottomSheetDialog dialog = new BottomSheetDialog(context);
-        LinearLayout content = sheetColumn(context);
-        TextView title = new TextView(context);
-        title.setText(R.string.message_actions_title);
-        title.setTextAppearance(R.style.TextAppearance_NexaChat_TitleMedium);
+        View sheet = LayoutInflater.from(context).inflate(R.layout.sheet_message_actions, null, false);
+        TextView title = sheet.findViewById(R.id.messageActionsTitle);
         androidx.core.view.ViewCompat.setAccessibilityHeading(title, true);
-        content.addView(title);
-        if (sent) content.addView(reactionRow(context, emoji -> {
-            dialog.dismiss();
-            actions.react(message, emoji);
-        }));
-        for (int i = 0; i < labels.size(); i++) {
-            Runnable action = callbacks.get(i);
-            MaterialButton button = new MaterialButton(context, null,
-                    com.google.android.material.R.attr.borderlessButtonStyle);
-            button.setText(labels.get(i));
-            button.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-            button.setMinHeight(context.getResources().getDimensionPixelSize(R.dimen.min_touch_target));
-            button.setTextAppearance(R.style.TextAppearance_NexaChat_BodyLarge);
-            button.setTextColor(MaterialColors.getColor(button,
-                    i == labels.size() - 1 && deleteAction != RecallWindowRules.DeleteAction.NONE
-                            ? com.google.android.material.R.attr.colorError
-                            : com.google.android.material.R.attr.colorOnSurface));
-            button.setOnClickListener(v -> { dialog.dismiss(); action.run(); });
-            content.addView(button, new LinearLayout.LayoutParams(-1, -2));
+        View reactionScroller = sheet.findViewById(R.id.reactionScroller);
+        LinearLayout reactionRow = sheet.findViewById(R.id.reactionRow);
+        LinearLayout actionList = sheet.findViewById(R.id.messageActionList);
+        if (sent) {
+            populateReactionButtons(reactionRow, context, emoji -> {
+                dialog.dismiss();
+                actions.react(message, emoji);
+            });
+        } else {
+            reactionScroller.setVisibility(View.GONE);
         }
-        ScrollView scroll = new ScrollView(context);
-        scroll.addView(content);
-        dialog.setContentView(scroll);
+        LayoutInflater inflater = LayoutInflater.from(context);
+        for (MessageActionEntry entry : entries) {
+            View row = inflater.inflate(R.layout.item_message_action_row, actionList, false);
+            bindMessageActionRow(row, entry.label, entry.kind);
+            row.setOnClickListener(v -> {
+                dialog.dismiss();
+                entry.callback.run();
+            });
+            actionList.addView(row);
+        }
+        dialog.setContentView(sheet);
         dialog.show();
         dialog.getBehavior().setState(BottomSheetBehavior.STATE_EXPANDED);
     }
@@ -125,12 +142,43 @@ public final class ChatInteractionsViews {
         dialog.show();
     }
 
-    private static LinearLayout sheetColumn(Context context) {
-        LinearLayout content = new LinearLayout(context);
-        content.setOrientation(LinearLayout.VERTICAL);
-        int inset = context.getResources().getDimensionPixelSize(R.dimen.space_md);
-        content.setPadding(inset, inset, inset, inset);
-        return content;
+    private static void bindMessageActionRow(
+            @NonNull View row,
+            @NonNull CharSequence label,
+            @NonNull MessageActionKind kind) {
+        TextView actionLabel = row.findViewById(R.id.actionLabel);
+        ImageView actionIcon = row.findViewById(R.id.actionIcon);
+        FrameLayout actionIconTile = row.findViewById(R.id.actionIconTile);
+        actionLabel.setText(label);
+        int iconRes;
+        int tileBg = R.drawable.bg_settings_tile_tint;
+        int iconAttr = com.google.android.material.R.attr.colorOnSurface;
+        int labelAttr = com.google.android.material.R.attr.colorOnSurface;
+        switch (kind) {
+            case REPLY -> {
+                iconRes = R.drawable.ic_reply;
+                iconAttr = com.google.android.material.R.attr.colorPrimary;
+            }
+            case COPY -> {
+                iconRes = R.drawable.ic_content_copy;
+                iconAttr = com.google.android.material.R.attr.colorOnSurfaceVariant;
+            }
+            case FORWARD -> iconRes = R.drawable.ic_forward;
+            case PIN -> iconRes = R.drawable.ic_push_pin;
+            case EDIT -> iconRes = R.drawable.ic_edit;
+            case DELETE -> {
+                iconRes = R.drawable.ic_delete;
+                tileBg = R.drawable.bg_settings_tile_error;
+                iconAttr = com.google.android.material.R.attr.colorError;
+                labelAttr = com.google.android.material.R.attr.colorError;
+            }
+            default -> throw new IllegalStateException("Unknown message action");
+        }
+        actionIcon.setImageResource(iconRes);
+        actionIconTile.setBackgroundResource(tileBg);
+        ImageViewCompat.setImageTintList(actionIcon, ColorStateList.valueOf(
+                MaterialColors.getColor(actionIcon, iconAttr)));
+        actionLabel.setTextColor(MaterialColors.getColor(actionLabel, labelAttr));
     }
 
     private static HorizontalScrollView reactionRow(Context context,
@@ -139,6 +187,20 @@ public final class ChatInteractionsViews {
         scroll.setHorizontalScrollBarEnabled(false);
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setBackgroundColor(MaterialColors.getColor(row,
+                com.google.android.material.R.attr.colorSurfaceContainerLow));
+        int pad = context.getResources().getDimensionPixelSize(R.dimen.space_sm);
+        row.setPadding(pad, pad, pad, pad);
+        populateReactionButtons(row, context, onPick);
+        scroll.addView(row);
+        return scroll;
+    }
+
+    private static void populateReactionButtons(
+            @NonNull LinearLayout row,
+            @NonNull Context context,
+            @NonNull java.util.function.Consumer<String> onPick) {
+        row.removeAllViews();
         for (int i = 0; i < REACTIONS.length; i++) {
             String emoji = REACTIONS[i];
             MaterialButton button = new MaterialButton(context, null,
@@ -152,8 +214,6 @@ public final class ChatInteractionsViews {
             button.setOnClickListener(v -> onPick.accept(emoji));
             row.addView(button, new LinearLayout.LayoutParams(-2, -2));
         }
-        scroll.addView(row);
-        return scroll;
     }
 
     private static void confirmDelete(

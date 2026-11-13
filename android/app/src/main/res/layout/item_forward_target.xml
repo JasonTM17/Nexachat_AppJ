@@ -9,10 +9,10 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
-        android:minHeight="56dp"
+        android:minHeight="64dp"
         android:orientation="horizontal"
         android:paddingHorizontal="@dimen/space_md"
-        android:paddingVertical="10dp">
+        android:paddingVertical="@dimen/space_sm">
 
         <com.nexachat.core.ui.components.AvatarView
             android:id="@+id/avatar"
@@ -27,9 +27,8 @@
             android:layout_weight="1"
             android:ellipsize="end"
             android:maxLines="2"
-            android:textAppearance="?attr/textAppearanceBodyLarge"
-            android:textColor="?attr/colorOnSurface"
-            android:textStyle="bold" />
+            android:textAppearance="?attr/textAppearanceTitleMedium"
+            android:textColor="?attr/colorOnSurface" />
 
         <com.google.android.material.radiobutton.MaterialRadioButton
             android:id="@+id/selectionRadio"
