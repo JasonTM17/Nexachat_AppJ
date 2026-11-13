@@ -1,3 +1,5 @@
+> **Historical survey (2026-11-08).** Current contracts: [`docs/architecture.md`](docs/architecture.md), [`docs/api-contract.md`](docs/api-contract.md), [`docs/testing.md`](docs/testing.md).
+
 # KIẾN TRÚC & PHƯƠNG PHÁP LUẬN KIỂM THỬ E2E TOÀN DIỆN (TEST INFRASTRUCTURE)
 ## HỆ THỐNG TIN NHẮN & CUỘC GỌI BẢO MẬT THỜI GIAN THỰC NEXACHAT (P0 PRODUCTION ENGINEERING)
 

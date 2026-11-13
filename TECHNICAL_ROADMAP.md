@@ -1,3 +1,5 @@
+> **Historical survey (2026-11-08).** Current contracts: [`docs/architecture.md`](docs/architecture.md), [`docs/api-contract.md`](docs/api-contract.md), [`docs/testing.md`](docs/testing.md).
+
 # BÁO CÁO KHẢO SÁT KỸ THUẬT TOÀN DIỆN & LỘ TRÌNH PHÁT TRIỂN PRODUCTION (TECHNICAL ROADMAP)
 ## HỆ THỐNG TIN NHẮN & CUỘC GỌI BẢO MẬT THỜI GIAN THỰC NEXACHAT
 

@@ -1,3 +1,5 @@
+> **Historical survey (2026-11-08).** Current contracts: [`docs/architecture.md`](docs/architecture.md), [`docs/api-contract.md`](docs/api-contract.md), [`docs/testing.md`](docs/testing.md).
+
 # BÁO CÁO SẴN SÀNG KIỂM THỬ E2E (TEST READY SPECIFICATION)
 ## HỆ THỐNG TIN NHẮN & CUỘC GỌI BẢO MẬT THỜI GIAN THỰC NEXACHAT (P0 PRODUCTION ENGINEERING)
 
@@ -62,23 +64,7 @@ java tools/e2e/P0E2ETestRunner.java
 ```
 
 ### 2.2 Phương thức 2: Chạy qua Maven Test Suite (Tích hợp CI/CD & Spring Boot)
-Chạy toàn bộ hoặc từng phần bộ kiểm thử E2E thông qua Apache Maven trong thư mục `server`:
-
-```powershell
-# Chuyển vào thư mục backend server
-cd server
-
-# Chạy toàn bộ 81 ca kiểm thử E2E
-mvn test "-Dtest=Tier1FeatureCoverageTest,Tier2BoundaryCornerCasesTest,Tier3CrossFeatureCombinationsTest,Tier4RealWorldScenariosTest"
-
-# Hoặc chạy kiểm thử đơn lẻ cho từng Tier mong muốn
-mvn test "-Dtest=Tier1FeatureCoverageTest"
-mvn test "-Dtest=Tier2BoundaryCornerCasesTest"
-mvn test "-Dtest=Tier3CrossFeatureCombinationsTest"
-mvn test "-Dtest=Tier4RealWorldScenariosTest"
-```
-
-*Kết quả thực thi Maven*: `BUILD SUCCESS` (Tests run: 81, Failures: 0, Errors: 0, Skipped: 0).
+Các lệnh kiểm thử Maven và script E2E hiện hành: [`docs/testing.md`](docs/testing.md).
 
 ---
 
