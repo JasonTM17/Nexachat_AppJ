@@ -6,6 +6,66 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-11-13
+
+Fix release after a full review of the Android app, server, website and docs.
+The `v1.2.5` app works with the running `v1.2.1` server; the server fixes below
+take effect only after the owner approves a redeploy. No migration, no new
+required environment variable. See
+[docs/release-notes/v1.2.5.md](docs/release-notes/v1.2.5.md).
+
+### Android
+
+**Fixed**
+
+- Photo avatars stay circular, the camera badge no longer covers initials, and
+  the inbox has no stray gap; names wrap at large font scale; online status is
+  read with the name.
+- Chat: operation-specific Retry on the inline error, TalkBack announcements for
+  errors, sending, reactions and read receipts, a failed edit keeps its draft,
+  attachment and voice sends quote the reply target, and a permanently denied
+  microphone offers app settings.
+- Unread badges keep messages newer than the read receipt, synced messages are
+  not double-counted with the outbox, and leaving a group no longer clears other
+  conversations from the inbox.
+- Groups: the only admin is told why leaving is unavailable; leaving a group that
+  was opened directly returns to a single inbox.
+- Account: sign-out on other devices reports when it cannot be confirmed,
+  accounts without a password no longer offer Change password, deletion codes
+  can be resent, and message notifications are dismissed when the session ends.
+- Sign-in: login and register replace each other on the back stack, and an
+  invite is kept through Google onboarding and rotation.
+- Discovery, invite loading, polls and reminders, archive, summary actions and
+  the media viewer show readable errors with a retry.
+
+### Server
+
+**Fixed** (effective after the next server deploy)
+
+- Group authority is revalidated after locking and join-request decisions are
+  atomic; null sync watermarks are rejected; the last account sign-in method
+  cannot be removed.
+- Reminders keep their occurrence after a retryable push failure; backups refuse
+  completed destinations, publish from a fresh staging directory and include
+  query-string avatar references.
+- The scheduled embedding backfill stays on the local provider (no message text
+  leaves the server without consent); calls to deleted accounts are rejected.
+- Docker Compose forwards the documented server feature settings.
+
+### Website
+
+**Fixed**
+
+- Account guidance matches Google sign-up and password-free deletion; Vietnamese
+  and English jump links and a working install path on the download and invite
+  pages.
+
+### Documentation and tooling
+
+- Historical audit evidence is bannered, E2E evidence is labelled honestly,
+  contributor and operator docs are aligned, a tools index was added, and CI now
+  runs the offline tool unit tests and the Android accessibility check.
+
 ## [1.2.4] - 2026-11-13
 
 Android-only release after `v1.2.3`: calmer plum palette and a second UI polish
