@@ -9,6 +9,7 @@ import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.View.MeasureSpec;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -249,26 +250,39 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
             return windowInsets;
         });
         binding.summaryActions.post(this::stackFooterIfNeeded);
+        binding.summaryActions.addOnLayoutChangeListener(
+                (v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+                    if (binding != null && right - left != oldRight - oldLeft) {
+                        stackFooterIfNeeded();
+                    }
+                });
     }
 
     private void stackFooterIfNeeded() {
         if (binding == null) return;
-        int content = binding.summaryActions.getWidth()
-                - binding.summaryActions.getPaddingLeft()
-                - binding.summaryActions.getPaddingRight();
-        int sum = 0;
-        for (int i = 0; i < binding.summaryActions.getChildCount(); i++) {
-            sum += binding.summaryActions.getChildAt(i).getMeasuredWidth();
-        }
-        if (!SummaryFooterRules.stack(sum, content)
-                || binding.summaryActions.getOrientation() == LinearLayout.VERTICAL) {
+        LinearLayout actions = binding.summaryActions;
+        int content = actions.getWidth()
+                - actions.getPaddingLeft()
+                - actions.getPaddingRight();
+        if (content <= 0 || actions.getOrientation() == LinearLayout.VERTICAL) {
             return;
         }
-        binding.summaryActions.setOrientation(LinearLayout.VERTICAL);
-        for (int i = 0; i < binding.summaryActions.getChildCount(); i++) {
-            View child = binding.summaryActions.getChildAt(i);
-            ViewGroup.LayoutParams params = child.getLayoutParams();
+        int desired = SummaryFooterRules.desiredHorizontalSpan(actions);
+        if (!SummaryFooterRules.stack(desired, content)) {
+            return;
+        }
+        actions.setOrientation(LinearLayout.VERTICAL);
+        int rowGap = getResources().getDimensionPixelSize(R.dimen.space_xs);
+        for (int i = 0; i < actions.getChildCount(); i++) {
+            View child = actions.getChildAt(i);
+            ViewGroup.LayoutParams raw = child.getLayoutParams();
+            if (!(raw instanceof LinearLayout.LayoutParams params)) {
+                continue;
+            }
             params.width = ViewGroup.LayoutParams.MATCH_PARENT;
+            params.weight = 0f;
+            params.topMargin = i == 0 ? 0 : rowGap;
+            params.setMarginStart(0);
             child.setLayoutParams(params);
         }
     }
@@ -445,13 +459,37 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
         setCitationContext(seqMap, new HashSet<>(seqMap.keySet()));
     }
 
-    /** Footer labels stack when their measured widths no longer fit the sheet. */
+    /** Footer labels stack when intrinsic widths plus margins no longer fit the sheet. */
     static final class SummaryFooterRules {
         private SummaryFooterRules() {
         }
 
-        static boolean stack(int measuredChildren, int contentWidth) {
-            return contentWidth > 0 && measuredChildren > contentWidth;
+        static boolean stack(int desiredSpan, int contentWidth) {
+            return contentWidth > 0 && desiredSpan > contentWidth;
+        }
+
+        static int desiredSpan(int[] childDesiredWidths, int[] horizontalMargins) {
+            int sum = 0;
+            for (int i = 0; i < childDesiredWidths.length; i++) {
+                sum += childDesiredWidths[i] + horizontalMargins[i];
+            }
+            return sum;
+        }
+
+        static int desiredHorizontalSpan(@NonNull ViewGroup row) {
+            int sum = 0;
+            int widthSpec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
+            int heightSpec = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
+            for (int i = 0; i < row.getChildCount(); i++) {
+                View child = row.getChildAt(i);
+                child.measure(widthSpec, heightSpec);
+                sum += child.getMeasuredWidth();
+                ViewGroup.LayoutParams raw = child.getLayoutParams();
+                if (raw instanceof ViewGroup.MarginLayoutParams margin) {
+                    sum += margin.getMarginStart() + margin.getMarginEnd();
+                }
+            }
+            return sum;
         }
     }
 }

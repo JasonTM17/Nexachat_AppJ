@@ -1,6 +1,7 @@
 package com.nexachat.feature.summary;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.graphics.Paint;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
@@ -10,6 +11,8 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
+import androidx.core.widget.TextViewCompat;
+import com.google.android.material.color.MaterialColors;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import com.nexachat.R;
@@ -59,7 +62,7 @@ public final class SummarySheetContentBinder {
             addSectionHeader(container, R.string.summary_section_overview, R.drawable.ic_info);
             TextView overview = new TextView(context);
             overview.setText(summary.getOverview());
-            overview.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium);
+            overview.setTextAppearance(R.style.TextAppearance_NexaChat_BodyMedium);
             int pad = context.getResources().getDimensionPixelSize(R.dimen.space_sm);
             overview.setPadding(pad, pad, pad, pad);
             overview.setBackgroundColor(ContextCompat.getColor(context, R.color.bubble_other));
@@ -158,12 +161,15 @@ public final class SummarySheetContentBinder {
     private void addSectionHeader(LinearLayout container, int titleRes, int iconRes) {
         TextView header = new TextView(context);
         header.setText(titleRes);
-        header.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelLarge);
+        header.setTextAppearance(R.style.TextAppearance_NexaChat_LabelLarge);
         header.setPadding(0, context.getResources().getDimensionPixelSize(R.dimen.space_md), 0, 0);
         if (iconRes != 0) {
             header.setCompoundDrawablesWithIntrinsicBounds(iconRes, 0, 0, 0);
             header.setCompoundDrawablePadding(
                     context.getResources().getDimensionPixelSize(R.dimen.space_xs));
+            int accent = MaterialColors.getColor(
+                    context, com.google.android.material.R.attr.colorPrimary, 0);
+            TextViewCompat.setCompoundDrawableTintList(header, ColorStateList.valueOf(accent));
         }
         container.addView(header);
     }

@@ -33,10 +33,20 @@ public final class SummarySheetFooterContractTest {
     }
 
     @Test
-    public void footerStacksOnlyWhenMeasuredChildrenExceedTheContentWidth() {
+    public void footerStacksOnlyWhenDesiredSpanIncludingMarginsExceedsContentWidth() {
+        int[] widths = {48, 132, 118};
+        int[] margins = {0, 8, 8};
+        int desired = SummaryBottomSheetFragment.SummaryFooterRules.desiredSpan(widths, margins);
+        assertEquals(314, desired);
         assertFalse(SummaryBottomSheetFragment.SummaryFooterRules.stack(100, 200));
-        assertTrue(SummaryBottomSheetFragment.SummaryFooterRules.stack(240, 200));
-        assertFalse(SummaryBottomSheetFragment.SummaryFooterRules.stack(240, 0));
+        assertTrue(SummaryBottomSheetFragment.SummaryFooterRules.stack(desired, 288));
+        assertFalse(SummaryBottomSheetFragment.SummaryFooterRules.stack(desired, 0));
+    }
+
+    @Test
+    public void stackedLayoutWidthMustNotMaskIntrinsicOverflow() {
+        assertFalse(SummaryBottomSheetFragment.SummaryFooterRules.stack(48 + 90 + 150, 288));
+        assertTrue(SummaryBottomSheetFragment.SummaryFooterRules.stack(314, 288));
     }
 
     @Test

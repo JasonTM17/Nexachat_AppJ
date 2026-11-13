@@ -87,6 +87,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     app:drawableStartCompat="@drawable/ic_lock"
+                    app:drawableTint="?attr/colorOnSurfaceVariant"
                     android:drawablePadding="4dp"
                     android:paddingHorizontal="6dp"
                     android:paddingVertical="2dp"

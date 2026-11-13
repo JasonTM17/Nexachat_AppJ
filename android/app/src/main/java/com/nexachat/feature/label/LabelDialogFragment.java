@@ -103,7 +103,7 @@ public final class LabelDialogFragment extends DialogFragment {
         content.setPadding(dp(DIALOG_PADDING_DP), dp(4), dp(DIALOG_PADDING_DP), dp(4));
 
         status = new TextView(requireContext());
-        status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        status.setTextAppearance(R.style.TextAppearance_NexaChat_BodyMedium);
         status.setVisibility(View.GONE);
         LinearLayout.LayoutParams statusLp = matchWrap();
         statusLp.bottomMargin = dp(8);
