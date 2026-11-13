@@ -4,10 +4,12 @@ import android.animation.ValueAnimator;
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.View;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.animation.PathInterpolator;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.widget.AppCompatImageButton;
+import com.nexachat.R;
 
 /** Image button that fades between visible and hidden composer actions. */
 public final class ChatActionImageButton extends AppCompatImageButton {
@@ -15,8 +17,11 @@ public final class ChatActionImageButton extends AppCompatImageButton {
     private static final long CROSS_FADE_DURATION_MS = 150L;
     private static final PathInterpolator CROSS_FADE_INTERPOLATOR = new PathInterpolator(0.2f, 0f, 0f, 1f);
     private static final int NO_PENDING_VISIBILITY = -1;
+    private static final int ACCESSIBILITY_ACTION_CANCEL_VOICE_RECORDING = 0x7F010001;
 
     private int pendingVisibility = NO_PENDING_VISIBILITY;
+    private boolean accessibleVoiceRecording;
+    @Nullable private Runnable accessibilityCancelVoiceRecording;
 
     public ChatActionImageButton(@NonNull Context context) {
         super(context);
@@ -32,6 +37,40 @@ public final class ChatActionImageButton extends AppCompatImageButton {
             int defStyleAttr
     ) {
         super(context, attrs, defStyleAttr);
+    }
+
+    /**
+     * When recording was started through an accessibility click, expose an explicit cancel action.
+     */
+    public void setAccessibleVoiceRecording(
+            boolean recording,
+            @Nullable Runnable onAccessibilityCancel) {
+        accessibleVoiceRecording = recording;
+        accessibilityCancelVoiceRecording = recording ? onAccessibilityCancel : null;
+        if (recording) {
+            setClickable(true);
+        }
+    }
+
+    @Override
+    public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+        super.onInitializeAccessibilityNodeInfo(info);
+        if (accessibleVoiceRecording && accessibilityCancelVoiceRecording != null) {
+            info.addAction(new AccessibilityNodeInfo.AccessibilityAction(
+                    ACCESSIBILITY_ACTION_CANCEL_VOICE_RECORDING,
+                    getContext().getString(R.string.action_cancel)));
+        }
+    }
+
+    @Override
+    public boolean performAccessibilityAction(int action, android.os.Bundle arguments) {
+        if (action == ACCESSIBILITY_ACTION_CANCEL_VOICE_RECORDING
+                && accessibleVoiceRecording
+                && accessibilityCancelVoiceRecording != null) {
+            accessibilityCancelVoiceRecording.run();
+            return true;
+        }
+        return super.performAccessibilityAction(action, arguments);
     }
 
     @Override
@@ -114,6 +153,8 @@ public final class ChatActionImageButton extends AppCompatImageButton {
     protected void onDetachedFromWindow() {
         animate().cancel();
         pendingVisibility = NO_PENDING_VISIBILITY;
+        accessibleVoiceRecording = false;
+        accessibilityCancelVoiceRecording = null;
         super.onDetachedFromWindow();
     }
 }

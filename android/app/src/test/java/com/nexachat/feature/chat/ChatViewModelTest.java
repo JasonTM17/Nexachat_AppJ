@@ -838,6 +838,69 @@ public final class ChatViewModelTest {
     }
 
     @Test
+    public void searchSetsLoadingWhileFirstPageIsInFlight() {
+        when(messageRepository.searchMessages(anyString(), anyString(), nullable(Long.class), anyInt()))
+                .thenReturn(Single.never());
+        viewModel.search("hi");
+        timerScheduler.advanceTimeBy(ChatViewModel.SEARCH_DEBOUNCE_MS + 1, TimeUnit.MILLISECONDS);
+
+        assertTrue(searchState().isLoading());
+        assertTrue(searchState().getResults().isEmpty());
+        assertNull(searchState().getError());
+    }
+
+    @Test
+    public void reloadInitialHistoryRetriesRefreshWhenMessagesAreEmpty() {
+        when(messageRepository.refreshHistory(CONVERSATION_ID, null))
+                .thenReturn(Single.just(Result.failure(new ApiError.Network("down"))));
+        ChatViewModel failedVm = newViewModel(new SavedStateHandle(Map.of("conversationId", CONVERSATION_ID)));
+        assertEquals(new ApiError.Network("down"), failedVm.getUiState().getValue().getError());
+
+        Mockito.clearInvocations(messageRepository);
+        when(messageRepository.refreshHistory(CONVERSATION_ID, null))
+                .thenReturn(Single.just(new Result.Success<>(new MessagePageDto())));
+        failedVm.reloadInitialHistory();
+
+        assertNull(failedVm.getUiState().getValue().getError());
+        assertFalse(failedVm.getUiState().getValue().isLoading());
+        verify(messageRepository, times(1)).refreshHistory(CONVERSATION_ID, null);
+    }
+
+    @Test
+    public void reloadInitialHistoryIsNoOpWhenCachedMessagesExist() {
+        messagesFlow.onNext(List.of(message("m-1", 1L, true)));
+        when(messageRepository.refreshHistory(CONVERSATION_ID, null))
+                .thenReturn(Single.just(Result.failure(new ApiError.Network("down"))));
+        ChatViewModel failedVm = newViewModel(new SavedStateHandle(Map.of("conversationId", CONVERSATION_ID)));
+        assertFalse(failedVm.getUiState().getValue().getMessages().isEmpty());
+
+        Mockito.clearInvocations(messageRepository);
+        failedVm.reloadInitialHistory();
+
+        verify(messageRepository, never()).refreshHistory(CONVERSATION_ID, null);
+    }
+
+    @Test
+    public void reloadInitialHistoryIgnoresConcurrentRetries() {
+        Mockito.clearInvocations(messageRepository);
+        when(messageRepository.refreshHistory(CONVERSATION_ID, null)).thenReturn(Single.never());
+        viewModel.reloadInitialHistory();
+        viewModel.reloadInitialHistory();
+
+        verify(messageRepository, times(1)).refreshHistory(CONVERSATION_ID, null);
+    }
+
+    @Test
+    public void initialHistoryRetryabilityTreatsMembershipErrorsAsTerminal() {
+        assertFalse(ChatViewModel.isInitialHistoryErrorRetryable(
+                new ApiError.Unknown(com.nexachat.data.MessageRepository.ERROR_NOT_MEMBER)));
+        assertFalse(ChatViewModel.isInitialHistoryErrorRetryable(
+                new ApiError.Unknown(com.nexachat.data.MessageRepository.ERROR_CONVERSATION_NOT_FOUND)));
+        assertFalse(ChatViewModel.isInitialHistoryErrorRetryable(ApiError.InvalidCredentials.INSTANCE));
+        assertTrue(ChatViewModel.isInitialHistoryErrorRetryable(new ApiError.Network("down")));
+    }
+
+    @Test
     public void peerPresenceComesFromDirectConversationSummary() {
         PeerPresence presence = new PeerPresence(true, 1_700_000_000_000L);
         conversationFlow.onNext(Optional.of(summary("DIRECT", null, null, presence)));

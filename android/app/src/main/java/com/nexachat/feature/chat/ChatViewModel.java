@@ -102,6 +102,8 @@ public final class ChatViewModel extends ViewModel {
     private final ChatSingleLiveEvent<String> jumpTargets = new ChatSingleLiveEvent<>();
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final SerialDisposable searchDisposable = new SerialDisposable();
+    private final SerialDisposable initialHistoryDisposable = new SerialDisposable();
+    private boolean initialHistoryReloadInFlight;
     private final Map<String, CompositeDisposable> uploadDisposables = new LinkedHashMap<>();
     private final AtomicLong searchGeneration = new AtomicLong();
 
@@ -175,8 +177,43 @@ public final class ChatViewModel extends ViewModel {
         this.mutableUiState = new MutableLiveData<>(new UiState(
                 input == null ? "" : input));
         disposables.add(searchDisposable);
+        disposables.add(initialHistoryDisposable);
         observeRepositoryState();
         initializeConversation();
+    }
+
+    /** True when the initial-history error screen may offer retry. */
+    public static boolean isInitialHistoryErrorRetryable(@Nullable ApiError error) {
+        if (error == null) {
+            return false;
+        }
+        if (error instanceof ApiError.InvalidCredentials) {
+            return false;
+        }
+        if (error instanceof ApiError.Unknown unknown) {
+            String code = unknown.getCode();
+            if (MessageRepository.ERROR_NOT_MEMBER.equals(code)
+                    || MessageRepository.ERROR_CONVERSATION_NOT_FOUND.equals(code)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Idempotent reload for the empty-history error path. No-ops when messages are already
+     * cached or a reload is already in flight.
+     */
+    public void reloadInitialHistory() {
+        UiState state = currentUiState();
+        if (!state.getMessages().isEmpty() || !state.getSending().isEmpty() || initialHistoryReloadInFlight) {
+            return;
+        }
+        initialHistoryReloadInFlight = true;
+        updateUiState(current -> current.withError(null).withLoading(true));
+        initialHistoryDisposable.set(refreshInitialHistoryPage()
+                .doFinally(() -> initialHistoryReloadInFlight = false)
+                .subscribe(this::applyInitialHistoryPage, this::applyInitialHistoryFailure));
     }
 
     public ChatViewModel(
@@ -341,21 +378,29 @@ public final class ChatViewModel extends ViewModel {
         }
         disposables.add(messageRepository.openConversation(conversationId)
                 .subscribeOn(Schedulers.io())
-                .andThen(messageRepository.refreshHistory(conversationId, null)
-                        .subscribeOn(Schedulers.io()))
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(result -> {
-                    if (result instanceof Result.Success<?> success
-                            && success.getValue() instanceof com.nexachat.core.network.dto.MessagePageDto page) {
-                        updateUiState(state -> state.withHasMore(page.getHasMore()));
-                    } else if (result instanceof Result.Failure<?> failure) {
-                        updateUiState(state -> state.withError(failure.getError()));
-                    }
-                    updateUiState(state -> state.withLoading(false));
-                }, error -> {
-                    updateUiState(state -> state.withError(toApiError(error)));
-                    updateUiState(state -> state.withLoading(false));
-                }));
+                .andThen(refreshInitialHistoryPage())
+                .subscribe(this::applyInitialHistoryPage, this::applyInitialHistoryFailure));
+    }
+
+    private Single<Result<com.nexachat.core.network.dto.MessagePageDto>> refreshInitialHistoryPage() {
+        return messageRepository.refreshHistory(conversationId, null)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread());
+    }
+
+    private void applyInitialHistoryPage(Result<com.nexachat.core.network.dto.MessagePageDto> result) {
+        if (result instanceof Result.Success<?> success
+                && success.getValue() instanceof com.nexachat.core.network.dto.MessagePageDto page) {
+            updateUiState(state -> state.withHasMore(page.getHasMore()));
+        } else if (result instanceof Result.Failure<?> failure) {
+            updateUiState(state -> state.withError(failure.getError()));
+        }
+        updateUiState(state -> state.withLoading(false));
+    }
+
+    private void applyInitialHistoryFailure(Throwable error) {
+        updateUiState(state -> state.withError(toApiError(error)));
+        updateUiState(state -> state.withLoading(false));
     }
 
     private void applyMessages(List<ChatMessage> messages) {

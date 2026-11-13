@@ -59,6 +59,7 @@ import com.nexachat.databinding.FragmentChatBinding;
 import com.nexachat.feature.chat.ui.MessageActionListener;
 import com.nexachat.feature.chat.voice.VoiceRecorder;
 import java.io.File;
+import com.nexachat.feature.chat.adapter.ChatActionImageButton;
 import com.nexachat.feature.chat.adapter.MessageListAdapter;
 import com.nexachat.feature.chat.adapter.MessageListItem;
 import com.nexachat.feature.chat.adapter.MessageListMapper;
@@ -162,6 +163,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private Runnable recordingTimerRunnable;
     private float recordStartX;
     private boolean recordingCancelled;
+    private boolean accessibleVoiceRecordingActive;
 
     public static ChatFragment newInstance(@NonNull String conversationId) {
         ChatFragment fragment = new ChatFragment();
@@ -471,49 +473,21 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     @SuppressLint("ClickableViewAccessibility")
     private void configureVoiceRecording() {
         voiceRecorder = new VoiceRecorder(requireContext());
-        binding.composerBar.micButton.setOnTouchListener((v, event) -> {
+        ChatActionImageButton micButton = binding.composerBar.micButton;
+        micButton.setOnClickListener(v -> handleAccessibleMicClick());
+        micButton.setOnTouchListener((v, event) -> {
             switch (event.getAction()) {
                 case MotionEvent.ACTION_DOWN:
-                    if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.RECORD_AUDIO)
-                            != PackageManager.PERMISSION_GRANTED) {
-                        recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO);
+                    if (!ensureRecordAudioPermission()) {
                         return false;
                     }
                     recordStartX = event.getRawX();
                     recordingCancelled = false;
-                    if (voiceRecorder == null) {
-                        voiceRecorder = new VoiceRecorder(requireContext());
-                    }
-                    if (!voiceRecorder.start()) {
+                    accessibleVoiceRecordingActive = false;
+                    resetAccessibleVoiceRecordingUi();
+                    if (!beginVoiceRecording(v)) {
                         return false;
                     }
-                    v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
-                    binding.composerBar.attachButton.setVisibility(View.GONE);
-                    binding.composerBar.messageInput.setVisibility(View.GONE);
-                    binding.composerBar.recordingOverlay.setVisibility(View.VISIBLE);
-                    binding.composerBar.recordingDuration.setText(R.string.voice_recording_duration_zero);
-                    binding.composerBar.recordingCancelLabel.setText(R.string.voice_slide_to_cancel);
-                    binding.composerBar.recordingCancelLabel.setTextColor(
-                            ContextCompat.getColor(requireContext(), R.color.text_secondary_light));
-
-                    recordingTimerRunnable = new Runnable() {
-                        @Override
-                        public void run() {
-                            if (voiceRecorder != null && voiceRecorder.isRecording()) {
-                                long durationSec = voiceRecorder.getDurationMs() / 1000;
-                                long minutes = durationSec / 60;
-                                long seconds = durationSec % 60;
-                                if (binding != null) {
-                                    binding.composerBar.recordingDuration.setText(
-                                            String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds));
-                                    binding.composerBar.recordingDot.setAlpha(
-                                            binding.composerBar.recordingDot.getAlpha() == 1f ? 0.3f : 1f);
-                                }
-                                recordingHandler.postDelayed(this, 500);
-                            }
-                        }
-                    };
-                    recordingHandler.postDelayed(recordingTimerRunnable, 500);
                     return true;
 
                 case MotionEvent.ACTION_MOVE:
@@ -540,45 +514,141 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                     return true;
 
                 case MotionEvent.ACTION_UP:
-                    if (recordingTimerRunnable != null) {
-                        recordingHandler.removeCallbacks(recordingTimerRunnable);
-                    }
-                    restoreComposerAfterRecording();
-                    if (voiceRecorder != null) {
-                        if (recordingCancelled) {
-                            voiceRecorder.cancel();
-                        } else {
-                            long durationMs = voiceRecorder.getDurationMs();
-                            File audioFile = voiceRecorder.stop();
-                            if (durationMs < 1000L || audioFile == null) {
-                                if (audioFile != null && audioFile.exists()) {
-                                    //noinspection ResultOfMethodCallIgnored
-                                    audioFile.delete();
-                                }
-                                Toast.makeText(requireContext(), R.string.voice_too_short, Toast.LENGTH_SHORT).show();
-                            } else {
-                                Uri voiceUri = FileProvider.getUriForFile(
-                                        requireContext(),
-                                        requireContext().getPackageName() + ".fileprovider",
-                                        audioFile);
-                                viewModel.sendAttachments(Collections.singletonList(voiceUri), durationMs);
-                            }
-                        }
-                    }
+                    finishVoiceRecording(recordingCancelled, false);
                     return true;
 
                 case MotionEvent.ACTION_CANCEL:
-                    if (recordingTimerRunnable != null) {
-                        recordingHandler.removeCallbacks(recordingTimerRunnable);
-                    }
-                    if (voiceRecorder != null) {
-                        voiceRecorder.cancel();
-                    }
-                    restoreComposerAfterRecording();
+                    finishVoiceRecording(true, false);
                     return true;
             }
             return false;
         });
+    }
+
+    private void handleAccessibleMicClick() {
+        if (voiceRecorder != null && voiceRecorder.isRecording()) {
+            finishVoiceRecording(false, true);
+            announceVoiceRecordingState(R.string.cd_send);
+            return;
+        }
+        if (!ensureRecordAudioPermission()) {
+            return;
+        }
+        recordingCancelled = false;
+        accessibleVoiceRecordingActive = true;
+        if (!beginVoiceRecording(binding.composerBar.micButton)) {
+            accessibleVoiceRecordingActive = false;
+            resetAccessibleVoiceRecordingUi();
+            return;
+        }
+        binding.composerBar.micButton.setAccessibleVoiceRecording(true, () -> {
+            if (voiceRecorder != null && voiceRecorder.isRecording()) {
+                finishVoiceRecording(true, true);
+                announceVoiceRecordingState(R.string.voice_release_to_cancel);
+            }
+        });
+        announceVoiceRecordingState(R.string.cd_record_voice);
+    }
+
+    private boolean ensureRecordAudioPermission() {
+        if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.RECORD_AUDIO)
+                == PackageManager.PERMISSION_GRANTED) {
+            return true;
+        }
+        recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO);
+        return false;
+    }
+
+    private boolean beginVoiceRecording(@NonNull View source) {
+        if (voiceRecorder == null) {
+            voiceRecorder = new VoiceRecorder(requireContext());
+        }
+        if (!voiceRecorder.start()) {
+            return false;
+        }
+        source.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        showVoiceRecordingOverlay();
+        scheduleRecordingTimer();
+        return true;
+    }
+
+    private void showVoiceRecordingOverlay() {
+        binding.composerBar.attachButton.setVisibility(View.GONE);
+        binding.composerBar.messageInput.setVisibility(View.GONE);
+        binding.composerBar.recordingOverlay.setVisibility(View.VISIBLE);
+        binding.composerBar.recordingDuration.setText(R.string.voice_recording_duration_zero);
+        binding.composerBar.recordingCancelLabel.setText(R.string.voice_slide_to_cancel);
+        binding.composerBar.recordingCancelLabel.setTextColor(
+                ContextCompat.getColor(requireContext(), R.color.text_secondary_light));
+    }
+
+    private void scheduleRecordingTimer() {
+        recordingTimerRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (voiceRecorder != null && voiceRecorder.isRecording()) {
+                    long durationSec = voiceRecorder.getDurationMs() / 1000;
+                    long minutes = durationSec / 60;
+                    long seconds = durationSec % 60;
+                    if (binding != null) {
+                        binding.composerBar.recordingDuration.setText(
+                                String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds));
+                        binding.composerBar.recordingDot.setAlpha(
+                                binding.composerBar.recordingDot.getAlpha() == 1f ? 0.3f : 1f);
+                    }
+                    recordingHandler.postDelayed(this, 500);
+                }
+            }
+        };
+        recordingHandler.postDelayed(recordingTimerRunnable, 500);
+    }
+
+    private void finishVoiceRecording(boolean cancel, boolean fromAccessibleControl) {
+        if (recordingTimerRunnable != null) {
+            recordingHandler.removeCallbacks(recordingTimerRunnable);
+            recordingTimerRunnable = null;
+        }
+        restoreComposerAfterRecording();
+        if (voiceRecorder == null) {
+            resetAccessibleVoiceRecordingUi();
+            return;
+        }
+        if (cancel) {
+            voiceRecorder.cancel();
+        } else {
+            long durationMs = voiceRecorder.getDurationMs();
+            File audioFile = voiceRecorder.stop();
+            if (durationMs < 1000L || audioFile == null) {
+                if (audioFile != null && audioFile.exists()) {
+                    //noinspection ResultOfMethodCallIgnored
+                    audioFile.delete();
+                }
+                Toast.makeText(requireContext(), R.string.voice_too_short, Toast.LENGTH_SHORT).show();
+            } else {
+                Uri voiceUri = FileProvider.getUriForFile(
+                        requireContext(),
+                        requireContext().getPackageName() + ".fileprovider",
+                        audioFile);
+                viewModel.sendAttachments(Collections.singletonList(voiceUri), durationMs);
+            }
+        }
+        if (fromAccessibleControl || accessibleVoiceRecordingActive) {
+            resetAccessibleVoiceRecordingUi();
+        }
+    }
+
+    private void resetAccessibleVoiceRecordingUi() {
+        accessibleVoiceRecordingActive = false;
+        if (binding != null) {
+            binding.composerBar.micButton.setAccessibleVoiceRecording(false, null);
+        }
+    }
+
+    private void announceVoiceRecordingState(int messageId) {
+        if (binding == null) {
+            return;
+        }
+        binding.composerBar.micButton.announceForAccessibility(getString(messageId));
     }
 
     private void restoreComposerAfterRecording() {
@@ -707,6 +777,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     }
 
     private void renderConversationState() {
+        if (searchOpen) {
+            binding.emptyState.setVisibility(View.GONE);
+            binding.loadingState.setVisibility(View.GONE);
+            binding.errorState.setVisibility(View.GONE);
+            return;
+        }
         boolean hasMessages = !state.getMessages().isEmpty() || !state.getSending().isEmpty();
         boolean hasError = state.getError() != null;
         binding.emptyState.setVisibility(ChatEmptyPolicy.showEmpty(state.isLoading(), hasError, hasMessages)
@@ -721,7 +797,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         }
         if (ChatEmptyPolicy.showError(hasError, hasMessages)) {
             binding.errorState.setMessage(getString(ChatErrorText.messageId(state.getError())));
-            binding.errorState.setOnRetry(null);
+            binding.errorState.setOnRetry(ChatViewModel.isInitialHistoryErrorRetryable(state.getError())
+                    ? () -> viewModel.reloadInitialHistory()
+                    : null);
         }
     }
 
@@ -985,19 +1063,65 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         searchOpen = open;
         binding.chatSearchBar.setVisibility(open ? View.VISIBLE : View.GONE);
         binding.messageList.setVisibility(View.VISIBLE);
-        if (open) { binding.chatSearchInput.requestFocus(); }
-        else { binding.chatSearchInput.setText(""); viewModel.clearSearch(); submitMessages(state.getMessages()); }
+        if (open) {
+            binding.chatSearchInput.requestFocus();
+            renderSearchResults();
+            renderConversationState();
+        } else {
+            binding.chatSearchInput.setText("");
+            viewModel.clearSearch();
+            clearSearchPresentation();
+            submitMessages(state.getMessages());
+            renderConversationState();
+        }
+    }
+
+    private void clearSearchPresentation() {
+        binding.chatError.setVisibility(View.GONE);
+        binding.loadingState.setLabel(null);
     }
 
     private void renderSearchResults() {
         if (!searchOpen || binding == null) return;
         List<ChatMessage> results = searchState.getResults();
-        binding.chatError.setVisibility(searchState.getError() == null ? View.GONE : View.VISIBLE);
-        if (searchState.getError() != null) binding.chatError.setText(R.string.search_in_chat_error);
+        String trimmedQuery = searchState.getQuery().trim();
+        boolean queryReady = trimmedQuery.length() >= ChatViewModel.MIN_SEARCH_CHARS;
+        boolean loading = searchState.isLoading();
+        boolean hasError = searchState.getError() != null;
+        boolean hasResults = !results.isEmpty();
+        boolean showLoading = queryReady && loading && !hasResults;
+        boolean showEmpty = queryReady && !loading && !hasError && !hasResults;
+        boolean showError = queryReady && hasError && !hasResults;
+
+        binding.loadingState.setVisibility(showLoading ? View.VISIBLE : View.GONE);
+        if (showLoading) {
+            binding.loadingState.setLabel(getString(R.string.ask_loading));
+        } else if (!searchOpen) {
+            binding.loadingState.setLabel(null);
+        }
+
+        binding.emptyState.setVisibility(showEmpty ? View.VISIBLE : View.GONE);
+        if (showEmpty) {
+            binding.emptyState.setMessage(getString(R.string.search_in_chat_no_results));
+            binding.emptyState.clearAction();
+        }
+
+        binding.errorState.setVisibility(showError ? View.VISIBLE : View.GONE);
+        binding.chatError.setVisibility(View.GONE);
+        if (showError) {
+            binding.errorState.setMessage(getString(R.string.search_in_chat_error));
+            String retryQuery = searchState.getQuery();
+            binding.errorState.setOnRetry(
+                    retryQuery.trim().length() >= ChatViewModel.MIN_SEARCH_CHARS
+                            ? () -> viewModel.search(retryQuery)
+                            : null);
+        }
+
         List<MessageListItem> rows = new ArrayList<>();
         for (ChatMessage message : results) rows.add(MessageListItem.message(message,
                 com.nexachat.core.ui.components.MessageGroupPosition.SINGLE, false, false, false));
         adapter.submitList(rows);
+        binding.messageList.setVisibility(showLoading || showEmpty || showError ? View.GONE : View.VISIBLE);
     }
 
     private void jumpToLoadedMessage(String messageId) {
