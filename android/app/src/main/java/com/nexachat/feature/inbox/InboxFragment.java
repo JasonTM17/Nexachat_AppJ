@@ -591,7 +591,8 @@ public final class InboxFragment extends Fragment {
 
             peerName.setText(displayTitle);
             peerName.setMaxLines(ActiveNowPeerRules.captionMaxLines());
-            peerView.setContentDescription(displayTitle);
+            peerView.setContentDescription(
+                    displayTitle + ", " + getString(R.string.cd_online_status));
 
             peerView.setOnClickListener(v -> openConversation(row.getId()));
             binding.activeNowStrip.addView(peerView);

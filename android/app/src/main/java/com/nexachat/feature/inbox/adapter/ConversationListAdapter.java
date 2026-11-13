@@ -147,7 +147,9 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             preview.setMaxLines(fontScale >= 1.5f ? 2 : 1);
             avatar.setName(displayTitle);
             avatar.setAvatarUrl(conversation.getDisplayAvatar());
-            avatar.setOnlineStatus(InboxBadgeRules.resolveOnlineStatus(conversation));
+            Boolean onlineStatus = InboxBadgeRules.resolveOnlineStatus(conversation);
+            avatar.setOnlineStatus(onlineStatus);
+            applyTitlePresenceDescription(displayTitle, onlineStatus);
 
             boolean unread = conversation.getUnreadCount() > 0;
             InboxRowTypography.applyUnreadWeight(title, unread);
@@ -255,6 +257,21 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                 listener.onConversationLongClick(conversation);
                 return true;
             });
+        }
+
+        private void applyTitlePresenceDescription(
+                @NonNull String displayTitle,
+                @Nullable Boolean onlineStatus
+        ) {
+            if (onlineStatus == null) {
+                title.setContentDescription(null);
+                return;
+            }
+            int presenceRes = Boolean.TRUE.equals(onlineStatus)
+                    ? R.string.cd_online_status
+                    : R.string.presence_offline;
+            title.setContentDescription(
+                    displayTitle + ", " + itemView.getContext().getString(presenceRes));
         }
 
         private void applyTitleVerticalAlignment(boolean hasPreviewLine) {

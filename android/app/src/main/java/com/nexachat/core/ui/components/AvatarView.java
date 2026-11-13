@@ -122,10 +122,9 @@ public class AvatarView extends FrameLayout {
             return;
         }
         statusDotView.setVisibility(VISIBLE);
-        int colorRes = Boolean.TRUE.equals(onlineStatus)
-                ? R.color.stitch_online_dot
-                : R.color.stitch_offline_dot;
-        int fillColor = ContextCompat.getColor(getContext(), colorRes);
+        int fillColor = Boolean.TRUE.equals(onlineStatus)
+                ? ContextCompat.getColor(getContext(), R.color.stitch_online_dot)
+                : resolveOnSurfaceVariantColor();
         int strokeColor = resolveSurfaceColor();
         int strokeWidth = dpToPx(2);
 
@@ -134,6 +133,19 @@ public class AvatarView extends FrameLayout {
         dotDrawable.setColor(fillColor);
         dotDrawable.setStroke(strokeWidth, strokeColor);
         statusDotView.setBackground(dotDrawable);
+    }
+
+    @ColorInt
+    private int resolveOnSurfaceVariantColor() {
+        TypedValue value = new TypedValue();
+        if (getContext().getTheme().resolveAttribute(
+                com.google.android.material.R.attr.colorOnSurfaceVariant, value, true)) {
+            if (value.resourceId != 0) {
+                return ContextCompat.getColor(getContext(), value.resourceId);
+            }
+            return value.data;
+        }
+        return ContextCompat.getColor(getContext(), R.color.colorOnSurfaceVariant);
     }
 
     @ColorInt
