@@ -6,6 +6,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -465,7 +466,9 @@ public final class SyncAndOutboxRegressionTest {
         when(tokenStore.readTokens()).thenReturn(Maybe.just(new Tokens("token", 1000L, "refresh")));
         when(conversationDao.bumpPeerReadSeq(anyString(), anyLong())).thenReturn(Completable.complete());
         when(conversationDao.bumpPeerDeliveredSeq(anyString(), anyLong())).thenReturn(Completable.complete());
+        when(messageDao.byId(anyString())).thenReturn(Maybe.empty());
         when(messageDao.upsertAll(anyList())).thenReturn(Completable.complete());
+        when(conversationDao.incrementUnread(anyString(), anyInt())).thenReturn(Completable.complete());
         when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong()))
                 .thenReturn(Completable.complete());
 
