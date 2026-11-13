@@ -144,8 +144,8 @@ removed; strict refresh rotation still works, but replay recovery is off.
 
 Run the smoke test:
 ```sh
-bash tools/prod-smoke.sh https://api.nexachat.io.vn
-bash tools/prod-smoke.sh https://api.nexachat.io.vn --write
+bash tools/ops/prod-smoke.sh https://api.nexachat.io.vn
+bash tools/ops/prod-smoke.sh https://api.nexachat.io.vn --write
 ```
 
 ### Rollback

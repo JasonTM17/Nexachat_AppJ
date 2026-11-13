@@ -11,7 +11,7 @@ repository alone.
   disposable PostgreSQL 16 database are available.
 - [ ] Working tree is clean (`git status --short`).
 - [ ] **credential** Release signing inputs exist outside git for local signing or
-  GitHub Actions secrets for automated release (`tools/README-release.md` §1).
+  GitHub Actions secrets for automated release (`tools/release/README.md` §1).
 - [ ] **credential** Production environment values are prepared:
   `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`, `JWT_SECRET`
   (32+ bytes, not the repository development value), `STORAGE_ROOT`; optional
@@ -25,8 +25,8 @@ repository alone.
 
 Verify release tooling:
 ```bash
-bash tools/test-release-version.sh
-bash tools/test-sign-release-url-guard.sh
+bash tools/release/test-release-version.sh
+bash tools/release/test-sign-release-url-guard.sh
 ```
 
 Server gates (private disposable database; do not point at demo or production):
@@ -41,10 +41,10 @@ env -u FCM_ENABLED -u FCM_PROJECT_ID -u FCM_SERVICE_ACCOUNT_JSON \
 Android and repository hygiene checks:
 ```bash
 cd android && ./gradlew :app:testDebugUnitTest :app:lintDebug --no-daemon && cd ..
-python tools/check-markdown-links.py
+python tools/checks/check-markdown-links.py
 python site/check.py
-python tools/check-android-strings.py --self-test
-python tools/check-android-strings.py
+python tools/checks/check-android-strings.py --self-test
+python tools/checks/check-android-strings.py
 find demo tools -name '*.sh' -type f -print0 | xargs -0 -n1 bash -n
 ```
 
@@ -67,26 +67,26 @@ JAVA_HOME='<jdk>' ANDROID_HOME='<sdk>' ./gradlew :app:checkFirebaseConfig
 cd ..
 
 # Build a release APK, align, sign and verify it
-tools/sign-release.sh v<MAJOR.MINOR.PATCH> -PapiBaseUrl='<https-api-base-url>'
+tools/release/sign-release.sh v<MAJOR.MINOR.PATCH> -PapiBaseUrl='<https-api-base-url>'
 
 # Prove R8 retained the reflective wire models
-python tools/check-release-r8-mapping.py
+python tools/checks/check-release-r8-mapping.py
 ```
 
 - The signer rejects a non-HTTPS `API_BASE_URL`; `--allow-http-smoke` is only
   for a local smoke build and must not be used for a distributed APK
-  (`tools/release-url-guard.sh`).
+  (`tools/release/release-url-guard.sh`).
 - The signer writes `release/nexachat-vX.Y.Z.apk` and runs
   `apksigner verify --print-certs`; both outputs are gitignored.
-- `check-release-r8-mapping.py` reads
+- `tools/checks/check-release-r8-mapping.py` reads
   `android/app/build/outputs/mapping/release/mapping.txt` and `usage.txt` and
   fails on renamed/removed reflective DTOs, Room migrations or required keep
   rules.
 - `versionCode = MAJOR * 1,000,000 + MINOR * 1,000 + PATCH`, capped at
-  `2,100,000,000` (`tools/release-version.sh`). Confirm it is greater than the
+  `2,100,000,000` (`tools/release/release-version.sh`). Confirm it is greater than the
   version code of the last published release.
 - If the Play Console requires an AAB, build it separately with the signing
-  credentials and run the same mapping check. The repository's `sign-release.sh`
+  credentials and run the same mapping check. The repository's `tools/release/sign-release.sh`
   produces an APK, not an AAB (**owner** decides whether an AAB is required).
 
 ## 3. Roll out the database migration and server
@@ -163,10 +163,10 @@ Follow the verified sequence:
   curl -fsS https://api.nexachat.io.vn/actuator/health
   curl -fsS https://api.nexachat.io.vn/actuator/health/readiness
   ```
-- [ ] **7. Smoke tests** — Run [tools/prod-smoke.sh](../tools/prod-smoke.sh) read-only, then with write verification:
+- [ ] **7. Smoke tests** — Run [tools/ops/prod-smoke.sh](../tools/ops/prod-smoke.sh) read-only, then with write verification:
   ```bash
-  bash tools/prod-smoke.sh https://api.nexachat.io.vn
-  bash tools/prod-smoke.sh https://api.nexachat.io.vn --write
+  bash tools/ops/prod-smoke.sh https://api.nexachat.io.vn
+  bash tools/ops/prod-smoke.sh https://api.nexachat.io.vn --write
   ```
 - [ ] **8. Scan logs** — Scan Render application logs for new `WARN` or `ERROR` entries.
 - [ ] **9. Tag** — Tag the release commit and push the tag (the local APK and R8
@@ -233,7 +233,7 @@ production does not pull it. Render builds from `server/Dockerfile`.
 
 | Step | Why |
 |---|---|
-| Android signing keystore and `signing.properties` | Secret; never committed (`tools/README-release.md`). |
+| Android signing keystore and `signing.properties` | Secret; never committed (`tools/release/README.md`). |
 | Production `DATABASE_*`, `JWT_SECRET`, `STORAGE_ROOT` | Secret/environment-specific. |
 | FCM service account and `google-services.json` | External Firebase project; not in repository. |
 | Summary LLM / RAG embedding API keys | Optional paid providers; disabled by default. |

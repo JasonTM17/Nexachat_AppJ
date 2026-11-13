@@ -2,7 +2,7 @@
 
 > Endpoint catalog for the current REST contract. Routes below are derived from
 > controllers under `server/src/main/java/com/nexachat/`; run
-> `python tools/check-api-contract.py` to fail when a controller route is
+> `python tools/checks/check-api-contract.py` to fail when a controller route is
 > missing from this file (or a documented route no longer exists).
 > The WebSocket / STOMP contract is documented in [`docs/websocket-protocol.md`](websocket-protocol.md).
 > Conversation RAG is detailed in [`docs/rag.md`](rag.md) (server API and Android Ask screen available).

@@ -122,7 +122,7 @@ Architecture, protocol contracts, and security boundaries are documented in
 | AI Conversation Summary | Extractive local engine + optional OpenAI-compatible LLM (Gemini primary `gemini-3.1-flash-lite`, DeepSeek `deepseek-flash` fallback) behind consent, citations, Android summary UI | `server/summary`, `app/summary`, `app/feature/summary` |
 | Conversation RAG ("Ask this chat") | Server-side QA API (`POST /conversations/{id}/ask`, V9), Android Ask screen, hybrid BM25 + vector search, MMR diversification, citation validation, local lexical fallback, admin-only telemetry `/rag/stats` | `server/rag`, `app/feature/ask`, `docs/rag.md`, `tools/rag-eval` |
 | Push Notifications | FCM HTTP v1 OAuth2 service-account authentication (server), Android device token registration and persisted sync cursor | `server/notification`, `app/notification` |
-| Design System & Quality Gates | Material 3 Dark/Light themes, ≥48dp touch targets, shared state components, automated server/client test suites, R8 mapping check (`tools/check-release-r8-mapping.py`), site tests (`site/check.py`, `tools/site-tests`), and markdown link check | `core/ui`, `server/src/test`, `app/src/test`, `docs/testing.md` |
+| Design System & Quality Gates | Material 3 Dark/Light themes, ≥48dp touch targets, shared state components, automated server/client test suites, R8 mapping check (`tools/checks/check-release-r8-mapping.py`), site tests (`site/check.py`, `tools/site-tests`), and markdown link check | `core/ui`, `server/src/test`, `app/src/test`, `docs/testing.md` |
 
 ## Architecture
 
@@ -296,7 +296,7 @@ cd server && mvn verify
 cd android && ./gradlew testDebugUnitTest
 
 # Android release R8 keep-rule reflection verification
-python tools/check-release-r8-mapping.py
+python tools/checks/check-release-r8-mapping.py
 
 # Static site checks and JavaScript unit tests
 python site/check.py
@@ -306,7 +306,7 @@ cd tools/site-tests && npm test
 cd tools/firebase-rules && npm test
 
 # Markdown relative link verification
-python tools/check-markdown-links.py
+python tools/checks/check-markdown-links.py
 
 # RAG benchmark evaluation (synthetic corpus)
 bash tools/rag-eval/run-benchmark.sh
@@ -342,7 +342,7 @@ nexachat/
 │  ├─ media/        Dark & Light Mode showcase frames (docs/media/README.md)
 │  └─ evidence/     local interaction captures (gitignored)
 ├─ demo/      seed.sql + LAN bootstrap scripts (lan-up.sh / lan-up.ps1, backup.sh)
-├─ tools/     check-release-r8-mapping.py · check-markdown-links.py · sign-release.sh · site-tests/ · e2e/ · summary-eval/ · rag-eval/ · firebase-rules/
+├─ tools/     checks/ · release/ · ops/ · demo/ · backup/ · domain/ · e2e/ · firebase-rules/ · perf/ · site-tests/ · rag-eval/ · summary-eval/
 ├─ .github/   workflows/ci.yml · pull_request_template.md · ISSUE_TEMPLATE/
 ├─ README.md · CONTRIBUTING.md · CHANGELOG.md
 └─ docker-compose.yml

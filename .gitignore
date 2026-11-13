@@ -58,7 +58,7 @@ demo/backups/
 
 # ---- Release artifacts (local signing & builds — never committed) ----
 # Signing keystore, signing.properties, and built APKs live here.
-# See tools/README-release.md.
+# See tools/release/README.md.
 # Root-anchored: a bare `release/` also ignores Gradle source sets such as
 # android/app/src/release/ when that flavor is added.
 /release/

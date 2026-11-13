@@ -1113,7 +1113,7 @@ Get-ChildItem -Path "." -Recurse -Include *.kt, *.kts | Measure-Object
 Xác thực rằng tài liệu này và toàn bộ tài liệu trong kho lưu trữ không có bất kỳ liên kết nội bộ nào bị gãy:
 ```powershell
 # Chạy công cụ kiểm tra liên kết của dự án
-python tools/check-markdown-links.py README.md docs/ TECHNICAL_ROADMAP.md
+python tools/checks/check-markdown-links.py README.md docs/ TECHNICAL_ROADMAP.md
 ```
 *Kết quả kỳ vọng*: `PASS: no broken relative links` (Mã thoát 0).
 

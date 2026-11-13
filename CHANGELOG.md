@@ -553,7 +553,7 @@ GitHub Releases and `site/download.html`.
 - Signed APK release workflow (`.github/workflows/android-release.yml`) triggered
   on version tags (`v*`) to build, sign, checksum, and publish releases to GitHub
   Releases.
-- CI API contract check (`tools/check-api-contract.py`) integrated into
+- CI API contract check (`tools/checks/check-api-contract.py`) integrated into
   `repo-hygiene` with self-test verification.
 - Offline Firebase RTDB rules contract verification in CI.
 - Multi-stage `server/Dockerfile` with pinned base-image digests, non-root
@@ -565,10 +565,10 @@ GitHub Releases and `site/download.html`.
   assembly, repository hygiene (Markdown links, site, string checks,
   actionlint, shell syntax), secret scanning and GHCR server-image publishing
   on `main`.
-- Release tooling: `tools/sign-release.sh` (HTTPS URL guard, version
+- Release tooling: `tools/release/sign-release.sh` (HTTPS URL guard, version
   derivation, zipalign, apksigner verification), PowerShell twin,
-  `tools/release-version.sh`, `tools/release-url-guard.sh` and
-  `tools/check-release-r8-mapping.py`.
+  `tools/release/release-version.sh`, `tools/release/release-url-guard.sh` and
+  `tools/checks/check-release-r8-mapping.py`.
 - Backup/restore scripts, LAN demo bootstrap scripts, seed script and
   end-to-end drivers under `tools/e2e/`.
 

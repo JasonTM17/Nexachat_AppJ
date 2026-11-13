@@ -152,10 +152,10 @@ cd android && ./gradlew lintDebug
 cd android && ./gradlew :app:assembleRelease -PskipSigning
 
 # Verify R8 keep rules preserved reflection-dependent classes
-python tools/check-release-r8-mapping.py
+python tools/checks/check-release-r8-mapping.py
 ```
 
-`tools/check-release-r8-mapping.py` inspects `mapping.txt` and `usage.txt` to verify
+`tools/checks/check-release-r8-mapping.py` inspects `mapping.txt` and `usage.txt` to verify
 that ProGuard/R8 did not rename or remove reflection-dependent wire models
 (Retrofit APIs, Moshi/Gson DTOs, Room DAOs/migrations, Google ID token credentials,
 and WorkManager workers). See [docs/release-checklist.md](release-checklist.md).
@@ -163,8 +163,8 @@ and WorkManager workers). See [docs/release-checklist.md](release-checklist.md).
 String parity:
 
 ```bash
-python tools/check-android-strings.py --self-test
-python tools/check-android-strings.py
+python tools/checks/check-android-strings.py --self-test
+python tools/checks/check-android-strings.py
 ```
 
 The JVM suite, including `ContrastUnitTest`, checks resource XML and computed
@@ -194,7 +194,7 @@ cd tools/site-tests && npm test
 ## Markdown link verification
 
 ```bash
-python tools/check-markdown-links.py
+python tools/checks/check-markdown-links.py
 ```
 
 Validates that all relative Markdown links in repository documentation resolve to real files

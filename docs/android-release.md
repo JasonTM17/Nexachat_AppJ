@@ -3,7 +3,7 @@
 The `Android APK Release` workflow builds on a `vMAJOR.MINOR.PATCH` tag and
 publishes the signed APK plus its SHA-256 file to that GitHub Release. It can
 also be started manually with an existing tag. The tag supplies Android's
-`versionName` and `versionCode` through `tools/release-version.sh`.
+`versionName` and `versionCode` through `tools/release/release-version.sh`.
 
 ## Prepare the signing key once
 

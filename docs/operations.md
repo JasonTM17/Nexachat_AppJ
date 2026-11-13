@@ -743,12 +743,12 @@ to start if a non-NexaChat process is listening on host port `8080` or `5433`.
 
 ## Production smoke test
 
-`tools/prod-smoke.sh` is the post-deploy check. Run it against the public API
+`tools/ops/prod-smoke.sh` is the post-deploy check. Run it against the public API
 origin after a deploy (bash, curl and Python 3.8+ are required; JSON parsing
 uses Python):
 
 ```sh
-bash tools/prod-smoke.sh https://api.nexachat.io.vn
+bash tools/ops/prod-smoke.sh https://api.nexachat.io.vn
 ```
 
 It polls `/actuator/health` for up to 120 s (Render Free wakes in about a
@@ -1251,7 +1251,7 @@ cd android
 
 The resulting unsigned APK is located at `android/app/build/outputs/apk/release/app-release-unsigned.apk`.
 
-`tools/sign-release.sh` accepts `MAJOR.MINOR.PATCH` tags, optionally with a
+`tools/release/sign-release.sh` accepts `MAJOR.MINOR.PATCH` tags, optionally with a
 leading `v`; it sets Android `versionName` to the normalized tag and derives
 `versionCode = MAJOR * 1000000 + MINOR * 1000 + PATCH`. Minor and patch
 components are limited to 0–999 and Android's version-code ceiling is enforced.
@@ -1261,7 +1261,7 @@ Direct Gradle builds can set `-PreleaseVersionName` and
 ### Hardening and security boundaries
 
 1. **R8 full mode and resource shrinking**: Enabled via `android.enableR8.fullMode=true` in `gradle.properties`, and `minifyEnabled true`, `shrinkResources true` in `build.gradle`. Dead code, unused resources, and unneeded metadata are stripped.
-2. **Reflective ProGuard keep rules**: Rules in `android/app/proguard-rules.pro` retain names and signatures for reflective Moshi DTOs (network/STOMP, ask, summary, archive, poll, label, invite and reminder models), Retrofit API interfaces, Room entities/DAOs/migrations, Hilt entry points, WorkManager workers (`OutboxSyncWorker`, `DeviceTokenSyncWorker`), Media3/ExoPlayer components, Glide modules, WebRTC native JNI methods, and Firebase Messaging. After building a release variant, run `python tools/check-release-r8-mapping.py` to check the mapping file for the app's reflective class names.
+2. **Reflective ProGuard keep rules**: Rules in `android/app/proguard-rules.pro` retain names and signatures for reflective Moshi DTOs (network/STOMP, ask, summary, archive, poll, label, invite and reminder models), Retrofit API interfaces, Room entities/DAOs/migrations, Hilt entry points, WorkManager workers (`OutboxSyncWorker`, `DeviceTokenSyncWorker`), Media3/ExoPlayer components, Glide modules, WebRTC native JNI methods, and Firebase Messaging. After building a release variant, run `python tools/checks/check-release-r8-mapping.py` to check the mapping file for the app's reflective class names.
 3. **Network security**: Cleartext HTTP/WS is disabled globally in production (`android/app/src/main/res/xml/network_security_config.xml` has `cleartextTrafficPermitted="false"` with zero exemptions). Cleartext access to `10.0.2.2` (emulator) and LAN dev IPs is strictly isolated to the `debug` and `localSmoke` variants (`android/app/src/debug/res/xml/network_security_config.xml`, `android/app/src/localSmoke/res/xml/network_security_config.xml`).
 4. **App backup disabled (`android:allowBackup="false"`)**: Backups are disabled to prevent extraction of sensitive local data via `adb backup` or cloud sync. Allowing backup would expose:
    - Decrypted SQLite database containing cached messages, contact lists, conversation watermarks, and drafts.
@@ -1289,9 +1289,9 @@ and a committed-secret scan. Equivalent local commands are:
 ```sh
 (cd server && mvn -B verify)
 (cd android && ./gradlew testDebugUnitTest lintDebug assembleDebug --no-daemon --no-parallel --max-workers=1)
-python tools/check-markdown-links.py
+python tools/checks/check-markdown-links.py
 python site/check.py
-python tools/check-android-strings.py
+python tools/checks/check-android-strings.py
 bash -n demo/*.sh tools/*.sh
 ```
 
@@ -1333,12 +1333,12 @@ examples whose effects were intentionally not triggered during the audit.
 | `(cd server && mvn -B verify)` | NOT_RUN — full suite not run by this worker |
 | `(cd android && ./gradlew testDebugUnitTest lintDebug assembleDebug --no-daemon --no-parallel --max-workers=1)` | NOT_RUN — another Gradle daemon was BUSY |
 | Android release build `android/gradlew.bat :app:assembleRelease -PskipSigning --no-parallel --max-workers=2` | PASS — unsigned APK generated (`app-release-unsigned.apk`, 28.58 MB), R8 full mode minification and resource shrinking enabled, 0 errors |
-| `python -B tools/check-markdown-links.py docs/operations.md` | PASS — no broken relative links |
-| `python -B tools/check-markdown-links.py` | PASS — 56 relative links checked across 43 files |
+| `python -B tools/checks/check-markdown-links.py docs/operations.md` | PASS — no broken relative links |
+| `python -B tools/checks/check-markdown-links.py` | PASS — 56 relative links checked across 43 files |
 | `bash -n demo/*.sh tools/*.sh` | PASS |
 | PowerShell parser and `--help` checks for the four `.ps1` scripts | PASS |
 | Python syntax and `--help` checks for the root `tools/*.py` scripts | PASS |
-| `python -B tools/test_seed_demo_chat.py` | PASS — 5 tests |
+| `python -B tools/demo/test_seed_demo_chat.py` | PASS — 5 tests |
 | `shellcheck demo/*.sh tools/*.sh` | NOT_RUN — ShellCheck is not installed |
 | `actionlint .github/workflows/ci.yml` | NOT_RUN — actionlint is not installed |
 | GitHub Actions workflow run | NOT_RUN — static workflow configuration is not live CI evidence |

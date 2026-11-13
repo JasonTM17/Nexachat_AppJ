@@ -37,7 +37,7 @@ Every engineering document in the repository, grouped by domain. Start with
 | [docs/production-runbook.md](production-runbook.md) | Production topology, Render/Neon/Supabase/Firebase/Vercel operations, cold-start handling, secret rotation checklist, and free-tier limits |
 | [docs/backup-recovery.md](backup-recovery.md) | Paired PostgreSQL and attachment backup/restore for local stacks (`tools/backup/`) |
 | [docs/testing.md](testing.md) | Server test setup, PostgreSQL requirements, Firebase rules tests, E2E scripts, site validation, R8 release mapping check, and Mailpit dev setup |
-| [tools/README-release.md](../tools/README-release.md) | Upload keystore setup, signed release APK build and `apksigner` verification |
+| [tools/release/README.md](../tools/release/README.md) | Upload keystore setup, signed release APK build and `apksigner` verification |
 | [demo/seed.sql](../demo/seed.sql) | Re-runnable demo accounts, contacts and sample conversations |
 | [demo/lan-up.sh](../demo/lan-up.sh), [demo/lan-up.ps1](../demo/lan-up.ps1) | Local LAN stack bootstrap (Git Bash / PowerShell) |
 | [demo/backup.sh](../demo/backup.sh) | PostgreSQL database backup utility |
@@ -64,7 +64,7 @@ Every engineering document in the repository, grouped by domain. Start with
 | Doc | Contents |
 |---|---|
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Setup, JDK 21 LTS build & test gates, repository layout, branching and PR rules |
-| [docs/release-checklist.md](release-checklist.md) | Release preconditions, server and Android gates, R8 mapping verification (`tools/check-release-r8-mapping.py`), signing, rollout, smoke tests and rollback |
+| [docs/release-checklist.md](release-checklist.md) | Release preconditions, server and Android gates, R8 mapping verification (`tools/checks/check-release-r8-mapping.py`), signing, rollout, smoke tests and rollback |
 | [docs/android-release.md](android-release.md) | GitHub Actions signed APK release, signing secrets, certificate fingerprints, tags and checksum verification |
 | [CHANGELOG.md](../CHANGELOG.md) | Release history and unreleased changes |
 | [docs/release-notes/](release-notes/) | Versioned release note pages (v1.1.x–v1.2.x) |

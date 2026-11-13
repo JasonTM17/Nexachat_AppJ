@@ -181,6 +181,6 @@
 # holder service, the hidden activities, and Firebase's components. The
 # googleid AAR has no reflective lookup: GoogleIdTokenCredential is built from
 # Bundle string keys, and its type constant is compared as a string.
-# tools/check-release-r8-mapping.py asserts the manifest/meta-data class names
+# tools/checks/check-release-r8-mapping.py asserts the manifest/meta-data class names
 # and the Google ID token type constant in the packaged release APK.
 # ------------------------------------------------------------------------------

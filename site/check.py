@@ -1601,10 +1601,10 @@ def test_vercel_ignore_command(vercel_data):
             )
             if proc.returncode != 0:
                 failures.append(
-                    f"tools/test-vercel-ignore-command.sh failed (exit {proc.returncode}):\n{proc.stdout}\n{proc.stderr}"
+                    f"tools/release/test-vercel-ignore-command.sh failed (exit {proc.returncode}):\n{proc.stdout}\n{proc.stderr}"
                 )
             else:
-                log_pass("tools/test-vercel-ignore-command.sh passed (shallow clone and diff scenarios)")
+                log_pass("tools/release/test-vercel-ignore-command.sh passed (shallow clone and diff scenarios)")
         else:
             log_info("bash not found; skipped dynamic test-vercel-ignore-command.sh execution")
     return failures

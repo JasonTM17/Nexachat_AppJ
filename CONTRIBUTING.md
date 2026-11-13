@@ -14,7 +14,7 @@ environment setup, running and testing the project, and contribution standards.
 | Gradle | 8.14.3 wrapper | `android/gradlew` (wrapper jar committed). AGP 8.9.3, Java 21 LTS, Hilt 2.52 (`annotationProcessor`), Room 2.6.1 (`room-rxjava3`), RxJava 3.1.9 (see `android/gradle/libs.versions.toml`). |
 | Android Studio | current stable | Must support AGP 8.9.3 (Hedgehog and older are too old). |
 | Docker Desktop | recent | Verified: Docker Compose v5.6.0. PostgreSQL 16 runs on host port 5433. |
-| Python | 3.x | Used by `tools/check-markdown-links.py` and E2E test utilities. |
+| Python | 3.x | Used by `tools/checks/check-markdown-links.py` and E2E test utilities. |
 | `adb` | Android SDK platform-tools | For installing the app on a device/emulator. |
 
 ## Clone and run
