@@ -76,28 +76,25 @@ public final class ReminderFragment extends Fragment {
         }
         adapter.submitList(state.getReminders());
         boolean hasRows = !state.getReminders().isEmpty();
-        boolean blocked = state.getLoadError() == ReminderRepository.Failure.NOT_MEMBER
-                || state.getLoadError() == ReminderRepository.Failure.FORBIDDEN
-                || state.getLoadError() == ReminderRepository.Failure.NOT_ADMIN
-                || state.getLoadError() == ReminderRepository.Failure.NOT_FOUND;
+        ReminderRepository.Failure loadError = state.getLoadError();
+        boolean blocked = BoardListRenderRules.isBlocked(loadError);
         boolean showLoading = state.isLoading() && !hasRows;
-        boolean showError = state.getLoadError() != null && !hasRows && !blocked;
-        boolean showEmpty = state.isEmpty() || (blocked && !hasRows);
+        boolean showError = BoardListRenderRules.showError(loadError, hasRows);
+        boolean showEmpty = BoardListRenderRules.showEmpty(state.isEmpty());
         binding.reminderList.setVisibility(hasRows ? View.VISIBLE : View.GONE);
         binding.reminderLoading.setVisibility(showLoading ? View.VISIBLE : View.GONE);
         binding.reminderError.setVisibility(showError ? View.VISIBLE : View.GONE);
         binding.reminderEmpty.setVisibility(showEmpty ? View.VISIBLE : View.GONE);
         if (showError) {
-            binding.reminderError.setMessage(
-                    getString(ReminderText.loadError(state.getLoadError())));
-            binding.reminderError.setOnRetry(() -> viewModel.retry());
+            binding.reminderError.setMessage(getString(ReminderText.loadError(loadError)));
+            binding.reminderError.setOnRetry(BoardListRenderRules.offersRetry(loadError)
+                    ? () -> viewModel.retry()
+                    : null);
         } else {
             binding.reminderError.setOnRetry(null);
         }
         if (showEmpty) {
-            binding.reminderEmpty.setMessage(getString(blocked
-                    ? ReminderText.loadError(state.getLoadError())
-                    : R.string.reminder_empty));
+            binding.reminderEmpty.setMessage(getString(R.string.reminder_empty));
         }
 
         ReminderRepository.Failure refreshError = state.getRefreshError();
@@ -154,5 +151,30 @@ public final class ReminderFragment extends Fragment {
         }
         ReminderEditorSheet sheet = ReminderEditorSheet.newInstance(reminder);
         sheet.show(getChildFragmentManager(), EDITOR_TAG);
+    }
+
+    /** Empty, error, and dead-end access failures for the reminder board list. */
+    static final class BoardListRenderRules {
+        private BoardListRenderRules() {
+        }
+
+        static boolean isBlocked(@Nullable ReminderRepository.Failure loadError) {
+            return loadError == ReminderRepository.Failure.NOT_MEMBER
+                    || loadError == ReminderRepository.Failure.FORBIDDEN
+                    || loadError == ReminderRepository.Failure.NOT_ADMIN
+                    || loadError == ReminderRepository.Failure.NOT_FOUND;
+        }
+
+        static boolean showError(@Nullable ReminderRepository.Failure loadError, boolean hasRows) {
+            return loadError != null && !hasRows;
+        }
+
+        static boolean showEmpty(boolean stateIsEmpty) {
+            return stateIsEmpty;
+        }
+
+        static boolean offersRetry(@Nullable ReminderRepository.Failure loadError) {
+            return loadError != null && !isBlocked(loadError);
+        }
     }
 }

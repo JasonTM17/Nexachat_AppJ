@@ -141,11 +141,11 @@ public final class PollFragment extends Fragment {
         }
         adapter.submitList(rows);
         boolean hasRows = !rows.isEmpty();
-        boolean blocked = state.getLoadError() == PollRepository.Failure.NOT_A_GROUP
-                || state.getLoadError() == PollRepository.Failure.NOT_MEMBER;
+        PollRepository.Failure loadError = state.getLoadError();
+        boolean blocked = BoardListRenderRules.isBlocked(loadError);
         boolean showLoading = state.isLoading() && !hasRows;
-        boolean showError = state.getLoadError() != null && !hasRows && !blocked;
-        boolean showEmpty = state.isEmpty() || (blocked && !hasRows);
+        boolean showError = BoardListRenderRules.showError(loadError, hasRows);
+        boolean showEmpty = BoardListRenderRules.showEmpty(state.isEmpty());
         binding.pollList.setVisibility(hasRows ? View.VISIBLE : View.GONE);
         binding.pollLoading.setVisibility(showLoading ? View.VISIBLE : View.GONE);
         binding.pollError.setVisibility(showError ? View.VISIBLE : View.GONE);
@@ -155,15 +155,15 @@ public final class PollFragment extends Fragment {
         binding.pollAdd.setVisibility(
                 viewModel.isGroup() && !blocked ? View.VISIBLE : View.GONE);
         if (showError) {
-            binding.pollError.setMessage(getString(PollText.loadError(state.getLoadError())));
-            binding.pollError.setOnRetry(() -> viewModel.retry());
+            binding.pollError.setMessage(getString(PollText.loadError(loadError)));
+            binding.pollError.setOnRetry(BoardListRenderRules.offersRetry(loadError)
+                    ? () -> viewModel.retry()
+                    : null);
         } else {
             binding.pollError.setOnRetry(null);
         }
         if (showEmpty) {
-            binding.pollEmpty.setMessage(getString(blocked
-                    ? PollText.loadError(state.getLoadError())
-                    : R.string.poll_empty));
+            binding.pollEmpty.setMessage(getString(R.string.poll_empty));
         }
 
         PollRepository.Failure refreshError = state.getRefreshError();
@@ -231,5 +231,28 @@ public final class PollFragment extends Fragment {
                     }
                 })
                 .show();
+    }
+
+    /** Empty, error, and dead-end access failures for the poll board list. */
+    static final class BoardListRenderRules {
+        private BoardListRenderRules() {
+        }
+
+        static boolean isBlocked(@Nullable PollRepository.Failure loadError) {
+            return loadError == PollRepository.Failure.NOT_A_GROUP
+                    || loadError == PollRepository.Failure.NOT_MEMBER;
+        }
+
+        static boolean showError(@Nullable PollRepository.Failure loadError, boolean hasRows) {
+            return loadError != null && !hasRows;
+        }
+
+        static boolean showEmpty(boolean stateIsEmpty) {
+            return stateIsEmpty;
+        }
+
+        static boolean offersRetry(@Nullable PollRepository.Failure loadError) {
+            return loadError != null && !isBlocked(loadError);
+        }
     }
 }
