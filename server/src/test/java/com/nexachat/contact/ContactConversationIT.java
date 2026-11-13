@@ -169,9 +169,12 @@ class ContactConversationIT {
                 .andExpect(jsonPath("$[0].phone").doesNotExist());
 
         // Valid E.164 that is not bob's exact number → empty list (no prefix match).
-        char last = bob.phone().charAt(bob.phone().length() - 1);
-        char flipped = last == '0' ? '1' : '0';
-        String nearMiss = bob.phone().substring(0, bob.phone().length() - 1) + flipped;
+        // Fixture phones are allocated sequentially, so changing the last digit can land on
+        // another fixture user (alice). Change the thousands digit: no fixture is that close.
+        int index = bob.phone().length() - 4;
+        char digit = bob.phone().charAt(index);
+        char changed = digit == '0' ? '1' : '0';
+        String nearMiss = bob.phone().substring(0, index) + changed + bob.phone().substring(index + 1);
         mockMvc.perform(get("/api/v1/users/search")
                         .param("phone", nearMiss)
                         .header("Authorization", "Bearer " + alice.accessToken()))
