@@ -5,6 +5,8 @@ import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.message.CallSystemMessageWriter;
+import com.nexachat.user.User;
+import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
@@ -18,6 +20,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -42,6 +45,7 @@ class CallServiceTest {
     private final UUID calleeId = UUID.randomUUID();
     private final Instant now = Instant.parse("2026-11-05T08:00:00Z");
     private CallRecordRepository recordRepository;
+    private UserRepository userRepository;
     private ConversationRepository conversationRepository;
     private ConversationMemberRepository memberRepository;
     private RateLimitService rateLimitService;
@@ -55,6 +59,7 @@ class CallServiceTest {
     void setUp() {
         registry = new CallRegistry(Clock.fixed(now, ZoneOffset.UTC), 45_000);
         recordRepository = mock(CallRecordRepository.class);
+        userRepository = mock(UserRepository.class);
         conversationRepository = mock(ConversationRepository.class);
         memberRepository = mock(ConversationMemberRepository.class);
         rateLimitService = mock(RateLimitService.class);
@@ -66,10 +71,53 @@ class CallServiceTest {
         when(memberRepository.findMemberUserIds(conversationId)).thenReturn(List.of(callerId, calleeId));
         when(rateLimitService.tryConsume(any(), anyLong(), any())).thenReturn(
                 new RateLimitService.Consumption(true, 0));
+        stubActiveParticipants(callerId, calleeId);
         service = new CallService(registry, recordRepository, conversationRepository,
                 memberRepository, rateLimitService, systemMessageWriter,
-                mock(com.nexachat.user.UserRepository.class), eventPublisher,
+                userRepository, eventPublisher,
                 "stun:stun.l.google.com:19302");
+    }
+
+    private void stubActiveParticipants(UUID firstUserId, UUID secondUserId) {
+        when(userRepository.findActiveUsersByIdsForUpdate(org.mockito.ArgumentMatchers.anyList())).thenAnswer(invocation -> {
+            List<UUID> orderedIds = invocation.getArgument(0);
+            return orderedIds.stream()
+                    .map(userId -> userId.equals(firstUserId) || userId.equals(secondUserId)
+                            ? activeUser(userId) : null)
+                    .filter(java.util.Objects::nonNull)
+                    .toList();
+        });
+    }
+
+    private static User activeUser(UUID userId) {
+        User user = User.create("+84000000001",
+                "$2a$12$abcdefghijklmnopqrstuvwxYz012345678901234567", "active");
+        try {
+            java.lang.reflect.Field idField = User.class.getDeclaredField("id");
+            idField.setAccessible(true);
+            idField.set(user, userId);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException(exception);
+        }
+        return user;
+    }
+
+    @Test
+    void rejectsInviteWhenPeerAccountWasDeleted() {
+        List<UUID> ordered = Stream.of(callerId, calleeId).sorted().toList();
+        when(userRepository.findActiveUsersByIdsForUpdate(ordered)).thenReturn(List.of(activeUser(callerId)));
+        UUID callId = UUID.randomUUID();
+        assertThatThrownBy(() -> service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.INVITE, callId, null, null)))
+                .isInstanceOf(CallException.class)
+                .extracting("code").isEqualTo(CallException.Code.NOT_MEMBER);
+        assertThat(registry.find(callId)).isEmpty();
+        assertThat(registry.activeCallForUser(callerId)).isEmpty();
+        assertThat(registry.activeCallForUser(calleeId)).isEmpty();
+        verify(recordRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any(CallRingingEvent.class));
+        verify(eventPublisher, never()).publishEvent(any(CallDelivery.class));
+        verify(systemMessageWriter, never()).write(any());
     }
 
     @Test
@@ -268,9 +316,10 @@ class CallServiceTest {
             }
         };
         registry = new CallRegistry(advancingClock, 45_000);
+        stubActiveParticipants(callerId, calleeId);
         service = new CallService(registry, recordRepository, conversationRepository,
                 memberRepository, rateLimitService, systemMessageWriter,
-                mock(com.nexachat.user.UserRepository.class), eventPublisher,
+                userRepository, eventPublisher,
                 "stun:stun.l.google.com:19302");
         UUID callId = UUID.randomUUID();
         service.signal(conversationId, callerId,

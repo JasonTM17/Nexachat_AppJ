@@ -7,6 +7,7 @@ import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.message.CallSystemMessageWriter;
+import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
@@ -21,11 +22,15 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 public class CallService {
@@ -95,6 +100,7 @@ public class CallService {
 
     private void invite(UUID conversationId, UUID callerId, CallSignal signal) {
         UUID calleeId = directPeer(conversationId, callerId);
+        requireActiveParticipants(callerId, calleeId);
         consume(callerId, "invite", 20);
         CallRegistry.Invitation invitation = registry.invite(signal.callId(), conversationId,
                 callerId, calleeId, registry.now());
@@ -376,6 +382,19 @@ public class CallService {
             throw new IllegalStateException("Call registry mutation scope is missing");
         }
         scope.rollbacks.add(rollback);
+    }
+
+    /** Locks both participants in UUID order and rejects missing or tombstoned accounts. */
+    private void requireActiveParticipants(UUID callerId, UUID calleeId) {
+        List<UUID> orderedIds = Stream.of(callerId, calleeId).distinct().sorted().toList();
+        Map<UUID, User> users = userRepository.findActiveUsersByIdsForUpdate(orderedIds).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+        for (UUID userId : orderedIds) {
+            User user = users.get(userId);
+            if (user == null || user.getDeletedAt() != null) {
+                throw CallException.notMember();
+            }
+        }
     }
 
     private UUID directPeer(UUID conversationId, UUID callerId) {

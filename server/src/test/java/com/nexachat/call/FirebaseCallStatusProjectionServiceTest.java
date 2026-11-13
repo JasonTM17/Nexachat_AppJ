@@ -7,6 +7,8 @@ import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.firebase.call.FirebaseCallStatusProjectionService;
 import com.nexachat.firebase.client.FirebaseRtdbClient;
 import com.nexachat.message.CallSystemMessageWriter;
+import com.nexachat.user.User;
+import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -173,6 +175,19 @@ class FirebaseCallStatusProjectionServiceTest {
                 .satisfies(update -> assertThat(update.get("calls/" + oldTerminal.callId())).isNull());
     }
 
+    private static User activeUser(UUID userId) {
+        User user = User.create("+84000000001",
+                "$2a$12$abcdefghijklmnopqrstuvwxYz012345678901234567", "active");
+        try {
+            java.lang.reflect.Field idField = User.class.getDeclaredField("id");
+            idField.setAccessible(true);
+            idField.set(user, userId);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException(exception);
+        }
+        return user;
+    }
+
     private static CallService callService(Clock clock, ApplicationEventPublisher events) {
         CallRegistry registry = new CallRegistry(clock, 45_000);
         CallRecordRepository records = mock(CallRecordRepository.class);
@@ -187,8 +202,13 @@ class FirebaseCallStatusProjectionServiceTest {
         when(rateLimits.tryConsume(any(), anyLong(), any()))
                 .thenReturn(new RateLimitService.Consumption(true, 0));
         when(records.save(any(CallRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        UserRepository users = mock(UserRepository.class);
+        when(users.findActiveUsersByIdsForUpdate(org.mockito.ArgumentMatchers.anyList())).thenAnswer(invocation -> {
+            List<UUID> orderedIds = invocation.getArgument(0);
+            return orderedIds.stream().map(FirebaseCallStatusProjectionServiceTest::activeUser).toList();
+        });
         return new CallService(registry, records, conversations, members, rateLimits,
-                systemMessages, mock(com.nexachat.user.UserRepository.class), events,
+                systemMessages, users, events,
                 "stun:stun.l.google.com:19302");
     }
 
