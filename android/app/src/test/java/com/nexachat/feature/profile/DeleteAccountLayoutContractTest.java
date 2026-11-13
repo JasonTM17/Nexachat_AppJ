@@ -47,7 +47,10 @@ public final class DeleteAccountLayoutContractTest {
 
     private static void assertMinTouchTarget(Element node) {
         String minHeight = node.getAttributeNS(ANDROID, "minHeight");
-        assertTrue(minHeight.contains("min_touch_target") || minHeight.endsWith("48dp"));
+        boolean token = minHeight.contains("min_touch_target");
+        boolean literalAtLeast48 = minHeight.matches("\\d+dp")
+                && Integer.parseInt(minHeight.replace("dp", "")) >= 48;
+        assertTrue("minHeight must be at least 48dp: " + minHeight, token || literalAtLeast48);
     }
 
     private static Element requireId(String file, String id) throws Exception {

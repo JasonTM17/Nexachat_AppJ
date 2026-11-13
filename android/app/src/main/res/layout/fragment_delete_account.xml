@@ -24,27 +24,24 @@
             android:id="@+id/deleteAccountConsequences"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="8dp"
+            android:layout_marginHorizontal="@dimen/space_md"
+            android:layout_marginTop="@dimen/space_sm"
             android:text="@string/delete_account_consequences"
             android:textAppearance="?attr/textAppearanceBodyLarge"
             android:textColor="?attr/colorOnSurfaceVariant" />
 
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/passwordLayout"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            style="@style/Widget.NexaChat.TextInputLayout.Auth"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="20dp"
+            android:layout_marginHorizontal="@dimen/space_md"
+            android:layout_marginTop="@dimen/space_lg"
             android:hint="@string/auth_current_password_label"
-            app:boxCornerRadiusBottomEnd="12dp"
-            app:boxCornerRadiusBottomStart="12dp"
-            app:boxCornerRadiusTopEnd="12dp"
-            app:boxCornerRadiusTopStart="12dp"
             app:endIconContentDescription="@string/cd_password_visibility"
             app:endIconDrawable="@drawable/ic_visibility"
-            app:endIconMode="password_toggle">
+            app:endIconMode="password_toggle"
+            app:startIconDrawable="@drawable/ic_lock">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/passwordInput"
@@ -62,18 +59,18 @@
             style="@style/Widget.Material3.Button"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="20dp"
-            android:minHeight="@dimen/min_touch_target"
+            android:layout_marginHorizontal="@dimen/space_md"
+            android:layout_marginTop="@dimen/space_lg"
+            android:minHeight="56dp"
             android:text="@string/delete_account_send_code"
             android:visibility="gone"
-            app:cornerRadius="12dp" />
+            app:cornerRadius="@dimen/corner_md" />
 
         <TextView
             android:id="@+id/deletionCodeSentMessage"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginHorizontal="16dp"
+            android:layout_marginHorizontal="@dimen/space_md"
             android:layout_marginTop="12dp"
             android:accessibilityLiveRegion="polite"
             android:text="@string/delete_account_code_sent"
@@ -83,17 +80,13 @@
 
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/deletionCodeLayout"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            style="@style/Widget.NexaChat.TextInputLayout.Auth"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="16dp"
+            android:layout_marginHorizontal="@dimen/space_md"
+            android:layout_marginTop="@dimen/space_md"
             android:hint="@string/delete_account_code_label"
-            android:visibility="gone"
-            app:boxCornerRadiusBottomEnd="12dp"
-            app:boxCornerRadiusBottomStart="12dp"
-            app:boxCornerRadiusTopEnd="12dp"
-            app:boxCornerRadiusTopStart="12dp">
+            android:visibility="gone">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/deletionCodeInput"
@@ -110,44 +103,49 @@
             android:id="@+id/inlineError"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="12dp"
+            android:layout_marginHorizontal="@dimen/space_md"
+            android:layout_marginTop="@dimen/space_md"
             android:accessibilityLiveRegion="polite"
+            android:background="@drawable/bg_auth_inline_error"
+            android:drawableStart="@drawable/ic_error_outline"
+            android:drawablePadding="@dimen/space_sm"
+            android:drawableTint="?attr/colorError"
+            android:padding="@dimen/space_inset"
             android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:textColor="?attr/colorError"
+            android:textColor="?attr/colorOnErrorContainer"
             android:visibility="gone" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/profileLoadRetry"
-            style="?attr/materialButtonOutlinedStyle"
+            style="@style/Widget.NexaChat.Button.Outlined"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="16dp"
+            android:layout_marginHorizontal="@dimen/space_md"
+            android:layout_marginTop="@dimen/space_md"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/action_retry"
             android:visibility="gone"
-            app:cornerRadius="12dp" />
+            app:cornerRadius="@dimen/corner_md" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/confirmDelete"
             style="@style/Widget.Material3.Button"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="24dp"
-            android:minHeight="@dimen/min_touch_target"
+            android:layout_marginHorizontal="@dimen/space_md"
+            android:layout_marginTop="@dimen/space_lg"
+            android:minHeight="56dp"
             android:text="@string/delete_account_confirm"
             android:textColor="?attr/colorOnError"
             app:backgroundTint="?attr/colorError"
-            app:cornerRadius="12dp" />
+            app:cornerRadius="@dimen/corner_md" />
 
         <com.google.android.material.progressindicator.LinearProgressIndicator
             android:id="@+id/deleteProgress"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginHorizontal="16dp"
-            android:layout_marginTop="16dp"
+            android:layout_marginHorizontal="@dimen/space_md"
+            android:layout_marginTop="@dimen/space_md"
             android:accessibilityLiveRegion="polite"
             android:contentDescription="@string/delete_account_confirm"
             android:indeterminate="true"
