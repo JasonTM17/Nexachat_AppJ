@@ -774,11 +774,14 @@ public class MessageService {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "syncVersion must be 1 or 2");
         }
         for (SyncRequest.ConversationWatermark watermark : request.watermarks()) {
-            if (watermark != null && watermark.changeCursor() != null && watermark.changeCursor() < 0) {
+            if (watermark == null) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "watermark must not be null");
+            }
+            if (watermark.changeCursor() != null && watermark.changeCursor() < 0) {
                 throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                         "changeCursor must be a non-negative signed 64-bit integer");
             }
-            if (watermark != null && watermark.generation() != null && watermark.generation() < 1) {
+            if (watermark.generation() != null && watermark.generation() < 1) {
                 throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                         "generation must be a positive signed 64-bit integer");
             }

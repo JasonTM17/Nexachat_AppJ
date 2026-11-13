@@ -15,7 +15,7 @@ public record SyncRequest(
         @NotEmpty(message = "watermarks list must not be empty")
         @Size(max = 100, message = "watermarks list must not exceed 100 items")
         @Valid
-        List<ConversationWatermark> watermarks,
+        List<@NotNull(message = "watermark must not be null") ConversationWatermark> watermarks,
 
         Integer limitPerConv,
 
