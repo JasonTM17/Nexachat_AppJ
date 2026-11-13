@@ -37,6 +37,7 @@ IDENTICAL_LOCALE_ALLOWLIST = frozenset(
         "ui_remove_symbol",
         "time_duration_mm_ss",
         "complete_profile_google_chip",
+        "sign_in_method_google",
     }
 )
 
