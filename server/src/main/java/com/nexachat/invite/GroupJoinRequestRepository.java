@@ -12,6 +12,10 @@ import java.util.UUID;
 
 public interface GroupJoinRequestRepository extends JpaRepository<GroupJoinRequest, UUID> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT r FROM GroupJoinRequest r WHERE r.id = :id")
+    Optional<GroupJoinRequest> findByIdForUpdate(@Param("id") UUID id);
+
     Optional<GroupJoinRequest> findByConversation_IdAndUser_IdAndStatus(
             UUID conversationId, UUID userId, GroupJoinRequest.Status status);
 

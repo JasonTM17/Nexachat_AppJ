@@ -94,6 +94,8 @@ class InviteServiceTest {
                 conversationRepository, memberRepository, userRepository,
                 groupService, tokenGenerator, rateLimiter, entityManager, 5);
 
+        lenient().when(joinRequestRepository.findByIdForUpdate(any()))
+                .thenAnswer(invocation -> joinRequestRepository.findById(invocation.getArgument(0)));
         lenient().when(memberRepository.findCurrentRole(conversationId, adminId))
                 .thenReturn(Optional.of(ConversationMember.Role.ADMIN));
         lenient().when(conversationRepository.findByIdForUpdate(conversationId))

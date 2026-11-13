@@ -400,24 +400,8 @@ public class InviteService {
         ConversationMember callerMember = requireMember(conversationId, callerId);
         requireAdmin(callerMember);
 
-        GroupJoinRequest request = joinRequestRepository.findById(requestId)
-                .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_FOUND, "Join request not found"));
-
-        if (!request.getConversation().getId().equals(conversationId)) {
-            throw ApiException.of(ApiErrorCode.NOT_FOUND, "Join request not found for this group");
-        }
-
-        UUID requestedUserId = request.getUser().getId();
-        Map<UUID, User> lockedUsers = lockActiveUsers(callerId, requestedUserId);
-
-        // Deletion may have removed the request while this transaction waited
-        // for the user lock. Re-read it before taking conversation/link locks.
-        request = joinRequestRepository.findById(requestId)
-                .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_FOUND, "Join request not found"));
-        if (!request.getConversation().getId().equals(conversationId)
-                || !request.getUser().getId().equals(requestedUserId)) {
-            throw ApiException.of(ApiErrorCode.NOT_FOUND, "Join request not found for this group");
-        }
+        ReviewContext review = lockReview(callerId, conversationId, requestId);
+        GroupJoinRequest request = review.request();
 
         if (request.getStatus() == GroupJoinRequest.Status.APPROVED) {
             return toJoinRequestResponse(request); // Idempotent
@@ -425,10 +409,6 @@ public class InviteService {
         if (request.getStatus() == GroupJoinRequest.Status.REJECTED) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Cannot approve a rejected request");
         }
-
-        // Lock conversation row for member cap
-        conversationRepository.findByIdForUpdate(conversationId)
-                .orElseThrow(() -> ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
 
         long memberCount = memberRepository.countByConversation_Id(conversationId);
         if (memberCount >= maxMembers) {
@@ -449,7 +429,7 @@ public class InviteService {
         // Add member to group
         groupService.addMemberFromInvite(request.getUser().getId(), conversationId, callerId);
 
-        request.approve(lockedUsers.get(callerId), Instant.now());
+        request.approve(review.reviewer(), Instant.now());
         request = joinRequestRepository.save(request);
 
         log.info("Join request {} approved by admin {} for user {}", requestId, callerId, request.getUser().getId());
@@ -482,12 +462,8 @@ public class InviteService {
         ConversationMember callerMember = requireMember(conversationId, callerId);
         requireAdmin(callerMember);
 
-        GroupJoinRequest request = joinRequestRepository.findById(requestId)
-                .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_FOUND, "Join request not found"));
-
-        if (!request.getConversation().getId().equals(conversationId)) {
-            throw ApiException.of(ApiErrorCode.NOT_FOUND, "Join request not found for this group");
-        }
+        ReviewContext review = lockReview(callerId, conversationId, requestId);
+        GroupJoinRequest request = review.request();
 
         if (request.getStatus() == GroupJoinRequest.Status.REJECTED) {
             return toJoinRequestResponse(request); // Idempotent
@@ -496,11 +472,38 @@ public class InviteService {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Cannot reject an already approved request");
         }
 
-        request.reject(callerMember.getUser(), Instant.now());
+        request.reject(review.reviewer(), Instant.now());
         request = joinRequestRepository.save(request);
 
         log.info("Join request {} rejected by admin {} for user {}", requestId, callerId, request.getUser().getId());
         return toJoinRequestResponse(request);
+    }
+
+    private record ReviewContext(GroupJoinRequest request, User reviewer) {
+    }
+
+    private ReviewContext lockReview(UUID callerId, UUID conversationId, UUID requestId) {
+        GroupJoinRequest initial = joinRequestRepository.findById(requestId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_FOUND, "Join request not found"));
+        if (!initial.getConversation().getId().equals(conversationId)) {
+            throw ApiException.of(ApiErrorCode.NOT_FOUND, "Join request not found for this group");
+        }
+        UUID requestedUserId = initial.getUser().getId();
+        // Evict the pre-lock snapshot: a locking query alone does not refresh
+        // an entity already held by this persistence context.
+        entityManager.detach(initial);
+        Map<UUID, User> lockedUsers = lockActiveUsers(callerId, requestedUserId);
+        // Every review path uses users (UUID order) -> conversation -> request -> link.
+        conversationRepository.findByIdForUpdate(conversationId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
+        requireCurrentAdmin(conversationId, callerId);
+        GroupJoinRequest request = joinRequestRepository.findByIdForUpdate(requestId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_FOUND, "Join request not found"));
+        if (!request.getConversation().getId().equals(conversationId)
+                || !request.getUser().getId().equals(requestedUserId)) {
+            throw ApiException.of(ApiErrorCode.NOT_FOUND, "Join request not found for this group");
+        }
+        return new ReviewContext(request, lockedUsers.get(callerId));
     }
 
     // ------------------------------------------------------------- helpers

@@ -88,15 +88,23 @@ public class GroupJoinRequest {
     }
 
     public void approve(User reviewer, Instant now) {
+        requirePending();
         this.status = Status.APPROVED;
         this.reviewedAt = now != null ? now : Instant.now();
         this.reviewedBy = Objects.requireNonNull(reviewer, "reviewer");
     }
 
     public void reject(User reviewer, Instant now) {
+        requirePending();
         this.status = Status.REJECTED;
         this.reviewedAt = now != null ? now : Instant.now();
         this.reviewedBy = Objects.requireNonNull(reviewer, "reviewer");
+    }
+
+    private void requirePending() {
+        if (status != Status.PENDING) {
+            throw new IllegalStateException("A terminal join request cannot be changed");
+        }
     }
 
     public UUID getId() {
