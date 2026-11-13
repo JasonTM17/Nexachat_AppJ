@@ -1,21 +1,35 @@
-## Summary
+# Pull request / Yêu cầu hợp nhất
 
-<!-- What does this PR do and why? 1–3 sentences. -->
+## Summary / Tóm tắt
 
-## Module touched
+<!-- What changed and why? / Thay đổi gì và vì sao? -->
 
-- [ ] `server/`
-- [ ] `android/`
-- [ ] `docs/`
+## Type / Loại thay đổi
 
-## Test evidence
+- [ ] Bug fix / Sửa lỗi
+- [ ] Feature / Tính năng
+- [ ] Maintenance or docs / Bảo trì hoặc tài liệu
+- [ ] Security or data change / Bảo mật hoặc dữ liệu
 
-<!-- Commands run + result, e.g.
-     `mvn -B verify` → all server unit & integration tests pass
-     `./gradlew testDebugUnitTest lintDebug assembleDebug` → all Android checks pass
-     Paste output/log link or screenshot for UI changes. -->
+## Areas / Khu vực
 
-## Checklist
+- [ ] Server
+- [ ] Android
+- [ ] Site
+- [ ] Docs or tools
 
-- [ ] Verified changes against `docs/api-contract.md` / `docs/websocket-protocol.md` (if transport contracts changed).
-- [ ] Updated `docs/architecture.md` or relevant feature documentation (if system boundaries or behavior changed).
+## Verification / Xác minh
+
+- [ ] Commands and results are listed below / Đã ghi lệnh và kết quả bên dưới
+- [ ] Tests and documentation updated where needed / Đã cập nhật kiểm thử và tài liệu khi cần
+- [ ] No secrets or personal data are included / Không có bí mật hoặc dữ liệu cá nhân
+
+<!-- Commands and results / Lệnh và kết quả -->
+
+## UI screenshots / Ảnh giao diện
+
+<!-- Add before/after screenshots for UI changes; otherwise write N/A. / Đính kèm ảnh trước/sau nếu đổi giao diện; nếu không, ghi N/A. -->
+
+## Migration and deployment notes / Ghi chú migration và triển khai
+
+<!-- Include database, configuration, rollout, and rollback notes, or write N/A. / Ghi chú cơ sở dữ liệu, cấu hình, triển khai và quay lui; nếu không, ghi N/A. -->

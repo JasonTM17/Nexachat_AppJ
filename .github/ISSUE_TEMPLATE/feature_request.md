@@ -1,25 +1,25 @@
 ---
-name: Feature request
-about: Propose a new capability for NexaChat
+name: Feature request / Đề xuất tính năng
+about: Suggest an improvement / Đề xuất cải tiến
 title: ""
 labels: enhancement
 assignees: ""
 ---
 
-## Problem
+## Problem / Vấn đề
 
-<!-- What user problem does this solve? -->
+<!-- What user problem should this solve? / Tính năng này giải quyết vấn đề nào? -->
 
-## Proposed solution
+## Proposal / Đề xuất
 
-<!-- What should happen? Link the relevant design doc or API contract if applicable. -->
+<!-- Describe the expected behavior and any relevant design or API contract. / Mô tả cách hoạt động mong muốn và thiết kế hoặc hợp đồng API liên quan. -->
 
-## Alternatives considered
+## Alternatives / Phương án khác
 
-<!-- Other approaches you evaluated. -->
+<!-- Optional / Không bắt buộc -->
 
-## Checklist
+## Checklist / Xác nhận
 
-- [ ] This fits the project scope (see `docs/known-limitations.md`).
-- [ ] EN/VI strings are planned for any new user-facing copy.
-- [ ] Tests and documentation updates are included.
+- [ ] Fits project scope / Phù hợp phạm vi dự án
+- [ ] Tests and documentation are considered / Đã tính đến kiểm thử và tài liệu
+- [ ] No secrets or personal data are included / Không có bí mật hoặc dữ liệu cá nhân
