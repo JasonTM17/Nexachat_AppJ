@@ -6,21 +6,57 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.6] - 2026-11-14
+
+Stability and polish release: scrolling, keyboard and large-font fixes across
+the Android app, a calmer reconnect loop, a lossless legacy sync, and a tidier
+repository layout. The server changes take effect with the matching server
+deploy; the `v1.2.6` app also works with the previous server. No migration, no
+new required environment variable. See
+[docs/release-notes/v1.2.6.md](docs/release-notes/v1.2.6.md).
+
 ### Android
 
-- **Active Now** inbox rail with smoother structural updates; brighter online presence dot on avatars (offline peers no longer show a grey dot).
-- Chat history mapping uses one stream per open conversation, reducing duplicate Room work while preserving read receipts and paging.
+**Fixed**
+
+- Chat keeps the reader's exact scroll offset when messages, reactions or read
+  receipts arrive, or when an older page loads, instead of snapping the first
+  visible row to the top.
+- Inbox no longer re-anchors the list when an update leaves the rows unchanged.
+- The add-member sheet of a group bounds its list and keeps the confirm button
+  visible; other form sheets and password dialogs stay above the keyboard.
+- Reminder and poll snackbars appear above the add button; invite actions and
+  long titles wrap at large font sizes; the media viewer back control stays
+  readable over light photos.
+- The realtime retry loop stays parked while the network is online but the server
+  is unreachable, instead of retrying again immediately.
+
+**Added**
+
+- **Active Now** inbox rail with smoother structural updates and a brighter
+  online presence dot on avatars.
+
+**Changed**
+
+- Chat history is mapped once per open conversation, reducing duplicate Room work.
+- Legacy sync keeps an opaque cursor across batches.
 
 ### Server
 
-- Scheduled retention sweeps acquire a cluster advisory lock so only one instance runs a destructive sweep at a time.
-- Legacy v1 sync stays lossless when edits and recalls overflow the page limit; `serverTime` is capped at the earliest truncated boundary on both server and Android client.
+- Scheduled retention sweeps take a cluster advisory lock so only one instance
+  runs a destructive sweep at a time.
+- Legacy v1 sync stays lossless when edits and recalls overflow the page limit;
+  `serverTime` is capped at the earliest truncated boundary.
+- Access-token validity cache expiry uses an injectable clock.
 
 ### Documentation and tooling
 
-- Documentation grouped under `docs/architecture/`, `docs/operations/`, `docs/release/`, `docs/quality/`, and `docs/archive/`; repository tools live under `tools/checks/`, `tools/release/`, `tools/ops/`, and `tools/demo/`.
-- GitHub issue and pull request templates; CI runs hermetic Python tooling unit tests and the Android accessibility check.
-
+- Documentation is grouped by audience under `docs/architecture/`,
+  `docs/operations/`, `docs/release/`, `docs/quality/` and `docs/archive/`;
+  tools live under `tools/checks/`, `tools/release/`, `tools/ops/` and
+  `tools/demo/`.
+- GitHub issue and pull request templates; CI runs hermetic tooling tests, pulls
+  the Testcontainers database image, and checks Android accessibility.
 ## [1.2.5] - 2026-11-13
 
 Fix release after a full review of the Android app, server, website and docs.
