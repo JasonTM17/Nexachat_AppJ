@@ -24,6 +24,7 @@ from manifest import (
     OBJECTS_DIR,
     Reconciliation,
     configure_logging,
+    canonical_storage_reference,
     is_canonical_storage_key,
     lock_path,
     manifest_path,
@@ -300,19 +301,38 @@ def run_pg_dump(db: dict[str, str], dest: Path) -> dict[str, int]:
     return {"pg_dump_client_major": client_major, "pg_server_major": server_major}
 
 
+def inventory_storage_keys(lines: list[str]) -> set[str]:
+    """Resolve attachment keys and avatar URLs to one set of canonical keys.
+
+    Avatar URLs are decoded with the same query, fragment, and percent-encoding
+    rules as the server. A local reference that does not resolve is an error;
+    it is not dropped from the reconciliation count.
+    """
+    keys: set[str] = set()
+    unresolved: list[str] = []
+    for line in lines:
+        raw = line.strip()
+        if not raw:
+            continue
+        key = canonical_storage_reference(raw)
+        if not is_canonical_storage_key(key):
+            unresolved.append(raw)
+            continue
+        keys.add(key)
+    if unresolved:
+        raise SystemExit("Unresolved local storage reference: " + ", ".join(unresolved))
+    return keys
+
+
 def query_referenced_keys_psql(db: dict[str, str]) -> set[str]:
     """Collect keys using only docker/psql (stdlib rehearsal path)."""
     sql = """
 COPY (
   SELECT storage_key FROM message_attachments
   UNION
-  SELECT substring(avatar_url from '.*/api/v1/files/(.+)$') AS storage_key
-  FROM (
-    SELECT avatar_url FROM users WHERE avatar_url LIKE '%/api/v1/files/%'
-    UNION ALL
-    SELECT avatar_url FROM conversations WHERE avatar_url LIKE '%/api/v1/files/%'
-  ) avatars
-  WHERE substring(avatar_url from '.*/api/v1/files/(.+)$') IS NOT NULL
+  SELECT avatar_url FROM users WHERE avatar_url LIKE '%/api/v1/files/%'
+  UNION
+  SELECT avatar_url FROM conversations WHERE avatar_url LIKE '%/api/v1/files/%'
 ) TO STDOUT;
 """
     container = os.environ.get("BACKUP_PG_CONTAINER")
@@ -340,12 +360,7 @@ COPY (
         )
     if proc.returncode != 0:
         raise SystemExit(f"Failed to inventory storage references: {proc.stderr.strip()}")
-    keys: set[str] = set()
-    for line in proc.stdout.splitlines():
-        key = line.strip()
-        if key and is_canonical_storage_key(key):
-            keys.add(key)
-    return keys
+    return inventory_storage_keys(proc.stdout.splitlines())
 
 
 def active_writers(db: dict[str, str]) -> int:

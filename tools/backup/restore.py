@@ -18,6 +18,7 @@ from manifest import (
     assert_complete_backup,
     assert_manifest_version,
     configure_logging,
+    canonical_storage_reference,
     is_canonical_storage_key,
     load_manifest,
     manifest_path,
@@ -132,9 +133,10 @@ def restore_database(db_name: str, backup_dir: Path, payload: dict, user: str) -
 def restore_objects(backup_dir: Path, payload: dict, storage_root: Path) -> None:
     objects_dir = backup_dir / OBJECTS_DIR
     root = storage_root.expanduser().resolve()
-    for key, meta in payload.get("objects", {}).items():
+    for raw_key, meta in payload.get("objects", {}).items():
+        key = canonical_storage_reference(str(raw_key))
         if not is_canonical_storage_key(key):
-            raise SystemExit(f"Manifest contains unsafe key {key!r}")
+            raise SystemExit(f"Unresolved local storage reference {raw_key!r}")
         source = objects_dir / str(meta["backup_name"])
         dest = (root / key).resolve()
         if not dest.is_relative_to(root):

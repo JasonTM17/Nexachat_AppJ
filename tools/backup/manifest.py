@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 FORMAT_VERSION = 1
 MANIFEST_NAME = "manifest.json"
@@ -52,27 +53,49 @@ def is_canonical_storage_key(storage_key: str | None) -> bool:
     return bool(CANONICAL_KEY_RE.match(storage_key))
 
 
+def _path_without_query_or_fragment(value: str) -> str:
+    fragment = value.find("#")
+    if fragment >= 0:
+        value = value[:fragment]
+    query = value.find("?")
+    if query >= 0:
+        value = value[:query]
+    return value
+
+
 def storage_key_from_avatar_url(avatar_url: str | None) -> str | None:
+    """Storage key for a files URL, using the server avatar URL rules.
+
+    Query and fragment are removed before the path is decoded, matching
+    ``AvatarUrlPolicy.storageKeyFromUrl``.
+    """
     if avatar_url is None:
         return None
     value = avatar_url.strip()
     if not value:
         return None
-    path = value
-    if "://" in value:
-        fragment = value.find("#")
-        if fragment >= 0:
-            value = value[:fragment]
-        query = value.find("?")
-        if query >= 0:
-            value = value[:query]
-        slash = value.find("/", value.find("://") + 3)
-        path = value[slash:] if slash >= 0 else value
+    try:
+        parsed_path = unquote(urlparse(value).path or "")
+    except ValueError:
+        parsed_path = ""
+    path = parsed_path or unquote(_path_without_query_or_fragment(value))
     prefix = path.rfind(FILES_PATH)
     if prefix < 0:
         return None
     key = path[prefix + len(FILES_PATH) :]
-    return key if key else None
+    return key if key.strip() else None
+
+
+def canonical_storage_reference(reference: str | None) -> str | None:
+    """Return one canonical object key for an attachment key or avatar URL."""
+    if reference is None:
+        return None
+    text = reference.strip()
+    if not text:
+        return None
+    if FILES_PATH in text or "://" in text:
+        return storage_key_from_avatar_url(text)
+    return unquote(_path_without_query_or_fragment(text)) or None
 
 
 @dataclass(frozen=True)

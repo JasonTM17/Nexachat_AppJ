@@ -122,6 +122,39 @@ class RestoreNegativeTest(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     restore.run_restore(manifest_path, "nexachat_restore_v12", False, True)
 
+    def test_avatar_url_object_key_restores_to_decoded_path(self) -> None:
+        avatar_id = "550e8400-e29b-41d4-a716-446655440000"
+        key = f"avatars/{avatar_id}.png"
+        url_key = f"/api/v1/files/{key}?v=2"
+        with tempfile.TemporaryDirectory() as tmp:
+            backup_dir = Path(tmp) / "bundle"
+            backup_dir.mkdir()
+            dump = backup_dir / manifest.DUMP_NAME
+            dump.write_bytes(b"SELECT 1;\n")
+            rel = key.replace("/", "__")
+            obj_dir = backup_dir / manifest.OBJECTS_DIR
+            obj_dir.mkdir()
+            (obj_dir / rel).write_bytes(b"avatar-bytes")
+            payload = {
+                "format_version": manifest.FORMAT_VERSION,
+                "database": {"dump_file": manifest.DUMP_NAME, "sha256": manifest.sha256_file(dump)},
+                "objects": {
+                    url_key: {
+                        "backup_name": rel,
+                        "sha256": manifest.sha256_file(obj_dir / rel),
+                        "size_bytes": 12,
+                    }
+                },
+                "reconciliation": {"referenced": 1, "present": 1, "missing": []},
+            }
+            manifest.write_manifest(manifest.manifest_path(backup_dir), payload)
+            manifest.write_complete_marker(backup_dir)
+            restored = Path(tmp) / "storage"
+            restored.mkdir()
+            restore.restore_objects(backup_dir, payload, restored)
+            self.assertEqual((restored / key).read_bytes(), b"avatar-bytes")
+            self.assertFalse((restored / url_key.lstrip("/")).exists())
+
     def test_mismatched_manifest_version(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             manifest_path = _write_backup(Path(tmp), version=0)

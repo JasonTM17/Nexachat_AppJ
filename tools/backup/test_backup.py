@@ -20,6 +20,7 @@ if str(TOOLS) not in sys.path:
 
 import backup  # noqa: E402
 import manifest  # noqa: E402
+import restore  # noqa: E402
 
 
 class ManifestHelpersTest(unittest.TestCase):
@@ -28,6 +29,19 @@ class ManifestHelpersTest(unittest.TestCase):
         self.assertEqual(
             manifest.storage_key_from_avatar_url(url),
             "avatars/550e8400-e29b-41d4-a716-446655440000.png",
+        )
+
+    def test_avatar_url_strips_query_and_decodes_path(self) -> None:
+        avatar_id = "550e8400-e29b-41d4-a716-446655440000"
+        key = f"avatars/{avatar_id}.png"
+        self.assertEqual(manifest.storage_key_from_avatar_url(f"/api/v1/files/{key}?v=2"), key)
+        self.assertEqual(
+            manifest.storage_key_from_avatar_url(f"/api/v1/files/avatars/{avatar_id}%2Epng"),
+            key,
+        )
+        self.assertEqual(
+            manifest.storage_key_from_avatar_url(f"https://cdn.example/api/v1/files/{key}?v=2#rev"),
+            key,
         )
 
     def test_rejects_traversal_keys(self) -> None:
@@ -380,6 +394,67 @@ class BackupCaptureTest(unittest.TestCase):
             self.assertEqual(data["reconciliation"]["present"], 1)
             obj_path = output / manifest.OBJECTS_DIR / backup.object_backup_name(key)
             self.assertEqual(manifest.sha256_bytes(payload_bytes), manifest.sha256_file(obj_path))
+
+    def test_query_and_encoded_avatars_are_inventoried_once_and_restored(self) -> None:
+        avatar_id = "550e8400-e29b-41d4-a716-446655440000"
+        key = f"avatars/{avatar_id}.png"
+        stdout = "\n".join(
+            [
+                f"/api/v1/files/{key}?v=2",
+                f"/api/v1/files/avatars/{avatar_id}%2Epng#rev",
+                f"https://cdn.example/api/v1/files/{key}?v=3",
+            ]
+        )
+        db = {
+            "host": "localhost",
+            "port": "5433",
+            "database": "nexachat",
+            "user": "nexachat",
+            "password": "local-only",
+        }
+        with mock.patch.dict(os.environ, {"BACKUP_PG_CONTAINER": "fake-db"}, clear=False):
+            with mock.patch("subprocess.run") as run_mock:
+                run_mock.return_value = mock.Mock(returncode=0, stdout=stdout, stderr="")
+                keys = backup.query_referenced_keys_psql(db)
+        self.assertEqual(keys, {key})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "backup"
+            storage = Path(tmp) / "uploads"
+            (storage / "avatars").mkdir(parents=True)
+            payload_bytes = b"avatar-bytes"
+            (storage / key).write_bytes(payload_bytes)
+            env = _backup_env(storage)
+            with mock.patch.dict(os.environ, env, clear=False):
+                with mock.patch.object(backup, "active_writers", return_value=0):
+                    with mock.patch.object(backup, "run_pg_dump", side_effect=_successful_dump):
+                        with mock.patch("subprocess.run") as run_mock:
+                            run_mock.return_value = mock.Mock(returncode=0, stdout=stdout + "\n", stderr="")
+                            backup.run_backup("fixture", output, quiesced=True)
+            data = json.loads(manifest.manifest_path(output).read_text(encoding="utf-8"))
+            self.assertEqual(set(data["objects"]), {key})
+            self.assertEqual(data["reconciliation"]["referenced"], 1)
+            self.assertEqual(data["reconciliation"]["present"], 1)
+            restored = Path(tmp) / "restored"
+            restored.mkdir()
+            restore.restore_objects(output, data, restored)
+            self.assertEqual((restored / key).read_bytes(), payload_bytes)
+
+    def test_unresolved_local_reference_fails_inventory(self) -> None:
+        db = {
+            "host": "localhost",
+            "port": "5433",
+            "database": "nexachat",
+            "user": "nexachat",
+            "password": "local-only",
+        }
+        stdout = "/api/v1/files/../secret\n"
+        with mock.patch.dict(os.environ, {"BACKUP_PG_CONTAINER": "fake-db"}, clear=False):
+            with mock.patch("subprocess.run") as run_mock:
+                run_mock.return_value = mock.Mock(returncode=0, stdout=stdout, stderr="")
+                with self.assertRaises(SystemExit) as ctx:
+                    backup.query_referenced_keys_psql(db)
+        self.assertIn("Unresolved", str(ctx.exception))
 
 
 def _backup_env(storage: Path) -> dict[str, str]:
