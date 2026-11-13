@@ -47,8 +47,9 @@ public final class LoginFragment extends Fragment {
         binding.passwordInput.setOnEditorActionListener((v, action, event) -> { if (action == EditorInfo.IME_ACTION_DONE) { submit(); return true; } return false; });
         binding.primaryAction.setText(R.string.action_sign_in);
         binding.primaryAction.setOnClickListener(v -> submit());
-        binding.googleSignIn.setVisibility(
-                viewModel.isGoogleSignInAvailable() ? View.VISIBLE : View.GONE);
+        int googleVisibility = viewModel.isGoogleSignInAvailable() ? View.VISIBLE : View.GONE;
+        binding.googleSignIn.setVisibility(googleVisibility);
+        binding.authOrDivider.getRoot().setVisibility(googleVisibility);
         binding.googleSignIn.setOnClickListener(v -> viewModel.googleSignIn(requireActivity()));
         binding.secondaryAction.setText(R.string.action_create_account);
         View.OnClickListener openRegister = v -> {

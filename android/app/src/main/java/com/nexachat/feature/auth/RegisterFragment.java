@@ -42,8 +42,9 @@ public final class RegisterFragment extends Fragment {
         binding.confirmPasswordInput.addTextChangedListener(watcher(s -> { confirmation = s; render(viewModel.getUiState().getValue()); }));
         binding.confirmPasswordInput.setOnEditorActionListener((v, action, event) -> { if (action == EditorInfo.IME_ACTION_DONE) { submit(); return true; } return false; });
         binding.registerButton.setOnClickListener(v -> submit());
-        binding.googleSignIn.setVisibility(
-                viewModel.isGoogleSignInAvailable() ? View.VISIBLE : View.GONE);
+        int googleVisibility = viewModel.isGoogleSignInAvailable() ? View.VISIBLE : View.GONE;
+        binding.googleSignIn.setVisibility(googleVisibility);
+        binding.authOrDivider.getRoot().setVisibility(googleVisibility);
         binding.googleSignIn.setOnClickListener(v -> viewModel.googleSignIn(requireActivity()));
         View.OnClickListener openLogin = v -> {
             Bundle args = inviteReturnArgs();

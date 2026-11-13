@@ -119,6 +119,7 @@
                     style="@style/Widget.NexaChat.Button.Google"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
                     android:contentDescription="@string/cd_continue_with_google"
                     android:minHeight="56dp"
                     android:text="@string/action_continue_with_google"
@@ -129,7 +130,9 @@
                     app:iconTint="@null"
                     tools:visibility="visible" />
 
-                <include layout="@layout/include_auth_or_divider" />
+                <include
+                    android:id="@+id/authOrDivider"
+                    layout="@layout/include_auth_or_divider" />
 
                 <!-- Fields -->
                 <com.google.android.material.textfield.TextInputLayout
@@ -240,7 +243,8 @@
                     android:layout_marginTop="@dimen/space_sm"
                     android:minHeight="@dimen/min_touch_target"
                     android:text="@string/action_sign_in"
-                    android:textColor="?attr/colorPrimary" />
+                    android:textColor="?attr/colorPrimary"
+                    android:visibility="gone" />
             </LinearLayout>
         </LinearLayout>
     </ScrollView>
