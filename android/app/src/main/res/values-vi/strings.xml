@@ -604,4 +604,6 @@
     <string name="action_open_app_settings">Mở cài đặt</string>
     <!-- group leave -->
     <string name="group_leave_only_admin">Bạn là quản trị viên duy nhất. Chưa thể rời nhóm khi vẫn còn thành viên khác.</string>
+    <!-- Account and session notices -->
+    <string name="logout_all_unconfirmed">Đã đăng xuất trên thiết bị này. Chưa thể xác nhận đăng xuất trên các thiết bị khác. Hãy đăng nhập và thử lại.</string>
 </resources>

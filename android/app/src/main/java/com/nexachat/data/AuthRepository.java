@@ -314,6 +314,12 @@ public final class AuthRepository {
                         .andThen(clearAndFinishLogout(deviceTokenRegistrationManager.onLogout()
                                 .onErrorComplete()
                                 .andThen(ApiResult.safeApiCall(authApi.logoutAll())
+                                        .doOnSuccess(result -> {
+                                            if (!(result instanceof ApiResult.Success<?>)) {
+                                                markRemoteRevocationUnconfirmed();
+                                            }
+                                        })
+                                        .doOnError(ignored -> markRemoteRevocationUnconfirmed())
                                         .ignoreElement().onErrorComplete())
                                 .andThen(tokenStore.clear())
                                 .andThen(Completable.fromAction(sessionEvents::emitLoggedOut)), true))
@@ -321,6 +327,10 @@ public final class AuthRepository {
                                 () -> new Result.Success<>(Unit.INSTANCE)))
                 )
                 .subscribeOn(Schedulers.io());
+    }
+
+    private void markRemoteRevocationUnconfirmed() {
+        if (loginNotice != null) loginNotice.setRemoteRevocationUnconfirmed();
     }
 
     /**

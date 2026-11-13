@@ -19,6 +19,10 @@ public final class LoginNotice {
         pendingMessageResId.set(R.string.login_account_deleted_notice);
     }
 
+    public void setRemoteRevocationUnconfirmed() {
+        pendingMessageResId.set(R.string.logout_all_unconfirmed);
+    }
+
     @StringRes
     @Nullable
     public Integer consume() {
