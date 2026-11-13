@@ -112,6 +112,8 @@ public final class ChatViewModel extends ViewModel {
     private final SerialDisposable initialHistoryDisposable = new SerialDisposable();
     private boolean initialHistoryReloadInFlight;
     private final Map<String, CompositeDisposable> uploadDisposables = new LinkedHashMap<>();
+    /** Reply id captured when an upload batch starts, keyed by that batch's local ids. */
+    private final Map<String, String> attachmentReplyIds = new HashMap<>();
     private final AtomicLong searchGeneration = new AtomicLong();
 
     private final Map<String, Disposable> typingTtlDisposables = new LinkedHashMap<>();
@@ -1023,10 +1025,15 @@ public final class ChatViewModel extends ViewModel {
     }
 
     public void sendAttachments(List<Uri> uris, @Nullable Long durationMs) {
+        ReplyTarget batchReply = currentUiState().getReplyTarget();
+        String batchReplyId = batchReply == null ? null : batchReply.getMessageId();
         for (int index = 0; index < uris.size(); index++) {
             Uri uri = uris.get(index);
             Long attachmentDurationMs = index == 0 ? durationMs : null;
             String localId = UUID.randomUUID().toString();
+            if (batchReplyId != null) {
+                attachmentReplyIds.put(localId, batchReplyId);
+            }
             CompositeDisposable uploadTask = new CompositeDisposable();
             uploadDisposables.put(localId, uploadTask);
             disposables.add(uploadTask);
@@ -1035,7 +1042,10 @@ public final class ChatViewModel extends ViewModel {
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(local -> startUpload(
                                     localId, uri, local, attachmentDurationMs, uploadTask),
-                            error -> uploadDisposables.remove(localId));
+                            error -> {
+                                attachmentReplyIds.remove(localId);
+                                uploadDisposables.remove(localId);
+                            });
             // CompositeDisposable preserves both handles when the description
             // completes synchronously before its subscription is returned.
             uploadTask.add(describe);
@@ -1076,8 +1086,10 @@ public final class ChatViewModel extends ViewModel {
                     row.getType(), progress.getFraction(), row.getState())));
         } else if (event instanceof AttachmentUploadEvent.Uploaded uploaded) {
             AttachmentDto attachment = uploaded.getAttachment();
+            String replyToId = attachmentReplyIds.remove(localId);
             updatePending(rows -> filterPending(rows, localId));
             uploadDisposables.remove(localId);
+            consumeReplyTarget(replyToId);
             String content = local.getDisplayName();
             if (content == null || content.isBlank()) {
                 content = attachment.getOriginalName();
@@ -1094,7 +1106,7 @@ public final class ChatViewModel extends ViewModel {
             disposables.add(messageRepository.send(
                             conversationId,
                             finalContent,
-                            null,
+                            replyToId,
                             finalType,
                             List.of(attachment))
                     .subscribeOn(Schedulers.io())
@@ -1105,7 +1117,21 @@ public final class ChatViewModel extends ViewModel {
         }
     }
 
+    private void consumeReplyTarget(@Nullable String replyToId) {
+        if (replyToId == null) {
+            return;
+        }
+        updateUiState(state -> {
+            ReplyTarget current = state.getReplyTarget();
+            if (current != null && replyToId.equals(current.getMessageId())) {
+                return state.withReplyTarget(null);
+            }
+            return state;
+        });
+    }
+
     private void markUploadFailed(String localId) {
+        attachmentReplyIds.remove(localId);
         updatePending(rows -> mapPending(rows, localId, row -> new PendingAttachment(
                 row.getLocalId(), row.getUri(), row.getDisplayName(), row.getMimeType(),
                 row.getType(), row.getProgress(), PendingAttachment.PendingState.FAILED)));
@@ -1113,6 +1139,7 @@ public final class ChatViewModel extends ViewModel {
     }
 
     public void removePendingAttachment(String localId) {
+        attachmentReplyIds.remove(localId);
         CompositeDisposable task = uploadDisposables.remove(localId);
         if (task != null) {
             task.dispose();
@@ -1232,6 +1259,7 @@ public final class ChatViewModel extends ViewModel {
     protected void onCleared() {
         disposables.clear();
         uploadDisposables.clear();
+        attachmentReplyIds.clear();
         clearTypingIndicator();
         if (ephemeralRouter != null) {
             clearOwnTypingSignal();
