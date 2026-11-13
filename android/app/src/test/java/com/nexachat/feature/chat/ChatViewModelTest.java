@@ -445,6 +445,11 @@ public final class ChatViewModelTest {
     }
 
     @Test
+    public void observesMappedMessageHistoryOnlyOnceForUiAndReadMarking() {
+        verify(messageRepository, times(1)).messagesFlow(CONVERSATION_ID);
+    }
+
+    @Test
     public void ownMessageDoesNotTriggerReadCall() {
         messagesFlow.onNext(List.of(message("m-2", 10L, true)));
         verify(messageRepository, never()).sendRead(CONVERSATION_ID, 10L);

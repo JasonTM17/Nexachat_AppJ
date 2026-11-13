@@ -340,7 +340,10 @@ public final class ChatViewModel extends ViewModel {
         disposables.add(messageRepository.messagesFlow(conversationId)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(this::applyMessages, this::surfaceStreamFailure));
+                .subscribe(messages -> {
+                    applyMessages(messages);
+                    markNewestIncomingRead(messages);
+                }, this::surfaceStreamFailure));
         disposables.add(conversationRepository.conversationFlow(conversationId)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
@@ -395,10 +398,6 @@ public final class ChatViewModel extends ViewModel {
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(ignored -> clearTypingIndicator(), this::surfaceStreamFailure));
         }
-        disposables.add(messageRepository.messagesFlow(conversationId)
-                .subscribeOn(Schedulers.io())
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(this::markNewestIncomingRead, this::surfaceStreamFailure));
     }
 
     private void updateConnectivityState() {
