@@ -33,9 +33,9 @@ Still frames captured from live Android emulators (`emulator-5554` / `nexachat-a
 | `screens/09-outgoing-call-dark-en.png` | Outgoing 1-to-1 voice call screen, ringing |
 | `screens/11-call-failure-dark-en.png` | Call failure dialog with connection status reason |
 | `screens/12-summary-dark-en.png` | Conversation summary sheet with generated Overview, Key points, citations, and Action items |
-| `screens/13-inbox-light-vi.png` | Light Mode Inbox (Vietnamese) |
+| `screens/13-inbox-light-vi.png` | Same image bytes as `stitch-02-inbox-light.png` (English light inbox stitch; not a Vietnamese capture) |
 | `screens/14-chat-light-vi.png` | Direct chat in Light Mode (Vietnamese) |
-| `screens/15-chat-light-en.png` | Chat screen in Light Mode (English) |
+| `screens/15-chat-light-en.png` | Same image bytes as `05-group-chat-dark-en.png` (dark group chat frame; not a light English chat) |
 | `screens/16-chat-landscape-dark-en.png` | Chat screen in Dark Mode landscape orientation (2400×1080) |
 | `screens/17-offline-chat-dark-en.png` | Offline/disconnected banner in chat with queued outbox message |
 
