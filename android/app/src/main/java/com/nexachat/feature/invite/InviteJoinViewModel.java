@@ -37,11 +37,18 @@ public final class InviteJoinViewModel extends ViewModel {
     public void open(@Nullable String rawUrl) {
         Optional<InviteLinkParser.ParsedInvite> parsed = InviteLinkParser.parse(rawUrl);
         if (parsed.isEmpty()) {
+            disposables.clear();
+            token = null;
             mutableState.setValue(InviteJoinUiState.loading()
                     .withFailure(InviteFailure.UNAVAILABLE));
             return;
         }
-        token = parsed.get().getToken();
+        String nextToken = parsed.get().getToken();
+        if (nextToken.equals(token)) {
+            return;
+        }
+        disposables.clear();
+        token = nextToken;
         mutableState.setValue(InviteJoinUiState.loading());
         loadPreview();
     }
@@ -75,7 +82,7 @@ public final class InviteJoinViewModel extends ViewModel {
     public void refreshStatus() {
         InviteJoinUiState state = current();
         String id = state.getConversationId();
-        if (id == null || (state.getStatus() != InviteJoinUiState.Status.PENDING
+        if (state.isBusy() || id == null || (state.getStatus() != InviteJoinUiState.Status.PENDING
                 && state.getStatus() != InviteJoinUiState.Status.APPROVED)) {
             return;
         }
@@ -92,8 +99,26 @@ public final class InviteJoinViewModel extends ViewModel {
         }
         disposables.add(repository.loadPreview(inviteToken)
                 .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(preview -> mutableState.setValue(current().withPreview(preview)),
-                        this::showFailure));
+                .subscribe(this::onPreview, this::showFailure));
+    }
+
+    private void onPreview(InvitePreviewResponse preview) {
+        InviteJoinUiState ready = current().withPreview(preview);
+        if (preview.isMember || !preview.requiresApproval) {
+            mutableState.setValue(ready);
+            return;
+        }
+        // A fresh ViewModel has no retained request status. Resolve it before allowing Join.
+        mutableState.setValue(ready.withBusy());
+        disposables.add(repository.getMyJoinRequest(preview.conversationId)
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(result -> {
+                    if (result.isEmpty()) {
+                        mutableState.setValue(ready);
+                    } else {
+                        onRequestStatus(result);
+                    }
+                }, this::showFailure));
     }
 
     private void onJoined(JoinResponse response) {
