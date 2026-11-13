@@ -21,119 +21,135 @@
             app:navigationContentDescription="@string/cd_back"
             app:navigationIcon="@drawable/ic_arrow_back" />
 
-        <!-- Header: 96dp Avatar with camera badge, name and phone -->
-        <FrameLayout
-            android:layout_width="96dp"
-            android:layout_height="96dp"
-            android:layout_marginTop="8dp">
-
-            <com.nexachat.core.ui.components.AvatarView
-                android:id="@+id/profileAvatar"
-                android:layout_width="96dp"
-                android:layout_height="96dp" />
-
-            <ImageView
-                android:id="@+id/cameraBadge"
-                android:layout_width="@dimen/min_touch_target"
-                android:layout_height="@dimen/min_touch_target"
-                android:layout_gravity="bottom|end"
-                android:background="@drawable/bg_camera_badge"
-                android:contentDescription="@string/profile_change_avatar"
-                android:padding="@dimen/space_sm"
-                android:src="@drawable/ic_camera_alt"
-                app:tint="@android:color/white" />
-        </FrameLayout>
-
-        <TextView
-            android:id="@+id/profileName"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:textAppearance="?attr/textAppearanceHeadlineSmall"
-            android:textColor="?attr/colorOnSurface"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/profilePhone"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:textColor="?attr/colorOnSurfaceVariant" />
-
-        <!-- Edit display name expandable section -->
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/nameLayout"
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:hint="@string/auth_display_name_label"
-            android:visibility="gone"
-            app:boxCornerRadiusBottomEnd="12dp"
-            app:boxCornerRadiusBottomStart="12dp"
-            app:boxCornerRadiusTopEnd="12dp"
-            app:boxCornerRadiusTopStart="12dp">
+            android:layout_marginTop="@dimen/space_sm"
+            app:cardBackgroundColor="?attr/colorSurface"
+            app:cardCornerRadius="@dimen/corner_lg"
+            app:cardElevation="0dp"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
 
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/nameInput"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:singleLine="true" />
-        </com.google.android.material.textfield.TextInputLayout>
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:padding="@dimen/space_md">
 
-        <LinearLayout
-            android:id="@+id/nameActions"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:gravity="end"
-            android:visibility="gone">
+                <FrameLayout
+                    android:layout_width="96dp"
+                    android:layout_height="96dp">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/cancelName"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:minHeight="@dimen/min_touch_target"
-                android:text="@string/action_cancel"
-                app:cornerRadius="12dp" />
+                    <com.nexachat.core.ui.components.AvatarView
+                        android:id="@+id/profileAvatar"
+                        android:layout_width="96dp"
+                        android:layout_height="96dp" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/saveName"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:minHeight="@dimen/min_touch_target"
-                android:text="@string/action_save"
-                app:cornerRadius="12dp" />
-        </LinearLayout>
+                    <ImageView
+                        android:id="@+id/cameraBadge"
+                        android:layout_width="@dimen/min_touch_target"
+                        android:layout_height="@dimen/min_touch_target"
+                        android:layout_gravity="bottom|end"
+                        android:background="@drawable/bg_camera_badge"
+                        android:contentDescription="@string/profile_change_avatar"
+                        android:padding="@dimen/space_sm"
+                        android:src="@drawable/ic_camera_alt"
+                        app:tint="@android:color/white" />
+                </FrameLayout>
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/editName"
-            style="?attr/materialButtonOutlinedStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:minHeight="@dimen/min_touch_target"
-            android:text="@string/cd_edit_name"
-            app:cornerRadius="12dp" />
+                <TextView
+                    android:id="@+id/profileName"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                    android:textColor="?attr/colorOnSurface"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/profilePhone"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/nameLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:hint="@string/auth_display_name_label"
+                    android:visibility="gone"
+                    app:boxCornerRadiusBottomEnd="12dp"
+                    app:boxCornerRadiusBottomStart="12dp"
+                    app:boxCornerRadiusTopEnd="12dp"
+                    app:boxCornerRadiusTopStart="12dp">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/nameInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:singleLine="true" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <LinearLayout
+                    android:id="@+id/nameActions"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:gravity="end"
+                    android:visibility="gone">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/cancelName"
+                        style="?attr/materialButtonOutlinedStyle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:minHeight="@dimen/min_touch_target"
+                        android:text="@string/action_cancel"
+                        app:cornerRadius="12dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/saveName"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:minHeight="@dimen/min_touch_target"
+                        android:text="@string/action_save"
+                        app:cornerRadius="12dp" />
+                </LinearLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/editName"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:minHeight="@dimen/min_touch_target"
+                    android:text="@string/cd_edit_name"
+                    app:cornerRadius="12dp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
         <!-- Preferences Group Card (16dp radius) -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginStart="4dp"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="@dimen/space_md"
             android:layout_marginBottom="6dp"
             android:text="@string/settings_section_appearance"
-            android:textAppearance="?attr/textAppearanceLabelLarge"
-            android:textColor="?attr/colorPrimary" />
+            android:textAppearance="?attr/textAppearanceLabelMedium"
+            android:textColor="?attr/colorOnSurfaceVariant" />
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:cardBackgroundColor="?attr/colorSurface"
-            app:cardCornerRadius="16dp"
+            app:cardCornerRadius="@dimen/corner_lg"
             app:cardElevation="0dp"
             app:strokeColor="?attr/colorOutlineVariant"
             app:strokeWidth="1dp">
@@ -171,42 +187,24 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/themeChipSystem"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.NexaChat.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/theme_system"
-                        android:textColor="@color/stitch_chip_text_color"
-                        app:checkedIconVisible="false"
-                        app:chipBackgroundColor="@color/stitch_chip_bg_tint"
-                        app:chipCornerRadius="18dp"
-                        app:chipStrokeColor="@color/stitch_chip_stroke_color"
-                        app:chipStrokeWidth="1dp" />
+                        android:text="@string/theme_system" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/themeChipLight"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.NexaChat.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/theme_light"
-                        android:textColor="@color/stitch_chip_text_color"
-                        app:checkedIconVisible="false"
-                        app:chipBackgroundColor="@color/stitch_chip_bg_tint"
-                        app:chipCornerRadius="18dp"
-                        app:chipStrokeColor="@color/stitch_chip_stroke_color"
-                        app:chipStrokeWidth="1dp" />
+                        android:text="@string/theme_light" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/themeChipDark"
-                        style="@style/Widget.Material3.Chip.Filter"
+                        style="@style/Widget.NexaChat.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/theme_dark"
-                        android:textColor="@color/stitch_chip_text_color"
-                        app:checkedIconVisible="false"
-                        app:chipBackgroundColor="@color/stitch_chip_bg_tint"
-                        app:chipCornerRadius="18dp"
-                        app:chipStrokeColor="@color/stitch_chip_stroke_color"
-                        app:chipStrokeWidth="1dp" />
+                        android:text="@string/theme_dark" />
                 </com.google.android.material.chip.ChipGroup>
 
                 <View
@@ -387,17 +385,17 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginStart="4dp"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="@dimen/space_md"
             android:layout_marginBottom="6dp"
             android:text="@string/settings_section_account"
-            android:textAppearance="?attr/textAppearanceLabelLarge"
-            android:textColor="?attr/colorPrimary" />
+            android:textAppearance="?attr/textAppearanceLabelMedium"
+            android:textColor="?attr/colorOnSurfaceVariant" />
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:cardBackgroundColor="?attr/colorSurface"
-            app:cardCornerRadius="16dp"
+            app:cardCornerRadius="@dimen/corner_lg"
             app:cardElevation="0dp"
             app:strokeColor="?attr/colorOutlineVariant"
             app:strokeWidth="1dp">
@@ -465,17 +463,17 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginStart="4dp"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="@dimen/space_md"
             android:layout_marginBottom="6dp"
             android:text="@string/settings_section_session"
-            android:textAppearance="?attr/textAppearanceLabelLarge"
-            android:textColor="?attr/colorPrimary" />
+            android:textAppearance="?attr/textAppearanceLabelMedium"
+            android:textColor="?attr/colorOnSurfaceVariant" />
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:cardBackgroundColor="?attr/colorSurface"
-            app:cardCornerRadius="16dp"
+            app:cardCornerRadius="@dimen/corner_lg"
             app:cardElevation="0dp"
             app:strokeColor="?attr/colorOutlineVariant"
             app:strokeWidth="1dp">
@@ -508,7 +506,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
             app:cardBackgroundColor="?attr/colorSurface"
-            app:cardCornerRadius="16dp"
+            app:cardCornerRadius="@dimen/corner_lg"
             app:cardElevation="0dp"
             app:strokeColor="?attr/colorOutlineVariant"
             app:strokeWidth="1dp">

@@ -321,7 +321,7 @@ public final class ProfileFragment extends Fragment {
                                           java.util.function.Consumer<String> onConfirm) {
         TextInputLayout layout = passwordInputLayout(R.string.auth_password_label);
         TextInputEditText input = (TextInputEditText) layout.getEditText();
-        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        int pad = getResources().getDimensionPixelSize(R.dimen.space_md);
         layout.setPadding(pad, getResources().getDimensionPixelSize(R.dimen.space_sm), pad, 0);
         AlertDialog dialog = new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(titleRes)
@@ -366,7 +366,7 @@ public final class ProfileFragment extends Fragment {
     private void showPasswordDialog() {
         LinearLayout form = new LinearLayout(requireContext());
         form.setOrientation(LinearLayout.VERTICAL);
-        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        int pad = getResources().getDimensionPixelSize(R.dimen.space_md);
         int spaceSm = getResources().getDimensionPixelSize(R.dimen.space_sm);
         form.setPadding(pad, spaceSm, pad, 0);
 
