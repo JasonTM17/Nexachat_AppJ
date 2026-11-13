@@ -129,6 +129,48 @@ public final class RealtimeSessionTokenEpochTest {
     }
 
     @Test
+    public void logoutFencesLateStompFrameFromThePreviousSession() {
+        TestScheduler scheduler = new TestScheduler();
+        BehaviorProcessor<Boolean> admission = BehaviorProcessor.createDefault(true);
+        TokenRefresher refresher = mock(TokenRefresher.class);
+        when(refresher.sessionAdmission()).thenReturn(admission);
+        when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
+        TestSessionSignals.stub(refresher);
+        when(refresher.sessionEpoch()).thenReturn(8L);
+        when(refresher.isSessionCurrent(anyLong())).thenAnswer(invocation ->
+                admission.getValue() && invocation.getArgument(0, Long.class) == 8L);
+        stubSessionActionGate(refresher, admission, () -> 8L);
+
+        PublishSubject<StompClient.State> attempt = PublishSubject.create();
+        PublishSubject<com.nexachat.core.network.stomp.StompFrame> frames = PublishSubject.create();
+        StompClient stomp = mock(StompClient.class);
+        when(stomp.getFrames()).thenReturn(frames.toFlowable(BackpressureStrategy.LATEST));
+        when(stomp.connect(any(), any())).thenReturn(Flowable.concat(
+                Flowable.just(StompClient.State.Open.INSTANCE),
+                attempt.toFlowable(BackpressureStrategy.LATEST)));
+        RealtimeSession session = new RealtimeSession(
+                stomp, loggedInStore(), refresher, new Moshi.Builder().build(),
+                new ReconnectPolicy(() -> 0.0), onlineNever(), foregroundNever(), scheduler, scheduler);
+        var events = session.getEvents().test();
+        scheduler.triggerActions();
+        assertTrue(session.isCurrentlyOpen());
+
+        frames.onNext(typingFrame("old session before logout"));
+        scheduler.triggerActions();
+        assertEquals(1, events.values().size());
+
+        admission.onNext(false);
+        scheduler.triggerActions();
+        frames.onNext(typingFrame("late callback after logout"));
+        scheduler.triggerActions();
+
+        assertFalse(session.isCurrentlyOpen());
+        assertEquals("old-session callback must not reach consumers", 1, events.values().size());
+        verify(stomp, times(1)).connect(eq("access"), any());
+        verify(stomp, atLeast(1)).close();
+    }
+
+    @Test
     public void supersededAttemptCompletionDoesNotPublishOpen() {
         TestScheduler scheduler = new TestScheduler();
         TokenRefresher refresher = mock(TokenRefresher.class);
@@ -280,6 +322,15 @@ public final class RealtimeSessionTokenEpochTest {
             TokenStore store, StompClient stomp, TokenRefresher refresher, TestScheduler scheduler) {
         return new RealtimeSession(stomp, store, refresher, new Moshi.Builder().build(),
                 new ReconnectPolicy(() -> 0.0), onlineNever(), foregroundNever(), scheduler);
+    }
+
+    private static com.nexachat.core.network.stomp.StompFrame typingFrame(String displayName) {
+        return new com.nexachat.core.network.stomp.StompFrame(
+                com.nexachat.core.network.stomp.StompCommand.MESSAGE,
+                java.util.Map.of("destination", "/user/queue/inbox"),
+                "{\"eventType\":\"USER_TYPING\",\"conversationId\":\"c-1\","
+                        + "\"payload\":{\"userId\":\"user-a\",\"displayName\":\""
+                        + displayName + "\"}}");
     }
 
     private static NetworkMonitor onlineNever() {
