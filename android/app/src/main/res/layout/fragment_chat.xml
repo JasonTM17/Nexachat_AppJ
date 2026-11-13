@@ -14,8 +14,8 @@
         android:background="?attr/colorSurface"
         app:subtitleTextAppearance="@style/TextAppearance.NexaChat.BodySmall"
         app:subtitleTextColor="?attr/colorOnSurfaceVariant"
-        app:titleMarginStart="48dp"
-        app:titleTextAppearance="@style/TextAppearance.NexaChat.TitleLarge"
+        app:titleMarginStart="96dp"
+        app:titleTextAppearance="@style/TextAppearance.NexaChat.TitleMedium"
         app:titleTextColor="?attr/colorOnSurface"
         app:layout_constraintEnd_toStartOf="@id/chatToolbarActions"
         app:layout_constraintStart_toStartOf="parent"
@@ -27,7 +27,7 @@
         android:id="@+id/chatHeaderAvatar"
         android:layout_width="@dimen/avatar_chat_size"
         android:layout_height="@dimen/avatar_chat_size"
-        android:layout_marginStart="52dp"
+        android:layout_marginStart="@dimen/min_touch_target"
         app:layout_constraintBottom_toBottomOf="@id/chatToolbar"
         app:layout_constraintStart_toStartOf="@id/chatToolbar"
         app:layout_constraintTop_toTopOf="@id/chatToolbar" />
@@ -85,25 +85,43 @@
         android:id="@+id/chatSearchBar"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:background="@drawable/bg_search_pill"
+        android:gravity="center_vertical"
+        android:minHeight="@dimen/min_touch_target"
         android:orientation="horizontal"
+        android:paddingHorizontal="@dimen/space_sm"
+        android:layout_margin="@dimen/space_sm"
         android:visibility="gone"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/unreadBanner">
+
+        <ImageView
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_search"
+            app:tint="?attr/colorOnSurfaceVariant" />
+
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/chatSearchInput"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:background="@android:color/transparent"
             android:hint="@string/search_in_chat_placeholder"
-            android:singleLine="true" />
+            android:singleLine="true"
+            android:textColor="?attr/colorOnSurface"
+            android:textColorHint="?attr/colorOnSurfaceVariant" />
+
         <ImageButton
             android:id="@+id/closeChatSearch"
             android:layout_width="@dimen/min_touch_target"
             android:layout_height="@dimen/min_touch_target"
+            android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/cd_clear_search"
             android:src="@drawable/ic_close"
-            android:background="?attr/selectableItemBackgroundBorderless" />
+            app:tint="?attr/colorOnSurfaceVariant" />
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
@@ -145,7 +163,7 @@
         layout="@layout/include_chat_composer_bar"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginHorizontal="@dimen/space_md"
+        android:layout_marginHorizontal="0dp"
         android:layout_marginBottom="@dimen/space_sm"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"

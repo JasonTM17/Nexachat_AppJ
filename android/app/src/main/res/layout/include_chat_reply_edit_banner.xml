@@ -4,16 +4,22 @@
     android:id="@+id/replyEditRoot"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="?attr/colorPrimaryContainer"
+    android:background="?attr/colorSurface"
     android:gravity="center_vertical"
     android:orientation="horizontal"
     android:padding="@dimen/space_sm"
     android:visibility="gone">
 
+    <View
+        android:layout_width="3dp"
+        android:layout_height="match_parent"
+        android:background="?attr/colorPrimary" />
+
     <ImageView
         android:id="@+id/replyIcon"
         android:layout_width="24dp"
         android:layout_height="24dp"
+        android:layout_marginStart="@dimen/space_sm"
         android:importantForAccessibility="no"
         android:src="@drawable/ic_reply"
         app:tint="?attr/colorPrimary" />
@@ -24,8 +30,10 @@
         android:layout_height="wrap_content"
         android:layout_marginStart="@dimen/space_sm"
         android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="2"
         android:textAppearance="?attr/textAppearanceBodyMedium"
-        android:textColor="?attr/colorOnPrimaryContainer" />
+        android:textColor="?attr/colorOnSurface" />
 
     <ImageButton
         android:id="@+id/cancelReplyEdit"

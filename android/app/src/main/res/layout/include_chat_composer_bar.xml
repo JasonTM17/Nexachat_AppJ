@@ -15,11 +15,10 @@
         android:id="@+id/attachButton"
         android:layout_width="@dimen/min_touch_target"
         android:layout_height="@dimen/min_touch_target"
-        android:background="@drawable/bg_date_separator"
-        android:backgroundTint="?attr/colorSurfaceVariant"
+        android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="@string/cd_attach"
         android:padding="10dp"
-        android:src="@drawable/ic_attach_file"
+        android:src="@drawable/ic_add"
         app:tint="?attr/colorOnSurfaceVariant" />
 
     <com.google.android.material.textfield.TextInputEditText
@@ -102,11 +101,11 @@
             android:id="@+id/micButton"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="@drawable/bg_unread_badge"
+            android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/cd_record_voice"
             android:padding="10dp"
             android:src="@drawable/ic_mic"
             android:visibility="visible"
-            app:tint="?attr/colorOnPrimary" />
+            app:tint="?attr/colorOnSurfaceVariant" />
     </FrameLayout>
 </LinearLayout>
