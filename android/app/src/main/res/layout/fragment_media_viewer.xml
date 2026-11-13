@@ -42,6 +42,16 @@
             android:visibility="gone" />
     </FrameLayout>
 
+    <View
+        android:id="@+id/viewerTopScrim"
+        android:layout_width="match_parent"
+        android:layout_height="120dp"
+        android:layout_gravity="top"
+        android:background="@drawable/bg_media_viewer_top_scrim"
+        android:clickable="false"
+        android:focusable="false"
+        android:importantForAccessibility="no" />
+
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/viewerToolbar"
         android:layout_width="match_parent"

@@ -80,6 +80,8 @@
     <color name="nexa_link_outgoing">#FFFFFCFF</color>
     <color name="nexa_media_meta_surface">#FF211E25</color>
     <color name="nexa_on_media_meta">#FFFFFCFF</color>
+    <color name="nexa_media_viewer_scrim">#E6211E25</color>
+    <color name="nexa_media_viewer_scrim_clear">#00211E25</color>
     <color name="nexa_call_surface">#FF1D1920</color>
     <color name="nexa_call_surface_end">#FF302333</color>
     <!-- Note mark. Night brand_indigo supplies the dark mark. The plate ink does not flip. -->
