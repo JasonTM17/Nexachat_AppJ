@@ -22,20 +22,24 @@
   <a class="skip-link" href="#main">Bỏ qua đến nội dung</a>
   <main id="main" class="container">
     <div class="card card--prose">
-      <h1 class="brand">Quyền riêng tư</h1>
-      <p class="lead" lang="vi">Tóm tắt phù hợp với mã nguồn hiện tại của NexaChat.</p>
-      <p class="lead" lang="en">Summary aligned with the current NexaChat source.</p>
-      <div class="prose" lang="vi">
+      <nav class="language-switch" aria-label="Ngôn ngữ / Language">
+        <a href="#lang-vi" lang="vi">Tiếng Việt</a>
+        <span aria-hidden="true">/</span>
+        <a href="#lang-en" lang="en">English</a>
+      </nav>
+      <section id="lang-vi" class="prose language-section" lang="vi" aria-labelledby="privacy-title-vi">
+        <h1 id="privacy-title-vi" class="brand">Quyền riêng tư</h1>
+        <p class="lead">Tóm tắt phù hợp với mã nguồn hiện tại của NexaChat.</p>
         <h2>Ứng dụng</h2>
         <p>NexaChat là ứng dụng nhắn tin trên Android (<code>com.nexachat</code>). Không có ứng dụng trình duyệt đầy đủ cho nhắn tin.</p>
 
         <h2>Dữ liệu tài khoản và danh bạ</h2>
-        <p>Đăng ký dùng số điện thoại chuẩn hóa E.164, mật khẩu và tên hiển thị; bạn có thể thêm ảnh đại diện tùy chọn. Dịch vụ không xác minh quyền sở hữu số điện thoại bằng tin nhắn SMS OTP.</p>
+        <p>Đăng ký bằng số điện thoại dùng số chuẩn hóa E.164, mật khẩu và tên hiển thị; bạn có thể thêm ảnh đại diện tùy chọn. Dịch vụ không xác minh quyền sở hữu số điện thoại bằng tin nhắn SMS OTP.</p>
         <p>NexaChat không đọc danh bạ trên thiết bị (không yêu cầu quyền <code>READ_CONTACTS</code>). Danh bạ được tạo thủ công trong ứng dụng. Khi tìm kiếm theo tên hiển thị, số điện thoại được ẩn trừ khi bạn đã lưu người đó trong danh bạ; tìm kiếm chính xác bằng số điện thoại sẽ hiển thị hồ sơ tương ứng.</p>
 
         <h2>Đăng nhập bằng Google (tùy chọn)</h2>
-        <p>Đăng nhập bằng Google là tính năng tùy chọn, mặc định tắt và phụ thuộc vào cấu hình của nhà vận hành. Tính năng này không tạo tài khoản mới; bạn chỉ có thể liên kết tài khoản Google sau khi đã đăng nhập tài khoản NexaChat trong phần Cài đặt (cần nhập mật khẩu hiện tại).</p>
-        <p>Máy chủ NexaChat chỉ xác thực ID token và lưu mã nhận diện người dùng bất biến của Google (OpenID Connect <code>sub</code>) cùng địa chỉ email Google tại thời điểm liên kết để hiển thị. Token phiên Google không được lưu trữ. Dữ liệu liên kết Google chỉ dành riêng cho chủ tài khoản, không hiển thị trong tìm kiếm hay hồ sơ công khai, và sẽ bị xóa ngay khi bạn hủy liên kết hoặc xóa tài khoản.</p>
+        <p>Đăng nhập bằng Google là tính năng tùy chọn và phụ thuộc vào cấu hình của nhà vận hành. Khi nhà vận hành bật đăng nhập bằng Google và cho phép tạo tài khoản mới, Google có thể tạo tài khoản NexaChat. Khi tính năng đăng nhập bằng Google được bật, bạn cũng có thể liên kết Google với tài khoản hiện có trong phần Cài đặt sau khi đăng nhập (cần mật khẩu hiện tại).</p>
+        <p>Máy chủ NexaChat xác thực ID token và lưu mã nhận diện người dùng bất biến của Google (OpenID Connect <code>sub</code>) cùng email Google được liên kết với tài khoản. Token phiên Google không được lưu trữ. Dữ liệu này chỉ dành riêng cho chủ tài khoản, không hiển thị trong tìm kiếm hay hồ sơ công khai, và sẽ bị xóa khi bạn hủy liên kết hoặc xóa tài khoản.</p>
 
         <h2>Email khôi phục và mã dùng một lần</h2>
         <p>Bạn có thể thêm một email khôi phục tùy chọn và xác minh bằng mã 6 chữ số. Email khôi phục là dữ liệu riêng tư, không hiển thị cho người dùng khác, không xuất hiện trong tìm kiếm và không dùng cho mục đích quảng cáo.</p>
@@ -60,23 +64,25 @@
 
         <h2>Lưu trữ, thu hồi và xóa tài khoản</h2>
         <p>Tin nhắn và cuộc trò chuyện thông thường không tự động hết hạn. Người gửi có thể thu hồi tin nhắn trong vòng 24 giờ (hoặc quản trị viên nhóm có thể thu hồi bất kỳ lúc nào), chuyển tin nhắn thành trạng thái đã thu hồi.</p>
-        <p>Bạn có thể xóa tài khoản trực tiếp trong ứng dụng tại Hồ sơ (Cài đặt) > Xóa tài khoản với mật khẩu hiện tại. Nếu đã có email khôi phục đã xác minh, bạn cũng có thể yêu cầu xóa tài khoản bị mất thiết bị qua biểu mẫu trên <a href="/delete-account.html">trang xóa tài khoản</a>.</p>
+        <p>Bạn có thể xóa tài khoản trong ứng dụng tại Hồ sơ (Cài đặt) &gt; Xóa tài khoản. Nhập mật khẩu hiện tại nếu tài khoản có mật khẩu; nếu tài khoản không có mật khẩu, hãy dùng mã gửi tới email đã xác minh theo hướng dẫn trong ứng dụng. Biểu mẫu xóa trên web chỉ dành cho tài khoản có số điện thoại và email khôi phục đã xác minh; tài khoản Google không có số điện thoại cần được xóa trong ứng dụng. Xem <a href="/delete-account.html#lang-vi">trang xóa tài khoản</a> để biết chi tiết.</p>
         <p>Khi xóa tài khoản, hệ thống lập tức thu hồi mọi phiên đăng nhập, xóa đăng ký nhận thông báo, xóa danh bạ hai chiều, rời tất cả các nhóm (chuyển giao quyền quản trị nếu là quản trị viên duy nhất), xóa ảnh đại diện, xóa liên kết Google, xóa email khôi phục và mã OTP, xóa đồng ý và bộ nhớ đệm AI, giải phóng số điện thoại để đăng ký mới và đổi tên hiển thị thành tài khoản đã xóa. Tin nhắn bạn đã gửi vẫn lưu lại trong cuộc trò chuyện của người nhận dưới tên tài khoản đã xóa. Trên thiết bị Android, thao tác xóa tài khoản sẽ dọn sạch toàn bộ cơ sở dữ liệu cục bộ, token và bộ nhớ đệm tệp.</p>
 
         <h2>Trang web này</h2>
         <p>nexachat.io.vn phục vụ trang giới thiệu, liên kết mời nhóm, tệp <code>assetlinks.json</code> cho App Links Android và biểu mẫu xóa tài khoản. Khi được bật, biểu mẫu chỉ gửi số điện thoại và mã bạn nhập tới API NexaChat qua HTTPS; trang không đặt cookie, không dùng lưu trữ cục bộ và không có trình theo dõi. Đăng ký tài khoản chỉ thực hiện trong ứng dụng.</p>
-      </div>
-      <div class="prose" lang="en">
+      </section>
+      <section id="lang-en" class="prose language-section" lang="en" aria-labelledby="privacy-title-en">
+        <h1 id="privacy-title-en" class="brand">Privacy Policy</h1>
+        <p class="lead">Summary aligned with the current NexaChat source.</p>
         <h2>Application</h2>
         <p>NexaChat is an Android messaging app (<code>com.nexachat</code>). There is no full browser client for messaging.</p>
 
         <h2>Account data and contacts</h2>
-        <p>Registration uses an E.164 phone number, password, and display name; you can optionally upload an avatar image. The service does not verify phone number ownership with SMS OTP.</p>
+        <p>Phone-based registration uses an E.164 phone number, password, and display name; you can optionally upload an avatar image. The service does not verify phone number ownership with SMS OTP.</p>
         <p>NexaChat does not read your device address book (no <code>READ_CONTACTS</code> permission). Contacts are created manually in the app. In display-name search, phone numbers are omitted unless you already have that user in your contacts; searching by exact phone number returns the matching profile.</p>
 
         <h2>Sign in with Google (optional)</h2>
-        <p>Sign in with Google is optional, disabled by default, and depends on operator configuration. It cannot be used to create new accounts; you can only link a Google account after registering and signing in to NexaChat, through Settings (requiring your current password).</p>
-        <p>The NexaChat server verifies the ID token and stores only Google's immutable user identifier (OpenID Connect <code>sub</code> claim) and the Google email address at link time for display. Google session tokens are not stored. Linked Google identity data is owner-only, is never exposed in search or public profiles, and is permanently deleted when you unlink Google or delete your account.</p>
+        <p>Sign in with Google is optional and depends on operator configuration. When the operator enables both Google sign-in and account creation, Google can create a NexaChat account. When Google sign-in is enabled, you can also link Google to an existing account in Settings after signing in (the current password is required).</p>
+        <p>The NexaChat server verifies the ID token and stores Google's immutable user identifier (OpenID Connect <code>sub</code> claim) and the Google email associated with the account. Google session tokens are not stored. This identity data is visible only to the account owner, is not exposed in search or public profiles, and is deleted when you unlink Google or delete your account.</p>
 
         <h2>Recovery email and one-time codes</h2>
         <p>You can add an optional recovery email and verify it with a 6-digit code. The recovery email is private, never shown to other users, omitted from search and profile responses, and never used for marketing.</p>
@@ -101,25 +107,25 @@
 
         <h2>Retention, recall, and account deletion</h2>
         <p>Messages and conversations do not expire automatically by default. Authors can recall their messages within 24 hours (or group admins at any time), replacing them with tombstones.</p>
-        <p>You can delete your account in the Android app under Profile (Settings) > Delete account with your current password. If you have a verified recovery email, you can also delete a lost-device account via the web form on the <a href="/delete-account.html">account deletion page</a>.</p>
+        <p>Delete your account in the Android app under Profile (Settings) &gt; Delete account. Enter the current password if the account has one; if the account has no password, use a code sent to its verified email as the app prompts. The web deletion form is only for accounts with a phone number and verified recovery email; a Google-created account without a phone number must be deleted in the app. See the <a href="/delete-account.html#lang-en">account deletion page</a> for details.</p>
         <p>Account deletion immediately revokes all sessions, removes push tokens, deletes mutual contacts, leaves all groups (transferring admin rights if sole admin), deletes avatar images and unbound uploads, removes Google identities and recovery email OTP records, purges AI consent and caches, releases the phone number for new registration, and replaces the display name with a neutral deleted state. Sent messages and attachments remain visible to other conversation members, attributed to “Deleted account”. On the device, account deletion wipes the local database, tokens, and media caches.</p>
 
         <h2>This website</h2>
         <p>nexachat.io.vn serves landing pages, group invite links, Android App Links metadata (<code>assetlinks.json</code>), and the account-deletion form. When enabled, the web deletion form sends only the phone number and verification code to the NexaChat API over HTTPS; the site sets no cookies, uses no local storage, and has no third-party trackers. Account registration is available in the Android app only.</p>
-      </div>
+      </section>
       <p class="page-actions"><a class="btn btn-secondary" href="/">Trang chủ · Home</a></p>
     </div>
   </main>
   <footer class="site-footer">
-    <nav aria-label="Pháp lý">
-      <a href="/download.html" lang="vi">Tải ứng dụng</a>
-      <a href="/download.html" lang="en">Download</a>
-      <a href="/privacy.html" aria-current="page" lang="vi">Quyền riêng tư</a>
-      <a href="/privacy.html" aria-current="page" lang="en">Privacy</a>
-      <a href="/terms.html" lang="vi">Điều khoản</a>
-      <a href="/terms.html" lang="en">Terms</a>
-      <a href="/delete-account.html" lang="vi">Xóa tài khoản</a>
-      <a href="/delete-account.html" lang="en">Delete account</a>
+    <nav aria-label="Điều hướng pháp lý / Legal navigation">
+      <a href="/download.html#lang-vi" lang="vi">Tải ứng dụng</a>
+      <a href="/download.html#lang-en" lang="en">Download</a>
+      <a href="/privacy.html#lang-vi" aria-current="page" lang="vi">Quyền riêng tư</a>
+      <a href="/privacy.html#lang-en" aria-current="page" lang="en">Privacy</a>
+      <a href="/terms.html#lang-vi" lang="vi">Điều khoản</a>
+      <a href="/terms.html#lang-en" lang="en">Terms</a>
+      <a href="/delete-account.html#lang-vi" lang="vi">Xóa tài khoản</a>
+      <a href="/delete-account.html#lang-en" lang="en">Delete account</a>
     </nav>
   </footer>
 </body>

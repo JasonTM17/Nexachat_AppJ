@@ -24,18 +24,22 @@
   <a class="skip-link" href="#main">Bỏ qua đến nội dung</a>
   <main id="main" class="container">
     <div class="card card--prose">
-      <h1 class="brand">Xóa tài khoản</h1>
-      <p class="lead" lang="vi">Xóa tài khoản NexaChat trong ứng dụng Android.</p>
-      <p class="lead" lang="en">Delete a NexaChat account in the Android app.</p>
-      <div class="prose" lang="vi">
+      <nav class="language-switch" aria-label="Ngôn ngữ / Language">
+        <a href="#lang-vi" lang="vi">Tiếng Việt</a>
+        <span aria-hidden="true">/</span>
+        <a href="#lang-en" lang="en">English</a>
+      </nav>
+      <section id="lang-vi" class="prose language-section" lang="vi" aria-labelledby="delete-title-vi">
+        <h1 id="delete-title-vi" class="brand">Xóa tài khoản</h1>
+        <p class="lead">Xóa tài khoản NexaChat trong ứng dụng Android.</p>
         <h2>Trong ứng dụng</h2>
         <ol>
           <li>Mở NexaChat và đăng nhập.</li>
           <li>Mở Hồ sơ (Cài đặt).</li>
           <li>Chọn Xóa tài khoản.</li>
-          <li>Nhập mật khẩu hiện tại và xác nhận.</li>
+          <li>Nhập mật khẩu hiện tại nếu tài khoản có mật khẩu; nếu tài khoản không có mật khẩu, dùng mã gửi tới email đã xác minh theo hướng dẫn trong ứng dụng.</li>
         </ol>
-        <p>Cần mật khẩu hiện tại và phiên đăng nhập hợp lệ. Sau khi xóa, ứng dụng đưa bạn về màn hình đăng nhập. Không thể hoàn tác.</p>
+        <p>Cần phiên đăng nhập hợp lệ. Xác nhận bằng mật khẩu hiện tại nếu tài khoản có mật khẩu hoặc bằng mã gửi tới email đã xác minh nếu tài khoản không có mật khẩu. Sau khi xóa, ứng dụng đưa bạn về màn hình đăng nhập. Không thể hoàn tác.</p>
         <h2>Dữ liệu bị xóa</h2>
         <ul>
           <li>Phiên đăng nhập trên mọi thiết bị; access token hiện có bị vô hiệu hóa và kết nối realtime bị đóng.</li>
@@ -65,17 +69,19 @@
           <li>Đăng ký lại bằng cùng số điện thoại tạo tài khoản mới, không liên quan đến tài khoản đã xóa.</li>
         </ul>
         <h2>Mất thiết bị hoặc không đăng nhập được</h2>
-        <p>Nếu còn thiết bị khác, đăng nhập bằng số điện thoại và mật khẩu rồi làm theo các bước trên. Nếu đã thêm email khôi phục đã xác minh trong ứng dụng, hãy xem mục xóa trên web bên dưới (khi mục này được bật). Nếu không có email khôi phục đã xác minh, hãy dùng thông tin liên hệ của nhà phát triển trên trang Google Play của NexaChat.</p>
-      </div>
-      <div class="prose" lang="en">
+        <p>Khi nhà vận hành bật đăng nhập bằng Google và cho phép tạo tài khoản mới, Google có thể tạo tài khoản NexaChat. Biểu mẫu xóa trên web (khi được bật) chỉ dành cho tài khoản có số điện thoại và email khôi phục đã xác minh; tài khoản Google không có số điện thoại cần được xóa trong ứng dụng. Nếu còn thiết bị khác, đăng nhập và làm theo các bước trên.</p>
+      </section>
+      <section id="lang-en" class="prose language-section" lang="en" aria-labelledby="delete-title-en">
+        <h1 id="delete-title-en" class="brand">Delete account</h1>
+        <p class="lead">Delete a NexaChat account in the Android app.</p>
         <h2>In the app</h2>
         <ol>
           <li>Open NexaChat and sign in.</li>
           <li>Open Profile (Settings).</li>
           <li>Choose Delete account.</li>
-          <li>Enter your current password and confirm.</li>
+          <li>Enter the current password if the account has one; if the account has no password, use a code sent to its verified email as the app prompts.</li>
         </ol>
-        <p>The current password and a valid session are required. After deletion the app returns you to the sign-in screen. Deletion cannot be undone.</p>
+        <p>A valid session is required. Confirm with the current password if the account has one, or with a code sent to its verified email if the account has no password. After deletion the app returns you to the sign-in screen. Deletion cannot be undone.</p>
         <h2>Data that is deleted</h2>
         <ul>
           <li>Sessions on every device; existing access tokens are invalidated and realtime connections are closed.</li>
@@ -105,18 +111,18 @@
           <li>Registering again with the same phone number creates a new, unrelated account.</li>
         </ul>
         <h2>Lost device or cannot sign in</h2>
-        <p>If you have another device, sign in with your phone number and password, then follow the steps above. If you added a verified recovery email in the app, see web deletion below (when it is enabled). Without a verified recovery email, use the developer contact on the NexaChat Google Play listing.</p>
-      </div>
+        <p>When the operator enables both Google sign-in and account creation, Google can create a NexaChat account. The web deletion form is only for accounts with a phone number and verified recovery email; a Google-created account without a phone number must be deleted in the app. If you have another device, sign in and follow the steps above.</p>
+      </section>
       <section id="web-deletion-section" class="deletion-web" aria-labelledby="web-deletion-heading-vi web-deletion-heading-en">
         <h2 id="web-deletion-heading-vi" class="deletion-web__title" lang="vi">Xóa trên web (mất thiết bị)</h2>
         <h2 id="web-deletion-heading-en" class="deletion-web__title" lang="en">Web deletion (lost device)</h2>
         <div id="web-deletion-unavailable">
-          <p lang="vi">Xóa trên web chưa khả dụng. Làm theo các bước trong ứng dụng ở trên hoặc liên hệ qua Google Play nếu bạn không đăng nhập được.</p>
-          <p lang="en">Web deletion is not available yet. Follow the in-app steps above or contact us on Google Play if you cannot sign in.</p>
+          <p lang="vi">Xóa trên web chưa khả dụng. Làm theo các bước trong ứng dụng ở trên hoặc liên hệ nhà vận hành nếu bạn không đăng nhập được.</p>
+          <p lang="en">Web deletion is not available yet. Follow the in-app steps above or contact the operator if you cannot sign in.</p>
         </div>
         <div id="web-deletion-form-wrap" hidden>
-          <p class="deletion-web__hint" lang="vi">Nhập số điện thoại đã đăng ký. Mã OTP được gửi tới email khôi phục đã xác minh.</p>
-          <p class="deletion-web__hint" lang="en">Enter your registered phone number. A one-time code is sent to your verified recovery email.</p>
+          <p class="deletion-web__hint" lang="vi">Với tài khoản có số điện thoại và email khôi phục đã xác minh, nhập số điện thoại đã đăng ký. Mã OTP được gửi tới email đó.</p>
+          <p class="deletion-web__hint" lang="en">For an account with a phone number and verified recovery email, enter the registered phone number. A one-time code is sent to that email.</p>
           <form id="web-deletion-form" class="deletion-form" action="#" method="post" novalidate>
             <div class="form-field">
               <label class="form-label" for="deletion-phone" lang="vi">Số điện thoại</label>
@@ -174,19 +180,19 @@
           </div>
         </div>
       </section>
-      <p class="page-actions"><a class="btn btn-secondary" href="/privacy.html">Quyền riêng tư · Privacy</a></p>
+      <p class="page-actions"><a class="btn btn-secondary" href="/privacy.html#lang-vi" aria-label="Quyền riêng tư, Privacy">Quyền riêng tư · Privacy</a></p>
     </div>
   </main>
   <footer class="site-footer">
-    <nav aria-label="Pháp lý">
-      <a href="/download.html" lang="vi">Tải ứng dụng</a>
-      <a href="/download.html" lang="en">Download</a>
-      <a href="/privacy.html" lang="vi">Quyền riêng tư</a>
-      <a href="/privacy.html" lang="en">Privacy</a>
-      <a href="/terms.html" lang="vi">Điều khoản</a>
-      <a href="/terms.html" lang="en">Terms</a>
-      <a href="/delete-account.html" aria-current="page" lang="vi">Xóa tài khoản</a>
-      <a href="/delete-account.html" aria-current="page" lang="en">Delete account</a>
+    <nav aria-label="Điều hướng pháp lý / Legal navigation">
+      <a href="/download.html#lang-vi" lang="vi">Tải ứng dụng</a>
+      <a href="/download.html#lang-en" lang="en">Download</a>
+      <a href="/privacy.html#lang-vi" lang="vi">Quyền riêng tư</a>
+      <a href="/privacy.html#lang-en" lang="en">Privacy</a>
+      <a href="/terms.html#lang-vi" lang="vi">Điều khoản</a>
+      <a href="/terms.html#lang-en" lang="en">Terms</a>
+      <a href="/delete-account.html#lang-vi" aria-current="page" lang="vi">Xóa tài khoản</a>
+      <a href="/delete-account.html#lang-en" aria-current="page" lang="en">Delete account</a>
     </nav>
   </footer>
 </body>
