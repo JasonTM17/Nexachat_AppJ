@@ -15,6 +15,7 @@ import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Audit tests verifying accessibility and localization invariants on new auth and profile screens:
@@ -92,6 +93,7 @@ public final class NewScreensAccessibilityUnitTest {
         layoutToErrorId.put("fragment_recovery_email_form.xml", "recoveryFormError");
         layoutToErrorId.put("fragment_recovery_email_manage.xml", "recoveryEmailError");
         layoutToErrorId.put("fragment_recovery_email_otp.xml", "recoveryOtpError");
+        layoutToErrorId.put("fragment_chat.xml", "chatError");
 
         for (Map.Entry<String, String> entry : layoutToErrorId.entrySet()) {
             File layoutFile = new File(resDir, "layout/" + entry.getKey());
@@ -102,6 +104,48 @@ public final class NewScreensAccessibilityUnitTest {
             assertEquals(entry.getKey() + " error banner @" + entry.getValue()
                     + " must declare android:accessibilityLiveRegion=\"polite\"", "polite", liveRegion);
         }
+
+        File landscapeChat = new File(resDir, "layout-land/fragment_chat.xml");
+        Element landscapeError = findElementById(
+                loadXml(landscapeChat).getDocumentElement(), "chatError");
+        assertNotNull("landscape fragment_chat.xml must contain @chatError", landscapeError);
+        assertEquals("landscape chat error must use a polite live region", "polite",
+                getAttr(landscapeError, NS_ANDROID, "accessibilityLiveRegion"));
+    }
+
+    @Test
+    public void newMessageSendActionAnnouncesSendingOnce() throws Exception {
+        File chatFragment = new File(resDir.getParentFile(),
+                "java/com/nexachat/feature/chat/ChatFragment.java");
+        assertTrue("ChatFragment.java must exist", chatFragment.isFile());
+        String source = new String(java.nio.file.Files.readAllBytes(chatFragment.toPath()),
+                java.nio.charset.StandardCharsets.UTF_8);
+        int handlerStart = source.indexOf("binding.composerBar.sendButton.setOnClickListener");
+        int handlerEnd = source.indexOf(
+                "binding.composerBar.messageInput.setOnEditorActionListener", handlerStart);
+        assertTrue("send button handler must be present", handlerStart >= 0 && handlerEnd > handlerStart);
+        String handler = source.substring(handlerStart, handlerEnd);
+        int sendBranchStart = handler.indexOf("if (editingMessage == null)");
+        int editBranchStart = handler.indexOf("} else if", sendBranchStart);
+        assertTrue("new-message send branch must be present",
+                sendBranchStart >= 0 && editBranchStart > sendBranchStart);
+        String sendBranch = handler.substring(sendBranchStart, editBranchStart)
+                .replaceAll("\\s+", "");
+        assertEquals("send branch must announce once", 1,
+                countOccurrences(sendBranch, "announceForAccessibility("));
+        assertTrue("send branch must announce the sending state",
+                sendBranch.contains("binding.composerBar.sendButton.announceForAccessibility("
+                        + "getString(R.string.cd_sending));"));
+    }
+
+    private int countOccurrences(String source, String needle) {
+        int count = 0;
+        int from = 0;
+        while ((from = source.indexOf(needle, from)) >= 0) {
+            count++;
+            from += needle.length();
+        }
+        return count;
     }
 
     @Test

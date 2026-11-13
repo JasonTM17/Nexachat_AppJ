@@ -110,6 +110,7 @@
             android:layout_weight="1"
             android:background="@android:color/transparent"
             android:hint="@string/search_in_chat_placeholder"
+            android:imeOptions="actionSearch"
             android:singleLine="true"
             android:textColor="?attr/colorOnSurface"
             android:textColorHint="?attr/colorOnSurfaceVariant" />
@@ -176,10 +177,12 @@
         android:background="@drawable/bg_auth_inline_error"
         android:gravity="center_vertical"
         android:orientation="horizontal"
+        android:layout_marginHorizontal="@dimen/space_sm"
         android:paddingHorizontal="@dimen/space_md"
         android:paddingVertical="@dimen/space_xs"
         android:textColor="?attr/colorOnErrorContainer"
         android:visibility="gone"
+        android:accessibilityLiveRegion="polite"
         app:layout_constraintBottom_toTopOf="@id/replyEditBanner"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent">

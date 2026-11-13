@@ -68,6 +68,32 @@ public final class SharedStateViewsLayoutContractTest {
     }
 
     @Test
+    public void loadingViewHasLocalizedDefaultLabelAndPoliteAnnouncement() throws Exception {
+        Document layout = parse(new File(resDir, "layout/view_loading_state.xml"));
+        Element label = findElementById(layout.getDocumentElement(), "loadingLabel");
+        assertNotNull(label);
+        assertEquals("@string/loading_status", label.getAttributeNS(NS_ANDROID, "text"));
+        assertEquals("polite", label.getAttributeNS(NS_ANDROID, "accessibilityLiveRegion"));
+        assertTrue("default loading label must be visible",
+                !"gone".equals(label.getAttributeNS(NS_ANDROID, "visibility")));
+
+        Document english = parse(new File(resDir, "values/strings.xml"));
+        Document vietnamese = parse(new File(resDir, "values-vi/strings.xml"));
+        assertEquals("Loading", findString(english, "loading_status").getTextContent().trim());
+        assertEquals("Đang tải", findString(vietnamese, "loading_status").getTextContent().trim());
+    }
+
+    @Test
+    public void clearingLoadingLabelRestoresTheLocalizedDefault() throws Exception {
+        String source = readJava("LoadingStateView.java");
+        int clearBranch = source.indexOf("if (label == null || label.length() == 0)");
+        int restoreDefault = source.indexOf("labelView.setText(R.string.loading_status);", clearBranch);
+        int showDefault = source.indexOf("labelView.setVisibility(VISIBLE);", restoreDefault);
+        assertTrue("clearing the optional label must restore loading_status",
+                clearBranch >= 0 && restoreDefault > clearBranch && showDefault > restoreDefault);
+    }
+
+    @Test
     public void iconsAreDecorativeAndRetryIsNamed() throws Exception {
         Document emptyDoc = parse(new File(resDir, "layout/view_empty_state.xml"));
         Element emptyIcon = findElementById(emptyDoc.getDocumentElement(), "emptyIcon");
@@ -131,6 +157,15 @@ public final class SharedStateViewsLayoutContractTest {
             }
         }
         return null;
+    }
+
+    private static Element findString(Document document, String name) {
+        NodeList strings = document.getDocumentElement().getElementsByTagName("string");
+        for (int i = 0; i < strings.getLength(); i++) {
+            Element value = (Element) strings.item(i);
+            if (name.equals(value.getAttribute("name"))) return value;
+        }
+        throw new AssertionError("Missing string " + name);
     }
 
     private static Document parse(File file) throws Exception {

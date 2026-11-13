@@ -294,6 +294,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             }
             binding.composerBar.sendButton.setEnabled(false);
             if (editingMessage == null) {
+                binding.composerBar.sendButton.announceForAccessibility(
+                        getString(R.string.cd_sending));
                 viewModel.send();
             } else if (!editInput.isBlank()) {
                 viewModel.editMessage(editingMessage.getId(), editingMentionDraft);

@@ -122,6 +122,7 @@
     <string name="action_logout_all">Sign out all devices</string>
     <string name="profile_logout_all_confirm">Every session, including this one, will be signed out.</string>
     <string name="action_retry">Retry</string>
+    <string name="loading_status">Loading</string>
     <string name="cd_back">Back</string>
     <string name="cd_edit_name">Edit name</string>
 
@@ -154,6 +155,7 @@
     <string name="msg_seen">Seen</string>
     <string name="chat_offline">Disconnected</string>
     <string name="cd_send">Send</string>
+    <string name="cd_sending">Sending</string>
     <string name="cd_group_info">Group info</string>
     <string name="cd_attach">Attach</string>
     <string name="cd_remove_attachment">Remove attachment</string>
@@ -166,6 +168,7 @@
     <!-- Message interactions -->
     <string name="action_reply">Reply</string>
     <string name="dialog_reaction_picker_title">React</string>
+    <string name="a11y_reaction_chip_by_me">%1$s, %2$d, yours</string>
     <string name="action_pin">Pin</string>
     <string name="action_unpin">Unpin</string>
     <string name="action_pin_conversation">Pin conversation</string>

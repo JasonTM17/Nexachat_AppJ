@@ -58,6 +58,26 @@ public final class ChatInlineErrorLayoutContractTest {
     }
 
     @Test
+    public void chatErrorSurfaceUsesExistingHorizontalInsetInBothOrientations() throws Exception {
+        for (String directory : new String[]{"layout", "layout-land"}) {
+            Document layout = parse("src/main/res/" + directory + "/fragment_chat.xml");
+            Element error = findById(layout, "chatError");
+            assertEquals(directory + " chatError must keep the existing horizontal inset",
+                    "@dimen/space_sm", error.getAttributeNS(ANDROID, "layout_marginHorizontal"));
+        }
+    }
+
+    @Test
+    public void chatSearchUsesSearchImeActionInBothOrientations() throws Exception {
+        for (String directory : new String[]{"layout", "layout-land"}) {
+            Document layout = parse("src/main/res/" + directory + "/fragment_chat.xml");
+            Element search = findById(layout, "chatSearchInput");
+            assertEquals(directory + " chat search must expose the Search keyboard action",
+                    "actionSearch", search.getAttributeNS(ANDROID, "imeOptions"));
+        }
+    }
+
+    @Test
     public void inlineErrorBackgroundUsesTwelveDpErrorContainerShape() throws Exception {
         Document background = parse("src/main/res/drawable/bg_auth_inline_error.xml");
         Element corners = (Element) background.getElementsByTagName("corners").item(0);

@@ -791,11 +791,11 @@ public final class MessageBubbleBinder {
             time.setAlpha(metaLabelAlpha);
         }
         if (sending != null) {
-            sending.setVisibility(
-                    isMine && message.getStatus() == DeliveryStatus.SENDING
-                            ? View.VISIBLE
-                            : View.GONE
-            );
+            boolean sendingNow = isMine && message.getStatus() == DeliveryStatus.SENDING;
+            sending.setVisibility(sendingNow ? View.VISIBLE : View.GONE);
+            sending.setContentDescription(sendingNow
+                    ? root.getContext().getString(R.string.cd_sending)
+                    : null);
             if (isMine) {
                 sending.setIndeterminateTintList(ColorStateList.valueOf(metaColor));
             }
@@ -832,7 +832,7 @@ public final class MessageBubbleBinder {
             if (deliveryText != null) deliveryText.setVisibility(View.GONE);
             if (deliveredIcon != null) {
                 deliveredIcon.setVisibility(View.VISIBLE);
-                deliveredIcon.setImageResource(R.drawable.ic_check_double);
+                deliveredIcon.setImageResource(R.drawable.ic_visibility);
                 deliveredIcon.setImageTintList(ColorStateList.valueOf(
                         ContextCompat.getColor(root.getContext(), R.color.chat_bubble_read_tick)
                 ));
@@ -886,8 +886,12 @@ public final class MessageBubbleBinder {
         int index = 0;
         for (ReactionChip chip : reactions) {
             Chip view = new Chip(root.getContext());
+            boolean mineReaction = chip.getReactedByMe();
             view.setText(root.getResources().getString(
-                    R.string.a11y_reaction_chip, chip.getEmoji(), chip.getCount()));
+                    mineReaction
+                            ? R.string.a11y_reaction_chip_by_me
+                            : R.string.a11y_reaction_chip,
+                    chip.getEmoji(), chip.getCount()));
             view.setCheckable(false);
             view.setClickable(true);
             TextViewCompat.setTextAppearance(view, R.style.TextAppearance_NexaChat_LabelMedium);
@@ -895,7 +899,6 @@ public final class MessageBubbleBinder {
             int minTouchPx = root.getResources().getDimensionPixelSize(R.dimen.min_touch_target);
             view.setChipMinHeight(minTouchPx);
             view.setEnsureMinTouchTargetSize(true);
-            boolean mineReaction = chip.getReactedByMe();
             view.setTextColor(resolveThemeColor(
                     root.getContext(),
                     mineReaction

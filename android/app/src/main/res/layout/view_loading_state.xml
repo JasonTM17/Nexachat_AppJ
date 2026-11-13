@@ -17,7 +17,8 @@
         android:layout_marginTop="@dimen/space_sm"
         android:accessibilityLiveRegion="polite"
         android:gravity="center"
+        android:text="@string/loading_status"
         android:textAppearance="?attr/textAppearanceBodyMedium"
         android:textColor="?attr/colorOnSurfaceVariant"
-        android:visibility="gone" />
+        android:visibility="visible" />
 </merge>

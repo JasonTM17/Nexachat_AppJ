@@ -103,6 +103,7 @@
             android:layout_weight="1"
             android:background="@android:color/transparent"
             android:hint="@string/search_in_chat_placeholder"
+            android:imeOptions="actionSearch"
             android:singleLine="true"
             android:textColor="?attr/colorOnSurface"
             android:textColorHint="?attr/colorOnSurfaceVariant" />
@@ -162,7 +163,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
 
-    <LinearLayout android:id="@+id/chatError" android:layout_width="0dp" android:layout_height="wrap_content" android:background="@drawable/bg_auth_inline_error" android:gravity="center_vertical" android:orientation="horizontal" android:paddingHorizontal="@dimen/space_md" android:paddingVertical="@dimen/space_xs" android:textColor="?attr/colorOnErrorContainer" android:visibility="gone" app:layout_constraintBottom_toTopOf="@id/replyEditBanner" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent">
+    <LinearLayout android:id="@+id/chatError" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginHorizontal="@dimen/space_sm" android:background="@drawable/bg_auth_inline_error" android:gravity="center_vertical" android:orientation="horizontal" android:paddingHorizontal="@dimen/space_md" android:paddingVertical="@dimen/space_xs" android:textColor="?attr/colorOnErrorContainer" android:visibility="gone" android:accessibilityLiveRegion="polite" app:layout_constraintBottom_toTopOf="@id/replyEditBanner" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent">
         <TextView android:id="@+id/chatErrorMessage" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginEnd="@dimen/space_sm" android:layout_weight="1" android:textColor="?attr/colorOnErrorContainer" />
         <com.google.android.material.button.MaterialButton android:id="@+id/chatErrorRetry" style="@style/Widget.NexaChat.Button.Text" android:layout_width="wrap_content" android:layout_height="wrap_content" android:minHeight="@dimen/min_touch_target" android:text="@string/action_retry" android:visibility="gone" />
     </LinearLayout>
