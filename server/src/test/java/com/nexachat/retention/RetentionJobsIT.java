@@ -6,19 +6,27 @@ import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.GroupService;
 import com.nexachat.conversation.dto.PatchGroupRequest;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import javax.sql.DataSource;
+import com.nexachat.ops.ScheduledAdvisoryLock;
+import com.nexachat.ops.ScheduledLockIds;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -34,9 +42,15 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 /**
  * Populated-PostgreSQL coverage for the opt-in retention jobs.
@@ -47,19 +61,20 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 @SpringBootTest
 @ActiveProfiles("it")
 @TestPropertySource(properties = "nexachat.storage.root=${java.io.tmpdir}/nexachat-retention-it")
+@Testcontainers
 class RetentionJobsIT {
+
+    @Container
+    private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine")
+            .withDatabaseName("nexachat_retention_it")
+            .withUsername("nexachat")
+            .withPassword("nexachat");
 
     @DynamicPropertySource
     static void datasourceProps(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url",
-                () -> env("IT_DB_URL", "jdbc:postgresql://localhost:5432/nexachat_test"));
-        registry.add("spring.datasource.username", () -> env("IT_DB_USER", "nexachat"));
-        registry.add("spring.datasource.password", () -> env("IT_DB_PASSWORD", "nexachat"));
-    }
-
-    private static String env(String name, String fallback) {
-        String value = System.getenv(name);
-        return value == null || value.isBlank() ? fallback : value;
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.datasource.username", POSTGRES::getUsername);
+        registry.add("spring.datasource.password", POSTGRES::getPassword);
     }
 
     @Autowired
@@ -76,6 +91,10 @@ class RetentionJobsIT {
     private MeterRegistry meterRegistry;
     @Autowired
     private PlatformTransactionManager transactionManager;
+    @MockitoSpyBean
+    private com.nexachat.attachment.StorageService storageService;
+    @Autowired
+    private DataSource dataSource;
 
     private UUID firstUserId;
     private UUID secondUserId;
@@ -92,6 +111,7 @@ class RetentionJobsIT {
 
     @AfterEach
     void removeSyntheticRowsAndFiles() throws Exception {
+        reset(storageService);
         for (String key : storageKeys) {
             Files.deleteIfExists(storagePath(key));
         }
@@ -124,6 +144,39 @@ class RetentionJobsIT {
         retentionProperties.setEnabled(false);
 
         assertThat(retentionJobRunner.runEnabledJobs()).isEmpty();
+    }
+
+    @Test
+    void scheduledSweepSkipsWhenAnotherApplicationSessionOwnsTheRetentionLock() throws Exception {
+        String expired = insertIdempotency("retention-lock-contention", "now() - interval '2 days'");
+        retentionProperties.setEnabled(true);
+        retentionProperties.setDryRun(false);
+        retentionProperties.getJobs().getIdempotency().setEnabled(true);
+
+        try {
+            try (var secondContext = new AnnotationConfigApplicationContext()) {
+                secondContext.registerBean("retentionLockJdbcTemplate", JdbcTemplate.class,
+                        () -> new JdbcTemplate(dataSource));
+                secondContext.registerBean(ScheduledAdvisoryLock.class,
+                        () -> new ScheduledAdvisoryLock(secondContext.getBean(
+                                "retentionLockJdbcTemplate", JdbcTemplate.class)));
+                secondContext.refresh();
+                secondContext.getBean(ScheduledAdvisoryLock.class).withLock(
+                        ScheduledLockIds.RETENTION_SWEEP, () -> {
+                            retentionJobRunner.scheduledSweep();
+                            assertThat(idempotencyExists(expired))
+                                    .as("a second application context holding the sweep lock blocks this run")
+                                    .isTrue();
+                            return Boolean.TRUE;
+                        });
+            }
+            retentionJobRunner.scheduledSweep();
+            assertThat(idempotencyExists(expired)).isFalse();
+        } finally {
+            retentionProperties.setEnabled(false);
+            retentionProperties.setDryRun(true);
+            retentionProperties.getJobs().getIdempotency().setEnabled(false);
+        }
     }
 
     @Test
@@ -370,6 +423,116 @@ class RetentionJobsIT {
         assertThat(attachmentExists(liveKey)).isTrue();
         assertThat(attachmentExists(avatarReferencedKey)).isTrue();
         assertThat(attachmentExists(groupAvatarReferencedKey)).isTrue();
+    }
+
+    @Test
+    void storageFailureKeepsAttachmentRowAndRetryDeletesIt() throws Exception {
+        String key = insertAttachment(null, "now() - interval '40 days'");
+        AtomicBoolean failOnce = new AtomicBoolean(true);
+        doAnswer(invocation -> {
+            String requestedKey = invocation.getArgument(0);
+            assertThat(requestedKey).isEqualTo(key);
+            assertThat(attachmentExists(key)).as("row must remain until object deletion succeeds").isTrue();
+            if (failOnce.getAndSet(false)) {
+                throw new IllegalStateException("injected storage outage");
+            }
+            return invocation.callRealMethod();
+        }).when(storageService).deleteIfExists(anyString());
+
+        RetentionJobRunner.JobRunResult failed = retentionJobRunner.runNow(
+                RetentionJobRunner.Job.ATTACHMENTS, false);
+
+        assertThat(failed.rowsAffected()).isZero();
+        assertThat(failed.errors()).isEqualTo(1);
+        assertThat(attachmentExists(key)).isTrue();
+        assertThat(Files.exists(storagePath(key))).isTrue();
+
+        RetentionJobRunner.JobRunResult retried = retentionJobRunner.runNow(
+                RetentionJobRunner.Job.ATTACHMENTS, false);
+
+        assertThat(retried.rowsAffected()).isEqualTo(1);
+        assertThat(retried.filesDeleted()).isEqualTo(1);
+        assertThat(attachmentExists(key)).isFalse();
+        assertThat(Files.exists(storagePath(key))).isFalse();
+    }
+
+    @Test
+    void failedPartOfAttachmentBatchResumesWithoutDeletingCompletedObjectTwice() throws Exception {
+        String first = insertAttachment(null, "now() - interval '42 days'");
+        String second = insertAttachment(null, "now() - interval '41 days'");
+        doAnswer(invocation -> {
+            String key = invocation.getArgument(0);
+            if (key.equals(second)) {
+                throw new IllegalStateException("injected mid-batch storage outage");
+            }
+            return invocation.callRealMethod();
+        }).when(storageService).deleteIfExists(anyString());
+
+        RetentionJobRunner.JobRunResult partial = retentionJobRunner.runNow(
+                RetentionJobRunner.Job.ATTACHMENTS, false);
+
+        assertThat(partial.rowsAffected()).isEqualTo(1);
+        assertThat(partial.errors()).isEqualTo(1);
+        assertThat(attachmentExists(first)).isFalse();
+        assertThat(attachmentExists(second)).isTrue();
+        assertThat(Files.exists(storagePath(first))).isFalse();
+        assertThat(Files.exists(storagePath(second))).isTrue();
+        verify(storageService, times(1)).deleteIfExists(first);
+        verify(storageService, times(1)).deleteIfExists(second);
+
+        org.mockito.Mockito.reset(storageService);
+        RetentionJobRunner.JobRunResult resumed = retentionJobRunner.runNow(
+                RetentionJobRunner.Job.ATTACHMENTS, false);
+
+        assertThat(resumed.rowsAffected()).isEqualTo(1);
+        assertThat(attachmentExists(first)).isFalse();
+        assertThat(attachmentExists(second)).isFalse();
+        verify(storageService, times(0)).deleteIfExists(first);
+        verify(storageService, times(1)).deleteIfExists(second);
+        assertThat(Files.exists(storagePath(second))).isFalse();
+    }
+
+    @Test
+    void readerCanFinishWhileRetentionDeletionIsPausedBeforeObjectRemoval() throws Exception {
+        String key = insertAttachment(null, "now() - interval '40 days'");
+        CountDownLatch deletionAtStorageBoundary = new CountDownLatch(1);
+        CountDownLatch allowObjectRemoval = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            deletionAtStorageBoundary.countDown();
+            if (!allowObjectRemoval.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting for concurrent attachment read");
+            }
+            return invocation.callRealMethod();
+        }).when(storageService).deleteIfExists(key);
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            Future<RetentionJobRunner.JobRunResult> deletion = executor.submit(
+                    () -> retentionJobRunner.runNow(RetentionJobRunner.Job.ATTACHMENTS, false));
+            assertThat(deletionAtStorageBoundary.await(5, TimeUnit.SECONDS)).isTrue();
+
+            assertThat(storageService.read(key)).isEqualTo("synthetic attachment".getBytes());
+
+            allowObjectRemoval.countDown();
+            assertThat(deletion.get(10, TimeUnit.SECONDS).rowsAffected()).isEqualTo(1);
+        } finally {
+            allowObjectRemoval.countDown();
+        }
+        assertThat(attachmentExists(key)).isFalse();
+        assertThat(Files.exists(storagePath(key))).isFalse();
+    }
+
+    @Test
+    void attachmentStorageKeyReferencedByAvatarIsNeverDeleted() throws Exception {
+        String key = insertAttachment(null, "now() - interval '40 days'");
+        jdbcTemplate.update("UPDATE users SET avatar_url = ? WHERE id = ?",
+                "/api/v1/files/" + key, firstUserId);
+
+        RetentionJobRunner.JobRunResult first = retentionJobRunner.runNow(
+                RetentionJobRunner.Job.ATTACHMENTS, false);
+
+        assertThat(first.rowsAffected()).isZero();
+        assertThat(attachmentExists(key)).isTrue();
+        assertThat(Files.exists(storagePath(key))).isTrue();
     }
 
     @Test
