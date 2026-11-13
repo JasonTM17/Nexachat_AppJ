@@ -69,7 +69,7 @@
       "rule": "A6",
       "severity": "WARN",
       "file": "layout/item_active_now_peer.xml",
-      "line": 39,
+      "line": 43,
       "element_id": "@+id/activePeerName",
       "tag": "TextView",
       "message": "maxLines=1 on message/title/error text may clip at large font"

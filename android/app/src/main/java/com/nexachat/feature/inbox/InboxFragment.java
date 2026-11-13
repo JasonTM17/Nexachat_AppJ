@@ -33,13 +33,11 @@ import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.network.dto.UserDto;
-import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.data.ThemeMode;
 import com.nexachat.databinding.FragmentInboxBinding;
 import com.nexachat.feature.chat.ChatErrorIds;
 import com.nexachat.feature.inbox.adapter.ConversationListAdapter;
-import com.nexachat.feature.inbox.adapter.ConversationPreviewHelper;
 import com.nexachat.feature.label.ConversationLabel;
 import com.nexachat.feature.label.LabelDialogFragment;
 import com.nexachat.feature.label.LabelText;
@@ -76,6 +74,7 @@ public final class InboxFragment extends Fragment {
     private boolean labelFiltersInitialized;
     @Nullable private String boundUserId;
     @Nullable private UserDto boundInboxUser;
+    @Nullable private ActiveNowStripBinder activeNowStripBinder;
     private int lastPaginationErrorMessageId;
 
     @Nullable
@@ -120,6 +119,10 @@ public final class InboxFragment extends Fragment {
 
         binding.activeNowViewAll.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.contactsFragment));
+        activeNowStripBinder = new ActiveNowStripBinder(
+                binding.activeNowStrip,
+                LayoutInflater.from(requireContext()),
+                requireContext());
 
         binding.inboxFilterChips.check(R.id.filterAllChip);
         updateFilterChipsUi(0);
@@ -544,59 +547,16 @@ public final class InboxFragment extends Fragment {
     }
 
     private void renderActiveNowStrip(@NonNull List<ConversationSummary> rows) {
-        if (binding == null) {
+        if (binding == null || activeNowStripBinder == null) {
             return;
         }
-        binding.activeNowStrip.removeAllViews();
-        LayoutInflater inflater = LayoutInflater.from(requireContext());
-        List<ConversationSummary> visibleRows = InboxFilterRules.apply(rows, InboxFilter.ALL);
-
-        View yourStatusView = inflater.inflate(R.layout.item_active_now_peer, binding.activeNowStrip, false);
-        AvatarView yourAvatar = yourStatusView.findViewById(R.id.activePeerAvatar);
-        TextView yourName = yourStatusView.findViewById(R.id.activePeerName);
-        View yourBadge = yourStatusView.findViewById(R.id.activePeerBadge);
-        if (boundInboxUser != null) {
-            yourAvatar.setName(boundInboxUser.getDisplayName());
-            yourAvatar.setAvatarUrl(boundInboxUser.getAvatarUrl());
-        } else {
-            yourAvatar.setName(getString(R.string.inbox_your_status));
-        }
-        yourAvatar.setOnlineStatus(null);
-        yourAvatar.setShowStoryRing(false);
-        yourName.setText(R.string.inbox_your_status);
-        yourName.setMaxLines(ActiveNowPeerRules.captionMaxLines());
-        if (yourBadge != null) {
-            yourBadge.setVisibility(View.VISIBLE);
-        }
-        yourStatusView.setContentDescription(getString(R.string.inbox_your_status));
-        yourStatusView.setOnClickListener(v ->
-                NavHostFragment.findNavController(this).navigate(R.id.profileFragment));
-        binding.activeNowStrip.addView(yourStatusView);
-
-        for (ConversationSummary row : ActiveNowPeerRules.selectOnlineDirectPeers(visibleRows)) {
-            String displayTitle = ConversationPreviewHelper.displayTitle(requireContext(), row);
-
-            View peerView = inflater.inflate(R.layout.item_active_now_peer, binding.activeNowStrip, false);
-            AvatarView peerAvatar = peerView.findViewById(R.id.activePeerAvatar);
-            TextView peerName = peerView.findViewById(R.id.activePeerName);
-            View peerBadge = peerView.findViewById(R.id.activePeerBadge);
-            if (peerBadge != null) {
-                peerBadge.setVisibility(View.GONE);
-            }
-
-            peerAvatar.setName(displayTitle);
-            peerAvatar.setAvatarUrl(row.getDisplayAvatar());
-            peerAvatar.setOnlineStatus(Boolean.TRUE);
-            peerAvatar.setShowStoryRing(true);
-
-            peerName.setText(displayTitle);
-            peerName.setMaxLines(ActiveNowPeerRules.captionMaxLines());
-            peerView.setContentDescription(
-                    displayTitle + ", " + getString(R.string.cd_online_status));
-
-            peerView.setOnClickListener(v -> openConversation(row.getId()));
-            binding.activeNowStrip.addView(peerView);
-        }
+        float fontScale = getResources().getConfiguration().fontScale;
+        activeNowStripBinder.bind(
+                boundInboxUser,
+                rows,
+                () -> NavHostFragment.findNavController(this).navigate(R.id.profileFragment),
+                row -> openConversation(row.getId()),
+                fontScale);
     }
 
     private void attachSwipeGestureHelper() {

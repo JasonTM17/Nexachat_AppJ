@@ -65,8 +65,9 @@ public final class ActiveNowPeerRulesTest {
 
     @Test
     public void captionMaxLines_allowsTwoLinesForStoryRail() {
-        assertEquals(2, ActiveNowPeerRules.captionMaxLines());
-        assertTrue(ActiveNowPeerRules.captionMaxLines() >= 2);
+        assertEquals(1, ActiveNowPeerRules.captionMaxLines(1f));
+        assertEquals(2, ActiveNowPeerRules.captionMaxLines(1.3f));
+        assertEquals(2, ActiveNowPeerRules.captionMaxLines(1.6f));
     }
 
     private static ConversationSummary direct(

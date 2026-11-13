@@ -14,8 +14,8 @@ public final class ActiveNowPeerRules {
 
     private ActiveNowPeerRules() {}
 
-    public static int captionMaxLines() {
-        return 2;
+    public static int captionMaxLines(float fontScale) {
+        return fontScale >= 1.3f ? 2 : 1;
     }
 
     @NonNull
