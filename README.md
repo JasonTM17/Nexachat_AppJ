@@ -9,8 +9,9 @@ message sending available offline.
 > **Architecture at a glance:** 100% **Java 21 LTS** end-to-end — Android client
 > (`XML Views`, `Fragments`, `ViewBinding`, `RxJava 3`, `Room v14`, `Hilt`, `Material 3`)
 > paired with a **Spring Boot 3.5** modular monolith (`REST /api/v1`, `STOMP over WebSocket /ws`,
-> **PostgreSQL 16** with Flyway `V1–V20` + `V22` + `V24–V28` (V21/V23 reserved), **WebRTC** 1-to-1 voice calls,
-> Google sign-in (link-first, public JWKS), email OTP recovery/deletion, self-service account deletion,
+> **PostgreSQL 16** with Flyway `V1–V20` + `V22` + `V24–V33` (V21/V23 reserved), **WebRTC** 1-to-1 voice calls,
+> Google sign-in (link-first on existing accounts; `POST /auth/google` can register when signup is enabled,
+> public JWKS), email OTP recovery/deletion, self-service account deletion,
 > consent-gated **AI conversation summaries**, conversation RAG with the Android “Ask this chat” entry,
 > and optional Firebase ephemeral state (flags off, STOMP default)).
 > Every architectural claim below links directly to its executable source and verification suite.
@@ -23,7 +24,9 @@ contract. Until the V32 server is integrated it explicitly uses legacy sync;
 
 Captured live on `emulator-5554` (`nexachat-audit`) and `emulator-5556` (`campuscore-p07-native`) running the R8-minified release APK against the local Spring Boot 3 + PostgreSQL 16 backend. Full media index: [`docs/media/README.md`](docs/media/README.md).
 
-### Dark Mode — Midnight Obsidian (`#0B0E17`) & Electric Violet (`#7C3AED`)
+**Historical UI captures** (pre–v1.2.4 palette): frames below still show the older Midnight Obsidian / Electric Violet look; the shipped app uses the plum Material 3 palette (seed `#733F68` — see [`docs/design/design-notes.md`](docs/design/design-notes.md)).
+
+### Dark Mode — Midnight Obsidian (`#0B0E17`) & Electric Violet (`#7C3AED`) *(historical)*
 
 <table>
 <tr>
@@ -42,7 +45,7 @@ Captured live on `emulator-5554` (`nexachat-audit`) and `emulator-5556` (`campus
 </tr>
 </table>
 
-### Light Mode (`#F8FAFC`) & Core Workflows
+### Light Mode (`#F8FAFC`) & Core Workflows *(historical)*
 
 <table>
 <tr>
@@ -71,8 +74,11 @@ database password and JWT secret placeholders; see [docs/operations.md](docs/ope
 ```bash
 docker compose up -d db app                                    # backend + PostgreSQL 16
 docker exec -i $(docker compose ps -q db) psql -U nexachat -d nexachat < demo/seed.sql
+# android/local.properties must define sdk.dir before the first Gradle run (see Quickstart — android).
 cd android && ./gradlew assembleDebug && adb install app/build/outputs/apk/debug/app-debug.apk
 ```
+
+Windows (PowerShell): same Compose and seed steps; `.\demo\lan-up.ps1` automates backend + seed + LAN hints. For the app, set `sdk.dir` in `android\local.properties`, then `cd android; .\gradlew.bat assembleDebug; adb install app\build\outputs\apk\debug\app-debug.apk`.
 
 Health check: `curl http://localhost:8080/actuator/health` → `{"status":"UP"}`.
 Pre-built APK download: [nexachat.io.vn/download.html](https://nexachat.io.vn/download.html) · [GitHub Releases](https://github.com/JasonTM17/Nexachat_AppJ/releases).
@@ -87,7 +93,7 @@ Architecture, protocol contracts, and security boundaries are documented in
 | Domain / Capability | Shipped | Where |
 |---|---|---|
 | Account & Auth | Register / login (E.164 phone, bcrypt 12), JWT + rotating refresh tokens with reuse detection, logout / logout-all, change password, access-token revocation cutoff (`tokens_valid_after`, V11), keyed refresh replay (V25) | `server/auth`, `app/feature/auth`, `core/storage` |
-| Google Sign-In | Link-first OpenID Connect via Google's public JWKS (no secret needed, client IDs from env, V28); single-use nonces; Android Credential Manager integration | `server/auth/google`, `app/core/auth`, `docs/operations.md` |
+| Google Sign-In | Link-first OpenID Connect via Google's public JWKS; `POST /auth/google` also registers when `NEXACHAT_GOOGLE_SIGNUP_ENABLED=true` (V28/V33); client IDs from env; single-use nonces; Android Credential Manager | `server/auth/google`, `app/core/auth`, `docs/operations.md`, `docs/known-limitations.md` |
 | Account Recovery & Email OTP | Recovery email verification, password reset OTP, account deletion OTP via HMAC-SHA256 digests (V27), cooldown & rate limits, pluggable `MailSender` (SMTP, Resend, local Mailpit for dev) | `server/recovery`, `server/mail`, `app/feature/profile`, `docs/operations.md` |
 | Self-Service Account Deletion | Soft-delete / tombstoning (V26), E.164 phone released for re-registration, session invalidation, group auto-leave with admin promotion, PII/avatar scrubbed, historical messages preserved under neutral `Deleted account` label; in-app (`DELETE /api/v1/users/me`) and web flow (`site/delete-account.html`) | `server/user`, `site/delete-account.html`, `app/feature/profile`, `docs/operations.md` |
 | Realtime & Ephemeral Routing | STOMP over WebSocket as default for presence, typing, delivery/read receipts; candidate Firebase RTDB bridge and projections (flags off by default, STOMP fallback via `EphemeralStateRouter`) | `server/firebase`, `app/core/realtime/ephemeral`, `docs/firebase-realtime.md` |
@@ -140,7 +146,7 @@ flowchart LR
         BR["SimpleBroker<br/>/topic + /user/queue"]
     end
 
-    DB[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V28<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin")]
+    DB[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V33<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin")]
     STORAGE["File storage<br/>(local volume or private S3-compatible bucket)"]
 
     RT -- "REST /api/v1 (JWT Bearer)" --> SEC --> SVC
@@ -169,7 +175,7 @@ rendered directly. Rationale and diagrams: [docs/architecture.md](docs/architect
 | Framework | Spring Boot 3.5.16 (Web, WebSocket, Security, Data JPA, Validation, Actuator) | Material 3 + AppCompat, Navigation Component, Fragments, ViewBinding, RecyclerView `ListAdapter` |
 | Auth/crypto | jjwt 0.12.6 (HS256), BCrypt cost 12, SHA-256 token hashes, Google OpenID Connect (public JWKS), HMAC-SHA256 OTPs | AES/GCM/NoPadding via AndroidKeyStore, Credential Manager |
 | Realtime | spring-websocket + STOMP (default), optional Firebase RTDB bridge | OkHttp 4.12 WebSocket + STOMP, EphemeralStateRouter |
-| Persistence | PostgreSQL 16, Flyway V1–V20 + V22 + V24–V28, `ddl-auto: validate` | Room 2.6.1 (v14, exported schemas 6–14, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
+| Persistence | PostgreSQL 16, Flyway V1–V20 + V22 + V24–V33, `ddl-auto: validate` | Room 2.6.1 (v14, exported schemas 6–14, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
 | Files | `StorageService` abstraction, `MagicBytes` sniffing, 25MB cap, Range downloads, BlurHash | Glide 4.16, Media3 1.5.1 |
 | Other | libphonenumber 8.13.45, bucket4j 8.10.1 rate limiting | Hilt 2.52 (`annotationProcessor`), Retrofit 2.11 + Moshi, RxJava 3.1.9 |
 | Build/test | Maven + failsafe (`*IT` @ `verify`), Testcontainers dep | Gradle 8.14.3 + AGP 8.9.3 + version catalog (`libs.versions.toml`), JUnit 4 + Mockito + RxJava `TestObserver`/`TestSubscriber` |
@@ -186,7 +192,8 @@ Dark & Light Mode showcase frames are indexed in
 |---|---|---|
 | JDK | 21 LTS (Temurin) | `java -version`. Server requires JDK 21+ (`sourceCompatibility 21`). Android Gradle requires JDK 21+ (`android/gradle.properties`, `compileOptions VERSION_21`). |
 | Maven | 3.9+ | system `mvn` (there is no `server/mvnw` wrapper) |
-| Android SDK | minSdk 26 · targetSdk 36 (compileSdk 36) | via Android Studio |
+| Android Studio | current stable | Supports AGP 8.9.3 (`android/gradle/libs.versions.toml`); Hedgehog and older are too old. |
+| Android SDK | minSdk 26 · targetSdk 36 (compileSdk 36) | `sdk.dir` in `android/local.properties` |
 | Docker | recent | PostgreSQL + app image via `docker compose` |
 
 ## Quickstart — server
@@ -230,7 +237,7 @@ psql -h localhost -p 5433 -U nexachat -d nexachat < demo/seed.sql
 
 ## Quickstart — android
 
-1. Open `android/` in Android Studio (Hedgehog+).
+1. Open `android/` in a current Android Studio release that supports AGP 8.9.3 (not Hedgehog or older).
 2. Create `android/local.properties` (never committed):
 
    ```properties
@@ -320,14 +327,14 @@ nexachat/
 │  │  ├─ call/       call core/media/service/UI (Java)
 │  │  ├─ data/       repositories (Room write-through, outbox, resync; RxJava 3)
 │  │  ├─ di/         Hilt modules (`annotationProcessor`)
-│  │  ├─ feature/    auth · chat · contacts · group · inbox · interactions · media · profile · splash · summary
+│  │  ├─ feature/    auth · chat · contacts · group · inbox · archive · ask · invite · label · poll · reminder · groupboard · media · profile · splash · summary
 │  │  └─ summary/    summary ViewModel + repository wiring
 │  ├─ app/src/main/res/layout/   ViewBinding XML layouts
 │  ├─ app/schemas/   Room-exported schema JSON (migration-test assets)
 │  └─ gradle/libs.versions.toml   # dependency version catalog
 ├─ server/    Spring Boot modular monolith (REST /api/v1 + STOMP /ws)
 │  ├─ src/main/java/com/nexachat/{auth,user,contact,conversation,message,attachment,retention,presence,call,summary,notification,rag,reminder,poll,label,invite,archive,observability,recovery,firebase,mail,ws,common,config}/
-│  ├─ src/main/resources/db/migration/V1–V20, V22, V24–V28 # Flyway migrations
+│  ├─ src/main/resources/db/migration/V1–V20, V22, V24–V33 # Flyway migrations
 │  └─ Dockerfile + pom.xml
 ├─ site/      Static site on Vercel (delete-account web flow, assetlinks, check.py, vercel.json)
 ├─ docs/      architecture, API/STOMP contracts, security, operations (index: docs/README.md)
@@ -364,7 +371,7 @@ points: [docs/architecture.md](docs/architecture.md) ·
 ## Contributing
 
 Conventional commits (`feat(server/auth): …`, `fix(app/chat): …`), PR per
-`feature/<scope>` branch into `develop`, ≥1 cross-review before squash merge.
+`feature/<scope>` branch into `main`, ≥1 cross-review before squash merge.
 Never commit secrets, keystores, `.env`, or `local.properties` — `.gitignore`
 and the CI secret scan enforce this.
 
