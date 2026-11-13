@@ -6,7 +6,7 @@
 # "LF will be replaced by CRLF" on every `git status`.
 #
 # Safety: `git add --renormalize .` on the current tree stages no content
-# changes (verified in a throwaway clone; see docs/CONTRIBUTING.md).
+# changes (verified in a throwaway clone; see CONTRIBUTING.md).
 
 # Text files: auto-detect binary, keep LF in the index and in the working tree.
 * text=auto eol=lf
