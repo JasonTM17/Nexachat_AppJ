@@ -80,10 +80,13 @@ public class AvatarView extends FrameLayout {
         }
         initialsView.setVisibility(VISIBLE);
         imageView.setVisibility(VISIBLE);
-        Glide.with(this)
-                .load(AppConfig.absoluteMediaUrl(avatarUrl))
-                .centerCrop()
-                .into(imageView);
+        var request = Glide.with(this).load(AppConfig.absoluteMediaUrl(avatarUrl));
+        if (AvatarPhotoLoadingRules.useCircleCropForPhotoUrl(avatarUrl)) {
+            request = request.circleCrop();
+        } else {
+            request = request.centerCrop();
+        }
+        request.into(imageView);
     }
 
     public void setOnlineStatus(@Nullable Boolean online) {
