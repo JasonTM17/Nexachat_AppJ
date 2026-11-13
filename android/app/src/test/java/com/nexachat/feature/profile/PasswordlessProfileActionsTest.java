@@ -25,28 +25,28 @@ public final class PasswordlessProfileActionsTest {
     @Test public void passwordlessAccountCannotOpenChangePassword() {
         ProfileViewModel vm = create(new UserDto("me", null, "User", null, "a@b.c", true, false));
         vm.openPasswordDialog();
-        assertFalse(vm.getUiState().getValue().canChangePassword());
+        assertFalse(vm.getUiState().getValue().getUser().isPasswordSet());
         assertFalse(vm.getUiState().getValue().isShowPasswordDialog());
     }
 
     @Test public void unloadedProfileCannotOpenChangePassword() {
         ProfileViewModel vm = create(null);
         vm.openPasswordDialog();
-        assertFalse(vm.getUiState().getValue().canChangePassword());
+        assertNull(vm.getUiState().getValue().getUser());
         assertFalse(vm.getUiState().getValue().isShowPasswordDialog());
     }
 
     @Test public void passwordAccountCanOpenChangePassword() {
         ProfileViewModel vm = create(new UserDto("me", "+1", "User", null, null, null, true));
         vm.openPasswordDialog();
-        assertTrue(vm.getUiState().getValue().canChangePassword());
+        assertTrue(vm.getUiState().getValue().getUser().isPasswordSet());
         assertTrue(vm.getUiState().getValue().isShowPasswordDialog());
     }
 
     @Test public void absentPasswordFlagKeepsServerCompatibilityDefault() {
         ProfileViewModel vm = create(new UserDto("me", "+1", "User"));
         vm.openPasswordDialog();
-        assertTrue(vm.getUiState().getValue().canChangePassword());
+        assertTrue(vm.getUiState().getValue().getUser().isPasswordSet());
         assertTrue(vm.getUiState().getValue().isShowPasswordDialog());
     }
 
