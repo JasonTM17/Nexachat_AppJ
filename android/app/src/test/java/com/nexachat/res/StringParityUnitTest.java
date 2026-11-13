@@ -47,7 +47,8 @@ public final class StringParityUnitTest {
             "summary_badge_ai",
             "summary_citation_chip",
             // Spec requires the literal brand chip "Google" in both locales.
-            "complete_profile_google_chip"
+            "complete_profile_google_chip",
+            "sign_in_method_google"
     )));
 
     // Common Vietnamese vowels with diacritics across the 5 tones and modified vowels (ă, â, đ, ê, ô, ơ, ư)
