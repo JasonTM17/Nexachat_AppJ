@@ -3,15 +3,18 @@ package com.nexachat.feature.auth;
 import androidx.navigation.NavOptions;
 import com.nexachat.R;
 
-/** Navigation used once a session exists, so Back does not reopen the sign-in form. */
+/** Replaces the auth root so completed forms never remain as Back destinations. */
 public final class AuthNav {
     private AuthNav() {}
 
     public static NavOptions signedInOptions() {
-        return new NavOptions.Builder().setPopUpTo(R.id.loginFragment, true).build();
+        return new NavOptions.Builder().setPopUpTo(R.id.nav_main, true).build();
     }
 
     public static NavOptions authTabSwitchOptions() {
-        return new NavOptions.Builder().setLaunchSingleTop(true).build();
+        return new NavOptions.Builder()
+                .setPopUpTo(R.id.nav_main, true)
+                .setLaunchSingleTop(true)
+                .build();
     }
 }

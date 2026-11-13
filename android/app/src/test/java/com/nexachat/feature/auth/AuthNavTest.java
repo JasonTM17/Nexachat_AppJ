@@ -12,15 +12,17 @@ import static org.junit.Assert.assertTrue;
 public class AuthNavTest {
 
     @Test
-    public void signedInNavigationRemovesTheLoginScreen() {
+    public void signedInNavigationReplacesTheRootIncludingOnboarding() {
         NavOptions options = AuthNav.signedInOptions();
-        assertEquals(R.id.loginFragment, options.getPopUpToId());
+        assertEquals(R.id.nav_main, options.getPopUpToId());
         assertTrue(options.isPopUpToInclusive());
     }
 
     @Test
-    public void authTabSwitchUsesLaunchSingleTop() {
+    public void authTabSwitchReplacesTheRootAndUsesLaunchSingleTop() {
         NavOptions options = AuthNav.authTabSwitchOptions();
         assertTrue(options.shouldLaunchSingleTop());
+        assertEquals(R.id.nav_main, options.getPopUpToId());
+        assertTrue(options.isPopUpToInclusive());
     }
 }
