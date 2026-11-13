@@ -45,11 +45,17 @@ public final class RegisterFragment extends Fragment {
         binding.googleSignIn.setVisibility(
                 viewModel.isGoogleSignInAvailable() ? View.VISIBLE : View.GONE);
         binding.googleSignIn.setOnClickListener(v -> viewModel.googleSignIn(requireActivity()));
-        binding.secondaryAction.setOnClickListener(v -> {
+        View.OnClickListener openLogin = v -> {
             Bundle args = inviteReturnArgs();
             NavHostFragment.findNavController(this).navigate(
                     R.id.loginFragment, args.isEmpty() ? null : args);
-        });
+        };
+        binding.secondaryAction.setOnClickListener(openLogin);
+        binding.authModeLogin.setOnClickListener(openLogin);
+        if (binding.loadingState.getContentDescription() == null) {
+            binding.loadingState.setContentDescription(
+                    getString(R.string.action_continue_with_google));
+        }
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
         viewModel.getEvents().observe(getViewLifecycleOwner(), this::onAuthEvent);
         if (viewModel.hasPendingCompleteProfile()) {
@@ -129,6 +135,8 @@ public final class RegisterFragment extends Fragment {
         binding.registerButton.setEnabled(notLoading);
         binding.googleSignIn.setEnabled(notLoading);
         binding.secondaryAction.setEnabled(notLoading);
+        binding.authModeLogin.setEnabled(notLoading);
+        binding.loadingState.setVisibility(s.getLoading() ? View.VISIBLE : View.GONE);
         rendering = false;
     }
     @Override public void onSaveInstanceState(@NonNull Bundle out) { super.onSaveInstanceState(out); out.putBoolean("confirmChecked", confirmChecked); }

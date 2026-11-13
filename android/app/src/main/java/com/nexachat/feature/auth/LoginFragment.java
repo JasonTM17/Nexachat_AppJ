@@ -51,11 +51,17 @@ public final class LoginFragment extends Fragment {
                 viewModel.isGoogleSignInAvailable() ? View.VISIBLE : View.GONE);
         binding.googleSignIn.setOnClickListener(v -> viewModel.googleSignIn(requireActivity()));
         binding.secondaryAction.setText(R.string.action_create_account);
-        binding.secondaryAction.setOnClickListener(v -> {
+        View.OnClickListener openRegister = v -> {
             Bundle args = inviteReturnArgs();
             NavHostFragment.findNavController(this).navigate(
                     R.id.registerFragment, args.isEmpty() ? null : args);
-        });
+        };
+        binding.secondaryAction.setOnClickListener(openRegister);
+        binding.authModeRegister.setOnClickListener(openRegister);
+        if (binding.loadingState.getContentDescription() == null) {
+            binding.loadingState.setContentDescription(
+                    getString(R.string.action_continue_with_google));
+        }
         binding.forgotPasswordAction.setOnClickListener(v -> {
             String phone = binding.phoneInput.getText() == null
                     ? "" : binding.phoneInput.getText().toString();
@@ -162,6 +168,8 @@ public final class LoginFragment extends Fragment {
         binding.googleSignIn.setEnabled(notLoading);
         binding.secondaryAction.setEnabled(notLoading);
         binding.forgotPasswordAction.setEnabled(notLoading);
+        binding.authModeRegister.setEnabled(notLoading);
+        binding.loadingState.setVisibility(state.getLoading() ? View.VISIBLE : View.GONE);
         binding.primaryAction.setText(R.string.action_sign_in);
         rendering = false;
     }

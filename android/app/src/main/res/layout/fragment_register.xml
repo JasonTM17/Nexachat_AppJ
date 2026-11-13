@@ -16,7 +16,7 @@
             android:layout_height="wrap_content"
             android:gravity="center"
             android:orientation="vertical"
-            android:padding="24dp">
+            android:padding="@dimen/space_lg">
 
             <LinearLayout
                 android:id="@+id/registerColumn"
@@ -43,33 +43,90 @@
                     android:id="@+id/authTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="20dp"
-                    android:layout_marginBottom="28dp"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:layout_marginBottom="@dimen/space_md"
                     android:accessibilityHeading="true"
-                    tools:targetApi="p"
-                    android:text="@string/action_create_account"
+                    android:fontFamily="@font/manrope"
+                    android:text="@string/app_name"
                     android:textAppearance="?attr/textAppearanceHeadlineMedium"
                     android:textColor="?attr/colorOnSurface"
-                    android:textStyle="bold" />
+                    android:textFontWeight="700"
+                    tools:targetApi="p" />
+
+                <LinearLayout
+                    android:id="@+id/authModeSwitch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:background="?attr/colorSurfaceContainerLow"
+                    android:gravity="center_vertical"
+                    android:minHeight="48dp"
+                    android:orientation="horizontal"
+                    android:padding="@dimen/space_xs">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/authModeLogin"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="center"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:maxLines="2"
+                        android:minHeight="@dimen/min_touch_target"
+                        android:text="@string/action_sign_in"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        app:backgroundTint="@android:color/transparent"
+                        app:cornerRadius="@dimen/corner_sm" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/authModeRegister"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="center"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:maxLines="2"
+                        android:minHeight="@dimen/min_touch_target"
+                        android:text="@string/action_create_account"
+                        android:textColor="?attr/colorOnPrimary"
+                        app:backgroundTint="?attr/colorPrimary"
+                        app:cornerRadius="@dimen/corner_sm" />
+                </LinearLayout>
 
                 <include
                     android:id="@+id/googleEmailInUseError"
                     layout="@layout/include_google_email_in_use_error" />
 
+                <TextView
+                    android:id="@+id/errorBanner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:accessibilityLiveRegion="polite"
+                    android:background="@drawable/bg_auth_inline_error"
+                    android:drawablePadding="@dimen/space_sm"
+                    android:padding="@dimen/space_inset"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?attr/colorOnErrorContainer"
+                    android:visibility="gone"
+                    app:drawableStartCompat="@drawable/ic_error_outline"
+                    app:drawableTint="?attr/colorError" />
+
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/googleSignIn"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    style="@style/Widget.NexaChat.Button.Google"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:contentDescription="@string/cd_continue_with_google"
                     android:minHeight="56dp"
                     android:text="@string/action_continue_with_google"
-                    android:textStyle="bold"
                     android:visibility="gone"
-                    app:cornerRadius="12dp"
                     app:icon="@drawable/ic_google_g"
                     app:iconGravity="textStart"
-                    app:iconPadding="12dp"
+                    app:iconPadding="@dimen/space_inset"
+                    app:iconTint="@null"
                     tools:visibility="visible" />
 
                 <include layout="@layout/include_auth_or_divider" />
@@ -77,14 +134,11 @@
                 <!-- Fields -->
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/nameLayout"
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    style="@style/Widget.NexaChat.TextInputLayout.Auth"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:hint="@string/auth_display_name_label"
-                    app:boxCornerRadiusBottomEnd="12dp"
-                    app:boxCornerRadiusBottomStart="12dp"
-                    app:boxCornerRadiusTopEnd="12dp"
-                    app:boxCornerRadiusTopStart="12dp">
+                    app:startIconDrawable="@drawable/ic_person_outline">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/nameInput"
@@ -99,15 +153,12 @@
 
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/phoneLayout"
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    style="@style/Widget.NexaChat.TextInputLayout.Auth"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
+                    android:layout_marginTop="@dimen/space_md"
                     android:hint="@string/auth_phone_label"
-                    app:boxCornerRadiusBottomEnd="12dp"
-                    app:boxCornerRadiusBottomStart="12dp"
-                    app:boxCornerRadiusTopEnd="12dp"
-                    app:boxCornerRadiusTopStart="12dp">
+                    app:startIconDrawable="@drawable/ic_call">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/phoneInput"
@@ -122,18 +173,15 @@
 
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/passwordLayout"
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    style="@style/Widget.NexaChat.TextInputLayout.Auth"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
+                    android:layout_marginTop="@dimen/space_md"
                     android:hint="@string/auth_password_label"
-                    app:boxCornerRadiusBottomEnd="12dp"
-                    app:boxCornerRadiusBottomStart="12dp"
-                    app:boxCornerRadiusTopEnd="12dp"
-                    app:boxCornerRadiusTopStart="12dp"
                     app:endIconContentDescription="@string/cd_password_visibility"
                     app:endIconDrawable="@drawable/ic_visibility"
-                    app:endIconMode="password_toggle">
+                    app:endIconMode="password_toggle"
+                    app:startIconDrawable="@drawable/ic_lock">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/passwordInput"
@@ -150,18 +198,15 @@
 
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/confirmPasswordLayout"
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    style="@style/Widget.NexaChat.TextInputLayout.Auth"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
+                    android:layout_marginTop="@dimen/space_md"
                     android:hint="@string/auth_confirm_password_label"
-                    app:boxCornerRadiusBottomEnd="12dp"
-                    app:boxCornerRadiusBottomStart="12dp"
-                    app:boxCornerRadiusTopEnd="12dp"
-                    app:boxCornerRadiusTopStart="12dp"
                     app:endIconContentDescription="@string/cd_password_visibility"
                     app:endIconDrawable="@drawable/ic_visibility"
-                    app:endIconMode="password_toggle">
+                    app:endIconMode="password_toggle"
+                    app:startIconDrawable="@drawable/ic_lock">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/confirmPasswordInput"
@@ -175,28 +220,16 @@
                         android:saveEnabled="false" />
                 </com.google.android.material.textfield.TextInputLayout>
 
-                <!-- Error banner -->
-                <TextView
-                    android:id="@+id/errorBanner"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:accessibilityLiveRegion="polite"
-                    android:background="@drawable/bg_settings_tile_error"
-                    android:padding="12dp"
-                    android:textColor="?attr/colorOnErrorContainer"
-                    android:visibility="gone" />
-
                 <!-- One full-width primary button -->
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/registerButton"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="24dp"
-                    android:minHeight="54dp"
+                    android:layout_marginTop="@dimen/space_lg"
+                    android:minHeight="56dp"
                     android:text="@string/action_create_account"
                     android:textStyle="bold"
-                    app:cornerRadius="12dp" />
+                    app:cornerRadius="@dimen/corner_md" />
 
                 <!-- Text link -->
                 <com.google.android.material.button.MaterialButton
@@ -204,7 +237,7 @@
                     style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
+                    android:layout_marginTop="@dimen/space_sm"
                     android:minHeight="@dimen/min_touch_target"
                     android:text="@string/action_sign_in"
                     android:textColor="?attr/colorPrimary" />
