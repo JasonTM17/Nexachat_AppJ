@@ -68,29 +68,20 @@ public final class SharedStateViewsLayoutContractTest {
     }
 
     @Test
-    public void loadingViewHasLocalizedDefaultLabelAndPoliteAnnouncement() throws Exception {
+    public void loadingSpinnerIsNamedAndOptionalLabelStaysHiddenByDefault() throws Exception {
         Document layout = parse(new File(resDir, "layout/view_loading_state.xml"));
+        Element spinner = findElementById(layout.getDocumentElement(), "loadingSpinner");
+        assertNotNull(spinner);
+        assertEquals("@string/loading_status", spinner.getAttributeNS(NS_ANDROID, "contentDescription"));
         Element label = findElementById(layout.getDocumentElement(), "loadingLabel");
         assertNotNull(label);
-        assertEquals("@string/loading_status", label.getAttributeNS(NS_ANDROID, "text"));
         assertEquals("polite", label.getAttributeNS(NS_ANDROID, "accessibilityLiveRegion"));
-        assertTrue("default loading label must be visible",
-                !"gone".equals(label.getAttributeNS(NS_ANDROID, "visibility")));
+        assertEquals("gone", label.getAttributeNS(NS_ANDROID, "visibility"));
 
         Document english = parse(new File(resDir, "values/strings.xml"));
         Document vietnamese = parse(new File(resDir, "values-vi/strings.xml"));
         assertEquals("Loading", findString(english, "loading_status").getTextContent().trim());
         assertEquals("Đang tải", findString(vietnamese, "loading_status").getTextContent().trim());
-    }
-
-    @Test
-    public void clearingLoadingLabelRestoresTheLocalizedDefault() throws Exception {
-        String source = readJava("LoadingStateView.java");
-        int clearBranch = source.indexOf("if (label == null || label.length() == 0)");
-        int restoreDefault = source.indexOf("labelView.setText(R.string.loading_status);", clearBranch);
-        int showDefault = source.indexOf("labelView.setVisibility(VISIBLE);", restoreDefault);
-        assertTrue("clearing the optional label must restore loading_status",
-                clearBranch >= 0 && restoreDefault > clearBranch && showDefault > restoreDefault);
     }
 
     @Test

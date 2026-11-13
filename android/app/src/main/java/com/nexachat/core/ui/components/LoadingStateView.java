@@ -34,8 +34,7 @@ public class LoadingStateView extends FrameLayout {
 
     public void setLabel(@Nullable CharSequence label) {
         if (label == null || label.length() == 0) {
-            labelView.setText(R.string.loading_status);
-            labelView.setVisibility(VISIBLE);
+            labelView.setVisibility(GONE);
         } else {
             labelView.setText(label);
             labelView.setVisibility(VISIBLE);
