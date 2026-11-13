@@ -123,6 +123,7 @@ public final class ProfileViewModel extends ViewModel {
     }
 
     public void openPasswordDialog() {
+        if (!currentState().canChangePassword()) return;
         updateState(state -> state
                 .withShowPasswordDialog(true)
                 .withOldPassword("")
@@ -355,6 +356,7 @@ public final class ProfileViewModel extends ViewModel {
         public boolean isLoading() { return loading; }
         public boolean getLoading() { return loading; }
         @Nullable public UserDto getUser() { return user; }
+        public boolean canChangePassword() { return user != null && user.isPasswordSet(); }
         @Nullable public ApiError getError() { return error; }
         public boolean isEditingName() { return editingName; }
         public boolean getEditingName() { return editingName; }

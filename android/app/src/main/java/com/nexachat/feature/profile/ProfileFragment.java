@@ -78,7 +78,13 @@ public final class ProfileFragment extends Fragment {
         binding.nameInput.addTextChangedListener(new SimpleTextWatcher(s -> viewModel.onNameInputChange(s)));
         binding.saveName.setOnClickListener(v -> viewModel.saveDisplayName());
         binding.cancelName.setOnClickListener(v -> viewModel.cancelEditName());
-        binding.changePassword.setOnClickListener(v -> { viewModel.openPasswordDialog(); showPasswordDialog(); });
+        binding.changePassword.setOnClickListener(v -> {
+            ProfileViewModel.UiState current = viewModel.getUiState().getValue();
+            if (current != null && current.canChangePassword()) {
+                viewModel.openPasswordDialog();
+                showPasswordDialog();
+            }
+        });
         binding.recoveryEmailRow.setTitle(getString(R.string.recovery_email_title));
         binding.recoveryEmailRow.setLeadingIcon(R.drawable.ic_email);
         binding.recoveryEmailRow.setOnClickListener(v -> NavHostFragment.findNavController(this)
@@ -205,6 +211,7 @@ public final class ProfileFragment extends Fragment {
     }
 
     private void render(ProfileViewModel.UiState state) {
+        binding.changePassword.setVisibility(state.canChangePassword() ? View.VISIBLE : View.GONE);
         ApiError loadError = state.getError();
         UserDto user = state.getUser();
         boolean noUser = user == null;
