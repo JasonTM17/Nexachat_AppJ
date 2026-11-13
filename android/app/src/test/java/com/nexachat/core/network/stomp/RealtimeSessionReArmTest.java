@@ -97,6 +97,42 @@ public final class RealtimeSessionReArmTest {
     }
 
     @Test
+    public void parkedLoopStaysParkedInBackgroundWhileNetworkStaysOnline() {
+        TestScheduler scheduler = new TestScheduler();
+        AtomicInteger connects = new AtomicInteger();
+        RealtimeSession session = session(loggedInStore(Long.MAX_VALUE), failedClient(connects),
+                BehaviorProcessor.createDefault(true), BehaviorProcessor.createDefault(false),
+                mock(TokenRefresher.class), scheduler);
+
+        scheduler.advanceTimeBy(10, TimeUnit.MINUTES);
+
+        assertEquals("a backgrounded app with a reachable network but an unreachable server"
+                + " must stop after the retry budget instead of hammering the server",
+                ReconnectPolicy.MAX_ATTEMPTS, connects.get());
+    }
+
+    @Test
+    public void parkedLoopWaitsForParkedDelayWhileNetworkStaysOnline() {
+        TestScheduler scheduler = new TestScheduler();
+        AtomicInteger connects = new AtomicInteger();
+        RealtimeSession session = session(loggedInStore(Long.MAX_VALUE), failedClient(connects),
+                BehaviorProcessor.createDefault(true), BehaviorProcessor.createDefault(true),
+                mock(TokenRefresher.class), scheduler);
+
+        int guard = 0;
+        while (connects.get() < ReconnectPolicy.MAX_ATTEMPTS && guard++ < 600) {
+            scheduler.advanceTimeBy(100L, TimeUnit.MILLISECONDS);
+        }
+        assertEquals("the retry budget should be spent first",
+                ReconnectPolicy.MAX_ATTEMPTS, connects.get());
+        scheduler.advanceTimeBy(RealtimeSession.PARKED_RETRY_BASE_MS - 300L, TimeUnit.MILLISECONDS);
+        assertEquals("the parked delay must hold while the network is merely online",
+                ReconnectPolicy.MAX_ATTEMPTS, connects.get());
+        scheduler.advanceTimeBy(400L, TimeUnit.MILLISECONDS);
+        assertEquals(ReconnectPolicy.MAX_ATTEMPTS + 1, connects.get());
+    }
+
+    @Test
     public void parkedRetryTimerUsesJitteredDelayFromPolicy() {
         TestScheduler scheduler = new TestScheduler();
         BehaviorProcessor<Boolean> foreground = BehaviorProcessor.createDefault(false);

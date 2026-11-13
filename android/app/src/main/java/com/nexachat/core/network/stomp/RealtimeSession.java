@@ -623,9 +623,10 @@ public final class RealtimeSession {
             publishState(new StompClient.State.Failed(StompClient.REASON_OFFLINE),
                     sessionEpoch, attemptId);
             long delay = reconnectPolicy.parkedDelayMillis(parkedRounds);
-            Flowable<Object> wakeSignals = Flowable.merge(
-                    networkMonitor.getIsOnline().filter(Boolean::booleanValue).map(value -> new Object()),
-                    rearmRequests);
+            // NetworkMonitor replays its latest value, so subscribing to it here would fire at once
+            // while the network is merely online and defeat the parked delay. A validated regain
+            // already reaches this loop through ensureConnected() -> rearmRequests.
+            Flowable<Object> wakeSignals = rearmRequests;
             Flowable<Object> foregroundTimer = foreground.getIsForeground()
                     .distinctUntilChanged()
                     .switchMap(isForeground -> isForeground
