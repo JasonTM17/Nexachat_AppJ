@@ -1012,6 +1012,16 @@ The V31/V32 forward-recovery drill is a PowerShell script:
 It builds the frozen V31 artifact from the phase base SHA, starts V32 and V31 against one temporary database, injects a pre-commit rebuild failure, then proves generation reset and reconciliation. The drill creates and drops only uniquely named test databases on the PostgreSQL server selected by `IT_DB_URL`; it does not target a hosted database.
 
 Watermarks for unknown conversations, or conversations the caller is not (or no longer) a member of, are omitted from `deltas` without an error. `editedMessages`, `deletedMessageIds` and `reactionUpdates` are populated only when `since` is supplied; a request without `since` returns `newMessages` only. `maxSeq` is the conversation's current maximum sequence even when `hasMore=true`.
+
+In the legacy response, `hasMore` also covers an overflowing edit or recall
+stream. Those rows are ordered by their change timestamp and bounded by
+`limitPerConv`, with every row tied at the last included timestamp returned
+together. If an edit or recall stream is truncated, response-wide `serverTime`
+is capped to the earliest included page boundary across the requested
+conversations and streams. The next legacy request can echo that value as
+`since`; an untruncated response keeps its existing request-time `serverTime`.
+V2 cursor paging and response fields are unchanged.
+
 Supported by server index `idx_messages_delta_sync` on `(conversation_id, seq) INCLUDE (edited_at, deleted_at)` (Flyway V7). Flyway V19 adds the partial indexes `idx_messages_conv_edited` on `(conversation_id, edited_at) WHERE edited_at IS NOT NULL` and `idx_messages_conv_deleted` on `(conversation_id, deleted_at) WHERE deleted_at IS NOT NULL`, so the per-conversation edited/deleted scans do not fall back to a full scan of the conversation's messages.
 
 `reactionUpdates` is derived from the append-only `reaction_events` table, so a

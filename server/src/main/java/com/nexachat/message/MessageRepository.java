@@ -1,5 +1,6 @@
 package com.nexachat.message;
 
+import com.nexachat.message.dto.MessageDeletionChange;
 import com.nexachat.message.dto.MessageRow;
 import com.nexachat.message.dto.MessageSearchProjection;
 import com.nexachat.message.dto.ReplyRefRow;
@@ -209,6 +210,18 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     List<UUID> findDeletedMessageIdsSince(@Param("conversationId") UUID conversationId,
                                          @Param("lastSeq") long lastSeq,
                                          @Param("since") Instant since);
+
+    @Query("""
+            SELECT new com.nexachat.message.dto.MessageDeletionChange(m.id, m.deletedAt)
+            FROM Message m
+            WHERE m.conversation.id = :conversationId
+              AND m.seq <= :lastSeq
+              AND m.deletedAt > :since
+            ORDER BY m.deletedAt ASC, m.id ASC
+            """)
+    List<MessageDeletionChange> findDeletedChangesSince(@Param("conversationId") UUID conversationId,
+                                                         @Param("lastSeq") long lastSeq,
+                                                         @Param("since") Instant since);
 
     /**
      * Conversation-scoped literal substring search, ordered through

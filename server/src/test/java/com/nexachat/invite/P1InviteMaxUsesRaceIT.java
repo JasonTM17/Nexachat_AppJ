@@ -168,6 +168,18 @@ class P1InviteMaxUsesRaceIT {
         });
     }
 
+    private CompletableFuture<Integer> revokeAsync(UUID groupId, String accessToken) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                return mockMvc.perform(delete("/api/v1/conversations/{id}/invite-link", groupId)
+                                .header("Authorization", "Bearer " + accessToken))
+                        .andReturn().getResponse().getStatus();
+            } catch (Exception ex) {
+                throw new IllegalStateException(ex);
+            }
+        });
+    }
+
     @Test
     void concurrentRevocationMustInvalidateAnInFlightJoin() throws Exception {
         UUID groupId = createGroup(List.of(dave.id()));
@@ -188,16 +200,15 @@ class P1InviteMaxUsesRaceIT {
                 statement.executeQuery().close();
             }
 
-            CompletableFuture<Integer> join = joinAsync(token, bob.accessToken());
+            CompletableFuture<Integer> revoke = revokeAsync(groupId, alice.accessToken());
             awaitBlockedTransactions(1, "conversations");
+            CompletableFuture<Integer> join = joinAsync(token, bob.accessToken());
+            awaitBlockedTransactions(2, "conversations");
 
-            // Revoke while the join is parked at the conversation lock with the
-            // link entity already loaded inside its persistence context.
-            mockMvc.perform(delete("/api/v1/conversations/{id}/invite-link", groupId)
-                            .header("Authorization", "Bearer " + alice.accessToken()))
-                    .andExpect(status().isNoContent());
-
+            // Queue revocation ahead of the join on the serialized conversation
+            // row, so the stale preloaded link must be rejected after both run.
             lockConnection.commit();
+            int revokeStatus = revoke.get(10, TimeUnit.SECONDS);
             int joinStatus = join.get(10, TimeUnit.SECONDS);
 
             Integer membership = jdbcTemplate.queryForObject(
@@ -207,6 +218,7 @@ class P1InviteMaxUsesRaceIT {
                     "SELECT COUNT(*) FROM group_invite_links WHERE id = ? AND revoked_at IS NOT NULL",
                     Integer.class, linkId);
 
+            assertThat(revokeStatus).isEqualTo(204);
             assertThat(revokedAt).as("the revocation must survive the in-flight join").isEqualTo(1);
             assertThat(joinStatus).isEqualTo(404);
             assertThat(membership).isZero();
@@ -231,17 +243,15 @@ class P1InviteMaxUsesRaceIT {
                 statement.executeQuery().close();
             }
 
-            // Both rotations read the same active link, then park on its row
-            // lock. Releasing them makes both try to insert a new active link;
-            // the partial unique index admits only one.
+            // The first rotation holds the caller and conversation locks before
+            // waiting on the held invite-link row; the second waits on the same
+            // caller row, following the service's lock order.
             CompletableFuture<Integer> first = rotateAsync(groupId);
             CompletableFuture<Integer> second = rotateAsync(groupId);
-            // The first rotation parks on the link row; the second is serialized
-            // behind it by the conversation row lock it already holds.
             TestWaits.until("the first rotation to block on the group_invite_links row lock "
-                    + "and the second behind the conversation row lock",
+                    + "and the second behind the caller user row lock",
                     () -> lockWaiters("group_invite_links") >= 1
-                            && lockWaiters("conversations") >= 1);
+                            && lockWaiters("users") >= 1);
             lockConnection.commit();
 
             int firstStatus = first.get(10, TimeUnit.SECONDS);

@@ -684,6 +684,70 @@ public final class SyncEngineTest {
     }
 
     @Test
+    public void legacySyncPaginatesEditRecallOverflowByEarliestTimestampAcrossBatches() {
+        when(tokenStore.readTokens()).thenReturn(
+                Maybe.just(new Tokens(jwt("user-1"), 1800000000000L, "refresh")));
+        Map<String, String> cursors = new HashMap<>();
+        cursors.put("user-1", "2026-11-08T10:00:00Z");
+        when(tokenStore.readSyncServerTime("user-1")).thenAnswer(invocation -> {
+            String cursor = cursors.get("user-1");
+            return cursor == null ? Maybe.empty() : Maybe.just(cursor);
+        });
+        when(tokenStore.saveSyncServerTime(anyString(), anyString())).thenAnswer(invocation -> {
+            cursors.put(invocation.getArgument(0), invocation.getArgument(1));
+            return Completable.complete();
+        });
+        when(messageDao.getAllMaxSeqs()).thenReturn(Single.just(watermarks(101)));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(messageDao.byId(anyString())).thenReturn(Maybe.empty());
+
+        AtomicInteger callIndex = new AtomicInteger();
+        String[] responseTimes = {
+                "2026-11-08T10:00:05Z", "2026-11-08T10:00:10Z",
+                "2026-11-08T10:00:20Z", "2026-11-08T10:00:25Z"
+        };
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenAnswer(invocation -> {
+            int index = callIndex.getAndIncrement();
+            SyncRequest request = invocation.getArgument(0);
+            boolean firstOverflowPage = index == 0;
+            boolean finalTimestampPage = index == 2;
+            List<SyncResponse.ConversationDeltaDto> deltas = request.getWatermarks().stream()
+                    .map(watermark -> {
+                        boolean target = "conversation-0".equals(watermark.getConversationId());
+                        if (target && (firstOverflowPage || finalTimestampPage)) {
+                            String suffix = firstOverflowPage ? "first" : "last";
+                            return new SyncResponse.ConversationDeltaDto(
+                                    watermark.getConversationId(), List.of(),
+                                    List.of(message("edit-" + suffix, 0L, watermark.getConversationId(), suffix)),
+                                    List.of("deleted-" + suffix), List.of(), watermark.getLastSeq(),
+                                    firstOverflowPage);
+                        }
+                        return new SyncResponse.ConversationDeltaDto(
+                                watermark.getConversationId(), List.of(), List.of(), List.of(), List.of(),
+                                watermark.getLastSeq(), false);
+                    })
+                    .toList();
+            return responseCall(new SyncResponse(deltas, responseTimes[index]));
+        });
+
+        syncEngine.sync().blockingAwait();
+
+        ArgumentCaptor<SyncRequest> requestCaptor = ArgumentCaptor.forClass(SyncRequest.class);
+        verify(messageApi, times(4)).syncDeltas(requestCaptor.capture());
+        List<SyncRequest> requests = requestCaptor.getAllValues();
+        assertEquals(100, requests.get(0).getWatermarks().size());
+        assertEquals(1, requests.get(1).getWatermarks().size());
+        assertEquals("2026-11-08T10:00:00Z", requests.get(0).getSince());
+        assertEquals("2026-11-08T10:00:00Z", requests.get(1).getSince());
+        assertEquals("2026-11-08T10:00:05Z", requests.get(2).getSince());
+        assertEquals("2026-11-08T10:00:05Z", requests.get(3).getSince());
+        ArgumentCaptor<String> savedCursors = ArgumentCaptor.forClass(String.class);
+        verify(tokenStore, times(2)).saveSyncServerTime(eq("user-1"), savedCursors.capture());
+        assertEquals(List.of("2026-11-08T10:00:05Z", "2026-11-08T10:00:20Z"),
+                savedCursors.getAllValues());
+    }
+
+    @Test
     public void syncStopsWhenHasMoreMakesNoProgressAndDoesNotAdvanceTheCursor() {
         when(tokenStore.readTokens()).thenReturn(
                 Maybe.just(new Tokens(jwt("user-1"), 1800000000000L, "refresh")));

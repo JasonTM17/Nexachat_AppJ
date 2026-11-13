@@ -12,6 +12,7 @@ import com.nexachat.conversation.dto.ConversationUpdatePayload;
 import com.nexachat.conversation.dto.MemberFlagsRow;
 import com.nexachat.message.dto.AttachmentResponse;
 import com.nexachat.message.dto.EditMessageRequest;
+import com.nexachat.message.dto.MessageDeletionChange;
 import com.nexachat.message.dto.MessagePageResponse;
 import com.nexachat.message.dto.MessageResponse;
 import com.nexachat.message.dto.MessageDeletedPayload;
@@ -674,6 +675,9 @@ public class MessageService {
         }
 
         List<SyncResponse.ConversationDelta> deltas = new ArrayList<>();
+        // Legacy exposes one timestamp cursor for every conversation and change
+        // stream, so an overflow in any one stream caps the whole response.
+        Instant legacyServerTime = requestTime;
         for (SyncRequest.ConversationWatermark wm : watermarks) {
             UUID conversationId = wm.conversationId();
             long lastSeq = wm.lastSeq();
@@ -695,17 +699,35 @@ public class MessageService {
             List<MessageResponse> editedMessages = List.of();
             if (since != null) {
                 List<MessageRow> editedRows = messageRepository.findEditedRowsSince(conversationId, lastSeq, since);
-                if (editedRows.size() > limit) {
-                    editedRows = editedRows.subList(0, limit);
+                TimestampedPage<MessageRow> editedPage = pageTimestampedChanges(
+                        editedRows, limit, MessageRow::editedAt);
+                if (editedPage.hasMore()) {
+                    hasMore = true;
+                    legacyServerTime = earlier(legacyServerTime, editedPage.boundaryTimestamp());
                 }
-                editedMessages = hydrateResponses(editedRows, userId);
+                editedMessages = hydrateResponses(editedPage.items(), userId);
             }
 
             // 3. Deleted message IDs since timestamp (with seq <= lastSeq)
             List<UUID> deletedMessageIds = List.of();
             if (since != null) {
                 List<UUID> allDeleted = messageRepository.findDeletedMessageIdsSince(conversationId, lastSeq, since);
-                deletedMessageIds = allDeleted.size() > limit ? allDeleted.subList(0, limit) : allDeleted;
+                if (allDeleted.size() > limit) {
+                    List<MessageDeletionChange> deletedChanges = messageRepository.findDeletedChangesSince(
+                            conversationId, lastSeq, since);
+                    TimestampedPage<MessageDeletionChange> deletedPage = pageTimestampedChanges(
+                            deletedChanges, limit, MessageDeletionChange::deletedAt);
+                    deletedMessageIds = deletedPage.items().stream()
+                            .map(MessageDeletionChange::messageId)
+                            .toList();
+                    if (deletedPage.hasMore()) {
+                        hasMore = true;
+                        legacyServerTime = earlier(legacyServerTime, deletedPage.boundaryTimestamp());
+                    }
+                } else {
+                    // Keep the existing query and order for ordinary small syncs.
+                    deletedMessageIds = allDeleted;
+                }
             }
 
             // 4. Reactions updated since timestamp — derived from the append-only
@@ -760,7 +782,27 @@ public class MessageService {
             ));
         }
 
-        return new SyncResponse(deltas, requestTime);
+        return new SyncResponse(deltas, legacyServerTime);
+    }
+
+    private record TimestampedPage<T>(List<T> items, boolean hasMore, Instant boundaryTimestamp) {
+    }
+
+    private static <T> TimestampedPage<T> pageTimestampedChanges(
+            List<T> rows, int limit, java.util.function.Function<T, Instant> timestamp) {
+        if (rows.size() <= limit) {
+            return new TimestampedPage<>(rows, false, null);
+        }
+        Instant boundary = timestamp.apply(rows.get(limit - 1));
+        int end = limit;
+        while (end < rows.size() && boundary.equals(timestamp.apply(rows.get(end)))) {
+            end++;
+        }
+        return new TimestampedPage<>(rows.subList(0, end), end < rows.size(), boundary);
+    }
+
+    private static Instant earlier(Instant current, Instant candidate) {
+        return candidate.isBefore(current) ? candidate : current;
     }
 
     private static int resolveSyncLimitPerConv(Integer requested, int max) {

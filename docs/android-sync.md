@@ -13,7 +13,11 @@ on subsequent pages. Complete v2 field presence is required for every returned
 delta. An old, disabled, unknown-version or partial-v2 response triggers a fresh
 legacy request; its v2 rows are never partially applied. Downgrade clears saved
 revision authority without deleting history or queued sends. Legacy mode retains
-the server's timestamp/overflow limitations and does not provide v2 convergence.
+timestamp-based reconciliation without v2 current-state convergence. On edit or
+recall overflow, the server caps `serverTime` at the included change boundary;
+the Android fallback retries from the earliest returned server time across
+watermark batches after sequence and reaction cursors drain. Retry/page bounds
+leave pending work for the next sync.
 The V32 server is a separate delivery: client fixture evidence does not prove
 interoperation with the unmerged implementation.
 

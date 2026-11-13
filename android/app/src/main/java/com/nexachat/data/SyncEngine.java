@@ -30,6 +30,8 @@ import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.io.IOException;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -249,18 +251,19 @@ public final class SyncEngine {
                             }
                             List<SyncRequest> requests = splitWatermarks(
                                     reqWatermarks, cursor.serverTime);
-                            AtomicReference<SyncResponse> lastResponse = new AtomicReference<>();
+                            AtomicReference<String> earliestServerTime = new AtomicReference<>();
                             AtomicBoolean missingServerTime = new AtomicBoolean();
                             AtomicBoolean batchHasMore = new AtomicBoolean();
                             return Flowable.fromIterable(requests)
                                     .concatMapCompletable(request -> drainDeltaRequest(
-                                            request, lastResponse, missingServerTime,
+                                            request, earliestServerTime, missingServerTime,
                                             batchHasMore, cursor.userId, expectedEpoch))
                                     .andThen(Completable.defer(() -> {
-                                        Completable persist = (missingServerTime.get() || lastResponse.get() == null)
+                                        String serverTime = earliestServerTime.get();
+                                        Completable persist = (missingServerTime.get() || serverTime == null)
                                                 ? Completable.complete()
                                                 : persistServerTime(
-                                                        cursor, lastResponse.get(), expectedEpoch);
+                                                        cursor, serverTime, expectedEpoch);
                                         return persist.andThen(Completable.defer(() -> {
                                             if (batchHasMore.get()) {
                                                 hasPendingContinuation.set(true);
@@ -283,7 +286,7 @@ public final class SyncEngine {
      */
     private Completable drainDeltaRequest(
             SyncRequest request,
-            AtomicReference<SyncResponse> lastResponse,
+            AtomicReference<String> earliestServerTime,
             AtomicBoolean missingServerTime,
             AtomicBoolean batchHasMore,
             @Nullable String ownerUserId,
@@ -292,7 +295,7 @@ public final class SyncEngine {
                 request.getSince(),
                 new ArrayList<>(request.getWatermarks()),
                 0,
-                lastResponse,
+                earliestServerTime,
                 missingServerTime,
                 batchHasMore,
                 ownerUserId,
@@ -303,7 +306,7 @@ public final class SyncEngine {
             @Nullable String since,
             List<SyncRequest.Watermark> watermarks,
             int page,
-            AtomicReference<SyncResponse> lastResponse,
+            AtomicReference<String> earliestServerTime,
             AtomicBoolean missingServerTime,
             AtomicBoolean batchHasMore,
             @Nullable String ownerUserId,
@@ -322,26 +325,38 @@ public final class SyncEngine {
                 watermarks, DELTA_LIMIT_PER_CONVERSATION, since);
         return fetchDeltaResponse(request).flatMapCompletable(response -> {
             applyDeltaBundle(response, watermarks, ownerUserId, expectedEpoch);
-            lastResponse.set(response);
             if (response.getServerTime() == null) {
                 missingServerTime.set(true);
+            } else {
+                keepEarliestServerTime(earliestServerTime, response.getServerTime());
             }
-            List<SyncRequest.Watermark> next = nextDeltaWatermarks(watermarks, response);
-            if (next == null) {
-                return Completable.error(new IOException("delta sync page made no progress"));
+            DeltaContinuation continuation = nextDeltaWatermarks(watermarks, response);
+            if (continuation.stalled()) {
+                if (!canContinueByTimestamp(since, watermarks, response, continuation)) {
+                    return Completable.error(new IOException("delta sync page made no progress"));
+                }
+                // Legacy edit and recall pages have no sequence or reaction
+                // continuation key. Save their capped serverTime, then retry
+                // the batch from that timestamp after other cursors drain.
+                batchHasMore.set(true);
             }
-            return drainDeltaPage(since, next, page + 1, lastResponse,
-                    missingServerTime, batchHasMore, ownerUserId, expectedEpoch);
+            if (continuation.watermarks().isEmpty()) {
+                return Completable.complete();
+            }
+            if (page + 1 >= MAX_DRAIN_PAGES) {
+                batchHasMore.set(true);
+                return Completable.complete();
+            }
+            return drainDeltaPage(since, continuation.watermarks(), page + 1,
+                    earliestServerTime, missingServerTime, batchHasMore, ownerUserId, expectedEpoch);
         });
     }
 
-    /**
-     * Watermarks that still need a follow-up page. Returns {@code null} when a
-     * delta claims more data but none of its continuation keys advanced, which
-     * would otherwise loop forever on the same page.
-     */
-    @Nullable
-    private static List<SyncRequest.Watermark> nextDeltaWatermarks(
+    /** Continuation keys that advanced, plus whether another delta made no progress. */
+    private record DeltaContinuation(List<SyncRequest.Watermark> watermarks, boolean stalled) {
+    }
+
+    private static DeltaContinuation nextDeltaWatermarks(
             List<SyncRequest.Watermark> requested, SyncResponse response) {
         Map<String, SyncRequest.Watermark> byId = new HashMap<>();
         for (SyncRequest.Watermark watermark : requested) {
@@ -376,7 +391,75 @@ public final class SyncEngine {
             }
             next.add(new SyncRequest.Watermark(conversationId, nextLastSeq, nextCursor));
         }
-        return stuck ? null : next;
+        return new DeltaContinuation(next, stuck);
+    }
+
+    private static boolean canContinueByTimestamp(
+            @Nullable String since,
+            List<SyncRequest.Watermark> requested,
+            SyncResponse response,
+            DeltaContinuation continuation) {
+        if (!continuation.stalled() || since == null || response.getServerTime() == null) {
+            return false;
+        }
+        Instant sinceInstant = parseServerTime(since);
+        Instant responseTime = parseServerTime(response.getServerTime());
+        if (sinceInstant == null || responseTime == null || !responseTime.isAfter(sinceInstant)) {
+            return false;
+        }
+
+        Map<String, SyncRequest.Watermark> byId = new HashMap<>();
+        for (SyncRequest.Watermark watermark : requested) {
+            byId.put(watermark.getConversationId(), watermark);
+        }
+        boolean hasTimestampOnlyStall = false;
+        for (SyncResponse.ConversationDeltaDto delta : response.getDeltas()) {
+            if (!delta.isHasMore() || delta.getConversationId() == null) continue;
+            SyncRequest.Watermark current = byId.get(delta.getConversationId());
+            if (current == null) continue;
+
+            long nextLastSeq = current.getLastSeq();
+            for (MessageDto message : delta.getNewMessages()) {
+                if (message.getSeq() != null) {
+                    nextLastSeq = Math.max(nextLastSeq, message.getSeq());
+                }
+            }
+            if (delta.getNewMessages().isEmpty()) {
+                nextLastSeq = Math.max(nextLastSeq, delta.getMaxSeq());
+            }
+            Long nextCursor = delta.getReactionCursor() != null
+                    ? delta.getReactionCursor()
+                    : current.getReactionCursor();
+            boolean cursorAdvanced = nextLastSeq != current.getLastSeq()
+                    || !Objects.equals(nextCursor, current.getReactionCursor());
+            if (cursorAdvanced) continue;
+            if (!delta.getNewMessages().isEmpty() || !delta.getReactionUpdates().isEmpty()
+                    || (delta.getEditedMessages().isEmpty() && delta.getDeletedMessageIds().isEmpty())) {
+                return false;
+            }
+            hasTimestampOnlyStall = true;
+        }
+        return hasTimestampOnlyStall;
+    }
+
+    private static void keepEarliestServerTime(AtomicReference<String> earliest, String candidate) {
+        earliest.updateAndGet(current -> {
+            if (current == null) return candidate;
+            Instant currentInstant = parseServerTime(current);
+            Instant candidateInstant = parseServerTime(candidate);
+            if (currentInstant == null) return candidateInstant == null ? current : candidate;
+            return candidateInstant != null && candidateInstant.isBefore(currentInstant) ? candidate : current;
+        });
+    }
+
+    @Nullable
+    private static Instant parseServerTime(@Nullable String value) {
+        if (value == null) return null;
+        try {
+            return Instant.parse(value);
+        } catch (DateTimeParseException ignored) {
+            return null;
+        }
     }
 
     /**
@@ -453,18 +536,18 @@ public final class SyncEngine {
     }
 
     private Completable persistServerTime(
-            SyncCursor cursor, SyncResponse response, long expectedEpoch) {
-        if (cursor.userId == null || response == null || response.getServerTime() == null) {
+            SyncCursor cursor, @Nullable String serverTime, long expectedEpoch) {
+        if (cursor.userId == null || serverTime == null) {
             return Completable.complete();
         }
         return Completable.fromAction(() -> {
             boolean persisted = tokenRefresher.runIfSessionCurrent(expectedEpoch, () ->
-                    tokenStore.saveSyncServerTime(cursor.userId, response.getServerTime())
+                    tokenStore.saveSyncServerTime(cursor.userId, serverTime)
                             .blockingAwait());
             if (!persisted) {
                 throw new CancellationException("Sync session changed before cursor write");
             }
-            lastServerTime = response.getServerTime();
+            lastServerTime = serverTime;
         });
     }
 
