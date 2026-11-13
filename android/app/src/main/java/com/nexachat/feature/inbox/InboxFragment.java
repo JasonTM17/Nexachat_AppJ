@@ -32,6 +32,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
+import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.data.ThemeMode;
@@ -45,11 +46,9 @@ import com.nexachat.feature.label.LabelText;
 import com.nexachat.feature.label.LabelUiState;
 import com.nexachat.feature.label.LabelViewModel;
 import com.nexachat.feature.profile.AppSettingsViewModel;
+import com.nexachat.feature.profile.ProfileViewModel;
 import dagger.hilt.android.AndroidEntryPoint;
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 
@@ -67,6 +66,7 @@ public final class InboxFragment extends Fragment {
     private InboxViewModel viewModel;
     private LabelViewModel labelViewModel;
     private AppSettingsViewModel settingsViewModel;
+    private ProfileViewModel profileViewModel;
     private ConversationListAdapter adapter;
     private LinearLayoutManager layoutManager;
     @Nullable private RecyclerView.OnScrollListener paginationScrollListener;
@@ -75,6 +75,7 @@ public final class InboxFragment extends Fragment {
     private List<ConversationLabel> renderedLabels = List.of();
     private boolean labelFiltersInitialized;
     @Nullable private String boundUserId;
+    @Nullable private UserDto boundInboxUser;
     private int lastPaginationErrorMessageId;
 
     @Nullable
@@ -92,13 +93,14 @@ public final class InboxFragment extends Fragment {
         viewModel = new ViewModelProvider(this).get(InboxViewModel.class);
         labelViewModel = new ViewModelProvider(requireActivity()).get(LabelViewModel.class);
         settingsViewModel = new ViewModelProvider(requireActivity()).get(AppSettingsViewModel.class);
+        profileViewModel = new ViewModelProvider(requireActivity()).get(ProfileViewModel.class);
         labelViewModel.load();
 
-        binding.inboxUserAvatar.setName("Nexa");
         binding.inboxUserAvatar.setContentDescription(getString(R.string.profile_title));
-        binding.inboxUserAvatar.setOnlineStatus(true);
+        binding.inboxUserAvatar.setOnlineStatus(null);
         binding.inboxUserAvatar.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.profileFragment));
+        profileViewModel.getUiState().observe(getViewLifecycleOwner(), this::renderInboxIdentity);
         binding.inboxContactsButton.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.contactsFragment));
         binding.moreButton.setOnClickListener(this::showInboxMenu);
@@ -192,54 +194,62 @@ public final class InboxFragment extends Fragment {
         if (lastState != null) render(lastState);
     }
 
+    private void renderInboxIdentity(@NonNull ProfileViewModel.UiState state) {
+        if (binding == null) {
+            return;
+        }
+        boundInboxUser = state.getUser();
+        if (boundInboxUser != null) {
+            binding.inboxUserAvatar.setName(boundInboxUser.getDisplayName());
+            binding.inboxUserAvatar.setAvatarUrl(boundInboxUser.getAvatarUrl());
+        }
+        binding.inboxUserAvatar.setOnlineStatus(null);
+        if (lastState != null) {
+            renderActiveNowStrip(lastState.getConversations());
+        }
+    }
+
     private void renderLabelFilters(@NonNull LabelUiState state) {
         ChipGroup group = binding.labelFilterChips;
-        int primaryColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorPrimary);
-        int onPrimaryColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorOnPrimary);
-        int surfaceContainerColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorSurfaceContainer);
-        int onSurfaceVariantColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
-        int outlineColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorOutlineVariant);
+        if (!InboxFilterChipRules.showLabelFilterRow(state.getLabels().size())) {
+            group.setVisibility(View.GONE);
+            group.removeAllViews();
+            labelFiltersInitialized = false;
+            renderedLabels = List.of();
+            return;
+        }
+        group.setVisibility(View.VISIBLE);
 
         if (!labelFiltersInitialized || !renderedLabels.equals(state.getLabels())) {
             group.removeAllViews();
             labelFiltersInitialized = true;
             renderedLabels = List.copyOf(state.getLabels());
-            Chip all = new Chip(requireContext());
+            Chip all = new Chip(requireContext(), null, R.style.Widget_NexaChat_Chip_Filter);
             all.setId(View.generateViewId());
             all.setCheckable(true);
-            all.setCheckedIconVisible(false);
-            all.setMinHeight(dp(48));
-            all.setChipCornerRadius(dp(999));
+            all.setCheckedIconVisible(true);
             all.setText(R.string.label_filter_all);
             all.setTag(ALL_LABEL_FILTER);
             group.addView(all, new ChipGroup.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             for (ConversationLabel label : state.getLabels()) {
-                Chip chip = new Chip(requireContext());
+                Chip chip = new Chip(requireContext(), null, R.style.Widget_NexaChat_Chip_Filter);
                 chip.setId(View.generateViewId());
                 chip.setCheckable(true);
                 chip.setCheckedIconVisible(true);
                 chip.setCheckedIconTint(ColorStateList.valueOf(Color.WHITE));
                 chip.setText(label.getName());
                 chip.setTag(label.getId());
-                chip.setMinHeight(dp(48));
-                chip.setChipCornerRadius(dp(999));
                 chip.setTextColor(Color.WHITE);
                 chip.setChipBackgroundColor(ColorStateList.valueOf(label.getColor().getBackgroundColor()));
                 chip.setContentDescription(getString(R.string.label_filter_description, label.getName()));
                 group.addView(chip, new ChipGroup.LayoutParams(
                         ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             }
-            Chip manage = new Chip(requireContext());
+            Chip manage = new Chip(requireContext(), null, R.style.Widget_NexaChat_Chip_Filter);
             manage.setId(View.generateViewId());
             manage.setCheckable(false);
             manage.setText(R.string.label_manage);
-            manage.setMinHeight(dp(48));
-            manage.setChipCornerRadius(dp(999));
-            manage.setChipBackgroundColor(ColorStateList.valueOf(surfaceContainerColor));
-            manage.setTextColor(onSurfaceVariantColor);
-            manage.setChipStrokeColor(ColorStateList.valueOf(outlineColor));
-            manage.setChipStrokeWidth(dp(1));
             manage.setContentDescription(getString(R.string.label_manage_description));
             manage.setOnClickListener(v -> LabelDialogFragment.show(requireActivity(), null));
             group.addView(manage, new ChipGroup.LayoutParams(
@@ -253,24 +263,7 @@ public final class InboxFragment extends Fragment {
                     ? ALL_LABEL_FILTER.equals(chip.getTag())
                     : state.getSelectedFilterId().equals(chip.getTag());
             chip.setChecked(selected);
-            if (ALL_LABEL_FILTER.equals(chip.getTag())) {
-                if (selected) {
-                    chip.setChipBackgroundColor(ColorStateList.valueOf(primaryColor));
-                    chip.setTextColor(onPrimaryColor);
-                    chip.setChipStrokeColor(ColorStateList.valueOf(Color.TRANSPARENT));
-                    chip.setChipStrokeWidth(0f);
-                } else {
-                    chip.setChipBackgroundColor(ColorStateList.valueOf(surfaceContainerColor));
-                    chip.setTextColor(onSurfaceVariantColor);
-                    chip.setChipStrokeColor(ColorStateList.valueOf(outlineColor));
-                    chip.setChipStrokeWidth(dp(1));
-                }
-            }
         }
-    }
-
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private void showThemeDialog() {
@@ -533,34 +526,6 @@ public final class InboxFragment extends Fragment {
         } else {
             binding.filterUnreadChip.setText(R.string.inbox_filter_unread);
         }
-
-        int surfaceContainerColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorSurfaceContainerLow);
-        int onSurfaceVariantColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
-        int outlineColor = resolveThemeColor(requireContext(), com.google.android.material.R.attr.colorOutlineVariant);
-
-        Chip[] chips = new Chip[] {
-                binding.filterAllChip,
-                binding.filterUnreadChip,
-                binding.filterGroupsChip,
-                binding.filterArchivedChip
-        };
-
-        for (Chip chip : chips) {
-            boolean isSelected = chip.getId() == binding.inboxFilterChips.getCheckedChipId();
-            if (isSelected) {
-                chip.setChipBackgroundColor(ContextCompat.getColorStateList(
-                        requireContext(), R.color.nexa_filter_chip_bg));
-                chip.setTextColor(ContextCompat.getColorStateList(
-                        requireContext(), R.color.nexa_filter_chip_text));
-                chip.setChipStrokeColor(ColorStateList.valueOf(Color.TRANSPARENT));
-                chip.setChipStrokeWidth(0f);
-            } else {
-                chip.setChipBackgroundColor(ColorStateList.valueOf(surfaceContainerColor));
-                chip.setTextColor(onSurfaceVariantColor);
-                chip.setChipStrokeColor(ColorStateList.valueOf(outlineColor));
-                chip.setChipStrokeWidth(1f);
-            }
-        }
     }
 
     private void renderActiveNowStrip(@NonNull List<ConversationSummary> rows) {
@@ -571,44 +536,30 @@ public final class InboxFragment extends Fragment {
         LayoutInflater inflater = LayoutInflater.from(requireContext());
         List<ConversationSummary> visibleRows = InboxFilterRules.apply(rows, InboxFilter.ALL);
 
-        // 1. First item: "Your status" (+) item that opens R.id.profileFragment
         View yourStatusView = inflater.inflate(R.layout.item_active_now_peer, binding.activeNowStrip, false);
         AvatarView yourAvatar = yourStatusView.findViewById(R.id.activePeerAvatar);
         TextView yourName = yourStatusView.findViewById(R.id.activePeerName);
         View yourBadge = yourStatusView.findViewById(R.id.activePeerBadge);
-        yourAvatar.setName("+");
+        if (boundInboxUser != null) {
+            yourAvatar.setName(boundInboxUser.getDisplayName());
+            yourAvatar.setAvatarUrl(boundInboxUser.getAvatarUrl());
+        } else {
+            yourAvatar.setName(getString(R.string.inbox_your_status));
+        }
+        yourAvatar.setOnlineStatus(null);
+        yourAvatar.setShowStoryRing(false);
         yourName.setText(R.string.inbox_your_status);
+        yourName.setMaxLines(ActiveNowPeerRules.captionMaxLines());
         if (yourBadge != null) {
             yourBadge.setVisibility(View.VISIBLE);
         }
+        yourStatusView.setContentDescription(getString(R.string.inbox_your_status));
         yourStatusView.setOnClickListener(v ->
                 NavHostFragment.findNavController(this).navigate(R.id.profileFragment));
         binding.activeNowStrip.addView(yourStatusView);
 
-        // 2. Next items (up to 8 peers), prioritizing direct conversations and deduplicating titles
-        List<ConversationSummary> candidates = new ArrayList<>(visibleRows.size());
-        for (ConversationSummary row : visibleRows) {
-            if (!row.isGroup()) {
-                candidates.add(row);
-            }
-        }
-        for (ConversationSummary row : visibleRows) {
-            if (row.isGroup()) {
-                candidates.add(row);
-            }
-        }
-
-        Set<String> seenTitles = new HashSet<>();
-        int count = 0;
-        for (ConversationSummary row : candidates) {
-            if (count >= 8) {
-                break;
-            }
+        for (ConversationSummary row : ActiveNowPeerRules.selectOnlineDirectPeers(visibleRows)) {
             String displayTitle = ConversationPreviewHelper.displayTitle(requireContext(), row);
-            String normalizedTitle = displayTitle.trim().toLowerCase(Locale.ROOT);
-            if (!seenTitles.add(normalizedTitle)) {
-                continue;
-            }
 
             View peerView = inflater.inflate(R.layout.item_active_now_peer, binding.activeNowStrip, false);
             AvatarView peerAvatar = peerView.findViewById(R.id.activePeerAvatar);
@@ -620,18 +571,15 @@ public final class InboxFragment extends Fragment {
 
             peerAvatar.setName(displayTitle);
             peerAvatar.setAvatarUrl(row.getDisplayAvatar());
-            Boolean isOnline = InboxBadgeRules.resolveOnlineStatus(row);
-            peerAvatar.setOnlineStatus(isOnline);
-            peerAvatar.setShowStoryRing(Boolean.TRUE.equals(isOnline));
+            peerAvatar.setOnlineStatus(Boolean.TRUE);
+            peerAvatar.setShowStoryRing(true);
 
-            String shortName = displayTitle.contains(" ")
-                    ? displayTitle.substring(0, displayTitle.indexOf(" "))
-                    : displayTitle;
-            peerName.setText(shortName);
+            peerName.setText(displayTitle);
+            peerName.setMaxLines(ActiveNowPeerRules.captionMaxLines());
+            peerView.setContentDescription(displayTitle);
 
             peerView.setOnClickListener(v -> openConversation(row.getId()));
             binding.activeNowStrip.addView(peerView);
-            count++;
         }
     }
 
@@ -828,6 +776,7 @@ public final class InboxFragment extends Fragment {
         layoutManager = null;
         adapter = null;
         boundUserId = null;
+        boundInboxUser = null;
         lastState = null;
         lastLabelState = null;
         renderedLabels = List.of();

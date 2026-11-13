@@ -10,6 +10,7 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
+import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
@@ -18,6 +19,7 @@ import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.core.ui.components.ChatUiRules;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.feature.inbox.InboxBadgeRules;
+import com.nexachat.feature.inbox.InboxRowPreviewRules;
 import com.nexachat.feature.inbox.InboxRowTypography;
 import com.nexachat.feature.inbox.InboxPreviewKind;
 import com.nexachat.feature.label.ConversationLabel;
@@ -149,11 +151,20 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
 
             boolean unread = conversation.getUnreadCount() > 0;
             InboxRowTypography.applyUnreadWeight(title, unread);
-            preview.setText(ConversationPreviewHelper.previewText(
+            String previewText = ConversationPreviewHelper.previewText(
                     itemView.getContext(),
                     conversation,
                     currentUserId
-            ));
+            );
+            boolean hasPreviewLine = InboxRowPreviewRules.hasPreviewLine(previewText);
+            if (hasPreviewLine) {
+                preview.setVisibility(View.VISIBLE);
+                preview.setText(previewText);
+            } else {
+                preview.setVisibility(View.GONE);
+                preview.setText("");
+            }
+            applyTitleVerticalAlignment(hasPreviewLine);
             InboxRowTypography.applyUnreadWeight(preview, unread);
             int previewColor = resolveThemeColor(
                     itemView.getContext(),
@@ -173,7 +184,7 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             } else if (previewKind == InboxPreviewKind.CALL) {
                 previewIcon = R.drawable.ic_call;
             }
-            if (previewIcon == 0) {
+            if (!hasPreviewLine || previewIcon == 0) {
                 previewTypeIcon.setVisibility(View.GONE);
             } else {
                 previewTypeIcon.setImageResource(previewIcon);
@@ -244,6 +255,17 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                 listener.onConversationLongClick(conversation);
                 return true;
             });
+        }
+
+        private void applyTitleVerticalAlignment(boolean hasPreviewLine) {
+            ConstraintLayout.LayoutParams titleParams = (ConstraintLayout.LayoutParams) title.getLayoutParams();
+            titleParams.topToTop = R.id.avatar;
+            if (hasPreviewLine) {
+                titleParams.bottomToBottom = ConstraintLayout.LayoutParams.UNSET;
+            } else {
+                titleParams.bottomToBottom = R.id.avatar;
+            }
+            title.setLayoutParams(titleParams);
         }
 
         private void bindMuteIndicator(@NonNull ConversationSummary conversation) {
