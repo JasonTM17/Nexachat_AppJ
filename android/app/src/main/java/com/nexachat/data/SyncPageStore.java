@@ -143,7 +143,24 @@ final class SyncPageStore {
                     db.reactionDao().deleteForConversation(conversation).blockingAwait();
                 }
                 for (MessageDto row : delta.getChanges()) {
-                    messages.apply(row, conversation, delta.getGeneration(), owner, current.rebuildingReactions);
+                    boolean isNew = row.getId() != null
+                            && db.messageDao().byId(row.getId()).blockingGet() == null;
+                    boolean accepted = messages.apply(
+                            row, conversation, delta.getGeneration(), owner, current.rebuildingReactions);
+                    MessageEntity committed = row.getId() == null
+                            ? null : db.messageDao().byId(row.getId()).blockingGet();
+                    if (accepted && isNew && committed != null && committed.getDeletedAtEpochMs() == null
+                            && !owner.equals(committed.getSenderId())) {
+                        db.conversationDao().incrementUnread(conversation, 1).blockingAwait();
+                    }
+                    if (committed != null && row.getClientMessageId() != null
+                            && owner.equals(committed.getSenderId())
+                            && conversation.equals(committed.getConversationId())
+                            && owner.equals(row.getResolvedSenderId())
+                            && (committed.getClientMessageId() == null
+                            || row.getClientMessageId().equals(committed.getClientMessageId()))) {
+                        db.outboxDao().delete(row.getClientMessageId(), owner).blockingAwait();
+                    }
                 }
                 if (!delta.isReactionsFullRefresh()) {
                     for (ReactionUpdateDto update : delta.getReactionUpdates()) {

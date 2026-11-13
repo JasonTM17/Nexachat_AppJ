@@ -30,6 +30,7 @@ public final class SyncEngineV2Test {
     private final Map<String, SyncCursorEntity> cursors = new LinkedHashMap<>();
     private final Map<String, List<MessageReactionEntity>> reactionRows = new LinkedHashMap<>();
     private final Set<String> queued = new HashSet<>();
+    private final Map<String, Integer> unreadCounts = new LinkedHashMap<>();
     private AppDatabase db;
     private MessageDao messages;
     private ConversationDao inbox;
@@ -96,7 +97,10 @@ public final class SyncEngineV2Test {
                 .thenReturn(Completable.complete());
         when(inbox.deleteById(anyString())).thenReturn(Completable.complete());
         when(inbox.markLastMessageDeleted(anyString())).thenReturn(Completable.complete());
-        when(inbox.incrementUnread(anyString(), anyInt())).thenReturn(Completable.complete());
+        when(inbox.incrementUnread(anyString(), anyInt())).thenAnswer(i -> {
+            unreadCounts.merge(i.getArgument(0), i.getArgument(1), Integer::sum);
+            return Completable.complete();
+        });
         when(messages.deleteForConversation(anyString())).thenAnswer(i -> Completable.fromAction(() ->
                 rows.values().removeIf(row -> row.getConversationId().equals(i.getArgument(0)))));
         when(reactions.deleteForConversation(anyString())).thenReturn(Completable.complete());
@@ -109,10 +113,14 @@ public final class SyncEngineV2Test {
             Map<String, MessageEntity> beforeRows = new LinkedHashMap<>(rows);
             Map<String, SyncCursorEntity> beforeCursors = new LinkedHashMap<>(cursors);
             Map<String, List<MessageReactionEntity>> beforeReactions = new LinkedHashMap<>(reactionRows);
+            Map<String, Integer> beforeUnread = new LinkedHashMap<>(unreadCounts);
+            Set<String> beforeQueued = new HashSet<>(queued);
             try { ((Runnable) i.getArgument(0)).run(); }
             catch (Throwable error) { rows.clear(); rows.putAll(beforeRows);
                 cursors.clear(); cursors.putAll(beforeCursors);
-                reactionRows.clear(); reactionRows.putAll(beforeReactions); throw error; }
+                reactionRows.clear(); reactionRows.putAll(beforeReactions);
+                unreadCounts.clear(); unreadCounts.putAll(beforeUnread);
+                queued.clear(); queued.addAll(beforeQueued); throw error; }
             return null;
         })
                 .when(db).runInTransaction(any(Runnable.class));
@@ -601,6 +609,66 @@ public final class SyncEngineV2Test {
         assertEquals(Long.valueOf(value), parsed.getDeltas().get(0).getChangeCursor());
         SyncRequest.Watermark watermark = new SyncRequest.Watermark("c0", 1, null, value, 1L);
         assertTrue(moshi.adapter(SyncRequest.Watermark.class).toJson(watermark).contains(Long.toString(value)));
+    }
+
+    @Test public void syncedPageCountsANewIncomingMessageAndDropsTheMatchingOutboxRow() {
+        conversations.add(new ConversationWatermark("c0", 900));
+        cursors.put("A:c0", new SyncCursorEntity("A", "c0", 1, 0,
+                "2026-11-12T00:00:00Z", null, null, false));
+        queued.add("A:mine-client");
+        queued.add("B:mine-client");
+        String incoming = message("c0", 1).replace("\"id\":\"m-c0\"", "\"id\":\"m-in\"");
+        String own = message("c0", 2).replace("\"id\":\"m-c0\"", "\"id\":\"m-own\"")
+                .replace("\"senderId\":\"peer\"", "\"senderId\":\"A\",\"clientMessageId\":\"mine-client\"");
+        String deleted = message("c0", 3).replace("\"id\":\"m-c0\"", "\"id\":\"m-gone\"")
+                .replace("\"content\":\"v3\"", "\"content\":\"x\",\"deletedAt\":\"2026-11-12T00:00:03Z\"");
+        String edit = message("c0", 4).replace("\"id\":\"m-c0\"", "\"id\":\"m-in\"")
+                .replace("\"content\":\"v4\"", "\"content\":\"edited\"");
+        server = request -> {
+            long at = cursor(request.getWatermarks().get(0));
+            if (at < 3L) {
+                return envelope(List.of(page("c0", 3, 3, false, false, 1,
+                        incoming + "," + own + "," + deleted)), 1);
+            }
+            return envelope(List.of(page("c0", 4, 4, false, false, 1, edit)), 2);
+        };
+
+        engine.sync().blockingAwait();
+
+        assertEquals(Integer.valueOf(1), unreadCounts.get("c0"));
+        assertFalse(queued.contains("A:mine-client"));
+        assertTrue(queued.contains("B:mine-client"));
+        engine.sync().blockingAwait();
+        assertEquals(Integer.valueOf(1), unreadCounts.get("c0"));
+        assertEquals("edited", rows.get("m-in").getContent());
+    }
+
+    @Test public void legacyBundleCountsANewIncomingMessageAndDropsTheMatchingOutboxRow() {
+        conversations.add(new ConversationWatermark("c0", 900));
+        queued.add("A:mine-client");
+        queued.add("B:mine-client");
+        String incoming = message("c0", 1).replace("\"id\":\"m-c0\"", "\"id\":\"m-in\"")
+                .replace("\"seq\":1,", "\"seq\":11,");
+        String own = message("c0", 2).replace("\"id\":\"m-c0\"", "\"id\":\"m-own\"")
+                .replace("\"seq\":1,", "\"seq\":12,")
+                .replace("\"senderId\":\"peer\"", "\"senderId\":\"A\",\"clientMessageId\":\"mine-client\"");
+        String deleted = message("c0", 3).replace("\"id\":\"m-c0\"", "\"id\":\"m-gone\"")
+                .replace("\"seq\":1,", "\"seq\":13,")
+                .replace("\"content\":\"v3\"", "\"content\":\"x\",\"deletedAt\":\"2026-11-12T00:00:03Z\"");
+        String legacy = "{\"deltas\":[{\"conversationId\":\"c0\",\"newMessages\":["
+                + incoming + "," + own + "," + deleted
+                + "],\"hasMore\":false}],\"serverTime\":\"2026-11-12T00:00:01Z\"}";
+        server = request -> request.getSyncVersion() != null
+                ? "{\"syncVersion\":1,\"serverTime\":\"2026-11-12T00:00:00Z\",\"deltas\":[]}"
+                : legacy;
+
+        engine.sync().blockingAwait();
+
+        assertEquals(Integer.valueOf(1), unreadCounts.get("c0"));
+        assertFalse(queued.contains("A:mine-client"));
+        assertTrue(queued.contains("B:mine-client"));
+        engine.sync().blockingAwait();
+        assertEquals(Integer.valueOf(1), unreadCounts.get("c0"));
     }
 
     @Test public void duplicateOwnAcknowledgementsClearOutboxEvenWhenContentIsNotApplied() {
