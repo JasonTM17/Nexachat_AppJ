@@ -230,6 +230,7 @@ public final class InboxFragment extends Fragment {
             all.setCheckedIconVisible(true);
             all.setText(R.string.label_filter_all);
             all.setTag(ALL_LABEL_FILTER);
+            InboxFilterChipColourRules.apply(all, requireContext());
             group.addView(all, new ChipGroup.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             for (ConversationLabel label : state.getLabels()) {
@@ -263,6 +264,9 @@ public final class InboxFragment extends Fragment {
                     ? ALL_LABEL_FILTER.equals(chip.getTag())
                     : state.getSelectedFilterId().equals(chip.getTag());
             chip.setChecked(selected);
+            if (ALL_LABEL_FILTER.equals(chip.getTag())) {
+                InboxFilterChipColourRules.apply(chip, requireContext());
+            }
         }
     }
 
@@ -525,6 +529,17 @@ public final class InboxFragment extends Fragment {
                     totalUnread));
         } else {
             binding.filterUnreadChip.setText(R.string.inbox_filter_unread);
+        }
+        refreshInboxFilterChipColours();
+    }
+
+    private void refreshInboxFilterChipColours() {
+        ChipGroup group = binding.inboxFilterChips;
+        for (int index = 0; index < group.getChildCount(); index++) {
+            View child = group.getChildAt(index);
+            if (child instanceof Chip chip) {
+                InboxFilterChipColourRules.apply(chip, requireContext());
+            }
         }
     }
 

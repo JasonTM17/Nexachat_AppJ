@@ -285,9 +285,9 @@
         android:layout_marginEnd="@dimen/space_md"
         android:layout_marginBottom="@dimen/space_lg"
         android:contentDescription="@string/inbox_new_chat"
-        app:backgroundTint="?attr/colorPrimary"
+        app:backgroundTint="@color/brand_fill"
         app:elevation="@dimen/elevation_level3"
         app:shapeAppearanceOverlay="@style/ShapeAppearance.NexaChat.Large"
         app:srcCompat="@drawable/ic_edit_compose"
-        app:tint="?attr/colorOnPrimary" />
+        app:tint="@color/brand_on_fill" />
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

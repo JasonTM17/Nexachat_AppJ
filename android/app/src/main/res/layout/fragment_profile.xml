@@ -83,7 +83,7 @@
                         android:contentDescription="@string/profile_change_avatar"
                         android:padding="@dimen/space_sm"
                         android:src="@drawable/ic_camera_alt"
-                        app:tint="?attr/colorOnPrimary" />
+                        app:tint="@color/brand_on_fill" />
                 </FrameLayout>
 
                 <TextView

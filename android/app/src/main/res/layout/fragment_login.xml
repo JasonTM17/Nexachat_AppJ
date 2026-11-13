@@ -75,8 +75,8 @@
                         android:maxLines="2"
                         android:minHeight="@dimen/min_touch_target"
                         android:text="@string/action_sign_in"
-                        android:textColor="?attr/colorOnPrimary"
-                        app:backgroundTint="?attr/colorPrimary"
+                        android:textColor="@color/brand_on_fill"
+                        app:backgroundTint="@color/brand_fill"
                         app:cornerRadius="@dimen/corner_sm" />
 
                     <com.google.android.material.button.MaterialButton

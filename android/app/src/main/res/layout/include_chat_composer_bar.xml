@@ -90,12 +90,12 @@
             android:id="@+id/sendButton"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="@drawable/bg_unread_badge"
+            android:background="@drawable/bg_send_button"
             android:contentDescription="@string/cd_send"
             android:padding="10dp"
             android:src="@drawable/ic_send"
             android:visibility="gone"
-            app:tint="?attr/colorOnPrimary" />
+            app:tint="@color/brand_on_fill" />
 
         <com.nexachat.feature.chat.adapter.ChatActionImageButton
             android:id="@+id/micButton"

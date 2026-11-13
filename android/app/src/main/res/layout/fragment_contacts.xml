@@ -46,10 +46,10 @@
         android:layout_gravity="bottom|end"
         android:layout_margin="@dimen/space_lg"
         android:contentDescription="@string/action_add_contact"
-        app:backgroundTint="?attr/colorPrimary"
+        app:backgroundTint="@color/brand_fill"
         app:shapeAppearanceOverlay="@style/ShapeAppearance.NexaChat.Large"
         app:srcCompat="@drawable/ic_add"
-        app:tint="?attr/colorOnPrimary" />
+        app:tint="@color/brand_on_fill" />
 
     <com.nexachat.core.ui.components.LoadingStateView
         android:id="@+id/loadingState"

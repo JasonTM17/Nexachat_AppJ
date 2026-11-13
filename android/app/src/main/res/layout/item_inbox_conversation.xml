@@ -109,7 +109,7 @@
             android:minHeight="24dp"
             android:paddingHorizontal="@dimen/space_sm"
             android:textAppearance="?attr/textAppearanceLabelMedium"
-            android:textColor="?attr/colorOnPrimary"
+            android:textColor="@color/brand_on_fill"
             android:visibility="gone" />
     </LinearLayout>
 
