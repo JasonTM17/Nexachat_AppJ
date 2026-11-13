@@ -2,6 +2,7 @@ package com.nexachat.feature.media;
 
 import android.net.Uri;
 import android.os.Bundle;
+import android.graphics.drawable.Drawable;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -17,6 +18,10 @@ import androidx.media3.common.MediaItem;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.navigation.Navigation;
 import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.DataSource;
+import com.bumptech.glide.load.engine.GlideException;
+import com.bumptech.glide.request.RequestListener;
+import com.bumptech.glide.request.target.Target;
 import com.nexachat.R;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.ui.components.ErrorStateView;
@@ -42,6 +47,7 @@ public final class MediaViewerFragment extends Fragment {
     private static final int MENU_ZOOM = 4;
     private static final String SAVED_EXPORT = "media.pendingExport";
     private final MediaViewerSubscriptions subscriptions = new MediaViewerSubscriptions();
+    private final ImageLoadState imageLoadState = new ImageLoadState();
     @Nullable private File pendingExport;
     private final ActivityResultLauncher<String> saveDocument = registerForActivityResult(
             new ActivityResultContracts.CreateDocument("application/octet-stream"), uri -> {
@@ -139,7 +145,9 @@ public final class MediaViewerFragment extends Fragment {
         }
         MediaViewerViewModel.UiState state = viewModel.getUiState().getValue();
         if (state == null) return false;
-        File file = state.getFile() != null ? state.getFile() : loadedImageFile;
+        File file = state.getFile() != null
+                ? state.getFile()
+                : imageLoadState.canUseFileActions() ? loadedImageFile : null;
         if (file == null) {
             return false;
         }
@@ -202,12 +210,18 @@ public final class MediaViewerFragment extends Fragment {
             ui.mediaImage.setVisibility(View.VISIBLE);
             return;
         }
-        if (id.equals(loadedImageAttachmentId) && ui.mediaImage.getDrawable() != null) {
+        if (id.equals(loadedImageAttachmentId)
+                && imageLoadState.canUseFileActions()
+                && ui.mediaImage.getDrawable() != null) {
             ui.mediaImage.setVisibility(View.VISIBLE);
             return;
         }
         loadedImageAttachmentId = id;
+        loadedImageFile = null;
+        long requestGeneration = imageLoadState.begin();
+        updateToolbarActions(state);
         showLoading(ui);
+        ui.mediaImage.setImageDrawable(null);
         subscriptions.clearImageLoads();
         subscriptions.addImageLoad(
                 attachmentRepository.downloadToCache(id, state.getDisplayName())
@@ -219,20 +233,62 @@ public final class MediaViewerFragment extends Fragment {
                                     if (current == null || !isAdded()) {
                                         return;
                                     }
-                                    current.mediaLoadingHost.setVisibility(View.GONE);
                                     if (result instanceof com.nexachat.core.common.Result.Success<?> success
                                             && success.getValue() instanceof File file) {
-                                        loadedImageFile = file;
-                                        updateToolbarActions(state);
                                         current.mediaImage.setVisibility(View.VISIBLE);
                                         Glide.with(this)
                                                 .load(file)
                                                 .fitCenter()
+                                                .listener(new RequestListener<Drawable>() {
+                                                    @Override
+                                                    public boolean onLoadFailed(
+                                                            @Nullable GlideException error,
+                                                            Object model,
+                                                            Target<Drawable> target,
+                                                            boolean isFirstResource) {
+                                                        FragmentMediaViewerBinding latest = binding;
+                                                        if (isCurrentImageRequest(
+                                                                latest, id, requestGeneration)) {
+                                                            latest.mediaLoadingHost.setVisibility(View.GONE);
+                                                            latest.mediaImage.setVisibility(View.GONE);
+                                                            latest.mediaImage.setImageDrawable(null);
+                                                            loadedImageAttachmentId = null;
+                                                            loadedImageFile = null;
+                                                            imageLoadState.fail();
+                                                            updateToolbarActions(state);
+                                                            showImageError(latest, state, R.string.error_generic);
+                                                        }
+                                                        return true;
+                                                    }
+
+                                                    @Override
+                                                    public boolean onResourceReady(
+                                                            Drawable resource,
+                                                            Object model,
+                                                            Target<Drawable> target,
+                                                            DataSource dataSource,
+                                                            boolean isFirstResource) {
+                                                        FragmentMediaViewerBinding latest = binding;
+                                                        if (isCurrentImageRequest(
+                                                                latest, id, requestGeneration)) {
+                                                            imageLoadState.decodeSucceeded();
+                                                            loadedImageFile = file;
+                                                            latest.mediaLoadingHost.setVisibility(View.GONE);
+                                                            latest.mediaErrorHost.setVisibility(View.GONE);
+                                                            latest.mediaImage.setVisibility(View.VISIBLE);
+                                                            updateToolbarActions(state);
+                                                        }
+                                                        return false;
+                                                    }
+                                                })
                                                 .into(current.mediaImage);
                                     } else {
                                         loadedImageAttachmentId = null;
                                         loadedImageFile = null;
-                                        showImageError(current, state);
+                                        imageLoadState.fail();
+                                        updateToolbarActions(state);
+                                        current.mediaLoadingHost.setVisibility(View.GONE);
+                                        showImageError(current, state, R.string.error_network);
                                     }
                                 },
                                 error -> {
@@ -241,14 +297,28 @@ public final class MediaViewerFragment extends Fragment {
                                         current.mediaLoadingHost.setVisibility(View.GONE);
                                         loadedImageAttachmentId = null;
                                         loadedImageFile = null;
-                                        showImageError(current, state);
+                                        imageLoadState.fail();
+                                        updateToolbarActions(state);
+                                        showImageError(current, state, R.string.error_network);
                                     }
                                 }));
     }
 
+    private boolean isCurrentImageRequest(
+            @Nullable FragmentMediaViewerBinding current,
+            @NonNull String attachmentId,
+            long requestGeneration) {
+        return current != null
+                && current == binding
+                && isAdded()
+                && imageLoadState.isCurrent(requestGeneration)
+                && attachmentId.equals(loadedImageAttachmentId);
+    }
+
     private void showImageError(
             @NonNull FragmentMediaViewerBinding ui,
-            @NonNull MediaViewerViewModel.UiState state) {
+            @NonNull MediaViewerViewModel.UiState state,
+            int messageResource) {
         ui.mediaErrorHost.setVisibility(View.VISIBLE);
         if (errorView == null) {
             errorView = new ErrorStateView(requireContext());
@@ -256,14 +326,14 @@ public final class MediaViewerFragment extends Fragment {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));
         }
-        errorView.setMessage(getString(R.string.error_network));
-        errorView.setOnRetry(() -> {
+        errorView.setMessage(getString(messageResource));
+        errorView.setOnRetry(imageLoadState.shouldShowRetry() ? () -> {
             FragmentMediaViewerBinding current = binding;
             if (current != null && isAdded()) {
                 current.mediaErrorHost.setVisibility(View.GONE);
                 loadImageAttachment(current, state);
             }
-        });
+        } : null);
     }
 
     private void updateToolbarActions(@NonNull MediaViewerViewModel.UiState state) {
@@ -272,7 +342,8 @@ public final class MediaViewerFragment extends Fragment {
             return;
         }
         Menu menu = ui.viewerToolbar.getMenu();
-        boolean hasFile = state.getFile() != null || loadedImageFile != null;
+        boolean hasFile = state.getFile() != null
+                || (imageLoadState.canUseFileActions() && loadedImageFile != null);
         MenuItem open = menu.findItem(MENU_OPEN);
         if (open != null) {
             open.setVisible(hasFile);
@@ -341,6 +412,44 @@ public final class MediaViewerFragment extends Fragment {
         playingFile = null;
     }
 
+    static final class ImageLoadState {
+        private enum Phase { IDLE, LOADING, READY, ERROR }
+
+        private Phase phase = Phase.IDLE;
+        private long generation;
+
+        long begin() {
+            generation++;
+            phase = Phase.LOADING;
+            return generation;
+        }
+
+        void decodeSucceeded() {
+            phase = Phase.READY;
+        }
+
+        void fail() {
+            phase = Phase.ERROR;
+        }
+
+        boolean canUseFileActions() {
+            return phase == Phase.READY;
+        }
+
+        boolean shouldShowRetry() {
+            return phase == Phase.ERROR;
+        }
+
+        boolean isCurrent(long requestGeneration) {
+            return generation == requestGeneration;
+        }
+
+        void reset() {
+            generation++;
+            phase = Phase.IDLE;
+        }
+    }
+
     @Override
     public void onSaveInstanceState(@NonNull Bundle state) {
         super.onSaveInstanceState(state);
@@ -364,6 +473,11 @@ public final class MediaViewerFragment extends Fragment {
     @Override
     public void onDestroyView() {
         subscriptions.clearOnDestroyView();
+        imageLoadState.reset();
+        FragmentMediaViewerBinding ui = binding;
+        if (ui != null) {
+            Glide.with(this).clear(ui.mediaImage);
+        }
         loadedImageAttachmentId = null;
         loadedImageFile = null;
         releasePlayer();
