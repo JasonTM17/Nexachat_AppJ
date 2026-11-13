@@ -353,12 +353,18 @@ public final class MessageRepository {
                                 .add(toChip(reaction));
                     }
                     List<ChatMessage> result = new ArrayList<>(snapshot.messages.size() + snapshot.pending.size());
+                    java.util.Set<String> storedClientIds = new java.util.HashSet<>();
                     for (MessageEntity message : snapshot.messages) {
+                        if (message.getClientMessageId() != null) {
+                            storedClientIds.add(message.getClientMessageId());
+                        }
                         if (snapshot.hiddenIds.contains(message.getId())) continue;
                         result.add(toChatMessage(message, snapshot.ownerUserId,
                                 chips.getOrDefault(message.getId(), Collections.emptyList())));
                     }
-                    snapshot.pending.stream().filter(item -> conversationId.equals(item.getConversationId()))
+                    snapshot.pending.stream()
+                            .filter(item -> conversationId.equals(item.getConversationId()))
+                            .filter(item -> !storedClientIds.contains(item.getClientMessageId()))
                             .map(this::toChatMessage).forEach(result::add);
                     return result;
                 })).subscribeOn(Schedulers.io());
@@ -1009,10 +1015,15 @@ public final class MessageRepository {
     }
 
     /**
-     * POSTs the read watermark and clears local unread state without regression.
-     * The sequence is clamped into {@code [1, lastMessageSeq]} so a stale caller
-     * can never make the server reject the receipt, and a value that does not
-     * advance the acknowledged watermark sends nothing.
+     * POSTs the read watermark, then recomputes unread from local rows newer
+     * than the acknowledged sequence. The caller's own non-deleted messages
+     * do not count. A preview already ahead of stored history is left as it
+     * is, so a late receipt cannot wipe a badge the message table cannot yet
+     * explain. An inbox page whose {@code lastMessageSeq} matches local state
+     * still replaces that count. The sequence is clamped into
+     * {@code [1, lastMessageSeq]} so a stale caller can never make the server
+     * reject the receipt, and a value that does not advance the acknowledged
+     * watermark sends nothing.
      */
     public Completable sendRead(String conversationId, long upToSeq) {
         return operationTracker.track(readCeilingSeq(conversationId).flatMapCompletable(lastSeq -> {
@@ -1031,9 +1042,42 @@ public final class MessageRepository {
             session.sendReadAck(conversationId, clamped);
             return call(messageApi.markRead(conversationId, new ReadRequest(clamped)))
                     .flatMapCompletable(result -> result instanceof Result.Success<?>
-                            ? conversationDao.clearUnread(conversationId) : Completable.complete())
+                            ? applyLocalUnread(conversationId, clamped) : Completable.complete())
                     .subscribeOn(Schedulers.io());
         }));
+    }
+
+    /**
+     * Sets unread to the number of someone else's live rows above {@code acknowledgedSeq}.
+     * When the inbox preview is already past both that watermark and the stored
+     * rows, the current badge stays until those rows arrive.
+     */
+    private Completable applyLocalUnread(String conversationId, long acknowledgedSeq) {
+        return currentUserId().defaultIfEmpty("").flatMapCompletable(ownerId ->
+                messageDao.messagesForConversation(conversationId).firstOrError().flatMapCompletable(rows ->
+                        conversationDao.byId(conversationId).map(Optional::of).defaultIfEmpty(Optional.empty())
+                                .flatMapCompletable(optional -> {
+                                    int unread = 0;
+                                    long maxStoredSeq = 0L;
+                                    for (MessageEntity row : rows) {
+                                        if (row.getSeq() > maxStoredSeq) maxStoredSeq = row.getSeq();
+                                        if (row.getSeq() <= acknowledgedSeq || row.getDeletedAtEpochMs() != null) {
+                                            continue;
+                                        }
+                                        if (!ownerId.isEmpty() && ownerId.equals(row.getSenderId())) continue;
+                                        unread++;
+                                    }
+                                    ConversationEntity conversation = optional.orElse(null);
+                                    if (unread == 0 && conversation != null
+                                            && conversation.getLastMessageSeq() > acknowledgedSeq
+                                            && conversation.getLastMessageSeq() > maxStoredSeq) {
+                                        return Completable.complete();
+                                    }
+                                    int current = conversation == null ? 0 : conversation.getUnreadCount();
+                                    if (unread == current) return Completable.complete();
+                                    if (unread == 0) return conversationDao.clearUnread(conversationId);
+                                    return conversationDao.incrementUnread(conversationId, unread - current);
+                                })));
     }
 
     /**

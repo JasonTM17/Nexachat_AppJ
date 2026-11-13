@@ -928,6 +928,56 @@ public class MessageRepositoryTest {
         verify(messageApi, org.mockito.Mockito.never()).markRead(anyString(), any());
     }
 
+    @Test public void sendReadKeepsUnreadForAMessageNewerThanTheReceipt() {
+        await(conversationDao.upsert(conversationCopy(conversation(11, "newer"), "newer", 0L, 1, false)));
+        await(messageDao.upsert(stored("m-11", 11L)));
+        await(repository.sendRead(CONVERSATION_ID, 10L));
+        assertEquals(1, conversations.get(CONVERSATION_ID).getUnreadCount());
+    }
+
+    @Test public void sendReadClearsUnreadWhenNothingIsNewerThanTheReceipt() {
+        await(conversationDao.upsert(conversationCopy(conversation(10, "read"), "read", 0L, 1, false)));
+        await(messageDao.upsert(stored("m-10", 10L)));
+        await(repository.sendRead(CONVERSATION_ID, 10L));
+        assertEquals(0, conversations.get(CONVERSATION_ID).getUnreadCount());
+    }
+
+    @Test public void sendReadKeepsUnreadWhenThePreviewIsAheadOfStoredRows() {
+        await(conversationDao.upsert(conversationCopy(conversation(11, "preview"), "preview", 0L, 1, false)));
+        await(messageDao.upsert(stored("m-10", 10L)));
+        await(repository.sendRead(CONVERSATION_ID, 10L));
+        assertEquals(1, conversations.get(CONVERSATION_ID).getUnreadCount());
+    }
+
+    @Test public void sendReadClearsUnreadWhenTheOnlyNewerRowIsMine() {
+        await(conversationDao.upsert(conversationCopy(conversation(11, "mine"), "mine", 0L, 1, false)));
+        await(messageDao.upsert(own("m-11", 11L, "mine")));
+        await(repository.sendRead(CONVERSATION_ID, 10L));
+        assertEquals(0, conversations.get(CONVERSATION_ID).getUnreadCount());
+    }
+
+    @Test public void sendReadClearsUnreadWhenTheNewerRowIsDeleted() {
+        await(conversationDao.upsert(conversationCopy(conversation(11, "gone"), "gone", 0L, 1, true)));
+        await(messageDao.upsert(new MessageEntity("m-11", CONVERSATION_ID, 11L, "u-other", "Lan", "TEXT", "",
+                null, null, null, null, 11L, null, null, 11L)));
+        await(repository.sendRead(CONVERSATION_ID, 10L));
+        assertEquals(0, conversations.get(CONVERSATION_ID).getUnreadCount());
+    }
+
+    @Test public void messagesFlowRendersAStoredClientMessageOnce() {
+        await(messageDao.upsert(new MessageEntity("m-1", CONVERSATION_ID, 1L, "me-1", "Me", "TEXT", "hello",
+                "cm-dup", null, null, null, 1L, null, null, null)));
+        await(outboxDao.insert(outbox("cm-dup", "hello", OutboxState.SENDING, 2L)));
+        await(outboxDao.insert(outbox("cm-other", "pending", OutboxState.SENDING, 3L)));
+        TestSubscriber<List<ChatMessage>> subscriber = repository.messagesFlow(CONVERSATION_ID).test();
+        List<ChatMessage> rendered = subscriber.values().get(subscriber.values().size() - 1);
+        assertEquals(2, rendered.size());
+        assertEquals(1L, rendered.stream().filter(message -> "cm-dup".equals(message.getClientMessageId())).count());
+        assertEquals("cm-other", rendered.get(1).getClientMessageId());
+        assertEquals(DeliveryStatus.SENDING, rendered.get(1).getStatus());
+        subscriber.cancel();
+    }
+
     @Test public void reactionUpdatedReplacesStoredSummary() {
         events.onNext(new ChatEvent.ReactionUpdated(CONVERSATION_ID, "m-1", List.of(
                 new ReactionSummaryDto("👍", 2, List.of("me-1", "u-2")),
