@@ -456,6 +456,7 @@ public final class InboxFragment extends Fragment {
 
     private void submitRowsPreservingPosition(@NonNull List<ConversationSummary> rows) {
         if (adapter == null || binding == null) return;
+        if (adapter.getCurrentList().equals(rows)) return;
         int firstPosition = layoutManager == null ? RecyclerView.NO_POSITION
                 : layoutManager.findFirstVisibleItemPosition();
         String anchorId = null;
