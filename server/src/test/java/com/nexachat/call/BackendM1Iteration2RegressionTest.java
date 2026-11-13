@@ -8,6 +8,8 @@ import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.conversation.dto.MemberFlagsRow;
 import com.nexachat.message.*;
+import com.nexachat.message.dto.MessageDeletionChange;
+import com.nexachat.message.dto.MessageResponse;
 import com.nexachat.message.dto.MessageRow;
 import com.nexachat.message.dto.SyncRequest;
 import com.nexachat.message.dto.SyncResponse;
@@ -38,10 +40,13 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.lang.reflect.Method;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -307,7 +312,7 @@ public class BackendM1Iteration2RegressionTest {
         }
 
         @Test
-        @DisplayName("3.3 Edited and deleted message results are bounded by limit in syncDelta")
+        @DisplayName("3.3 A timestamp tie larger than the limit is returned whole and does not cap serverTime")
         void editedAndDeletedQueriesBoundedByLimit() {
             UUID cId = UUID.randomUUID();
             Instant since = Instant.now().minusSeconds(60);
@@ -317,21 +322,155 @@ public class BackendM1Iteration2RegressionTest {
 
             List<MessageRow> manyEdited = new ArrayList<>();
             List<UUID> manyDeleted = new ArrayList<>();
+            List<MessageDeletionChange> deletedChanges = new ArrayList<>();
             for (int i = 0; i < 60; i++) {
-                manyEdited.add(new MessageRow(UUID.randomUUID(), cId, (long) i, userId, "User", com.nexachat.message.Message.Type.TEXT, "txt", null, null, since, since, null));
-                manyDeleted.add(UUID.randomUUID());
+                manyEdited.add(new MessageRow(UUID.randomUUID(), cId, (long) i, userId, "User",
+                        com.nexachat.message.Message.Type.TEXT, "txt", null, null, since, since, null));
+                UUID deletedId = UUID.randomUUID();
+                manyDeleted.add(deletedId);
+                deletedChanges.add(new MessageDeletionChange(deletedId, since));
             }
 
             when(messageRepository.findEditedRowsSince(eq(cId), eq(10L), eq(since))).thenReturn(manyEdited);
             when(messageRepository.findDeletedMessageIdsSince(eq(cId), eq(10L), eq(since))).thenReturn(manyDeleted);
+            when(messageRepository.findDeletedChangesSince(eq(cId), eq(10L), eq(since))).thenReturn(deletedChanges);
             when(messageRepository.findMaxSeqByConversationId(cId)).thenReturn(10L);
 
             SyncRequest request = new SyncRequest(List.of(new SyncRequest.ConversationWatermark(cId, 10L)), 50, since);
             SyncResponse response = messageService.syncDelta(userId, request);
 
             SyncResponse.ConversationDelta delta = response.deltas().get(0);
-            assertThat(delta.editedMessages()).hasSizeGreaterThan(50);
-            assertThat(delta.deletedMessageIds()).hasSizeGreaterThan(50);
+            assertThat(delta.editedMessages()).hasSize(60);
+            assertThat(delta.deletedMessageIds()).containsExactlyElementsOf(manyDeleted);
+            assertThat(delta.hasMore()).isFalse();
+            // The tie fits in one page, so the cursor stays at request time.
+            assertThat(response.serverTime()).isAfter(since);
+        }
+
+        @Test
+        @DisplayName("3.4 Legacy edit and recall pages keep every row and the capped cursor advances")
+        void legacyEditAndRecallPagesKeepEveryRowAndAdvanceTheCappedCursor() {
+            Instant now = Instant.parse("2026-11-13T12:00:00Z");
+            ReflectionTestUtils.setField(messageService, "clock", Clock.fixed(now, ZoneOffset.UTC));
+            Instant start = now.minusSeconds(1000);
+            long lastSeq = 10_000L;
+
+            UUID distinct = UUID.randomUUID();
+            List<MessageRow> distinctEdits = new ArrayList<>();
+            List<MessageDeletionChange> distinctDeletes = new ArrayList<>();
+            for (int i = 1; i <= 55; i++) {
+                Instant changed = start.plusSeconds(i);
+                distinctEdits.add(editedRow(distinct, i, changed));
+                distinctDeletes.add(new MessageDeletionChange(UUID.randomUUID(), changed));
+            }
+            stubLegacyChanges(distinct, lastSeq, distinctEdits, distinctDeletes);
+            assertPagedWithoutLoss(distinct, lastSeq, now, start, distinctEdits, distinctDeletes,
+                    start.plusSeconds(50), 50, 50);
+
+            UUID tied = UUID.randomUUID();
+            Instant tie = start.plusSeconds(10);
+            Instant later = start.plusSeconds(20);
+            List<MessageRow> tiedEdits = new ArrayList<>();
+            List<MessageDeletionChange> tiedDeletes = new ArrayList<>();
+            for (int i = 1; i <= 51; i++) {
+                tiedEdits.add(editedRow(tied, i, tie));
+                tiedDeletes.add(new MessageDeletionChange(UUID.randomUUID(), tie));
+            }
+            tiedEdits.add(editedRow(tied, 52, later));
+            tiedDeletes.add(new MessageDeletionChange(UUID.randomUUID(), later));
+            stubLegacyChanges(tied, lastSeq, tiedEdits, tiedDeletes);
+            assertPagedWithoutLoss(tied, lastSeq, now, start, tiedEdits, tiedDeletes, tie, 51, 51);
+
+            UUID oneTimestamp = UUID.randomUUID();
+            Instant shared = start.plusSeconds(5);
+            List<MessageRow> sharedEdits = new ArrayList<>();
+            List<MessageDeletionChange> sharedDeletes = new ArrayList<>();
+            for (int i = 1; i <= 60; i++) {
+                sharedEdits.add(editedRow(oneTimestamp, i, shared));
+                sharedDeletes.add(new MessageDeletionChange(UUID.randomUUID(), shared));
+            }
+            stubLegacyChanges(oneTimestamp, lastSeq, sharedEdits, sharedDeletes);
+            assertPagedWithoutLoss(oneTimestamp, lastSeq, now, start, sharedEdits, sharedDeletes,
+                    null, 60, 60);
+        }
+
+        private MessageRow editedRow(UUID conversationId, int seq, Instant editedAt) {
+            return new MessageRow(UUID.randomUUID(), conversationId, (long) seq, userId, "User",
+                    com.nexachat.message.Message.Type.TEXT, "txt", null, null,
+                    editedAt.minusSeconds(10), editedAt, null);
+        }
+
+        private void stubLegacyChanges(UUID conversationId, long lastSeq,
+                                       List<MessageRow> edits, List<MessageDeletionChange> deletes) {
+            reset(memberRepository, messageRepository);
+            when(memberRepository.findMemberFlags(eq(userId), any())).thenReturn(
+                    List.of(new MemberFlagsRow(conversationId, false, null, false, false, null)));
+            when(messageRepository.findRowsAfter(eq(conversationId), eq(lastSeq), any(Pageable.class)))
+                    .thenReturn(List.of());
+            when(messageRepository.findMaxSeqByConversationId(conversationId)).thenReturn(lastSeq);
+            when(messageRepository.findEditedRowsSince(eq(conversationId), eq(lastSeq), any())).thenAnswer(invocation -> {
+                Instant since = invocation.getArgument(2);
+                return edits.stream().filter(row -> row.editedAt().isAfter(since)).toList();
+            });
+            when(messageRepository.findDeletedMessageIdsSince(eq(conversationId), eq(lastSeq), any()))
+                    .thenAnswer(invocation -> {
+                        Instant since = invocation.getArgument(2);
+                        return deletes.stream()
+                                .filter(row -> row.deletedAt().isAfter(since))
+                                .map(MessageDeletionChange::messageId)
+                                .toList();
+                    });
+            when(messageRepository.findDeletedChangesSince(eq(conversationId), eq(lastSeq), any()))
+                    .thenAnswer(invocation -> {
+                        Instant since = invocation.getArgument(2);
+                        return deletes.stream().filter(row -> row.deletedAt().isAfter(since)).toList();
+                    });
+        }
+
+        private void assertPagedWithoutLoss(UUID conversationId, long lastSeq, Instant now, Instant since,
+                                             List<MessageRow> edits, List<MessageDeletionChange> deletes,
+                                             Instant firstCappedCursor, int firstEditCount, int firstDeleteCount) {
+            Set<UUID> seenEdits = new HashSet<>();
+            Set<UUID> seenDeletes = new HashSet<>();
+            Instant cursor = since;
+            boolean more = true;
+            int pages = 0;
+            while (more) {
+                pages++;
+                assertThat(pages).as("timestamp paging terminates").isLessThanOrEqualTo(4);
+                SyncResponse response = messageService.syncDelta(userId, new SyncRequest(
+                        List.of(new SyncRequest.ConversationWatermark(conversationId, lastSeq)), 50, cursor));
+                SyncResponse.ConversationDelta delta = response.deltas().get(0);
+                if (pages == 1) {
+                    assertThat(delta.editedMessages()).hasSize(firstEditCount);
+                    assertThat(delta.deletedMessageIds()).hasSize(firstDeleteCount);
+                    if (firstCappedCursor == null) {
+                        assertThat(delta.hasMore()).isFalse();
+                        assertThat(response.serverTime()).isEqualTo(now);
+                    } else {
+                        assertThat(delta.hasMore()).isTrue();
+                        assertThat(response.serverTime()).isEqualTo(firstCappedCursor);
+                    }
+                }
+                for (MessageResponse edited : delta.editedMessages()) {
+                    assertThat(seenEdits.add(edited.id())).as("edit %s is returned once", edited.id()).isTrue();
+                }
+                for (UUID deletedId : delta.deletedMessageIds()) {
+                    assertThat(seenDeletes.add(deletedId)).as("recall %s is returned once", deletedId).isTrue();
+                }
+                assertThat(response.serverTime()).isAfter(cursor);
+                if (delta.hasMore()) {
+                    assertThat(response.serverTime()).isBefore(now);
+                } else {
+                    assertThat(response.serverTime()).isEqualTo(now);
+                }
+                more = delta.hasMore();
+                cursor = response.serverTime();
+            }
+            assertThat(seenEdits).containsExactlyInAnyOrderElementsOf(
+                    edits.stream().map(MessageRow::id).toList());
+            assertThat(seenDeletes).containsExactlyInAnyOrderElementsOf(
+                    deletes.stream().map(MessageDeletionChange::messageId).toList());
         }
     }
 
