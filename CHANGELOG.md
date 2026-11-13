@@ -6,6 +6,36 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-11-13
+
+Android-only release after `v1.2.2`: whole-app UI pass and accessibility fixes.
+The server stays at `v1.2.1`; no migration, no new environment variable. See
+[docs/release-notes/v1.2.3.md](docs/release-notes/v1.2.3.md).
+
+### Android
+
+**Changed**
+
+- Inbox, chat toolbar/composer/search/banners, message bubbles, contacts and
+  search, group detail, profile, action and forward sheets, media viewer (dark
+  stage) and summary sheet use shared shapes, spacing and colours; the inbox
+  gains a Contacts button and a non-extending new-chat button.
+- Register validates the display name like Complete profile.
+
+**Fixed**
+
+- Voice recording is operable with TalkBack (click to start/send, Cancel action).
+- Chat history load failure offers Retry; in-chat search shows loading, empty and
+  error states.
+- Shared loading, empty and error views announce state changes; invite screens
+  announce status; remove-member and summary action checkboxes have names.
+- Summary Copy and Share are disabled when the summary failed.
+- Profile load failure offers Retry; camera badge contrast in dark mode.
+- Login/Register tab switch is single-top; the loading overlay no longer names
+  Google for phone sign-in; Complete profile shows the overlay while saving;
+  the delete-account confirm button no longer flashes before the profile loads.
+- Group member selection is rebound correctly on scroll.
+- Chat title no longer overlaps the header avatar (title margin was applied in pixels).
 ## [1.2.2] - 2026-11-13
 
 Android-only release after `v1.2.1`: restyled sign-in, register, complete-profile,
