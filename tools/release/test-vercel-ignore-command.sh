@@ -10,7 +10,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+# This script is one level below the repository's tools directory.
+REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VERCEL_JSON="$REPO_DIR/site/vercel.json"
 
 if [[ ! -f "$VERCEL_JSON" ]]; then

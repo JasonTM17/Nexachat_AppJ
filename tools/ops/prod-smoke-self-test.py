@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline self-test for tools/prod-smoke.sh.
+"""Offline self-test for tools/ops/prod-smoke.sh.
 
 Starts a stub NexaChat API on 127.0.0.1 and runs the real smoke script against
 it. Four scenarios prove that the script detects both success and failure:

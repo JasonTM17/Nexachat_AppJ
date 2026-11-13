@@ -9,8 +9,8 @@ flag. Every route must be mentioned in the API contract as
 serves any more.
 
 Usage:
-    python tools/check-api-contract.py [--root REPO_ROOT] [--verbose]
-    python tools/check-api-contract.py --self-test
+    python tools/checks/check-api-contract.py [--root REPO_ROOT] [--verbose]
+    python tools/checks/check-api-contract.py --self-test
 
 Exit code 0 when the contract covers every route and has no stale entries.
 """

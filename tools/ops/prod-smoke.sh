@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tools/prod-smoke.sh — post-deploy smoke test for a NexaChat API base URL.
+# tools/ops/prod-smoke.sh — post-deploy smoke test for a NexaChat API base URL.
 #
 # Read-only by default. It waits for a sleeping server (Render Free wakes in
 # about a minute), then checks health, transport security, the browser CORS
@@ -15,13 +15,13 @@
 # touches a real address.
 #
 # Usage:
-#   bash tools/prod-smoke.sh [options] <base-url>
-#   bash tools/prod-smoke.sh --self-test
+#   bash tools/ops/prod-smoke.sh [options] <base-url>
+#   bash tools/ops/prod-smoke.sh --self-test
 #
 # Examples:
-#   bash tools/prod-smoke.sh https://api.nexachat.io.vn
-#   bash tools/prod-smoke.sh --write http://localhost:8080
-#   bash tools/prod-smoke.sh --self-test
+#   bash tools/ops/prod-smoke.sh https://api.nexachat.io.vn
+#   bash tools/ops/prod-smoke.sh --write http://localhost:8080
+#   bash tools/ops/prod-smoke.sh --self-test
 #
 # Exit codes: 0 all checks passed, 1 one or more checks failed, 2 usage error.
 set -euo pipefail
@@ -55,8 +55,8 @@ PYTHON_BIN="${PYTHON_BIN:-}"
 
 usage() {
     cat <<'USAGE'
-Usage: bash tools/prod-smoke.sh [options] <base-url>
-       bash tools/prod-smoke.sh --self-test
+Usage: bash tools/ops/prod-smoke.sh [options] <base-url>
+       bash tools/ops/prod-smoke.sh --self-test
 
 Options:
   --write           register disposable accounts, upload/fetch an avatar,

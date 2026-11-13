@@ -6,7 +6,7 @@ import re
 import unittest
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_PATH = REPO_ROOT / "docker-compose.yml"
 ENV_EXAMPLE_PATH = REPO_ROOT / ".env.example"
 

@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 import sys
 
-# Load tools/check-android-a11y.py via importlib (hyphenated filename)
+# Load tools/checks/check-android-a11y.py via importlib (hyphenated filename)
 MODULE_PATH = Path(__file__).resolve().parent / "check-android-a11y.py"
 spec = importlib.util.spec_from_file_location("check_android_a11y", MODULE_PATH)
 if spec is None or spec.loader is None:

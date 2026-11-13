@@ -11,7 +11,7 @@ Scans Android layouts and values files for common accessibility defects:
 
 Rules A1, A2, A3 are ERROR severity and cause non-zero exit in CI for new findings.
 Rules A4, A5, A6 are WARN severity.
-Baseline file support (tools/android-a11y-baseline.json) ensures legacy findings do not
+Baseline file support (tools/checks/android-a11y-baseline.json) ensures legacy findings do not
 break builds, while any newly introduced violations fail CI.
 """
 from __future__ import annotations
@@ -31,7 +31,7 @@ APP_NS = "{http://schemas.android.com/apk/res-auto}"
 TOOLS_NS = "{http://schemas.android.com/tools}"
 
 DEFAULT_RES_DIR = Path("android/app/src/main/res")
-DEFAULT_BASELINE_FILE = Path("tools/android-a11y-baseline.json")
+DEFAULT_BASELINE_FILE = Path("tools/checks/android-a11y-baseline.json")
 
 RULE_SEVERITY: dict[str, str] = {
     "A1": "ERROR",

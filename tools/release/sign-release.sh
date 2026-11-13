@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# tools/sign-release.sh — assemble the release APK and sign it with the LOCAL
-# upload keystore. Run from anywhere: tools/sign-release.sh [version-tag] [options]
+# tools/release/sign-release.sh — assemble the release APK and sign it with the LOCAL
+# upload keystore. Run from anywhere: tools/release/sign-release.sh [version-tag] [options]
 #
 # Inputs
 #   release/keystore/signing.properties   storeFile, keyAlias,
@@ -28,7 +28,7 @@ source "$TOOLS_DIR/release-version.sh"
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     cat <<'USAGE'
-Usage: tools/sign-release.sh [version-tag] [-PapiBaseUrl=<url>] [--allow-http-smoke]
+Usage: tools/release/sign-release.sh [version-tag] [-PapiBaseUrl=<url>] [--allow-http-smoke]
 
 Assemble, align, sign, and verify a release APK using signing properties.
 The version tag must be MAJOR.MINOR.PATCH (optional leading v; default: v1.0.0).
@@ -36,12 +36,12 @@ Set RELEASE_SIGNING_PROPERTIES to read a properties file outside the repo.
 Signed releases require an HTTPS API_BASE_URL. The explicit --allow-http-smoke
 flag permits HTTP only for a local smoke build.
 Requires ANDROID_HOME or ANDROID_SDK_ROOT, JDK 21+, and a configured keystore.
-PowerShell twin: tools/sign-release.ps1.
+PowerShell twin: tools/release/sign-release.ps1.
 USAGE
     exit 0
 fi
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 VERSION_TAG="v1.0.0"
@@ -136,7 +136,7 @@ fi
 command -v "$JAVA_BIN" >/dev/null 2>&1 || JAVA_BIN="${JAVA_BIN}.exe"
 command -v "$JAVA_BIN" >/dev/null 2>&1 || fail "java not found (set JAVA_HOME to JDK 21+)."
 
-[[ -f "$PROPS" ]] || fail "Signing properties file not found; see tools/README-release.md §1."
+[[ -f "$PROPS" ]] || fail "Signing properties file not found; see tools/release/README.md §1."
 STORE_FILE_VALUE="$(prop "$PROPS" storeFile || true)"
 KEY_ALIAS="$(prop "$PROPS" keyAlias || true)"
 STORE_PASS="$(prop "$PROPS" keystore.storePassword || true)"

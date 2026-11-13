@@ -2,8 +2,8 @@
 """Android string resources, layout copy, and basic a11y hygiene checker.
 
 Usage (repo root):
-    python tools/check-android-strings.py
-    python tools/check-android-strings.py --self-test
+    python tools/checks/check-android-strings.py
+    python tools/checks/check-android-strings.py --self-test
 
 Uses only the Python standard library. Exits 0 on success, 1 when violations are found.
 """
@@ -92,7 +92,7 @@ class LocaleBundle:
 
 def repo_root() -> Path:
     here = Path(__file__).resolve().parent
-    return here.parent
+    return here.parent.parent
 
 
 def locate_res(root: Path, res: Path | None) -> Path:

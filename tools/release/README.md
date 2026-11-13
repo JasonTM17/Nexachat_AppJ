@@ -20,21 +20,21 @@ mkdir -p release/keystore
 
 Credentials live in `release/keystore/signing.properties`
 (`storeFile` / `keyAlias` / `keystore.storePassword` / `keyPassword`) —
-consumed by `tools/sign-release.sh` and `tools/sign-release.ps1`. For a
+consumed by `tools/release/sign-release.sh` and `tools/release/sign-release.ps1`. For a
 production Play Store key, use strong unique passwords stored in your secrets manager.
 
 ## 2. Build + sign the release APK
 
 ```bash
-tools/sign-release.sh            # → release/nexachat-v1.0.0.apk (+ -unsigned.apk)
-tools/sign-release.sh v1.0.1     # app versionName 1.0.1, versionCode 1000001
-tools/sign-release.sh -PapiBaseUrl=https://chat.example.com
+tools/release/sign-release.sh            # → release/nexachat-v1.0.0.apk (+ -unsigned.apk)
+tools/release/sign-release.sh v1.0.1     # app versionName 1.0.1, versionCode 1000001
+tools/release/sign-release.sh -PapiBaseUrl=https://chat.example.com
 ```
 
 Or on Windows PowerShell:
 
 ```powershell
-.\tools\sign-release.ps1
+.\tools\release\sign-release.ps1
 ```
 
 The signing script resolves the effective `API_BASE_URL` in this order:
@@ -47,7 +47,7 @@ keeps its existing behavior.
 For a local smoke build only, explicitly permit an HTTP endpoint:
 
 ```bash
-tools/sign-release.sh --allow-http-smoke -PapiBaseUrl=http://10.0.2.2:8080
+tools/release/sign-release.sh --allow-http-smoke -PapiBaseUrl=http://10.0.2.2:8080
 ```
 
 The PowerShell wrapper forwards the same `-PapiBaseUrl` and

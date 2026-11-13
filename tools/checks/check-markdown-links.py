@@ -2,7 +2,7 @@
 """Check relative Markdown links in a repository.
 
 Usage (from the repo root):
-    python tools/check-markdown-links.py [PATH ...]
+    python tools/checks/check-markdown-links.py [PATH ...]
 
 Defaults to every *.md file under the current directory. External links
 (http/https/mailto), pure anchors and inline code are ignored. Exits 0 when
