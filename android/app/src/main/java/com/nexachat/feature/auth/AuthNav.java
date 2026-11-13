@@ -10,4 +10,8 @@ public final class AuthNav {
     public static NavOptions signedInOptions() {
         return new NavOptions.Builder().setPopUpTo(R.id.loginFragment, true).build();
     }
+
+    public static NavOptions authTabSwitchOptions() {
+        return new NavOptions.Builder().setLaunchSingleTop(true).build();
+    }
 }

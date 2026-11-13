@@ -49,13 +49,15 @@ public final class RegisterFragment extends Fragment {
         View.OnClickListener openLogin = v -> {
             Bundle args = inviteReturnArgs();
             NavHostFragment.findNavController(this).navigate(
-                    R.id.loginFragment, args.isEmpty() ? null : args);
+                    R.id.loginFragment,
+                    args.isEmpty() ? null : args,
+                    AuthNav.authTabSwitchOptions());
         };
         binding.secondaryAction.setOnClickListener(openLogin);
         binding.authModeLogin.setOnClickListener(openLogin);
         if (binding.loadingState.getContentDescription() == null) {
             binding.loadingState.setContentDescription(
-                    getString(R.string.action_continue_with_google));
+                    getString(AuthLoadingOverlay.contentDescriptionResId()));
         }
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
         viewModel.getEvents().observe(getViewLifecycleOwner(), this::onAuthEvent);

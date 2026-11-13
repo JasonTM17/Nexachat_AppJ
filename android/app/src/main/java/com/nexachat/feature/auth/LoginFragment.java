@@ -55,13 +55,15 @@ public final class LoginFragment extends Fragment {
         View.OnClickListener openRegister = v -> {
             Bundle args = inviteReturnArgs();
             NavHostFragment.findNavController(this).navigate(
-                    R.id.registerFragment, args.isEmpty() ? null : args);
+                    R.id.registerFragment,
+                    args.isEmpty() ? null : args,
+                    AuthNav.authTabSwitchOptions());
         };
         binding.secondaryAction.setOnClickListener(openRegister);
         binding.authModeRegister.setOnClickListener(openRegister);
         if (binding.loadingState.getContentDescription() == null) {
             binding.loadingState.setContentDescription(
-                    getString(R.string.action_continue_with_google));
+                    getString(AuthLoadingOverlay.contentDescriptionResId()));
         }
         binding.forgotPasswordAction.setOnClickListener(v -> {
             String phone = binding.phoneInput.getText() == null

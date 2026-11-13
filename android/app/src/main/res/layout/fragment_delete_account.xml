@@ -137,6 +137,7 @@
             android:minHeight="56dp"
             android:text="@string/delete_account_confirm"
             android:textColor="?attr/colorOnError"
+            android:visibility="gone"
             app:backgroundTint="?attr/colorError"
             app:cornerRadius="@dimen/corner_md" />
 

@@ -109,7 +109,7 @@ public final class CompleteProfileFragment extends Fragment {
         boolean busy = state.getLoading() || state.getSaving();
         binding.displayNameInput.setEnabled(!busy);
         binding.completeProfileContinue.setEnabled(!busy);
-        binding.loadingState.setVisibility(state.getLoading() ? View.VISIBLE : View.GONE);
+        binding.loadingState.setVisibility(busy ? View.VISIBLE : View.GONE);
         rendering = false;
     }
 

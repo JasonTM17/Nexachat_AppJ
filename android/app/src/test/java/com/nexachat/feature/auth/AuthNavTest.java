@@ -17,4 +17,10 @@ public class AuthNavTest {
         assertEquals(R.id.loginFragment, options.getPopUpToId());
         assertTrue(options.isPopUpToInclusive());
     }
+
+    @Test
+    public void authTabSwitchUsesLaunchSingleTop() {
+        NavOptions options = AuthNav.authTabSwitchOptions();
+        assertTrue(options.shouldLaunchSingleTop());
+    }
 }
