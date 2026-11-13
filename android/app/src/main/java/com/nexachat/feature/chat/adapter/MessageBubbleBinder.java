@@ -739,6 +739,13 @@ public final class MessageBubbleBinder {
             metaColor = resolveThemeColor(root.getContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
         }
 
+        boolean tombstone = MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs());
+        boolean quietOutgoingMeta = isMine
+                && !mediaMeta
+                && message.getStatus() != DeliveryStatus.FAILED
+                && !tombstone;
+        float metaLabelAlpha = quietOutgoingMeta ? 0.75f : 1.0f;
+
         if (edited != null) {
             boolean showEdited = MessageUiRules.isEdited(
                     message.getEditedAtEpochMs(),
@@ -748,13 +755,13 @@ public final class MessageBubbleBinder {
             if (showEdited) {
                 edited.setText(R.string.message_edited);
                 edited.setTextColor(metaColor);
-                edited.setAlpha(1.0f);
+                edited.setAlpha(metaLabelAlpha);
             }
         }
         if (time != null) {
             time.setText(timeFormat.format(new Date(message.getCreatedAtEpochMs())));
             time.setTextColor(metaColor);
-            time.setAlpha(1.0f);
+            time.setAlpha(metaLabelAlpha);
         }
         if (sending != null) {
             sending.setVisibility(
