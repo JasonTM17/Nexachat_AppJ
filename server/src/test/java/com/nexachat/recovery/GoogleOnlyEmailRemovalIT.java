@@ -1,6 +1,7 @@
 package com.nexachat.recovery;
 
 import com.nexachat.auth.JwtService;
+import com.nexachat.testutil.ItPhoneRanges;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -57,7 +58,7 @@ class GoogleOnlyEmailRemovalIT {
     @Test
     void passwordAndPhoneAccountsCanRemoveEmail() throws Exception {
         for (boolean password : new boolean[]{true, false}) {
-            User user = User.create(password ? null : "+84900000101", password ? "test-hash" : null, "Anchored user");
+            User user = User.create(password ? null : ItPhoneRanges.nextPhone(GoogleOnlyEmailRemovalIT.class),password ? "test-hash" : null, "Anchored user");
             user.changeEmail(email());
             user.verifyEmail(Instant.now());
             user = users.saveAndFlush(user);

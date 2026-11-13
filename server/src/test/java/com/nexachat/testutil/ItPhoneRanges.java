@@ -90,6 +90,7 @@ public final class ItPhoneRanges {
             Map.entry("com.nexachat.attachment.StorageOutsideTransactionIT", "+84830"),
             Map.entry("com.nexachat.auth.GoogleSignInSignupIT", "+84831"),
             Map.entry("com.nexachat.auth.GoogleOnlyAccountDeletionIT", "+84896"),
+            Map.entry("com.nexachat.recovery.GoogleOnlyEmailRemovalIT", "+84897"),
             Map.entry("com.nexachat.auth.MembershipGuardMatrixIT", "+84832"),
             Map.entry("com.nexachat.contact.ContactByEmailIT", "+84833"),
             Map.entry("com.nexachat.message.MessageCommitOrderIT", "+84834"),
