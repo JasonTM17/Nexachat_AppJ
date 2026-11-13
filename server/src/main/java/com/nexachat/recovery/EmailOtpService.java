@@ -149,6 +149,10 @@ public class EmailOtpService {
     @Transactional
     public void removeEmail(UUID userId) {
         User user = lockActiveUser(userId);
+        if (user.getPhone() == null && user.getPasswordHash() == null) {
+            throw ApiException.of(ApiErrorCode.LAST_SIGN_IN_METHOD,
+                    "The last sign-in method cannot be removed");
+        }
         user.removeEmail();
         userRepository.save(user);
         otpRepository.invalidateActive(userId, OtpPurpose.VERIFY_EMAIL, clock.instant());
