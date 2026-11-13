@@ -23,7 +23,8 @@
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             app:navigationContentDescription="@string/cd_back"
-            app:navigationIcon="@drawable/ic_arrow_back" />
+            app:navigationIcon="@drawable/ic_arrow_back"
+            app:titleTextAppearance="?attr/textAppearanceTitleLarge" />
 
         <TextView
             android:id="@+id/profileLoadError"
@@ -87,9 +88,10 @@
 
                 <TextView
                     android:id="@+id/profileName"
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
+                    android:gravity="center"
                     android:textAppearance="?attr/textAppearanceHeadlineSmall"
                     android:textColor="?attr/colorOnSurface"
                     android:textStyle="bold" />
@@ -205,9 +207,10 @@
                     android:id="@+id/themeQuickChips"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="72dp"
-                    android:layout_marginEnd="16dp"
+                    android:layout_marginHorizontal="16dp"
                     android:layout_marginBottom="8dp"
+                    app:chipSpacingHorizontal="@dimen/space_xs"
+                    app:chipSpacingVertical="@dimen/space_xs"
                     app:selectionRequired="true"
                     app:singleSelection="true">
 

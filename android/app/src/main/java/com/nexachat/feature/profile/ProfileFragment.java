@@ -33,7 +33,6 @@ import com.google.android.material.color.MaterialColors;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.network.dto.UserDto;
-import com.nexachat.core.ui.ThemeMapper;
 import com.nexachat.data.ThemeMode;
 import com.nexachat.databinding.FragmentProfileBinding;
 import com.nexachat.feature.auth.ApiErrorText;
@@ -168,7 +167,12 @@ public final class ProfileFragment extends Fragment {
         viewModel.getShowSeen().observe(getViewLifecycleOwner(), value -> binding.showSeen.setChecked(Boolean.TRUE.equals(value)));
         settingsViewModel.getThemeMode().observe(getViewLifecycleOwner(), mode -> {
             ThemeMode active = mode != null ? mode : ThemeMode.SYSTEM;
-            binding.themeRow.setTrailingValue(ThemeMapper.resolveThemeLabel(active, getString(R.string.theme_system), getString(R.string.theme_light), getString(R.string.theme_dark)));
+            binding.themeRow.setTrailingValue(ProfileThemeUiRules.resolveThemeRowTrailingValue(
+                    active,
+                    getString(R.string.theme_system),
+                    getString(R.string.theme_light),
+                    getString(R.string.theme_dark),
+                    true));
             binding.themeChipSystem.setChecked(active == ThemeMode.SYSTEM);
             binding.themeChipLight.setChecked(active == ThemeMode.LIGHT);
             binding.themeChipDark.setChecked(active == ThemeMode.DARK);
