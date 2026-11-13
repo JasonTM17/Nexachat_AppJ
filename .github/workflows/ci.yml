@@ -38,6 +38,14 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+      - name: Pull the Testcontainers database image
+        # Several integration tests start their own PostgreSQL 16 container.
+        run: |
+          for _ in 1 2 3; do
+            docker pull postgres:16-alpine && exit 0
+            sleep 5
+          done
+          exit 1
       - name: Maven verify
         working-directory: server
         run: mvn -B verify
