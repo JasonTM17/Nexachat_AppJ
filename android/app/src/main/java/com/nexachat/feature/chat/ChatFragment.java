@@ -773,7 +773,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         int widthDp = getResources().getConfiguration().screenWidthDp;
         boolean hideAvatar = scale >= 1.5f || widthDp < 360;
         binding.chatHeaderAvatar.setVisibility(hideAvatar ? View.GONE : View.VISIBLE);
-        binding.chatToolbar.setTitleMarginStart(hideAvatar ? 16 : 48);
+        int titleMarginRes = hideAvatar
+                ? R.dimen.space_md
+                : R.dimen.chat_toolbar_title_start_with_avatar;
+        binding.chatToolbar.setTitleMarginStart(getResources().getDimensionPixelSize(titleMarginRes));
     }
 
     private void renderConversationState() {
@@ -1532,6 +1535,15 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
         static boolean summaryAvailable() {
             return true;
+        }
+
+        /** Title start inset in dp; matches {@code fragment_chat.xml} {@code titleMarginStart}. */
+        static int titleMarginStartDp(boolean hideAvatar) {
+            return hideAvatar ? 16 : 48;
+        }
+
+        static int avatarOccupiedWidthEndDp() {
+            return 48 + 36;
         }
     }
 

@@ -14,7 +14,7 @@
         android:background="?attr/colorSurface"
         app:subtitleTextAppearance="@style/TextAppearance.NexaChat.BodySmall"
         app:subtitleTextColor="?attr/colorOnSurfaceVariant"
-        app:titleMarginStart="96dp"
+        app:titleMarginStart="@dimen/chat_toolbar_title_start_with_avatar"
         app:titleTextAppearance="@style/TextAppearance.NexaChat.TitleMedium"
         app:titleTextColor="?attr/colorOnSurface"
         app:layout_constraintEnd_toStartOf="@id/chatToolbarActions"

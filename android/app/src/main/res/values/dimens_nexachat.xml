@@ -27,6 +27,7 @@
     <dimen name="inbox_row_min_height">72dp</dimen>
     <dimen name="avatar_inbox_size">48dp</dimen>
     <dimen name="avatar_chat_size">36dp</dimen>
+    <dimen name="chat_toolbar_title_start_with_avatar">48dp</dimen>
     <dimen name="icon_size">24dp</dimen>
     <dimen name="metadata_icon_size">16dp</dimen>
     <dimen name="bubble_content_inset">12dp</dimen>
