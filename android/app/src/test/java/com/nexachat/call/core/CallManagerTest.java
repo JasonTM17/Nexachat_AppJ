@@ -1,6 +1,7 @@
 package com.nexachat.call.core;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executor;
@@ -203,13 +204,20 @@ public final class CallManagerTest {
     @Test
     public void pushIsRejectedWhileAnotherCallIsBusy() {
         startOutgoing();
+        signaling.emit(event(CallEvent.Type.CALL_ACCEPTED, "call-1", null));
+        scheduler.runCurrent();
+        media.listener.onConnected();
+        scheduler.runCurrent();
+        assertEquals(CallState.ACTIVE, session().getState());
+
         TestObserver<CallSession> admission = admitPush(
                 "call-busy", nowMs + 20L, () -> true);
         scheduler.runCurrent();
 
         admission.assertComplete();
-        assertEquals(CallState.OUTGOING_RINGING, session().getState());
+        assertEquals(CallState.ACTIVE, session().getState());
         assertEquals("call-1", session().getCallId());
+        assertEquals(0, media.stopCount);
     }
 
     @Test
@@ -440,6 +448,50 @@ public final class CallManagerTest {
     }
 
     @Test
+    public void conflictingTerminalOrderingsKeepFirstApplicableOutcomeAndReleaseMediaOnce() {
+        List<TerminalScenario> scenarios = Arrays.asList(
+                new TerminalScenario("CANCEL,ACCEPT", CallState.ENDED,
+                        CallEndReason.CANCELLED, 0),
+                new TerminalScenario("TIMEOUT,ACCEPT", CallState.ENDED,
+                        CallEndReason.MISSED, 0),
+                new TerminalScenario("REMOTE,ACCEPT", CallState.ENDED,
+                        CallEndReason.COMPLETED, 0),
+                new TerminalScenario("SERVER,ACCEPT", CallState.ENDED,
+                        CallEndReason.FAILED, 0),
+                new TerminalScenario("ACCEPT,CANCEL", CallState.CONNECTING, null, 0),
+                new TerminalScenario("ACCEPT,TIMEOUT", CallState.CONNECTING, null, 0),
+                new TerminalScenario("ACCEPT,PERMISSION", CallState.ENDED,
+                        CallEndReason.FAILED, 1),
+                new TerminalScenario("ACCEPT,REMOTE", CallState.ENDED,
+                        CallEndReason.COMPLETED, 1),
+                new TerminalScenario("ACCEPT,SERVER", CallState.ENDED,
+                        CallEndReason.FAILED, 1));
+
+        for (TerminalScenario scenario : scenarios) {
+            restartManager();
+            startOutgoing();
+            for (String action : scenario.actions.split(",")) {
+                applyTerminalAction(action);
+                scheduler.runCurrent();
+            }
+
+            assertEquals(scenario.actions, scenario.state, session().getState());
+            assertEquals(scenario.actions, scenario.reason, session().getEndReason());
+            assertEquals(scenario.actions, scenario.mediaStops, media.stopCount);
+
+            signaling.emit(event(CallEvent.Type.CALL_ACCEPTED, "call-1", null));
+            scheduler.runCurrent();
+            assertEquals(scenario.actions + " late ACCEPT", scenario.state, session().getState());
+            if (scenario.state == CallState.ENDED && media.listener != null) {
+                media.listener.onConnected();
+                scheduler.runCurrent();
+            }
+            assertEquals(scenario.actions + " late media callback", scenario.state, session().getState());
+            assertEquals(scenario.actions + " late ACCEPT", scenario.mediaStops, media.stopCount);
+        }
+    }
+
+    @Test
     public void signalingDisconnectDuringActiveCallEndsItAsFailed() {
         startOutgoing();
         signaling.emit(event(CallEvent.Type.CALL_ACCEPTED, "call-1", null));
@@ -472,6 +524,51 @@ public final class CallManagerTest {
     private void startOutgoing() {
         manager.startOutgoing("conversation-1", "peer-1", "Peer");
         scheduler.runCurrent();
+    }
+
+    private void restartManager() {
+        manager.close();
+        scheduler.runCurrent();
+        setUp();
+    }
+
+    private void applyTerminalAction(String action) {
+        switch (action) {
+            case "ACCEPT":
+                signaling.emit(event(CallEvent.Type.CALL_ACCEPTED, "call-1", null));
+                break;
+            case "CANCEL":
+                signaling.emit(event(CallEvent.Type.CALL_CANCELLED, "call-1", null));
+                break;
+            case "TIMEOUT":
+                signaling.emit(event(CallEvent.Type.CALL_TIMEOUT, "call-1", null));
+                break;
+            case "REMOTE":
+                signaling.emit(event(CallEvent.Type.CALL_ENDED, "call-1", "COMPLETED"));
+                break;
+            case "SERVER":
+                signaling.emit(error("call-1", "conversation-1", "CALL_STATE_INVALID"));
+                break;
+            case "PERMISSION":
+                media.listener.onFailed("permission denied");
+                break;
+            default:
+                throw new AssertionError("Unknown action: " + action);
+        }
+    }
+
+    private static final class TerminalScenario {
+        final String actions;
+        final CallState state;
+        final CallEndReason reason;
+        final int mediaStops;
+
+        TerminalScenario(String actions, CallState state, CallEndReason reason, int mediaStops) {
+            this.actions = actions;
+            this.state = state;
+            this.reason = reason;
+            this.mediaStops = mediaStops;
+        }
     }
 
     private TestObserver<CallSession> admitPush(
