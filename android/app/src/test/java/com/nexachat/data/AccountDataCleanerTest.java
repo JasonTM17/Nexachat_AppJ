@@ -14,6 +14,7 @@ import com.nexachat.core.database.OutboxDao;
 import com.nexachat.core.network.SessionEvents;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.subjects.CompletableSubject;
+import io.reactivex.rxjava3.subjects.SingleSubject;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -110,5 +111,29 @@ public final class AccountDataCleanerTest {
 
         verify(database).clearAllTables();
         verify(database, never()).clearAccountDataPreservingOutbox();
+    }
+
+    @Test
+    public void lateWorkerCompletionAfterAccountSwitchCannotWriteOldAccountData() {
+        AppDatabase database = mock(AppDatabase.class);
+        OutboxDao outboxDao = mock(OutboxDao.class);
+        when(database.outboxDao()).thenReturn(outboxDao);
+        when(outboxDao.sealUnassignedLegacyOwners()).thenReturn(Completable.complete());
+        SessionOperationTracker tracker = new SessionOperationTracker();
+        AccountDataCleaner cleaner = new AccountDataCleaner(
+                database, tracker, Completable::complete);
+        SingleSubject<String> oldAccountWorker = SingleSubject.create();
+        AtomicInteger oldAccountWrites = new AtomicInteger();
+
+        var worker = tracker.track(oldAccountWorker.doOnSuccess(ignored -> oldAccountWrites.incrementAndGet()))
+                .test();
+        cleaner.startSession(Completable.complete(), Completable.complete()).blockingAwait();
+        assertTrue("new account session should be active", tracker.isActive());
+
+        oldAccountWorker.onSuccess("late old account result");
+
+        worker.assertNoValues();
+        assertEquals("disposed worker callback must not write for its old account",
+                0, oldAccountWrites.get());
     }
 }

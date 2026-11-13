@@ -81,6 +81,23 @@ public final class TokenRefresherStaleTerminalResponseTest {
         harness.events.getEvents().test().assertNoValues();
     }
 
+    @Test
+    public void lateSuccessfulRefreshCannotRestoreTokensAfterLogout() throws Exception {
+        Harness harness = new Harness(200, null);
+        TestObserver<TokenRefreshOutcome> result = harness.refresher.refresh().test();
+
+        harness.awaitRefreshResponse();
+        harness.refresher.logOut().test().awaitDone(5, TimeUnit.SECONDS).assertComplete();
+        assertTrue("logout must clear the token store", harness.tokens.get() == null);
+        harness.releaseRefreshResponse();
+
+        result.awaitDone(5, TimeUnit.SECONDS).assertNoErrors();
+        assertTrue("stale success must not restore credentials", harness.tokens.get() == null);
+        assertTrue(result.values().get(0) instanceof TokenRefreshOutcome.NoRefreshToken);
+        verify(harness.store, never()).commitRefreshRotation(
+                anyLong(), anyString(), anyString(), anyLong(), anyString(), any());
+    }
+
     private static void assertCurrentSessionB(Harness harness) {
         assertTrue("session B admission must remain open at epoch "
                         + harness.refresher.sessionEpoch(),
@@ -97,6 +114,8 @@ public final class TokenRefresherStaleTerminalResponseTest {
         final AuthApi api = mock(AuthApi.class);
         final CountDownLatch errorBodyEntered = new CountDownLatch(1);
         final CountDownLatch releaseErrorBody = new CountDownLatch(1);
+        final CountDownLatch refreshResponseEntered = new CountDownLatch(1);
+        final CountDownLatch releaseRefreshResponse = new CountDownLatch(1);
         final TokenRefresher refresher;
 
         Harness(int status, String code) throws Exception {
@@ -113,18 +132,32 @@ public final class TokenRefresherStaleTerminalResponseTest {
             when(store.clear()).thenAnswer(ignored -> Completable.fromAction(() -> tokens.set(null)));
             when(store.getHasValidRefresh()).thenReturn(Flowable.just(true));
 
-            ResponseBody errorBody = mock(ResponseBody.class);
             Call<AuthResponse> call = mock(Call.class);
-            Response<AuthResponse> errorResponse = Response.error(status, errorBody);
-            when(call.execute()).thenReturn(errorResponse);
             when(api.refresh(anyString(), any(RefreshRequest.class))).thenReturn(call);
-            when(errorBody.string()).thenAnswer(ignored -> {
-                errorBodyEntered.countDown();
-                if (!releaseErrorBody.await(5, TimeUnit.SECONDS)) {
-                    throw new IOException("test did not release the refresh error body");
-                }
-                return "{\"error\":{\"code\":\"" + code + "\"}}";
-            });
+            if (status == 200) {
+                AuthResponse success = mock(AuthResponse.class);
+                when(success.getAccessToken()).thenReturn("access-a-refreshed");
+                when(success.getAccessTokenExpiresIn()).thenReturn(3_600L);
+                when(success.getRefreshToken()).thenReturn("refresh-a-refreshed");
+                when(call.execute()).thenAnswer(ignored -> {
+                    refreshResponseEntered.countDown();
+                    if (!releaseRefreshResponse.await(5, TimeUnit.SECONDS)) {
+                        throw new IOException("test did not release the refresh response");
+                    }
+                    return Response.success(success);
+                });
+            } else {
+                ResponseBody errorBody = mock(ResponseBody.class);
+                Response<AuthResponse> errorResponse = Response.error(status, errorBody);
+                when(call.execute()).thenReturn(errorResponse);
+                when(errorBody.string()).thenAnswer(ignored -> {
+                    errorBodyEntered.countDown();
+                    if (!releaseErrorBody.await(5, TimeUnit.SECONDS)) {
+                        throw new IOException("test did not release the refresh error body");
+                    }
+                    return "{\"error\":{\"code\":\"" + code + "\"}}";
+                });
+            }
             refresher = new TokenRefresher(store, events, (Provider<AuthApi>) () -> api);
         }
 
@@ -135,6 +168,15 @@ public final class TokenRefresherStaleTerminalResponseTest {
 
         void releaseErrorBody() {
             releaseErrorBody.countDown();
+        }
+
+        void awaitRefreshResponse() throws InterruptedException {
+            assertTrue("refresh should reach response delivery",
+                    refreshResponseEntered.await(5, TimeUnit.SECONDS));
+        }
+
+        void releaseRefreshResponse() {
+            releaseRefreshResponse.countDown();
         }
 
         void establishSessionB() {
