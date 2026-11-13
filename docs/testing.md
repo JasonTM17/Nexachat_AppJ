@@ -73,6 +73,26 @@ MEDIUM known rule gaps are documented in
 
 ## Live end-to-end scripts
 
+These Python runners (and their thin shell wrappers) are the supported live E2E
+evidence against a running backend. They hit real HTTP and, where noted, STOMP
+WebSocket endpoints (`docs/api-contract.md`, `docs/websocket-protocol.md`).
+
+| Script | Role |
+| --- | --- |
+| `tools/e2e/smoke_api.py` | REST smoke: auth, send/history, edit/delete, search, settings |
+| `tools/e2e/stomp_e2e.py` | STOMP message lifecycle, presence, rate limits |
+| `tools/e2e/p0/p0_live.py` | P0 receipts, delta sync, idempotency, FCM token, auth envelopes |
+| `tools/e2e/new_features/features_live.py` | Archive, polls, reminders, labels, pins, invite links, recall |
+| `tools/e2e/final/final_live.py` | Disposable-stack invite, retention, recall cache checks |
+| `tools/e2e/final/final_extended.py` | Extended STOMP/REST matrix on the `nexachat_e2e_grok2` stack |
+| `tools/e2e/summary/summary_e2e.py` | AI summary API against a live backend |
+| `tools/e2e/calls/call_e2e.py` | Call signaling journey |
+
+`tools/e2e/P0E2ETestRunner.java` is an **illustrative synthetic fixture** only: it
+runs 81 JDK-only assertions on locally constructed data without starting the server
+or Android app. Do not treat its output as live E2E acceptance. See
+[`tools/e2e/README.md`](../tools/e2e/README.md).
+
 `tools/e2e/final/final_live.py` covers the checks that need a disposable stack:
 parallel joins at `maxUses`, revoke during a join, approval limits, recall
 purging the ask cache, and a spoofed `X-Forwarded-For` that must not reset the

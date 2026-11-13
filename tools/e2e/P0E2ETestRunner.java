@@ -9,9 +9,11 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * NexaChat P0 Production Engineering — Standalone E2E Test Runner.
+ * NexaChat P0 Production Engineering — synthetic fixture runner (illustrative only).
  * Pure Java 21 LTS, zero external dependencies (standard JDK only).
- * Executes all 81 requirement-driven opaque-box tests across Tiers 1-4.
+ * Runs 81 in-process checks on locally constructed data; no server, database, or
+ * Android build participates. Not live end-to-end acceptance evidence — see
+ * docs/testing.md and tools/e2e/README.md for API/STOMP runners against a real backend.
  *
  * Usage:
  *   java tools/e2e/P0E2ETestRunner.java
@@ -61,8 +63,8 @@ public class P0E2ETestRunner {
 
     private static void printBanner() {
         System.out.println(CYAN + BOLD + "==========================================================================" + RESET);
-        System.out.println(CYAN + BOLD + "   NEXACHAT P0 PRODUCTION ENGINEERING — OPAQUE-BOX E2E TEST RUNNER        " + RESET);
-        System.out.println(CYAN + BOLD + "   100% Pure Java 21 LTS | 81 Verification Tests across 4 Tiers           " + RESET);
+        System.out.println(CYAN + BOLD + "   NEXACHAT P0 — SYNTHETIC FIXTURE RUNNER (ILLUSTRATIVE, NOT LIVE E2E)     " + RESET);
+        System.out.println(CYAN + BOLD + "   100% Pure Java 21 LTS | 81 in-process checks on local fixtures         " + RESET);
         System.out.println(CYAN + BOLD + "==========================================================================" + RESET);
         System.out.println();
     }
@@ -595,7 +597,7 @@ public class P0E2ETestRunner {
         String finalColor = (totalFailed == 0) ? GREEN + BOLD : RED + BOLD;
         System.out.printf(" %-40s | %s%8d%s | %s%8d%s | %8d%n", "TOTAL ACROSS ALL TIERS", finalColor, totalPassed, RESET, (totalFailed > 0 ? RED + BOLD : RESET), totalFailed, RESET, (totalPassed + totalFailed));
         System.out.println(CYAN + BOLD + "==========================================================================" + RESET);
-        System.out.printf(" Execution Time: %d ms | Result: %s%s%s%n", elapsedMs, finalColor, (totalFailed == 0 ? "ALL PASS (100%)" : "FAILED"), RESET);
+        System.out.printf(" Execution Time: %d ms | Fixture checks: %s%s%s (not live E2E acceptance)%n", elapsedMs, finalColor, (totalFailed == 0 ? "all local checks passed" : "FAILED"), RESET);
         System.out.println();
     }
 
