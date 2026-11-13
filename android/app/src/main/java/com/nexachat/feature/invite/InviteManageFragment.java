@@ -81,7 +81,10 @@ public final class InviteManageFragment extends Fragment {
 
     private void render(@NonNull InviteManageUiState state) {
         if (binding == null) return;
-        binding.loading.setVisibility(state.isLoading() ? View.VISIBLE : View.GONE);
+        boolean loadingVisible = state.isLoading();
+        binding.loading.setVisibility(loadingVisible ? View.VISIBLE : View.GONE);
+        binding.loading.setContentDescription(
+                loadingVisible ? getString(R.string.voice_status_loading) : null);
         InviteLinkResponse link = state.getLink();
         boolean hasLink = link != null;
         if (hasLink) {

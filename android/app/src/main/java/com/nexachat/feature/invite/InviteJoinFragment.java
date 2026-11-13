@@ -71,8 +71,10 @@ public final class InviteJoinFragment extends Fragment {
         }
 
         InviteJoinUiState.Status status = state.getStatus();
-        binding.loading.setVisibility(state.isBusy() || status == InviteJoinUiState.Status.LOADING
-                ? View.VISIBLE : View.GONE);
+        boolean loadingVisible = state.isBusy() || status == InviteJoinUiState.Status.LOADING;
+        binding.loading.setVisibility(loadingVisible ? View.VISIBLE : View.GONE);
+        binding.loading.setContentDescription(
+                loadingVisible ? getString(R.string.voice_status_loading) : null);
         binding.joinButton.setVisibility(status == InviteJoinUiState.Status.PREVIEW
                 ? View.VISIBLE : View.GONE);
         binding.joinButton.setText(preview != null && preview.requiresApproval

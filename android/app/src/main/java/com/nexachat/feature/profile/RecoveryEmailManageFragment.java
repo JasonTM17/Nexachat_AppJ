@@ -61,6 +61,8 @@ public final class RecoveryEmailManageFragment extends Fragment {
 
     private void render(RecoveryEmailManageViewModel.UiState state) {
         UserDto user = state.getUser();
+        boolean initialLoading = RecoveryEmailManageUiRules.showInitialLoading(
+                state.isLoading(), user, state.getError());
         boolean loadFailed = !state.isLoading() && user == null && state.getError() != null;
         boolean verified = user != null && user.hasVerifiedRecoveryEmail();
 
@@ -70,6 +72,12 @@ public final class RecoveryEmailManageFragment extends Fragment {
             binding.recoveryEmailRemove.setVisibility(View.GONE);
             binding.recoveryEmailAdd.setVisibility(View.GONE);
             binding.recoveryEmailRetry.setVisibility(View.VISIBLE);
+        } else if (initialLoading) {
+            binding.recoveryEmailStatus.setText(R.string.voice_status_loading);
+            binding.recoveryEmailChange.setVisibility(View.GONE);
+            binding.recoveryEmailRemove.setVisibility(View.GONE);
+            binding.recoveryEmailAdd.setVisibility(View.GONE);
+            binding.recoveryEmailRetry.setVisibility(View.GONE);
         } else {
             binding.recoveryEmailStatus.setText(verified
                     ? getString(R.string.recovery_email_verified_status, user.getEmail())
