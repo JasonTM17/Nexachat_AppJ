@@ -67,7 +67,9 @@
 
                 <FrameLayout
                     android:layout_width="96dp"
-                    android:layout_height="96dp">
+                    android:layout_height="96dp"
+                    android:clipChildren="false"
+                    android:clipToPadding="false">
 
                     <com.nexachat.core.ui.components.AvatarView
                         android:id="@+id/profileAvatar"
@@ -79,9 +81,11 @@
                         android:layout_width="@dimen/min_touch_target"
                         android:layout_height="@dimen/min_touch_target"
                         android:layout_gravity="bottom|end"
+                        android:layout_marginEnd="-12dp"
+                        android:layout_marginBottom="-12dp"
                         android:background="@drawable/bg_camera_badge"
                         android:contentDescription="@string/profile_change_avatar"
-                        android:padding="@dimen/space_sm"
+                        android:padding="@dimen/space_md"
                         android:src="@drawable/ic_camera_alt"
                         app:tint="@color/brand_on_fill" />
                 </FrameLayout>

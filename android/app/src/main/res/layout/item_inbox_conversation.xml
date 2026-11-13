@@ -17,7 +17,6 @@
         android:layout_width="@dimen/avatar_inbox_size"
         android:layout_height="@dimen/avatar_inbox_size"
         android:importantForAccessibility="no"
-        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
