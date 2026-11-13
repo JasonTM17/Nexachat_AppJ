@@ -578,7 +578,8 @@
     <string name="google_link_password_prompt">Enter your password to link this account.</string>
     <string name="google_unlink_confirm">Unlink this Google account? You will sign in with your phone and password.</string>
     <string name="error_google_sign_in">Google sign-in failed. Try again.</string>
-    <string name="error_google_not_linked">This Google account is not linked. Sign in with your phone and password, then link Google in Settings.</string>
+    <string name="error_google_unavailable">Google Play services is unavailable. Update it, or sign in with your phone number.</string>
+    <string name="error_google_not_linked">This Google account is not linked. Sign in with your phone and password, then link Google in Profile.</string>
     <string name="error_google_already_linked">That Google account is already linked to another account.</string>
     <string name="error_google_no_account">No Google account found on this device.</string>
     <string name="error_last_sign_in_method">Set a password before removing this sign-in method.</string>

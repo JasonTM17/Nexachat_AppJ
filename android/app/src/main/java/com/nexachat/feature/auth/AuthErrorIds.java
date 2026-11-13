@@ -44,6 +44,9 @@ public final class AuthErrorIds {
             if ("GOOGLE_SIGN_IN_FAILED".equals(code)) {
                 return R.string.error_google_sign_in;
             }
+            if (com.nexachat.core.auth.GoogleSignInFlow.CODE_UNAVAILABLE.equals(code)) {
+                return R.string.error_google_unavailable;
+            }
             if ("LAST_SIGN_IN_METHOD".equals(code)) {
                 return R.string.error_last_sign_in_method;
             }

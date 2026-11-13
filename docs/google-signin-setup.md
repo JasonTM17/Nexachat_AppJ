@@ -20,10 +20,10 @@ for security rules see [docs/security.md](security.md).
      the ID token and is what the Android app passes to Credential Manager as
      `serverClientId`. Copy it into server `NEXACHAT_GOOGLE_WEB_CLIENT_ID` and
      Android `GOOGLE_WEB_CLIENT_ID` (see below). Do not commit real values.
-   - **Android** — create **two** clients for package name `com.nexachat`:
-     - **Debug** — register the SHA-1 of the **debug signing key** (see
+   - **Android** — create **two** clients:
+     - **Debug** — package name `com.nexachat.debug`; register the SHA-1 of the **debug signing key** (see
        [Android OAuth fingerprints](#android-oauth-fingerprints)).
-     - **Release** — register the SHA-1 of your **upload/release signing key**
+     - **Release** — package name `com.nexachat`; register the SHA-1 of your **upload/release signing key**
        (see [docs/android-release.md](android-release.md)).
      Each Android OAuth client has its own client ID string. The server does not
      read those IDs from separate env vars; list both in one place (below).

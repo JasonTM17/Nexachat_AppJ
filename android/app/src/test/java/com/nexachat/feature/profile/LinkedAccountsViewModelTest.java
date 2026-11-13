@@ -3,6 +3,7 @@ package com.nexachat.feature.profile;
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 
 import com.nexachat.core.auth.FakeGoogleSignInClient;
+import com.nexachat.core.auth.GoogleSignInException;
 import com.nexachat.core.auth.GoogleSignInFlow;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
@@ -145,6 +146,23 @@ public final class LinkedAccountsViewModelTest {
         assertEquals("GOOGLE_ACCOUNT_ALREADY_LINKED",
                 ((ApiError.Unknown) viewModel.getUiState().getValue().getError()).getCode());
         assertFalse(viewModel.getUiState().getValue().isLinked());
+    }
+
+    @Test
+    public void cancelledLinkChooserClearsLoadingWithoutShowingAnError() {
+        when(repository.linkedIdentities()).thenReturn(Single.just(
+                new Result.Success<>(new LinkedIdentitiesResponse(List.of()))));
+        when(repository.requestGoogleLinkNonce()).thenReturn(
+                Single.just(new Result.Success<>(new GoogleNonceResponse("nonce-1", 300))));
+        FakeGoogleSignInClient client = new FakeGoogleSignInClient(true,
+                new GoogleSignInException(GoogleSignInException.Reason.CANCELLED));
+        LinkedAccountsViewModel viewModel = configuredViewModel(client);
+
+        viewModel.link(null, "secret123");
+
+        assertFalse(viewModel.getUiState().getValue().isLoading());
+        assertNull(viewModel.getUiState().getValue().getError());
+        verify(repository, never()).linkGoogle(anyString(), anyString(), anyString());
     }
 
     @Test

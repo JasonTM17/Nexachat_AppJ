@@ -570,8 +570,9 @@
     <string name="action_unlink_google">Gỡ liên kết Google</string>
     <string name="google_link_password_prompt">Nhập mật khẩu để liên kết tài khoản này.</string>
     <string name="google_unlink_confirm">Gỡ liên kết tài khoản Google này? Bạn sẽ đăng nhập bằng số điện thoại và mật khẩu.</string>
-    <string name="error_google_sign_in">Đăng nhập Google thất bại. Vui lòng thử lại.</string>
-    <string name="error_google_not_linked">Tài khoản Google này chưa được liên kết. Hãy đăng nhập bằng số điện thoại và mật khẩu, sau đó liên kết Google trong Cài đặt.</string>
+    <string name="error_google_sign_in">Không đăng nhập được bằng Google. Hãy thử lại.</string>
+    <string name="error_google_unavailable">Dịch vụ Google Play không dùng được. Hãy cập nhật, hoặc đăng nhập bằng số điện thoại.</string>
+    <string name="error_google_not_linked">Tài khoản Google này chưa được liên kết. Hãy đăng nhập bằng số điện thoại và mật khẩu, sau đó liên kết Google trong Hồ sơ.</string>
     <string name="error_google_already_linked">Tài khoản Google này đã được liên kết với một tài khoản khác.</string>
     <string name="error_google_no_account">Không tìm thấy tài khoản Google trên thiết bị này.</string>
     <string name="error_last_sign_in_method">Hãy đặt mật khẩu trước khi gỡ phương thức đăng nhập này.</string>
@@ -589,7 +590,7 @@
     <string name="cd_complete_profile_avatar">Ảnh đại diện của bạn</string>
     <string name="cd_complete_profile_email_verified">Email đã xác minh</string>
     <!-- Sign-in methods and add-by-email -->
-    <string name="sign_in_method_google">Đăng nhập Google</string>
+    <string name="sign_in_method_google">Google</string>
     <string name="sign_in_method_phone">Số điện thoại</string>
     <string name="action_link_google_short">Liên kết</string>
     <string name="action_unlink_google_short">Hủy liên kết</string>

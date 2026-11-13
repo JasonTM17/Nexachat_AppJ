@@ -142,6 +142,11 @@ public final class LinkedAccountsViewModel extends ViewModel {
 
     private void onLinkResult(Result<Unit> result) {
         if (result instanceof Result.Failure<?> failure) {
+            if (failure.getError() instanceof ApiError.Unknown unknown
+                    && GoogleSignInFlow.CODE_CANCELLED.equals(unknown.getCode())) {
+                update(state -> state.withLoading(false).withError(null));
+                return;
+            }
             update(state -> state.withLoading(false).withError(failure.getError()));
             return;
         }
