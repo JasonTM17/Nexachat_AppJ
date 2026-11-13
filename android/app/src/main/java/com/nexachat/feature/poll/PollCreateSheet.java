@@ -9,12 +9,14 @@ import android.widget.EditText;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.lifecycle.ViewModelProvider;
+import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment;
 import com.google.android.material.datepicker.CalendarConstraints;
 import com.google.android.material.datepicker.MaterialDatePicker;
 import com.nexachat.R;
 import com.nexachat.databinding.ItemPollOptionInputBinding;
+import com.nexachat.feature.ui.ImeInsets;
 import com.nexachat.databinding.SheetCreatePollBinding;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -42,7 +44,10 @@ public final class PollCreateSheet extends BottomSheetDialogFragment {
     @Override
     public Dialog onCreateDialog(@Nullable Bundle savedInstanceState) {
         BottomSheetDialog dialog = (BottomSheetDialog) super.onCreateDialog(savedInstanceState);
-        dialog.setOnShowListener(ignored -> dialog.getBehavior().setSkipCollapsed(true));
+        dialog.setOnShowListener(ignored -> {
+            dialog.getBehavior().setSkipCollapsed(true);
+            dialog.getBehavior().setState(BottomSheetBehavior.STATE_EXPANDED);
+        });
         return dialog;
     }
 
@@ -77,6 +82,7 @@ public final class PollCreateSheet extends BottomSheetDialogFragment {
         });
         binding.pollCreateSubmit.setOnClickListener(ignored -> submit());
         renderExpiry();
+        ImeInsets.applyBottomPadding(binding.getRoot());
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
     }
 

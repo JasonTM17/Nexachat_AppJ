@@ -36,6 +36,7 @@ import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.data.ThemeMode;
 import com.nexachat.databinding.FragmentProfileBinding;
 import com.nexachat.feature.auth.ApiErrorText;
+import com.nexachat.feature.ui.ImeInsets;
 import com.nexachat.summary.AiConsentRepository;
 import dagger.hilt.android.AndroidEntryPoint;
 import javax.inject.Inject;
@@ -360,6 +361,9 @@ public final class ProfileFragment extends Fragment {
                 .setPositiveButton(titleRes, null)
                 .create();
         dialog.setOnShowListener(ignored -> {
+            if (dialog.getWindow() != null) {
+                ImeInsets.applyToDecor(dialog.getWindow());
+            }
             android.widget.Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
             positive.setOnClickListener(v -> {
                 String value = input == null || input.getText() == null
@@ -428,7 +432,11 @@ public final class ProfileFragment extends Fragment {
                 .setPositiveButton(R.string.action_save, null)
                 .setOnCancelListener(d -> viewModel.dismissPasswordDialog())
                 .create();
-        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+        dialog.setOnShowListener(ignored -> {
+            if (dialog.getWindow() != null) {
+                ImeInsets.applyToDecor(dialog.getWindow());
+            }
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             String oldValue = old == null || old.getText() == null ? "" : old.getText().toString();
             String newValue = next == null || next.getText() == null ? "" : next.getText().toString();
             String confirmValue = confirm == null || confirm.getText() == null ? "" : confirm.getText().toString();
@@ -458,7 +466,8 @@ public final class ProfileFragment extends Fragment {
                 viewModel.submitPasswordChange();
                 dialog.dismiss();
             }
-        }));
+            });
+        });
         dialog.show();
     }
     private void onAiConsentToggled(CompoundButton button, boolean checked) {

@@ -10,6 +10,7 @@ import android.widget.EditText;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.lifecycle.ViewModelProvider;
+import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment;
 import com.google.android.material.datepicker.CalendarConstraints;
@@ -19,6 +20,7 @@ import com.google.android.material.timepicker.MaterialTimePicker;
 import com.google.android.material.timepicker.TimeFormat;
 import com.nexachat.R;
 import com.nexachat.databinding.SheetReminderEditorBinding;
+import com.nexachat.feature.ui.ImeInsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -60,8 +62,10 @@ public final class ReminderEditorSheet extends BottomSheetDialogFragment {
     @Override
     public Dialog onCreateDialog(@Nullable Bundle savedInstanceState) {
         BottomSheetDialog dialog = (BottomSheetDialog) super.onCreateDialog(savedInstanceState);
-        dialog.setOnShowListener(ignored ->
-                dialog.getBehavior().setSkipCollapsed(true));
+        dialog.setOnShowListener(ignored -> {
+            dialog.getBehavior().setSkipCollapsed(true);
+            dialog.getBehavior().setState(BottomSheetBehavior.STATE_EXPANDED);
+        });
         return dialog;
     }
 
@@ -99,6 +103,7 @@ public final class ReminderEditorSheet extends BottomSheetDialogFragment {
         binding.reminderEditorRepeat.setOnClickListener(ignored -> pickRepeat());
         binding.reminderEditorSave.setOnClickListener(ignored -> submit());
         renderSelection();
+        ImeInsets.applyBottomPadding(binding.getRoot());
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
     }
 
