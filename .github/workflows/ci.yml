@@ -105,6 +105,15 @@ jobs:
           python tools/check-android-strings.py
       - name: Test release R8 mapping checker
         run: python -m unittest tools/test_check_release_r8_mapping.py
+      - name: Test offline tool unit tests
+        run: |
+          python -m unittest tools/test_check_android_a11y.py
+          python -B tools/test_seed_demo_chat.py
+          bash tools/test-release-version.sh
+          bash tools/test-sign-release-url-guard.sh
+          bash tools/test-vercel-ignore-command.sh
+      - name: Check Android layout accessibility
+        run: python tools/check-android-a11y.py
       - name: Test API contract checker
         run: python tools/check-api-contract.py --self-test
       - name: Check API contract routes
