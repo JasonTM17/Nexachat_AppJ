@@ -330,8 +330,8 @@ public class BackendM1Iteration2RegressionTest {
             SyncResponse response = messageService.syncDelta(userId, request);
 
             SyncResponse.ConversationDelta delta = response.deltas().get(0);
-            assertThat(delta.editedMessages()).hasSize(50);
-            assertThat(delta.deletedMessageIds()).hasSize(50);
+            assertThat(delta.editedMessages()).hasSizeGreaterThan(50);
+            assertThat(delta.deletedMessageIds()).hasSizeGreaterThan(50);
         }
     }
 

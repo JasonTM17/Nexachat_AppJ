@@ -2,6 +2,7 @@ package com.nexachat.auth;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.testutil.ItPhoneRanges;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,7 +62,9 @@ class AccountDeletionFailureRecoveryIT {
 
     @Test
     void retriesAfterAttachmentCleanupFailureAndPreservesPeerHistory() throws Exception {
-        Fixture fixture = fixture("+84909951001", "+84909951002");
+        Fixture fixture = fixture(
+                ItPhoneRanges.phoneFor(AccountDeletionFailureRecoveryIT.class, "+84898001001"),
+                ItPhoneRanges.phoneFor(AccountDeletionFailureRecoveryIT.class, "+84898001002"));
         String key = "attachments/" + UUID.randomUUID() + ".txt";
         jdbc.update("""
                 INSERT INTO message_attachments (owner_id, storage_key, original_name, mime_type, size_bytes)
@@ -79,7 +82,9 @@ class AccountDeletionFailureRecoveryIT {
 
     @Test
     void retriesAfterDeviceTokenCleanupFailureWithoutPartialScrub() throws Exception {
-        Fixture fixture = fixture("+84909952001", "+84909952002");
+        Fixture fixture = fixture(
+                ItPhoneRanges.phoneFor(AccountDeletionFailureRecoveryIT.class, "+84898002001"),
+                ItPhoneRanges.phoneFor(AccountDeletionFailureRecoveryIT.class, "+84898002002"));
         jdbc.update("""
                 INSERT INTO user_device_tokens (user_id, token, platform)
                 VALUES (?, ?, 'ANDROID')
@@ -95,7 +100,9 @@ class AccountDeletionFailureRecoveryIT {
 
     @Test
     void retriesAfterRefreshSessionRevocationFailureWithoutTombstoning() throws Exception {
-        Fixture fixture = fixture("+84909953001", "+84909953002");
+        Fixture fixture = fixture(
+                ItPhoneRanges.phoneFor(AccountDeletionFailureRecoveryIT.class, "+84898003001"),
+                ItPhoneRanges.phoneFor(AccountDeletionFailureRecoveryIT.class, "+84898003002"));
 
         assertFailureAndRetry(fixture, "refresh_tokens", "UPDATE");
 
@@ -107,7 +114,9 @@ class AccountDeletionFailureRecoveryIT {
 
     @Test
     void retryAfterTombstoneWriteFailureKeepsOriginalPiiUntilSuccessfulRetry() throws Exception {
-        Fixture fixture = fixture("+84909954001", "+84909954002");
+        Fixture fixture = fixture(
+                ItPhoneRanges.phoneFor(AccountDeletionFailureRecoveryIT.class, "+84898004001"),
+                ItPhoneRanges.phoneFor(AccountDeletionFailureRecoveryIT.class, "+84898004002"));
         installTombstoneFailure();
         try {
             delete(fixture.owner()).andExpect(status().is5xxServerError());
