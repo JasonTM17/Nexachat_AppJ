@@ -32,7 +32,11 @@ public final class InviteManageViewModel extends ViewModel {
     }
 
     public void load(@NonNull String id) {
-        if (id.isBlank() || id.equals(conversationId)) {
+        if (id.isBlank()) {
+            return;
+        }
+        InviteManageUiState state = current();
+        if (id.equals(conversationId) && (state.isLoading() || state.isLoaded())) {
             return;
         }
         conversationId = id;
@@ -54,7 +58,7 @@ public final class InviteManageViewModel extends ViewModel {
             @Nullable Integer maxUses,
             boolean requiresApproval) {
         String id = conversationId;
-        if (id == null || current().isBusy()) {
+        if (id == null || !current().isLoaded() || current().isBusy()) {
             return;
         }
         mutableState.setValue(current().withBusy(true));
@@ -67,7 +71,8 @@ public final class InviteManageViewModel extends ViewModel {
     public void setRequiresApproval(boolean enabled) {
         InviteLinkResponse link = current().getLink();
         String id = conversationId;
-        if (id == null || link == null || link.requiresApproval == enabled || current().isBusy()) {
+        if (id == null || !current().isLoaded() || link == null
+                || link.requiresApproval == enabled || current().isBusy()) {
             return;
         }
         mutableState.setValue(current().withBusy(true));
@@ -80,7 +85,7 @@ public final class InviteManageViewModel extends ViewModel {
 
     public void revoke() {
         String id = conversationId;
-        if (id == null || current().getLink() == null || current().isBusy()) {
+        if (id == null || !current().isLoaded() || current().getLink() == null || current().isBusy()) {
             return;
         }
         mutableState.setValue(current().withBusy(true));
@@ -100,7 +105,7 @@ public final class InviteManageViewModel extends ViewModel {
 
     public void refreshRequests() {
         String id = conversationId;
-        if (id == null || current().isBusy()) {
+        if (id == null || !current().isLoaded() || current().isBusy()) {
             return;
         }
         disposables.add(repository.listPendingRequests(id)
@@ -115,7 +120,7 @@ public final class InviteManageViewModel extends ViewModel {
 
     private void review(String requestId, boolean approve) {
         String id = conversationId;
-        if (id == null || current().isBusy()) {
+        if (id == null || !current().isLoaded() || current().isBusy()) {
             return;
         }
         mutableState.setValue(current().withBusy(true));

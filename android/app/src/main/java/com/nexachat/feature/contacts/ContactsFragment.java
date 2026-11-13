@@ -10,6 +10,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -18,7 +19,9 @@ import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.color.MaterialColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.snackbar.Snackbar;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
 import com.nexachat.R;
@@ -47,6 +50,7 @@ public final class ContactsFragment extends Fragment {
     @Nullable private TextView addDoneText;
     @Nullable private MaterialButton addActionButton;
     @Nullable private ContactDetailBinder detailBinder;
+    private int lastCachedRefreshErrorId;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     @Nullable
@@ -106,6 +110,21 @@ public final class ContactsFragment extends Fragment {
         boolean showEmpty = !showLoading && !showError && contacts.isEmpty();
         boolean showList = !contacts.isEmpty();
 
+        if (error == null || contacts.isEmpty()) {
+            lastCachedRefreshErrorId = 0;
+        } else {
+            int errorMessageId = ContactErrorIds.messageId(error);
+            if (lastCachedRefreshErrorId != errorMessageId) {
+                lastCachedRefreshErrorId = errorMessageId;
+                Snackbar.make(
+                                binding.getRoot(),
+                                getString(errorMessageId),
+                                Snackbar.LENGTH_LONG)
+                        .setAction(R.string.action_retry, ignored -> viewModel.loadContacts())
+                        .show();
+            }
+        }
+
         binding.loadingState.setVisibility(showLoading ? View.VISIBLE : View.GONE);
         binding.contactList.setVisibility(showList ? View.VISIBLE : View.GONE);
         binding.emptyState.setVisibility(showEmpty ? View.VISIBLE : View.GONE);
@@ -136,6 +155,9 @@ public final class ContactsFragment extends Fragment {
     private void showAddByPhoneDialog() {
         viewModel.resetAddFlow();
         LinearLayout root = new LinearLayout(requireContext());
+        ScrollView scroll = new ScrollView(requireContext());
+        scroll.setFillViewport(true);
+        scroll.addView(root);
         root.setOrientation(LinearLayout.VERTICAL);
         int pad = getResources().getDimensionPixelSize(R.dimen.space_lg);
         int spaceSm = getResources().getDimensionPixelSize(R.dimen.space_sm);
@@ -144,7 +166,7 @@ public final class ContactsFragment extends Fragment {
 
         TextView title = new TextView(requireContext());
         title.setText(R.string.add_contact_title);
-        title.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleLarge);
+        title.setTextAppearance(R.style.TextAppearance_NexaChat_TitleLarge);
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -173,7 +195,10 @@ public final class ContactsFragment extends Fragment {
         root.addView(phoneLayout, phoneLp);
 
         addErrorText = new TextView(requireContext());
-        addErrorText.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium);
+        addErrorText.setTextAppearance(R.style.TextAppearance_NexaChat_BodyMedium);
+        addErrorText.setTextColor(MaterialColors.getColor(
+                addErrorText, com.google.android.material.R.attr.colorError));
+        addErrorText.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         addErrorText.setVisibility(View.GONE);
         LinearLayout.LayoutParams errLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -182,7 +207,8 @@ public final class ContactsFragment extends Fragment {
         root.addView(addErrorText, errLp);
 
         addResultText = new TextView(requireContext());
-        addResultText.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyLarge);
+        addResultText.setTextAppearance(R.style.TextAppearance_NexaChat_BodyLarge);
+        addResultText.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         addResultText.setVisibility(View.GONE);
         LinearLayout.LayoutParams resLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -191,7 +217,7 @@ public final class ContactsFragment extends Fragment {
         root.addView(addResultText, resLp);
 
         addDoneText = new TextView(requireContext());
-        addDoneText.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium);
+        addDoneText.setTextAppearance(R.style.TextAppearance_NexaChat_BodyMedium);
         addDoneText.setVisibility(View.GONE);
         addDoneText.setText(R.string.contact_added);
         LinearLayout.LayoutParams doneLp = new LinearLayout.LayoutParams(
@@ -236,7 +262,7 @@ public final class ContactsFragment extends Fragment {
         });
 
         addDialog = new MaterialAlertDialogBuilder(requireContext())
-                .setView(root)
+                .setView(scroll)
                 .setNegativeButton(android.R.string.cancel, (d, w) -> {
                     viewModel.resetAddFlow();
                     addDialog = null;

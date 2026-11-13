@@ -25,6 +25,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.color.MaterialColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
@@ -101,6 +102,8 @@ public final class GroupDetailFragment extends Fragment {
         MenuItem renameItem = binding.toolbar.getMenu().add(
                 Menu.NONE, MENU_RENAME, Menu.NONE, R.string.action_rename_group);
         renameItem.setIcon(R.drawable.ic_edit);
+        renameItem.getIcon().mutate().setTint(MaterialColors.getColor(
+                binding.toolbar, com.google.android.material.R.attr.colorOnSurfaceVariant));
         renameItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
         binding.toolbar.setOnMenuItemClickListener(this::onMenuItem);
         binding.membersHeader.setTitle(getString(R.string.group_detail_title));
@@ -110,16 +113,6 @@ public final class GroupDetailFragment extends Fragment {
         binding.errorState.setOnRetry(viewModel::loadMembers);
         binding.emptyState.setMessage(getString(R.string.group_members_empty));
         binding.emptyState.setIcon(R.drawable.ic_person_outline);
-        binding.groupAvatar.setOnClickListener(v -> {
-            if (viewModel.getUiState().getValue().isIAmAdmin()) {
-                avatarPicker.launch("image/*");
-            }
-        });
-        binding.groupTitle.setOnClickListener(v -> {
-            if (viewModel.getUiState().getValue().isIAmAdmin()) {
-                viewModel.openRename();
-            }
-        });
         viewModel.getUiState()
                 .observe(getViewLifecycleOwner(), this::render);
         viewModel.getEvents()
@@ -159,6 +152,22 @@ public final class GroupDetailFragment extends Fragment {
         binding.groupTitle.setText(title);
         binding.groupAvatar.setName(title);
         binding.groupAvatar.setAvatarUrl(state.getGroupAvatar());
+        boolean isAdmin = state.isIAmAdmin();
+        if (isAdmin) {
+            binding.groupAvatar.setOnClickListener(v -> avatarPicker.launch("image/*"));
+            binding.groupTitle.setOnClickListener(v -> viewModel.openRename());
+            binding.groupAvatar.setContentDescription(getString(R.string.group_change_avatar));
+            binding.groupTitle.setContentDescription(getString(R.string.action_rename_group));
+        } else {
+            binding.groupAvatar.setOnClickListener(null);
+            binding.groupTitle.setOnClickListener(null);
+            binding.groupAvatar.setContentDescription(title);
+            binding.groupTitle.setContentDescription(null);
+        }
+        binding.groupAvatar.setClickable(state.isIAmAdmin());
+        binding.groupAvatar.setFocusable(isAdmin);
+        binding.groupTitle.setClickable(state.isIAmAdmin());
+        binding.groupTitle.setFocusable(isAdmin);
         memberAdapter.setShowRemove(state.isIAmAdmin());
         memberAdapter.submitList(state.getMembers());
         binding.addMemberButton.setVisibility(state.isIAmAdmin() ? View.VISIBLE : View.GONE);

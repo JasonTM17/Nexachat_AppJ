@@ -140,7 +140,7 @@ final class ContactDetailBinder {
         root.addView(avatar, avatarLp);
 
         TextView name = new TextView(fragment.requireContext());
-        name.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleLarge);
+        name.setTextAppearance(R.style.TextAppearance_NexaChat_TitleLarge);
         name.setGravity(Gravity.CENTER_HORIZONTAL);
         name.setText(content.getTitle());
         root.addView(name, new LinearLayout.LayoutParams(
@@ -150,7 +150,7 @@ final class ContactDetailBinder {
         String identityLine = content.getIdentityLine();
         if (identityLine != null && !identityLine.isBlank()) {
             TextView phone = new TextView(fragment.requireContext());
-            phone.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium);
+            phone.setTextAppearance(R.style.TextAppearance_NexaChat_BodyMedium);
             phone.setGravity(Gravity.CENTER_HORIZONTAL);
             phone.setText(identityLine);
             LinearLayout.LayoutParams phoneLp = new LinearLayout.LayoutParams(

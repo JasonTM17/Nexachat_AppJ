@@ -5,8 +5,10 @@ import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import io.reactivex.rxjava3.subjects.SingleSubject;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -104,6 +106,65 @@ public final class InviteManageViewModelTest {
         viewModel.load("group-1");
 
         assertEquals(InviteFailure.OFFLINE, state().getFailure());
+    }
+
+    @Test
+    public void creationIsBlockedUntilInitialDataCompletes() {
+        SingleSubject<Optional<InviteLinkResponse>> activeLink = SingleSubject.create();
+        SingleSubject<List<JoinRequestResponse>> pendingRequests = SingleSubject.create();
+        repository.activeLink = activeLink;
+        repository.pendingRequests = pendingRequests;
+        InviteManageViewModel deferred = new InviteManageViewModel(repository);
+
+        deferred.load("group-deferred");
+        deferred.createOrRotate("2026-11-16T00:00:00Z", 10, false);
+
+        assertTrue(deferred.getState().getValue().isLoading());
+        assertNull(repository.lastCreateRequest);
+    }
+
+    @Test
+    public void requestReviewIsBlockedUntilInitialDataCompletes() {
+        SingleSubject<Optional<InviteLinkResponse>> activeLink = SingleSubject.create();
+        SingleSubject<List<JoinRequestResponse>> pendingRequests = SingleSubject.create();
+        repository.activeLink = activeLink;
+        repository.pendingRequests = pendingRequests;
+        InviteManageViewModel deferred = new InviteManageViewModel(repository);
+
+        deferred.load("group-deferred");
+        deferred.approve("request-1");
+        deferred.reject("request-1");
+
+        assertEquals(0, repository.approveCalls);
+        assertEquals(0, repository.rejectCalls);
+    }
+
+    @Test
+    public void retryAfterInitialFailureReloadsLinkAndRequestsOnSameViewModel() {
+        AtomicInteger activeLinkCalls = new AtomicInteger();
+        AtomicInteger pendingRequestCalls = new AtomicInteger();
+        repository.activeLink = Single.defer(() -> {
+            activeLinkCalls.incrementAndGet();
+            return Single.just(Optional.of(FakeInviteRepository.link("B".repeat(43), false)));
+        });
+        repository.pendingRequests = Single.defer(() -> {
+            int call = pendingRequestCalls.incrementAndGet();
+            return call == 1
+                    ? Single.error(new InviteApiException(InviteFailure.OFFLINE))
+                    : Single.just(List.of(FakeInviteRepository.request("PENDING")));
+        });
+        InviteManageViewModel retryable = new InviteManageViewModel(repository);
+
+        retryable.load("group-retry");
+        assertEquals(InviteFailure.OFFLINE, retryable.getState().getValue().getFailure());
+
+        retryable.load("group-retry");
+
+        assertEquals(2, activeLinkCalls.get());
+        assertEquals(2, pendingRequestCalls.get());
+        assertNull(retryable.getState().getValue().getFailure());
+        assertEquals("link-1", retryable.getState().getValue().getLink().id);
+        assertEquals(1, retryable.getState().getValue().getRequests().size());
     }
 
     private InviteManageUiState state() {

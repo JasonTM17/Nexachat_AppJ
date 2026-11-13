@@ -88,7 +88,6 @@ public final class GroupMemberAdapter extends ListAdapter<GroupMember, GroupMemb
             avatar.setName(member.getDisplayName());
             avatar.setAvatarUrl(member.getAvatarUrl());
             memberRole.setVisibility(member.isAdmin() ? View.VISIBLE : View.GONE);
-            itemView.setOnClickListener(v -> listener.onMemberClick(member.getUserId()));
             removeMember.setVisibility(showRemove && !member.isAdmin() ? View.VISIBLE : View.GONE);
             removeMember.setContentDescription(itemView.getContext().getString(
                     removeMemberContentDescriptionRes(), member.getDisplayName()));

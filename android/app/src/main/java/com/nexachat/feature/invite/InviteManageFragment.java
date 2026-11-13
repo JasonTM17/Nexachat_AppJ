@@ -32,6 +32,7 @@ public final class InviteManageFragment extends Fragment {
     private FragmentInviteManageBinding binding;
     private InviteManageViewModel viewModel;
     private InviteRequestAdapter requestAdapter;
+    private String conversationId;
     private int expiryDays = 7;
     private int maxUses;
     private boolean approvalDraft;
@@ -69,10 +70,10 @@ public final class InviteManageFragment extends Fragment {
         binding.copyButton.setOnClickListener(ignored -> copyLink());
         binding.shareButton.setOnClickListener(ignored -> shareLink());
         binding.revokeButton.setOnClickListener(ignored -> confirmRevoke());
-        binding.refreshRequestsButton.setOnClickListener(ignored -> viewModel.refreshRequests());
+        binding.refreshRequestsButton.setOnClickListener(ignored -> refreshInviteData());
         viewModel.getState().observe(getViewLifecycleOwner(), this::render);
 
-        String conversationId = getArguments() == null
+        conversationId = getArguments() == null
                 ? null : getArguments().getString("conversationId");
         if (conversationId != null) {
             viewModel.load(conversationId);
@@ -87,15 +88,16 @@ public final class InviteManageFragment extends Fragment {
                 loadingVisible ? getString(R.string.voice_status_loading) : null);
         InviteLinkResponse link = state.getLink();
         boolean hasLink = link != null;
+        binding.linkStatus.setVisibility(state.isLoaded() ? View.VISIBLE : View.GONE);
         if (hasLink) {
             approvalDraft = link.requiresApproval;
         }
         binding.linkStatus.setText(hasLink ? R.string.invite_active_link : R.string.invite_no_link);
         binding.createLinkButton.setText(hasLink ? R.string.invite_rotate : R.string.invite_create);
-        binding.createLinkButton.setEnabled(!state.isBusy());
-        binding.expiryButton.setEnabled(!state.isBusy());
-        binding.maxUsesButton.setEnabled(!state.isBusy());
-        binding.approvalSwitch.setEnabled(!state.isBusy());
+        binding.createLinkButton.setEnabled(state.isLoaded() && !state.isBusy());
+        binding.expiryButton.setEnabled(state.isLoaded() && !state.isBusy());
+        binding.maxUsesButton.setEnabled(state.isLoaded() && !state.isBusy());
+        binding.approvalSwitch.setEnabled(state.isLoaded() && !state.isBusy());
         binding.approvalSwitch.setOnCheckedChangeListener(null);
         binding.approvalSwitch.setChecked(hasLink ? link.requiresApproval : approvalDraft);
         binding.approvalSwitch.setOnCheckedChangeListener((button, checked) -> {
@@ -143,9 +145,24 @@ public final class InviteManageFragment extends Fragment {
         }
         List<JoinRequestResponse> requests = state.getRequests();
         requestAdapter.submitList(requests);
-        requestAdapter.setActionsEnabled(!state.isBusy());
-        binding.emptyRequests.setVisibility(requests.isEmpty() ? View.VISIBLE : View.GONE);
-        binding.refreshRequestsButton.setEnabled(!state.isBusy());
+        requestAdapter.setActionsEnabled(state.isLoaded() && !state.isBusy());
+        binding.emptyRequests.setVisibility(
+                state.isLoaded() && requests.isEmpty() ? View.VISIBLE : View.GONE);
+        boolean retryInitialLoad = failure != null && !state.isLoaded();
+        binding.refreshRequestsButton.setText(retryInitialLoad
+                ? R.string.action_retry : R.string.invite_refresh_requests);
+        binding.refreshRequestsButton.setEnabled(!state.isBusy() && !state.isLoading());
+    }
+
+    private void refreshInviteData() {
+        InviteManageUiState state = viewModel.getState().getValue();
+        if (state != null && !state.isLoaded()) {
+            if (conversationId != null && !conversationId.isBlank()) {
+                viewModel.load(conversationId);
+            }
+            return;
+        }
+        viewModel.refreshRequests();
     }
 
     private void showExpiryOptions() {
