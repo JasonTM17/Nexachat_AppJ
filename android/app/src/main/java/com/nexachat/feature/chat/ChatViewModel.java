@@ -98,6 +98,8 @@ public final class ChatViewModel extends ViewModel {
     private final MutableLiveData<Boolean> serverStarting = new MutableLiveData<>(false);
     @Nullable private final SettingsRepository settingsRepository;
     private final MutableLiveData<UiState> mutableUiState;
+    private final MutableLiveData<ChatEditSession> editSession;
+    private boolean editSubmitInFlight;
     private final MutableLiveData<AiOptOutState> aiOptOutState =
             new MutableLiveData<>(new AiOptOutState());
     private final MutableLiveData<ChatSearchState> mutableSearchState =
@@ -185,6 +187,7 @@ public final class ChatViewModel extends ViewModel {
         String input = savedStateHandle.get(KEY_INPUT);
         this.mutableUiState = new MutableLiveData<>(new UiState(
                 input == null ? "" : input));
+        this.editSession = new MutableLiveData<>(restoreEditSession());
         disposables.add(searchDisposable);
         disposables.add(initialHistoryDisposable);
         observeRepositoryState();
@@ -805,6 +808,135 @@ public final class ChatViewModel extends ViewModel {
                         updateUiState(state -> state.withError(failure.getError()));
                     }
                 }, this::surfaceStreamFailure));
+    }
+
+    public LiveData<ChatEditSession> getEditSession() {
+        return editSession;
+    }
+
+    @Nullable
+    public ChatEditSession currentEditSession() {
+        return editSession.getValue();
+    }
+
+    public boolean isEditing() {
+        return currentEditSession() != null;
+    }
+
+    public MentionDraft currentEditDraft() {
+        ChatEditSession current = currentEditSession();
+        return current == null ? MentionDraft.empty("") : current.getDraft();
+    }
+
+    /** Opens an edit without replacing the ordinary composer draft. */
+    public void beginEdit(ChatMessage message) {
+        if (message == null || !canEdit(message)) {
+            return;
+        }
+        String content = message.getContent() == null ? "" : message.getContent();
+        publishEditSession(new ChatEditSession(
+                message.getId(),
+                content,
+                MentionDraft.fromMessage(content, message.getMentions(), message.isMentionAll())));
+    }
+
+    public void onEditDraftChange(@Nullable MentionDraft draft) {
+        ChatEditSession current = currentEditSession();
+        if (current == null) {
+            return;
+        }
+        publishEditSession(current.withDraft(draft == null ? MentionDraft.empty("") : draft));
+    }
+
+    /** Drops the edit and leaves the ordinary composer draft in place. */
+    public void cancelEdit() {
+        editSubmitInFlight = false;
+        publishEditSession(null);
+    }
+
+    /**
+     * Saves the current edit. The draft stays until the save succeeds, and a
+     * failure or a second result does not clear the ordinary composer draft.
+     */
+    public void submitEdit() {
+        if (editSubmitInFlight) {
+            return;
+        }
+        ChatEditSession current = currentEditSession();
+        if (current == null) {
+            return;
+        }
+        MentionDraft trimmed = current.getDraft().trimmed();
+        if (trimmed.getContent().isEmpty()) {
+            return;
+        }
+        String messageId = current.getMessageId();
+        editSubmitInFlight = true;
+        disposables.add(messageRepository.editMessage(conversationId, messageId,
+                        trimmed.getContent(), trimmed.getMentions(), trimmed.isMentionAll())
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(result -> {
+                    editSubmitInFlight = false;
+                    if (result instanceof Result.Success<?>) {
+                        clearEditIfMatches(messageId);
+                        actionEvents.emit(new ChatActionEvent.MessageEdited(messageId));
+                    } else if (result instanceof Result.Failure<?> failure) {
+                        updateUiState(state -> state.withError(failure.getError()));
+                    }
+                }, error -> {
+                    editSubmitInFlight = false;
+                    surfaceStreamFailure(error);
+                }));
+    }
+
+    private void clearEditIfMatches(String messageId) {
+        ChatEditSession current = currentEditSession();
+        if (current != null && messageId.equals(current.getMessageId())) {
+            publishEditSession(null);
+        }
+    }
+
+    private void publishEditSession(@Nullable ChatEditSession session) {
+        if (session == null) {
+            savedStateHandle.set(ChatEditSession.KEY_MESSAGE_ID, null);
+            savedStateHandle.set(ChatEditSession.KEY_ORIGINAL, null);
+            savedStateHandle.set(ChatEditSession.KEY_DRAFT, null);
+            savedStateHandle.set(ChatEditSession.KEY_MENTIONS, null);
+            savedStateHandle.set(ChatEditSession.KEY_MENTION_ALL_OFFSET, null);
+            savedStateHandle.set(ChatEditSession.KEY_MENTION_ALL_LENGTH, null);
+        } else {
+            MentionDraft draft = session.getDraft();
+            savedStateHandle.set(ChatEditSession.KEY_MESSAGE_ID, session.getMessageId());
+            savedStateHandle.set(ChatEditSession.KEY_ORIGINAL, session.getOriginalContent());
+            savedStateHandle.set(ChatEditSession.KEY_DRAFT, draft.getContent());
+            savedStateHandle.set(ChatEditSession.KEY_MENTIONS,
+                    MessageMentionCodec.encode(draft.getMentions()));
+            savedStateHandle.set(ChatEditSession.KEY_MENTION_ALL_OFFSET, draft.getMentionAllOffset());
+            savedStateHandle.set(ChatEditSession.KEY_MENTION_ALL_LENGTH, draft.getMentionAllLength());
+        }
+        editSession.setValue(session);
+    }
+
+    @Nullable
+    private ChatEditSession restoreEditSession() {
+        String messageId = savedStateHandle.get(ChatEditSession.KEY_MESSAGE_ID);
+        if (messageId == null || messageId.isBlank()) {
+            return null;
+        }
+        String original = savedStateHandle.get(ChatEditSession.KEY_ORIGINAL);
+        String draft = savedStateHandle.get(ChatEditSession.KEY_DRAFT);
+        String mentions = savedStateHandle.get(ChatEditSession.KEY_MENTIONS);
+        Integer allOffset = savedStateHandle.get(ChatEditSession.KEY_MENTION_ALL_OFFSET);
+        Integer allLength = savedStateHandle.get(ChatEditSession.KEY_MENTION_ALL_LENGTH);
+        return new ChatEditSession(
+                messageId,
+                original == null ? "" : original,
+                MentionDraft.restore(
+                        draft == null ? "" : draft,
+                        MessageMentionCodec.decode(mentions),
+                        allOffset == null ? -1 : allOffset,
+                        allLength == null ? 0 : allLength));
     }
 
     private void clearMentionDraft() {

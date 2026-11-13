@@ -114,10 +114,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private RecallWindowConfig recallWindowConfig = RecallWindowConfig.DEFAULT;
     private String conversationId = "";
     private String pulsingMessageId;
-    private ChatMessage editingMessage;
-    private String editInput = "";
     private MentionDraft composerMentionDraft = MentionDraft.empty("");
-    private MentionDraft editingMentionDraft = MentionDraft.empty("");
     private MentionDraft.Query mentionQuery;
     private MentionSuggestionAdapter mentionAdapter;
     private List<GroupMember> groupMembers = List.of();
@@ -225,7 +222,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         list.setLayoutManager(layout);
         list.setAdapter(adapter);
         new androidx.recyclerview.widget.ItemTouchHelper(new ReplySwipeCallback(
-                adapter, () -> searchOpen || editingMessage != null, viewModel::setReplyTarget)).attachToRecyclerView(list);
+                adapter, () -> searchOpen || viewModel.isEditing(), viewModel::setReplyTarget)).attachToRecyclerView(list);
         list.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
                 if (binding == null || adapter == null) return;
@@ -292,18 +289,15 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             if (!binding.composerBar.sendButton.isEnabled()) {
                 return;
             }
-            binding.composerBar.sendButton.setEnabled(false);
-            if (editingMessage == null) {
+            if (viewModel.isEditing()) {
+                viewModel.submitEdit();
+                binding.composerBar.sendButton.setEnabled(
+                        !viewModel.currentEditDraft().getContent().isBlank());
+            } else {
+                binding.composerBar.sendButton.setEnabled(false);
                 binding.composerBar.sendButton.announceForAccessibility(
                         getString(R.string.cd_sending));
                 viewModel.send();
-            } else if (!editInput.isBlank()) {
-                viewModel.editMessage(editingMessage.getId(), editingMentionDraft);
-                editingMessage = null;
-                editInput = "";
-                editingMentionDraft = MentionDraft.empty("");
-                mentionQuery = null;
-                render();
             }
         });
         binding.composerBar.messageInput.setOnEditorActionListener((text, actionId, event) -> {
@@ -324,17 +318,17 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                 if (settingDraft) return;
                 boolean hasText = s != null && !s.toString().isBlank();
-                updateComposerButtons(hasText || editingMessage != null);
+                updateComposerButtons(hasText || viewModel.isEditing());
                 String value = s == null ? "" : s.toString();
-                if (editingMessage == null) {
+                if (!viewModel.isEditing()) {
                     composerMentionDraft = composerMentionDraft.afterEdit(start, before, count, value);
                     viewModel.onComposerDraftChange(composerMentionDraft);
                     applyMentionSpans(binding.composerBar.messageInput, composerMentionDraft);
                 } else {
-                    editInput = value;
-                    editingMentionDraft = editingMentionDraft.afterEdit(start, before, count, value);
-                    binding.composerBar.sendButton.setEnabled(!editInput.isBlank());
-                    applyMentionSpans(binding.composerBar.messageInput, editingMentionDraft);
+                    MentionDraft next = viewModel.currentEditDraft().afterEdit(start, before, count, value);
+                    viewModel.onEditDraftChange(next);
+                    binding.composerBar.sendButton.setEnabled(!next.getContent().isBlank());
+                    applyMentionSpans(binding.composerBar.messageInput, next);
                 }
                 updateMentionPicker(value, binding.composerBar.messageInput.getSelectionStart());
             }
@@ -353,7 +347,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     }
 
     private MentionDraft currentMentionDraft() {
-        return editingMessage == null ? composerMentionDraft : editingMentionDraft;
+        return viewModel.isEditing() ? viewModel.currentEditDraft() : composerMentionDraft;
     }
 
     private void updateMentionPicker(String text, int selectionStart) {
@@ -404,12 +398,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         binding.composerBar.messageInput.setSelection(Math.min(cursor, nextText.length()));
         settingDraft = false;
         binding.composerBar.messageInput.requestFocus();
-        if (editingMessage == null) {
+        if (!viewModel.isEditing()) {
             composerMentionDraft = next;
             viewModel.onComposerDraftChange(next);
         } else {
-            editingMentionDraft = next;
-            editInput = nextText;
+            viewModel.onEditDraftChange(next);
         }
         applyMentionSpans(binding.composerBar.messageInput, next);
         updateComposerButtons(true);
@@ -421,10 +414,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         settingDraft = true;
         binding.composerBar.messageInput.setText("");
         settingDraft = false;
-        composerMentionDraft = MentionDraft.empty("");
-        editingMentionDraft = MentionDraft.empty("");
-        editInput = "";
-        if (editingMessage == null) viewModel.onComposerDraftChange(composerMentionDraft);
+        if (viewModel.isEditing()) {
+            viewModel.onEditDraftChange(MentionDraft.empty(""));
+        } else {
+            composerMentionDraft = MentionDraft.empty("");
+            viewModel.onComposerDraftChange(composerMentionDraft);
+        }
         binding.mentionPicker.setVisibility(View.GONE);
         updateComposerButtons(false);
         Snackbar.make(binding.getRoot(), R.string.mention_limit_exceeded, Snackbar.LENGTH_LONG).show();
@@ -468,7 +463,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         binding.composerBar.micButton.setVisibility(showSend ? View.GONE : View.VISIBLE);
         if (showSend) {
             ChatComposerEditPresentation.applySendButton(
-                    binding.composerBar.sendButton, editingMessage != null);
+                    binding.composerBar.sendButton, viewModel.isEditing());
         }
     }
 
@@ -656,7 +651,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private void restoreComposerAfterRecording() {
         if (binding == null) return;
         binding.composerBar.recordingOverlay.setVisibility(View.GONE);
-        binding.composerBar.attachButton.setVisibility(editingMessage == null ? View.VISIBLE : View.GONE);
+        binding.composerBar.attachButton.setVisibility(viewModel.isEditing() ? View.GONE : View.VISIBLE);
         binding.composerBar.messageInput.setVisibility(View.VISIBLE);
         binding.composerBar.recordingDot.setAlpha(1f);
     }
@@ -671,6 +666,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 render();
             }
         });
+        viewModel.getEditSession().observe(getViewLifecycleOwner(), ignored -> render());
         viewModel.getSearchState().observe(getViewLifecycleOwner(), next -> {
             if (next != null) {
                 searchState = next;
@@ -762,18 +758,19 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         renderAttachments();
         if (!searchOpen) submitMessages(state.getMessages());
         settingDraft = true;
-        String input = editingMessage == null ? state.getInput() : editInput;
+        ChatEditSession editing = viewModel.currentEditSession();
+        String input = editing == null ? state.getInput() : editing.getDraft().getContent();
         if (!String.valueOf(binding.composerBar.messageInput.getText()).contentEquals(input)) binding.composerBar.messageInput.setText(input);
         settingDraft = false;
-        MentionDraft visibleDraft = editingMessage == null
-                ? viewModel.getMentionDraft() : editingMentionDraft;
-        if (editingMessage == null && visibleDraft.getContent().equals(input)) composerMentionDraft = visibleDraft;
-        applyMentionSpans(binding.composerBar.messageInput, editingMessage == null
-                ? composerMentionDraft : editingMentionDraft);
+        MentionDraft visibleDraft = editing == null
+                ? viewModel.getMentionDraft() : editing.getDraft();
+        if (editing == null && visibleDraft.getContent().equals(input)) composerMentionDraft = visibleDraft;
+        applyMentionSpans(binding.composerBar.messageInput, editing == null
+                ? composerMentionDraft : editing.getDraft());
         updateMentionPicker(input, binding.composerBar.messageInput.getSelectionStart());
-        binding.composerBar.attachButton.setVisibility(editingMessage == null ? View.VISIBLE : View.GONE);
+        binding.composerBar.attachButton.setVisibility(editing == null ? View.VISIBLE : View.GONE);
         boolean hasText = input != null && !input.isBlank();
-        updateComposerButtons(hasText || editingMessage != null);
+        updateComposerButtons(hasText || editing != null);
     }
 
     private void applyLargeTypeToolbar() {
@@ -848,8 +845,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
     private void renderReplyEditBanner() {
         View root = binding.replyEditBanner.getRoot();
-        if (editingMessage != null) {
-            ChatInteractionsViews.bindReplyBanner(root, getString(R.string.action_edit) + ": " + editingMessage.getContent(), () -> { editingMessage = null; editInput = ""; editingMentionDraft = MentionDraft.empty(""); mentionQuery = null; render(); });
+        ChatEditSession editing = viewModel.currentEditSession();
+        if (editing != null) {
+            ChatInteractionsViews.bindReplyBanner(root, getString(R.string.action_edit) + ": " + editing.getOriginalContent(), () -> { viewModel.cancelEdit(); mentionQuery = null; render(); });
             root.findViewById(R.id.cancelReplyEdit).setContentDescription(getString(R.string.cd_cancel_edit));
             ((android.widget.ImageView) root.findViewById(R.id.replyIcon)).setImageResource(R.drawable.ic_edit);
             return;
@@ -1479,9 +1477,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     @Override public void onReactionTap(@NonNull String messageId, @NonNull String emoji) { ChatMessage message = resolveOriginal(messageId); if (message != null) viewModel.toggleReaction(message, emoji); }
 
     private void showEdit(ChatMessage message) {
-        editingMessage = message;
-        editInput = message.getContent() == null ? "" : message.getContent();
-        editingMentionDraft = MentionDraft.fromMessage(editInput, message.getMentions(), message.isMentionAll());
+        viewModel.beginEdit(message);
         mentionQuery = null;
         render();
         binding.composerBar.messageInput.requestFocus();

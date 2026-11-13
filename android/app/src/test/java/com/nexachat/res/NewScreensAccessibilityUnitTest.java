@@ -125,11 +125,11 @@ public final class NewScreensAccessibilityUnitTest {
                 "binding.composerBar.messageInput.setOnEditorActionListener", handlerStart);
         assertTrue("send button handler must be present", handlerStart >= 0 && handlerEnd > handlerStart);
         String handler = source.substring(handlerStart, handlerEnd);
-        int sendBranchStart = handler.indexOf("if (editingMessage == null)");
-        int editBranchStart = handler.indexOf("} else if", sendBranchStart);
+        int editBranchStart = handler.indexOf("if (viewModel.isEditing())");
+        int sendBranchStart = handler.indexOf("} else {", editBranchStart);
         assertTrue("new-message send branch must be present",
-                sendBranchStart >= 0 && editBranchStart > sendBranchStart);
-        String sendBranch = handler.substring(sendBranchStart, editBranchStart)
+                editBranchStart >= 0 && sendBranchStart > editBranchStart);
+        String sendBranch = handler.substring(sendBranchStart, handler.length())
                 .replaceAll("\\s+", "");
         assertEquals("send branch must announce once", 1,
                 countOccurrences(sendBranch, "announceForAccessibility("));
