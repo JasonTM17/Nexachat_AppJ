@@ -24,18 +24,21 @@
   <a class="skip-link" href="#main">Bỏ qua đến nội dung</a>
   <main id="main" class="container">
     <div class="card card--prose">
-      <h1 class="brand brand-lockup">
-        <svg class="brand-mark" viewBox="0 0 108 108" aria-hidden="true" focusable="false"><path d="M24 20H36L64 60V20H80V84H66L40 47V72L24 84Z"/></svg>
-        <span>Tải NexaChat</span>
-      </h1>
-      <p class="lead" lang="vi">Tập tin cài đặt APK cho thiết bị Android.</p>
-      <p class="lead" lang="en">APK installation package for Android devices.</p>
-
-      <div class="page-actions">
-        <a class="btn" href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest" aria-label="Tải APK mới nhất, Download latest APK">Tải APK mới nhất · Download latest APK</a>
-      </div>
-
-      <div class="prose" lang="vi">
+      <nav class="language-switch" aria-label="Ngôn ngữ / Language">
+        <a href="#lang-vi" lang="vi">Tiếng Việt</a>
+        <span aria-hidden="true">/</span>
+        <a href="#lang-en" lang="en">English</a>
+      </nav>
+      <section id="lang-vi" class="prose language-section" lang="vi" aria-labelledby="download-title-vi">
+        <h1 id="download-title-vi" class="brand brand-lockup">
+          <svg class="brand-mark" viewBox="0 0 108 108" aria-hidden="true" focusable="false"><path d="M24 20H36L64 60V20H80V84H66L40 47V72L24 84Z"/></svg>
+          <span>Tải NexaChat</span>
+        </h1>
+        <p class="lead">Tập tin cài đặt APK cho thiết bị Android.</p>
+        <div class="page-actions">
+          <a class="btn" href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest" aria-label="Mở bản phát hành mới nhất, Open latest release">Mở bản phát hành mới nhất</a>
+          <p class="install-hint">Chọn tệp APK trong mục Assets trên trang bản phát hành mới nhất.</p>
+        </div>
         <h2>Yêu cầu hệ thống</h2>
         <p>Hệ điều hành tối thiểu: <strong>Android 8.0 (API 26)</strong> trở lên.</p>
 
@@ -55,10 +58,16 @@
         <p>So sánh mã băm thu được với giá trị được công bố trong tệp <code>.sha256</code> trên trang phát hành GitHub Releases.</p>
 
         <h2>Quy định và điều khoản</h2>
-        <p>Xem <a href="/privacy.html">Quyền riêng tư</a> và <a href="/terms.html">Điều khoản sử dụng</a> để biết thông tin chi tiết về bảo mật dữ liệu và phạm vi dịch vụ.</p>
-      </div>
+        <p>Xem <a href="/privacy.html#lang-vi">Quyền riêng tư</a> và <a href="/terms.html#lang-vi">Điều khoản sử dụng</a> để biết thông tin chi tiết về bảo mật dữ liệu và phạm vi dịch vụ.</p>
+      </section>
 
-      <div class="prose" lang="en">
+      <section id="lang-en" class="prose language-section" lang="en" aria-labelledby="download-title-en">
+        <h1 id="download-title-en" class="brand">Download NexaChat</h1>
+        <p class="lead">APK installation package for Android devices.</p>
+        <div class="page-actions">
+          <a class="btn" href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest" aria-label="Open latest release">Open latest release</a>
+          <p class="install-hint">Choose the APK under Assets on the latest release page.</p>
+        </div>
         <h2>System requirements</h2>
         <p>Minimum operating system: <strong>Android 8.0 (API 26)</strong> or newer.</p>
 
@@ -78,22 +87,22 @@
         <p>Compare the computed hash against the value published in the <code>.sha256</code> release asset on GitHub Releases.</p>
 
         <h2>Privacy and terms</h2>
-        <p>Review our <a href="/privacy.html">Privacy Policy</a> and <a href="/terms.html">Terms of Service</a> for data handling and service scope details.</p>
-      </div>
+        <p>Review our <a href="/privacy.html#lang-en">Privacy Policy</a> and <a href="/terms.html#lang-en">Terms of Service</a> for data handling and service scope details.</p>
+      </section>
 
       <p class="page-actions"><a class="btn btn-secondary" href="/">Trang chủ · Home</a></p>
     </div>
   </main>
   <footer class="site-footer">
-    <nav aria-label="Pháp lý">
-      <a href="/download.html" aria-current="page" lang="vi">Tải ứng dụng</a>
-      <a href="/download.html" aria-current="page" lang="en">Download</a>
-      <a href="/privacy.html" lang="vi">Quyền riêng tư</a>
-      <a href="/privacy.html" lang="en">Privacy</a>
-      <a href="/terms.html" lang="vi">Điều khoản</a>
-      <a href="/terms.html" lang="en">Terms</a>
-      <a href="/delete-account.html" lang="vi">Xóa tài khoản</a>
-      <a href="/delete-account.html" lang="en">Delete account</a>
+    <nav aria-label="Điều hướng pháp lý / Legal navigation">
+      <a href="/download.html#lang-vi" aria-current="page" lang="vi">Tải ứng dụng</a>
+      <a href="/download.html#lang-en" aria-current="page" lang="en">Download</a>
+      <a href="/privacy.html#lang-vi" lang="vi">Quyền riêng tư</a>
+      <a href="/privacy.html#lang-en" lang="en">Privacy</a>
+      <a href="/terms.html#lang-vi" lang="vi">Điều khoản</a>
+      <a href="/terms.html#lang-en" lang="en">Terms</a>
+      <a href="/delete-account.html#lang-vi" lang="vi">Xóa tài khoản</a>
+      <a href="/delete-account.html#lang-en" lang="en">Delete account</a>
     </nav>
   </footer>
 </body>

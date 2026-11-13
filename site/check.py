@@ -713,22 +713,20 @@ DELETION_PAGE_VI_PHRASES = (
     "Cài đặt",
     "Xóa tài khoản",
     "mật khẩu hiện tại",
+    "email đã xác minh",
     "Dữ liệu bị xóa",
     "Dữ liệu còn lại và thời gian lưu",
     "quản trị viên duy nhất",
-    "Google Play",
-    "email khôi phục đã xác minh",
     "Xóa trên web chưa khả dụng",
 )
 DELETION_PAGE_EN_PHRASES = (
     "Settings",
     "Delete account",
     "current password",
+    "verified email",
     "Data that is deleted",
     "Data that remains and how long it is kept",
     "only admin",
-    "Google Play",
-    "verified recovery email",
     "Web deletion is not available yet",
 )
 DELETION_NEUTRAL_REQUEST_VI = "Nếu số này có email khôi phục đã xác minh, chúng tôi đã gửi mã."
@@ -1115,15 +1113,94 @@ def test_bilingual_user_visible_text():
     if os.path.isfile(join_path):
         with open(join_path, "r", encoding="utf-8") as f:
             join_html = f.read()
-        if "com.nexachat" not in join_html:
-            failures.append("join/index.html must mention package id com.nexachat in install instructions")
-        if "Google Play" not in join_html:
-            failures.append("join/index.html must mention Google Play install path")
+        join_text = re.sub(r"<[^>]*>", " ", join_html)
+        join_text = re.sub(r"\s+", " ", join_text).casefold()
+        join_text = re.sub(r"\s+([,.;:!?])", r"\1", join_text)
+        if 'href="/download.html#lang-vi"' not in join_html or "tải apk từ bản phát hành mới nhất (mục assets), rồi mở lại lời mời này" not in join_text:
+            failures.append("join/index.html must link Vietnamese invitees to the APK release Assets and tell them to reopen the invite")
+        if 'href="/download.html#lang-en"' not in join_html or "download the apk from the latest release (assets), then reopen this invite" not in join_text:
+            failures.append("join/index.html must link English invitees to the APK release Assets and tell them to reopen the invite")
+        if "com.nexachat" in join_html or "Google Play" in join_html:
+            failures.append("join/index.html must not direct invitees to an unverified Play listing or package-id search")
         if "App Store" in join_html:
             failures.append("join/index.html must not claim an iOS App Store listing (Android-only client)")
 
     if not failures:
-        log_pass("Public HTML pages include vi/en text and join install fallback copy")
+        log_pass("Public HTML pages include vi/en text and a release-based invite install path")
+    return failures
+
+
+def test_bilingual_language_navigation():
+    """Long bilingual pages expose named language sections and matching footer links."""
+    failures = []
+    long_pages = {
+        "privacy.html": ("privacy-title-vi", "privacy-title-en"),
+        "terms.html": ("terms-title-vi", "terms-title-en"),
+        "download.html": ("download-title-vi", "download-title-en"),
+        "delete-account.html": ("delete-title-vi", "delete-title-en"),
+    }
+    footer_pages = REQUIRED_HTML_PAGES
+    footer_targets = (
+        "/download.html",
+        "/privacy.html",
+        "/terms.html",
+        "/delete-account.html",
+    )
+
+    for rel_page, title_ids in long_pages.items():
+        path = os.path.join(SITE_DIR, rel_page)
+        if not os.path.isfile(path):
+            failures.append(f"Missing bilingual page {rel_page}")
+            continue
+        with open(path, "r", encoding="utf-8") as f:
+            page_html = f.read()
+        switch_start = page_html.find('<nav class="language-switch"')
+        first_section = page_html.find('<section id="lang-vi"')
+        if switch_start == -1 or first_section == -1 or switch_start > first_section:
+            failures.append(f"{rel_page} must show language links before its language sections")
+        for fragment, label, lang in (("lang-vi", "Tiếng Việt", "vi"), ("lang-en", "English", "en")):
+            if f'href="#{fragment}" lang="{lang}">{label}</a>' not in page_html:
+                failures.append(f"{rel_page} missing the visible {label} language jump link")
+            section = re.search(
+                rf'<section\b(?=[^>]*\bid="{fragment}")([^>]*)>(.*?)</section>',
+                page_html,
+                re.IGNORECASE | re.DOTALL,
+            )
+            if section is None:
+                failures.append(f"{rel_page} missing the #{fragment} language section")
+                continue
+            attrs, body = section.groups()
+            if re.search(rf'\blang="{lang}"', attrs, re.IGNORECASE) is None:
+                failures.append(f"{rel_page} #{fragment} section must declare lang=\"{lang}\"")
+            labelled_by = re.search(r'\baria-labelledby="([^"]+)"', attrs, re.IGNORECASE)
+            title_id = title_ids[0 if lang == "vi" else 1]
+            title = re.search(rf'<h1\b(?=[^>]*\bid="{re.escape(title_id)}")[^>]*>(.*?)</h1>', body, re.IGNORECASE | re.DOTALL)
+            if labelled_by is None or title_id not in labelled_by.group(1).split() or title is None:
+                failures.append(f"{rel_page} #{fragment} needs a section landmark named by its translated title")
+            elif not re.sub(r"<[^>]*>", "", title.group(1)).strip():
+                failures.append(f"{rel_page} #{fragment} title must have visible text")
+
+    for rel_page in footer_pages:
+        path = os.path.join(SITE_DIR, rel_page)
+        if not os.path.isfile(path):
+            continue
+        with open(path, "r", encoding="utf-8") as f:
+            page_html = f.read()
+        footer_start = page_html.find("<footer")
+        footer_html = page_html[footer_start:] if footer_start >= 0 else ""
+        if 'aria-label="Điều hướng pháp lý / Legal navigation"' not in footer_html:
+            failures.append(f"{rel_page} footer navigation needs Vietnamese and English landmark text")
+        for target in footer_targets:
+            for fragment, lang in (("lang-vi", "vi"), ("lang-en", "en")):
+                anchor = re.compile(
+                    rf'<a\b(?=[^>]*\bhref="{re.escape(target)}#{fragment}")(?=[^>]*\blang="{lang}")[^>]*>',
+                    re.IGNORECASE,
+                )
+                if anchor.search(footer_html) is None:
+                    failures.append(f"{rel_page} footer must link {target}#{fragment} with lang=\"{lang}\"")
+
+    if not failures:
+        log_pass("Long bilingual pages have translated section landmarks, jump links, and matching footer targets")
     return failures
 
 
@@ -1169,10 +1246,53 @@ def test_privacy_policy_disclosures():
     for phrase in PRIVACY_BRIDGE_EN_PHRASES:
         if phrase not in html:
             failures.append(f"privacy.html missing English Firebase disclosure: {ascii(phrase)}")
+    failures.extend(account_guidance_failures(html, "privacy.html"))
     if not failures:
         log_pass(
-            "Privacy page discloses Firebase call status, lastSeen, retention, and default-off flags in vi/en"
+            "Privacy page discloses Firebase behavior and conditional account guidance in vi/en"
         )
+    return failures
+
+
+def account_guidance_failures(markup: str, rel_page: str) -> list[str]:
+    """Check the conditions and available account paths without freezing sentence wording."""
+    visible_text = re.sub(r"<[^>]*>", " ", markup)
+    visible_text = re.sub(r"\s+", " ", visible_text).casefold()
+    meanings = {
+        "vi": (
+            (
+                "Google account creation must be conditional on the operator enabling it",
+                r"khi nhà vận hành bật.{0,100}google.{0,80}(?:có thể|được phép) tạo tài khoản",
+            ),
+            (
+                "password deletion must fall back to a verified-email code for passwordless accounts",
+                r"mật khẩu hiện tại nếu tài khoản có mật khẩu.{0,120}nếu tài khoản không có mật khẩu.{0,100}mã.{0,80}email đã xác minh",
+            ),
+            (
+                "web deletion must be limited to phone accounts and phone-less Google accounts directed to the app",
+                r"biểu mẫu xóa trên web.{0,100}chỉ dành cho tài khoản có số điện thoại.{0,120}google.{0,60}không có số điện thoại.{0,100}xóa trong ứng dụng",
+            ),
+        ),
+        "en": (
+            (
+                "Google account creation must be conditional on the operator enabling it",
+                r"when the operator enables both google sign-in and account creation.{0,100}google can create.{0,60}account",
+            ),
+            (
+                "password deletion must fall back to a verified-email code for passwordless accounts",
+                r"current password if the account has (?:one|a password).{0,120}if the account has no password.{0,100}code.{0,80}verified email",
+            ),
+            (
+                "web deletion must be limited to phone accounts and phone-less Google accounts directed to the app",
+                r"web deletion form.{0,100}(?:only for|only applies to) accounts with a phone number.{0,120}google.{0,60}without a phone.{0,100}delete.{0,50}in the app",
+            ),
+        ),
+    }
+    failures = []
+    for lang, checks in meanings.items():
+        for description, pattern in checks:
+            if re.search(pattern, visible_text, re.IGNORECASE) is None:
+                failures.append(f"{rel_page} ({lang}) must state that {description}")
     return failures
 
 
@@ -1197,12 +1317,13 @@ def test_account_deletion_page():
     for phrase in DELETION_PAGE_EN_PHRASES:
         if phrase not in html:
             failures.append(f"{DELETION_PAGE} missing English deletion copy: {phrase}")
+    failures.extend(account_guidance_failures(html, DELETION_PAGE))
 
     privacy_path = os.path.join(SITE_DIR, "privacy.html")
     if os.path.isfile(privacy_path):
         with open(privacy_path, "r", encoding="utf-8") as f:
             privacy_html = f.read()
-        if privacy_html.count('href="/delete-account.html"') < 2:
+        if 'href="/delete-account.html#lang-vi"' not in privacy_html or 'href="/delete-account.html#lang-en"' not in privacy_html:
             failures.append("privacy.html must link the deletion page from its body and its footer")
     else:
         failures.append("Missing site/privacy.html")
@@ -1213,8 +1334,13 @@ def test_account_deletion_page():
             continue
         with open(path, "r", encoding="utf-8") as f:
             page_html = f.read()
-        if 'href="/delete-account.html"' not in page_html:
-            failures.append(f"{rel_page} footer must link /delete-account.html")
+        for fragment, lang in (("lang-vi", "vi"), ("lang-en", "en")):
+            anchor = re.compile(
+                rf'<a\b(?=[^>]*\bhref="/delete-account.html#{fragment}")(?=[^>]*\blang="{lang}")[^>]*>',
+                re.IGNORECASE,
+            )
+            if anchor.search(page_html) is None:
+                failures.append(f"{rel_page} footer must link /delete-account.html#{fragment} with lang=\"{lang}\"")
 
     if DELETION_NEUTRAL_REQUEST_VI not in html:
         failures.append(f"{DELETION_PAGE} missing neutral post-request copy (vi)")
@@ -1279,6 +1405,16 @@ def test_download_page():
     )
     if not btn_pattern.search(html):
         failures.append(f"{DOWNLOAD_PAGE} missing primary .btn link to {OFFICIAL_RELEASE_APK_URL}")
+    download_text = re.sub(r"<[^>]*>", " ", html)
+    download_text = re.sub(r"\s+", " ", download_text).casefold()
+    if "mở bản phát hành mới nhất" not in download_text:
+        failures.append(f"{DOWNLOAD_PAGE} missing the Vietnamese latest-release button label")
+    if "open latest release" not in download_text:
+        failures.append(f"{DOWNLOAD_PAGE} missing the English latest-release button label")
+    if "chọn tệp apk trong mục assets" not in download_text:
+        failures.append(f"{DOWNLOAD_PAGE} missing the Vietnamese APK-under-Assets hint")
+    if "choose the apk under assets" not in download_text:
+        failures.append(f"{DOWNLOAD_PAGE} missing the English APK-under-Assets hint")
 
     # Dynamic minSdk check against android/app/build.gradle
     min_sdk, err = read_android_min_sdk()
@@ -1309,9 +1445,9 @@ def test_download_page():
         failures.append(f"{DOWNLOAD_PAGE} missing Get-FileHash verification command")
 
     # Links to privacy and terms
-    if 'href="/privacy.html"' not in html:
+    if 'href="/privacy.html#lang-vi"' not in html or 'href="/privacy.html#lang-en"' not in html:
         failures.append(f"{DOWNLOAD_PAGE} missing link to /privacy.html")
-    if 'href="/terms.html"' not in html:
+    if 'href="/terms.html#lang-vi"' not in html or 'href="/terms.html#lang-en"' not in html:
         failures.append(f"{DOWNLOAD_PAGE} missing link to /terms.html")
 
     # Navigation and footer links in index.html
@@ -1325,7 +1461,7 @@ def test_download_page():
             failures.append("index.html navigation must link to /download.html")
         # Check footer in index.html
         footer_idx = index_html.find("<footer")
-        if footer_idx == -1 or 'href="/download.html"' not in index_html[footer_idx:]:
+        if footer_idx == -1 or 'href="/download.html#lang-vi"' not in index_html[footer_idx:] or 'href="/download.html#lang-en"' not in index_html[footer_idx:]:
             failures.append("index.html footer must link to /download.html")
     else:
         failures.append("Missing site/index.html")
@@ -1457,7 +1593,12 @@ def test_vercel_ignore_command(vercel_data):
     if os.path.isfile(sh_script):
         bash_path = shutil.which("bash")
         if bash_path:
-            proc = subprocess.run([bash_path, sh_script], capture_output=True, text=True)
+            proc = subprocess.run(
+                [bash_path, os.path.relpath(sh_script, REPO_DIR).replace(os.sep, "/")],
+                cwd=REPO_DIR,
+                capture_output=True,
+                text=True,
+            )
             if proc.returncode != 0:
                 failures.append(
                     f"tools/test-vercel-ignore-command.sh failed (exit {proc.returncode}):\n{proc.stdout}\n{proc.stderr}"
@@ -1610,6 +1751,9 @@ def main():
 
     f_i18n = test_bilingual_user_visible_text()
     all_failures.extend(f_i18n)
+
+    f_language_navigation = test_bilingual_language_navigation()
+    all_failures.extend(f_language_navigation)
 
     f_privacy = test_privacy_policy_disclosures()
     all_failures.extend(f_privacy)

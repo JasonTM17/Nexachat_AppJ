@@ -22,10 +22,14 @@
   <a class="skip-link" href="#main">Bỏ qua đến nội dung</a>
   <main id="main" class="container">
     <div class="card card--prose">
-      <h1 class="brand">Điều khoản</h1>
-      <p class="lead" lang="vi">Phạm vi dịch vụ như mô tả trong mã nguồn mở của dự án.</p>
-      <p class="lead" lang="en">Service scope as described in the project source.</p>
-      <div class="prose" lang="vi">
+      <nav class="language-switch" aria-label="Ngôn ngữ / Language">
+        <a href="#lang-vi" lang="vi">Tiếng Việt</a>
+        <span aria-hidden="true">/</span>
+        <a href="#lang-en" lang="en">English</a>
+      </nav>
+      <section id="lang-vi" class="prose language-section" lang="vi" aria-labelledby="terms-title-vi">
+        <h1 id="terms-title-vi" class="brand">Điều khoản</h1>
+        <p class="lead">Phạm vi dịch vụ như mô tả trong mã nguồn mở của dự án.</p>
         <h2>Phạm vi</h2>
         <p>NexaChat cung cấp nhắn tin 1-1 và nhóm trên Android, đồng bộ qua REST và WebSocket STOMP tới backend Spring Boot mà nhà vận hành triển khai.</p>
         <h2>Tài khoản</h2>
@@ -36,8 +40,10 @@
         <p>Dịch vụ có giới hạn tốc độ, kích thước tệp và retention tùy cấu hình nhà vận hành. Không đảm bảo mã hóa đầu cuối hay khả dụng 100%.</p>
         <h2>Liên kết mời</h2>
         <p>Liên kết <code>/join/&lt;token&gt;</code> mở ứng dụng Android khi token hợp lệ và App Links được cấu hình đúng.</p>
-      </div>
-      <div class="prose" lang="en">
+      </section>
+      <section id="lang-en" class="prose language-section" lang="en" aria-labelledby="terms-title-en">
+        <h1 id="terms-title-en" class="brand">Terms of Service</h1>
+        <p class="lead">Service scope as described in the project source.</p>
         <h2>Scope</h2>
         <p>NexaChat provides direct and group messaging on Android, synced via REST and STOMP WebSocket to a Spring Boot backend run by the operator.</p>
         <h2>Accounts</h2>
@@ -48,20 +54,20 @@
         <p>Rate limits, file sizes, and retention depend on operator configuration. There is no end-to-end encryption guarantee or 100% uptime guarantee.</p>
         <h2>Invite links</h2>
         <p><code>/join/&lt;token&gt;</code> opens the Android app when the token is valid and App Links are configured correctly.</p>
-      </div>
+      </section>
       <p class="page-actions"><a class="btn btn-secondary" href="/">Trang chủ · Home</a></p>
     </div>
   </main>
   <footer class="site-footer">
-    <nav aria-label="Pháp lý">
-      <a href="/download.html" lang="vi">Tải ứng dụng</a>
-      <a href="/download.html" lang="en">Download</a>
-      <a href="/privacy.html" lang="vi">Quyền riêng tư</a>
-      <a href="/privacy.html" lang="en">Privacy</a>
-      <a href="/terms.html" aria-current="page" lang="vi">Điều khoản</a>
-      <a href="/terms.html" aria-current="page" lang="en">Terms</a>
-      <a href="/delete-account.html" lang="vi">Xóa tài khoản</a>
-      <a href="/delete-account.html" lang="en">Delete account</a>
+    <nav aria-label="Điều hướng pháp lý / Legal navigation">
+      <a href="/download.html#lang-vi" lang="vi">Tải ứng dụng</a>
+      <a href="/download.html#lang-en" lang="en">Download</a>
+      <a href="/privacy.html#lang-vi" lang="vi">Quyền riêng tư</a>
+      <a href="/privacy.html#lang-en" lang="en">Privacy</a>
+      <a href="/terms.html#lang-vi" aria-current="page" lang="vi">Điều khoản</a>
+      <a href="/terms.html#lang-en" aria-current="page" lang="en">Terms</a>
+      <a href="/delete-account.html#lang-vi" lang="vi">Xóa tài khoản</a>
+      <a href="/delete-account.html#lang-en" lang="en">Delete account</a>
     </nav>
   </footer>
 </body>
