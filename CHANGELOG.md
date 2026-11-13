@@ -6,6 +6,30 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-11-13
+
+Android-only release after `v1.2.3`: calmer plum palette and a second UI polish
+pass. The server stays at `v1.2.1`; no migration, no new environment variable.
+See [docs/release-notes/v1.2.4.md](docs/release-notes/v1.2.4.md).
+
+### Android
+
+**Changed**
+
+- Colours follow the Stitch plum: filled controls (floating button, checked
+  chips, unread badge, send button, camera badge) keep the same plum with white
+  text in light and dark mode instead of a pale pink fill at night; surfaces and
+  dividers are quieter; the dark accent for text and icons is softer.
+- Avatars use three plum tones instead of eight unrelated pastels; sender names
+  in group chats use six distinct colours and no longer reuse the error red.
+- Inbox: one compact filter row (labels only when they exist), your own name and
+  photo in the top bar, an Active Now rail that lists only people who are online,
+  and no blank preview line for conversations without a message.
+- Chat: the inline error has its own surface; the message field has a comfortable
+  inset.
+- Profile: the theme is shown once, on the three chips; a long display name is
+  centred; the toolbar title uses the shared title style.
+
 ## [1.2.3] - 2026-11-13
 
 Android-only release after `v1.2.2`: whole-app UI pass and accessibility fixes.
