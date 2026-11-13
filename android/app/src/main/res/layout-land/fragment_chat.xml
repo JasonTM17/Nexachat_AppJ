@@ -162,7 +162,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
 
-    <TextView android:id="@+id/chatError" android:layout_width="0dp" android:layout_height="wrap_content" android:paddingHorizontal="@dimen/space_md" android:paddingVertical="@dimen/space_xs" android:textColor="?attr/colorError" android:visibility="gone" app:layout_constraintBottom_toTopOf="@id/replyEditBanner" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" />
+    <TextView android:id="@+id/chatError" android:layout_width="0dp" android:layout_height="wrap_content" android:background="@drawable/bg_auth_inline_error" android:paddingHorizontal="@dimen/space_md" android:paddingVertical="@dimen/space_xs" android:textColor="?attr/colorOnErrorContainer" android:visibility="gone" app:layout_constraintBottom_toTopOf="@id/replyEditBanner" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" />
     <LinearLayout android:id="@+id/pendingAttachments" android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:paddingHorizontal="@dimen/space_md" android:paddingVertical="@dimen/space_xs" android:visibility="gone" app:layout_constraintBottom_toTopOf="@id/chatError" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" />
 
     <com.nexachat.core.ui.components.EmptyStateView

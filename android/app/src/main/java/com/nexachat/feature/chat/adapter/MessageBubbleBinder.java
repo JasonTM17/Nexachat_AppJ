@@ -69,11 +69,11 @@ public final class MessageBubbleBinder {
             R.color.colorPrimary,
             R.color.colorTertiary,
             R.color.slate_muted,
-            R.color.colorError,
+            R.color.colorSecondary,
             R.color.colorOnPrimaryContainer,
             R.color.colorOnSecondaryContainer,
             R.color.colorOnTertiaryContainer,
-            R.color.colorOnErrorContainer
+            R.color.slate_on_secondary_container
     };
 
     private final DateFormat timeFormat;
@@ -166,7 +166,8 @@ public final class MessageBubbleBinder {
                             root.getContext(), com.google.android.material.R.attr.colorOnSurface);
                 } else {
                     int colorIndex = ChatBubbleRules.resolveSenderPaletteIndex(message.getSenderId());
-                    senderColor = ContextCompat.getColor(root.getContext(), SENDER_NAME_COLORS[colorIndex]);
+                    senderColor = ContextCompat.getColor(
+                            root.getContext(), senderNameColorResourceAt(colorIndex));
                 }
                 senderName.setTextColor(senderColor);
             } else {
@@ -312,6 +313,32 @@ public final class MessageBubbleBinder {
             return ContextCompat.getColor(context, value.resourceId);
         }
         return value.data;
+    }
+
+    static int senderNameColorResourceAt(int paletteIndex) {
+        return SENDER_NAME_COLORS[Math.floorMod(paletteIndex, SENDER_NAME_COLORS.length)];
+    }
+
+    static double contrastRatio(int foregroundArgb, int backgroundArgb) {
+        double foregroundLuminance = relativeLuminance(foregroundArgb);
+        double backgroundLuminance = relativeLuminance(backgroundArgb);
+        double lighter = Math.max(foregroundLuminance, backgroundLuminance);
+        double darker = Math.min(foregroundLuminance, backgroundLuminance);
+        return (lighter + 0.05d) / (darker + 0.05d);
+    }
+
+    private static double relativeLuminance(int argb) {
+        double red = linearize((argb >> 16) & 0xFF);
+        double green = linearize((argb >> 8) & 0xFF);
+        double blue = linearize(argb & 0xFF);
+        return 0.2126d * red + 0.7152d * green + 0.0722d * blue;
+    }
+
+    private static double linearize(int channel) {
+        double srgb = channel / 255.0d;
+        return srgb <= 0.04045d
+                ? srgb / 12.92d
+                : Math.pow((srgb + 0.055d) / 1.055d, 2.4d);
     }
 
     private void bindReplyQuote(View root, ChatMessage message) {
