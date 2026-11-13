@@ -112,7 +112,7 @@ public final class DeleteAccountFragment extends Fragment {
         boolean passwordFlow = state.usesPasswordFlow();
         binding.passwordLayout.setVisibility(profileReady && passwordFlow ? View.VISIBLE : View.GONE);
         binding.sendDeletionCode.setVisibility(
-                profileReady && !passwordFlow && !state.isCodeRequested()
+                profileReady && !passwordFlow
                         ? View.VISIBLE
                         : View.GONE);
         binding.deletionCodeSentMessage.setVisibility(
@@ -166,7 +166,14 @@ public final class DeleteAccountFragment extends Fragment {
                 profileReady && !busy && (passwordFlow || state.isCodeRequested()));
         binding.passwordInput.setEnabled(!busy && passwordFlow);
         binding.deletionCodeInput.setEnabled(!busy && state.isCodeRequested());
-        binding.sendDeletionCode.setEnabled(!busy && !state.isCodeRequested());
+        binding.sendDeletionCode.setEnabled(!busy && state.getResendSecondsRemaining() <= 0);
+        if (state.getResendSecondsRemaining() > 0) {
+            binding.sendDeletionCode.setText(getString(R.string.recovery_email_resend_countdown,
+                    state.getResendSecondsRemaining()));
+        } else {
+            binding.sendDeletionCode.setText(state.isCodeRequested()
+                    ? R.string.recovery_email_resend : R.string.delete_account_send_code);
+        }
         binding.profileLoadRetry.setEnabled(!waitingForProfile);
         binding.deleteProgress.setVisibility(busy || waitingForProfile ? View.VISIBLE : View.GONE);
         rendering = false;

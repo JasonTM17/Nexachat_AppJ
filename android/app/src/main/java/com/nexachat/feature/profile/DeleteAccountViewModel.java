@@ -11,9 +11,12 @@ import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.data.AuthRepository;
 import com.nexachat.data.ContactsRepository;
 import dagger.hilt.android.lifecycle.HiltViewModel;
+import io.reactivex.rxjava3.core.Observable;
+import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.function.UnaryOperator;
 import javax.inject.Inject;
 
@@ -21,6 +24,7 @@ import javax.inject.Inject;
 @HiltViewModel
 public final class DeleteAccountViewModel extends ViewModel {
 
+    private final Scheduler cooldownScheduler;
     private final AuthRepository authRepository;
     private final ContactsRepository contactsRepository;
     private final AccountDeletionCoordinator accountDeletionCoordinator;
@@ -33,11 +37,7 @@ public final class DeleteAccountViewModel extends ViewModel {
             @NonNull AuthRepository authRepository,
             @NonNull ContactsRepository contactsRepository,
             @NonNull AccountDeletionCoordinator accountDeletionCoordinator) {
-        this.authRepository = Objects.requireNonNull(authRepository, "authRepository");
-        this.contactsRepository = Objects.requireNonNull(contactsRepository, "contactsRepository");
-        this.accountDeletionCoordinator = Objects.requireNonNull(
-                accountDeletionCoordinator, "accountDeletionCoordinator");
-        loadProfile();
+        this(authRepository, contactsRepository, accountDeletionCoordinator, false);
     }
 
     DeleteAccountViewModel(
@@ -45,13 +45,22 @@ public final class DeleteAccountViewModel extends ViewModel {
             @NonNull ContactsRepository contactsRepository,
             @NonNull AccountDeletionCoordinator accountDeletionCoordinator,
             boolean skipProfileLoad) {
+        this(authRepository, contactsRepository, accountDeletionCoordinator,
+                skipProfileLoad, Schedulers.computation());
+    }
+
+    DeleteAccountViewModel(
+            @NonNull AuthRepository authRepository,
+            @NonNull ContactsRepository contactsRepository,
+            @NonNull AccountDeletionCoordinator accountDeletionCoordinator,
+            boolean skipProfileLoad,
+            @NonNull Scheduler cooldownScheduler) {
         this.authRepository = Objects.requireNonNull(authRepository, "authRepository");
         this.contactsRepository = Objects.requireNonNull(contactsRepository, "contactsRepository");
         this.accountDeletionCoordinator = Objects.requireNonNull(
                 accountDeletionCoordinator, "accountDeletionCoordinator");
-        if (!skipProfileLoad) {
-            loadProfile();
-        }
+        this.cooldownScheduler = Objects.requireNonNull(cooldownScheduler, "cooldownScheduler");
+        if (!skipProfileLoad) loadProfile();
     }
 
     public LiveData<UiState> getUiState() {
@@ -92,6 +101,7 @@ public final class DeleteAccountViewModel extends ViewModel {
         if (!state.isProfileLoaded()
                 || state.isDeleting()
                 || state.isSendingCode()
+                || state.getResendSecondsRemaining() > 0
                 || state.usesPasswordFlow()) {
             return;
         }
@@ -99,23 +109,43 @@ public final class DeleteAccountViewModel extends ViewModel {
         disposables.add(authRepository.requestAccountDeletionCode()
                 .subscribeOn(Schedulers.io())
                 .subscribe(
-                        result -> updateState(current -> {
+                        result -> {
                             if (result instanceof Result.Success<?>) {
-                                return current.withSendingCode(false)
+                                updateState(current -> current.withSendingCode(false)
                                         .withCodeRequested(true)
-                                        .withError(null);
+                                        .withCode("")
+                                        .withCodeMissing(false)
+                                        .withCodeInputError(false)
+                                        .withError(null)
+                                        .withResendSecondsRemaining(
+                                                RecoveryEmailOtpViewModel.RESEND_COOLDOWN_SECONDS));
+                                startResendCooldown();
+                            } else {
+                                ApiError error = ((Result.Failure<?>) result).getError();
+                                updateState(current -> current.withSendingCode(false).withError(error));
                             }
-                            ApiError error = ((Result.Failure<?>) result).getError();
-                            return current.withSendingCode(false).withError(error);
-                        }),
+                        },
                         error -> updateState(current -> current
                                 .withSendingCode(false)
                                 .withError(new ApiError.Network(error.getMessage())))));
     }
 
+    private void startResendCooldown() {
+        long until = cooldownScheduler.now(TimeUnit.MILLISECONDS)
+                + TimeUnit.SECONDS.toMillis(RecoveryEmailOtpViewModel.RESEND_COOLDOWN_SECONDS);
+        disposables.add(Observable.interval(1, 1, TimeUnit.SECONDS, cooldownScheduler)
+                .takeUntil(ignored -> cooldownScheduler.now(TimeUnit.MILLISECONDS) >= until)
+                .subscribe(ignored -> {
+                    long remaining = until - cooldownScheduler.now(TimeUnit.MILLISECONDS);
+                    int seconds = (int) Math.min(RecoveryEmailOtpViewModel.RESEND_COOLDOWN_SECONDS,
+                            Math.max(0, (remaining + 999) / 1000));
+                    updateState(state -> state.withResendSecondsRemaining(seconds));
+                }));
+    }
+
     public void submit() {
         UiState state = currentState();
-        if (!state.isProfileLoaded() || state.isDeleting()) {
+        if (!state.isProfileLoaded() || state.isDeleting() || state.isSendingCode()) {
             return;
         }
         if (state.usesPasswordFlow()) {
@@ -229,10 +259,11 @@ public final class DeleteAccountViewModel extends ViewModel {
         private final boolean codeMissing;
         private final boolean codeInputError;
         private final boolean deleting;
+        private final int resendSecondsRemaining;
         @Nullable private final ApiError error;
 
         public UiState() {
-            this(false, false, false, "", false, false, false, "", false, false, false, null);
+            this(false, false, false, "", false, false, false, "", false, false, false, null, 0);
         }
 
         private UiState(
@@ -247,7 +278,8 @@ public final class DeleteAccountViewModel extends ViewModel {
                 boolean codeMissing,
                 boolean codeInputError,
                 boolean deleting,
-                @Nullable ApiError error) {
+                @Nullable ApiError error,
+                int resendSecondsRemaining) {
             this.passwordSet = passwordSet;
             this.profileLoaded = profileLoaded;
             this.profileLoading = profileLoading;
@@ -260,6 +292,7 @@ public final class DeleteAccountViewModel extends ViewModel {
             this.codeInputError = codeInputError;
             this.deleting = deleting;
             this.error = error;
+            this.resendSecondsRemaining = resendSecondsRemaining;
         }
 
         public boolean usesPasswordFlow() {
@@ -290,6 +323,8 @@ public final class DeleteAccountViewModel extends ViewModel {
             return codeRequested;
         }
 
+        public int getResendSecondsRemaining() { return resendSecondsRemaining; }
+
         public boolean isSendingCode() {
             return sendingCode;
         }
@@ -318,73 +353,78 @@ public final class DeleteAccountViewModel extends ViewModel {
         UiState withPasswordSet(boolean value) {
             return new UiState(
                     value, profileLoaded, profileLoading, password, passwordMissing, codeRequested,
-                    sendingCode, code, codeMissing, codeInputError, deleting, error);
+                    sendingCode, code, codeMissing, codeInputError, deleting, error, resendSecondsRemaining);
         }
 
         UiState withProfileLoaded(boolean value) {
             return new UiState(
                     passwordSet, value, profileLoading, password, passwordMissing, codeRequested,
-                    sendingCode, code, codeMissing, codeInputError, deleting, error);
+                    sendingCode, code, codeMissing, codeInputError, deleting, error, resendSecondsRemaining);
         }
 
         UiState withProfileLoading(boolean value) {
             return new UiState(
                     passwordSet, profileLoaded, value, password, passwordMissing, codeRequested,
-                    sendingCode, code, codeMissing, codeInputError, deleting, error);
+                    sendingCode, code, codeMissing, codeInputError, deleting, error, resendSecondsRemaining);
         }
 
         UiState withPassword(String value) {
             return new UiState(
                     passwordSet, profileLoaded, profileLoading, value, passwordMissing, codeRequested,
-                    sendingCode, code, codeMissing, codeInputError, deleting, error);
+                    sendingCode, code, codeMissing, codeInputError, deleting, error, resendSecondsRemaining);
         }
 
         UiState withPasswordMissing(boolean value) {
             return new UiState(
                     passwordSet, profileLoaded, profileLoading, password, value, codeRequested,
-                    sendingCode, code, codeMissing, codeInputError, deleting, error);
+                    sendingCode, code, codeMissing, codeInputError, deleting, error, resendSecondsRemaining);
         }
 
         UiState withCodeRequested(boolean value) {
             return new UiState(
                     passwordSet, profileLoaded, profileLoading, password, passwordMissing, value,
-                    sendingCode, code, codeMissing, codeInputError, deleting, error);
+                    sendingCode, code, codeMissing, codeInputError, deleting, error, resendSecondsRemaining);
         }
 
         UiState withSendingCode(boolean value) {
             return new UiState(
                     passwordSet, profileLoaded, profileLoading, password, passwordMissing,
-                    codeRequested, value, code, codeMissing, codeInputError, deleting, error);
+                    codeRequested, value, code, codeMissing, codeInputError, deleting, error, resendSecondsRemaining);
         }
 
         UiState withCode(String value) {
             return new UiState(
                     passwordSet, profileLoaded, profileLoading, password, passwordMissing,
-                    codeRequested, sendingCode, value, codeMissing, codeInputError, deleting, error);
+                    codeRequested, sendingCode, value, codeMissing, codeInputError, deleting, error, resendSecondsRemaining);
         }
 
         UiState withCodeMissing(boolean value) {
             return new UiState(
                     passwordSet, profileLoaded, profileLoading, password, passwordMissing,
-                    codeRequested, sendingCode, code, value, codeInputError, deleting, error);
+                    codeRequested, sendingCode, code, value, codeInputError, deleting, error, resendSecondsRemaining);
         }
 
         UiState withCodeInputError(boolean value) {
             return new UiState(
                     passwordSet, profileLoaded, profileLoading, password, passwordMissing,
-                    codeRequested, sendingCode, code, codeMissing, value, deleting, error);
+                    codeRequested, sendingCode, code, codeMissing, value, deleting, error, resendSecondsRemaining);
         }
 
         UiState withDeleting(boolean value) {
             return new UiState(
                     passwordSet, profileLoaded, profileLoading, password, passwordMissing,
-                    codeRequested, sendingCode, code, codeMissing, codeInputError, value, error);
+                    codeRequested, sendingCode, code, codeMissing, codeInputError, value, error, resendSecondsRemaining);
+        }
+
+        UiState withResendSecondsRemaining(int value) {
+            return new UiState(passwordSet, profileLoaded, profileLoading, password, passwordMissing,
+                    codeRequested, sendingCode, code, codeMissing, codeInputError, deleting, error, value);
         }
 
         UiState withError(@Nullable ApiError value) {
             return new UiState(
                     passwordSet, profileLoaded, profileLoading, password, passwordMissing,
-                    codeRequested, sendingCode, code, codeMissing, codeInputError, deleting, value);
+                    codeRequested, sendingCode, code, codeMissing, codeInputError, deleting, value, resendSecondsRemaining);
         }
     }
 }
