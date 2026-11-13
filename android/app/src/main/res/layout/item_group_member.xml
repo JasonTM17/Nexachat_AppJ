@@ -46,7 +46,7 @@
             android:checkable="false"
             app:checkedIconVisible="false"
             app:chipBackgroundColor="?attr/colorSecondaryContainer"
-            app:chipCornerRadius="8dp"
+            app:chipCornerRadius="@dimen/corner_full"
             app:chipMinHeight="32dp"
             app:chipStrokeWidth="0dp"
             app:ensureMinTouchTargetSize="false" />

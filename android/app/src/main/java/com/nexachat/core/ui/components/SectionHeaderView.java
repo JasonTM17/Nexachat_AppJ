@@ -28,7 +28,7 @@ public class SectionHeaderView extends FrameLayout {
         int v = getResources().getDimensionPixelSize(R.dimen.space_sm);
         titleView.setPadding(h, v, h, v);
         titleView.setTextAppearance(R.style.TextAppearance_NexaChat_LabelMedium);
-        titleView.setTextColor(ContextCompat.getColor(context, R.color.colorPrimary));
+        titleView.setTextColor(ContextCompat.getColor(context, R.color.colorOnSurfaceVariant));
         addView(titleView, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.START));
     }
 
