@@ -349,20 +349,11 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
             binder.bind(binding.summaryContent, state.getSummary());
         }
 
-        if (loading) {
-            binding.summaryRegenerate.setEnabled(false);
-            binding.summaryCopy.setEnabled(false);
-            binding.summaryShare.setEnabled(false);
-        } else if (error) {
-            binding.summaryRegenerate.setEnabled(true);
-            binding.summaryCopy.setEnabled(true);
-            binding.summaryShare.setEnabled(true);
-        } else {
-            boolean canAct = SummaryUiRules.canShareOrCopy(state.getStatus(), state.getSummary());
-            binding.summaryRegenerate.setEnabled(true);
-            binding.summaryCopy.setEnabled(canAct);
-            binding.summaryShare.setEnabled(canAct);
-        }
+        SummaryUiRules.FooterButtonState footer = SummaryUiRules.footerButtonState(
+                loading, error, state.getStatus(), state.getSummary());
+        binding.summaryRegenerate.setEnabled(footer.regenerateEnabled);
+        binding.summaryCopy.setEnabled(footer.copyEnabled);
+        binding.summaryShare.setEnabled(footer.shareEnabled);
     }
 
     private void handleCitationClick(@NonNull String messageId) {

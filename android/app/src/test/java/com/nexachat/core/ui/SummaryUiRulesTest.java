@@ -118,4 +118,46 @@ public class SummaryUiRulesTest {
         assertEquals("summary_scope_last_n", SummaryUiRules.getScopeResourceName(SummaryScope.LAST_N));
         assertEquals("summary_scope_today", SummaryUiRules.getScopeResourceName(SummaryScope.TODAY));
     }
+
+    @Test
+    public void footerButtonState_disablesAllActionsWhileLoading() {
+        SummaryUiRules.FooterButtonState state = SummaryUiRules.footerButtonState(
+                true, false, SummaryUiState.Status.READY, minimalSummary("Overview"));
+        assertFalse(state.regenerateEnabled);
+        assertFalse(state.copyEnabled);
+        assertFalse(state.shareEnabled);
+    }
+
+    @Test
+    public void footerButtonState_keepsCopyAndShareDisabledOnError() {
+        SummaryUiRules.FooterButtonState state = SummaryUiRules.footerButtonState(
+                false, true, SummaryUiState.Status.ERROR, null);
+        assertTrue(state.regenerateEnabled);
+        assertFalse(state.copyEnabled);
+        assertFalse(state.shareEnabled);
+    }
+
+    @Test
+    public void footerButtonState_enablesCopyAndShareOnlyWhenReadyWithContent() {
+        SummaryResponse withOverview = minimalSummary("Overview");
+        SummaryUiRules.FooterButtonState ready = SummaryUiRules.footerButtonState(
+                false, false, SummaryUiState.Status.READY, withOverview);
+        assertTrue(ready.regenerateEnabled);
+        assertTrue(ready.copyEnabled);
+        assertTrue(ready.shareEnabled);
+
+        SummaryResponse empty = minimalSummary("   ");
+        SummaryUiRules.FooterButtonState emptyReady = SummaryUiRules.footerButtonState(
+                false, false, SummaryUiState.Status.READY, empty);
+        assertTrue(emptyReady.regenerateEnabled);
+        assertFalse(emptyReady.copyEnabled);
+        assertFalse(emptyReady.shareEnabled);
+    }
+
+    private static SummaryResponse minimalSummary(String overview) {
+        return new SummaryResponse(
+                "s1", "c1", 1, 10, 10, SummaryLanguage.VI, "LOCAL", null, null, false,
+                "2026-11-05T00:00:00Z", overview, null, null, null, null, null, null
+        );
+    }
 }

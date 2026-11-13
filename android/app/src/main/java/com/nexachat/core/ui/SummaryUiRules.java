@@ -94,6 +94,35 @@ public final class SummaryUiRules {
         return hasOverview || hasKeyPoints || hasDecisions || hasActionItems;
     }
 
+    /** Enabled state for summary sheet footer actions derived from presentation flags. */
+    public static final class FooterButtonState {
+        public final boolean regenerateEnabled;
+        public final boolean copyEnabled;
+        public final boolean shareEnabled;
+
+        FooterButtonState(boolean regenerateEnabled, boolean copyEnabled, boolean shareEnabled) {
+            this.regenerateEnabled = regenerateEnabled;
+            this.copyEnabled = copyEnabled;
+            this.shareEnabled = shareEnabled;
+        }
+    }
+
+    public static FooterButtonState footerButtonState(
+            boolean loading,
+            boolean error,
+            SummaryUiState.Status status,
+            SummaryResponse summary
+    ) {
+        if (loading) {
+            return new FooterButtonState(false, false, false);
+        }
+        if (error) {
+            return new FooterButtonState(true, false, false);
+        }
+        boolean canAct = canShareOrCopy(status, summary);
+        return new FooterButtonState(true, canAct, canAct);
+    }
+
     /**
      * Returns string resource name for the given summary scope chip.
      */

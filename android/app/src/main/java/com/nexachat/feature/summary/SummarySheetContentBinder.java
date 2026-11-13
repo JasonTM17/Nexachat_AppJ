@@ -117,23 +117,26 @@ public final class SummarySheetContentBinder {
             CheckBox check = row.findViewById(R.id.summaryActionCheck);
             TextView text = row.findViewById(R.id.summaryActionText);
             TextView meta = row.findViewById(R.id.summaryActionMeta);
-            text.setText(action.getText());
-            boolean checked = Boolean.TRUE.equals(actionChecked.get(key));
-            check.setChecked(checked);
-            text.setPaintFlags(checked
-                    ? text.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG
-                    : text.getPaintFlags() & ~Paint.STRIKE_THRU_TEXT_FLAG);
-            View toggleTarget = row;
-            toggleTarget.setOnClickListener(v -> {
-                boolean next = !check.isChecked();
-                check.setChecked(next);
-                actionChecked.put(key, next);
-                text.setPaintFlags(next
+            String actionText = action.getText();
+            text.setText(actionText);
+            check.setContentDescription(actionText);
+            final boolean[] applyingCheckState = {false};
+            Runnable applyChecked = () -> {
+                boolean isChecked = Boolean.TRUE.equals(actionChecked.get(key));
+                applyingCheckState[0] = true;
+                check.setChecked(isChecked);
+                applyingCheckState[0] = false;
+                text.setPaintFlags(isChecked
                         ? text.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG
                         : text.getPaintFlags() & ~Paint.STRIKE_THRU_TEXT_FLAG);
+            };
+            applyChecked.run();
+            row.setOnClickListener(v -> {
+                actionChecked.put(key, !Boolean.TRUE.equals(actionChecked.get(key)));
+                applyChecked.run();
             });
             check.setOnCheckedChangeListener((button, isChecked) -> {
-                if (!button.isPressed()) {
+                if (applyingCheckState[0]) {
                     return;
                 }
                 actionChecked.put(key, isChecked);
