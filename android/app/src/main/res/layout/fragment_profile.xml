@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground">
+
+<androidx.core.widget.NestedScrollView
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
 
     <LinearLayout
         android:id="@+id/profileColumn"
@@ -20,6 +24,28 @@
             android:layout_height="?attr/actionBarSize"
             app:navigationContentDescription="@string/cd_back"
             app:navigationIcon="@drawable/ic_arrow_back" />
+
+        <TextView
+            android:id="@+id/profileLoadError"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:accessibilityLiveRegion="polite"
+            android:gravity="center"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?attr/colorError"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/profileLoadRetry"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="@dimen/min_touch_target"
+            android:text="@string/action_retry"
+            android:visibility="gone"
+            app:cornerRadius="12dp" />
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
@@ -56,7 +82,7 @@
                         android:contentDescription="@string/profile_change_avatar"
                         android:padding="@dimen/space_sm"
                         android:src="@drawable/ic_camera_alt"
-                        app:tint="@android:color/white" />
+                        app:tint="?attr/colorOnPrimary" />
                 </FrameLayout>
 
                 <TextView
@@ -529,3 +555,17 @@
             android:visibility="gone" />
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>
+
+    <com.nexachat.core.ui.components.LoadingStateView
+        android:id="@+id/loadingState"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
+    <com.nexachat.core.ui.components.ErrorStateView
+        android:id="@+id/errorState"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
+</FrameLayout>

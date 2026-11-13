@@ -73,6 +73,20 @@ public final class ProfileViewModelTest {
     }
 
     @Test
+    public void reloadFailurePreservesCachedUserAndSurfacesLoadError() {
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me));
+        when(contactsRepository.getMe()).thenReturn(Single.just(
+                Result.failure(new ApiError.Network("down"))));
+
+        viewModel.load();
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertEquals(me, state.getUser());
+        assertEquals(new ApiError.Network("down"), state.getError());
+        assertFalse(state.isLoading());
+    }
+
+    @Test
     public void loadFailureSurfacesErrorAndReloadRetries() {
         ProfileViewModel viewModel = createViewModel(
                 Result.failure(new ApiError.Network("down")));

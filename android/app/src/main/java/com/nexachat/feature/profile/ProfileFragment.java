@@ -160,6 +160,8 @@ public final class ProfileFragment extends Fragment {
         binding.signInMethodPhoneRow.setTitle(getString(R.string.sign_in_method_phone));
         binding.signInMethodPhoneRow.setLeadingIcon(R.drawable.ic_call);
         binding.signInMethodPhoneRow.setShowChevron(false);
+        binding.errorState.setOnRetry(() -> viewModel.load());
+        binding.profileLoadRetry.setOnClickListener(v -> viewModel.load());
         linkedAccountsViewModel.getUiState().observe(getViewLifecycleOwner(), this::renderLinkedAccounts);
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
         viewModel.getShowPresence().observe(getViewLifecycleOwner(), value -> binding.showPresence.setChecked(Boolean.TRUE.equals(value)));
@@ -199,7 +201,23 @@ public final class ProfileFragment extends Fragment {
     }
 
     private void render(ProfileViewModel.UiState state) {
+        ApiError loadError = state.getError();
         UserDto user = state.getUser();
+        boolean noUser = user == null;
+        boolean showInitialLoading = state.isLoading() && noUser;
+        boolean showInitialError = loadError != null && noUser;
+        boolean showCachedLoadError = loadError != null && !noUser;
+        binding.loadingState.setVisibility(showInitialLoading ? View.VISIBLE : View.GONE);
+        binding.errorState.setVisibility(showInitialError ? View.VISIBLE : View.GONE);
+        if (showInitialError && loadError != null) {
+            binding.errorState.setMessage(ApiErrorText.text(requireContext(), loadError));
+        }
+        binding.profileLoadError.setVisibility(showCachedLoadError ? View.VISIBLE : View.GONE);
+        binding.profileLoadRetry.setVisibility(showCachedLoadError ? View.VISIBLE : View.GONE);
+        binding.profileLoadRetry.setEnabled(!state.isLoading());
+        if (showCachedLoadError && loadError != null) {
+            binding.profileLoadError.setText(ApiErrorText.text(requireContext(), loadError));
+        }
         if (user != null) {
             binding.profileAvatar.setName(user.getDisplayName());
             binding.profileAvatar.setAvatarUrl(user.getAvatarUrl());
@@ -236,7 +254,7 @@ public final class ProfileFragment extends Fragment {
         binding.editName.setVisibility(state.isEditingName() ? View.GONE : View.VISIBLE);
         if (!binding.nameInput.getText().toString().equals(state.getNameInput())) binding.nameInput.setText(state.getNameInput());
         binding.saveName.setEnabled(!state.isSaving() && !state.getNameInput().trim().isEmpty());
-        ApiError error = state.getError() != null ? state.getError() : state.getSaveError() != null ? state.getSaveError() : state.getPasswordError() != null ? state.getPasswordError() : state.getAvatarError();
+        ApiError error = state.getSaveError() != null ? state.getSaveError() : state.getPasswordError() != null ? state.getPasswordError() : state.getAvatarError();
         binding.profileError.setVisibility(error == null ? View.GONE : View.VISIBLE);
         if (error != null) binding.profileError.setText(ApiErrorText.text(requireContext(), error));
         if (state.isPasswordChanged()) { viewModel.consumePasswordChanged(); new MaterialAlertDialogBuilder(requireContext()).setMessage(R.string.profile_password_changed).setPositiveButton(android.R.string.ok, null).show(); }
