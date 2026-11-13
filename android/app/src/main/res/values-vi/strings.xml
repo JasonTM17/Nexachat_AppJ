@@ -602,4 +602,6 @@
     <string name="add_contact_field_label">Số điện thoại hoặc email</string>
     <!-- chat recovery -->
     <string name="action_open_app_settings">Mở cài đặt</string>
+    <!-- group leave -->
+    <string name="group_leave_only_admin">Bạn là quản trị viên duy nhất. Chưa thể rời nhóm khi vẫn còn thành viên khác.</string>
 </resources>

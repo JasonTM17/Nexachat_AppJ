@@ -609,4 +609,6 @@
     <string name="add_contact_field_label">Phone or email</string>
     <!-- chat recovery -->
     <string name="action_open_app_settings">Open settings</string>
+    <!-- group leave -->
+    <string name="group_leave_only_admin">You are the only admin. Leaving while other members remain is unavailable.</string>
 </resources>

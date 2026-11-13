@@ -269,7 +269,17 @@ public final class GroupDetailViewModel extends ViewModel {
                 }, this::surfaceError));
     }
 
+    /** {@link GroupErrorText#soleAdminLeaveExplanation} for the loaded roster, or 0. */
+    public int onlyAdminLeaveExplanation() {
+        GroupDetailUiState state = currentState();
+        return GroupErrorText.soleAdminLeaveExplanation(
+                state.isIAmAdmin(), state.getMyUserId(), state.getMembers());
+    }
+
     public void requestLeave() {
+        if (onlyAdminLeaveExplanation() != 0) {
+            return;
+        }
         mutableUiState.setValue(currentState().withConfirmLeave(true));
     }
 
@@ -278,7 +288,7 @@ public final class GroupDetailViewModel extends ViewModel {
     }
 
     public void confirmLeave() {
-        if (currentState().isBusy()) {
+        if (currentState().isBusy() || onlyAdminLeaveExplanation() != 0) {
             return;
         }
         mutableUiState.setValue(currentState().withLeaveInFlight());

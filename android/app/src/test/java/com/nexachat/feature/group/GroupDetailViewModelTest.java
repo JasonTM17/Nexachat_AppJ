@@ -3,6 +3,7 @@ package com.nexachat.feature.group;
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 import androidx.lifecycle.SavedStateHandle;
 import androidx.lifecycle.ViewModelStore;
+import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.data.Contact;
@@ -209,6 +210,7 @@ public final class GroupDetailViewModelTest {
 
     @Test
     public void confirmedLeaveEmitsExitToInbox() {
+        reopenWithAnotherAdmin();
         when(conversationRepository.leaveGroup(anyString()))
                 .thenReturn(Single.just(new Result.Success<Void>(null)));
         AtomicReference<GroupSingleLiveEvent.Event<GroupDetailEvent>> event = new AtomicReference<>();
@@ -226,6 +228,7 @@ public final class GroupDetailViewModelTest {
 
     @Test
     public void leaveFailureSurfacesErrorAndEmitsNoEvent() {
+        reopenWithAnotherAdmin();
         when(conversationRepository.leaveGroup(anyString()))
                 .thenReturn(Single.just(Result.failure(new ApiError.Network())));
         AtomicReference<GroupSingleLiveEvent.Event<GroupDetailEvent>> event = new AtomicReference<>();
@@ -312,6 +315,7 @@ public final class GroupDetailViewModelTest {
 
     @Test
     public void consumedLeaveEventDoesNotReplayAfterObserverReattaches() {
+        reopenWithAnotherAdmin();
         when(conversationRepository.leaveGroup(anyString()))
                 .thenReturn(Single.just(new Result.Success<Void>(null)));
         AtomicReference<GroupSingleLiveEvent.Event<GroupDetailEvent>> first = new AtomicReference<>();
@@ -326,5 +330,79 @@ public final class GroupDetailViewModelTest {
         viewModel.getEvents().observeForever(secondObserver);
         assertNull(afterRotation.get().consume());
         viewModel.getEvents().removeObserver(secondObserver);
+    }
+
+    @Test
+    public void soleAdminWithOtherMembersExplainsLimitAndDoesNotOfferLeave() {
+        viewModel.requestLeave();
+
+        assertFalse(
+                "loaded sole admin with other members must not open leave confirmation",
+                state().isConfirmLeave());
+        assertEquals(R.string.group_leave_only_admin, viewModel.onlyAdminLeaveExplanation());
+        viewModel.confirmLeave();
+        verify(conversationRepository, never()).leaveGroup(anyString());
+    }
+
+    @Test
+    public void ordinaryMemberLeaveStillConfirms() {
+        when(conversationRepository.leaveGroup(anyString()))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+        GroupMember meMember = new GroupMember(
+                MY_ID, "Me", "+84900000000", null, "MEMBER");
+        GroupMember lanAdmin = new GroupMember(
+                "u-lan", "Lan", "+84911111111", null, GroupMember.ROLE_ADMIN);
+        GroupDetailViewModel member = openGroup(List.of(meMember, lanAdmin));
+
+        member.requestLeave();
+
+        GroupDetailUiState memberState = member.getUiState().getValue();
+        assertTrue(memberState.isConfirmLeave());
+        assertEquals(0, member.onlyAdminLeaveExplanation());
+        member.confirmLeave();
+        verify(conversationRepository).leaveGroup(CONVERSATION_ID);
+    }
+
+    @Test
+    public void lastMemberLeaveStillConfirms() {
+        when(conversationRepository.leaveGroup(anyString()))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+        GroupDetailViewModel alone = openGroup(List.of(me));
+
+        alone.requestLeave();
+
+        GroupDetailUiState aloneState = alone.getUiState().getValue();
+        assertTrue(aloneState.isConfirmLeave());
+        assertEquals(0, alone.onlyAdminLeaveExplanation());
+        alone.confirmLeave();
+        verify(conversationRepository).leaveGroup(CONVERSATION_ID);
+    }
+
+    @Test
+    public void adminAlongsideAnotherAdminCanStillConfirmLeave() {
+        when(conversationRepository.leaveGroup(anyString()))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+        GroupMember lanAdmin = new GroupMember(
+                "u-lan", "Lan", "+84911111111", null, GroupMember.ROLE_ADMIN);
+        GroupDetailViewModel admins = openGroup(List.of(me, lanAdmin));
+
+        admins.requestLeave();
+
+        GroupDetailUiState adminState = admins.getUiState().getValue();
+        assertTrue(adminState.isConfirmLeave());
+        assertTrue(adminState.isIAmAdmin());
+        assertEquals(0, admins.onlyAdminLeaveExplanation());
+        admins.confirmLeave();
+        verify(conversationRepository).leaveGroup(CONVERSATION_ID);
+    }
+
+    private GroupDetailViewModel openGroup(List<GroupMember> members) {
+        return createViewModel(new Result.Success<>(new GroupDetail("Weekend", members)));
+    }
+
+    private void reopenWithAnotherAdmin() {
+        GroupMember lanAdmin = new GroupMember(
+                "u-lan", "Lan", "+84911111111", null, GroupMember.ROLE_ADMIN);
+        viewModel = openGroup(List.of(me, lanAdmin));
     }
 }

@@ -52,6 +52,7 @@ public final class GroupDetailFragment extends Fragment {
     @Nullable private AlertDialog renameDialog;
     @Nullable private AlertDialog removeDialog;
     @Nullable private AlertDialog leaveDialog;
+    @Nullable private AlertDialog onlyAdminDialog;
     @Nullable private Dialog addMemberDialog;
     @Nullable private SelectableContactAdapter addMemberPickerAdapter;
     @Nullable private MaterialButton addMemberConfirmButton;
@@ -109,7 +110,7 @@ public final class GroupDetailFragment extends Fragment {
         binding.membersHeader.setTitle(getString(R.string.group_detail_title));
         binding.addMemberButton.setOnClickListener(v -> viewModel.openAddMember());
         binding.inviteLinkButton.setOnClickListener(v -> openInviteManager());
-        binding.leaveGroupButton.setOnClickListener(v -> viewModel.requestLeave());
+        binding.leaveGroupButton.setOnClickListener(v -> onLeaveClicked());
         binding.errorState.setOnRetry(viewModel::loadMembers);
         binding.emptyState.setMessage(getString(R.string.group_members_empty));
         binding.emptyState.setIcon(R.drawable.ic_person_outline);
@@ -249,6 +250,27 @@ public final class GroupDetailFragment extends Fragment {
                 .show();
     }
 
+    private void onLeaveClicked() {
+        int explanation = viewModel.onlyAdminLeaveExplanation();
+        if (explanation != 0) {
+            showOnlyAdminLeaveDialog(explanation);
+            return;
+        }
+        viewModel.requestLeave();
+    }
+
+    private void showOnlyAdminLeaveDialog(int message) {
+        if (onlyAdminDialog != null && onlyAdminDialog.isShowing()) {
+            return;
+        }
+        onlyAdminDialog = new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.action_leave_group)
+                .setMessage(message)
+                .setPositiveButton(R.string.action_close, null)
+                .setOnDismissListener(dialog -> onlyAdminDialog = null)
+                .show();
+    }
+
     private void showLeaveDialog() {
         if (leaveDialog != null && leaveDialog.isShowing()) {
             return;
@@ -347,6 +369,9 @@ public final class GroupDetailFragment extends Fragment {
         }
         if (leaveDialog != null) {
             leaveDialog.dismiss();
+        }
+        if (onlyAdminDialog != null) {
+            onlyAdminDialog.dismiss();
         }
         if (addMemberDialog != null) {
             addMemberDialog.dismiss();
