@@ -165,6 +165,8 @@ class GroupServiceTest {
         Conversation conversation = groupConversation();
         when(conversationRepository.findById(conversationId))
                 .thenReturn(Optional.of(conversation));
+        lenient().when(memberRepository.findCurrentRole(conversationId, adminId))
+                .thenReturn(Optional.of(callerRole));
         lenient().when(memberRepository.findByConversation_IdAndUser_Id(conversationId, adminId))
                 .thenReturn(Optional.of(
                         member(conversation, adminId, "Admin Alice", callerRole)));

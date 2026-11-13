@@ -497,6 +497,7 @@ public class GroupService {
         }
         userRepository.lockForKeyShareSorted(List.of(callerId));
         conversation = lockGroup(conversationId);
+        requireCurrentAdmin(conversationId, callerId);
         if (renamed) {
             conversation.changeTitle(newTitle);
         }
@@ -606,6 +607,14 @@ public class GroupService {
 
     private static void requireAdmin(ConversationMember member) {
         if (member.getRole() != ConversationMember.Role.ADMIN) {
+            throw ApiException.of(ApiErrorCode.NOT_ADMIN, "Group admin role required");
+        }
+    }
+
+    private void requireCurrentAdmin(UUID conversationId, UUID userId) {
+        ConversationMember.Role role = memberRepository.findCurrentRole(conversationId, userId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_MEMBER, "Not a member of this conversation"));
+        if (role != ConversationMember.Role.ADMIN) {
             throw ApiException.of(ApiErrorCode.NOT_ADMIN, "Group admin role required");
         }
     }

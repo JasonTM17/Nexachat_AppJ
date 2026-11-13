@@ -94,8 +94,10 @@ public class InviteService {
         ConversationMember callerMember = requireMember(conversationId, callerId);
         requireAdmin(callerMember);
 
+        lockActiveUsers(callerId);
         conversationRepository.findByIdForUpdate(conversationId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
+        requireCurrentAdmin(conversationId, callerId);
 
         Instant now = Instant.now();
         Instant expiresAt = null;
@@ -179,6 +181,11 @@ public class InviteService {
         ConversationMember callerMember = requireMember(conversationId, callerId);
         requireAdmin(callerMember);
 
+        lockActiveUsers(callerId);
+        conversationRepository.findByIdForUpdate(conversationId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
+        requireCurrentAdmin(conversationId, callerId);
+
         if (request == null || request.requiresApproval() == null) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "requiresApproval is required");
         }
@@ -206,6 +213,11 @@ public class InviteService {
         requireGroup(conversationId);
         ConversationMember callerMember = requireMember(conversationId, callerId);
         requireAdmin(callerMember);
+
+        lockActiveUsers(callerId);
+        conversationRepository.findByIdForUpdate(conversationId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
+        requireCurrentAdmin(conversationId, callerId);
 
         Optional<GroupInviteLink> linkOpt = linkRepository.findByConversation_IdAndRevokedAtIsNull(conversationId);
         if (linkOpt.isPresent()) {
@@ -505,6 +517,14 @@ public class InviteService {
     private ConversationMember requireMember(UUID conversationId, UUID userId) {
         return memberRepository.findByConversation_IdAndUser_Id(conversationId, userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_MEMBER, "Not a member of this conversation"));
+    }
+
+    private void requireCurrentAdmin(UUID conversationId, UUID userId) {
+        ConversationMember.Role role = memberRepository.findCurrentRole(conversationId, userId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_MEMBER, "Not a member of this conversation"));
+        if (role != ConversationMember.Role.ADMIN) {
+            throw ApiException.of(ApiErrorCode.NOT_ADMIN, "Group admin role required");
+        }
     }
 
     private static void requireAdmin(ConversationMember member) {

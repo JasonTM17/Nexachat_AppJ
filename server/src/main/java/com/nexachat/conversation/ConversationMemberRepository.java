@@ -187,6 +187,11 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
      */
     Optional<ConversationMember> findByConversation_IdAndUser_Id(UUID conversationId, UUID userId);
 
+    /** Fresh authority read after the conversation lock; bypasses managed membership snapshots. */
+    @Query("SELECT m.role FROM ConversationMember m WHERE m.conversation.id = :conversationId AND m.user.id = :userId")
+    Optional<ConversationMember.Role> findCurrentRole(@Param("conversationId") UUID conversationId,
+                                                     @Param("userId") UUID userId);
+
     /** Serialize assignment-cap writes with membership deletion for this caller/conversation. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT m FROM ConversationMember m "
