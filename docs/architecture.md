@@ -3,7 +3,7 @@
 > Current implementation view: Android app (Java 21 LTS, XML Views + Fragments +
 > ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v14) → REST
 > `/api/v1` + STOMP over WebSocket → Spring Boot 3.5.16 modular monolith → PostgreSQL 16
-> (Flyway V1–V20 + V22 + V24–V28; V21/V23 reserved) + local or S3-compatible file storage. Conversation RAG is available through the
+> (Flyway V1–V20 + V22 + V24–V33; V21/V23 reserved) + local or S3-compatible file storage. Conversation RAG is available through the
 > server API (`POST /api/v1/conversations/{id}/ask`) and Android Ask screen
 > ([docs/rag.md](rag.md)).
 > Call signaling shares STOMP (`server/call`,
@@ -63,7 +63,7 @@ flowchart LR
         PRESENCE["PresenceSessionRegistry<br/>(in-memory, per node)"]
     end
 
-    PG[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V28 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin")]
+    PG[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V33 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin · sync cursors · google_signup")]
     STORAGE["File storage<br/>(StorageService: local or S3-compatible)"]
     FCM[["FCM (HTTP v1 OAuth2, GoogleHttpFcmGateway)"]]
 
@@ -204,7 +204,7 @@ sequenceDiagram
   not hide the peers from that user. Last-disconnect offline notification is
   coalesced for five seconds.
 
-## 5. V12–V28 feature modules & realtime extensions
+## 5. V12–V33 feature modules & realtime extensions
 
 - **Per-member conversation preferences (V12, V16):** `conversation_members`
   carries `muted` / `muted_until` / `archived` and `pinned` / `pinned_at`.
@@ -265,12 +265,20 @@ sequenceDiagram
   for email verification (`POST /api/v1/users/me/email/request`), password reset
   (`POST /api/v1/auth/recovery/reset-password/request`), and web account deletion. Pluggable
   `MailSender` supports SMTP (Gmail, local Mailpit for dev) and Resend.
-- **Google sign-in (V28):** link-first OpenID Connect identity integration
+- **Google sign-in (V28, V33):** OpenID Connect identity integration
   (`user_identities`, `google_signin_nonces`). Validates Google ID tokens via
   public JWKS (`https://www.googleapis.com/oauth2/v3/certs`) using Spring Security's
   `NimbusJwtDecoder` without requiring a client secret. Single-use nonces prevent replay.
-  Linking requires re-authenticating with the account's password; automatic account creation
-  and email-based linking are omitted to prevent account takeover.
+  Linking requires re-authenticating with the account's password. When the operator enables
+  signup (`NEXACHAT_GOOGLE_SIGNUP_ENABLED=true`), an unlinked Google `sub` can register a
+  Google-only account (`V33` relaxes `password_hash` and requires a verified email anchor).
+- **Reminder claim lease index (V31):** partial index on `conversation_reminders`
+  (`claimed_at`, `id`) where the row is claimed and not yet fired, for the event-driven
+  scheduler's earliest wakeup lookup.
+- **Message change cursors (V32):** per-conversation `change_version` and
+  `sync_generation` on `conversations` and `messages`, with a one-time backfill;
+  apply only while message writers and sync-v2 requests are quiesced (Flyway runs
+  the backfill in one transactional baseline).
 - **Ephemeral state router (STOMP default, opt-in Firebase):** Android `EphemeralStateRouter`
   manages presence and typing subscriptions. While STOMP is always active and the default,
   an optional Firebase RTDB bridge and projection writer (`server/firebase/**`,

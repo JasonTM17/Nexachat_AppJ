@@ -1000,7 +1000,7 @@ LAN address printed by the demo script and be on the same network.
 ## Upgrade
 
 Back up before replacing the app image. Flyway applies versioned migrations
-through V30 on app startup and they are forward-only: add a new SQL migration; never
+through V33 on app startup and they are forward-only: add a new SQL migration; never
 edit one already applied to a database. The full migration list with intent is in
 [`docs/api-contract.md`](api-contract.md#migration-history); the migrations after
 V11 introduce:
@@ -1032,8 +1032,14 @@ tombstoning, `V27__account_recovery_email_otp.sql` adds recovery email/OTP data,
 `V29__user_ai_summary_consent_epoch.sql` adds `users.ai_summary_consent_epoch`
 for fencing in-flight AI summary generation against consent revocation, and
 `V30__refresh_token_user_index.sql` drops partial index `idx_refresh_user` and
-creates composite index `idx_refresh_user_id` on `refresh_tokens (user_id, id)`.
-Ensure every migration file V1–V20, `V22`, and `V24`–`V30` is present in the
+creates composite index `idx_refresh_user_id` on `refresh_tokens (user_id, id)`,
+`V31__reminder_claim_lease_wakeup_index.sql` adds the partial `idx_reminders_claim_lease`
+index for reminder scheduler wakeups,
+`V32__message_change_cursors.sql` adds bounded per-conversation change cursors and
+sync generation (quiesce writers before deploying on a live database), and
+`V33__google_signup.sql` allows Google-only accounts with nullable `password_hash`
+when verified email is the sign-in anchor.
+Ensure every migration file V1–V20, `V22`, and `V24`–`V33` is present in the
 source tree before rebuilding the dev app container; the image packages the
 server migration resources used by Flyway at startup.
 
