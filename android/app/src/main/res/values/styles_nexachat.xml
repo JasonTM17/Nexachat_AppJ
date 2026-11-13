@@ -125,4 +125,26 @@
         <item name="chipEndPadding">12dp</item>
         <item name="rippleColor">@android:color/transparent</item>
     </style>
+
+    <style name="Widget.NexaChat.Button.Google" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="iconTint">@null</item>
+        <item name="iconSize">@dimen/icon_size</item>
+        <item name="iconPadding">@dimen/space_inset</item>
+        <item name="backgroundTint">@color/colorSurface</item>
+        <item name="strokeColor">@color/colorOutlineVariant</item>
+        <item name="strokeWidth">@dimen/control_stroke_width</item>
+        <item name="android:textColor">@color/colorOnSurface</item>
+        <item name="android:textAppearance">@style/TextAppearance.NexaChat.LabelLarge</item>
+        <item name="cornerRadius">@dimen/corner_md</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:minHeight">56dp</item>
+        <item name="rippleColor">@android:color/transparent</item>
+    </style>
+
+    <style name="Widget.NexaChat.TextInputLayout.Auth" parent="Widget.NexaChat.TextInputLayout">
+        <item name="boxBackgroundMode">outline</item>
+        <item name="boxBackgroundColor">@color/colorSurface</item>
+        <item name="startIconTint">?attr/colorOnSurfaceVariant</item>
+    </style>
 </resources>

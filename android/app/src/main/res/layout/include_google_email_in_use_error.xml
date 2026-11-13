@@ -1,30 +1,47 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/googleEmailInUseError"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginTop="12dp"
+    android:layout_marginTop="@dimen/space_md"
     android:accessibilityLiveRegion="polite"
-    android:background="@drawable/bg_settings_tile_error"
-    android:orientation="vertical"
-    android:padding="12dp"
+    android:background="@drawable/bg_auth_inline_error"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:padding="@dimen/space_inset"
     android:visibility="gone">
 
-    <TextView
-        android:id="@+id/googleEmailInUseTitle"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/error_google_email_in_use_title"
-        android:textAppearance="?attr/textAppearanceBodyMedium"
-        android:textColor="?attr/colorOnErrorContainer"
-        android:textStyle="bold" />
+    <ImageView
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:layout_marginEnd="@dimen/space_sm"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_error_outline"
+        app:tint="?attr/colorError" />
 
-    <TextView
-        android:id="@+id/googleEmailInUseBody"
-        android:layout_width="match_parent"
+    <LinearLayout
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="@string/error_google_email_in_use_body"
-        android:textAppearance="?attr/textAppearanceBodyMedium"
-        android:textColor="?attr/colorOnErrorContainer" />
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/googleEmailInUseTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/error_google_email_in_use_title"
+            android:textAppearance="?attr/textAppearanceLabelMedium"
+            android:textColor="?attr/colorError"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/googleEmailInUseBody"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_xs"
+            android:text="@string/error_google_email_in_use_body"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnErrorContainer" />
+    </LinearLayout>
 </LinearLayout>
