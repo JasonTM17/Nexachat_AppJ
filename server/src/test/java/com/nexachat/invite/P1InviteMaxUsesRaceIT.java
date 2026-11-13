@@ -169,7 +169,7 @@ class P1InviteMaxUsesRaceIT {
     }
 
     @Test
-    void concurrentRevocationMustInvalidateAnInFlightJoin() throws Exception {
+    void revocationQueuedBeforeAJoinMustInvalidateTheJoin() throws Exception {
         UUID groupId = createGroup(List.of(dave.id()));
         MvcResult link = postJson("/api/v1/conversations/" + groupId + "/invite-link",
                 alice.accessToken(), Map.of("requiresApproval", false))
@@ -180,37 +180,93 @@ class P1InviteMaxUsesRaceIT {
         UUID linkId = UUID.fromString(objectMapper.readTree(link.getResponse().getContentAsString())
                 .get("id").asText());
 
+        // Revocation and join both serialize on the conversation row. The test holds the
+        // row, queues the revocation first and the join second, then releases the row, so
+        // the join runs strictly after the revocation committed.
         try (Connection lockConnection = jdbcTemplate.getDataSource().getConnection()) {
             lockConnection.setAutoCommit(false);
-            try (PreparedStatement statement = lockConnection.prepareStatement(
-                    "SELECT 1 FROM conversations WHERE id = ? FOR UPDATE")) {
-                statement.setObject(1, groupId);
-                statement.executeQuery().close();
-            }
+            holdConversationRow(lockConnection, groupId);
+
+            CompletableFuture<Integer> revoke = revokeAsync(groupId, alice.accessToken());
+            awaitBlockedTransactions(1, "conversations");
+            CompletableFuture<Integer> join = joinAsync(token, bob.accessToken());
+            awaitBlockedTransactions(2, "conversations");
+
+            lockConnection.commit();
+            int revokeStatus = revoke.get(10, TimeUnit.SECONDS);
+            int joinStatus = join.get(10, TimeUnit.SECONDS);
+
+            assertThat(revokeStatus).isEqualTo(204);
+            assertThat(joinStatus).isEqualTo(404);
+            assertThat(membershipCount(groupId, bob.id())).isZero();
+            assertThat(revokedLinkCount(linkId)).as("the revocation must persist").isEqualTo(1);
+        }
+    }
+
+    @Test
+    void joinQueuedBeforeARevocationCompletesAndTheRevocationStillPersists() throws Exception {
+        UUID groupId = createGroup(List.of(dave.id()));
+        MvcResult link = postJson("/api/v1/conversations/" + groupId + "/invite-link",
+                alice.accessToken(), Map.of("requiresApproval", false))
+                .andExpect(res -> assertThat(res.getResponse().getStatus()).isEqualTo(201))
+                .andReturn();
+        String token = objectMapper.readTree(link.getResponse().getContentAsString())
+                .get("token").asText();
+        UUID linkId = UUID.fromString(objectMapper.readTree(link.getResponse().getContentAsString())
+                .get("id").asText());
+
+        // The join queued first holds the link it already loaded; the later revocation must
+        // still commit afterwards instead of being lost or failing the join.
+        try (Connection lockConnection = jdbcTemplate.getDataSource().getConnection()) {
+            lockConnection.setAutoCommit(false);
+            holdConversationRow(lockConnection, groupId);
 
             CompletableFuture<Integer> join = joinAsync(token, bob.accessToken());
             awaitBlockedTransactions(1, "conversations");
-
-            // Revoke while the join is parked at the conversation lock with the
-            // link entity already loaded inside its persistence context.
-            mockMvc.perform(delete("/api/v1/conversations/{id}/invite-link", groupId)
-                            .header("Authorization", "Bearer " + alice.accessToken()))
-                    .andExpect(status().isNoContent());
+            CompletableFuture<Integer> revoke = revokeAsync(groupId, alice.accessToken());
+            awaitBlockedTransactions(2, "conversations");
 
             lockConnection.commit();
             int joinStatus = join.get(10, TimeUnit.SECONDS);
+            int revokeStatus = revoke.get(10, TimeUnit.SECONDS);
 
-            Integer membership = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM conversation_members WHERE conversation_id = ? AND user_id = ?",
-                    Integer.class, groupId, bob.id());
-            Integer revokedAt = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM group_invite_links WHERE id = ? AND revoked_at IS NOT NULL",
-                    Integer.class, linkId);
-
-            assertThat(revokedAt).as("the revocation must survive the in-flight join").isEqualTo(1);
-            assertThat(joinStatus).isEqualTo(404);
-            assertThat(membership).isZero();
+            assertThat(joinStatus).isEqualTo(200);
+            assertThat(revokeStatus).isEqualTo(204);
+            assertThat(membershipCount(groupId, bob.id())).isEqualTo(1);
+            assertThat(revokedLinkCount(linkId)).as("the revocation must persist").isEqualTo(1);
         }
+    }
+
+    private static void holdConversationRow(Connection connection, UUID groupId) throws Exception {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT 1 FROM conversations WHERE id = ? FOR UPDATE")) {
+            statement.setObject(1, groupId);
+            statement.executeQuery().close();
+        }
+    }
+
+    private CompletableFuture<Integer> revokeAsync(UUID groupId, String accessToken) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                return mockMvc.perform(delete("/api/v1/conversations/{id}/invite-link", groupId)
+                                .header("Authorization", "Bearer " + accessToken))
+                        .andReturn().getResponse().getStatus();
+            } catch (Exception ex) {
+                throw new IllegalStateException(ex);
+            }
+        });
+    }
+
+    private Integer membershipCount(UUID groupId, UUID userId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM conversation_members WHERE conversation_id = ? AND user_id = ?",
+                Integer.class, groupId, userId);
+    }
+
+    private Integer revokedLinkCount(UUID linkId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM group_invite_links WHERE id = ? AND revoked_at IS NOT NULL",
+                Integer.class, linkId);
     }
 
     @Test
@@ -236,12 +292,12 @@ class P1InviteMaxUsesRaceIT {
             // the partial unique index admits only one.
             CompletableFuture<Integer> first = rotateAsync(groupId);
             CompletableFuture<Integer> second = rotateAsync(groupId);
-            // The first rotation parks on the link row; the second is serialized
-            // behind it by the conversation row lock it already holds.
+            // The first rotation holds the admin's user row and the conversation row and parks
+            // on the link row; the second is serialized behind it at the admin's user row lock.
             TestWaits.until("the first rotation to block on the group_invite_links row lock "
-                    + "and the second behind the conversation row lock",
+                    + "and the second behind the admin's user row lock",
                     () -> lockWaiters("group_invite_links") >= 1
-                            && lockWaiters("conversations") >= 1);
+                            && lockWaiters("from users") >= 1);
             lockConnection.commit();
 
             int firstStatus = first.get(10, TimeUnit.SECONDS);
