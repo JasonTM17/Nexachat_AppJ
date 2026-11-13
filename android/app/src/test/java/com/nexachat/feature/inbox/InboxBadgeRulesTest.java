@@ -1,5 +1,6 @@
 package com.nexachat.feature.inbox;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -106,11 +107,13 @@ public final class InboxBadgeRulesTest {
     }
 
     @Test
-    public void avatarView_usesOnSurfaceVariantForOfflineDotFill() throws Exception {
+    public void avatarView_hidesOfflinePresenceDotAndUsesPresenceRules() throws Exception {
         String source = readAvatarViewSource();
-        assertTrue(source.contains("colorOnSurfaceVariant"));
-        assertTrue("offline dot must not reference stitch_offline_dot",
-                !source.contains("stitch_offline_dot"));
+        assertTrue(source.contains("AvatarPresenceDotRules"));
+        assertTrue(source.contains("shouldShowDot"));
+        assertFalse("offline peers should not render a grey dot",
+                source.contains("colorOnSurfaceVariant"));
+        assertFalse(source.contains("stitch_offline_dot"));
     }
 
     @Test

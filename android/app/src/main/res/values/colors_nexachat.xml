@@ -32,7 +32,7 @@
     <color name="error_container_light">#FFF9DEDC</color>
     <color name="on_error_container_light">#FF410E0B</color>
     <color name="success_emerald">@color/tertiary_emerald</color>
-    <color name="stitch_online_dot">#FF2E7D32</color>
+    <color name="stitch_online_dot">#FF2E9948</color>
     <color name="stitch_offline_dot">#FF7B717E</color>
     <color name="stitch_fab_fill">#FF733F68</color>
     <color name="stitch_ai_badge_bg">@color/brand_indigo_container</color>

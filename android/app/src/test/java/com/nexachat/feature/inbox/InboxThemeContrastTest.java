@@ -39,6 +39,16 @@ public final class InboxThemeContrastTest {
     }
 
     @Test
+    public void presenceDotMeetsContrastOnSurfaceRing() throws Exception {
+        Map<String, String> light = loadThemeColors(false);
+        Map<String, String> dark = loadThemeColors(true);
+        assertPair(light, "stitch_online_dot", "colorSurface", 3.0);
+        assertPair(dark, "stitch_online_dot", "colorSurface", 3.0);
+        assertPair(light, "stitch_online_dot", "colorSurfaceContainer", 3.0);
+        assertPair(dark, "stitch_online_dot", "colorSurfaceContainer", 3.0);
+    }
+
+    @Test
     public void lightSurfaceAndAccentPairsMeetContrastTargets() throws Exception {
         Map<String, String> colors = loadThemeColors(false);
         assertPair(colors, "colorOnSurface", "colorSurfaceContainer", 4.5);

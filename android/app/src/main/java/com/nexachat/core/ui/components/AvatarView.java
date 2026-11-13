@@ -57,7 +57,7 @@ public class AvatarView extends FrameLayout {
 
         statusDotView = new View(context);
         statusDotView.setVisibility(GONE);
-        int dotPx = dpToPx(10);
+        int dotPx = dpToPx(AvatarPresenceDotRules.MIN_DOT_DP);
         LayoutParams dotLp = new LayoutParams(dotPx, dotPx, Gravity.BOTTOM | Gravity.END);
         addView(statusDotView, dotLp);
     }
@@ -97,6 +97,7 @@ public class AvatarView extends FrameLayout {
     public void setShowStoryRing(boolean showRing) {
         this.showStoryRing = showRing;
         applyColors();
+        layoutStatusDot();
     }
 
     @Override
@@ -106,46 +107,45 @@ public class AvatarView extends FrameLayout {
         float density = getResources().getDisplayMetrics().density;
         float textPx = AvatarInitialsSizing.textSizePx(diameterPx, displayName, density);
         initialsView.setTextSize(TypedValue.COMPLEX_UNIT_PX, textPx);
+        layoutStatusDot();
+    }
 
-        int dotPx = Math.max(dpToPx(10), Math.round(Math.min(w, h) * 0.26f));
-        LayoutParams lp = (LayoutParams) statusDotView.getLayoutParams();
-        if (lp != null && (lp.width != dotPx || lp.height != dotPx)) {
-            lp.width = dotPx;
-            lp.height = dotPx;
-            statusDotView.setLayoutParams(lp);
+    private void layoutStatusDot() {
+        int diameterPx = Math.min(getWidth(), getHeight());
+        if (diameterPx <= 0) {
+            return;
         }
+        float density = getResources().getDisplayMetrics().density;
+        int dotPx = AvatarPresenceDotRules.dotDiameterPx(diameterPx, density);
+        int insetPx = AvatarPresenceDotRules.dotCornerInsetPx(dotPx, density);
+        LayoutParams lp = (LayoutParams) statusDotView.getLayoutParams();
+        if (lp == null) {
+            return;
+        }
+        lp.width = dotPx;
+        lp.height = dotPx;
+        lp.gravity = Gravity.BOTTOM | Gravity.END;
+        lp.setMarginEnd(insetPx);
+        lp.bottomMargin = insetPx;
+        statusDotView.setLayoutParams(lp);
     }
 
     private void updateStatusDot() {
-        if (onlineStatus == null) {
+        if (!AvatarPresenceDotRules.shouldShowDot(onlineStatus)) {
             statusDotView.setVisibility(GONE);
             return;
         }
         statusDotView.setVisibility(VISIBLE);
-        int fillColor = Boolean.TRUE.equals(onlineStatus)
-                ? ContextCompat.getColor(getContext(), R.color.stitch_online_dot)
-                : resolveOnSurfaceVariantColor();
+        int fillColor = ContextCompat.getColor(getContext(), R.color.stitch_online_dot);
         int strokeColor = resolveSurfaceColor();
-        int strokeWidth = dpToPx(2);
+        int strokeWidth = dpToPx(AvatarPresenceDotRules.STROKE_DP);
 
         GradientDrawable dotDrawable = new GradientDrawable();
         dotDrawable.setShape(GradientDrawable.OVAL);
         dotDrawable.setColor(fillColor);
         dotDrawable.setStroke(strokeWidth, strokeColor);
         statusDotView.setBackground(dotDrawable);
-    }
-
-    @ColorInt
-    private int resolveOnSurfaceVariantColor() {
-        TypedValue value = new TypedValue();
-        if (getContext().getTheme().resolveAttribute(
-                com.google.android.material.R.attr.colorOnSurfaceVariant, value, true)) {
-            if (value.resourceId != 0) {
-                return ContextCompat.getColor(getContext(), value.resourceId);
-            }
-            return value.data;
-        }
-        return ContextCompat.getColor(getContext(), R.color.colorOnSurfaceVariant);
+        layoutStatusDot();
     }
 
     @ColorInt
