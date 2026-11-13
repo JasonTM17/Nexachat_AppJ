@@ -1,18 +1,35 @@
 package com.nexachat.feature.auth;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import com.nexachat.core.common.WhitespaceTrim;
 
-/** Display-name rules for the one-time Google signup completion screen. */
+/** Shared display-name rules for register and profile-completion flows. */
 public final class CompleteProfileDisplayNameRules {
 
     public static final int MAX_LENGTH = 60;
 
+    public enum Problem {
+        BLANK,
+        TOO_LONG
+    }
+
     private CompleteProfileDisplayNameRules() {}
 
-    public static boolean isValid(@NonNull String raw) {
+    @Nullable
+    public static Problem problem(@NonNull String raw) {
         String trimmed = WhitespaceTrim.trim(raw);
-        return !trimmed.isEmpty() && trimmed.length() <= MAX_LENGTH;
+        if (trimmed.isEmpty()) {
+            return Problem.BLANK;
+        }
+        if (trimmed.length() > MAX_LENGTH) {
+            return Problem.TOO_LONG;
+        }
+        return null;
+    }
+
+    public static boolean isValid(@NonNull String raw) {
+        return problem(raw) == null;
     }
 
     @NonNull

@@ -53,7 +53,7 @@ public final class CompleteProfileViewModel extends ViewModel {
                                         .withLoading(false)
                                         .withUser(user)
                                         .withDisplayName(name)
-                                        .withNameError(false));
+                                        .withDisplayNameProblem(null));
                             } else {
                                 ApiError error = ((Result.Failure<?>) result).getError();
                                 updateState(state -> state.withLoading(false).withError(error));
@@ -64,7 +64,7 @@ public final class CompleteProfileViewModel extends ViewModel {
     }
 
     public void onDisplayNameChange(@NonNull String value) {
-        updateState(state -> state.withDisplayName(value).withNameError(false));
+        updateState(state -> state.withDisplayName(value).withDisplayNameProblem(null));
     }
 
     public void continueToInbox() {
@@ -73,8 +73,10 @@ public final class CompleteProfileViewModel extends ViewModel {
             return;
         }
         String trimmed = CompleteProfileDisplayNameRules.normalize(state.getDisplayName());
-        if (!CompleteProfileDisplayNameRules.isValid(trimmed)) {
-            updateState(current -> current.withNameError(true));
+        CompleteProfileDisplayNameRules.Problem problem =
+                CompleteProfileDisplayNameRules.problem(state.getDisplayName());
+        if (problem != null) {
+            updateState(current -> current.withDisplayNameProblem(problem));
             return;
         }
         UserDto user = state.getUser();
@@ -127,11 +129,11 @@ public final class CompleteProfileViewModel extends ViewModel {
         @NonNull private final String displayName;
         private final boolean loading;
         private final boolean saving;
-        private final boolean nameError;
+        @Nullable private final CompleteProfileDisplayNameRules.Problem displayNameProblem;
         @Nullable private final ApiError error;
 
         public UiState() {
-            this(null, "", false, false, false, null);
+            this(null, "", false, false, null, null);
         }
 
         public UiState(
@@ -139,13 +141,13 @@ public final class CompleteProfileViewModel extends ViewModel {
                 @NonNull String displayName,
                 boolean loading,
                 boolean saving,
-                boolean nameError,
+                @Nullable CompleteProfileDisplayNameRules.Problem displayNameProblem,
                 @Nullable ApiError error) {
             this.user = user;
             this.displayName = displayName;
             this.loading = loading;
             this.saving = saving;
-            this.nameError = nameError;
+            this.displayNameProblem = displayNameProblem;
             this.error = error;
         }
 
@@ -167,8 +169,9 @@ public final class CompleteProfileViewModel extends ViewModel {
             return saving;
         }
 
-        public boolean getNameError() {
-            return nameError;
+        @Nullable
+        public CompleteProfileDisplayNameRules.Problem getDisplayNameProblem() {
+            return displayNameProblem;
         }
 
         @Nullable
@@ -177,27 +180,28 @@ public final class CompleteProfileViewModel extends ViewModel {
         }
 
         public UiState withUser(@Nullable UserDto value) {
-            return new UiState(value, displayName, loading, saving, nameError, error);
+            return new UiState(value, displayName, loading, saving, displayNameProblem, error);
         }
 
         public UiState withDisplayName(@NonNull String value) {
-            return new UiState(user, value, loading, saving, nameError, error);
+            return new UiState(user, value, loading, saving, displayNameProblem, error);
         }
 
         public UiState withLoading(boolean value) {
-            return new UiState(user, displayName, value, saving, nameError, error);
+            return new UiState(user, displayName, value, saving, displayNameProblem, error);
         }
 
         public UiState withSaving(boolean value) {
-            return new UiState(user, displayName, loading, value, nameError, error);
+            return new UiState(user, displayName, loading, value, displayNameProblem, error);
         }
 
-        public UiState withNameError(boolean value) {
+        public UiState withDisplayNameProblem(
+                @Nullable CompleteProfileDisplayNameRules.Problem value) {
             return new UiState(user, displayName, loading, saving, value, error);
         }
 
         public UiState withError(@Nullable ApiError value) {
-            return new UiState(user, displayName, loading, saving, nameError, value);
+            return new UiState(user, displayName, loading, saving, displayNameProblem, value);
         }
     }
 }

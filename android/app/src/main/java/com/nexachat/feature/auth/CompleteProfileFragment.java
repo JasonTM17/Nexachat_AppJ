@@ -73,6 +73,18 @@ public final class CompleteProfileFragment extends Fragment {
                 R.id.inboxFragment, null, AuthNav.signedInOptions());
     }
 
+    @Nullable
+    private CharSequence displayNameErrorText(
+            @Nullable CompleteProfileDisplayNameRules.Problem problem) {
+        if (problem == null) {
+            return null;
+        }
+        if (problem == CompleteProfileDisplayNameRules.Problem.BLANK) {
+            return getString(R.string.error_display_name_required);
+        }
+        return getString(R.string.error_display_name_length);
+    }
+
     private void render(CompleteProfileViewModel.UiState state) {
         rendering = true;
         UserDto user = state.getUser();
@@ -87,8 +99,7 @@ public final class CompleteProfileFragment extends Fragment {
         if (!binding.displayNameInput.getText().toString().equals(state.getDisplayName())) {
             binding.displayNameInput.setText(state.getDisplayName());
         }
-        binding.displayNameLayout.setError(state.getNameError()
-                ? getString(R.string.error_display_name_length) : null);
+        binding.displayNameLayout.setError(displayNameErrorText(state.getDisplayNameProblem()));
         binding.completeProfileError.setVisibility(state.getError() == null
                 ? View.GONE : View.VISIBLE);
         if (state.getError() != null) {

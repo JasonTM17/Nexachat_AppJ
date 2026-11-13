@@ -110,12 +110,24 @@ public final class RegisterFragment extends Fragment {
         @Override public void onTextChanged(CharSequence s, int start, int before, int count) { if (!rendering) change.accept(s.toString()); }
         @Override public void afterTextChanged(Editable s) {}
     }; }
+    @Nullable
+    private CharSequence displayNameErrorText(
+            @Nullable CompleteProfileDisplayNameRules.Problem problem) {
+        if (problem == null) {
+            return null;
+        }
+        if (problem == CompleteProfileDisplayNameRules.Problem.BLANK) {
+            return getString(R.string.error_display_name_required);
+        }
+        return getString(R.string.error_display_name_length);
+    }
+
     private void render(AuthViewModel.UiState s) {
         rendering = true;
         if (!binding.nameInput.getText().toString().equals(s.getDisplayName())) binding.nameInput.setText(s.getDisplayName());
         if (!binding.phoneInput.getText().toString().equals(s.getPhone())) binding.phoneInput.setText(s.getPhone());
         if (!binding.passwordInput.getText().toString().equals(s.getPassword())) binding.passwordInput.setText(s.getPassword());
-        binding.nameLayout.setError(s.getDisplayNameError() ? getString(R.string.error_display_name_required) : null);
+        binding.nameLayout.setError(displayNameErrorText(s.getDisplayNameProblem()));
         binding.phoneLayout.setError(s.getPhoneError() ? getString(R.string.error_phone_required) : null);
         binding.passwordLayout.setError(s.getPasswordError() ? getString(R.string.error_password_short) : null);
         boolean mismatch = confirmChecked && !AuthFieldValidators.passwordsMatch(s.getPassword(), confirmation);

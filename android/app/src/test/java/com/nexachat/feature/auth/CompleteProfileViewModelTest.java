@@ -69,13 +69,38 @@ public final class CompleteProfileViewModelTest {
     }
 
     @Test
-    public void blankNameShowsInlineError() {
+    public void blankNameShowsRequiredInlineError() {
         CompleteProfileViewModel viewModel = new CompleteProfileViewModel(contactsRepository);
         viewModel.onDisplayNameChange("   ");
         viewModel.continueToInbox();
 
-        assertTrue(viewModel.getUiState().getValue().getNameError());
+        assertEquals(
+                CompleteProfileDisplayNameRules.Problem.BLANK,
+                viewModel.getUiState().getValue().getDisplayNameProblem());
         verify(contactsRepository, never()).updateDisplayName(anyString());
+    }
+
+    @Test
+    public void tooLongNameShowsLengthInlineError() {
+        CompleteProfileViewModel viewModel = new CompleteProfileViewModel(contactsRepository);
+        viewModel.onDisplayNameChange("a".repeat(61));
+        viewModel.continueToInbox();
+
+        assertEquals(
+                CompleteProfileDisplayNameRules.Problem.TOO_LONG,
+                viewModel.getUiState().getValue().getDisplayNameProblem());
+        verify(contactsRepository, never()).updateDisplayName(anyString());
+    }
+
+    @Test
+    public void sixtyCharactersAfterTrimIsAccepted() {
+        when(contactsRepository.updateDisplayName(anyString())).thenReturn(
+                Single.just(new Result.Success<>(user)));
+        CompleteProfileViewModel viewModel = new CompleteProfileViewModel(contactsRepository);
+        viewModel.onDisplayNameChange(" " + "a".repeat(60) + " ");
+        viewModel.continueToInbox();
+
+        verify(contactsRepository, times(1)).updateDisplayName("a".repeat(60));
     }
 
     @Test

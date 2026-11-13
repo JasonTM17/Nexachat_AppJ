@@ -168,13 +168,15 @@ public final class AuthViewModel extends ViewModel {
         UiState state = currentState();
         boolean phoneInvalid = isBlank(state.getPhone());
         boolean passwordInvalid = state.getPassword().length() < MIN_PASSWORD_LENGTH;
-        boolean nameInvalid = isBlank(state.getDisplayName());
-        if (phoneInvalid || passwordInvalid || nameInvalid) {
+        CompleteProfileDisplayNameRules.Problem nameProblem =
+                CompleteProfileDisplayNameRules.problem(state.getDisplayName());
+        if (phoneInvalid || passwordInvalid || nameProblem != null) {
             updateState(current -> current.withRegisterValidation(
-                    phoneInvalid, passwordInvalid, nameInvalid));
+                    phoneInvalid, passwordInvalid, nameProblem));
             return;
         }
-        submitRegister(state.getPhone(), state.getPassword(), state.getDisplayName());
+        String displayName = CompleteProfileDisplayNameRules.normalize(state.getDisplayName());
+        submitRegister(state.getPhone(), state.getPassword(), displayName);
     }
 
     private void submitLogin(@NonNull String phone, @NonNull String password) {
@@ -254,10 +256,10 @@ public final class AuthViewModel extends ViewModel {
         @Nullable private final ApiError error;
         private final boolean phoneError;
         private final boolean passwordError;
-        private final boolean displayNameError;
+        @Nullable private final CompleteProfileDisplayNameRules.Problem displayNameProblem;
 
         public UiState() {
-            this("", "", "", false, null, false, false, false);
+            this("", "", "", false, null, false, false, null);
         }
 
         public UiState(
@@ -268,7 +270,7 @@ public final class AuthViewModel extends ViewModel {
                 @Nullable ApiError error,
                 boolean phoneError,
                 boolean passwordError,
-                boolean displayNameError) {
+                @Nullable CompleteProfileDisplayNameRules.Problem displayNameProblem) {
             this.phone = Objects.requireNonNull(phone, "phone");
             this.password = Objects.requireNonNull(password, "password");
             this.displayName = Objects.requireNonNull(displayName, "displayName");
@@ -276,7 +278,7 @@ public final class AuthViewModel extends ViewModel {
             this.error = error;
             this.phoneError = phoneError;
             this.passwordError = passwordError;
-            this.displayNameError = displayNameError;
+            this.displayNameProblem = displayNameProblem;
         }
 
         @NonNull
@@ -311,44 +313,47 @@ public final class AuthViewModel extends ViewModel {
             return passwordError;
         }
 
-        public boolean getDisplayNameError() {
-            return displayNameError;
+        @Nullable
+        public CompleteProfileDisplayNameRules.Problem getDisplayNameProblem() {
+            return displayNameProblem;
         }
 
         public UiState withPhone(@NonNull String value) {
             return new UiState(
                     value, password, displayName, loading, error, false, passwordError,
-                    displayNameError);
+                    displayNameProblem);
         }
 
         public UiState withPassword(@NonNull String value) {
             return new UiState(
                     phone, value, displayName, loading, error, phoneError, false,
-                    displayNameError);
+                    displayNameProblem);
         }
 
         public UiState withDisplayName(@NonNull String value) {
             return new UiState(
-                    phone, password, value, loading, error, phoneError, passwordError, false);
+                    phone, password, value, loading, error, phoneError, passwordError, null);
         }
 
         public UiState withLoginValidation(boolean phoneInvalid, boolean passwordInvalid) {
             return new UiState(
                     phone, password, displayName, loading, null, phoneInvalid, passwordInvalid,
-                    displayNameError);
+                    displayNameProblem);
         }
 
         public UiState withRegisterValidation(
-                boolean phoneInvalid, boolean passwordInvalid, boolean nameInvalid) {
+                boolean phoneInvalid,
+                boolean passwordInvalid,
+                @Nullable CompleteProfileDisplayNameRules.Problem nameProblem) {
             return new UiState(
                     phone, password, displayName, loading, null, phoneInvalid, passwordInvalid,
-                    nameInvalid);
+                    nameProblem);
         }
 
         public UiState withLoading(boolean value, @Nullable ApiError newError) {
             return new UiState(
                     phone, password, displayName, value, newError, phoneError, passwordError,
-                    displayNameError);
+                    displayNameProblem);
         }
 
         @Override
@@ -362,7 +367,7 @@ public final class AuthViewModel extends ViewModel {
             return loading == state.loading
                     && phoneError == state.phoneError
                     && passwordError == state.passwordError
-                    && displayNameError == state.displayNameError
+                    && displayNameProblem == state.displayNameProblem
                     && phone.equals(state.phone)
                     && password.equals(state.password)
                     && displayName.equals(state.displayName)
@@ -373,7 +378,7 @@ public final class AuthViewModel extends ViewModel {
         public int hashCode() {
             return Objects.hash(
                     phone, password, displayName, loading, error, phoneError, passwordError,
-                    displayNameError);
+                    displayNameProblem);
         }
 
         @Override
@@ -385,7 +390,7 @@ public final class AuthViewModel extends ViewModel {
                     + ", error=" + error
                     + ", phoneError=" + phoneError
                     + ", passwordError=" + passwordError
-                    + ", displayNameError=" + displayNameError
+                    + ", displayNameProblem=" + displayNameProblem
                     + ")";
         }
     }

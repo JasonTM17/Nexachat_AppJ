@@ -48,7 +48,7 @@ public final class AuthViewModelTest {
     public void uiStateStringDoesNotExposePassword() {
         AuthViewModel.UiState state = new AuthViewModel.UiState(
                 "+84912345678", "auth-secret-marker", "Minh", false, null,
-                false, false, false);
+                false, false, null);
 
         assertFalse(state.toString().contains("auth-secret-marker"));
     }
@@ -130,8 +130,53 @@ public final class AuthViewModelTest {
 
         viewModel.register();
 
-        assertTrue(viewModel.getUiState().getValue().getDisplayNameError());
+        assertEquals(
+                CompleteProfileDisplayNameRules.Problem.BLANK,
+                viewModel.getUiState().getValue().getDisplayNameProblem());
         verify(repository, never()).register(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    public void registerWithWhitespaceOnlyDisplayNameShowsRequiredError() {
+        viewModel.onPhoneChange("0912345678");
+        viewModel.onPasswordChange("secret123");
+        viewModel.onDisplayNameChange("   ");
+
+        viewModel.register();
+
+        assertEquals(
+                CompleteProfileDisplayNameRules.Problem.BLANK,
+                viewModel.getUiState().getValue().getDisplayNameProblem());
+        verify(repository, never()).register(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    public void registerWithTooLongDisplayNameIsBlockedBeforeRepository() {
+        viewModel.onPhoneChange("0912345678");
+        viewModel.onPasswordChange("secret123");
+        viewModel.onDisplayNameChange("a".repeat(61));
+
+        viewModel.register();
+
+        assertEquals(
+                CompleteProfileDisplayNameRules.Problem.TOO_LONG,
+                viewModel.getUiState().getValue().getDisplayNameProblem());
+        verify(repository, never()).register(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    public void registerWithSixtyCharactersAfterTrimCallsRepositoryWithTrimmedName() {
+        when(repository.register(anyString(), anyString(), anyString()))
+                .thenReturn(Single.just(new Result.Success<>(authResponse)));
+        String padded = " " + "a".repeat(60) + " ";
+        viewModel.onPhoneChange("0912345678");
+        viewModel.onPasswordChange("secret123");
+        viewModel.onDisplayNameChange(padded);
+
+        viewModel.register();
+
+        verify(repository, times(1))
+                .register("0912345678", "secret123", "a".repeat(60));
     }
 
     @Test
