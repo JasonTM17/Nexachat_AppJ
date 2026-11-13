@@ -7,19 +7,22 @@ import argparse
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
+import uuid
 from pathlib import Path
 from typing import BinaryIO
 from urllib.parse import urlparse
 
 from manifest import (
+    COMPLETE_MARKER,
     DUMP_NAME,
     FORMAT_VERSION,
     OBJECTS_DIR,
     Reconciliation,
-    complete_marker_path,
     configure_logging,
     is_canonical_storage_key,
     lock_path,
@@ -81,29 +84,59 @@ def local_storage_root() -> Path:
     return Path(root).expanduser().resolve()
 
 
-def acquire_lock(output_dir: Path, owner: str) -> None:
+def refuse_existing_destination(output_dir: Path) -> None:
+    """Reject a destination that already holds a bundle before any write."""
+    if not output_dir.exists():
+        return
+    if not output_dir.is_dir():
+        raise SystemExit(f"Backup destination {output_dir} is not a directory.")
+    if any(output_dir.iterdir()):
+        raise SystemExit(
+            "Backup destination is not empty; refusing to modify a completed or partial bundle."
+        )
+
+
+def acquire_lock(output_dir: Path, owner: str) -> str:
+    """Create this process's lock with exclusive creation. Returns the owner token."""
     output_dir.mkdir(parents=True, exist_ok=True)
     lock = lock_path(output_dir)
-    if lock.exists():
+    token = f"{owner}:{os.getpid()}:{uuid.uuid4()}"
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
         try:
             existing = lock.read_text(encoding="utf-8").strip()
         except OSError:
             existing = "(unreadable)"
         raise SystemExit(f"Concurrent or partial capture: lock exists ({existing!r}).")
-    lock.write_text(owner + "\n", encoding="utf-8")
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(token + "\n")
+    return token
 
 
-def release_lock(output_dir: Path) -> None:
+def release_lock(output_dir: Path, token: str) -> None:
+    """Remove the lock only when it still belongs to this capture."""
     lock = lock_path(output_dir)
-    if lock.is_file():
+    try:
+        current = lock.read_text(encoding="utf-8").strip()
+    except (FileNotFoundError, OSError):
+        return
+    if current != token:
+        return
+    try:
         lock.unlink()
+    except FileNotFoundError:
+        return
 
 
-def detect_partial_output(output_dir: Path) -> None:
-    if complete_marker_path(output_dir).exists() and not manifest_path(output_dir).exists():
-        raise SystemExit("Partial output: complete marker without manifest.")
-    if manifest_path(output_dir).exists() and not complete_marker_path(output_dir).exists():
-        raise SystemExit("Partial output: manifest without complete marker (interrupted capture).")
+def publish_staging(staging: Path, output_dir: Path) -> None:
+    """Move a finished staging tree into the destination, marker last."""
+    entries = sorted(staging.iterdir(), key=lambda path: path.name == COMPLETE_MARKER)
+    for entry in entries:
+        dest = output_dir / entry.name
+        if dest.exists():
+            raise SystemExit("Refusing to overwrite backup destination content.")
+        shutil.move(os.fspath(entry), os.fspath(dest))
 
 
 def docker_db_host(db: dict[str, str]) -> str:
@@ -397,19 +430,18 @@ def object_backup_name(storage_key: str) -> str:
     return storage_key.replace("/", "__")
 
 
-def run_backup(target: str, output_dir: Path, quiesced: bool) -> dict[str, object]:
-    if not quiesced:
-        raise SystemExit("Refusing backup without --quiesced acknowledgement.")
-    detect_partial_output(output_dir)
-    acquire_lock(output_dir, target)
+def capture_staged(target: str, staging: Path) -> tuple[dict[str, object], int, int]:
+    """Write a complete bundle into an empty staging directory.
+
+    Returns the manifest payload, total captured bytes, and object count.
+    """
     db = parse_db_config()
     kind = storage_kind()
     writers = active_writers(db)
     if writers > 0:
-        release_lock(output_dir)
         raise SystemExit(f"Active writers detected ({writers}); quiesce synthetic jobs first.")
     referenced = sorted(query_referenced_keys_psql(db))
-    objects_dir = output_dir / OBJECTS_DIR
+    objects_dir = staging / OBJECTS_DIR
     objects_dir.mkdir(parents=True, exist_ok=True)
     present: list[str] = []
     missing: list[str] = []
@@ -432,13 +464,11 @@ def run_backup(target: str, output_dir: Path, quiesced: bool) -> dict[str, objec
         except FileNotFoundError:
             missing.append(key)
         except ValueError as err:
-            release_lock(output_dir)
             raise SystemExit(str(err)) from err
     reconciliation = Reconciliation(len(referenced), len(present), missing)
     if missing:
-        release_lock(output_dir)
         raise SystemExit(f"Referenced objects missing from storage: {missing}")
-    dump_path = output_dir / DUMP_NAME
+    dump_path = staging / DUMP_NAME
     pg_versions = run_pg_dump(db, dump_path)
     payload: dict[str, object] = {
         "format_version": FORMAT_VERSION,
@@ -456,16 +486,37 @@ def run_backup(target: str, output_dir: Path, quiesced: bool) -> dict[str, objec
         "objects": object_entries,
         "reconciliation": reconciliation.as_dict(),
     }
-    write_manifest(manifest_path(output_dir), payload)
-    write_complete_marker(output_dir)
-    release_lock(output_dir)
-    LOGGER.info(
-        "backup complete target=%s bytes=%s objects=%s",
-        target,
-        dump_path.stat().st_size + sum(int(v["size_bytes"]) for v in object_entries.values()),
-        len(object_entries),
+    write_manifest(manifest_path(staging), payload)
+    write_complete_marker(staging)
+    total_bytes = dump_path.stat().st_size + sum(
+        int(entry["size_bytes"]) for entry in object_entries.values()
     )
-    return payload
+    return payload, total_bytes, len(object_entries)
+
+
+def run_backup(target: str, output_dir: Path, quiesced: bool) -> dict[str, object]:
+    if not quiesced:
+        raise SystemExit("Refusing backup without --quiesced acknowledgement.")
+    refuse_existing_destination(output_dir)
+    token: str | None = None
+    staging: Path | None = None
+    try:
+        token = acquire_lock(output_dir, target)
+        staging = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}.staging-", dir=output_dir.parent))
+        payload, total_bytes, object_count = capture_staged(target, staging)
+        publish_staging(staging, output_dir)
+        LOGGER.info(
+            "backup complete target=%s bytes=%s objects=%s",
+            target,
+            total_bytes,
+            object_count,
+        )
+        return payload
+    finally:
+        if staging is not None and staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+        if token is not None:
+            release_lock(output_dir, token)
 
 
 def build_parser() -> argparse.ArgumentParser:

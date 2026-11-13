@@ -248,6 +248,102 @@ class BackupNegativeTest(unittest.TestCase):
 
 
 class BackupCaptureTest(unittest.TestCase):
+    def test_failed_second_capture_leaves_completed_bundle_intact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "backup"
+            storage = Path(tmp) / "uploads"
+            key = "attachments/11111111-1111-1111-1111-111111111111.txt"
+            (storage / "attachments").mkdir(parents=True)
+            (storage / key).write_bytes(b"hello-backup")
+            env = _backup_env(storage)
+            with mock.patch.dict(os.environ, env, clear=False):
+                with mock.patch.object(backup, "active_writers", return_value=0):
+                    with mock.patch.object(backup, "query_referenced_keys_psql", return_value={key}):
+                        with mock.patch.object(backup, "run_pg_dump", side_effect=_successful_dump):
+                            backup.run_backup("fixture", output, quiesced=True)
+            before = _snapshot(output)
+
+            def _truncate_then_fail(_db: dict[str, str], dest: Path) -> dict[str, int]:
+                dest.write_bytes(b"")
+                raise SystemExit("pg_dump failed")
+
+            with mock.patch.dict(os.environ, env, clear=False):
+                with mock.patch.object(backup, "active_writers", return_value=0):
+                    with mock.patch.object(backup, "query_referenced_keys_psql", return_value={key}):
+                        with mock.patch.object(backup, "run_pg_dump", side_effect=_truncate_then_fail):
+                            with self.assertRaises(SystemExit):
+                                backup.run_backup("fixture", output, quiesced=True)
+            self.assertEqual(_snapshot(output), before)
+
+    def test_failed_dump_does_not_publish_a_partial_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "backup"
+            storage = Path(tmp) / "uploads"
+            storage.mkdir()
+            env = _backup_env(storage)
+
+            def _truncate_then_fail(_db: dict[str, str], dest: Path) -> dict[str, int]:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(b"partial-dump")
+                raise SystemExit("pg_dump failed")
+
+            with mock.patch.dict(os.environ, env, clear=False):
+                with mock.patch.object(backup, "active_writers", return_value=0):
+                    with mock.patch.object(backup, "query_referenced_keys_psql", return_value=set()):
+                        with mock.patch.object(backup, "run_pg_dump", side_effect=_truncate_then_fail):
+                            with self.assertRaises(SystemExit):
+                                backup.run_backup("fixture", output, quiesced=True)
+            self.assertFalse((output / manifest.DUMP_NAME).exists())
+            self.assertFalse(manifest.complete_marker_path(output).exists())
+            self.assertFalse(manifest.lock_path(output).exists())
+
+    def test_concurrent_lock_acquisition_has_one_winner(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            self._assert_one_lock_winner(Path(tmp) / "locked")
+
+    def _assert_one_lock_winner(self, output: Path) -> None:
+        real_exists = Path.exists
+
+        def _hide_lock(path: Path) -> bool:
+            if path.name == manifest.LOCK_NAME:
+                return False
+            return real_exists(path)
+
+        barrier = threading.Barrier(2)
+        outcomes: list[str] = []
+        guard = threading.Lock()
+
+        def _worker() -> None:
+            barrier.wait(5)
+            try:
+                backup.acquire_lock(output, "owner")
+                result = "acquired"
+            except SystemExit:
+                result = "rejected"
+            with guard:
+                outcomes.append(result)
+
+        with mock.patch.object(Path, "exists", _hide_lock):
+            threads = [threading.Thread(target=_worker) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(5)
+                self.assertFalse(thread.is_alive())
+        self.assertEqual(sorted(outcomes), ["acquired", "rejected"])
+
+    def test_release_leaves_a_lock_owned_by_someone_else(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp)
+            lock = manifest.lock_path(output)
+            lock.write_text("other-process\n", encoding="utf-8")
+            try:
+                backup.release_lock(output, "this-process")
+            except TypeError:
+                backup.release_lock(output)
+            self.assertTrue(lock.is_file())
+            self.assertEqual(lock.read_text(encoding="utf-8"), "other-process\n")
+
     def test_successful_capture_writes_complete_last(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "backup"
@@ -284,6 +380,31 @@ class BackupCaptureTest(unittest.TestCase):
             self.assertEqual(data["reconciliation"]["present"], 1)
             obj_path = output / manifest.OBJECTS_DIR / backup.object_backup_name(key)
             self.assertEqual(manifest.sha256_bytes(payload_bytes), manifest.sha256_file(obj_path))
+
+
+def _backup_env(storage: Path) -> dict[str, str]:
+    return {
+        "BACKUP_DB_URL": "jdbc:postgresql://localhost:5433/nexachat_v12_backup_src",
+        "BACKUP_DB_USER": "nexachat",
+        "BACKUP_DB_PASSWORD": "local-only",
+        "NEXACHAT_STORAGE_PROVIDER": "local",
+        "NEXACHAT_STORAGE_ROOT": str(storage),
+        "BACKUP_PG_CONTAINER": "fake-db",
+    }
+
+
+def _successful_dump(_db: dict[str, str], dest: Path) -> dict[str, int]:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(b"-- synthetic dump\n")
+    return {"pg_dump_client_major": 18, "pg_server_major": 16}
+
+
+def _snapshot(root: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
 
 
 if __name__ == "__main__":
