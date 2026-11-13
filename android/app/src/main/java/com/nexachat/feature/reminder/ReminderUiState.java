@@ -12,12 +12,13 @@ public final class ReminderUiState {
     private final boolean loaded;
     private final List<Reminder> reminders;
     @Nullable private final ReminderRepository.Failure loadError;
+    @Nullable private final ReminderRepository.Failure refreshError;
     private final boolean saving;
     @Nullable private final ReminderEditorError editorError;
     private final long savedSequence;
 
     public ReminderUiState() {
-        this(false, false, Collections.emptyList(), null, false, null, 0L);
+        this(false, false, Collections.emptyList(), null, null, false, null, 0L);
     }
 
     public ReminderUiState(
@@ -25,6 +26,7 @@ public final class ReminderUiState {
             boolean loaded,
             @NonNull List<Reminder> reminders,
             @Nullable ReminderRepository.Failure loadError,
+            @Nullable ReminderRepository.Failure refreshError,
             boolean saving,
             @Nullable ReminderEditorError editorError,
             long savedSequence) {
@@ -32,6 +34,7 @@ public final class ReminderUiState {
         this.loaded = loaded;
         this.reminders = List.copyOf(reminders);
         this.loadError = loadError;
+        this.refreshError = refreshError;
         this.saving = saving;
         this.editorError = editorError;
         this.savedSequence = savedSequence;
@@ -41,6 +44,7 @@ public final class ReminderUiState {
     public boolean isLoaded() { return loaded; }
     @NonNull public List<Reminder> getReminders() { return reminders; }
     @Nullable public ReminderRepository.Failure getLoadError() { return loadError; }
+    @Nullable public ReminderRepository.Failure getRefreshError() { return refreshError; }
     public boolean isSaving() { return saving; }
     @Nullable public ReminderEditorError getEditorError() { return editorError; }
     public long getSavedSequence() { return savedSequence; }

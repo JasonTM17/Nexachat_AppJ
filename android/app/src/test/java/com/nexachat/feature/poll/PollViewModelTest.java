@@ -181,6 +181,35 @@ public final class PollViewModelTest {
     }
 
     @Test
+    public void cachedChangeRefreshFailureKeepsPollsExposesRetryAndBlocksTimerSpam() {
+        FakeRepository repository = new FakeRepository();
+        repository.nextPage = new PollPage(List.of(
+                poll("p-1", "other", PollStatus.OPEN, null,
+                        List.of(option("o-1", "A", 0, List.of()),
+                                option("o-2", "B", 0, List.of())),
+                        List.of(), 1L)), null);
+        PollViewModel viewModel = createViewModel(repository, true, viewer(false));
+        viewModel.load();
+
+        viewModel.refreshChanges();
+        repository.changes.get(0).fail(PollRepository.Failure.OFFLINE);
+
+        PollUiState failed = viewModel.getUiState().getValue();
+        assertEquals(PollRepository.Failure.OFFLINE, failed.getRefreshError());
+        assertEquals(1, failed.getPolls().size());
+        assertNull(failed.getLoadError());
+
+        int changesBefore = repository.changes.size();
+        viewModel.refreshChanges();
+        assertEquals(changesBefore, repository.changes.size());
+
+        viewModel.retryRefresh();
+        assertEquals(changesBefore + 1, repository.changes.size());
+        repository.changes.get(changesBefore).succeed(new PollChanges(List.of(), 1L, false));
+        assertNull(viewModel.getUiState().getValue().getRefreshError());
+    }
+
+    @Test
     public void changeFeedMergesUpdatesAndDeleteTombstones() {
         FakeRepository repository = new FakeRepository();
         repository.nextPage = new PollPage(List.of(
@@ -461,6 +490,10 @@ public final class PollViewModelTest {
 
         void succeed(PollChanges page) {
             callback.onSuccess(page);
+        }
+
+        void fail(PollRepository.Failure failure) {
+            callback.onFailure(failure);
         }
 
         @Override public void cancel() { }

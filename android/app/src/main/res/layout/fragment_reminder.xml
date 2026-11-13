@@ -38,5 +38,7 @@
         android:layout_gravity="bottom|end"
         android:layout_margin="@dimen/space_md"
         android:contentDescription="@string/reminder_add"
-        app:srcCompat="@drawable/ic_add" />
+        app:backgroundTint="@color/brand_fill"
+        app:srcCompat="@drawable/ic_add"
+        app:tint="@color/brand_on_fill" />
 </FrameLayout>

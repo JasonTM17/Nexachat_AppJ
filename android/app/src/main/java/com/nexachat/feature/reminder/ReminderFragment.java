@@ -12,6 +12,7 @@ import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.databinding.FragmentReminderBinding;
 import dagger.hilt.android.AndroidEntryPoint;
+import java.util.Objects;
 
 /** Reminder tab of the shared conversation board. */
 @AndroidEntryPoint
@@ -22,6 +23,7 @@ public final class ReminderFragment extends Fragment {
     private FragmentReminderBinding binding;
     private ReminderViewModel viewModel;
     private ReminderAdapter adapter;
+    @Nullable private ReminderRepository.Failure lastRefreshSnackbarError;
 
     public ReminderFragment() {
         super(R.layout.fragment_reminder);
@@ -96,6 +98,18 @@ public final class ReminderFragment extends Fragment {
             binding.reminderEmpty.setMessage(getString(blocked
                     ? ReminderText.loadError(state.getLoadError())
                     : R.string.reminder_empty));
+        }
+
+        ReminderRepository.Failure refreshError = state.getRefreshError();
+        if (refreshError != null && hasRows && !blocked
+                && !Objects.equals(refreshError, lastRefreshSnackbarError)) {
+            lastRefreshSnackbarError = refreshError;
+            Snackbar.make(binding.getRoot(), ReminderText.loadError(refreshError),
+                            Snackbar.LENGTH_LONG)
+                    .setAction(R.string.action_retry, ignored -> viewModel.retryRefresh())
+                    .show();
+        } else if (refreshError == null) {
+            lastRefreshSnackbarError = null;
         }
     }
 

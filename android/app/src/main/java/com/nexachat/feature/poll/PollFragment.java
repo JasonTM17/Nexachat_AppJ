@@ -17,6 +17,7 @@ import com.nexachat.databinding.FragmentPollBinding;
 import dagger.hilt.android.AndroidEntryPoint;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /** Poll tab of the shared conversation board. */
 @AndroidEntryPoint
@@ -39,6 +40,7 @@ public final class PollFragment extends Fragment {
     private FragmentPollBinding binding;
     private PollViewModel viewModel;
     private PollAdapter adapter;
+    @Nullable private PollRepository.Failure lastRefreshSnackbarError;
 
     public PollFragment() {
         super(R.layout.fragment_poll);
@@ -162,6 +164,18 @@ public final class PollFragment extends Fragment {
             binding.pollEmpty.setMessage(getString(blocked
                     ? PollText.loadError(state.getLoadError())
                     : R.string.poll_empty));
+        }
+
+        PollRepository.Failure refreshError = state.getRefreshError();
+        if (refreshError != null && hasRows && !blocked
+                && !Objects.equals(refreshError, lastRefreshSnackbarError)) {
+            lastRefreshSnackbarError = refreshError;
+            Snackbar.make(binding.getRoot(), PollText.loadError(refreshError),
+                            Snackbar.LENGTH_LONG)
+                    .setAction(R.string.action_retry, ignored -> viewModel.retryRefresh())
+                    .show();
+        } else if (refreshError == null) {
+            lastRefreshSnackbarError = null;
         }
     }
 

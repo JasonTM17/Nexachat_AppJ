@@ -82,7 +82,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/pollAddOption"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.NexaChat.Button.Text"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:minHeight="@dimen/min_touch_target"
@@ -113,7 +113,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/pollExpiry"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    style="@style/Widget.NexaChat.Button.Outlined"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -123,7 +123,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/pollExpiryClear"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.NexaChat.Button.Text"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="@dimen/space_xs"
@@ -150,7 +150,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/pollCreateCancel"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.NexaChat.Button.Text"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"

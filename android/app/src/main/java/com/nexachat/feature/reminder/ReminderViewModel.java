@@ -40,6 +40,7 @@ public final class ReminderViewModel extends ViewModel {
     private boolean loaded;
     private boolean saving;
     @Nullable private ReminderRepository.Failure loadError;
+    @Nullable private ReminderRepository.Failure refreshError;
     @Nullable private ReminderEditorError editorError;
     private long savedSequence;
     @Nullable private ReminderRepository.Cancellable activeLoad;
@@ -92,11 +93,23 @@ public final class ReminderViewModel extends ViewModel {
 
     /** Re-reads the list after a resume or a matching REMINDER push. */
     public void refresh() {
+        if (refreshError != null) {
+            return;
+        }
         requestList(true);
     }
 
     public void retry() {
         requestList(false);
+    }
+
+    /** Retries a failed silent refresh while keeping the cached reminder list visible. */
+    public void retryRefresh() {
+        if (loading) {
+            return;
+        }
+        refreshError = null;
+        requestList(true);
     }
 
     public void openEditor() {
@@ -285,6 +298,7 @@ public final class ReminderViewModel extends ViewModel {
                 loading = false;
                 loaded = true;
                 loadError = null;
+                refreshError = null;
                 activeLoad = null;
                 publish();
             }
@@ -297,7 +311,11 @@ public final class ReminderViewModel extends ViewModel {
                 loading = false;
                 loaded = true;
                 activeLoad = null;
-                if (!silentFailure) {
+                if (silentFailure) {
+                    if (!reminders.isEmpty()) {
+                        refreshError = failure;
+                    }
+                } else {
                     loadError = failure;
                 }
                 publish();
@@ -344,7 +362,7 @@ public final class ReminderViewModel extends ViewModel {
     private void publish() {
         uiState.setValue(new ReminderUiState(
                 loading, loaded, Collections.unmodifiableList(new ArrayList<>(reminders)),
-                loadError, saving, editorError, savedSequence));
+                loadError, refreshError, saving, editorError, savedSequence));
     }
 
     @Override

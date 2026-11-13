@@ -64,6 +64,7 @@ public final class PollViewModel extends ViewModel {
     @Nullable private String createdPollId;
     @Nullable private String myUserId;
     @Nullable private PollRepository.Failure loadError;
+    @Nullable private PollRepository.Failure refreshError;
     @Nullable private PollRepository.Failure createError;
     private boolean admin;
     private long lastSince;
@@ -135,6 +136,15 @@ public final class PollViewModel extends ViewModel {
         loadError = null;
         loaded = false;
         requestPage(null, true);
+    }
+
+    /** Retries a failed change-feed refresh while keeping the cached poll list visible. */
+    public void retryRefresh() {
+        if (!group || !loaded || loading || loadError != null || changesInFlight) {
+            return;
+        }
+        refreshError = null;
+        requestChanges(0);
     }
 
     public void loadMore() {
@@ -332,7 +342,8 @@ public final class PollViewModel extends ViewModel {
 
     /** Exposed for tests and for the fragment's resume timer. */
     public void refreshChanges() {
-        if (!group || !loaded || loading || changesInFlight || loadError != null) {
+        if (!group || !loaded || loading || changesInFlight || loadError != null
+                || refreshError != null) {
             return;
         }
         requestChanges(0);
@@ -356,6 +367,7 @@ public final class PollViewModel extends ViewModel {
                             requestChanges(page + 1);
                         } else {
                             changesInFlight = false;
+                            refreshError = null;
                             publish();
                         }
                     }
@@ -363,6 +375,10 @@ public final class PollViewModel extends ViewModel {
                     @Override
                     public void onFailure(@NonNull PollRepository.Failure failure) {
                         changesInFlight = false;
+                        if (!polls.isEmpty()) {
+                            refreshError = failure;
+                        }
+                        publish();
                     }
                 });
         activeRequests.add(request);
@@ -585,7 +601,7 @@ public final class PollViewModel extends ViewModel {
         }
         uiState.setValue(new PollUiState(
                 loading, loaded, Collections.unmodifiableList(new ArrayList<>(polls)),
-                loadError, loadingMore, hasMore, nextBefore, creating, createError,
+                loadError, refreshError, loadingMore, hasMore, nextBefore, creating, createError,
                 createdPollId, votingPollId, selectionCopy, voterNames, myUserId, admin));
     }
 

@@ -14,6 +14,7 @@ public final class PollUiState {
     private final boolean loaded;
     private final List<Poll> polls;
     @Nullable private final PollRepository.Failure loadError;
+    @Nullable private final PollRepository.Failure refreshError;
     private final boolean loadingMore;
     private final boolean hasMore;
     @Nullable private final String nextBefore;
@@ -27,7 +28,7 @@ public final class PollUiState {
     private final boolean admin;
 
     public PollUiState() {
-        this(false, false, Collections.emptyList(), null, false, false, null, false, null,
+        this(false, false, Collections.emptyList(), null, null, false, false, null, false, null,
                 null, null, Collections.emptyMap(), Collections.emptyMap(), null, false);
     }
 
@@ -36,6 +37,7 @@ public final class PollUiState {
             boolean loaded,
             @NonNull List<Poll> polls,
             @Nullable PollRepository.Failure loadError,
+            @Nullable PollRepository.Failure refreshError,
             boolean loadingMore,
             boolean hasMore,
             @Nullable String nextBefore,
@@ -51,6 +53,7 @@ public final class PollUiState {
         this.loaded = loaded;
         this.polls = List.copyOf(polls);
         this.loadError = loadError;
+        this.refreshError = refreshError;
         this.loadingMore = loadingMore;
         this.hasMore = hasMore;
         this.nextBefore = nextBefore;
@@ -72,6 +75,7 @@ public final class PollUiState {
     public boolean isLoaded() { return loaded; }
     @NonNull public List<Poll> getPolls() { return polls; }
     @Nullable public PollRepository.Failure getLoadError() { return loadError; }
+    @Nullable public PollRepository.Failure getRefreshError() { return refreshError; }
     public boolean isLoadingMore() { return loadingMore; }
     public boolean hasMore() { return hasMore; }
     @Nullable public String getNextBefore() { return nextBefore; }

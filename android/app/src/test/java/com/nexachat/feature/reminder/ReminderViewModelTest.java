@@ -189,6 +189,32 @@ public final class ReminderViewModelTest {
     }
 
     @Test
+    public void silentRefreshFailureKeepsRemindersBlocksAutoRefreshAndRecoversOnRetry() {
+        FakeRepository repository = new FakeRepository();
+        repository.nextList = List.of(reminder("r-1", "Họp team", SOON, true));
+        ReminderViewModel viewModel = createViewModel(repository);
+        viewModel.load();
+        assertEquals(1, viewModel.getUiState().getValue().getReminders().size());
+
+        repository.loadFailure = ReminderRepository.Failure.OFFLINE;
+        viewModel.refresh();
+        ReminderUiState failed = viewModel.getUiState().getValue();
+        assertEquals(ReminderRepository.Failure.OFFLINE, failed.getRefreshError());
+        assertEquals(1, failed.getReminders().size());
+        assertNull(failed.getLoadError());
+
+        int loads = repository.loads;
+        viewModel.refresh();
+        assertEquals(loads, repository.loads);
+
+        repository.loadFailure = null;
+        viewModel.retryRefresh();
+        ReminderUiState recovered = viewModel.getUiState().getValue();
+        assertNull(recovered.getRefreshError());
+        assertEquals(1, recovered.getReminders().size());
+    }
+
+    @Test
     public void aReminderPushRefreshesOnlyTheMatchingConversation() {
         FakeRepository repository = new FakeRepository();
         ReminderViewModel viewModel = createViewModel(repository);
