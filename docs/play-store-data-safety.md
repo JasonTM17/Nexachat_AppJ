@@ -1,13 +1,6 @@
 # Play Store data-safety and listing facts
 
-Source: app and server code at `15bb91e` (2026-11-11) on `main`, plus the
-account-recovery and account-deletion change set that is not merged yet:
-`feat/server-account-deletion` (API, data changes and D4 hardening),
-`feat/server-email-otp-deletion` (recovery email, email OTP, public deletion
-and password-reset routes), `feat/android-account-deletion` (Settings > Delete
-account), `feat/android-recovery-email`, `feat/android-forgot-password`, and
-the site deletion page on `feat/site-web-account-deletion` (which contains
-`docs/site-account-deletion`). This is a code-derived worksheet for the Google
+Source: app and server code in this repository on `main`. This is a code-derived worksheet for the Google
 Play Data safety form and the privacy policy. It is not a legal opinion and not
 a submitted declaration. Answers describe the release build with the network
 security policy in `android/app/src/main/`; the `debug` and `localSmoke` source
@@ -16,7 +9,7 @@ sets are development-only and are not shipped.
 Each answer is marked:
 
 - **Supported by code (main)** — the repository implements the described
-  behaviour on `main` at `15bb91e`.
+  behaviour on `main`.
 - **Supported by code (branch)** — implemented on the named branch, not in
   `main`.
 - **Pending merge** — depends on one or more named branches; re-verify at the
@@ -24,13 +17,6 @@ Each answer is marked:
 - **Not supported** — the repository has no code path for that collection.
 - **Needs owner decision** — the answer depends on the shipped build, operator
   configuration, or a product/legal decision that the repository cannot make.
-
-The account-deletion and recovery-email answers are **pending merge**. Do not
-submit the Data safety form for a build that lacks
-`feat/server-account-deletion`, `feat/server-email-otp-deletion`,
-`feat/android-account-deletion`, `feat/android-recovery-email`,
-`feat/android-forgot-password` and the site deletion page: the deletion and
-recovery answers below would be false for that build.
 
 The form's "collected" means data transmitted off the device and stored. Data
 that exists only in app-private storage is listed separately in
@@ -57,9 +43,9 @@ branch, not from `main`.
 | Analytics / crash SDK | No analytics or crash SDK is declared or called by app code. Firebase dependencies include `firebase-messaging` (for push notifications) and `firebase-auth` / `firebase-database` (isolated to the optional ephemeral presence and typing transport, disabled by default via buildConfigField `FIREBASE_REALTIME_ENABLED`); no analytics (`firebase-analytics`), crash reporting (`firebase-crashlytics`), or performance SDK is declared. Firebase SDK-internal telemetry is not visible in this repository. | `android/gradle/libs.versions.toml:108`, `android/app/build.gradle:398-405`; imports are Firebase core, FCM (`notification/NexaFirebaseMessagingService.java:6-7`), GMS `Tasks` (`notification/FirebaseTokenSource.java:4`), and ephemeral transport (`core/realtime/ephemeral/FirebaseEphemeralStateSource.java:8-17`; `call/ui/FirebaseCallStatusDisplayAdapter.java:4`); no analytics or crash SDK | Supported by code (main) |
 | Backend required | Yes; the app is a client for a NexaChat REST/STOMP server | `core/common/AppConfig.java:8-19`, `core/network/NetworkModule.java:73-78` | Supported by code (main) |
 | Release transport | HTTPS/WSS only; cleartext is blocked by the release network policy | `android/app/src/main/res/xml/network_security_config.xml:10-16`; `tools/release-url-guard.sh:78-88` | Supported by code (main) |
-| Account creation | Yes, by phone + password (`POST /api/v1/auth/register`). Google sign-in does not create an account; an unlinked Google account is refused. | `server/src/main/java/com/nexachat/auth/AuthController.java:40-44`; `auth/google/GoogleSignInService.java:84-101`; `db/migration/V28__google_signin.sql` | Supported by code (main) |
-| Sign-in methods | Phone + password; optional Google sign-in for accounts that previously linked Google from Settings while signed in. The Google feature is off unless the operator enables it. | `auth/google/GoogleAuthController.java:47-86`; `auth/google/GoogleSignInService.java:84-101`, `:122-149`; `application.yml:61-73` | Supported by code (main; feature flag) |
-| Account deletion | In-app Profile (Settings) > Delete account, confirmed with the current password, calls `DELETE /api/v1/users/me`; the public page `site/delete-account.html` describes the same steps and the lost-device flow (phone + code to a verified recovery email; the web form is hidden until the operator configures its API origin). | `branch feat/server-account-deletion:user/AccountDeletionService.java`, `branch feat/server-account-deletion:user/UserController.java:52-57`; `branch feat/android-account-deletion:feature/profile/DeleteAccountFragment.java`; `branch feat/site-web-account-deletion:site/delete-account.html` | Pending merge |
+| Account creation | Yes, by phone + password (`POST /api/v1/auth/register`). When the operator enables Google sign-in and signup (`NEXACHAT_GOOGLE_SIGNUP_ENABLED=true`), `POST /api/v1/auth/google` can also create an account from a verified Google ID token for an unlinked `sub` (`V33__google_signup.sql` allows Google-only users without phone/password). Otherwise an unlinked Google account is refused. | `auth/AuthController.java`; `auth/google/GoogleAuthController.java:62-67`; `auth/google/GoogleSignInService.java:97-153`; `db/migration/V28__google_signin.sql`, `V33__google_signup.sql`; `application.yml:61-73`, `:113` | Supported by code (main); Google signup is operator-enabled |
+| Sign-in methods | Phone + password; optional Google sign-in (link or signup when enabled). The Google feature is off unless the operator enables it. | `auth/google/GoogleAuthController.java:47-86`; `auth/google/GoogleSignInService.java:97-153`, `:186-220`; `application.yml:61-73`, `:113` | Supported by code (main; feature flag) |
+| Account deletion | In-app Profile (Settings) > Delete account, confirmed with the current password or a verified-recovery-email code, calls `DELETE /api/v1/users/me`; the public page `site/delete-account.html` describes the same steps and the lost-device flow (phone + code to a verified recovery email; the web form is hidden until the operator configures its API origin). | `user/AccountDeletionService.java`; `user/UserController.java:62-77`; `android/app/src/main/java/com/nexachat/feature/profile/DeleteAccountFragment.java`; `site/delete-account.html`; `db/migration/V26__user_account_deletion.sql` | Supported by code (main) |
 
 ## Data the app sends to the NexaChat server
 
@@ -69,9 +55,9 @@ retention job or an explicit delete action removes it.
 | Data | What is sent / stored | Evidence | Status |
 |---|---|---|---|
 | Account identity | E.164 phone number, password, display name; password is BCrypt-hashed server-side and never returned | `auth/dto/RegisterRequest.java:12-16`; `user/User.java:33-42`; `config/SecurityConfig.java:67` | Supported by code (main) |
-| Recovery email (optional) | A user-supplied email address, normalized to lowercase and stored in `users.email`; it is **verified** by a 6-digit code before use, and `users.email_verified_at` records the verification. The address is owner-only: it is not in `UserResponse`, other users' profile views, or search. It is used for account-recovery, account-deletion, and password-reset codes, not for marketing. A verified address is unique among active accounts. | `branch feat/server-email-otp-deletion:db/migration/V27__account_recovery_email_otp.sql:1-11`; `branch feat/server-email-otp-deletion:user/dto/MyProfileResponse.java`; `user/dto/UserResponse.java`; `branch feat/server-email-otp-deletion:recovery/EmailOtpService.java:44-56`; `branch feat/server-email-otp-deletion:user/EmailRecoveryService.java` | Pending merge |
-| Email OTP records | Per-code row: purpose (`VERIFY_EMAIL`, `DELETE_ACCOUNT`, `RESET_PASSWORD`), recipient address, an HMAC-SHA256 hash of the 6-digit code, expiry, attempt count and consumed timestamp. The plaintext code is not stored. | `branch feat/server-email-otp-deletion:db/migration/V27__account_recovery_email_otp.sql:13-31`; `branch feat/server-email-otp-deletion:recovery/OtpCodeHasher.java:23-43`; `branch feat/server-email-otp-deletion:recovery/EmailOtpService.java:22-23`, `:108-132` | Pending merge |
-| Google identity (optional) | Google OpenID Connect `sub` (the immutable account identifier), the Google email at link time, and the link timestamp, stored in `user_identities`. The email is display-only and never used to match accounts. Linking requires the current password. The first Google sign-in for an unlinked `sub` is refused; Google never creates an account. | `db/migration/V28__google_signin.sql`; `auth/google/UserIdentity.java`; `auth/google/GoogleSignInService.java:84-101`, `:122-149` | Supported by code (main) |
+| Recovery email (optional) | A user-supplied email address, normalized to lowercase and stored in `users.email`; it is **verified** by a 6-digit code before use, and `users.email_verified_at` records the verification. The address is owner-only: it is not in `UserResponse`, other users' profile views, or search. It is used for account-recovery, account-deletion, and password-reset codes, not for marketing. A verified address is unique among active accounts. | `db/migration/V27__account_recovery_email_otp.sql:1-11`; `user/dto/MyProfileResponse.java`; `user/dto/UserResponse.java`; `recovery/EmailOtpService.java:44-56`; `user/EmailRecoveryService.java`; `user/UserController.java:79-97` | Supported by code (main) |
+| Email OTP records | Per-code row: purpose (`VERIFY_EMAIL`, `DELETE_ACCOUNT`, `RESET_PASSWORD`), recipient address, an HMAC-SHA256 hash of the 6-digit code, expiry, attempt count and consumed timestamp. The plaintext code is not stored. | `db/migration/V27__account_recovery_email_otp.sql:13-31`; `recovery/OtpCodeHasher.java:23-43`; `recovery/EmailOtpService.java:22-23`, `:108-132` | Supported by code (main) |
+| Google identity (optional) | Google OpenID Connect `sub` (the immutable account identifier), the Google email at link time, and the link timestamp, stored in `user_identities`. The email is display-only and never used to match accounts. Linking requires the current password. The first Google sign-in for an unlinked `sub` creates an account only when signup is enabled; otherwise it is refused. | `db/migration/V28__google_signin.sql`, `V33__google_signup.sql`; `auth/google/UserIdentity.java`; `auth/google/GoogleSignInService.java:97-153`, `:186-220`; `application.yml:113` | Supported by code (main); signup is operator-enabled |
 | Session device label | The `User-Agent` request header is stored as `refresh_tokens.device_label`; refresh tokens are stored only as SHA-256 hashes | `auth/AuthController.java:28`, `:42-56`; `db/migration/V1__init.sql:25-34`; `auth/TokenService.java:133-137` | Supported by code (main) |
 | Profile name and avatar | Display name, avatar image bytes; avatar URL is part of the public profile response | `user/dto/UpdateProfileRequest.java:9-11`; `attachment/AvatarController.java:50-60`; `user/dto/UserResponse.java:12-23` | Supported by code (main) |
 | Phone discovery | The user types a phone number or display-name prefix. An exact phone lookup returns the matching profile with the phone. A display-name prefix search returns profiles but omits the `phone` field unless the caller already has that user as a contact. | `data/ContactsRepository.java:120-127`; `user/UserController.java:51-56`; `user/UserService.java:76-107`; `user/dto/UserResponse.java:12-23` | Supported by code (main) |
@@ -104,9 +90,9 @@ contain the recovery email or the Google identity.
 
 | Form question | Answer from this code | Evidence | Status |
 |---|---|---|---|
-| Does the app collect or share any required user data type? | Yes. Account, optional recovery email, optional Google identity, message, media, interaction, call-signaling metadata, and device-token data reach the server. | See the tables above and `application.yml` configuration. | Supported by code (main); recovery-email part pending merge |
+| Does the app collect or share any required user data type? | Yes. Account, optional recovery email, optional Google identity, message, media, interaction, call-signaling metadata, and device-token data reach the server. | See the tables above and `application.yml` configuration. | Supported by code (main) |
 | Is all collected user data encrypted in transit? | Yes for the release build: cleartext is disabled and signed releases require an `https://` API base URL. TLS termination itself is a deployment responsibility that the owner must confirm. | `android/app/src/main/res/xml/network_security_config.xml:10-16`; `tools/release-url-guard.sh:78-88`; `docs/operations.md:353-356` | Supported by code (main) |
-| Do you provide a way for users to request that their data be deleted? | Yes, pending merge. The app provides Profile (Settings) > Delete account with the current password. The public page `site/delete-account.html` explains the same steps and, when its API origin is configured, the lost-device flow: phone number + a 6-digit code sent to the verified recovery email. Users without a verified recovery email are routed to the developer contact on the Play listing. Deletion is a server-side tombstone; sent messages and attachments stay visible to other members attributed to a deleted account. | `branch feat/server-account-deletion:user/UserController.java:52-57`, `branch feat/server-account-deletion:user/AccountDeletionService.java:79-115`; `branch feat/server-email-otp-deletion:recovery/AccountDeletionController.java`, `branch feat/server-email-otp-deletion:recovery/AccountRecoveryService.java:54-81`; `branch feat/android-account-deletion:feature/profile/DeleteAccountFragment.java`; `branch feat/site-web-account-deletion:site/delete-account.html` | Pending merge |
+| Do you provide a way for users to request that their data be deleted? | Yes. The app provides Profile (Settings) > Delete account with the current password or a verified-recovery-email code (`DELETE /api/v1/users/me`). The public page `site/delete-account.html` explains the same steps and, when its API origin is configured, the lost-device flow: phone number + a 6-digit code sent to the verified recovery email. Users without a verified recovery email are routed to the developer contact on the Play listing. Deletion is a server-side tombstone; sent messages and attachments stay visible to other members attributed to a deleted account. | `user/UserController.java:62-77`; `user/AccountDeletionService.java`; `recovery/AccountDeletionController.java`; `recovery/AccountRecoveryService.java:54-81`; `android/app/src/main/java/com/nexachat/feature/profile/DeleteAccountFragment.java`; `site/delete-account.html` | Supported by code (main) |
 
 ## Data safety form: data types
 
@@ -119,7 +105,7 @@ purpose applies.
 |---|---|---|---|---|
 | Personal info → Name | Display name, shown to other users | Required at registration | Account management; app functionality | Supported by code (main) |
 | Personal info → Phone number | E.164 number; used for login, returned in user profiles, and shown in display-name search only to callers who already have the user as a contact | Required at registration | Account management; app functionality | Supported by code (main) |
-| Personal info → Email address | Optional recovery email; used only for account-recovery, account-deletion and password-reset security codes; never shown to other users and not used for marketing | Optional | Account management; fraud prevention, security, and compliance | Pending merge |
+| Personal info → Email address | Optional recovery email; used only for account-recovery, account-deletion and password-reset security codes; never shown to other users and not used for marketing | Optional | Account management; fraud prevention, security, and compliance | Supported by code (main) |
 | Personal info → User IDs | Internal account UUID; additionally the Google OpenID Connect `sub` when the user links Google | Required for the NexaChat account; Google ID optional | Account management; app functionality | Supported by code (main); Google ID optional |
 | Messages → In-app messages | Text messages, edits, tombstones, reply/mention metadata | Required for messaging | App functionality | Supported by code (main) |
 | Photos and videos → Photos | Avatar image and image attachments chosen by the user | Optional (user chooses) | App functionality | Supported by code (main) |
@@ -150,7 +136,7 @@ paths; the owner must confirm the shipped configuration and the processor terms.
 |---|---|---|---|---|
 | Google Firebase Cloud Messaging | Device registration token; data-only payload: conversation/message ids, sequence, sender display name, call ids/names/timestamps, reminder ids and repeat rule. Message text and attachment bytes are not in the payload, but the sender's display name is. | The client contacts Firebase and obtains a token when the build has `google-services.json`; the server sends a payload only when `FCM_ENABLED=true` with a service account | `android/app/build.gradle:9-17`; `application.yml:225-236`; `notification/DefaultFcmPushService.java:65-77`, `:89-98`; `reminder/FcmReminderPushSender.java:29-31`, `:67-71` | Needs owner decision for the shipped build |
 | Google Identity Services (Credential Manager) | Google account email and Google `sub` identifier, returned to the app in an ID token when the user chooses Sign in with Google or links an account. The app sends the ID token and a server nonce to NexaChat; NexaChat stores only `sub` and the email at link time. The ID token itself is not stored. | Only when a user links or signs in with Google; the feature is off unless `NEXACHAT_GOOGLE_SIGNIN_ENABLED=true` and client IDs are configured | `android/app/src/main/java/com/nexachat/core/auth/CredentialManagerGoogleSignIn.java:52-95`; `core/auth/GoogleSignInFlow.java:40-70`; `core/network/dto/GoogleSignInRequest.java`; `server/src/main/java/com/nexachat/auth/google/GoogleIdTokenVerifier.java`; `user_identities` in `db/migration/V28__google_signin.sql` | Supported by code (main); owner must complete the OAuth consent screen and decide the form disclosure |
-| Transactional email provider (SMTP relay or Resend) | The verified recovery email address, the 6-digit code, and a bilingual message that states the purpose and the 10-minute validity. No marketing mail exists. | Only when the operator configures `NEXACHAT_MAIL_PROVIDER=smtp` or `resend` and a user requests a code; the default empty provider disables mail and makes authenticated email endpoints answer `503 MAIL_UNAVAILABLE`, while public requests still return `202` without sending | `branch feat/server-email-otp-deletion:mail/MailConfiguration.java`; `branch feat/server-email-otp-deletion:mail/ResendMailSender.java:30-48`; `branch feat/server-email-otp-deletion:mail/SmtpMailSender.java`; `branch feat/server-email-otp-deletion:recovery/OtpMailContent.java`; `branch feat/server-email-otp-deletion:recovery/OtpMailDispatcher.java` | Pending merge; provider name depends on configuration |
+| Transactional email provider (SMTP relay or Resend) | The verified recovery email address, the 6-digit code, and a bilingual message that states the purpose and the 10-minute validity. No marketing mail exists. | Only when the operator configures `NEXACHAT_MAIL_PROVIDER=smtp` or `resend` and a user requests a code; the default empty provider disables mail and makes authenticated email endpoints answer `503 MAIL_UNAVAILABLE`, while public requests still return `202` without sending | `mail/MailConfiguration.java`; `mail/ResendMailSender.java:30-48`; `mail/SmtpMailSender.java`; `recovery/OtpMailContent.java`; `recovery/OtpMailDispatcher.java` | Supported by code (main); provider name depends on configuration |
 | Google Firebase Realtime Database and Firebase Auth (opt-in ephemeral bridge) | When enabled: (1) Auth: NexaChat user UUID as Firebase UID (`auth.uid`) and a server-minted `bridgeId` claim. (2) Server-projected state: `/control/enabled`, `/control/presencePrivacyVersion` (v2); `/accounts/{uid}/{active,showPresence}`; session lease (`/sessions/{uid}/{bridgeId}/until`, <=120s); membership lease (`/members/{cid}/{uid}`, <=120s, <=30 conversations); 1:1 direct presence readers (`/presenceReaders/{subjectUid}/{viewerUid}`); reserved `/blocked`; passive call status (`/calls/{callId}` with `cid`, `callerId`, `calleeId`, `state`, `updatedAt`, `expiresAt`; client writes denied; no WebRTC SDP/ICE or audio). (3) Client-written ephemeral state: `/presence/{uid}/{bridgeId}` (`online` boolean, `updatedAt`, `leaseUntil`; `lastSeen` is strictly 0 under Presence Privacy v2; real `lastSeen` remains on server); `/typing/{cid}/{uid}` (`updatedAt`, `expiresAt` with max 5s TTL, 1 write/3s throttle). Excluded: no phone, email, password, display name, message text, attachment bytes, media, contacts, call audio, or NexaChat auth tokens. Retention: ephemeral only (5s–120s); cleared on disconnect/logout/revocation; purged on account deletion. Play classification: Collected by the app via its service provider for App Functionality (or Shared if service-provider DPA is not executed). | Only when `FIREBASE_REALTIME_ENABLED=true` and `FIREBASE_DATABASE_URL` is set on the server, AND `firebaseRealtimeEnabled=true` is enabled in Android; call status projection additionally requires `FIREBASE_CALL_STATUS_ENABLED=true` and `firebaseCallStatusEnabled=true`. Both server and Android flags are OFF by default; STOMP over WebSocket remains the default and authoritative transport | `android/app/build.gradle:78-85`, `:184-185`, `:398-402`; `android/app/src/main/java/com/nexachat/core/realtime/ephemeral/FirebaseEphemeralStateSource.java:154-207`, `:323-352`, `:397-410`, `:819-826`; `android/app/src/main/java/com/nexachat/core/realtime/ephemeral/EphemeralStateRouter.java:42-55`, `:74-76`; `android/app/src/main/java/com/nexachat/call/ui/FirebaseCallStatusDisplayAdapter.java:28-74`; `server/src/main/java/com/nexachat/firebase/auth/FirebaseRealtimeAuthService.java:54-102`; `server/src/main/java/com/nexachat/firebase/client/FirebaseRtdbRestClient.java:55-58`, `:289-297`; `server/src/main/java/com/nexachat/firebase/call/FirebaseCallStatusProjectionService.java:58-115`; `server/src/main/java/com/nexachat/firebase/projection/FirebaseAuthorizationProjectionService.java:110-129`; `server/src/main/java/com/nexachat/firebase/projection/FirebaseAuthorizationLeaseSweepJob.java:45-69`; `server/src/main/java/com/nexachat/firebase/auth/FirebaseSessionRevocationListener.java:35-57`; `server/src/main/resources/application.yml:279-285`; `tools/firebase-rules/database.rules.json:1-67`; `docs/firebase-realtime.md:8-195` | Supported by code (main), disabled by default; owner decision to enable |
 | External summary LLM | Redacted eligible message text and the summary request; sender names become `U1..Un`, message ids and phone/email/URL tokens are removed | Only when an operator configures a summary key, the provider is enabled, and the requesting user has `aiSummaryConsent=true`. Text from other participants in the window is included unless they opted out in that conversation; their own `aiSummaryConsent` flag is not checked. Primary is Gemini-compatible; optional fallback is DeepSeek-compatible; a local server model can be configured instead. | `application.yml:162-190`; `docs/ai-summary.md:91-96`; `docs/known-limitations.md:33`; `docs/rag.md:77-112` | Needs owner decision; default config makes no external call |
 | External embedding provider | Redacted question and candidate message text for embedding | The ask path uses an external provider only when the requesting user consents. The background backfill uses the deployment's primary provider (external when configured) and filters only per-conversation opt-outs, not each author's `aiSummaryConsent`; enabling it therefore sends non-opted-out message text without per-author consent. The default `lexical` provider stays on the server. | `application.yml:190-224`; `docs/rag.md:44-52`, `:77-98`, `:127-133`; `rag/RagEmbeddingService.java:63-75`, `:101-124`, `:140-149`, `:199-201`; `rag/RagEmbeddingProviders.java:48-51` | Needs owner decision; default config is offline |
@@ -302,8 +288,8 @@ When the feature flags are explicitly turned on, the following data reaches Fire
 | Online presence | In-memory session registry and STOMP by default; `users.last_seen_at` is persisted separately in PostgreSQL. When optional `FIREBASE_REALTIME_ENABLED` is on, ephemeral online/offline state is mirrored to Firebase RTDB (`/presence/{uid}/{bridgeId}`) with `lastSeen` strictly set to 0 (Presence Privacy v2) | `docs/known-limitations.md:14-15`; `docs/firebase-realtime.md:36`, `:137-140`; `android/app/src/main/java/com/nexachat/core/realtime/ephemeral/FirebaseEphemeralStateSource.java:397-402`, `:819-826` |
 | Rate-limit buckets and client IPs | In-memory bounded buckets; not persisted by the rate-limit code | `docs/security.md:216-221`; `config/ClientIpResolver.java` |
 | Raw AI prompts and model output | Not stored; only the validated summary/answer payload is cached | `docs/ai-summary.md:96`; `db/migration/V6__conversation_summaries.sql`, `V9__conversation_rag.sql` |
-| OTP plaintext code | Generated in memory and sent in the email; the database stores only the HMAC-SHA256 hash. The recipient's mailbox and the email provider necessarily see the code. | `branch feat/server-email-otp-deletion:recovery/OtpCodeHasher.java:31-37`; `branch feat/server-email-otp-deletion:recovery/EmailOtpService.java:22-23`, `:141-149`; `branch feat/server-email-otp-deletion:db/migration/V27__account_recovery_email_otp.sql:13-24` |
-| Google ID token | Held transiently by the Android client and sent to the server for verification; not persisted by the app or the server. The server stores the `sub` and email at link time. | `core/auth/GoogleSignInFlow.java:40-70`; `core/network/dto/GoogleSignInRequest.java`; `server/src/main/java/com/nexachat/auth/google/GoogleSignInService.java:84-101`; `db/migration/V28__google_signin.sql` |
+| OTP plaintext code | Generated in memory and sent in the email; the database stores only the HMAC-SHA256 hash. The recipient's mailbox and the email provider necessarily see the code. | `recovery/OtpCodeHasher.java:31-37`; `recovery/EmailOtpService.java:22-23`, `:141-149`; `db/migration/V27__account_recovery_email_otp.sql:13-24` |
+| Google ID token | Held transiently by the Android client and sent to the server for verification; not persisted by the app or the server. The server stores the `sub` and email at link time, or creates a Google-only account when signup is enabled. | `core/auth/GoogleSignInFlow.java:40-70`; `core/network/dto/GoogleSignInRequest.java`; `auth/google/GoogleSignInService.java:97-153`; `db/migration/V28__google_signin.sql`, `V33__google_signup.sql` |
 
 ## On-device storage
 
@@ -330,12 +316,10 @@ When the feature flags are explicitly turned on, the following data reaches Fire
 - `TokenStore.clear()` removes access/refresh tokens, recall config, hidden ids
   and sync cursors, but not the FCM token or a pending unregister
   (`core/storage/TokenStore.java:519-547`).
-- **Account deletion is the exception.** The Android deletion branch clears the
-  entire Room database, including the outbox and offline outbox, clears the
-  OkHttp/Glide/media caches, clears the pending device-unregister residue, and
-  then clears the session tokens before returning to Login
-  (`branch feat/android-account-deletion:data/AuthRepository.java:289-323`;
-  `branch feat/android-account-deletion:core/media/MediaCacheCleaner.java`).
+- **Account deletion is the exception.** Deleting the account clears the entire
+  Room database, including the outbox and offline outbox, clears the OkHttp/Glide/media
+  caches, clears the pending device-unregister residue, and then clears the session
+  tokens before returning to Login (`data/AuthRepository.java`; `core/media/MediaCacheCleaner.java`).
 - Ordinary logout (and logout-all) still does **not** clear the media caches in
   `cacheDir`; downloaded attachments, thumbnails and HTTP cache entries can
   outlive logout until Android evicts the cache or the user clears app data.
@@ -354,17 +338,17 @@ Account deletion is an explicit user action, not a retention job.
 
 | Data | Default retention behaviour | Evidence |
 |---|---|---|
-| Account, messages, conversations, contacts, labels, memberships | No automatic deletion by a retention job; the account owner can delete the account explicitly (below). Message recall is a soft delete, not a row delete. | `docs/operations.md:822`; `message/MessageService.java:406-449`; `branch feat/server-account-deletion` |
-| Recovery email | Stored in `users.email` after verification until the user changes/removes it or deletes the account. Cleared by the deletion tombstone. | `branch feat/server-email-otp-deletion:user/User.java:218-229`; `branch feat/server-email-otp-deletion:recovery/EmailOtpService.java:100-106` |
-| Email OTP records | The code is valid for 10 minutes, dies after 5 wrong attempts, and a new code invalidates older unconsumed codes of the same purpose. **No cleanup job exists on the branch checked**: consumed and expired `email_otps` rows keep the recipient address and the HMAC hash, and account deletion does not delete them. | `branch feat/server-email-otp-deletion:recovery/EmailOtpService.java:22-23`, `:108-132`; `branch feat/server-email-otp-deletion:recovery/EmailOtpRepository.java`; no delete statement in `branch feat/server-email-otp-deletion:user/AccountDeletionService.java` |
-| Linked Google identity | Stored until the user unlinks Google. Unlink deletes the row immediately; account deletion is required to delete it too, but that step is not in the account-deletion branch yet (brief 321, see caveats). | `auth/google/GoogleSignInService.java:151-169`; `db/migration/V28__google_signin.sql` |
+| Account, messages, conversations, contacts, labels, memberships | No automatic deletion by a retention job; the account owner can delete the account explicitly (below). Message recall is a soft delete, not a row delete. | `docs/operations.md:822`; `message/MessageService.java:406-449`; `user/AccountDeletionService.java` |
+| Recovery email | Stored in `users.email` after verification until the user changes/removes it or deletes the account. Cleared by the deletion tombstone. | `user/User.java:218-229`; `recovery/EmailOtpService.java:100-106` |
+| Email OTP records | The code is valid for 10 minutes, dies after 5 wrong attempts, and a new code invalidates older unconsumed codes of the same purpose. Account deletion deletes the user's `email_otps` rows; there is still no retention job for consumed or expired rows left on other accounts. | `recovery/EmailOtpService.java:22-23`, `:108-132`; `recovery/EmailOtpRepository.java`; `user/AccountDeletionJdbcSupport.java:77` |
+| Linked Google identity | Stored until the user unlinks Google. Unlink deletes the row immediately; account deletion deletes Google identity and link-nonce rows in the same transaction. | `auth/google/GoogleSignInService.java:186-220`; `user/AccountDeletionJdbcSupport.java:63-76`; `db/migration/V28__google_signin.sql` |
 | Message tombstones | Row remains; optional job after 30 days clears content, mention flags and embeddings. Attachments remain unless the attachment job runs. | `application.yml:143-145`; `docs/known-limitations.md:18`, `:51` |
 | Attachments | Optional job: unbound uploads after 24 h, attachments of soft-deleted messages after 30 days | `application.yml:139-142`; `docs/operations.md:800-802` |
 | Refresh tokens | Hash rows remain until the optional 30-day cleanup runs | `application.yml:124-126`; `db/migration/V1__init.sql:25-34` |
 | Device tokens | Optional cleanup after 180 stale days | `application.yml:127-129`; `docs/operations.md:792-793` |
 | Fired one-shot reminders / ended calls | Optional cleanup after 30 / 365 days | `application.yml:130-138`; `docs/operations.md:794-799` |
 | Polls | Optional job redacts aged payloads and removes options/votes after 365 days; the poll tombstone remains | `application.yml:133-135`; `docs/operations.md:796-797` |
-| Summaries and RAG caches | 24 h TTL by default; expired rows are only purged when the optional summaries/rag-cache job is enabled. Account deletion deletes the summary and ask caches of every conversation the user belonged to (the caches are conversation-scoped, not requester-scoped). | `db/migration/V6__conversation_summaries.sql`; `V9__conversation_rag.sql`; `application.yml:148-159`; `branch feat/server-account-deletion:user/AccountDeletionJdbcSupport.java:25-45` |
+| Summaries and RAG caches | 24 h TTL by default; expired rows are only purged when the optional summaries/rag-cache job is enabled. Account deletion deletes the summary and ask caches of every conversation the user belonged to (the caches are conversation-scoped, not requester-scoped). | `db/migration/V6__conversation_summaries.sql`; `V9__conversation_rag.sql`; `application.yml:148-159`; `user/AccountDeletionJdbcSupport.java:25-45` |
 | Derived copies of message text | Recall or edit deletes cached summaries whose sequence window contains the changed message, and recall purges the RAG ask cache for the conversation; the ask cache also refuses a replay when a cited message is gone or its author opted out. Expired rows remain until the optional summaries/rag-cache job runs. | `message/MessageService.java:406-449`; `summary/MessageSummaryCacheInvalidationListener.java:10-33`; `summary/SummaryCacheRepository.java:103-121`; `rag/MessageRecallAskCacheListener.java:12-22`; `docs/rag.md:108-113`; `db/migration/V6__conversation_summaries.sql`, `V9__conversation_rag.sql`; `application.yml:148-159` |
 | Firebase ephemeral state (leases, presence, typing, call status) | Disabled by default. When enabled, strictly ephemeral: typing TTL <= 5s; session/membership leases <= 120s; active call status lease <= 120s (renewed every 60s); presence cleared on disconnect via `onDisconnect()`. Swept by periodic lease job (`FirebaseAuthorizationLeaseSweepJob`), cleared on session revocation / logout (`FirebaseSessionRevocationListener`), and completely purged on account deletion (`FirebaseAuthorizationProjectionService`). | `docs/firebase-realtime.md:27-39`, `:118-122`; `server/src/main/java/com/nexachat/firebase/projection/FirebaseAuthorizationLeaseSweepJob.java:45-69`; `server/src/main/java/com/nexachat/firebase/auth/FirebaseSessionRevocationListener.java:35-57`; `server/src/main/java/com/nexachat/firebase/projection/FirebaseAuthorizationProjectionService.java:110-129` |
 | Server backups | `demo/backup.sh` creates SQL dumps on demand; no backup retention period is defined in the repository | `docs/operations.md:650-674` |
@@ -390,11 +374,9 @@ Deletion actions that exist:
   other members attributed to the deleted account. After deletion, login with
   the old phone is treated as an unknown user, search never returns the account,
   profile reads show the neutral deleted state, and registering the same phone
-  creates a new, unrelated account. Branch `feat/server-account-deletion`
-  (migration V26); Android branch `feat/android-account-deletion`; public page
-  `site/delete-account.html`.
-- The lost-device web flow on `site/delete-account.html` (branch
-  `feat/site-web-account-deletion`) posts the phone number to
+  creates a new, unrelated account. Migrations V26 and V27; in-app
+  `DeleteAccountFragment`; public page `site/delete-account.html`.
+- The lost-device web flow on `site/delete-account.html` posts the phone number to
   `POST /api/v1/account-deletion/request` and the code to
   `POST /api/v1/account-deletion/confirm`. The public request always returns
   `202` with a neutral message whether or not the phone exists or has a verified
@@ -414,16 +396,10 @@ Deletion actions that exist:
 
 Recovery email and deletion caveats:
 
-- The account-deletion branch at the reviewed SHA does **not** yet delete
-  `user_identities` rows or the user's Google link nonces. Brief 321 requires
-  both in the same deletion transaction and a fail-closed Google sign-in for a
-  deleted user; until that commit lands, a deleted account's Google link can
-  still resolve. Treat the Google-identity part of the deletion answer as
-  pending merge.
-- The recovery-email branch clears `users.email`/`email_verified_at` on the
-  tombstone but leaves `email_otps` rows (address + HMAC hash) in place. There is
-  no cleanup job for them. This is an open retention item, not a claim that the
-  data is deleted.
+- Account deletion clears `users.email`/`email_verified_at`, deletes the user's
+  `email_otps` rows, and removes Google identity rows and link nonces in the same
+  transaction. There is still no scheduled cleanup job for stale OTP rows that
+  belong to active accounts.
 - Deleting the account also deletes the user's `conversation_ai_opt_outs` row.
   Messages that remain visible from that account are therefore no longer
   excluded from AI prompts by that opt-out; the retained text becomes eligible
@@ -453,7 +429,7 @@ Deletion actions that do **not** exist:
 | Debug / localSmoke | Cleartext is permitted only in these development variants | `android/app/src/debug/res/xml/network_security_config.xml:10-12`; `android/app/src/localSmoke/res/xml/network_security_config.xml:9-11`; `android/app/src/test/java/com/nexachat/security/AndroidPrivacyConfigurationTest.java:82-113` |
 | Server edge | TLS is expected to terminate at a reverse proxy; the Compose stack itself is local HTTP | `docs/operations.md:353-356` |
 | Server to FCM / LLM | HTTPS endpoints; summary/RAG base URLs reject plain `http://` except loopback | `docs/ai-summary.md:125-128`; `docs/rag.md:63-66` |
-| Recovery email delivery | SMTP uses STARTTLS with a required upgrade on the configured port (default 587); Resend uses HTTPS `https://api.resend.com/emails`. The code is sent in the email body and is visible to the mailbox provider. | `branch feat/server-email-otp-deletion:application.yml` (spring.mail STARTTLS); `branch feat/server-email-otp-deletion:mail/SmtpMailSender.java`; `branch feat/server-email-otp-deletion:mail/ResendMailSender.java:30-48` |
+| Recovery email delivery | SMTP uses STARTTLS with a required upgrade on the configured port (default 587); Resend uses HTTPS `https://api.resend.com/emails`. The code is sent in the email body and is visible to the mailbox provider. | `application.yml` (spring.mail STARTTLS); `mail/SmtpMailSender.java`; `mail/ResendMailSender.java:30-48` |
 | Google identity verification | The server fetches Google's rotating public keys over HTTPS and verifies the ID token signature, issuer, audience and expiry; no client secret is stored in the app. | `auth/google/GoogleIdTokenVerifier.java`; `application.yml:69` |
 | Firebase bridge and ephemeral transport | HTTPS Realtime Database REST calls and Firebase Admin SDK calls from server; TLS (HTTPS and WSS) from Android client to Firebase Auth and Realtime Database; service-account key stays server-side. | `server/src/main/java/com/nexachat/firebase/client/FirebaseRtdbRestClient.java`; `android/app/src/main/java/com/nexachat/core/realtime/ephemeral/FirebaseEphemeralStateSource.java:172-196`; `docs/firebase-realtime.md:42-45` |
 | At rest on device | Room and SharedPreferences are not encrypted; session and FCM tokens are Keystore-encrypted | `core/database/DatabaseModule.java:24-38`; `core/storage/TokenStore.java:23-31` |
@@ -503,14 +479,11 @@ These are owner decisions; do not infer them from code:
    configured in the app or repository. The policy text must also cover the
    recovery email, the deletion form, and Google sign-in before submission.
 2. **Account deletion** — Play requires an in-app deletion path and a web
-   deletion URL for apps that create accounts. The code is on branches
-   `feat/server-account-deletion`, `feat/server-email-otp-deletion`,
-   `feat/android-account-deletion` and `feat/site-web-account-deletion`. Merge
-   all of them, apply the D3 review fixes to the site page, enable the web form
-   (API base meta, CORS and CSP), deploy the page, and set its URL in Play. The
-   branch at the reviewed SHA still leaves `email_otps` rows (address + hash)
-   and does not yet delete `user_identities`/link nonces; finish brief 321 and
-   decide the OTP-row cleanup before publishing the deletion answer.
+   deletion URL for apps that create accounts. The repository includes
+   `DELETE /api/v1/users/me`, `site/delete-account.html`, and the Android
+   Settings flow; enable the web form (API base meta, CORS and CSP), deploy the
+   page, and set its URL in Play. Decide whether to add a retention job for stale
+   `email_otps` rows on active accounts.
 3. **Target audience and content rating** — no target-age declaration or content
    rating questionnaire is in the repository.
 4. **Ads declaration** — no ad SDK exists, but the owner must still answer the
@@ -555,8 +528,9 @@ These are owner decisions; do not infer them from code:
 15. **Google sign-in disclosure** — the owner must create the Google Cloud OAuth
     consent screen and client IDs, register the release/Play App Signing SHA-1,
     and decide whether Google identity data is described as collected directly
-    by NexaChat or as a Google service. Google sign-in is off by default and
-    cannot create accounts; unlinking the last method is refused.
+    by NexaChat or as a Google service. Google sign-in is off by default;
+    Google-only account creation requires `NEXACHAT_GOOGLE_SIGNUP_ENABLED=true`.
+    Unlinking the last sign-in method is refused.
 16. **Email provider** — choose SMTP (the owner's mail account with an app
     password) or Resend, verify the sending domain, and confirm the provider's
     retention/DPA terms. Mail is disabled by default and the public deletion
@@ -579,41 +553,31 @@ These are owner decisions; do not infer them from code:
     privacy policy. If kept disabled (default), no Realtime Database connection
     is initiated.
 18. **OTP row cleanup** — decide whether to add a retention job for consumed or
-    expired `email_otps` rows, and whether account deletion should delete them.
-    The current branch does neither; the rows keep the recipient address and an
-    HMAC hash, not the plaintext code.
+    expired `email_otps` rows on active accounts. Account deletion already
+    deletes the user's OTP rows.
 19. **AI opt-out after deletion** — decide whether deleting
     `conversation_ai_opt_outs` (so retained messages become eligible for AI
     again) is the intended policy, or keep the opt-out row while the messages
     are retained.
-20. **Web deletion page deployment** — the page exists only on a branch, is not
-    live, and its default configuration hides the form. The D3 review's
-    server-side deletion findings are addressed on the account-deletion branches,
-    but the page still needs the remaining D3 fixes (retention wording, error
-    copy, contrast, focus, deploy configuration); re-check the published page
-    before using it as the Play deletion URL.
+20. **Web deletion page deployment** — `site/delete-account.html` is in the
+    repository but is not live until the operator deploys it with a configured
+    API base meta, CORS, and CSP. Re-check the published page before using it as
+    the Play deletion URL.
 
 ## Verification notes
 
 - Source inspected: Android manifest, backup/network XML, Gradle catalog,
   privacy configuration test, Room entities and database module, DataStore and
   Keystore storage, attachment/media caches, auth/logout/deletion flow, Google
-  Credential Manager client, server Flyway migrations V1–V28, controllers,
+  Credential Manager client, server Flyway migrations V1–V33, controllers,
   account-deletion and email-OTP services, the mail adapters, Firebase bridge
   and RTDB projection code (`server/src/main/java/com/nexachat/firebase/`),
   Android ephemeral transport (`core/realtime/ephemeral/` and
   `FirebaseCallStatusDisplayAdapter`), RTDB security rules and contract tests
   (`tools/firebase-rules/`), retention runner, FCM/LLM configuration, and the
-  linked architecture/security/operations/RAG/summary/firebase-realtime docs at `15bb91e`.
-- Branch sources inspected via `git show`: `feat/server-account-deletion`
-  (`ac27f39`), `feat/server-email-otp-deletion` (`4d8afbc`),
-  `feat/android-account-deletion` (`3249ec7`),
-  `feat/android-recovery-email` (`3134723`),
-  `feat/android-forgot-password` (`2354367`), `docs/site-account-deletion`
-  (`407fdf1`) and `feat/site-web-account-deletion` (`0aa6d2b`). None of these
-  branches is in `main` at `15bb91e`.
-- Account deletion was checked against the branch contract (`DELETE
-  /api/v1/users/me`, current password, `204`, V26 `deleted_at`, neutral display
+  linked architecture/security/operations/RAG/summary/firebase-realtime docs.
+- Account deletion was checked against the server contract (`DELETE
+  /api/v1/users/me`, password or recovery code, `204`, V26 `deleted_at`, neutral display
   name, released phone, V27 email columns, OTP hashing) but not executed against
   a built server, APK, deployed site or Play Console; this document is static
   source evidence.

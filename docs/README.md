@@ -8,7 +8,7 @@ Every engineering document in the repository, grouped by domain. Start with
 | Doc | Contents |
 |---|---|
 | [README.md](../README.md) | Product overview, Modern Dark/Light UI showcase, capability map, quick start, repo layout |
-| [docs/architecture.md](architecture.md) | Container, module and send-message sequence diagrams; modular monolith rationale, Flyway V1–V20 + V22 + V24–V28, account deletion, recovery email OTP, Google sign-in, and ephemeral state routing |
+| [docs/architecture.md](architecture.md) | Container, module and send-message sequence diagrams; modular monolith rationale, Flyway V1–V20 + V22 + V24–V33, account deletion, recovery email OTP, Google sign-in and signup, sync change cursors, and ephemeral state routing |
 | [docs/known-limitations.md](known-limitations.md) | Architectural scope and documented engineering trade-offs |
 | [docs/play-store-data-safety.md](play-store-data-safety.md) | Google Play Data safety form disclosures, privacy policy declarations, collection scopes, and account deletion handling |
 
@@ -18,6 +18,7 @@ Every engineering document in the repository, grouped by domain. Start with
 |---|---|
 | [docs/api-contract.md](api-contract.md) | REST API contract (`/api/v1`) with a feature matrix, migration history and operational notes, covering auth, conversations, messages, reminders, polls, labels, invites, attachments, calls and summary routes |
 | [docs/websocket-protocol.md](websocket-protocol.md) | STOMP over WebSocket (`/ws`) destinations, event envelope, delivery guarantees and rate limits |
+| [docs/android-sync.md](android-sync.md) | Android sync v2 checkpoints, Room migration 13→14, and reconciliation against server change cursors |
 | [docs/calls.md](calls.md) | 1-to-1 WebRTC voice call signaling, call events, ICE configuration, call history and Android UI |
 | [docs/firebase-realtime.md](firebase-realtime.md) | Opt-in Firebase RTDB presence/typing bridge (disabled by default, STOMP default): data model, rules install, offline emulator contract matrix, CI job and known rule gaps |
 | [docs/ai-summary.md](ai-summary.md) | Conversation catch-up summary contract, local extractive & OpenAI-compatible (Gemini-tested) LLM engines, citation guard and consent model |
@@ -34,6 +35,7 @@ Every engineering document in the repository, grouped by domain. Start with
 | [docs/deploy-render.md](deploy-render.md) | First public release on Render Free + Neon + Supabase Storage (R2 alternative): Blueprint, env vars, custom domain, cold starts |
 | [docs/domain-and-app-links.md](domain-and-app-links.md) | Domain, DNS, Vercel and Android App Links runbook: propagation checks, device testing, signing fingerprint, Vercel build-skip (`ignoreCommand`), and token rotation |
 | [docs/production-runbook.md](production-runbook.md) | Production topology, Render/Neon/Supabase/Firebase/Vercel operations, cold-start handling, secret rotation checklist, and free-tier limits |
+| [docs/backup-recovery.md](backup-recovery.md) | Paired PostgreSQL and attachment backup/restore for local stacks (`tools/backup/`) |
 | [docs/testing.md](testing.md) | Server test setup, PostgreSQL requirements, Firebase rules tests, E2E scripts, site validation, R8 release mapping check, and Mailpit dev setup |
 | [tools/README-release.md](../tools/README-release.md) | Upload keystore setup, signed release APK build and `apksigner` verification |
 | [demo/seed.sql](../demo/seed.sql) | Re-runnable demo accounts, contacts and sample conversations |
@@ -65,3 +67,4 @@ Every engineering document in the repository, grouped by domain. Start with
 | [docs/release-checklist.md](release-checklist.md) | Release preconditions, server and Android gates, R8 mapping verification (`tools/check-release-r8-mapping.py`), signing, rollout, smoke tests and rollback |
 | [docs/android-release.md](android-release.md) | GitHub Actions signed APK release, signing secrets, certificate fingerprints, tags and checksum verification |
 | [CHANGELOG.md](../CHANGELOG.md) | Release history and unreleased changes |
+| [docs/release-notes/](release-notes/) | Versioned release note pages (v1.1.x–v1.2.x) |
