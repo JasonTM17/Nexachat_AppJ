@@ -120,7 +120,7 @@ public final class GroupDetailFragment extends Fragment {
                 .observe(getViewLifecycleOwner(), raw -> {
                     GroupDetailEvent event = raw == null ? null : raw.consume();
                     if (event instanceof GroupDetailEvent.ExitToInbox) {
-                        NavHostFragment.findNavController(this).popBackStack(R.id.inboxFragment, false);
+                        GroupEntryExitNavigation.leave(NavHostFragment.findNavController(this));
                     }
                 });
     }
