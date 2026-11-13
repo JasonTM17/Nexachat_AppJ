@@ -6,9 +6,20 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
-### Changed
+### Android
 
-- Documentation reorganised into architecture, operations, release, quality and archive folders; see [docs/README.md](docs/README.md).
+- **Active Now** inbox rail with smoother structural updates; brighter online presence dot on avatars (offline peers no longer show a grey dot).
+- Chat history mapping uses one stream per open conversation, reducing duplicate Room work while preserving read receipts and paging.
+
+### Server
+
+- Scheduled retention sweeps acquire a cluster advisory lock so only one instance runs a destructive sweep at a time.
+- Legacy v1 sync stays lossless when edits and recalls overflow the page limit; `serverTime` is capped at the earliest truncated boundary on both server and Android client.
+
+### Documentation and tooling
+
+- Documentation grouped under `docs/architecture/`, `docs/operations/`, `docs/release/`, `docs/quality/`, and `docs/archive/`; repository tools live under `tools/checks/`, `tools/release/`, `tools/ops/`, and `tools/demo/`.
+- GitHub issue and pull request templates; CI runs hermetic Python tooling unit tests and the Android accessibility check.
 
 ## [1.2.5] - 2026-11-13
 
