@@ -123,6 +123,10 @@ public final class ProfileFragment extends Fragment {
         binding.themeChipSystem.setOnClickListener(onThemeChipClick);
         binding.themeChipLight.setOnClickListener(onThemeChipClick);
         binding.themeChipDark.setOnClickListener(onThemeChipClick);
+        // Render persisted values from the model; widget restoration could invoke the save listeners.
+        binding.showPresence.setSaveEnabled(false);
+        binding.showSeen.setSaveEnabled(false);
+        binding.aiSummaryConsent.setSaveEnabled(false);
         // Save every user change, including TalkBack, keyboard and Switch Access toggles that never
         // press the view; only values pushed in from storage are skipped.
         binding.showPresence.setOnCheckedChangeListener((button, checked) -> {

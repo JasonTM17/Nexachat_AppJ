@@ -5,7 +5,9 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -97,7 +99,8 @@ public final class RealtimeSessionEventDecodeTest {
         when(store.getHasValidRefresh()).thenReturn(hasRefresh);
         when(store.readTokens()).thenReturn(Maybe.just(new Tokens("access", Long.MAX_VALUE, "refresh")));
         StompClient stomp = stomp();
-        when(stomp.connect(any(), any())).thenReturn(Flowable.just(StompClient.State.Open.INSTANCE));
+        PublishProcessor<StompClient.State> socket = PublishProcessor.create();
+        when(stomp.connect(any(), any())).thenReturn(socket);
         NetworkMonitor monitor = mock(NetworkMonitor.class);
         when(monitor.getIsOnline()).thenReturn(Flowable.just(false));
         AppForegroundState foreground = () -> Flowable.just(false);
@@ -112,18 +115,24 @@ public final class RealtimeSessionEventDecodeTest {
             invocation.<Runnable>getArgument(1).run();
             return true;
         });
-        new RealtimeSession(stomp, store, refresher, new Moshi.Builder().build(),
+        RealtimeSession session = new RealtimeSession(stomp, store, refresher, new Moshi.Builder().build(),
                 new ReconnectPolicy(), monitor, foreground);
+        socket.onNext(StompClient.State.Open.INSTANCE);
         verify(stomp, times(1)).subscribe(RealtimeSession.USER_INBOX_DESTINATION);
+        session.watchConversation("previous-account");
+        verify(stomp).subscribe(RealtimeSession.TOPIC_PREFIX + "previous-account");
 
         hasRefresh.onNext(false);
         admitted.onNext(false);
+        clearInvocations(stomp);
         hasRefresh.onNext(true);
         admitted.onNext(true);
+        socket.onNext(StompClient.State.Open.INSTANCE);
 
-        verify(stomp, times(2)).subscribe(RealtimeSession.USER_INBOX_DESTINATION);
-        verify(stomp, times(2)).subscribe(RealtimeSession.USER_ERRORS_DESTINATION);
-        verify(stomp, times(2)).subscribe(RealtimeSession.USER_PRESENCE_DESTINATION);
+        verify(stomp).subscribe(RealtimeSession.USER_INBOX_DESTINATION);
+        verify(stomp).subscribe(RealtimeSession.USER_ERRORS_DESTINATION);
+        verify(stomp).subscribe(RealtimeSession.USER_PRESENCE_DESTINATION);
+        verify(stomp, never()).subscribe(RealtimeSession.TOPIC_PREFIX + "previous-account");
     }
 
     @Test
