@@ -28,6 +28,9 @@ import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
 import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.core.SingleObserver;
+import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.subjects.MaybeSubject;
 import io.reactivex.rxjava3.observers.TestObserver;
 import io.reactivex.rxjava3.schedulers.TestScheduler;
@@ -42,6 +45,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.MediaType;
 import okhttp3.ResponseBody;
@@ -824,10 +828,8 @@ public final class E2eeSessionTest {
                 session.encryptFor("c1", "hi", "u1", "m1").test();
         session.wipeLocal("u1");
         delayed.onSuccess(tokensFor("u1"));
-        observer.awaitDone(5, TimeUnit.SECONDS).assertError(error -> {
-            System.err.println("WIPE-ENCRYPT-ERR=" + error);
-            return error instanceof E2eeSession.E2eeException;
-        });
+        observer.awaitDone(5, TimeUnit.SECONDS).assertError(
+                error -> error instanceof E2eeSession.E2eeException);
         verify(api, never()).registerDevice(anyString(), any());
         verify(keyStore, never()).rememberCurrentUser(anyString());
     }
@@ -972,6 +974,78 @@ public final class E2eeSessionTest {
         session.onSessionAvailable().test().awaitDone(5, TimeUnit.SECONDS)
                 .assertComplete();
         verify(api, times(1)).registerDevice(anyString(), any());
+    }
+
+    // ---- Terminal emission fence: no value may cross a session boundary ----
+
+    @Test
+    public void staleSetE2eeSubscriptionDoesNotExecuteRequest() throws Exception {
+        ConversationE2eeDto state = new ConversationE2eeDto(true, List.of());
+        Call<ConversationE2eeDto> ok = stateCall(state);
+        when(api.setE2ee(eq("c1"), any())).thenReturn(ok);
+
+        // Assembled (epoch captured) before the boundary, subscribed after.
+        Single<ConversationE2eeDto> pending = session.setE2ee("c1", true);
+        session.wipeLocal("u1");
+        pending.test().awaitDone(5, TimeUnit.SECONDS)
+                .assertError(error -> error instanceof E2eeSession.E2eeException
+                        && "E2EE_SESSION_RESET".equals(error.getMessage()))
+                .assertNoValues();
+        verify(api, never()).setE2ee(anyString(), any());
+    }
+
+    @Test
+    public void cachedE2eeStateCannotEmitAcrossWipeBoundary() throws Exception {
+        ConversationE2eeDto state = new ConversationE2eeDto(true, List.of());
+        Call<ConversationE2eeDto> call = stateCall(state);
+        when(api.getE2ee("c1")).thenReturn(call);
+        session.e2eeState("c1").test().awaitDone(5, TimeUnit.SECONDS)
+                .assertValue(state);
+
+        // Gate the FIRST Single assembled inside the deferred pipeline — the
+        // terminal emission itself — so the wipe lands exactly between the
+        // cached read and the observer's onSuccess/onError call.
+        Single<ConversationE2eeDto> pending = session.e2eeState("c1");
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean intercepted = new AtomicBoolean();
+        RxJavaPlugins.setOnSingleAssembly(single -> {
+            if (!intercepted.compareAndSet(false, true)) {
+                return single;
+            }
+            return new Single<Object>() {
+                @Override
+                protected void subscribeActual(
+                        SingleObserver<? super Object> observer) {
+                    entered.countDown();
+                    try {
+                        if (!release.await(5, TimeUnit.SECONDS)) {
+                            observer.onError(new AssertionError(
+                                    "release gate timed out"));
+                            return;
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        observer.onError(e);
+                        return;
+                    }
+                    single.subscribe(observer);
+                }
+            };
+        });
+        try {
+            TestObserver<ConversationE2eeDto> observer = pending.test();
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            session.wipeLocal("u1");
+            release.countDown();
+            observer.awaitDone(5, TimeUnit.SECONDS)
+                    .assertError(error -> error instanceof E2eeSession.E2eeException
+                            && "E2EE_SESSION_RESET".equals(error.getMessage()))
+                    .assertNoValues();
+        } finally {
+            release.countDown();
+            RxJavaPlugins.reset();
+        }
     }
 
     // ---- helpers ----

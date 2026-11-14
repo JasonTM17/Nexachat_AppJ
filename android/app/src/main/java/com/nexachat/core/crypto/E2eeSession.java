@@ -486,7 +486,7 @@ public final class E2eeSession {
                 cached = deviceCache.get(conversationId);
             }
             if (cached != null && cached.expiresAtMs > System.currentTimeMillis()) {
-                return Single.just(cached.state);
+                return fencedEmit(epoch, cached.state);
             }
             return ApiResult.safeApiCall(api.getE2ee(conversationId))
                     .flatMap(result -> {
@@ -520,7 +520,14 @@ public final class E2eeSession {
         synchronized (identityLock) {
             epoch = sessionGeneration;
         }
-        return Single.defer(() -> ApiResult.safeApiCall(api.setE2ee(
+        return Single.defer(() -> {
+                    synchronized (identityLock) {
+                        if (isStale(epoch)) {
+                            return Single.<ConversationE2eeDto>error(
+                                    staleSessionError());
+                        }
+                    }
+                    return ApiResult.safeApiCall(api.setE2ee(
                             conversationId, new SetE2eeRequest(enabled)))
                     .flatMap(result -> {
                         if (result instanceof ApiResult.Success<ConversationE2eeDto> success) {
@@ -540,8 +547,8 @@ public final class E2eeSession {
                         }
                         return Single.<ConversationE2eeDto>error(
                                 new E2eeException("E2EE_NETWORK"));
-                    })
-        ).subscribeOn(Schedulers.io());
+                    });
+        }).subscribeOn(Schedulers.io());
     }
 
     /**
