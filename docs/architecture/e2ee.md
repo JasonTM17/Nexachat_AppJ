@@ -6,17 +6,23 @@ sees plaintext for rows where `messages.encryption IS NOT NULL`.
 
 ## Trust model
 
-- The server is a ciphertext router, not a trusted party. It enforces
-  membership, idempotency, and the send contract, but it cannot read encrypted
-  rows. A server or database compromise exposes `e2ee1:` payloads and wrapped
-  content keys, not plaintext.
+- v1 protects stored traffic against *passive* database exposure: rows hold
+  `e2ee1:` ciphertext and wrapped content keys, so reading the database alone
+  does not reveal plaintext. The scheme has **no independent cryptographic
+  audit or production certification**.
+- v1 still *trusts the authenticated server* for key-directory truth, sender
+  identity, and conversation toggle state. There are no sender signatures,
+  no persistent key pinning or verification, no key-change alerts, and no
+  ratchet. An actively malicious or compromised server could substitute
+  device keys, forge sender metadata, or downgrade the conversation flag.
+- Comparing the safety code is a *manual* out-of-band check, not enforced
+  verification: clients can compare the code (SHA-512 over sorted
+  `userId:deviceId:publicKey` lines of both members' active devices), but
+  nothing blocks a send when the code is never compared.
 - Device identity is per installation: an X25519 key pair whose private half
   never leaves the client (Android seals it with the Keystore-backed
   `AesGcmTokenCipher`; it is wiped on sign-out). `e2ee_devices` only stores
   `public_key` (32 bytes) plus `revoked_at`.
-- Authenticity of the directory rests on authenticated HTTPS access — clients
-  can compare the safety code (SHA-256 over sorted
-  `userId:deviceId:publicKey` lines of both members' active devices).
 
 ## Crypto scheme (client-side, Tink `subtle`)
 

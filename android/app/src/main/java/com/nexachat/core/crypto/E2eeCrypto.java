@@ -172,12 +172,12 @@ public final class E2eeCrypto {
 
             Envelope mine = null;
             for (Envelope envelope : envelopes) {
-                if (myDeviceId.equals(envelope.deviceId())) {
+                if (envelope != null && myDeviceId.equals(envelope.deviceId())) {
                     mine = envelope;
                     break;
                 }
             }
-            if (mine == null) {
+            if (mine == null || mine.wrappedKey() == null) {
                 return Optional.empty();
             }
             byte[] wrapped = Base64.getUrlDecoder().decode(mine.wrappedKey());

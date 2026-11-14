@@ -155,6 +155,28 @@ public final class E2eeCryptoTest {
     }
 
     @Test
+    public void decryptIgnoresNullEnvelopeEntries() throws Exception {
+        KeyPair mine = pair(9);
+        EncryptedMessage out = crypto.encrypt("boundary", CONVERSATION, SENDER,
+                CLIENT_MESSAGE_ID, List.of(device("dev-9", mine)));
+
+        // An untrusted payload may legally contain null elements; the mapper
+        // must degrade to the placeholder path instead of crashing.
+        List<Envelope> onlyNull = new ArrayList<>();
+        onlyNull.add(null);
+        assertTrue(crypto.decrypt(out.content(), onlyNull, "dev-9",
+                mine.privateKey(), CONVERSATION, SENDER, CLIENT_MESSAGE_ID).isEmpty());
+
+        List<Envelope> mixed = new ArrayList<>();
+        mixed.add(null);
+        mixed.add(out.envelopes().get(0));
+        Optional<String> plain = crypto.decrypt(out.content(), mixed, "dev-9",
+                mine.privateKey(), CONVERSATION, SENDER, CLIENT_MESSAGE_ID);
+        assertTrue(plain.isPresent());
+        assertEquals("boundary", plain.get());
+    }
+
+    @Test
     public void fixedVectorLocksTheWireFormat() throws Exception {
         // Sequential bytes 0..43 fill contentKey(32) then nonce(12); ephemeral
         // private key is pinned separately.

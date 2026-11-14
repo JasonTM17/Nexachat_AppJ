@@ -81,6 +81,27 @@ public final class E2eeMessageMappingTest {
     }
 
     @Test
+    public void deserializedNullEnvelopeEntriesStillFailSafe() throws Exception {
+        // Moshi fills fields reflectively, so an untrusted [null] element can
+        // reach the mapper even though the full constructor defensively copies.
+        String json = "{\"id\":\"id-1\",\"seq\":1,\"conversationId\":\"c1\","
+                + "\"senderId\":\"u2\",\"clientMessageId\":\"m1\",\"type\":\"TEXT\","
+                + "\"content\":\"e2ee1:wire\",\"createdAt\":\"2024-01-01T00:00:00Z\","
+                + "\"encryption\":\"E2EE_V1\",\"e2eeEnvelopes\":[null]}";
+        MessageDto dto = new com.squareup.moshi.Moshi.Builder().build()
+                .adapter(MessageDto.class).fromJson(json);
+        E2eeSession session = mock(E2eeSession.class);
+        when(session.decryptNow("c1", "u2", "m1", "e2ee1:wire", dto.getE2eeEnvelopes()))
+                .thenReturn(Optional.empty());
+
+        Resolved r = E2eeMessageMapping.resolve(dto, "c1", "u2", session);
+
+        assertNull(r.content());
+        assertTrue(r.encrypted());
+        assertTrue(r.decryptFailed());
+    }
+
+    @Test
     public void replyTargetEncryptedFollowsFlag() {
         assertFalse(E2eeMessageMapping.replyTargetEncrypted(null));
         ReplyRefDto ref = new ReplyRefDto();

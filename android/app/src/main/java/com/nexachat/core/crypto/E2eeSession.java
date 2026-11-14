@@ -13,21 +13,25 @@ import com.nexachat.core.network.dto.E2eeDeviceDtos.RegisterDeviceRequest;
 import com.nexachat.core.network.dto.E2eeDeviceDtos.SetE2eeRequest;
 import com.nexachat.core.network.dto.E2eeEnvelopeDto;
 import com.nexachat.core.storage.TokenStore;
+import com.nexachat.core.storage.Tokens;
 import com.nexachat.data.TimeAndJwt;
 import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Completable;
-import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
@@ -35,10 +39,20 @@ import javax.inject.Singleton;
  * Owns the device's E2EE identity for the signed-in user and the per-
  * conversation member-device list used by the encrypted send path.
  *
- * <p>The private key never leaves {@link DeviceKeyStore} unsealed; registration
- * on session-available is idempotent (PUT upsert), and the member-device list
- * is cached briefly and invalidated on conversation-updated events and on the
- * server's {@code E2EE_STALE_DEVICES} send error.
+ * <p>The private key never leaves {@link DeviceKeyStore} unsealed. Registration
+ * is required before any encrypted send: only an HTTP success marks this
+ * device ready, transient transport and 5xx failures retry at most three
+ * total calls (2s then 4s, then a terminal error), a device-id conflict
+ * regenerates key material exactly once, and any other 4xx is terminal.
+ * Readiness is memoized per user+device+key for the session so steady-state
+ * sends never re-register (the server budgets registrations per hour).
+ *
+ * <p>A monotonically increasing session-generation fence retires every
+ * in-flight operation on wipe, revocation, or a new session boundary, so a
+ * delayed retry can never recreate keys or mark readiness for a signed-out
+ * account. The member-device list is cached briefly and invalidated on
+ * conversation-updated events, on {@code E2EE_STALE_DEVICES}, and whenever a
+ * fresh registration lands.
  */
 @Singleton
 public final class E2eeSession {
@@ -47,12 +61,18 @@ public final class E2eeSession {
     static final long DEVICES_TTL_MS = TimeUnit.MINUTES.toMillis(5);
     private static final int REGISTER_MAX_ATTEMPTS = 3;
     private static final long REGISTER_BACKOFF_MS = 2_000L;
+    /** Fence value meaning "no session boundary applies to this operation". */
+    private static final int NO_FENCE = -1;
 
     private final E2eeApi api;
     private final DeviceKeyStore keyStore;
     private final TokenStore tokenStore;
     private final Moshi moshi;
     private final E2eeCrypto crypto;
+    private final Scheduler delayScheduler;
+    private final Object identityLock = new Object();
+    private final AtomicInteger sessionGeneration = new AtomicInteger();
+    private final AtomicReference<String> registrationProof = new AtomicReference<>();
     private final Map<String, CachedDevices> deviceCache = new ConcurrentHashMap<>();
 
     @Inject
@@ -64,11 +84,19 @@ public final class E2eeSession {
     E2eeSession(@NonNull E2eeApi api, @NonNull DeviceKeyStore keyStore,
             @NonNull TokenStore tokenStore, @NonNull Moshi moshi,
             @NonNull E2eeCrypto crypto) {
+        this(api, keyStore, tokenStore, moshi, crypto, Schedulers.computation());
+    }
+
+    /** Test seam: registration backoff runs on the supplied scheduler. */
+    E2eeSession(@NonNull E2eeApi api, @NonNull DeviceKeyStore keyStore,
+            @NonNull TokenStore tokenStore, @NonNull Moshi moshi,
+            @NonNull E2eeCrypto crypto, @NonNull Scheduler delayScheduler) {
         this.api = Objects.requireNonNull(api, "api");
         this.keyStore = Objects.requireNonNull(keyStore, "keyStore");
         this.tokenStore = Objects.requireNonNull(tokenStore, "tokenStore");
         this.moshi = Objects.requireNonNull(moshi, "moshi");
         this.crypto = Objects.requireNonNull(crypto, "crypto");
+        this.delayScheduler = Objects.requireNonNull(delayScheduler, "delayScheduler");
     }
 
     /**
@@ -81,52 +109,153 @@ public final class E2eeSession {
         return tokenStore.readTokens()
                 .flatMapCompletable(tokens -> {
                     String userId = TimeAndJwt.userIdFromJwt(tokens.getAccessToken(), moshi);
+                    if (userId == null) {
+                        return Completable.error(new E2eeException("E2EE_NO_SESSION"));
+                    }
+                    // A new session boundary retires every in-flight operation.
+                    int fence = sessionGeneration.incrementAndGet();
+                    String previous = keyStore.currentUserId();
+                    if (previous != null && !previous.equals(userId)) {
+                        registrationProof.set(null);
+                        deviceCache.clear();
+                    }
                     keyStore.rememberCurrentUser(userId);
-                    return ensureIdentity(userId)
-                            .flatMapCompletable(identity -> register(userId, identity, false));
+                    return ensureRegisteredIdentity(userId, fence).ignoreElement();
                 })
-                .retryWhen(errors -> errors.zipWith(
-                                Flowable.range(1, REGISTER_MAX_ATTEMPTS),
-                                (error, attempt) -> attempt)
-                        .flatMap(attempt -> Flowable.timer(
-                                REGISTER_BACKOFF_MS * attempt, TimeUnit.MILLISECONDS)))
                 .subscribeOn(Schedulers.io());
     }
 
     /**
-     * Registers the stored identity; a {@code E2EE_DEVICE_CONFLICT} (this
-     * deviceId already bound to another account's key) triggers exactly one
-     * regeneration with a fresh deviceId, never an unbounded loop.
+     * Resolves the stored identity (generating one when absent) and confirms
+     * it with the server. Success is memoized for the session so callers can
+     * invoke this before every encrypted send without paying the server's
+     * registration rate budget again.
      */
     @NonNull
-    private Completable register(@NonNull String userId, @NonNull Identity identity,
-            boolean retried) {
-        return ApiResult.safeApiCall(api.registerDevice(identity.getDeviceId(),
-                        new RegisterDeviceRequest(identity.publicKeyBase64Url())))
-                .flatMapCompletable(result -> {
-                    if (result instanceof ApiResult.HttpError<?> http
-                            && "E2EE_DEVICE_CONFLICT".equals(http.getErrorCode())
-                            && !retried) {
-                        // clear() drops the deviceId + key material, so
-                        // ensureIdentity mints a fresh pair and id.
-                        keyStore.clear(userId);
-                        return ensureIdentity(userId)
-                                .flatMapCompletable(fresh -> register(userId, fresh, true));
+    private Single<Identity> ensureRegisteredIdentity(@NonNull String userId, int fence) {
+        return ensureIdentity(userId, fence)
+                .flatMap(identity -> {
+                    if (isStale(fence)) {
+                        return Single.error(staleSessionError());
                     }
-                    return Completable.complete();
+                    if (registrationMarker(userId, identity).equals(registrationProof.get())) {
+                        return Single.just(identity);
+                    }
+                    return registerDeviceAttempts(userId, identity, false, 1, fence)
+                            .map(confirmed -> {
+                                if (isStale(fence)) {
+                                    throw staleSessionError();
+                                }
+                                // New or regenerated key material just landed on
+                                // the directory: cached member lists may predate
+                                // this device, so drop them all.
+                                deviceCache.clear();
+                                registrationProof.set(registrationMarker(userId, confirmed));
+                                return confirmed;
+                            });
                 });
+    }
+
+    /**
+     * Performs one logical device registration. Only {@code ApiResult.Success}
+     * confirms the identity. {@code E2EE_DEVICE_CONFLICT} regenerates the key
+     * pair and id exactly once (the second conflict is terminal). Transport
+     * failures and 5xx retry with 2s/4s backoff up to
+     * {@value #REGISTER_MAX_ATTEMPTS} total calls; every other 4xx is a
+     * terminal {@link E2eeException} carrying the server error code.
+     */
+    @NonNull
+    private Single<Identity> registerDeviceAttempts(@NonNull String userId,
+            @NonNull Identity identity, boolean regenerated, int attempt, int fence) {
+        if (isStale(fence)) {
+            return Single.error(staleSessionError());
+        }
+        // Each attempt builds its own Call inside defer so a retry never
+        // replays an already-executed request object.
+        return Single.defer(() -> ApiResult.safeApiCall(api.registerDevice(
+                        identity.getDeviceId(),
+                        new RegisterDeviceRequest(identity.publicKeyBase64Url()))))
+                .flatMap(result -> {
+                    if (isStale(fence)) {
+                        return Single.error(staleSessionError());
+                    }
+                    if (result instanceof ApiResult.Success) {
+                        return Single.just(identity);
+                    }
+                    if (result instanceof ApiResult.HttpError<?> http) {
+                        if ("E2EE_DEVICE_CONFLICT".equals(http.getErrorCode())
+                                && !regenerated) {
+                            return regenerateIdentity(userId, fence)
+                                    .flatMap(fresh -> registerDeviceAttempts(
+                                            userId, fresh, true, 1, fence));
+                        }
+                        if (http.getStatus() >= 500 && attempt < REGISTER_MAX_ATTEMPTS) {
+                            return delayFor(attempt).andThen(registerDeviceAttempts(
+                                    userId, identity, regenerated, attempt + 1, fence));
+                        }
+                        return Single.error(new E2eeException(http.getErrorCode() != null
+                                ? http.getErrorCode() : "E2EE_HTTP_" + http.getStatus()));
+                    }
+                    // ApiResult.NetworkError: transient transport failure.
+                    if (attempt < REGISTER_MAX_ATTEMPTS) {
+                        return delayFor(attempt).andThen(registerDeviceAttempts(
+                                userId, identity, regenerated, attempt + 1, fence));
+                    }
+                    return Single.error(new E2eeException("E2EE_NETWORK"));
+                });
+    }
+
+    @NonNull
+    private Completable delayFor(int attempt) {
+        return Completable.timer(REGISTER_BACKOFF_MS * attempt, TimeUnit.MILLISECONDS,
+                delayScheduler);
     }
 
     /** Loads the stored identity or generates, seals, and returns a new one. */
     @NonNull
     public Single<Identity> ensureIdentity(@NonNull String userId) {
+        return ensureIdentity(userId, NO_FENCE);
+    }
+
+    /**
+     * Fenced variant of {@link #ensureIdentity(String)}: read, generate, and
+     * persist happen inside one lock so concurrent first uses mint exactly one
+     * key pair, and a stale session never recreates keys after a wipe.
+     */
+    @NonNull
+    private Single<Identity> ensureIdentity(@NonNull String userId, int fence) {
         return Single.fromCallable(() -> {
-            Identity existing = keyStore.identity(userId);
-            if (existing != null) return existing;
-            E2eeCrypto.KeyPair pair = E2eeCrypto.generateDeviceKeyPair();
-            String deviceId = keyStore.deviceId(userId);
-            keyStore.put(userId, deviceId, pair);
-            return new Identity(deviceId, pair.publicKey(), pair.privateKey());
+            synchronized (identityLock) {
+                if (isStale(fence)) {
+                    throw staleSessionError();
+                }
+                return ensureIdentityLocked(userId);
+            }
+        });
+    }
+
+    @NonNull
+    private Identity ensureIdentityLocked(@NonNull String userId)
+            throws GeneralSecurityException {
+        Identity existing = keyStore.identity(userId);
+        if (existing != null) return existing;
+        E2eeCrypto.KeyPair pair = E2eeCrypto.generateDeviceKeyPair();
+        String deviceId = keyStore.deviceId(userId);
+        keyStore.put(userId, deviceId, pair);
+        return new Identity(deviceId, pair.publicKey(), pair.privateKey());
+    }
+
+    /** Drops the stored pair and mints a fresh one under the identity lock. */
+    @NonNull
+    private Single<Identity> regenerateIdentity(@NonNull String userId, int fence) {
+        return Single.fromCallable(() -> {
+            synchronized (identityLock) {
+                if (isStale(fence)) {
+                    throw staleSessionError();
+                }
+                keyStore.clear(userId);
+                return ensureIdentityLocked(userId);
+            }
         });
     }
 
@@ -138,23 +267,38 @@ public final class E2eeSession {
                                 api.revokeDevice(identity.getDeviceId()))
                         .ignoreElement()
                         .onErrorComplete())
-                .andThen(Completable.fromAction(() -> {
-                    keyStore.clear(userId);
-                    keyStore.forgetCurrentUser();
-                }))
+                .andThen(Completable.fromAction(() -> wipeIdentity(userId)))
                 .subscribeOn(Schedulers.io());
     }
 
     /** Wipes whichever identity is current; safe no-op when none exists. */
     public void wipeCurrent() {
         String userId = keyStore.currentUserId();
-        if (userId != null) wipeLocal(userId);
-        deviceCache.clear();
+        if (userId != null) {
+            wipeIdentity(userId);
+        } else {
+            sessionGeneration.incrementAndGet();
+            registrationProof.set(null);
+            deviceCache.clear();
+        }
     }
 
     /** Local-only wipe for the account-deletion / clear-all boundary. */
     public void wipeLocal(@NonNull String userId) {
-        keyStore.clear(userId);
+        wipeIdentity(userId);
+    }
+
+    /**
+     * Session-boundary wipe: bumps the generation fence so in-flight work
+     * dies, clears readiness proof and cached device lists, then deletes the
+     * sealed identity under the same lock that serializes minting.
+     */
+    private void wipeIdentity(@NonNull String userId) {
+        sessionGeneration.incrementAndGet();
+        registrationProof.set(null);
+        synchronized (identityLock) {
+            keyStore.clear(userId);
+        }
         keyStore.forgetCurrentUser();
         deviceCache.clear();
     }
@@ -230,28 +374,93 @@ public final class E2eeSession {
 
     /**
      * Encrypts {@code plaintext} for every active member device of
-     * {@code conversationId}, including this device. Caller must have checked
-     * the conversation's e2ee flag already.
+     * {@code conversationId}, including this device. The token's user must
+     * equal {@code senderId} and this device must be registered and listed in
+     * the member device set; otherwise the send fails with an
+     * {@link E2eeException} and never falls back to plaintext.
      */
     @NonNull
     public Single<E2eeCrypto.EncryptedMessage> encryptFor(
             @NonNull String conversationId, @NonNull String plaintext,
             @NonNull String senderId, @NonNull String clientMessageId) {
-        return e2eeState(conversationId).map(state -> {
-            List<DevicePublicKey> recipients = new ArrayList<>(state.getDevices().size());
-            for (MemberDeviceDto device : state.getDevices()) {
-                if (device.getDeviceId() == null || device.getPublicKey() == null) continue;
-                recipients.add(new DevicePublicKey(device.getDeviceId(),
-                        E2eeCrypto.b64urlDecode(device.getPublicKey())));
+        return tokenStore.readTokens()
+                .switchIfEmpty(Single.<Tokens>error(new E2eeException("E2EE_NO_SESSION")))
+                .flatMap(tokens -> {
+                    String userId = TimeAndJwt.userIdFromJwt(tokens.getAccessToken(), moshi);
+                    if (userId == null) {
+                        return Single.error(new E2eeException("E2EE_NO_SESSION"));
+                    }
+                    if (!userId.equals(senderId)) {
+                        return Single.error(new E2eeException("E2EE_SENDER_MISMATCH"));
+                    }
+                    int fence = sessionGeneration.get();
+                    return ensureRegisteredIdentity(userId, fence)
+                            .flatMap(identity -> encryptForConversation(conversationId,
+                                    plaintext, senderId, clientMessageId, userId,
+                                    identity, false));
+                })
+                .subscribeOn(Schedulers.io());
+    }
+
+    /**
+     * Encrypts against the member-device snapshot, failing closed:
+     * {@code E2EE_NOT_ENABLED} when the conversation is off,
+     * {@code E2EE_STALE_DEVICES} when the snapshot is malformed, lacks this
+     * device's exact key, or lists no peer device. A snapshot missing the
+     * just-registered own device is refetched once before erroring.
+     */
+    @NonNull
+    private Single<E2eeCrypto.EncryptedMessage> encryptForConversation(
+            @NonNull String conversationId, @NonNull String plaintext,
+            @NonNull String senderId, @NonNull String clientMessageId,
+            @NonNull String selfUserId, @NonNull Identity identity, boolean refetched) {
+        return e2eeState(conversationId).flatMap(state -> {
+            if (!state.isEnabled()) {
+                return Single.error(new E2eeException("E2EE_NOT_ENABLED"));
             }
-            if (recipients.isEmpty()) {
-                throw new E2eeException("E2EE_STALE_DEVICES");
+            List<DevicePublicKey> recipients = new ArrayList<>(state.getDevices().size());
+            boolean ownListed = false;
+            boolean peerListed = false;
+            for (MemberDeviceDto device : state.getDevices()) {
+                if (device.getUserId() == null || device.getDeviceId() == null
+                        || device.getPublicKey() == null) {
+                    return Single.<E2eeCrypto.EncryptedMessage>error(
+                            new E2eeException("E2EE_STALE_DEVICES"));
+                }
+                byte[] publicKey;
+                try {
+                    publicKey = E2eeCrypto.b64urlDecode(device.getPublicKey());
+                } catch (RuntimeException malformed) {
+                    return Single.<E2eeCrypto.EncryptedMessage>error(
+                            new E2eeException("E2EE_STALE_DEVICES"));
+                }
+                if (publicKey.length != E2eeCrypto.KEY_BYTES) {
+                    return Single.<E2eeCrypto.EncryptedMessage>error(
+                            new E2eeException("E2EE_STALE_DEVICES"));
+                }
+                if (device.getDeviceId().equals(identity.getDeviceId())) {
+                    ownListed = Arrays.equals(publicKey, identity.getPublicKey());
+                }
+                if (!selfUserId.equals(device.getUserId())) {
+                    peerListed = true;
+                }
+                recipients.add(new DevicePublicKey(device.getDeviceId(), publicKey));
+            }
+            if (!ownListed || !peerListed) {
+                if (!refetched) {
+                    invalidateDevices(conversationId);
+                    return encryptForConversation(conversationId, plaintext, senderId,
+                            clientMessageId, selfUserId, identity, true);
+                }
+                return Single.<E2eeCrypto.EncryptedMessage>error(
+                        new E2eeException("E2EE_STALE_DEVICES"));
             }
             try {
-                return crypto.encrypt(plaintext, conversationId, senderId, clientMessageId,
-                        recipients);
+                return Single.just(crypto.encrypt(plaintext, conversationId, senderId,
+                        clientMessageId, recipients));
             } catch (GeneralSecurityException failure) {
-                throw new E2eeException("E2EE_CRYPTO");
+                return Single.<E2eeCrypto.EncryptedMessage>error(
+                        new E2eeException("E2EE_CRYPTO"));
             }
         });
     }
@@ -273,7 +482,8 @@ public final class E2eeSession {
         List<Envelope> parsed = new ArrayList<>(envelopes == null ? 0 : envelopes.size());
         if (envelopes != null) {
             for (E2eeEnvelopeDto envelope : envelopes) {
-                if (envelope.getDeviceId() != null && envelope.getWrappedKey() != null) {
+                if (envelope != null && envelope.getDeviceId() != null
+                        && envelope.getWrappedKey() != null) {
                     parsed.add(new Envelope(envelope.getDeviceId(), envelope.getWrappedKey()));
                 }
             }
@@ -299,7 +509,8 @@ public final class E2eeSession {
                             envelopes == null ? 0 : envelopes.size());
                     if (envelopes != null) {
                         for (E2eeEnvelopeDto envelope : envelopes) {
-                            if (envelope.getDeviceId() != null && envelope.getWrappedKey() != null) {
+                            if (envelope != null && envelope.getDeviceId() != null
+                                    && envelope.getWrappedKey() != null) {
                                 parsed.add(new Envelope(envelope.getDeviceId(),
                                         envelope.getWrappedKey()));
                             }
@@ -311,6 +522,21 @@ public final class E2eeSession {
                     return plain.orElse(null);
                 }))
                 .subscribeOn(Schedulers.io());
+    }
+
+    private boolean isStale(int fence) {
+        return fence != NO_FENCE && sessionGeneration.get() != fence;
+    }
+
+    @NonNull
+    private static E2eeException staleSessionError() {
+        return new E2eeException("E2EE_SESSION_RESET");
+    }
+
+    @NonNull
+    private static String registrationMarker(@NonNull String userId,
+            @NonNull Identity identity) {
+        return userId + '|' + identity.getDeviceId() + '|' + identity.publicKeyBase64Url();
     }
 
     /** Error whose message is the server error code, so UI can branch on it. */
