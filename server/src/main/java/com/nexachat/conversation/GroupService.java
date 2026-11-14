@@ -222,6 +222,7 @@ public class GroupService {
         // lock at entry so the member INSERT (conversation FK) and the SYSTEM
         // lines cannot perform a key-share -> write upgrade later.
         conversation = lockGroup(conversationId);
+        requireCurrentAdmin(conversationId, callerId);
         List<User> candidates = userIds.stream().map(lockedUsers::get).toList();
 
         Set<UUID> existing = new HashSet<>(memberRepository.findMemberUserIds(conversationId));
