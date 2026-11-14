@@ -73,16 +73,23 @@ public final class ChatInteractionsViews {
             @NonNull RecallWindowRules.DeleteAction deleteAction,
             @NonNull MessageActions actions) {
         List<MessageActionEntry> entries = new ArrayList<>();
-        boolean sent = ChatBubbleRules.isMessageReplyable(message.getStatus()) && !message.isDeleted();
+        // Undecryptable content cannot be replied to, copied, or forwarded;
+        // ciphertext content cannot be edited or forwarded (the server rejects
+        // both, and forwarding decrypted plaintext would break e2ee).
+        boolean undecryptable = message.isDecryptFailed();
+        boolean sent = ChatBubbleRules.isMessageReplyable(message.getStatus())
+                && !message.isDeleted() && !undecryptable;
         if (sent) {
             entries.add(new MessageActionEntry(context.getString(R.string.action_reply),
                     () -> actions.reply(message), MessageActionKind.REPLY));
         }
-        if (message.getContent() != null && !message.getContent().isBlank() && !message.isDeleted()) {
+        if (message.getContent() != null && !message.getContent().isBlank()
+                && !message.isDeleted() && !undecryptable) {
             entries.add(new MessageActionEntry(context.getString(R.string.action_copy),
                     () -> copy(context, message.getContent()), MessageActionKind.COPY));
         }
         if (sent && message.getContent() != null && !message.getContent().isBlank()
+                && !message.isEncrypted()
                 && ForwardFilter.canForward(message.getType(), message.isDeleted())) {
             entries.add(new MessageActionEntry(context.getString(R.string.action_forward),
                     () -> actions.forward(message), MessageActionKind.FORWARD));
@@ -91,7 +98,8 @@ public final class ChatInteractionsViews {
             entries.add(new MessageActionEntry(context.getString(pinned ? R.string.action_unpin : R.string.action_pin),
                     () -> actions.pin(message), MessageActionKind.PIN));
         }
-        if (message.getMine() && sent && "TEXT".equals(message.getType())) {
+        if (message.getMine() && sent && !message.isEncrypted()
+                && "TEXT".equals(message.getType())) {
             entries.add(new MessageActionEntry(context.getString(R.string.action_edit),
                     () -> actions.edit(message), MessageActionKind.EDIT));
         }

@@ -154,6 +154,20 @@
     </fragment>
 
     <fragment
+        android:id="@+id/encryptionFragment"
+        android:name="com.nexachat.feature.encryption.EncryptionFragment"
+        android:label="@string/e2ee_screen_title">
+        <argument
+            android:name="conversationId"
+            app:argType="string" />
+        <argument
+            android:name="peerName"
+            android:defaultValue="@null"
+            app:argType="string"
+            app:nullable="true" />
+    </fragment>
+
+    <fragment
         android:id="@+id/groupCreateFragment"
         android:name="com.nexachat.feature.group.CreateGroupFragment"
         android:label="@string/group_create_title" />

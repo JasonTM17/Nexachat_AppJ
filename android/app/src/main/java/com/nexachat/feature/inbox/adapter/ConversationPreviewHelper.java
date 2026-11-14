@@ -26,6 +26,9 @@ public final class ConversationPreviewHelper {
         if (conversation.getLastMessageDeleted()) {
             return context.getString(R.string.message_deleted);
         }
+        if (conversation.isLastMessageEncrypted()) {
+            return context.getString(R.string.e2ee_message_placeholder);
+        }
         String raw = conversation.getLastMessageContent();
         if (raw == null || raw.isEmpty()) {
             return "";
