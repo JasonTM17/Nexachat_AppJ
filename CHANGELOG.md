@@ -6,6 +6,25 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.7] - 2026-11-14
+
+Realtime liveness and server authorization release. No migration, no new
+environment variable; the server part is already deployed and the `v1.2.6` app
+works with it.
+
+### Fixed
+- Android: a silent half-open realtime socket is detected within 15 seconds while
+  the app is in the foreground (was about 40 seconds); background is unchanged.
+- Android: message action labels wrap at large font scale.
+- Server: group member additions recheck the caller's current role.
+- Server: revoked, rotated or expired invites no longer admit; join retries are
+  idempotent.
+- Server: sync only returns messages, reactions and quotes from the caller's
+  current membership period.
+
+### Tests
+- Deterministic epoch-advance test no longer depends on thread scheduling state.
+
 ## [1.2.6] - 2026-11-14
 
 Stability and polish release: scrolling, keyboard and large-font fixes across
