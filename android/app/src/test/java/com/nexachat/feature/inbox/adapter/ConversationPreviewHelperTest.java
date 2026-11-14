@@ -105,6 +105,63 @@ public final class ConversationPreviewHelperTest {
     }
 
     @Test
+    public void typedMediaPreviewsUseLocalizedLabelsWithGroupPrefix() {
+        Context context = mock(Context.class);
+        when(context.getString(R.string.inbox_preview_photo)).thenReturn("Photo");
+        when(context.getString(R.string.inbox_preview_voice)).thenReturn("Voice message");
+        when(context.getString(R.string.inbox_preview_file)).thenReturn("File");
+
+        ConversationSummary image = conversation(
+                "GROUP", "Team", "photo_1.webp", "Mai", false, "IMAGE");
+        ConversationSummary video = conversation(
+                "GROUP", "Team", "clip_2.mp4", "Mai", false, "VIDEO");
+        ConversationSummary audio = conversation(
+                "GROUP", "Team", "voice_3.m4a", "Mai", false, "AUDIO");
+        ConversationSummary file = conversation(
+                "GROUP", "Team", "report.pdf", "Mai", false, "FILE");
+
+        assertEquals("Mai: Photo", ConversationPreviewHelper.previewText(context, image, "me"));
+        assertEquals("Mai: Photo", ConversationPreviewHelper.previewText(context, video, "me"));
+        assertEquals("Mai: Voice message", ConversationPreviewHelper.previewText(context, audio, "me"));
+        assertEquals("Mai: File", ConversationPreviewHelper.previewText(context, file, "me"));
+        assertEquals(InboxPreviewKind.PHOTO, ConversationPreviewHelper.previewKind(image));
+        assertEquals(InboxPreviewKind.PHOTO, ConversationPreviewHelper.previewKind(video));
+        assertEquals(InboxPreviewKind.VOICE, ConversationPreviewHelper.previewKind(audio));
+        assertEquals(InboxPreviewKind.FILE, ConversationPreviewHelper.previewKind(file));
+    }
+
+    @Test
+    public void typedMediaPreviewHasNoPrefixInDirectChat() {
+        Context context = mock(Context.class);
+        when(context.getString(R.string.inbox_preview_voice)).thenReturn("Voice message");
+        ConversationSummary audio = conversation(
+                "DIRECT", null, "voice_9.m4a", "Mai", false, "AUDIO");
+
+        assertEquals("Voice message", ConversationPreviewHelper.previewText(context, audio, "me"));
+    }
+
+    @Test
+    public void nullTypeStillFallsBackToContentMarkers() {
+        Context context = mock(Context.class);
+        when(context.getString(R.string.inbox_preview_voice)).thenReturn("Voice message");
+        ConversationSummary legacy = conversation(
+                "DIRECT", null, "VOICE|clip.m4a", null, false, null);
+
+        assertEquals("Voice message", ConversationPreviewHelper.previewText(context, legacy, "me"));
+        assertEquals(InboxPreviewKind.VOICE, ConversationPreviewHelper.previewKind(legacy));
+    }
+
+    @Test
+    public void textTypeKeepsRawContentAndTextKind() {
+        Context context = mock(Context.class);
+        ConversationSummary text = conversation(
+                "DIRECT", null, "plain words", null, false, "TEXT");
+
+        assertEquals("plain words", ConversationPreviewHelper.previewText(context, text, "me"));
+        assertEquals(InboxPreviewKind.TEXT, ConversationPreviewHelper.previewKind(text));
+    }
+
+    @Test
     public void nullLastMessageTypeKeepsLegacyRawBehavior() {
         Context context = mock(Context.class);
         ConversationSummary group = conversation(

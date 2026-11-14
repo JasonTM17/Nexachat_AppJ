@@ -7,16 +7,16 @@ pin, reply and forward text — in a bilingual (Vi/En) Material 3 UI that keeps
 message sending available offline.
 
 > **Architecture at a glance:** 100% **Java 21 LTS** end-to-end — Android client
-> (`XML Views`, `Fragments`, `ViewBinding`, `RxJava 3`, `Room v14`, `Hilt`, `Material 3`)
+> (`XML Views`, `Fragments`, `ViewBinding`, `RxJava 3`, `Room v16`, `Hilt`, `Material 3`)
 > paired with a **Spring Boot 3.5** modular monolith (`REST /api/v1`, `STOMP over WebSocket /ws`,
-> **PostgreSQL 16** with Flyway `V1–V20` + `V22` + `V24–V33` (V21/V23 reserved), **WebRTC** 1-to-1 voice calls,
+> **PostgreSQL 16** with Flyway `V1–V20` + `V22` + `V24–V34` (V21/V23 reserved), **WebRTC** 1-to-1 voice calls,
 > Google sign-in (link-first on existing accounts; `POST /auth/google` can register when signup is enabled,
 > public JWKS), email OTP recovery/deletion, self-service account deletion,
 > consent-gated **AI conversation summaries**, conversation RAG with the Android “Ask this chat” entry,
 > and optional Firebase ephemeral state (flags off, STOMP default)).
 > Every architectural claim below links directly to its executable source and verification suite.
 
-The Android sync consumer uses Room 14 and negotiates the upcoming sync v2
+The Android sync consumer uses Room 16 and negotiates the upcoming sync v2
 contract. Until the V32 server is integrated it explicitly uses legacy sync;
 [client checkpoints and verification limits](docs/architecture/android-sync.md) describe that boundary.
 
@@ -99,7 +99,8 @@ Architecture, protocol contracts, and security boundaries are documented in
 | Realtime & Ephemeral Routing | STOMP over WebSocket as default for presence, typing, delivery/read receipts; candidate Firebase RTDB bridge and projections (flags off by default, STOMP fallback via `EphemeralStateRouter`) | `server/firebase`, `app/core/realtime/ephemeral`, `docs/architecture/firebase-realtime.md` |
 | Static Site & App Links | Bilingual static site on Vercel with Digital Asset Links (`.well-known/assetlinks.json`), self-service web account deletion (`site/delete-account.html`), strict CSP, and repo-owned Vercel build-skip `ignoreCommand` | `site/`, `site/vercel.json`, `docs/operations/domain-and-app-links.md`, `site/README.md` |
 | Contacts & Discovery | Phone-number search, add/remove contact, alias names | `server/user`, `server/contact`, `app/feature/contacts` |
-| Direct Chat & Offline Outbox | 1-1 messaging, optimistic send, account-scoped durable offline outbox (Room v14) with WorkManager drain, caller-owned inbox labels, 2-tick delivery & read receipts, delta sync with `reaction_events` (V10), typing indicator, history paging | `server/message`, `server/ws`, `app/feature/chat`, `app/data` |
+| Direct Chat & Offline Outbox | 1-1 messaging, optimistic send, account-scoped durable offline outbox (Room v16) with WorkManager drain, caller-owned inbox labels, 2-tick delivery & read receipts, delta sync with `reaction_events` (V10), typing indicator, history paging | `server/message`, `server/ws`, `app/feature/chat`, `app/data` |
+| Direct-Chat E2EE | Optional per-conversation end-to-end encryption for DIRECT text chats: on-device X25519/AES-GCM keys, server stores ciphertext only, device registry and safety codes; server-side Ask/Summary unavailable while enabled; groups unsupported | `server/e2ee`, `app/core/crypto`, `app/feature/encryption`, `docs/architecture/e2ee.md` |
 | Message Management & Search | Edit own text messages, soft-delete own messages, conversation-scoped text search accelerated by GIN trigram index (V8), presence controls and direct-peer status | `server/message`, `server/presence`, `app/feature/chat`, `app/feature/profile` |
 | Conversation Archive | Member-scoped browser for conversation media, files and links, with filters and keyset paging | `server/archive`, `app/feature/archive` |
 | Conversation Preferences | Per-member mute/archive and per-conversation AI opt-out (V12/V13), with Android inbox and chat controls | `server/conversation`, `server/summary`, `app/feature/inbox`, `app/feature/chat` |
@@ -131,7 +132,7 @@ flowchart LR
     subgraph Android["android/ — Java 21 LTS, XML Views + ViewBinding, Hilt"]
         UI["Fragments + XML Views<br/>(feature/*)"] --> VM["ViewModels<br/>(LiveData + RxJava 3, SavedStateHandle)"]
         VM --> REPO["Repositories"]
-        REPO --> ROOM[("Room v14 — SSOT<br/>messages · conversations · labels<br/>owner-scoped outbox · offline_outbox · reactions · pins · preferences · mentions")]
+        REPO --> ROOM[("Room v16 — SSOT<br/>messages · conversations · labels<br/>owner-scoped outbox · offline_outbox · reactions · pins · preferences · mentions")]
         REPO --> TS["TokenStore<br/>AES/GCM @ AndroidKeyStore"]
         REPO --> ROUTER["EphemeralStateRouter<br/>(STOMP default, opt-in Firebase)"]
         REPO --> ST["StompClient<br/>(OkHttp raw WS)"]
@@ -146,7 +147,7 @@ flowchart LR
         BR["SimpleBroker<br/>/topic + /user/queue"]
     end
 
-    DB[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V33<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin")]
+    DB[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V34<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin")]
     STORAGE["File storage<br/>(local volume or private S3-compatible bucket)"]
 
     RT -- "REST /api/v1 (JWT Bearer)" --> SEC --> SVC
@@ -175,7 +176,7 @@ rendered directly. Rationale and diagrams: [docs/architecture/architecture.md](d
 | Framework | Spring Boot 3.5.16 (Web, WebSocket, Security, Data JPA, Validation, Actuator) | Material 3 + AppCompat, Navigation Component, Fragments, ViewBinding, RecyclerView `ListAdapter` |
 | Auth/crypto | jjwt 0.12.6 (HS256), BCrypt cost 12, SHA-256 token hashes, Google OpenID Connect (public JWKS), HMAC-SHA256 OTPs | AES/GCM/NoPadding via AndroidKeyStore, Credential Manager |
 | Realtime | spring-websocket + STOMP (default), optional Firebase RTDB bridge | OkHttp 4.12 WebSocket + STOMP, EphemeralStateRouter |
-| Persistence | PostgreSQL 16, Flyway V1–V20 + V22 + V24–V33, `ddl-auto: validate` | Room 2.6.1 (v14, exported schemas 6–14, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
+| Persistence | PostgreSQL 16, Flyway V1–V20 + V22 + V24–V34, `ddl-auto: validate` | Room 2.6.1 (v16, exported schemas 6–16, RxJava 3, explicit migrations), RxDataStore, SharedPreferences |
 | Files | `StorageService` abstraction, `MagicBytes` sniffing, 25MB cap, Range downloads, BlurHash | Glide 4.16, Media3 1.5.1 |
 | Other | libphonenumber 8.13.45, bucket4j 8.10.1 rate limiting | Hilt 2.52 (`annotationProcessor`), Retrofit 2.11 + Moshi, RxJava 3.1.9 |
 | Build/test | Maven + failsafe (`*IT` @ `verify`), Testcontainers dep | Gradle 8.14.3 + AGP 8.9.3 + version catalog (`libs.versions.toml`), JUnit 4 + Mockito + RxJava `TestObserver`/`TestSubscriber` |
@@ -334,7 +335,7 @@ nexachat/
 │  └─ gradle/libs.versions.toml   # dependency version catalog
 ├─ server/    Spring Boot modular monolith (REST /api/v1 + STOMP /ws)
 │  ├─ src/main/java/com/nexachat/{auth,user,contact,conversation,message,attachment,retention,presence,call,summary,notification,rag,reminder,poll,label,invite,archive,observability,recovery,firebase,mail,ws,common,config}/
-│  ├─ src/main/resources/db/migration/V1–V20, V22, V24–V33 # Flyway migrations
+│  ├─ src/main/resources/db/migration/V1–V20, V22, V24–V34 # Flyway migrations
 │  └─ Dockerfile + pom.xml
 ├─ site/      Static site on Vercel (delete-account web flow, assetlinks, check.py, vercel.json)
 ├─ docs/      audience-grouped documentation (index: docs/README.md)
@@ -388,5 +389,5 @@ Released under the [MIT License](LICENSE).
 
 NexaChat is designed and operated as a single-node real-time messaging deployment;
 architectural trade-offs and non-goals (in-memory SimpleBroker topology, LAN
-cleartext debug/localSmoke profiles, and external credentials required for live FCM delivery, E2EE, and OTP) are documented in
+cleartext debug/localSmoke profiles, and external credentials required for live FCM delivery and OTP) are documented in
 [docs/quality/known-limitations.md](docs/quality/known-limitations.md).

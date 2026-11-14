@@ -137,6 +137,30 @@ public final class ContactsViewModelTest {
     }
 
     @Test
+    public void editingQueryAfterSubmitMarksItUnsubmitted() {
+        when(repository.searchByName(anyString()))
+                .thenReturn(Single.just(new Result.Success<>(List.of(user))));
+        viewModel.onQueryChange("Lan");
+        viewModel.search();
+        assertTrue(viewModel.getUiState().getValue().isSearched());
+
+        viewModel.onQueryChange("Lang");
+
+        assertFalse(viewModel.getUiState().getValue().isSearched());
+    }
+
+    @Test
+    public void typingWithoutSubmitNeverCallsServerSearch() {
+        viewModel.onQueryChange("L");
+        viewModel.onQueryChange("La");
+        viewModel.onQueryChange("Lan");
+
+        verify(repository, never()).searchByName(anyString());
+        verify(repository, never()).searchByPhone(anyString());
+        verify(repository, never()).searchByEmail(anyString());
+    }
+
+    @Test
     public void findUserForAddWithNoMatchMapsToUserNotFound() {
         when(repository.searchByPhone(anyString()))
                 .thenReturn(Single.just(new Result.Success<>(Collections.emptyList())));

@@ -39,10 +39,13 @@ public final class MediaViewerViewModel extends ViewModel {
         String mimeType = nonBlank(savedStateHandle.get("mime"));
         String attachmentId = Objects.requireNonNullElse(
                 savedStateHandle.<String>get("attachmentId"), "");
+        String senderName = nonBlank(savedStateHandle.get("sender"));
+        Long sentAt = savedStateHandle.get("sentAt");
         boolean isImage = mimeType != null
                 && mimeType.startsWith(AttachmentDto.MIME_PREFIX_IMAGE);
         currentState = new UiState(
-                attachmentId, displayName, mimeType, isImage, !isImage, null, null);
+                attachmentId, displayName, mimeType, isImage, !isImage, null, null,
+                senderName, sentAt == null ? 0L : sentAt);
         mutableUiState = new MutableLiveData<>(currentState);
         if (!isImage) {
             download();
@@ -120,9 +123,11 @@ public final class MediaViewerViewModel extends ViewModel {
         private final boolean loading;
         @Nullable private final File file;
         @Nullable private final ApiError error;
+        @Nullable private final String senderName;
+        private final long sentAtEpochMs;
 
         public UiState() {
-            this("", null, null, false, true, null, null);
+            this("", null, null, false, true, null, null, null, 0L);
         }
 
         private UiState(
@@ -132,7 +137,9 @@ public final class MediaViewerViewModel extends ViewModel {
                 boolean image,
                 boolean loading,
                 @Nullable File file,
-                @Nullable ApiError error) {
+                @Nullable ApiError error,
+                @Nullable String senderName,
+                long sentAtEpochMs) {
             this.attachmentId = Objects.requireNonNull(attachmentId, "attachmentId");
             this.displayName = displayName;
             this.mimeType = mimeType;
@@ -140,6 +147,8 @@ public final class MediaViewerViewModel extends ViewModel {
             this.loading = loading;
             this.file = file;
             this.error = error;
+            this.senderName = senderName;
+            this.sentAtEpochMs = sentAtEpochMs;
         }
 
         public String getAttachmentId() { return attachmentId; }
@@ -150,17 +159,28 @@ public final class MediaViewerViewModel extends ViewModel {
         public boolean getLoading() { return loading; }
         @Nullable public File getFile() { return file; }
         @Nullable public ApiError getError() { return error; }
+        @Nullable public String getSenderName() { return senderName; }
+        public long getSentAtEpochMs() { return sentAtEpochMs; }
+
+        /** True for image/video attachments that present sender/time chrome. */
+        public boolean isVisualMedia() {
+            return image || (mimeType != null
+                    && mimeType.startsWith(AttachmentDto.MIME_PREFIX_VIDEO));
+        }
 
         public UiState withLoading(boolean value) {
-            return new UiState(attachmentId, displayName, mimeType, image, value, file, error);
+            return new UiState(attachmentId, displayName, mimeType, image, value, file, error,
+                    senderName, sentAtEpochMs);
         }
 
         public UiState withFile(@Nullable File value) {
-            return new UiState(attachmentId, displayName, mimeType, image, loading, value, error);
+            return new UiState(attachmentId, displayName, mimeType, image, loading, value, error,
+                    senderName, sentAtEpochMs);
         }
 
         public UiState withError(@Nullable ApiError value) {
-            return new UiState(attachmentId, displayName, mimeType, image, loading, file, value);
+            return new UiState(attachmentId, displayName, mimeType, image, loading, file, value,
+                    senderName, sentAtEpochMs);
         }
 
         @Override
@@ -170,16 +190,19 @@ public final class MediaViewerViewModel extends ViewModel {
             }
             return image == that.image
                     && loading == that.loading
+                    && sentAtEpochMs == that.sentAtEpochMs
                     && attachmentId.equals(that.attachmentId)
                     && Objects.equals(displayName, that.displayName)
                     && Objects.equals(mimeType, that.mimeType)
                     && Objects.equals(file, that.file)
-                    && Objects.equals(error, that.error);
+                    && Objects.equals(error, that.error)
+                    && Objects.equals(senderName, that.senderName);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(attachmentId, displayName, mimeType, image, loading, file, error);
+            return Objects.hash(attachmentId, displayName, mimeType, image, loading, file, error,
+                    senderName, sentAtEpochMs);
         }
 
         @Override
@@ -190,7 +213,9 @@ public final class MediaViewerViewModel extends ViewModel {
                     + ", isImage=" + image
                     + ", loading=" + loading
                     + ", file=" + file
-                    + ", error=" + error + ")";
+                    + ", error=" + error
+                    + ", senderName=" + senderName
+                    + ", sentAtEpochMs=" + sentAtEpochMs + ")";
         }
     }
 }

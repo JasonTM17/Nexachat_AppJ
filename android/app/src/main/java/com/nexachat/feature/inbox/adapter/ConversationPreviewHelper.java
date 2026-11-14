@@ -49,6 +49,10 @@ public final class ConversationPreviewHelper {
             // showing raw text or a redundant "Sender: Sender did X" prefix.
             return SystemEventFormatter.format(context, raw, false).toString();
         }
+        InboxPreviewKind typeKind = kindFromType(conversation.getLastMessageType());
+        if (typeKind != null) {
+            kind = typeKind;
+        }
         String preview;
         if (kind == InboxPreviewKind.PHOTO) {
             preview = context.getString(R.string.inbox_preview_photo);
@@ -67,7 +71,35 @@ public final class ConversationPreviewHelper {
         if (conversation.getLastMessageDeleted()) {
             return InboxPreviewKind.TEXT;
         }
-        return InboxPreviewKind.fromContent(conversation.getLastMessageContent());
+        InboxPreviewKind contentKind = InboxPreviewKind.fromContent(conversation.getLastMessageContent());
+        if (contentKind == InboxPreviewKind.CALL) {
+            return contentKind;
+        }
+        InboxPreviewKind typeKind = kindFromType(conversation.getLastMessageType());
+        return typeKind != null ? typeKind : contentKind;
+    }
+
+    /**
+     * Maps a persisted server message type to a preview kind. Returns null when
+     * the type is absent or carries no media meaning ({@code TEXT}, unknown);
+     * {@code SYSTEM} is handled separately by the formatter branch.
+     */
+    @Nullable
+    private static InboxPreviewKind kindFromType(@Nullable String type) {
+        if (type == null) {
+            return null;
+        }
+        switch (type) {
+            case "IMAGE":
+            case "VIDEO":
+                return InboxPreviewKind.PHOTO;
+            case "AUDIO":
+                return InboxPreviewKind.VOICE;
+            case "FILE":
+                return InboxPreviewKind.FILE;
+            default:
+                return null;
+        }
     }
 
     @NonNull

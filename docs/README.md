@@ -12,6 +12,7 @@ quick start remain in [README.md](../README.md).
 | [architecture/websocket-protocol.md](architecture/websocket-protocol.md) | STOMP destinations, envelopes, delivery guarantees, and rate limits. |
 | [architecture/android-sync.md](architecture/android-sync.md) | Android sync v2 checkpoints, Room 13→14, and legacy sync boundary. |
 | [architecture/calls.md](architecture/calls.md) | WebRTC call signaling, STOMP events, and Android call UI. |
+| [architecture/e2ee.md](architecture/e2ee.md) | Optional E2EE for direct chats: on-device keys, ciphertext-only storage, and v1 limits. |
 | [architecture/firebase-realtime.md](architecture/firebase-realtime.md) | Optional Firebase RTDB presence/typing bridge (STOMP default). |
 | [architecture/ai-summary.md](architecture/ai-summary.md) | Conversation catch-up summary engines, consent, and citations. |
 | [architecture/rag.md](architecture/rag.md) | “Ask this chat” retrieval, hybrid search, and eval harness. |
