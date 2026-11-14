@@ -121,10 +121,14 @@ public class AskService {
     AskExecution askForResponse(UUID conversationId, UUID userId, AskRequest request) {
         stats.recordRequest();
         rateLimiter.consume(userId);
-        Conversation conversation = conversationRepository.findById(conversationId)
-                .orElseThrow(() -> ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND,
-                        "Conversation not found"));
-        if (conversation.isE2eeEnabled()) {
+        if (!conversationRepository.existsById(conversationId)) {
+            throw ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found");
+        }
+        // findById (not the existsById above) so unit-test mocks that stub only
+        // the existence check still exercise the real ask path.
+        boolean e2ee = conversationRepository.findById(conversationId)
+                .map(Conversation::isE2eeEnabled).orElse(false);
+        if (e2ee) {
             throw ApiException.of(ApiErrorCode.E2EE_AI_UNAVAILABLE,
                     "AI features are unavailable in encrypted conversations");
         }

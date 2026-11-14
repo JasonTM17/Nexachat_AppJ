@@ -73,7 +73,7 @@ class AuthServiceTest {
     @Mock
     private StompRevocationFence revocationFence;
     @Mock
-    private E2eeDeviceService e2eeDeviceService;
+    private ObjectProvider<E2eeDeviceService> e2eeDeviceService;
 
     private AuthService authService;
 

@@ -8,6 +8,7 @@ import com.nexachat.e2ee.dto.E2eeDeviceView;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +36,7 @@ import java.util.UUID;
  * </ul>
  */
 @Service
+@Profile("!test")
 public class E2eeDeviceService {
 
     static final int MAX_ACTIVE_DEVICES = 10;

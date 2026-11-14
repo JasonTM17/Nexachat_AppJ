@@ -116,7 +116,7 @@ public class MessageService {
     private final Clock clock;
     private final SyncProperties syncProperties;
     private final MessageRecallProperties recallProperties;
-    private final E2eeDeviceService e2eeDeviceService;
+    private final org.springframework.beans.factory.ObjectProvider<E2eeDeviceService> e2eeDeviceService;
 
     @Autowired
     public MessageService(MessageRepository messageRepository,
@@ -132,7 +132,7 @@ public class MessageService {
                           ApplicationEventPublisher eventPublisher,
                           SyncProperties syncProperties,
                           MessageRecallProperties recallProperties,
-                          E2eeDeviceService e2eeDeviceService) {
+                          org.springframework.beans.factory.ObjectProvider<E2eeDeviceService> e2eeDeviceService) {
         this(messageRepository, mentionRepository, attachmentRepository, reactionRepository, reactionEventRepository,
                 conversationRepository, memberRepository, pinnedMessageRepository, storageService,
                 eventPublisher, syncProperties, Clock.systemUTC(), recallProperties, userRepository,
@@ -220,7 +220,7 @@ public class MessageService {
                    Clock clock,
                    MessageRecallProperties recallProperties,
                    UserRepository userRepository,
-                   E2eeDeviceService e2eeDeviceService) {
+                   org.springframework.beans.factory.ObjectProvider<E2eeDeviceService> e2eeDeviceService) {
         this.e2eeDeviceService = e2eeDeviceService;
         this.messageRepository = messageRepository;
         this.mentionRepository = mentionRepository;
@@ -392,7 +392,7 @@ public class MessageService {
             }
         }
         List<UUID> memberIds = memberRepository.findMemberUserIds(conversation.getId());
-        List<UUID> usable = e2eeDeviceService.activeDeviceIdsForUsers(memberIds, deviceIds);
+        List<UUID> usable = e2eeDeviceService.getObject().activeDeviceIdsForUsers(memberIds, deviceIds);
         if (usable.size() != deviceIds.size()) {
             throw ApiException.of(ApiErrorCode.E2EE_STALE_DEVICES,
                     "An envelope targets a revoked, unknown, or non-member device");

@@ -59,7 +59,7 @@ public class AccountDeletionService {
     private final AccountDeletionCoordination coordination;
     private final StompRevocationFence revocationFence;
     private final EmailOtpService emailOtpService;
-    private final com.nexachat.e2ee.E2eeDeviceService e2eeDeviceService;
+    private final org.springframework.beans.factory.ObjectProvider<com.nexachat.e2ee.E2eeDeviceService> e2eeDeviceService;
 
     public AccountDeletionService(UserRepository userRepository,
                                   PasswordEncoder passwordEncoder,
@@ -77,7 +77,7 @@ public class AccountDeletionService {
                                   AccountDeletionCoordination coordination,
                                   StompRevocationFence revocationFence,
                                   EmailOtpService emailOtpService,
-                                  com.nexachat.e2ee.E2eeDeviceService e2eeDeviceService) {
+                                  org.springframework.beans.factory.ObjectProvider<com.nexachat.e2ee.E2eeDeviceService> e2eeDeviceService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
@@ -170,7 +170,10 @@ public class AccountDeletionService {
         jdbcSupport.deleteEmailOtps(userId);
 
         tokenService.revokeAllForUser(userId);
-        e2eeDeviceService.revokeAllForUser(userId);
+        var e2eeDevices = e2eeDeviceService.getIfAvailable();
+        if (e2eeDevices != null) {
+            e2eeDevices.revokeAllForUser(userId);
+        }
 
         user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));

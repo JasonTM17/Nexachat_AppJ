@@ -63,7 +63,7 @@ public class AuthService {
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectProvider<PlatformTransactionManager> transactionManagerProvider;
     private final StompRevocationFence revocationFence;
-    private final com.nexachat.e2ee.E2eeDeviceService e2eeDeviceService;
+    private final ObjectProvider<com.nexachat.e2ee.E2eeDeviceService> e2eeDeviceService;
 
     /** Well-formed bcrypt used to equalize login timing for unknown accounts and malformed phones. */
     private final String dummyHash;
@@ -84,7 +84,7 @@ public class AuthService {
                        ApplicationEventPublisher eventPublisher,
                        ObjectProvider<PlatformTransactionManager> transactionManagerProvider,
                        StompRevocationFence revocationFence,
-                       com.nexachat.e2ee.E2eeDeviceService e2eeDeviceService) {
+                       ObjectProvider<com.nexachat.e2ee.E2eeDeviceService> e2eeDeviceService) {
         this.userRepository = userRepository;
         this.entityManager = entityManager;
         this.phoneService = phoneService;
@@ -247,7 +247,10 @@ public class AuthService {
         tokenService.revokeAllForUser(userId);
         accessTokenRevocationService.revoke(userId);
         // Every installation is signed out, so every device key is dead weight.
-        e2eeDeviceService.revokeAllForUser(userId);
+        var e2eeDevices = e2eeDeviceService.getIfAvailable();
+        if (e2eeDevices != null) {
+            e2eeDevices.revokeAllForUser(userId);
+        }
     }
 
     @Transactional

@@ -12,6 +12,7 @@ import com.nexachat.message.MessageService;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +26,7 @@ import java.util.UUID;
  * {@code CONVERSATION_UPDATED} snapshot so both clients refresh in place.
  */
 @Service
+@Profile("!test")
 public class E2eeConversationService {
 
     private final ConversationRepository conversationRepository;

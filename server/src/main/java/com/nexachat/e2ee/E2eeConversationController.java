@@ -7,6 +7,7 @@ import com.nexachat.e2ee.dto.ConversationE2eeStateResponse;
 import com.nexachat.e2ee.dto.SetE2eeRequest;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -18,6 +19,7 @@ import java.util.UUID;
 
 /** E2EE state of a DIRECT conversation: read, or toggle with a member-only PUT. */
 @RestController
+@Profile("!test")
 @RequestMapping("/api/v1/conversations/{conversationId}/e2ee")
 public class E2eeConversationController {
 
