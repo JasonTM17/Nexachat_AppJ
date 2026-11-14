@@ -90,6 +90,43 @@ public final class RealtimeSessionEventDecodeTest {
     }
 
     @Test
+    public void signingInAgainAfterLogoutRestoresTheUserQueues() {
+        BehaviorProcessor<Boolean> hasRefresh = BehaviorProcessor.createDefault(true);
+        BehaviorProcessor<Boolean> admitted = BehaviorProcessor.createDefault(true);
+        TokenStore store = mock(TokenStore.class);
+        when(store.getHasValidRefresh()).thenReturn(hasRefresh);
+        when(store.readTokens()).thenReturn(Maybe.just(new Tokens("access", Long.MAX_VALUE, "refresh")));
+        StompClient stomp = stomp();
+        when(stomp.connect(any(), any())).thenReturn(Flowable.just(StompClient.State.Open.INSTANCE));
+        NetworkMonitor monitor = mock(NetworkMonitor.class);
+        when(monitor.getIsOnline()).thenReturn(Flowable.just(false));
+        AppForegroundState foreground = () -> Flowable.just(false);
+        TokenRefresher refresher = mock(TokenRefresher.class);
+        when(refresher.sessionAdmission()).thenReturn(admitted);
+        when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
+        TestSessionSignals.stub(refresher);
+        when(refresher.sessionEpoch()).thenReturn(1L);
+        when(refresher.isSessionCurrent(1L)).thenAnswer(ignored -> admitted.getValue());
+        when(refresher.runIfSessionCurrent(anyLong(), any())).thenAnswer(invocation -> {
+            if (invocation.getArgument(0, Long.class) != 1L || !admitted.getValue()) return false;
+            invocation.<Runnable>getArgument(1).run();
+            return true;
+        });
+        new RealtimeSession(stomp, store, refresher, new Moshi.Builder().build(),
+                new ReconnectPolicy(), monitor, foreground);
+        verify(stomp, times(1)).subscribe(RealtimeSession.USER_INBOX_DESTINATION);
+
+        hasRefresh.onNext(false);
+        admitted.onNext(false);
+        hasRefresh.onNext(true);
+        admitted.onNext(true);
+
+        verify(stomp, times(2)).subscribe(RealtimeSession.USER_INBOX_DESTINATION);
+        verify(stomp, times(2)).subscribe(RealtimeSession.USER_ERRORS_DESTINATION);
+        verify(stomp, times(2)).subscribe(RealtimeSession.USER_PRESENCE_DESTINATION);
+    }
+
+    @Test
     public void messageUpdatedDecodesFullPayload() {
         RealtimeSession session = session(true, null);
         TestSubscriber<ChatEvent> observer = session.getEvents().test();

@@ -132,30 +132,15 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.conversation.id = :conversationId
               AND (:beforeSeq IS NULL OR m.seq < :beforeSeq)
+              AND EXISTS (SELECT 1 FROM ConversationMember member
+                          WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
+                            AND m.createdAt >= member.joinedAt)
             ORDER BY m.seq DESC
             """)
-    List<MessageRow> findPageRows(@Param("conversationId") UUID conversationId,
+    List<MessageRow> findPageRows(@Param("userId") UUID userId,
+                                  @Param("conversationId") UUID conversationId,
                                   @Param("beforeSeq") Long beforeSeq,
                                   Pageable pageable);
-
-    /**
-     * Forward resync page (plan §11.3.5): oldest-first via {@code seq > afterSeq}
-     * so a reconnected client can page forward from its local watermark until
-     * contiguous. {@code afterSeq} is exclusive.
-     */
-    @Query("""
-            SELECT new com.nexachat.message.dto.MessageRow(
-                       m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
-                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
-            FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
-            WHERE m.conversation.id = :conversationId
-              AND m.seq > :afterSeq
-            ORDER BY m.seq ASC
-            """)
-    List<MessageRow> findRowsAfter(@Param("conversationId") UUID conversationId,
-                                   @Param("afterSeq") long afterSeq,
-                                   Pageable pageable);
 
     /** Sync cursors are positions, never authority to read a previous membership epoch. */
     @Query("""
@@ -323,10 +308,14 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
               AND m.type = 'TEXT'
               AND m.deleted_at IS NULL
               AND (:beforeSeq IS NULL OR m.seq < :beforeSeq)
+              AND EXISTS (SELECT 1 FROM conversation_members cm
+                          WHERE cm.conversation_id = m.conversation_id AND cm.user_id = :userId
+                            AND m.created_at >= cm.joined_at)
               AND public.f_unaccent(m.content) ILIKE public.f_unaccent(:pattern) ESCAPE chr(92)
             ORDER BY m.seq DESC
             """, nativeQuery = true)
-    List<MessageSearchProjection> searchTextRows(@Param("conversationId") UUID conversationId,
+    List<MessageSearchProjection> searchTextRows(@Param("userId") UUID userId,
+                                                 @Param("conversationId") UUID conversationId,
                                                  @Param("pattern") String pattern,
                                                  @Param("beforeSeq") Long beforeSeq,
                                                  Pageable pageable);
@@ -349,15 +338,29 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
      */
     @Query("""
             SELECT new com.nexachat.message.dto.ReplyRefRow(
-                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt)
+                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt, m.createdAt)
             FROM Message m JOIN m.sender u
             WHERE m.id IN :ids
             """)
     List<ReplyRefRow> findReplyRefsByIdIn(@Param("ids") Collection<UUID> ids);
 
+    /** Rows by id, limited to messages the viewer was a member for (pins, previews). */
+    @Query("""
+            SELECT new com.nexachat.message.dto.MessageRow(
+                       m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+            FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
+            WHERE m.id IN :ids
+              AND EXISTS (SELECT 1 FROM ConversationMember member
+                          WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
+                            AND m.createdAt >= member.joinedAt)
+            """)
+    List<MessageRow> findAdmittedRowsByIdIn(@Param("userId") UUID userId, @Param("ids") Collection<UUID> ids);
+
     @Query("""
             SELECT new com.nexachat.message.dto.ReplyRefRow(
-                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt)
+                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt, m.createdAt)
             FROM Message m JOIN m.sender u
             WHERE m.id IN :ids
               AND EXISTS (SELECT 1 FROM ConversationMember member

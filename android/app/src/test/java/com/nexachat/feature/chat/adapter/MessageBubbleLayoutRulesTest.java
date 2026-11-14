@@ -50,4 +50,19 @@ public final class MessageBubbleLayoutRulesTest {
         assertEquals(560, MessageBubbleLayoutRules.maxBubbleWidthPx(2000, 1f, 2f));
         assertEquals(960, MessageBubbleLayoutRules.maxBubbleWidthPx(4000, 2f, 2f));
     }
+
+    @Test
+    public void anUnmeasuredRowKeepsItsLayoutDefaultsInsteadOfSpanningTheScreen() {
+        assertEquals(null, MessageBubbleLayoutRules.guidesOrNull(0, 1f, 2.625f));
+        assertEquals(null, MessageBubbleLayoutRules.guidesOrNull(-48, 1f, 2.625f));
+        float[] phone = MessageBubbleLayoutRules.guidesOrNull(1040, 1f, 2.625f);
+        assertEquals(1f - 735f / 1040f, phone[0], 0.001f);
+        assertEquals(735f / 1040f, phone[1], 0.001f);
+    }
+
+    @Test
+    public void equalGuidesAreNotReapplied() {
+        assertTrue(MessageBubbleLayoutRules.differs(0f, 0.29f));
+        assertTrue(!MessageBubbleLayoutRules.differs(0.2933f, 0.2932f));
+    }
 }

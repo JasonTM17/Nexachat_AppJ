@@ -98,7 +98,7 @@ public class PinService {
         if (pins.isEmpty()) {
             return List.of();
         }
-        Map<UUID, MessageRow> rowsById = messageRepository.findRowsByIdIn(
+        Map<UUID, MessageRow> rowsById = messageRepository.findAdmittedRowsByIdIn(userId,
                         pins.stream().map(p -> p.getMessage().getId()).toList())
                 .stream()
                 .collect(Collectors.toMap(MessageRow::id, Function.identity()));

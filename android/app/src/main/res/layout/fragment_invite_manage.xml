@@ -101,7 +101,7 @@
                         android:text="@string/invite_max_uses"
                         app:cornerRadius="12dp" />
 
-                    <com.google.android.material.switchmaterial.SwitchMaterial
+                    <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/approvalSwitch"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"

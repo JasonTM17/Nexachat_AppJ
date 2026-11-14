@@ -486,12 +486,13 @@ public final class AuthRepository {
     @NonNull
     private Single<Result<AuthSessionResult>> persistSessionResult(
             Single<Result<AuthSessionResult>> request) {
+        final long attemptBoundary = currentBoundary();
         return request.flatMap(result -> {
             if (!(result instanceof Result.Success<?> success)) {
                 return Single.just(result);
             }
             AuthSessionResult session = (AuthSessionResult) success.getValue();
-            return persistOnSuccess(Single.just(new Result.Success<>(session.getResponse())))
+            return persistOnSuccess(Single.just(new Result.Success<>(session.getResponse())), attemptBoundary)
                     .flatMap(persisted -> {
                         if (persisted instanceof Result.Success<?>) {
                             return Single.just(new Result.Success<>(session));
@@ -528,6 +529,17 @@ public final class AuthRepository {
     @NonNull
     private Single<Result<AuthResponse>> persistOnSuccess(
             Single<Result<AuthResponse>> request) {
+        return persistOnSuccess(request, currentBoundary());
+    }
+
+    /** Boundary read when the sign-in starts, so a late response cannot replace a newer session. */
+    private long currentBoundary() {
+        return accountDataCleaner == null ? -1L : accountDataCleaner.sessionBoundary();
+    }
+
+    @NonNull
+    private Single<Result<AuthResponse>> persistOnSuccess(
+            Single<Result<AuthResponse>> request, long attemptBoundary) {
         return request.flatMap(result -> {
             if (!(result instanceof Result.Success<?> success)) {
                 return Single.just(result);
@@ -548,7 +560,8 @@ public final class AuthRepository {
                 Completable establishSession = accountDataCleaner == null
                         ? saveSession.andThen(Completable.fromAction(sessionEvents::emitSessionAvailable))
                         : accountDataCleaner.startSession(saveSession,
-                                Completable.fromAction(sessionEvents::emitSessionAvailable));
+                                Completable.fromAction(sessionEvents::emitSessionAvailable),
+                                attemptBoundary);
                 return establishSession
                         .andThen(deviceTokenRegistrationManager.onSessionAvailable().onErrorComplete())
                         .andThen(Single.just(result));
@@ -624,8 +637,12 @@ public final class AuthRepository {
     }
 
     @NonNull
-    LoginRequest loginRequest(@NonNull String phone, @NonNull String password) {
-        return new LoginRequest(PhoneNormalizer.toE164(phone), password);
+    LoginRequest loginRequest(@NonNull String identifier, @NonNull String password) {
+        String trimmed = identifier.trim();
+        if (trimmed.contains("@")) {
+            return LoginRequest.byEmail(trimmed.toLowerCase(java.util.Locale.ROOT), password);
+        }
+        return new LoginRequest(PhoneNormalizer.toE164(identifier), password);
     }
 
     @NonNull

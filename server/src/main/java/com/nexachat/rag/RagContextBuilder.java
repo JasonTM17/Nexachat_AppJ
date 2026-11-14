@@ -29,6 +29,16 @@ public final class RagContextBuilder {
             List<RagMessage> recentMessages,
             RagMessageIndex index,
             RagProperties.Retrieval config) {
+        return build(ranked, recentMessages, index, config, null);
+    }
+
+    /** As above, but a replied-to parent from before {@code admittedFrom} is left out. */
+    public static ContextResult build(
+            List<ScoredMessage> ranked,
+            List<RagMessage> recentMessages,
+            RagMessageIndex index,
+            RagProperties.Retrieval config,
+            java.time.Instant admittedFrom) {
         if (ranked == null || ranked.isEmpty()) {
             return new ContextResult(List.of(), 0, Map.of());
         }
@@ -54,7 +64,8 @@ public final class RagContextBuilder {
             }
             if (message.replyToId() != null && !byId.containsKey(message.replyToId())) {
                 RagMessage parent = index.findMessage(message.conversationId(), message.replyToId());
-                if (parent != null) {
+                if (parent != null
+                        && (admittedFrom == null || !parent.createdAt().isBefore(admittedFrom))) {
                     byId.put(parent.id(), parent);
                     contextIds.add(parent.id());
                 }

@@ -34,6 +34,24 @@ public final class MessageBubbleLayoutRules {
         return Math.round(capPx);
     }
 
+    /**
+     * Start and end guideline percents for a measured row, or {@code null} before the row is
+     * measured: the layout's own defaults must stay in place until a real width exists,
+     * otherwise an unmeasured row would let its bubble span the whole screen.
+     */
+    public static float[] guidesOrNull(int innerWidthPx, float fontScale, float density) {
+        int max = maxBubbleWidthPx(innerWidthPx, fontScale, density);
+        if (max <= 0) {
+            return null;
+        }
+        return new float[] {startGuidePercent(max, innerWidthPx), endGuidePercent(max, innerWidthPx)};
+    }
+
+    /** Re-applying an equal percent would only request another layout pass. */
+    public static boolean differs(float current, float wanted) {
+        return Math.abs(current - wanted) > 0.0005f;
+    }
+
     /** Start guideline percent: {@code 1 - max / innerWidth}. */
     public static float startGuidePercent(int maxBubblePx, int innerWidthPx) {
         if (innerWidthPx <= 0 || maxBubblePx <= 0) {

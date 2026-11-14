@@ -549,7 +549,7 @@ class MessageServiceTest {
         when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, senderId))
                 .thenReturn(true);
         List<MessageRow> rows = List.of(row(35), row(34), row(33), row(32)); // limit 3 + 1 look-ahead
-        when(messageRepository.findPageRows(eq(conversationId), eq(40L), any(Pageable.class)))
+        when(messageRepository.findPageRows(eq(senderId), eq(conversationId), eq(40L), any(Pageable.class)))
                 .thenReturn(rows);
 
         MessagePageResponse page = messageService.getHistory(senderId, conversationId, 40L, null, 3);
@@ -565,7 +565,7 @@ class MessageServiceTest {
         when(conversationRepository.existsById(conversationId)).thenReturn(true);
         when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, senderId))
                 .thenReturn(true);
-        when(messageRepository.findPageRows(eq(conversationId), eq(33L), any(Pageable.class)))
+        when(messageRepository.findPageRows(eq(senderId), eq(conversationId), eq(33L), any(Pageable.class)))
                 .thenReturn(List.of(row(2), row(1)));
 
         MessagePageResponse page = messageService.getHistory(senderId, conversationId, 33L, null, 30);
@@ -580,7 +580,7 @@ class MessageServiceTest {
         when(conversationRepository.existsById(conversationId)).thenReturn(true);
         when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, senderId))
                 .thenReturn(true);
-        when(messageRepository.findPageRows(eq(conversationId), any(), any(Pageable.class)))
+        when(messageRepository.findPageRows(eq(senderId), eq(conversationId), any(), any(Pageable.class)))
                 .thenReturn(List.of());
 
         MessagePageResponse page = messageService.getHistory(senderId, conversationId, 1L, null, 30);
@@ -619,7 +619,7 @@ class MessageServiceTest {
         when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, senderId))
                 .thenReturn(true);
         // Forward page: rows arrive ASC; page size +1 look-ahead still detects hasMore.
-        when(messageRepository.findRowsAfter(eq(conversationId), eq(100L), any(Pageable.class)))
+        when(messageRepository.findSyncRowsAfter(eq(senderId), eq(conversationId), eq(100L), any(Pageable.class)))
                 .thenReturn(List.of(row(101), row(102), row(103), row(104)));
 
         MessagePageResponse page =
@@ -629,7 +629,7 @@ class MessageServiceTest {
                 .containsExactly(101L, 102L, 103L);
         assertThat(page.hasMore()).isTrue();
         assertThat(page.nextBeforeSeq()).isNull(); // forward pages carry no backward cursor
-        verify(messageRepository, never()).findPageRows(any(), any(), any());
+        verify(messageRepository, never()).findPageRows(any(), any(), any(), any());
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.nexachat.message.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -9,7 +10,8 @@ import java.util.UUID;
  * {@code replyTo} object): enough to render the quote line without a second
  * fetch — the target's id, sender, type, and content. {@code deleted} is
  * {@code true} when the target was soft-deleted; its {@code content} is then
- * {@code null} (deleted text is never re-broadcast — plan §9.3.6).
+ * {@code null} (deleted text is never re-broadcast — plan §9.3.6). {@code createdAt} lets live
+ * delivery drop the preview for a recipient who was not a member when the quoted message was sent.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ReplyRefResponse(UUID id,
@@ -18,5 +20,6 @@ public record ReplyRefResponse(UUID id,
                                String type,
                                @JsonInclude(JsonInclude.Include.ALWAYS)
                                String content,
-                               boolean deleted) {
+                               boolean deleted,
+                               Instant createdAt) {
 }

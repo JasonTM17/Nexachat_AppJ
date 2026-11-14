@@ -177,7 +177,15 @@ jobs:
             echo '::error::apksigner was not found in the Android SDK build-tools.'
             exit 1
           fi
-          "$apksigner" verify --print-certs "$apk"
+          certs="$("$apksigner" verify --print-certs "$apk")"
+          printf '%s\n' "$certs"
+          # The APK must be signed by the key whose fingerprint the site publishes for app links.
+          expected="$(jq -r '.[0].target.sha256_cert_fingerprints[0]' site/.well-known/assetlinks.json | tr -d ':' | tr 'A-F' 'a-f')"
+          actual="$(printf '%s\n' "$certs" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr 'A-F' 'a-f')"
+          if [[ -z "$expected" || "$actual" != "$expected" ]]; then
+            echo '::error::The APK signer does not match the approved fingerprint in site/.well-known/assetlinks.json.'
+            exit 1
+          fi
           asset_dir="$RUNNER_TEMP/nexachat-release-assets"
           mkdir -p "$asset_dir"
           asset_name="nexachat-${RELEASE_TAG}.apk"

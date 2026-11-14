@@ -4,14 +4,11 @@ Real-traffic verification of the message-lifecycle and presence contract against
 running backend (`docs/architecture/api-contract.md`, `docs/architecture/websocket-protocol.md`). They are
 demo/CI smoke tools, not part of the app build.
 
-## Live E2E evidence vs illustrative fixture
+## Live E2E entry points
 
 | Kind | Entry points | Requires running backend |
 | --- | --- | --- |
 | **Live API/STOMP evidence** | `smoke_api.py` (and `smoke-api.sh` / `smoke-api.ps1`), `stomp_e2e.py`, `p0/p0_live.py`, `new_features/features_live.py`, `final/final_live.py`, `final/final_extended.py`, `summary/summary_e2e.py`, `calls/call_e2e.py` | Yes (or explicit `--allow-skip` / `NOT_RUN` where documented) |
-| **Illustrative synthetic fixture** | `P0E2ETestRunner.java` — 81 in-process checks on locally constructed strings/maps | No; does not exercise the product and must not be cited as E2E acceptance |
-
-Offline guard: `python -m unittest tools/e2e/test_evidence_labels.py`.
 
 ## Prerequisites
 

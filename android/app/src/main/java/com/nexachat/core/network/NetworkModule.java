@@ -49,6 +49,7 @@ public final class NetworkModule {
                 .cache(MediaCacheConfig.createOkHttpCache(context.getCacheDir()))
                 .addInterceptor(new MediaCacheRequestInterceptor())
                 .addInterceptor(authInterceptor)
+                .addInterceptor(new AiRequestTimeoutInterceptor())
                 .addNetworkInterceptor(new MediaCacheResponseInterceptor())
                 .authenticator(tokenAuthenticator);
         if (BuildConfig.DEBUG) {

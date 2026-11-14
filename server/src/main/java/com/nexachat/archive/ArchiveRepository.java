@@ -40,6 +40,9 @@ public interface ArchiveRepository extends Repository<Message, UUID> {
             FROM message_attachments a
             JOIN messages m ON m.id = a.message_id
             WHERE m.conversation_id = :conversationId
+              AND EXISTS (SELECT 1 FROM conversation_members cm
+                          WHERE cm.conversation_id = m.conversation_id AND cm.user_id = :userId
+                            AND m.created_at >= cm.joined_at)
               AND m.deleted_at IS NULL
               AND m.type <> 'AUDIO'
               AND (CAST(:senderId AS uuid) IS NULL OR m.sender_id = CAST(:senderId AS uuid))
@@ -54,7 +57,8 @@ public interface ArchiveRepository extends Repository<Message, UUID> {
               AND (a.mime_type LIKE 'image/%' OR a.mime_type LIKE 'video/%')
             ORDER BY m.seq DESC, a.id ASC
             """, nativeQuery = true)
-    List<ArchiveAttachmentRow> findMediaPage(@Param("conversationId") UUID conversationId,
+    List<ArchiveAttachmentRow> findMediaPage(@Param("userId") UUID userId,
+                                             @Param("conversationId") UUID conversationId,
                                              @Param("senderId") UUID senderId,
                                              @Param("fromTs") Instant fromTs,
                                              @Param("toTs") Instant toTs,
@@ -72,6 +76,9 @@ public interface ArchiveRepository extends Repository<Message, UUID> {
             FROM message_attachments a
             JOIN messages m ON m.id = a.message_id
             WHERE m.conversation_id = :conversationId
+              AND EXISTS (SELECT 1 FROM conversation_members cm
+                          WHERE cm.conversation_id = m.conversation_id AND cm.user_id = :userId
+                            AND m.created_at >= cm.joined_at)
               AND m.deleted_at IS NULL
               AND m.type <> 'AUDIO'
               AND (CAST(:senderId AS uuid) IS NULL OR m.sender_id = CAST(:senderId AS uuid))
@@ -87,7 +94,8 @@ public interface ArchiveRepository extends Repository<Message, UUID> {
               AND a.mime_type NOT LIKE 'video/%'
             ORDER BY m.seq DESC, a.id ASC
             """, nativeQuery = true)
-    List<ArchiveAttachmentRow> findFilePage(@Param("conversationId") UUID conversationId,
+    List<ArchiveAttachmentRow> findFilePage(@Param("userId") UUID userId,
+                                             @Param("conversationId") UUID conversationId,
                                             @Param("senderId") UUID senderId,
                                             @Param("fromTs") Instant fromTs,
                                             @Param("toTs") Instant toTs,
@@ -105,6 +113,9 @@ public interface ArchiveRepository extends Repository<Message, UUID> {
                    m.created_at AS "createdAt", m.content AS "content"
             FROM messages m
             WHERE m.conversation_id = :conversationId
+              AND EXISTS (SELECT 1 FROM conversation_members cm
+                          WHERE cm.conversation_id = m.conversation_id AND cm.user_id = :userId
+                            AND m.created_at >= cm.joined_at)
               AND m.deleted_at IS NULL
               AND m.type = 'TEXT'
               AND m.content IS NOT NULL
@@ -117,7 +128,8 @@ public interface ArchiveRepository extends Repository<Message, UUID> {
               AND (CAST(:maxSeq AS bigint) IS NULL OR m.seq <= CAST(:maxSeq AS bigint))
             ORDER BY m.seq DESC
             """, nativeQuery = true)
-    List<ArchiveLinkRow> findLinkMessagePage(@Param("conversationId") UUID conversationId,
+    List<ArchiveLinkRow> findLinkMessagePage(@Param("userId") UUID userId,
+                                             @Param("conversationId") UUID conversationId,
                                              @Param("senderId") UUID senderId,
                                              @Param("fromTs") Instant fromTs,
                                              @Param("toTs") Instant toTs,

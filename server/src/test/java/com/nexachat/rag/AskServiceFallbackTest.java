@@ -172,7 +172,7 @@ class AskServiceFallbackTest {
         userId = UUID.randomUUID();
         senderId = UUID.randomUUID();
         when(conversationRepository.existsById(conversationId)).thenReturn(true);
-        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        when(memberRepository.findJoinedAt(conversationId, userId)).thenReturn(java.util.Optional.of(java.time.Instant.EPOCH));
         when(questionCache.citationsValid(any(), any())).thenReturn(true);
     }
 

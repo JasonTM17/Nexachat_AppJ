@@ -130,7 +130,7 @@ class ArchiveServiceTest {
                 attachmentRow(30, "image/png", first),
                 attachmentRow(29, "video/mp4", second),
                 attachmentRow(28, "image/jpeg", UUID.randomUUID()));
-        when(archiveRepository.findMediaPage(eq(conversationId), isNull(), isNull(), isNull(),
+        when(archiveRepository.findMediaPage(eq(callerId), eq(conversationId), isNull(), isNull(), isNull(),
                 isNull(), isNull(), any(Pageable.class))).thenReturn(rows);
 
         ArchiveResponse response = service.browse(
@@ -146,7 +146,7 @@ class ArchiveServiceTest {
         ArchiveCursor decoded = codec.decode(response.nextCursor(), conversationId, ArchiveKind.MEDIA);
         assertThat(decoded.seq()).isEqualTo(29);
         assertThat(decoded.sub()).isEqualTo(second.toString());
-        verify(archiveRepository, times(1)).findMediaPage(eq(conversationId), isNull(), isNull(),
+        verify(archiveRepository, times(1)).findMediaPage(eq(callerId), eq(conversationId), isNull(), isNull(),
                 isNull(), isNull(), isNull(), any(Pageable.class));
     }
 
@@ -154,7 +154,7 @@ class ArchiveServiceTest {
     void filePageMapsNonMediaAttachmentsToFileItems() {
         stubMember();
         UUID attachmentId = UUID.randomUUID();
-        when(archiveRepository.findFilePage(eq(conversationId), isNull(), isNull(), isNull(),
+        when(archiveRepository.findFilePage(eq(callerId), eq(conversationId), isNull(), isNull(), isNull(),
                 isNull(), isNull(), any(Pageable.class)))
                 .thenReturn(List.of(attachmentRow(9, "application/pdf", attachmentId)));
 
@@ -178,7 +178,7 @@ class ArchiveServiceTest {
     void linkPageCutsInsideAMessageAndResumesAtTheNextLink() {
         stubMember();
         long seq = 50;
-        when(archiveRepository.findLinkMessagePage(eq(conversationId), isNull(), isNull(), isNull(),
+        when(archiveRepository.findLinkMessagePage(eq(callerId), eq(conversationId), isNull(), isNull(), isNull(),
                 isNull(), any(Pageable.class))).thenReturn(List.of(
                 linkRow(seq, "one https://a.example/1 two https://a.example/2 three https://a.example/3")));
 
@@ -198,7 +198,7 @@ class ArchiveServiceTest {
     @Test
     void linkPageReturnsAllLinksFromTheOnlyMessageWithoutACursor() {
         stubMember();
-        when(archiveRepository.findLinkMessagePage(eq(conversationId), isNull(), isNull(), isNull(),
+        when(archiveRepository.findLinkMessagePage(eq(callerId), eq(conversationId), isNull(), isNull(), isNull(),
                 isNull(), any(Pageable.class))).thenReturn(List.of(
                 linkRow(7, "see https://a.example/x.")));
 
@@ -214,11 +214,11 @@ class ArchiveServiceTest {
     void linkPageSkipsUrlLikeMessagesTheExtractorRejects() {
         stubMember();
         Pageable page = org.springframework.data.domain.PageRequest.of(0, 4);
-        when(archiveRepository.findLinkMessagePage(eq(conversationId), isNull(), isNull(), isNull(),
+        when(archiveRepository.findLinkMessagePage(eq(callerId), eq(conversationId), isNull(), isNull(), isNull(),
                 isNull(), eq(page))).thenReturn(List.of(
                 linkRow(10, "http://"), linkRow(9, "https://."),
                 linkRow(8, "http:///path"), linkRow(7, "http://-")));
-        when(archiveRepository.findLinkMessagePage(eq(conversationId), isNull(), isNull(), isNull(),
+        when(archiveRepository.findLinkMessagePage(eq(callerId), eq(conversationId), isNull(), isNull(), isNull(),
                 eq(6L), eq(page))).thenReturn(List.of());
 
         ArchiveResponse response = service.browse(
@@ -227,7 +227,7 @@ class ArchiveServiceTest {
         assertThat(response.items()).isEmpty();
         assertThat(response.nextCursor()).isNull();
         verify(archiveRepository, times(2)).findLinkMessagePage(
-                eq(conversationId), isNull(), isNull(), isNull(), any(), any(Pageable.class));
+                eq(callerId), eq(conversationId), isNull(), isNull(), isNull(), any(), any(Pageable.class));
     }
 
     // --------------------------------------------------------------- helpers

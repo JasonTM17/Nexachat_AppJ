@@ -92,23 +92,23 @@ public class ArchiveService {
         }
         ArchiveCursor position = cursorCodec.decode(cursor, conversationId, kind);
         return switch (kind) {
-            case MEDIA, FILE -> attachmentPage(conversationId, senderId, fromTs, toTs, pageSize, kind, position);
-            case LINK -> linkPage(conversationId, senderId, fromTs, toTs, pageSize, position);
+            case MEDIA, FILE -> attachmentPage(userId, conversationId, senderId, fromTs, toTs, pageSize, kind, position);
+            case LINK -> linkPage(userId, conversationId, senderId, fromTs, toTs, pageSize, position);
         };
     }
 
     // ------------------------------------------------------------ attachments
 
-    private ArchiveResponse attachmentPage(UUID conversationId, UUID senderId, Instant fromTs,
+    private ArchiveResponse attachmentPage(UUID userId, UUID conversationId, UUID senderId, Instant fromTs,
                                            Instant toTs, int pageSize, ArchiveKind kind,
                                            ArchiveCursor position) {
         Long cursorSeq = position == null ? null : position.seq();
         UUID cursorAttachmentId = position == null ? null : UUID.fromString(position.sub());
         PageRequest page = PageRequest.of(0, pageSize + 1);
         List<ArchiveAttachmentRow> rows = kind == ArchiveKind.MEDIA
-                ? archiveRepository.findMediaPage(conversationId, senderId, fromTs, toTs,
+                ? archiveRepository.findMediaPage(userId, conversationId, senderId, fromTs, toTs,
                         cursorSeq, cursorAttachmentId, page)
-                : archiveRepository.findFilePage(conversationId, senderId, fromTs, toTs,
+                : archiveRepository.findFilePage(userId, conversationId, senderId, fromTs, toTs,
                         cursorSeq, cursorAttachmentId, page);
 
         boolean hasMore = rows.size() > pageSize;
@@ -158,7 +158,7 @@ public class ArchiveService {
 
     // ------------------------------------------------------------------ links
 
-    private ArchiveResponse linkPage(UUID conversationId, UUID senderId, Instant fromTs,
+    private ArchiveResponse linkPage(UUID userId, UUID conversationId, UUID senderId, Instant fromTs,
                                      Instant toTs, int pageSize, ArchiveCursor position) {
         List<ArchiveItem> items = new ArrayList<>(pageSize);
         int startOffset = 0;
@@ -173,7 +173,7 @@ public class ArchiveService {
         long lastScannedSeq = 0;
         for (int chunk = 0; chunk < MAX_LINK_SCAN_CHUNKS; chunk++) {
             List<ArchiveLinkRow> rows = archiveRepository.findLinkMessagePage(
-                    conversationId, senderId, fromTs, toTs, maxSeq,
+                    userId, conversationId, senderId, fromTs, toTs, maxSeq,
                     PageRequest.of(0, pageSize + 1));
             if (rows.isEmpty()) {
                 return new ArchiveResponse(List.copyOf(items), null);

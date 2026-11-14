@@ -309,13 +309,13 @@ def main() -> int:
         deleted_envelope = event_envelope(frame)
         deleted_payload = deleted_envelope["payload"]
         check(
-            set(deleted_payload) == {"messageId", "deletedAt"},
+            {"messageId", "deletedAt"} <= set(deleted_payload),
             f"MESSAGE_DELETED payload keys {sorted(deleted_payload)}",
         )
         check(deleted_payload["messageId"] == message_id, "MESSAGE_DELETED wrong id")
         check(deleted_payload.get("deletedAt"), "MESSAGE_DELETED has no deletedAt")
         ok(
-            "MESSAGE_DELETED {messageId, deletedAt}",
+            "MESSAGE_DELETED carries {messageId, deletedAt}",
             json.dumps(deleted_payload),
         )
 

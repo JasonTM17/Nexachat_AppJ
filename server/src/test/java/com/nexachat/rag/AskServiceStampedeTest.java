@@ -90,7 +90,7 @@ class AskServiceStampedeTest {
         properties.getRetrieval().setExtractiveThreshold(1.01);
 
         when(conversationRepository.existsById(conversationId)).thenReturn(true);
-        when(memberRepository.existsByConversation_IdAndUser_Id(eq(conversationId), any())).thenReturn(true);
+        when(memberRepository.findJoinedAt(eq(conversationId), any())).thenReturn(java.util.Optional.of(java.time.Instant.EPOCH));
         when(consentRepository.isConsented(any())).thenAnswer(invocation -> consented.get());
         when(consentRepository.snapshot(any())).thenAnswer(invocation ->
                 new ConsentSnapshot(consented.get(), consentEpoch.get()));
@@ -98,7 +98,7 @@ class AskServiceStampedeTest {
             embeddingCalls.incrementAndGet();
             return new RagEmbeddingService.EmbeddingOutcome(new float[] {1f, 0f}, "test-embedding-model");
         });
-        when(retrievalService.retrieve(any(), any(), any(), anyBoolean())).thenAnswer(invocation -> {
+        when(retrievalService.retrieve(any(), any(), any(), anyBoolean(), any())).thenAnswer(invocation -> {
             Boolean allowExternal = invocation.getArgument(3);
             if (!allowExternal) {
                 nonConsentedRetrievalReached.countDown();
@@ -157,7 +157,7 @@ class AskServiceStampedeTest {
             assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
         });
         verify(rateLimiter, times(CALLERS)).consume(userId);
-        verify(retrievalService, times(1)).retrieve(eq(conversationId), any(), any(), anyBoolean());
+        verify(retrievalService, times(1)).retrieve(eq(conversationId), any(), any(), anyBoolean(), any());
     }
 
     @Test
@@ -205,7 +205,7 @@ class AskServiceStampedeTest {
 
         assertThat(consentedAsk.get(WAIT_SECONDS, TimeUnit.SECONDS).mode()).isEqualTo(AskMode.NOT_FOUND);
         assertThat(answerProviderCalls.get()).isEqualTo(1);
-        verify(retrievalService, times(2)).retrieve(eq(conversationId), any(), any(), anyBoolean());
+        verify(retrievalService, times(2)).retrieve(eq(conversationId), any(), any(), anyBoolean(), any());
     }
 
     @Test
@@ -263,7 +263,7 @@ class AskServiceStampedeTest {
 
     @Test
     void aFailedAnswerIsNotReusedByTheNextRequest() {
-        when(retrievalService.retrieve(any(), any(), any(), anyBoolean()))
+        when(retrievalService.retrieve(any(), any(), any(), anyBoolean(), any()))
                 .thenThrow(new IllegalStateException("retrieval is down"))
                 .thenReturn(retrieval);
         answerWith(new CountDownLatch(0), null);

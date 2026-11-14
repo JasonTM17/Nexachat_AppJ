@@ -1,5 +1,6 @@
 package com.nexachat.rag;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +37,33 @@ public interface RagMessageIndex {
     /** Ids whose author opted out in the message's own conversation. */
     Set<UUID> optedOutMessageIds(Collection<UUID> messageIds);
 
+    /**
+     * Recent eligible messages created at or after {@code admittedFrom}; null means no bound.
+     * Recent messages are newest first, so filtering after the limit keeps every admitted one.
+     */
+    default List<RagMessage> recentMessages(UUID conversationId, int limit, Instant admittedFrom) {
+        return admittedOnly(recentMessages(conversationId, limit), admittedFrom);
+    }
+
+    /** Lexical candidates created at or after {@code admittedFrom}; null means no bound. */
+    default List<RagMessage> lexicalCandidates(
+            UUID conversationId, List<String> terms, int limit, Instant admittedFrom) {
+        return admittedOnly(lexicalCandidates(conversationId, terms, limit), admittedFrom);
+    }
+
+    /**
+     * Whether the conversation holds any message created before {@code instant}. A member who
+     * joined after such a message must not be served answers computed for earlier members.
+     */
+    boolean hasMessagesBefore(UUID conversationId, Instant instant);
+
+    /** Keeps messages a member admitted at {@code admittedFrom} may read; null keeps all. */
+    static List<RagMessage> admittedOnly(List<RagMessage> messages, Instant admittedFrom) {
+        if (admittedFrom == null) {
+            return messages;
+        }
+        return messages.stream().filter(message -> !message.createdAt().isBefore(admittedFrom)).toList();
+    }
     /** Look up a single message by id, scoped to a conversation. */
     RagMessage findMessage(UUID conversationId, UUID messageId);
 

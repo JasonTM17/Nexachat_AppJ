@@ -153,17 +153,17 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_md"
-                    android:hint="@string/auth_phone_label"
-                    app:startIconDrawable="@drawable/ic_call">
+                    android:hint="@string/auth_login_identifier_label"
+                    app:startIconDrawable="@drawable/ic_person_outline">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/phoneInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:autofillHints="phone"
+                        android:autofillHints="username"
                         android:imeOptions="actionNext"
                         android:importantForAutofill="yes"
-                        android:inputType="phone"
+                        android:inputType="textEmailAddress"
                         android:nextFocusDown="@id/passwordInput" />
                 </com.google.android.material.textfield.TextInputLayout>
 

@@ -5,6 +5,9 @@
     <!-- Splash -->
 
     <!-- Auth -->
+    <string name="auth_login_identifier_label">Email or phone number</string>
+    <string name="error_login_identifier_required">Enter your email or phone number</string>
+    <string name="error_login_identifier_invalid">Enter a valid email or international phone number</string>
     <string name="auth_phone_label">Phone number</string>
     <string name="auth_password_label">Password</string>
     <string name="auth_display_name_label">Display name</string>
@@ -26,7 +29,7 @@
     <string name="error_password_mismatch">Passwords don\'t match</string>
 
     <!-- ApiError → user-facing messages -->
-    <string name="error_invalid_credentials">Wrong phone number or password</string>
+    <string name="error_invalid_credentials">Wrong email, phone number or password</string>
     <string name="error_phone_exists">This phone number is already registered</string>
     <string name="error_rate_limited">Too many attempts. Try again later</string>
     <string name="error_network">No connection. Check your network</string>

@@ -319,7 +319,8 @@ class AttachmentServiceTest {
         MessageAttachment attachment = attachment(ownerId, "attachments/x.png", true);
         UUID conversationId = attachment.getMessage().getConversation().getId();
         when(attachmentRepository.findById(attachment.getId())).thenReturn(Optional.of(attachment));
-        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, requesterId))
+        when(memberRepository.existsAdmittedAt(
+                org.mockito.ArgumentMatchers.eq(conversationId), org.mockito.ArgumentMatchers.eq(requesterId), any()))
                 .thenReturn(true);
         when(storageService.open("attachments/x.png")).thenReturn(handle(PNG_BYTES));
 
@@ -334,7 +335,8 @@ class AttachmentServiceTest {
         MessageAttachment attachment = attachment(ownerId, "attachments/x.png", true);
         UUID conversationId = attachment.getMessage().getConversation().getId();
         when(attachmentRepository.findById(attachment.getId())).thenReturn(Optional.of(attachment));
-        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, requesterId))
+        when(memberRepository.existsAdmittedAt(
+                org.mockito.ArgumentMatchers.eq(conversationId), org.mockito.ArgumentMatchers.eq(requesterId), any()))
                 .thenReturn(false);
 
         ApiException ex = catchThrowableOfType(ApiException.class,
@@ -377,7 +379,7 @@ class AttachmentServiceTest {
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.ATTACHMENT_NOT_FOUND);
         assertThat(ex.getHttpStatus()).isEqualTo(404);
-        verify(memberRepository, never()).existsByConversation_IdAndUser_Id(any(), any());
+        verify(memberRepository, never()).existsAdmittedAt(any(), any(), any());
     }
 
     @Test
@@ -386,7 +388,8 @@ class AttachmentServiceTest {
         UUID conversationId = attachment.getMessage().getConversation().getId();
         when(attachmentRepository.findByStorageKey("attachments/x.png"))
                 .thenReturn(Optional.of(attachment));
-        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, requesterId))
+        when(memberRepository.existsAdmittedAt(
+                org.mockito.ArgumentMatchers.eq(conversationId), org.mockito.ArgumentMatchers.eq(requesterId), any()))
                 .thenReturn(false);
 
         ApiException ex = catchThrowableOfType(ApiException.class,
@@ -409,7 +412,7 @@ class AttachmentServiceTest {
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NOT_MEMBER);
         assertThat(ex.getHttpStatus()).isEqualTo(403);
         // No bound conversation → the member check is never even consulted.
-        verify(memberRepository, never()).existsByConversation_IdAndUser_Id(any(), any());
+        verify(memberRepository, never()).existsAdmittedAt(any(), any(), any());
     }
 
     @Test
@@ -420,6 +423,6 @@ class AttachmentServiceTest {
 
         attachmentService.assertStorageKeyReadable("attachments/x.png", ownerId);
 
-        verify(memberRepository, never()).existsByConversation_IdAndUser_Id(any(), any());
+        verify(memberRepository, never()).existsAdmittedAt(any(), any(), any());
     }
 }

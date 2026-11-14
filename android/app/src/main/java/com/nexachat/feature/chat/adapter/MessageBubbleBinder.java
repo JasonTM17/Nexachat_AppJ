@@ -714,6 +714,12 @@ public final class MessageBubbleBinder {
                     root.getContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
             metaInclude.setBackground(null);
             metaInclude.setPadding(0, 0, 0, 0);
+            if (metaInclude.getLayoutParams() instanceof android.widget.LinearLayout.LayoutParams params
+                    && params.gravity != android.view.Gravity.CENTER_HORIZONTAL) {
+                // A system notice is centred, so its time sits under it rather than at a bubble edge.
+                params.gravity = android.view.Gravity.CENTER_HORIZONTAL;
+                metaInclude.setLayoutParams(params);
+            }
             if (edited != null) {
                 edited.setVisibility(View.GONE);
             }
@@ -888,10 +894,12 @@ public final class MessageBubbleBinder {
             Chip view = new Chip(root.getContext());
             boolean mineReaction = chip.getReactedByMe();
             view.setText(root.getResources().getString(
-                    mineReaction
-                            ? R.string.a11y_reaction_chip_by_me
-                            : R.string.a11y_reaction_chip,
-                    chip.getEmoji(), chip.getCount()));
+                    R.string.a11y_reaction_chip, chip.getEmoji(), chip.getCount()));
+            if (mineReaction) {
+                // "yours" is for screen readers only; sighted users read ownership from the chip colours.
+                view.setContentDescription(root.getResources().getString(
+                        R.string.a11y_reaction_chip_by_me, chip.getEmoji(), chip.getCount()));
+            }
             view.setCheckable(false);
             view.setClickable(true);
             TextViewCompat.setTextAppearance(view, R.style.TextAppearance_NexaChat_LabelMedium);

@@ -278,7 +278,7 @@
                         android:textAppearance="?attr/textAppearanceBodyLarge"
                         android:textColor="?attr/colorOnSurface" />
 
-                    <com.google.android.material.switchmaterial.SwitchMaterial
+                    <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/aiSummaryConsent"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
@@ -326,7 +326,7 @@
                         android:textAppearance="?attr/textAppearanceBodyLarge"
                         android:textColor="?attr/colorOnSurface" />
 
-                    <com.google.android.material.switchmaterial.SwitchMaterial
+                    <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/showPresence"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
@@ -374,7 +374,7 @@
                         android:textAppearance="?attr/textAppearanceBodyLarge"
                         android:textColor="?attr/colorOnSurface" />
 
-                    <com.google.android.material.switchmaterial.SwitchMaterial
+                    <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/showSeen"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"

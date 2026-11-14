@@ -96,6 +96,18 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     long findDeliveredWatermark(@Param("conversationId") UUID conversationId,
                                 @Param("userId") UUID userId);
 
+    /** True when the user was a member at {@code at}: the admission test for content created then. */
+    @Query("SELECT COUNT(m) > 0 FROM ConversationMember m WHERE m.conversation.id = :conversationId"
+            + " AND m.user.id = :userId AND m.joinedAt <= :at")
+    boolean existsAdmittedAt(@Param("conversationId") UUID conversationId,
+                             @Param("userId") UUID userId, @Param("at") java.time.Instant at);
+
+    /** Members who may read content created at {@code at} (joined no later than that instant). */
+    @Query("SELECT m.user.id FROM ConversationMember m WHERE m.conversation.id = :conversationId"
+            + " AND m.joinedAt <= :at")
+    List<UUID> findAdmittedUserIds(@Param("conversationId") UUID conversationId,
+                                   @Param("at") java.time.Instant at);
+
     /** Member id list for broadcast fan-out (inbox pushes). */
     @Query("SELECT m.user.id FROM ConversationMember m WHERE m.conversation.id = :conversationId")
     List<UUID> findMemberUserIds(@Param("conversationId") UUID conversationId);
@@ -188,6 +200,11 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     Optional<ConversationMember> findByConversation_IdAndUser_Id(UUID conversationId, UUID userId);
 
     /** Fresh authority read after the conversation lock; bypasses managed membership snapshots. */
+    /** The member's current admission time; empty when the user is not a member. */
+    @Query("SELECT m.joinedAt FROM ConversationMember m WHERE m.conversation.id = :conversationId AND m.user.id = :userId")
+    Optional<java.time.Instant> findJoinedAt(@Param("conversationId") UUID conversationId,
+                                             @Param("userId") UUID userId);
+
     @Query("SELECT m.role FROM ConversationMember m WHERE m.conversation.id = :conversationId AND m.user.id = :userId")
     Optional<ConversationMember.Role> findCurrentRole(@Param("conversationId") UUID conversationId,
                                                      @Param("userId") UUID userId);

@@ -26,6 +26,19 @@ public final class SettingsRowLayoutRulesTest {
   }
 
   @Test
+  public void stacksWhenTheTitleWouldWrapBesideAnInlineValue() {
+    int rowWidthPx = Math.round(380 * DENSITY);
+    float longTitlePx = 150 * DENSITY;
+    float shortTitlePx = 70 * DENSITY;
+    assertTrue(
+        SettingsRowLayoutRules.shouldStackTrailingValue(
+            DENSITY, rowWidthPx, true, true, true, longTitlePx));
+    assertFalse(
+        SettingsRowLayoutRules.shouldStackTrailingValue(
+            DENSITY, rowWidthPx, true, true, true, shortTitlePx));
+  }
+
+  @Test
   public void neverStacksWithoutTrailingValue() {
     int rowWidthPx = Math.round(320 * DENSITY);
     assertFalse(

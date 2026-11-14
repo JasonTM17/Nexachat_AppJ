@@ -136,4 +136,45 @@ public final class AccountDataCleanerTest {
         assertEquals("disposed worker callback must not write for its old account",
                 0, oldAccountWrites.get());
     }
+
+    @Test
+    public void signInResponseFromBeforeALaterBoundaryIsDroppedWithoutTouchingTheNewSession() {
+        AppDatabase database = mock(AppDatabase.class);
+        OutboxDao outboxDao = mock(OutboxDao.class);
+        when(database.outboxDao()).thenReturn(outboxDao);
+        when(outboxDao.sealUnassignedLegacyOwners()).thenReturn(Completable.complete());
+        SessionOperationTracker tracker = new SessionOperationTracker();
+        AccountDataCleaner cleaner = new AccountDataCleaner(database, tracker, Completable::complete);
+        AtomicInteger staleSaves = new AtomicInteger();
+
+        long startedUnder = cleaner.sessionBoundary();
+        cleaner.clearForLogout(Completable.complete()).blockingAwait();
+        cleaner.startSession(Completable.complete(), Completable.complete()).blockingAwait();
+        verify(database, org.mockito.Mockito.times(2)).clearAccountDataPreservingOutbox();
+
+        cleaner.startSession(Completable.fromAction(staleSaves::incrementAndGet),
+                        Completable.complete(), startedUnder)
+                .test().awaitDone(5, TimeUnit.SECONDS).assertError(CancellationException.class);
+
+        assertEquals("stale response must not store its credentials", 0, staleSaves.get());
+        assertTrue("the newer session stays active", tracker.isActive());
+        verify(database, org.mockito.Mockito.times(2)).clearAccountDataPreservingOutbox();
+    }
+
+    @Test
+    public void signInStartedUnderTheCurrentBoundaryStillEstablishesTheSession() {
+        AppDatabase database = mock(AppDatabase.class);
+        OutboxDao outboxDao = mock(OutboxDao.class);
+        when(database.outboxDao()).thenReturn(outboxDao);
+        when(outboxDao.sealUnassignedLegacyOwners()).thenReturn(Completable.complete());
+        SessionOperationTracker tracker = new SessionOperationTracker();
+        AccountDataCleaner cleaner = new AccountDataCleaner(database, tracker, Completable::complete);
+        AtomicInteger saves = new AtomicInteger();
+
+        cleaner.startSession(Completable.fromAction(saves::incrementAndGet), Completable.complete(),
+                cleaner.sessionBoundary()).blockingAwait();
+
+        assertEquals(1, saves.get());
+        assertTrue(tracker.isActive());
+    }
 }

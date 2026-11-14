@@ -236,6 +236,118 @@ class AuthServiceTest {
         verify(passwordEncoder).matches("whatever123", "hashed:nexachat-timing-equalization");
     }
 
+    @Test
+    void login_verifiedEmail_issuesTokens() {
+        User user = userWithId("+84912345678", "stored-hash", "Minh");
+        ownVerifiedEmail(user, "minh@example.com");
+        when(userRepository.findActiveByVerifiedEmail("minh@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("secret123", "stored-hash")).thenReturn(true);
+
+        AuthResponse response = authService.login(
+                new LoginRequest(null, "  Minh@Example.COM ", "secret123"), "JUnit");
+
+        assertThat(response.user().id()).isEqualTo(user.getId());
+        verify(phoneService, never()).toE164(anyString());
+    }
+
+    @Test
+    void login_unknownEmail_isIndistinguishableFromWrongPassword() {
+        when(userRepository.findActiveByVerifiedEmail("ghost@example.com")).thenReturn(Optional.empty());
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest(null, "ghost@example.com", "whatever123"), null));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.INVALID_CREDENTIALS);
+        assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
+        verify(passwordEncoder).matches("whatever123", "hashed:nexachat-timing-equalization");
+    }
+
+    @Test
+    void login_malformedEmail_throwsInvalidCredentialsNotValidation() {
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest(null, "not an@email", "whatever123"), null));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.INVALID_CREDENTIALS);
+        verify(userRepository, never()).findActiveByVerifiedEmail(anyString());
+        verify(passwordEncoder).matches("whatever123", "hashed:nexachat-timing-equalization");
+    }
+
+    @Test
+    void login_identifierWinsOverLegacyPhoneAndSpellingsShareOneRateBudget() {
+        when(userRepository.findActiveByVerifiedEmail("minh@example.com")).thenReturn(Optional.empty());
+
+        catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest("0912345678", "MINH@example.com", "whatever123"), null));
+        catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest(null, " minh@EXAMPLE.com ", "whatever123"), null));
+
+        verify(rateLimitService, org.mockito.Mockito.times(2)).tryConsume(
+                org.mockito.ArgumentMatchers.eq("login|email|minh@example.com"),
+                org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void login_emailRemovedBeforeTheRowLockIsAcquired_isRejectedWithoutASession() {
+        User user = userWithId("+84912345678", "stored-hash", "Minh");
+        ownVerifiedEmail(user, "minh@example.com");
+        when(userRepository.findActiveByVerifiedEmail("minh@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("secret123", "stored-hash")).thenReturn(true);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            org.springframework.test.util.ReflectionTestUtils.setField(user, "email", null);
+            org.springframework.test.util.ReflectionTestUtils.setField(user, "emailVerifiedAt", null);
+            return null;
+        }).when(entityManager).refresh(any(), any(jakarta.persistence.LockModeType.class));
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest(null, "minh@example.com", "secret123"), null));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.INVALID_CREDENTIALS);
+        verify(tokenService, never()).issue(any(), any());
+    }
+
+    @Test
+    void login_emailReplacedBeforeTheRowLockIsAcquired_isRejectedWithoutASession() {
+        User user = userWithId("+84912345678", "stored-hash", "Minh");
+        ownVerifiedEmail(user, "minh@example.com");
+        when(userRepository.findActiveByVerifiedEmail("minh@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("secret123", "stored-hash")).thenReturn(true);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            org.springframework.test.util.ReflectionTestUtils.setField(user, "email", "other@example.com");
+            return null;
+        }).when(entityManager).refresh(any(), any(jakarta.persistence.LockModeType.class));
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest(null, "minh@example.com", "secret123"), null));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.INVALID_CREDENTIALS);
+        verify(tokenService, never()).issue(any(), any());
+    }
+
+    @Test
+    void login_passwordlessVerifiedEmail_paysOneDummyCompareAndIsRejected() {
+        User user = userWithId("+84912345678", null, "Google Only");
+        org.springframework.test.util.ReflectionTestUtils.setField(user, "passwordHash", null);
+        ownVerifiedEmail(user, "minh@example.com");
+        when(userRepository.findActiveByVerifiedEmail("minh@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches(anyString(), anyString())).thenReturn(true);
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest(null, "minh@example.com", "anypass9"), null));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.INVALID_CREDENTIALS);
+        verify(passwordEncoder, org.mockito.Mockito.times(1)).matches("anypass9", "hashed:nexachat-timing-equalization");
+        verify(tokenService, never()).issue(any(), any());
+    }
+
+    private static void ownVerifiedEmail(User user, String email) {
+        org.springframework.test.util.ReflectionTestUtils.setField(user, "email", email);
+        org.springframework.test.util.ReflectionTestUtils.setField(user, "emailVerifiedAt", java.time.Instant.now());
+    }
+
     // -------------------------------------------------------------- refresh
 
     @Test
@@ -353,6 +465,7 @@ class AuthServiceTest {
                 () -> authService.login(new LoginRequest("+84912345678", "anypass9"), null));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.INVALID_CREDENTIALS);
+        verify(passwordEncoder, org.mockito.Mockito.times(1)).matches("anypass9", "hashed:nexachat-timing-equalization");
     }
 
     @Test

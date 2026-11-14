@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -59,7 +60,7 @@ class MessageBroadcastListenerTest {
                 "hi", UUID.randomUUID(), null, null, List.of(), List.of(),
                 Instant.now(), null, null,
                 List.of(new com.nexachat.message.dto.MessageMentionResponse(memberB, 0, 2)), false);
-        when(memberRepository.findMemberUserIds(conversationId))
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any()))
                 .thenReturn(List.of(memberA, memberB));
 
         listener.onMessageCreated(new MessageCreatedEvent(conversationId, message));
@@ -84,6 +85,52 @@ class MessageBroadcastListenerTest {
         assertThat(inboxEvent.getValue().eventType()).isEqualTo(WsEventType.MESSAGE_CREATED);
         verify(messaging).convertAndSendToUser(
                 eq(memberB.toString()), eq("/queue/inbox"), eq(topicEvent.getValue()));
+    }
+
+    @Test
+    void replayedSend_republishesToTheTopicButOnlyReachesAdmittedInboxes() {
+        MessageResponse message = new MessageResponse(
+                UUID.randomUUID(), conversationId, 7L, memberA, "A", "TEXT",
+                "hi", UUID.randomUUID(), null, null, List.of(), List.of(),
+                Instant.parse("2026-01-01T00:00:00Z"), null, null, List.of(), false);
+        when(memberRepository.findAdmittedUserIds(conversationId, Instant.parse("2026-01-01T00:00:00Z")))
+                .thenReturn(List.of(memberA));
+
+        listener.onMessageCreated(new MessageCreatedEvent(conversationId, message, null, true));
+
+        verify(messaging).convertAndSend(
+                eq("/topic/conversations." + conversationId), org.mockito.ArgumentMatchers.<Object>any());
+        verify(messaging).convertAndSendToUser(eq(memberA.toString()), eq("/queue/inbox"),
+                org.mockito.ArgumentMatchers.<Object>any());
+        verify(messaging, org.mockito.Mockito.never()).convertAndSendToUser(
+                eq(memberB.toString()), eq("/queue/inbox"), org.mockito.ArgumentMatchers.<Object>any());
+    }
+
+    @Test
+    void inboxPushDropsTheQuotePreviewForMembersWhoJoinedAfterTheQuotedMessage() {
+        Instant quotedAt = Instant.parse("2026-01-01T00:00:00Z");
+        Instant sentAt = Instant.parse("2026-01-02T00:00:00Z");
+        UUID quotedId = UUID.randomUUID();
+        var quote = new com.nexachat.message.dto.ReplyRefResponse(
+                quotedId, memberA, "A", "TEXT", "said before B joined", false, quotedAt);
+        MessageResponse message = new MessageResponse(
+                UUID.randomUUID(), conversationId, 9L, memberA, "A", "TEXT",
+                "reply", UUID.randomUUID(), quotedId, quote, List.of(), List.of(),
+                sentAt, null, null, List.of(), false);
+        when(memberRepository.findAdmittedUserIds(conversationId, sentAt)).thenReturn(List.of(memberA, memberB));
+        when(memberRepository.findAdmittedUserIds(conversationId, quotedAt)).thenReturn(List.of(memberA));
+
+        listener.onMessageCreated(new MessageCreatedEvent(conversationId, message));
+
+        ArgumentCaptor<EventEnvelope> toA = ArgumentCaptor.forClass(EventEnvelope.class);
+        verify(messaging).convertAndSendToUser(eq(memberA.toString()), eq("/queue/inbox"), toA.capture());
+        assertThat(((MessageResponse) toA.getValue().payload()).replyTo()).isEqualTo(quote);
+        ArgumentCaptor<EventEnvelope> toB = ArgumentCaptor.forClass(EventEnvelope.class);
+        verify(messaging).convertAndSendToUser(eq(memberB.toString()), eq("/queue/inbox"), toB.capture());
+        MessageResponse forB = (MessageResponse) toB.getValue().payload();
+        assertThat(forB.replyTo()).isNull();
+        assertThat(forB.replyToId()).isEqualTo(quotedId);
+        assertThat(forB.content()).isEqualTo("reply");
     }
 
     @Test
