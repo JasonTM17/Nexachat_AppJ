@@ -19,8 +19,20 @@ public final class AuthFieldValidators {
         return input.matches("\\+[1-9][0-9]{7,14}");
     }
 
+    /**
+     * One plain mailbox: no whitespace, comma (a mailbox list) or empty dot-separated part. The server owns
+     * the full syntax; this only keeps shapes it would reject from being sent.
+     */
     public static boolean isEmail(@NonNull String input) {
-        return input.length() <= 254 && input.matches("[^\\s@]+@[^\\s@]+\\.[^\\s@]+");
+        if (input.length() > 254 || !input.matches("[^\\s@,]+@[^\\s@,]+\\.[^\\s@,]+")) {
+            return false;
+        }
+        int at = input.indexOf('@');
+        return !hasEmptyDotPart(input.substring(0, at)) && !hasEmptyDotPart(input.substring(at + 1));
+    }
+
+    private static boolean hasEmptyDotPart(@NonNull String part) {
+        return part.startsWith(".") || part.endsWith(".") || part.contains("..");
     }
 
     /** Sign-in accepts an email (lower-cased) or a phone number (E.164 punctuation stripped). */

@@ -58,4 +58,17 @@ public final class AuthFieldValidatorsTest {
         assertFalse(AuthFieldValidators.isLoginIdentifier("jason gmail@x.com"));
         assertFalse(AuthFieldValidators.isLoginIdentifier("0901234567"));
     }
+
+    @Test
+    public void emailShapesTheServerWouldRejectAreNotSent() {
+        assertTrue(AuthFieldValidators.isEmail("a@example.com"));
+        assertTrue(AuthFieldValidators.isEmail("first.last+tag@mail.example.com"));
+        assertFalse(AuthFieldValidators.isEmail("a,b@example.com"));
+        assertFalse(AuthFieldValidators.isEmail("a..b@example.com"));
+        assertFalse(AuthFieldValidators.isEmail("a@example..com"));
+        assertFalse(AuthFieldValidators.isEmail(".a@example.com"));
+        assertFalse(AuthFieldValidators.isEmail("a.@example.com"));
+        assertFalse(AuthFieldValidators.isEmail("a@.example.com"));
+        assertFalse(AuthFieldValidators.isEmail("a@localhost"));
+    }
 }
