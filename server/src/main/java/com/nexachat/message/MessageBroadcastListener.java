@@ -50,8 +50,12 @@ public class MessageBroadcastListener {
     public void onMessageCreated(MessageCreatedEvent event) {
         EventEnvelope envelope = EventEnvelope.of(
                 WsEventType.MESSAGE_CREATED, event.conversationId(), event.message());
+        // The topic frame is filtered per subscriber by creation time (see the outbound membership
+        // interceptor), and the inbox push below goes only to members admitted when the message was
+        // created, so a replayed send never announces an old message to someone admitted later.
         messaging.convertAndSend(topicDestination(event.conversationId()), envelope);
-        for (UUID memberId : memberRepository.findMemberUserIds(event.conversationId())) {
+        for (UUID memberId : memberRepository.findAdmittedUserIds(
+                event.conversationId(), event.message().createdAt())) {
             messaging.convertAndSendToUser(memberId.toString(), "/queue/inbox", envelope);
         }
     }

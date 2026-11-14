@@ -344,6 +344,20 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             """)
     List<ReplyRefRow> findReplyRefsByIdIn(@Param("ids") Collection<UUID> ids);
 
+    /** Rows by id, limited to messages the viewer was a member for (pins, previews). */
+    @Query("""
+            SELECT new com.nexachat.message.dto.MessageRow(
+                       m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+            FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
+            WHERE m.id IN :ids
+              AND EXISTS (SELECT 1 FROM ConversationMember member
+                          WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
+                            AND m.createdAt >= member.joinedAt)
+            """)
+    List<MessageRow> findAdmittedRowsByIdIn(@Param("userId") UUID userId, @Param("ids") Collection<UUID> ids);
+
     @Query("""
             SELECT new com.nexachat.message.dto.ReplyRefRow(
                        m.id, u.id, u.displayName, m.type, m.content, m.deletedAt)

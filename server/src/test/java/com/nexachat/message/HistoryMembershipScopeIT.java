@@ -17,6 +17,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** History, forward resync and search obey the same admission boundary as /sync. */
 class HistoryMembershipScopeIT extends ConcurrentDatabaseITSupport {
     @Autowired private MessageService messages;
+    @Autowired private PinService pins;
+    @Autowired private com.nexachat.archive.ArchiveService archive;
 
     private record Scenario(UUID conversation, UUID owner, UUID reader,
                             MessageResponse before, MessageResponse hidden, MessageResponse visible) { }
@@ -27,10 +29,10 @@ class HistoryMembershipScopeIT extends ConcurrentDatabaseITSupport {
         UUID conversation = group(owner, reader);
         MessageResponse before = send(owner.getId(), conversation, "needle before removal");
         groups.removeMember(owner.getId(), conversation, reader.getId());
-        MessageResponse hidden = send(owner.getId(), conversation, "needle while removed");
+        MessageResponse hidden = send(owner.getId(), conversation, "needle while removed https://example.test/private-gap");
         groups.addMembers(owner.getId(), conversation, new AddMemberRequest(List.of(reader.getId())));
         MessageResponse visible = messages.send(owner.getId(), conversation, new SendMessageRequest(
-                UUID.randomUUID(), "TEXT", "needle after rejoin", hidden.id(), List.of())).message();
+                UUID.randomUUID(), "TEXT", "needle after rejoin https://example.test/visible", hidden.id(), List.of())).message();
         Instant joined = Instant.now().minusSeconds(10);
         jdbc.update("UPDATE messages SET created_at=? WHERE conversation_id=?",
                 Timestamp.from(joined.minusSeconds(1)), conversation);
@@ -38,6 +40,8 @@ class HistoryMembershipScopeIT extends ConcurrentDatabaseITSupport {
                 Timestamp.from(joined), conversation, reader.getId());
         jdbc.update("UPDATE messages SET created_at=? WHERE id=?",
                 Timestamp.from(joined.plusSeconds(1)), visible.id());
+        jdbc.update("UPDATE conversation_members SET joined_at=? WHERE conversation_id=? AND user_id=?",
+                Timestamp.from(joined.minusSeconds(60)), conversation, owner.getId());
         return new Scenario(conversation, owner.getId(), reader.getId(), before, hidden, visible);
     }
 
@@ -75,6 +79,26 @@ class HistoryMembershipScopeIT extends ConcurrentDatabaseITSupport {
         var page = messages.search(s.reader(), s.conversation(), "needle", 50, null);
         assertThat(page.items()).extracting(MessageResponse::id)
                 .containsExactly(s.visible().id());
+    }
+
+    @Test
+    void pinnedGapMessageIsNotListedToTheRejoinedMember() {
+        Scenario s = rejoined();
+        pins.pin(s.owner(), s.conversation(), new com.nexachat.message.dto.PinRequest(s.hidden().id()));
+        pins.pin(s.owner(), s.conversation(), new com.nexachat.message.dto.PinRequest(s.visible().id()));
+        assertThat(pins.listPins(s.reader(), s.conversation())).extracting(p -> p.messageId())
+                .containsExactly(s.visible().id());
+        assertThat(pins.listPins(s.owner(), s.conversation())).extracting(p -> p.messageId())
+                .contains(s.hidden().id(), s.visible().id());
+    }
+
+    @Test
+    void archivedLinksFromTheAbsenceIntervalAreNotBrowsable() {
+        Scenario s = rejoined();
+        var forReader = archive.browse(s.reader(), s.conversation(), "LINK", null, null, null, 50, null);
+        assertThat(forReader.items()).extracting(i -> i.messageId()).containsExactly(s.visible().id());
+        var forOwner = archive.browse(s.owner(), s.conversation(), "LINK", null, null, null, 50, null);
+        assertThat(forOwner.items()).extracting(i -> i.messageId()).contains(s.hidden().id(), s.visible().id());
     }
 
     @Test

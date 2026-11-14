@@ -1325,7 +1325,7 @@ public class MessageService {
 
     /** Batch hydration shared by history and pinned-message read models. */
     List<MessageResponse> toResponses(List<MessageRow> rows, UUID viewerId) {
-        return hydrateResponses(rows, viewerId);
+        return hydrateResponses(rows, viewerId, true);
     }
 
     private List<MessageResponse> hydrateResponses(List<MessageRow> rows, UUID viewerId) {

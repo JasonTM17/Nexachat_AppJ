@@ -365,7 +365,7 @@ class PinServiceTest {
         MessageRow olderRow = new MessageRow(
                 olderId, conversationId, 1L, userId, "Member", Message.Type.TEXT,
                 "older", UUID.randomUUID(), null, olderAt, null, null);
-        when(messageRepository.findRowsByIdIn(List.of(newerId, olderId)))
+        when(messageRepository.findAdmittedRowsByIdIn(userId, List.of(newerId, olderId)))
                 .thenReturn(List.of(olderRow, newerRow));
         MessageResponse newerResponse = new MessageResponse(
                 newerId, conversationId, 2L, userId, "Member", "TEXT", "newer",

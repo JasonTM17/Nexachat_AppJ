@@ -61,7 +61,7 @@ class ArchiveLinkScanCapTest {
                 .mapToObj(offset -> (ArchiveLinkRow) new RejectedLinkRow(
                         UUID.randomUUID(), 100L - offset, UUID.randomUUID(), Instant.EPOCH, "http://"))
                 .toList();
-        when(archiveRepository.findLinkMessagePage(eq(conversationId), isNull(), isNull(), isNull(),
+        when(archiveRepository.findLinkMessagePage(eq(callerId), eq(conversationId), isNull(), isNull(), isNull(),
                 any(), any(Pageable.class))).thenReturn(rejected);
 
         ArchiveResponse response = service.browse(

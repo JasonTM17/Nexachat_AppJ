@@ -224,7 +224,7 @@ public class AttachmentService {
 
     /**
      * The single authZ rule (plan §13): owner always may; otherwise the
-     * requester must be a member of the bound message's conversation. Unbound
+     * requester must have been a member of the bound message's conversation when it was sent. Unbound
      * uploads are owner-only.
      */
     private void assertReadable(MessageAttachment attachment, UUID requesterId) {
@@ -236,8 +236,8 @@ public class AttachmentService {
             return;
         }
         if (bound != null
-                && memberRepository.existsByConversation_IdAndUser_Id(
-                        bound.getConversation().getId(), requesterId)) {
+                && memberRepository.existsAdmittedAt(
+                        bound.getConversation().getId(), requesterId, bound.getCreatedAt())) {
             return;
         }
         throw ApiException.of(ApiErrorCode.NOT_MEMBER, "Not allowed to read this attachment");
