@@ -29,6 +29,7 @@ public class SummaryWindowRepository {
             WHERE m.conversation_id = ?
               AND m.type = 'TEXT'
               AND m.deleted_at IS NULL
+              AND m.encryption IS NULL
               AND m.content IS NOT NULL
               AND btrim(m.content) <> ''
               AND NOT EXISTS (

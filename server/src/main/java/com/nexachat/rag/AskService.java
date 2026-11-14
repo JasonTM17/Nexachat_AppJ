@@ -2,6 +2,7 @@ package com.nexachat.rag;
 
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.summary.ConversationAiOptOuts;
@@ -120,8 +121,12 @@ public class AskService {
     AskExecution askForResponse(UUID conversationId, UUID userId, AskRequest request) {
         stats.recordRequest();
         rateLimiter.consume(userId);
-        if (!conversationRepository.existsById(conversationId)) {
-            throw ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found");
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND,
+                        "Conversation not found"));
+        if (conversation.isE2eeEnabled()) {
+            throw ApiException.of(ApiErrorCode.E2EE_AI_UNAVAILABLE,
+                    "AI features are unavailable in encrypted conversations");
         }
         java.time.Instant admittedFrom = memberRepository.findJoinedAt(conversationId, userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_MEMBER, "Conversation membership required"));

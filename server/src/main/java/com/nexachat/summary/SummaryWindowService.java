@@ -2,6 +2,7 @@ package com.nexachat.summary;
 
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationMember;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
@@ -41,8 +42,12 @@ public class SummaryWindowService {
 
     @Transactional(readOnly = true)
     public SummaryReadContext load(UUID conversationId, UUID userId, SummaryRequest request) {
-        if (!conversationRepository.existsById(conversationId)) {
-            throw ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found");
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND,
+                        "Conversation not found"));
+        if (conversation.isE2eeEnabled()) {
+            throw ApiException.of(ApiErrorCode.E2EE_AI_UNAVAILABLE,
+                    "AI features are unavailable in encrypted conversations");
         }
         ConversationMember member = memberRepository.findByConversation_IdAndUser_Id(conversationId, userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_MEMBER, "Conversation membership required"));

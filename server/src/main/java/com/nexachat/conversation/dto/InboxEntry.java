@@ -31,7 +31,9 @@ public record InboxEntry(
         boolean aiOptOut,
         boolean pinned,
         Instant pinnedAt,
-        List<UUID> labels
+        List<UUID> labels,
+        boolean lastMessageEncrypted,
+        boolean e2eeEnabled
 ) {
 
     /** Backward-compatible constructor for code that builds the pre-label inbox shape. */
@@ -41,7 +43,8 @@ public record InboxEntry(
                       Instant mutedUntil, boolean archived, boolean aiOptOut,
                       boolean pinned, Instant pinnedAt) {
         this(id, type, title, avatarUrl, members, lastMessage, unreadCount, lastReadSeq,
-                peerPresence, muted, mutedUntil, archived, aiOptOut, pinned, pinnedAt, List.of());
+                peerPresence, muted, mutedUntil, archived, aiOptOut, pinned, pinnedAt, List.of(),
+                false, false);
     }
 
     /** Member as the client needs it for headers/avatars plus admin gating. */

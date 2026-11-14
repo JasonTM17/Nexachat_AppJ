@@ -191,6 +191,11 @@ public class InboxService {
                 ? Map.of()
                 : messageRepository.findRowsByIdIn(lastMessageIds).stream()
                         .collect(Collectors.toMap(MessageRow::id, row -> row));
+        Set<UUID> encryptedLastMessageIds = lastMessageIds.isEmpty()
+                ? Set.of()
+                : messageRepository.findE2eeByIdIn(lastMessageIds).stream()
+                        .map(com.nexachat.message.dto.MessageE2eeRow::id)
+                        .collect(Collectors.toSet());
 
         Map<UUID, Long> unreadByConversation =
                 memberRepository.countUnreadByConversation(userId, conversationIds).stream()
@@ -209,6 +214,8 @@ public class InboxService {
                     // expiry is lazy so no sweep job has to clear the flag.
                     boolean muted = row.muted()
                             && (row.mutedUntil() == null || row.mutedUntil().isAfter(now));
+                    boolean lastEncrypted = row.lastMessageId() != null
+                            && encryptedLastMessageIds.contains(row.lastMessageId());
                     return new InboxEntry(
                             row.id(),
                             row.type().name(),
@@ -217,7 +224,7 @@ public class InboxService {
                             membersByConversation.getOrDefault(row.id(), List.of()),
                             toLastMessage(row.lastMessageId() == null
                                     ? null
-                                    : lastMessageById.get(row.lastMessageId())),
+                                    : lastMessageById.get(row.lastMessageId()), lastEncrypted),
                             unreadByConversation.getOrDefault(row.id(), 0L),
                             row.lastReadSeq(),
                             row.type() == com.nexachat.conversation.Conversation.Type.DIRECT
@@ -228,7 +235,8 @@ public class InboxService {
                             optedOutConversations.contains(row.id()),
                             row.pinned(),
                             row.pinned() ? row.pinnedAt() : null,
-                            labelsByConversation.getOrDefault(row.id(), List.of()));
+                            labelsByConversation.getOrDefault(row.id(), List.of()),
+                            lastEncrypted, row.e2eeEnabled());
                 })
                 .toList();
     }
@@ -283,12 +291,13 @@ public class InboxService {
                 view.role().name());
     }
 
-    private static InboxEntry.LastMessage toLastMessage(MessageRow row) {
+    private static InboxEntry.LastMessage toLastMessage(MessageRow row, boolean encrypted) {
         if (row == null) {
             return null;
         }
         return new InboxEntry.LastMessage(
-                row.seq(), row.type().name(), snippet(row.content()), row.senderId(), row.createdAt(), row.deletedAt());
+                row.seq(), row.type().name(), encrypted ? null : snippet(row.content()),
+                row.senderId(), row.createdAt(), row.deletedAt());
     }
 
     private static String snippet(String content) {
