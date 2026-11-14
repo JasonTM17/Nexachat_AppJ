@@ -18,7 +18,11 @@ sees plaintext for rows where `messages.encryption IS NOT NULL`.
 - Comparing the safety code is a *manual* out-of-band check, not enforced
   verification: clients can compare the code (SHA-512 over sorted
   `userId:deviceId:publicKey` lines of both members' active devices), but
-  nothing blocks a send when the code is never compared.
+  nothing blocks a send when the code is never compared. Matching codes do
+  **not** authenticate device ownership: both clients hash a wholly
+  server-supplied directory, so an active malicious server can serve both
+  members the same manipulated list and matching codes. No independent
+  audit is claimed.
 - Device identity is per installation: an X25519 key pair whose private half
   never leaves the client (Android seals it with the Keystore-backed
   `AesGcmTokenCipher`; it is wiped on sign-out). `e2ee_devices` only stores

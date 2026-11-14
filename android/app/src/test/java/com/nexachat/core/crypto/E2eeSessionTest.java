@@ -500,6 +500,275 @@ public final class E2eeSessionTest {
                 wire.content(), envelopes).orElseThrow(AssertionError::new));
     }
 
+    // ---- Session-fence rework: wipe boundaries retire in-flight work ----
+
+    @Test
+    public void wipeDuringMemberFetchDropsResultAndCacheWrite() throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Call<ConversationE2eeDto> blocked = mock(Call.class);
+        ConversationE2eeDto state = new ConversationE2eeDto(true, List.of());
+        when(blocked.execute()).thenAnswer(invocation -> {
+            entered.countDown();
+            release.await(5, TimeUnit.SECONDS);
+            return Response.success(state);
+        });
+        Call<ConversationE2eeDto> fresh = stateCall(state);
+        when(api.getE2ee("c1")).thenReturn(blocked, fresh);
+
+        TestObserver<ConversationE2eeDto> first = session.e2eeState("c1").test();
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+        session.wipeLocal("u1");
+        release.countDown();
+        first.awaitDone(5, TimeUnit.SECONDS).assertError(
+                error -> error instanceof E2eeSession.E2eeException);
+        // The aborted response must not have populated the cache.
+        session.e2eeState("c1").test().awaitDone(5, TimeUnit.SECONDS)
+                .assertValue(state);
+        verify(api, times(2)).getE2ee("c1");
+    }
+
+    @Test
+    public void wipeDuringEncryptMemberFetchResetsSend() throws Exception {
+        KeyPair mine = E2eeCrypto.generateDeviceKeyPair();
+        KeyPair peer = E2eeCrypto.generateDeviceKeyPair();
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(tokensFor("u1")));
+        when(keyStore.identity("u1"))
+                .thenReturn(new Identity("dev-me", mine.publicKey(), mine.privateKey()));
+        Call<DeviceDto> ok = okCall();
+        when(api.registerDevice(eq("dev-me"), any())).thenReturn(ok);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Call<ConversationE2eeDto> blocked = mock(Call.class);
+        when(blocked.execute()).thenAnswer(invocation -> {
+            entered.countDown();
+            release.await(5, TimeUnit.SECONDS);
+            return Response.success(
+                    twoMemberState(mine.publicKey(), peer.publicKey()));
+        });
+        when(api.getE2ee("c1")).thenReturn(blocked);
+
+        TestObserver<EncryptedMessage> observer =
+                session.encryptFor("c1", "hi", "u1", "m1").test();
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+        session.wipeLocal("u1");
+        release.countDown();
+        observer.awaitDone(5, TimeUnit.SECONDS)
+                .assertError(error -> error instanceof E2eeSession.E2eeException
+                        && "E2EE_SESSION_RESET".equals(error.getMessage()))
+                .assertNoValues();
+    }
+
+    @Test
+    public void wipeDuringBackoffSuppressesRetryCall() throws Exception {
+        stubIdentityAndTokens();
+        Call<DeviceDto> dead = failingCall(new IOException("offline"));
+        when(api.registerDevice(eq("dev-1"), any())).thenReturn(dead);
+        TestScheduler scheduler = new TestScheduler();
+        E2eeSession timed = timedSession(scheduler);
+
+        TestObserver<Void> observer = timed.onSessionAvailable().test();
+        verify(api, timeout(3_000).times(1)).registerDevice(eq("dev-1"), any());
+        timed.wipeLocal("u1");
+        scheduler.advanceTimeBy(10, TimeUnit.SECONDS);
+        // The delayed retry was armed before the wipe; it must not fire.
+        verify(api, times(1)).registerDevice(eq("dev-1"), any());
+        observer.assertError(error -> error instanceof E2eeSession.E2eeException);
+    }
+
+    @Test
+    public void sameUserRefreshDoesNotRetireInFlightRegistration() throws Exception {
+        stubIdentityAndTokens();
+        when(keyStore.currentUserId()).thenReturn("u1");
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Call<DeviceDto> blocked = mock(Call.class);
+        when(blocked.execute()).thenAnswer(invocation -> {
+            entered.countDown();
+            release.await(5, TimeUnit.SECONDS);
+            return Response.success(new DeviceDto());
+        });
+        Call<DeviceDto> ok = okCall();
+        when(api.registerDevice(eq("dev-1"), any())).thenReturn(blocked, ok);
+
+        TestObserver<Void> first = session.onSessionAvailable().test();
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+        // A same-user session refresh is not an account boundary: the older
+        // in-flight registration keeps its right to finish.
+        session.onSessionAvailable().test().awaitDone(5, TimeUnit.SECONDS)
+                .assertComplete();
+        release.countDown();
+        first.awaitDone(5, TimeUnit.SECONDS).assertComplete();
+        // Once confirmed, another same-user boundary stays memoized.
+        session.onSessionAvailable().test().awaitDone(5, TimeUnit.SECONDS)
+                .assertComplete();
+        verify(api, times(2)).registerDevice(eq("dev-1"), any());
+    }
+
+    @Test
+    public void delayedRegistrationSuccessAfterWipeCannotPublishProof() throws Exception {
+        stubIdentityAndTokens();
+        when(keyStore.currentUserId()).thenReturn("u1");
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Call<DeviceDto> blocked = mock(Call.class);
+        when(blocked.execute()).thenAnswer(invocation -> {
+            entered.countDown();
+            release.await(5, TimeUnit.SECONDS);
+            return Response.success(new DeviceDto());
+        });
+        Call<DeviceDto> retry = okCall();
+        when(api.registerDevice(eq("dev-1"), any())).thenReturn(blocked, retry);
+
+        TestObserver<Void> first = session.onSessionAvailable().test();
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+        session.wipeLocal("u1");
+        release.countDown();
+        first.awaitDone(5, TimeUnit.SECONDS).assertError(
+                error -> error instanceof E2eeSession.E2eeException);
+        // The stale success could not mark readiness: the next boundary
+        // registers again instead of skipping the call.
+        session.onSessionAvailable().test().awaitDone(5, TimeUnit.SECONDS)
+                .assertComplete();
+        verify(api, times(2)).registerDevice(eq("dev-1"), any());
+    }
+
+    @Test
+    public void delayedRevokeDoesNotForgetNewerAccount() throws Exception {
+        AtomicReference<String> current = new AtomicReference<>("uA");
+        when(keyStore.currentUserId()).thenAnswer(inv -> current.get());
+        doAnswer(inv -> {
+            current.set(inv.getArgument(0));
+            return null;
+        }).when(keyStore).rememberCurrentUser(anyString());
+        doAnswer(inv -> {
+            current.set(null);
+            return null;
+        }).when(keyStore).forgetCurrentUser();
+        when(keyStore.identity("uA"))
+                .thenReturn(new Identity("dev-a", new byte[32], new byte[32]));
+        when(keyStore.identity("uB"))
+                .thenReturn(new Identity("dev-b", new byte[32], new byte[32]));
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(tokensFor("uB")));
+        Call<DeviceDto> ok = okCall();
+        when(api.registerDevice(eq("dev-b"), any())).thenReturn(ok);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Call<Void> revokeCall = mock(Call.class);
+        when(revokeCall.execute()).thenAnswer(invocation -> {
+            entered.countDown();
+            release.await(5, TimeUnit.SECONDS);
+            return Response.success(null);
+        });
+        when(api.revokeDevice("dev-a")).thenReturn(revokeCall);
+
+        TestObserver<Void> revoke = session.revokeCurrentDevice("uA").test();
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+        session.onSessionAvailable().test().awaitDone(5, TimeUnit.SECONDS)
+                .assertComplete();
+        release.countDown();
+        revoke.awaitDone(5, TimeUnit.SECONDS).assertComplete();
+        assertEquals("uB", current.get());
+        verify(keyStore, never()).clear("uB");
+    }
+
+    @Test
+    public void staleSetE2eeResponseIsRejected() throws Exception {
+        ConversationE2eeDto state = new ConversationE2eeDto(true, List.of());
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Call<ConversationE2eeDto> blocked = mock(Call.class);
+        when(blocked.execute()).thenAnswer(invocation -> {
+            entered.countDown();
+            release.await(5, TimeUnit.SECONDS);
+            return Response.success(state);
+        });
+        when(api.setE2ee(eq("c1"), any())).thenReturn(blocked);
+
+        TestObserver<ConversationE2eeDto> observer = session.setE2ee("c1", true).test();
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+        session.wipeLocal("u1");
+        release.countDown();
+        observer.awaitDone(5, TimeUnit.SECONDS).assertError(
+                error -> error instanceof E2eeSession.E2eeException)
+                .assertNoValues();
+    }
+
+    @Test
+    public void encryptFailsOnNullMemberDeviceEntries() throws Exception {
+        KeyPair mine = E2eeCrypto.generateDeviceKeyPair();
+        KeyPair peer = E2eeCrypto.generateDeviceKeyPair();
+        List<MemberDeviceDto> devices = new ArrayList<>();
+        devices.add(null);
+        devices.add(new MemberDeviceDto("u2", "dev-peer",
+                E2eeCrypto.b64url(peer.publicKey())));
+        devices.add(new MemberDeviceDto("u1", "dev-me",
+                E2eeCrypto.b64url(mine.publicKey())));
+        stubEncryptSession(new Identity("dev-me", mine.publicKey(), mine.privateKey()),
+                new ConversationE2eeDto(true, devices));
+
+        session.encryptFor("c1", "hi", "u1", "m1").test()
+                .awaitDone(5, TimeUnit.SECONDS)
+                .assertError(error -> error instanceof E2eeSession.E2eeException
+                        && "E2EE_STALE_DEVICES".equals(error.getMessage()));
+    }
+
+    // ---- Unified call budget across a logical registration ----
+
+    @Test
+    public void serverErrorThenConflictThenServerErrorExhaustsBudget() throws Exception {
+        Identity stored = new Identity("dev-old", new byte[32], new byte[32]);
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(tokensFor("u1")));
+        when(keyStore.identity("u1")).thenReturn(stored, (Identity) null);
+        when(keyStore.deviceId("u1")).thenReturn("dev-new");
+        Call<DeviceDto> first503 = errorCall(503);
+        Call<DeviceDto> conflict = conflictCall();
+        Call<DeviceDto> second503 = errorCall(503);
+        when(api.registerDevice(eq("dev-old"), any())).thenReturn(first503, conflict);
+        when(api.registerDevice(eq("dev-new"), any())).thenReturn(second503);
+        TestScheduler scheduler = new TestScheduler();
+        E2eeSession timed = timedSession(scheduler);
+
+        TestObserver<Void> observer = timed.onSessionAvailable().test();
+        verify(api, timeout(3_000).times(1)).registerDevice(eq("dev-old"), any());
+        advanceUntilRegisterCount(scheduler, 2);
+        advanceUntilRegisterCount(scheduler, 3);
+        observer.awaitDone(5, TimeUnit.SECONDS).assertError(
+                error -> error instanceof E2eeSession.E2eeException);
+        // One shared budget for the whole logical registration: 3 calls total.
+        verify(api, times(3)).registerDevice(anyString(), any());
+    }
+
+    @Test
+    public void conflictOnFinalAttemptDoesNotFireFourthCall() throws Exception {
+        stubIdentityAndTokens();
+        Call<DeviceDto> first503 = errorCall(503);
+        Call<DeviceDto> second503 = errorCall(503);
+        Call<DeviceDto> conflict = conflictCall();
+        Call<DeviceDto> fourth = okCall();
+        when(api.registerDevice(eq("dev-1"), any()))
+                .thenReturn(first503, second503, conflict, fourth);
+        TestScheduler scheduler = new TestScheduler();
+        E2eeSession timed = timedSession(scheduler);
+
+        TestObserver<Void> observer = timed.onSessionAvailable().test();
+        verify(api, timeout(3_000).times(1)).registerDevice(eq("dev-1"), any());
+        advanceUntilRegisterCount(scheduler, 2);
+        advanceUntilRegisterCount(scheduler, 3);
+        observer.awaitDone(5, TimeUnit.SECONDS).assertError(
+                error -> error instanceof E2eeSession.E2eeException
+                        && "E2EE_DEVICE_CONFLICT".equals(error.getMessage()));
+        verify(api, times(3)).registerDevice(anyString(), any());
+        verify(keyStore, never()).deviceId("u1");
+    }
+
+    private static Call<DeviceDto> errorCall(int status) throws IOException {
+        Call<DeviceDto> call = mock(Call.class);
+        when(call.execute()).thenReturn(Response.error(status, ResponseBody.create(
+                MediaType.get("application/json"), "{}")));
+        return call;
+    }
+
     // ---- helpers ----
 
     /**
@@ -508,6 +777,8 @@ public final class E2eeSessionTest {
      * absorbing the race between the delayed retry being scheduled on the IO
      * worker and virtual time advancing.
      */
+
+
     private void advanceUntilRegisterCount(TestScheduler scheduler, int expected)
             throws InterruptedException {
         long deadline = System.currentTimeMillis() + 5_000;
