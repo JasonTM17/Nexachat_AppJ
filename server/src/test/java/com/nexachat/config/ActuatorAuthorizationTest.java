@@ -13,7 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.core.Authentication;
@@ -37,17 +37,17 @@ class ActuatorAuthorizationTest {
 
     @Autowired
     private MockMvc mockMvc;
-    @MockBean
+    @MockitoBean
     private RagStatsAuthorizationManager adminAuthorizationManager;
-    @MockBean
+    @MockitoBean
     private JwtAuthFilter jwtAuthFilter;
-    @MockBean
+    @MockitoBean
     private SecurityHeadersFilter securityHeadersFilter;
-    @MockBean
+    @MockitoBean
     private AuthSecurityErrorHandler securityErrorHandler;
-    @MockBean
+    @MockitoBean
     private RateLimitService rateLimitService;
-    @MockBean
+    @MockitoBean
     private ClientIpResolver clientIpResolver;
 
     @BeforeEach
