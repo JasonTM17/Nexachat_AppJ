@@ -177,7 +177,9 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             preview.setTextColor(previewColor);
             InboxPreviewKind previewKind = ConversationPreviewHelper.previewKind(conversation);
             int previewIcon = 0;
-            if (previewKind == InboxPreviewKind.PHOTO) {
+            if (conversation.isLastMessageEncrypted()) {
+                previewIcon = R.drawable.ic_lock;
+            } else if (previewKind == InboxPreviewKind.PHOTO) {
                 previewIcon = R.drawable.ic_image;
             } else if (previewKind == InboxPreviewKind.VOICE) {
                 previewIcon = R.drawable.ic_mic;

@@ -354,7 +354,10 @@ public final class MessageBubbleBinder {
         }
         ChatMessage original = resolveOriginal != null ? resolveOriginal.apply(replyId) : null;
         String snippet = message.getReplyToSnippet();
-        if (snippet == null && original != null) {
+        if (message.isReplyToEncrypted()
+                || (original != null && original.isDecryptFailed())) {
+            snippet = root.getContext().getString(R.string.e2ee_message_placeholder);
+        } else if (snippet == null && original != null) {
             snippet = original.getContent();
         }
         String sender = message.getReplyToSenderName();
@@ -482,6 +485,19 @@ public final class MessageBubbleBinder {
         if (body != null) {
             body.setVisibility(View.VISIBLE);
             String raw = message.getContent() != null ? message.getContent() : message.getType();
+            if (message.isDecryptFailed()) {
+                body.setText(R.string.e2ee_message_undecryptable);
+                body.setTypeface(null, android.graphics.Typeface.ITALIC);
+                body.setCompoundDrawablesRelativeWithIntrinsicBounds(
+                        R.drawable.ic_lock, 0, 0, 0);
+                body.setCompoundDrawablePadding(
+                        root.getResources().getDimensionPixelSize(R.dimen.space_xs));
+                body.setContentDescription(
+                        root.getContext().getString(R.string.e2ee_message_undecryptable));
+                return;
+            }
+            body.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0);
+            body.setTypeface(null, android.graphics.Typeface.NORMAL);
             if (raw != null && raw.startsWith("CALL|")) {
                 body.setText(SystemEventFormatter.format(
                         root.getContext(), raw, message.getMine()));

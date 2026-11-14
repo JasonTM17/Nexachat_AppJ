@@ -29,4 +29,11 @@ public final class StorageModule {
                 .setIoScheduler(Schedulers.io())
                 .build();
     }
+
+    @Provides
+    @Singleton
+    public static com.nexachat.core.crypto.DeviceKeyStore provideE2eeDeviceKeyStore(
+            @ApplicationContext Context context, TokenCipher cipher) {
+        return new com.nexachat.core.crypto.DeviceKeyStore(context, cipher);
+    }
 }

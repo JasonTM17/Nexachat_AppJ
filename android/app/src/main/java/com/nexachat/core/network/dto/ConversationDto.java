@@ -15,12 +15,18 @@ public final class ConversationDto {
     @Nullable private final String createdAt;
     /** Caller's own per-conversation AI opt-out state. */
     @Nullable private final Boolean aiOptOut;
+    /** Server flag: true once E2EE is enabled on this DIRECT conversation. */
+    @Nullable private final Boolean e2eeEnabled;
 
     public ConversationDto() {
         this(null, null, null, null, List.of(), null, null);
     }
 
     public ConversationDto(@NonNull String id, @Nullable String type, @Nullable String title, @Nullable String avatarUrl, @Nullable List<ConversationMemberDto> members, @Nullable String createdAt, @Nullable Boolean aiOptOut) {
+        this(id, type, title, avatarUrl, members, createdAt, aiOptOut, null);
+    }
+
+    public ConversationDto(@NonNull String id, @Nullable String type, @Nullable String title, @Nullable String avatarUrl, @Nullable List<ConversationMemberDto> members, @Nullable String createdAt, @Nullable Boolean aiOptOut, @Nullable Boolean e2eeEnabled) {
         this.id = id;
         this.type = type;
         this.title = title;
@@ -28,6 +34,7 @@ public final class ConversationDto {
         this.members = members == null ? List.of() : members;
         this.createdAt = createdAt;
         this.aiOptOut = aiOptOut;
+        this.e2eeEnabled = e2eeEnabled;
     }
 
     public ConversationDto(@NonNull String id, @Nullable String type, @Nullable String title, @Nullable String avatarUrl, @Nullable List<ConversationMemberDto> members, @Nullable String createdAt) {
@@ -65,6 +72,11 @@ public final class ConversationDto {
     /** Caller's own AI opt-out state; absent in legacy payloads. */
     @Nullable public Boolean getAiOptOut() {
         return aiOptOut;
+    }
+
+    /** Server E2EE flag; absent in legacy payloads. */
+    @Nullable public Boolean getE2eeEnabled() {
+        return e2eeEnabled;
     }
 
     @Override

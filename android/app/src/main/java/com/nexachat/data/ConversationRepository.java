@@ -6,6 +6,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 import com.nexachat.core.common.ApiError;
+import com.nexachat.core.crypto.E2eeSession;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.database.AppDatabase;
 import com.nexachat.core.database.ConversationDao;
@@ -123,6 +124,7 @@ public final class ConversationRepository implements AutoCloseable {
     private final SessionOperationTracker operationTracker;
     private final InboxReadWatermarkCache inboxReadWatermarkCache;
     @Nullable private final MessageRepository messageRepository;
+    @Nullable private final E2eeSession e2eeSession;
     private final PresenceRepository presenceRepository;
     private final RealtimeSession session;
     private final TokenStore tokenStore;
@@ -157,7 +159,7 @@ public final class ConversationRepository implements AutoCloseable {
     private final ConversationPreferenceLanes preferenceLanes = new ConversationPreferenceLanes();
     private final ConversationPreferenceNetworkQueue preferenceNetwork;
 
-    @Inject
+    /** Test seam without E2EE; production wiring uses the injected constructor. */
     public ConversationRepository(
             @NonNull MessageApi messageApi,
             @NonNull GroupApi groupApi,
@@ -172,6 +174,28 @@ public final class ConversationRepository implements AutoCloseable {
             @NonNull SessionOperationTracker operationTracker,
             @NonNull InboxReadWatermarkCache inboxReadWatermarkCache,
             @NonNull MessageRepository messageRepository) {
+        this(messageApi, groupApi, settingsApi, conversationDao, presenceRepository, session,
+                tokenStore, moshi, context, appDatabase, operationTracker,
+                inboxReadWatermarkCache, messageRepository, null);
+    }
+
+    @Inject
+    public ConversationRepository(
+            @NonNull MessageApi messageApi,
+            @NonNull GroupApi groupApi,
+            @NonNull ConversationSettingsApi settingsApi,
+            @NonNull ConversationDao conversationDao,
+            @NonNull PresenceRepository presenceRepository,
+            @NonNull RealtimeSession session,
+            @NonNull TokenStore tokenStore,
+            @NonNull Moshi moshi,
+            @ApplicationContext @NonNull Context context,
+            @NonNull AppDatabase appDatabase,
+            @NonNull SessionOperationTracker operationTracker,
+            @NonNull InboxReadWatermarkCache inboxReadWatermarkCache,
+            @NonNull MessageRepository messageRepository,
+            @Nullable E2eeSession e2eeSession) {
+        this.e2eeSession = e2eeSession;
         this.messageApi = messageApi;
         this.groupApi = groupApi;
         this.settingsApi = settingsApi;
@@ -238,7 +262,7 @@ public final class ConversationRepository implements AutoCloseable {
             @NonNull AppDatabase appDatabase) {
         this(messageApi, groupApi, settingsApi, conversationDao, presenceRepository,
                 session, tokenStore, moshi, context, appDatabase, new SessionOperationTracker(),
-                new InboxReadWatermarkCache(), null);
+                new InboxReadWatermarkCache(), null, null);
     }
 
     /**
@@ -709,6 +733,15 @@ public final class ConversationRepository implements AutoCloseable {
     Single<Boolean> handleConversationUpdate(ChatEvent.ConversationUpdated update) {
         String conversationId = update.getConversationId();
         if (conversationId == null) return Single.just(Boolean.FALSE);
+        if (e2eeSession != null) {
+            e2eeSession.invalidateDevices(conversationId);
+            Boolean e2ee = update.getE2eeEnabled();
+            if (e2ee != null) {
+                conversationDao.updateE2eeEnabled(conversationId, e2ee)
+                        .subscribeOn(Schedulers.io()).subscribe(
+                                () -> { }, RxJavaPlugins::onError);
+            }
+        }
         return operationTracker.track(currentUserIdOptional().flatMap(myId -> {
             String ownerUserId = myId.orElse(null);
             if (ownerUserId == null || !update.isSelfRemoval(ownerUserId)) {
@@ -1438,7 +1471,11 @@ public final class ConversationRepository implements AutoCloseable {
                         row.isAiOptOut(),
                         preservePreferencePinned(old, row, row.getId()),
                         preservePreferencePinnedAt(old, row, row.getId()),
-                        row.getLabelIdsCsv()));
+                        row.getLabelIdsCsv(),
+                        row.isE2eeEnabled(),
+                        keepNewerLocalActivity
+                                ? old.isLastMessageEncrypted()
+                                : row.isLastMessageEncrypted()));
             }
             return conversationDao.upsertAll(merged);
         }).subscribeOn(Schedulers.io());
@@ -1501,7 +1538,9 @@ public final class ConversationRepository implements AutoCloseable {
                 Boolean.TRUE.equals(dto.getAiOptOut()),
                 pinned,
                 pinnedAtMs,
-                String.join(",", dto.getLabels()));
+                String.join(",", dto.getLabels()),
+                Boolean.TRUE.equals(dto.getE2eeEnabled()),
+                Boolean.TRUE.equals(dto.getLastMessageEncrypted()));
     }
 
     private ConversationEntity toEntity(ConversationDto dto, String fallbackTitle) {
@@ -1576,7 +1615,9 @@ public final class ConversationRepository implements AutoCloseable {
                 row.isAiOptOut(),
                 row.isPinned(),
                 row.getPinnedAt(),
-                row.getLabelIds());
+                row.getLabelIds(),
+                row.isE2eeEnabled(),
+                row.isLastMessageEncrypted());
     }
 
     private ConversationEntity withTitle(ConversationEntity row, String title) {

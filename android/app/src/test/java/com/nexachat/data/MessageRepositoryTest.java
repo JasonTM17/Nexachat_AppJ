@@ -1,10 +1,12 @@
 package com.nexachat.data;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -232,7 +234,7 @@ public class MessageRepositoryTest {
                     row.getPeerReadSeq(), 0, row.getLastMessageDeleted()));
             return Completable.complete();
         });
-        when(conversationDao.updateLastMessage(anyString(), anyLong(), any(), any(), anyLong())).thenAnswer(call -> {
+        when(conversationDao.updateLastMessage(anyString(), anyLong(), any(), any(), anyLong(), anyBoolean())).thenAnswer(call -> {
             String id = call.getArgument(0); ConversationEntity row = conversations.get(id); long seq = call.getArgument(1);
             if (row != null && seq > row.getLastMessageSeq()) {
                 conversations.put(id, conversationLast(row, seq, call.getArgument(2), call.getArgument(3), call.getArgument(4), false));
@@ -636,6 +638,79 @@ public class MessageRepositoryTest {
         String clientId = outbox.keySet().iterator().next();
         events.onNext(new ChatEvent.SendRejected("NOT_MEMBER", clientId));
         assertEquals(OutboxState.FAILED, outbox.get(clientId).getState());
+    }
+
+    @Test public void e2eeNotEnabledRestFailureDoesNotDowngradeToPlaintext() {
+        com.nexachat.core.crypto.E2eeSession e2ee =
+                mock(com.nexachat.core.crypto.E2eeSession.class);
+        when(e2ee.e2eeState(CONVERSATION_ID)).thenReturn(Single.just(
+                new com.nexachat.core.network.dto.E2eeDeviceDtos.ConversationE2eeDto(
+                        false, List.of())));
+        when(conversationDao.updateE2eeEnabled(anyString(), anyBoolean()))
+                .thenReturn(Completable.complete());
+        MessageRepository repo = new MessageRepository(messageApi, messageDao,
+                conversationDao, outboxDao, reactionDao, pinDao, session, tokenStore,
+                sessionEvents, new Moshi.Builder().build(), timer, null, null, null, null,
+                new SessionOperationTracker(), null, null, null, e2ee);
+        try {
+            TestSubscriber<ApiError> errors = repo.getInteractionEvents().test();
+            isOpen.onNext(false);
+            when(session.sendMessage(anyString(), any())).thenReturn(false);
+            java.util.concurrent.atomic.AtomicInteger restCalls =
+                    new java.util.concurrent.atomic.AtomicInteger();
+            when(messageApi.sendMessage(anyString(), any())).thenAnswer(call -> {
+                restCalls.incrementAndGet();
+                return responseCall(Response.error(409,
+                        body("{\"error\":{\"code\":\"E2EE_NOT_ENABLED\"}}")));
+            });
+            await(repo.send(CONVERSATION_ID, "stay encrypted"));
+            String clientId = outbox.keySet().iterator().next();
+            assertEquals(OutboxState.FAILED, outbox.get(clientId).getState());
+            assertEquals(1, restCalls.get());
+            verify(e2ee).e2eeState(CONVERSATION_ID);
+            verify(messageApi, times(1)).sendMessage(anyString(), any());
+            errors.assertValue(error -> error instanceof ApiError.Unknown unknown
+                    && "E2EE_NOT_ENABLED".equals(unknown.getCode()));
+        } finally {
+            repo.dispose();
+        }
+    }
+
+    @Test public void stompStaleDevicesRejectionFallsBackToRestResend() {
+        // The default repository shares the same events subject and would race
+        // this test's instance for the SendRejected handling.
+        repository.dispose();
+        com.nexachat.core.crypto.E2eeSession e2ee =
+                mock(com.nexachat.core.crypto.E2eeSession.class);
+        ConversationEntity conv = mock(ConversationEntity.class);
+        when(conv.isE2eeEnabled()).thenReturn(true);
+        conversations.put(CONVERSATION_ID, conv);
+        when(e2ee.encryptFor(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(Single.just(new com.nexachat.core.crypto.E2eeCrypto.EncryptedMessage(
+                        "e2ee1:ct",
+                        List.of(new com.nexachat.core.crypto.E2eeCrypto.Envelope("d1", "w1")))));
+        MessageRepository repo = new MessageRepository(messageApi, messageDao,
+                conversationDao, outboxDao, reactionDao, pinDao, session, tokenStore,
+                sessionEvents, new Moshi.Builder().build(), timer, null, null, null, null,
+                new SessionOperationTracker(), null, null, null, e2ee);
+        try {
+            java.util.concurrent.atomic.AtomicInteger restCalls =
+                    new java.util.concurrent.atomic.AtomicInteger();
+            when(messageApi.sendMessage(anyString(), any())).thenAnswer(call -> {
+                restCalls.incrementAndGet();
+                SendMessageRequest request = call.getArgument(1);
+                return responseCall(Response.success(
+                        dto("m-9", request.getClientMessageId(), "me-1", 9L)));
+            });
+            await(repo.send(CONVERSATION_ID, "secret text"));
+            String clientId = outbox.keySet().iterator().next();
+            events.onNext(new ChatEvent.SendRejected("E2EE_STALE_DEVICES", clientId));
+            verify(e2ee).invalidateDevices(CONVERSATION_ID);
+            assertEquals(1, restCalls.get());
+            assertNull(outbox.get(clientId));
+        } finally {
+            repo.dispose();
+        }
     }
 
     @Test public void errorQueueRateLimitSchedulesAutomaticRetry() {

@@ -76,10 +76,11 @@ public interface ConversationDao {
     @Query(
             "UPDATE conversations SET lastMessageSeq = :seq, lastMessageContent = :content, "
                     + "lastMessageSenderName = :senderName, lastMessageAt = :at, "
-                    + "lastMessageDeleted = 0 "
+                    + "lastMessageDeleted = 0, lastMessageEncrypted = :encrypted "
                     + "WHERE id = :conversationId AND :seq > lastMessageSeq")
     Completable updateLastMessage(
-            String conversationId, long seq, String content, String senderName, long at);
+            String conversationId, long seq, String content, String senderName, long at,
+            boolean encrypted);
 
     /** An edit refreshes the snippet only while the same message remains last. */
     @Query(
@@ -92,6 +93,10 @@ public interface ConversationDao {
             "UPDATE conversations SET lastMessageContent = NULL, lastMessageDeleted = 1 "
                     + "WHERE id = :conversationId")
     Completable markLastMessageDeleted(String conversationId);
+
+    /** Applies the server E2EE flag pushed on conversation-updated frames. */
+    @Query("UPDATE conversations SET e2eeEnabled = :enabled WHERE id = :conversationId")
+    Completable updateE2eeEnabled(String conversationId, boolean enabled);
 
     @Query("UPDATE conversations SET unreadCount = unreadCount + :delta WHERE id = :conversationId")
     Completable incrementUnread(String conversationId, int delta);

@@ -30,6 +30,8 @@ public final class ConversationInboxDto {
     @Nullable private final Boolean pinned;
     @Nullable private final String pinnedAt;
     @Nullable private final List<String> labels;
+    @Nullable private final Boolean e2eeEnabled;
+    @Nullable private final Boolean lastMessageEncrypted;
 
     public ConversationInboxDto() {
         this(null, null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(), null,
@@ -62,7 +64,7 @@ public final class ConversationInboxDto {
         this(id, type, title, lastMessageSeq, lastMessage, lastMessageContent,
                 lastMessageSenderName, lastMessageAt, unreadCount, lastReadSeq, otherUser,
                 otherUserName, otherUserAvatar, avatarUrl, members, peerPresence, muted,
-                mutedUntil, archived, aiOptOut, pinned, pinnedAt, List.of());
+                mutedUntil, archived, aiOptOut, pinned, pinnedAt, List.of(), null, null);
     }
 
     public ConversationInboxDto(
@@ -89,6 +91,40 @@ public final class ConversationInboxDto {
             @Nullable Boolean pinned,
             @Nullable String pinnedAt,
             @Nullable List<String> labels) {
+        this(id, type, title, lastMessageSeq, lastMessage, lastMessageContent, lastMessageSenderName,
+                lastMessageAt, unreadCount, lastReadSeq, otherUser, otherUserName, otherUserAvatar,
+                avatarUrl, members, peerPresence, muted, mutedUntil, archived, aiOptOut, pinned,
+                pinnedAt, labels, null, null);
+    }
+
+    public ConversationInboxDto(
+            @NonNull String id,
+            @Nullable String type,
+            @Nullable String title,
+            @Nullable Long lastMessageSeq,
+            @Nullable InboxLastMessageDto lastMessage,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable String lastMessageAt,
+            @Nullable Integer unreadCount,
+            @Nullable Long lastReadSeq,
+            @Nullable OtherUserDto otherUser,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            @Nullable List<ConversationMemberDto> members,
+            @Nullable PeerPresenceDto peerPresence,
+            @Nullable Boolean muted,
+            @Nullable String mutedUntil,
+            @Nullable Boolean archived,
+            @Nullable Boolean aiOptOut,
+            @Nullable Boolean pinned,
+            @Nullable String pinnedAt,
+            @Nullable List<String> labels,
+            @Nullable Boolean e2eeEnabled,
+            @Nullable Boolean lastMessageEncrypted) {
+        this.e2eeEnabled = e2eeEnabled;
+        this.lastMessageEncrypted = lastMessageEncrypted;
         this.id = id;
         this.type = type;
         this.title = title;
@@ -314,6 +350,16 @@ public final class ConversationInboxDto {
 
     @NonNull public List<String> getLabels() {
         return labels == null ? List.of() : labels;
+    }
+
+    /** Server E2EE flag on the conversation; absent in legacy payloads. */
+    @Nullable public Boolean getE2eeEnabled() {
+        return e2eeEnabled;
+    }
+
+    /** True when the last-message preview is a ciphertext the server did not read. */
+    @Nullable public Boolean getLastMessageEncrypted() {
+        return lastMessageEncrypted;
     }
 
     @Nullable

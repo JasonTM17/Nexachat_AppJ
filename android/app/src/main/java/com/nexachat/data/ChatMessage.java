@@ -37,6 +37,12 @@ public final class ChatMessage {
     @Nullable private final Long deletedAtEpochMs;
     private final List<MessageMention> mentions;
     private final boolean mentionAll;
+    /** Row arrived as E2EE_V1 ciphertext; content holds the decrypted plaintext. */
+    private final boolean encrypted;
+    /** Decryption failed: content is null and the UI shows a placeholder. */
+    private final boolean decryptFailed;
+    /** The reply/quote target was encrypted; the UI shows a neutral tag. */
+    private final boolean replyToEncrypted;
 
     public ChatMessage(String id, String conversationId, @Nullable Long seq, String senderId,
             @Nullable String senderDisplayName, String type, @Nullable String content,
@@ -58,6 +64,24 @@ public final class ChatMessage {
             List<AttachmentDto> attachments, List<ReactionChip> reactions,
             @Nullable Long editedAtEpochMs, @Nullable Long deletedAtEpochMs,
             List<MessageMention> mentions, boolean mentionAll) {
+        this(id, conversationId, seq, senderId, senderDisplayName, type, content, replyToId,
+                replyToSenderName, replyToSnippet, createdAtEpochMs, clientMessageId, status,
+                mine, attachments, reactions, editedAtEpochMs, deletedAtEpochMs, mentions,
+                mentionAll, false, false, false);
+    }
+
+    public ChatMessage(String id, String conversationId, @Nullable Long seq, String senderId,
+            @Nullable String senderDisplayName, String type, @Nullable String content,
+            @Nullable String replyToId, @Nullable String replyToSenderName,
+            @Nullable String replyToSnippet, long createdAtEpochMs,
+            @Nullable String clientMessageId, DeliveryStatus status, boolean mine,
+            List<AttachmentDto> attachments, List<ReactionChip> reactions,
+            @Nullable Long editedAtEpochMs, @Nullable Long deletedAtEpochMs,
+            List<MessageMention> mentions, boolean mentionAll,
+            boolean encrypted, boolean decryptFailed, boolean replyToEncrypted) {
+        this.encrypted = encrypted;
+        this.decryptFailed = decryptFailed;
+        this.replyToEncrypted = replyToEncrypted;
         this.id = Objects.requireNonNull(id, "id");
         this.conversationId = Objects.requireNonNull(conversationId, "conversationId");
         this.seq = seq;
@@ -102,6 +126,12 @@ public final class ChatMessage {
     public boolean isMentionAll() { return mentionAll; }
     /** True when this message is a tombstone with content and attachments stripped. */
     public boolean isDeleted() { return deletedAtEpochMs != null; }
+    /** Wire format was E2EE_V1; content is already the decrypted plaintext. */
+    public boolean isEncrypted() { return encrypted; }
+    /** Decryption failed for this device; render the localized placeholder. */
+    public boolean isDecryptFailed() { return decryptFailed; }
+    /** The quoted message was encrypted; render the neutral snippet instead. */
+    public boolean isReplyToEncrypted() { return replyToEncrypted; }
 
     @Override public boolean equals(Object other) {
         if (!(other instanceof ChatMessage that)) return false;

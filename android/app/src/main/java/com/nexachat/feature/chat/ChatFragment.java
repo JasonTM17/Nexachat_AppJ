@@ -107,6 +107,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private static final int MENU_ASSIGN_LABEL = 9;
     private static final int MENU_SEARCH = 10;
     private static final int MENU_INFO = 11;
+    private static final int MENU_ENCRYPTION = 12;
     private final CompositeDisposable subscriptions = new CompositeDisposable();
     private FragmentChatBinding binding;
     private ChatViewModel viewModel;
@@ -296,10 +297,16 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
     @SuppressLint("ClickableViewAccessibility")
     private void configureComposer() {
-        binding.composerBar.attachButton.setOnClickListener(v -> ChatInteractionsViews.showAttachmentPicker(
+        binding.composerBar.attachButton.setOnClickListener(v -> {
+            if (state.isE2eeEnabled()) {
+                e2eeMediaUnsupported();
+                return;
+            }
+            ChatInteractionsViews.showAttachmentPicker(
                 requireContext(),
                 () -> visualPicker.launch(new PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo.INSTANCE).build()),
-                () -> documentPicker.launch(new String[]{"*/*"})));
+                () -> documentPicker.launch(new String[]{"*/*"}));
+        });
         binding.composerBar.sendButton.setOnClickListener(v -> {
             if (!binding.composerBar.sendButton.isEnabled()) {
                 return;
@@ -537,7 +544,16 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         });
     }
 
+    private void e2eeMediaUnsupported() {
+        Snackbar.make(binding.getRoot(), R.string.e2ee_composer_unsupported,
+                Snackbar.LENGTH_SHORT).show();
+    }
+
     private void handleAccessibleMicClick() {
+        if (state.isE2eeEnabled()) {
+            e2eeMediaUnsupported();
+            return;
+        }
         if (voiceRecorder != null && voiceRecorder.isRecording()) {
             finishVoiceRecording(false, true);
             announceVoiceRecordingState(R.string.cd_send);
@@ -841,8 +857,24 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 ? composerMentionDraft : editing.getDraft());
         updateMentionPicker(input, binding.composerBar.messageInput.getSelectionStart());
         binding.composerBar.attachButton.setVisibility(editing == null ? View.VISIBLE : View.GONE);
+        applyE2eeChrome();
         boolean hasText = input != null && !input.isBlank();
         updateComposerButtons(hasText || editing != null);
+    }
+
+    /**
+     * Applies the encrypted-conversation chrome: header lock, encrypted-input
+     * hint, and dimmed media buttons (their tap handlers show the unsupported
+     * snackbar instead of launching pickers).
+     */
+    private void applyE2eeChrome() {
+        boolean e2ee = state.isE2eeEnabled();
+        binding.e2eeLock.setVisibility(e2ee ? View.VISIBLE : View.GONE);
+        binding.composerBar.messageInput.setHint(
+                e2ee ? R.string.chat_input_hint_encrypted : R.string.chat_input_hint);
+        float alpha = e2ee ? 0.38f : 1f;
+        binding.composerBar.attachButton.setAlpha(alpha);
+        binding.composerBar.micButton.setAlpha(alpha);
     }
 
     private void applyLargeTypeToolbar() {
@@ -946,7 +978,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         List<ChatMessage> pins = state.getPins();
         if (pins.isEmpty()) { root.setVisibility(View.GONE); return; }
         ChatMessage pin = pins.get(pinIndex % pins.size());
-        ChatInteractionsViews.bindPinnedBanner(root, pin.getContent() == null ? pin.getType() : pin.getContent(), () -> { viewModel.jumpToMessage(pin.getId()); pinIndex++; renderPinned(); });
+        String pinText = pin.isDecryptFailed() || (pin.isEncrypted() && pin.getContent() == null)
+                ? getString(R.string.e2ee_message_placeholder)
+                : (pin.getContent() == null ? pin.getType() : pin.getContent());
+        ChatInteractionsViews.bindPinnedBanner(root, pinText, () -> { viewModel.jumpToMessage(pin.getId()); pinIndex++; renderPinned(); });
     }
 
     private void renderReplyEditBanner() {
@@ -1290,17 +1325,24 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 && conversation.isMutedAt(System.currentTimeMillis());
         boolean archived = conversation != null && conversation.isArchived();
         boolean pinned = state != null && state.isConversationPinned();
+        boolean e2ee = state != null && state.isE2eeEnabled();
         List<CharSequence> labels = new ArrayList<>();
         List<Integer> actions = new ArrayList<>();
-        labels.add(getString(R.string.ask_action));
-        actions.add(MENU_ASK);
+        if (!e2ee) {
+            labels.add(getString(R.string.ask_action));
+            actions.add(MENU_ASK);
+        }
         if (ChatToolbarPolicy.searchAvailable()) {
             labels.add(getString(R.string.cd_search_in_chat));
             actions.add(MENU_SEARCH);
         }
-        if (ChatToolbarPolicy.summaryAvailable()) {
+        if (!e2ee && ChatToolbarPolicy.summaryAvailable()) {
             labels.add(getString(R.string.summary_overflow_action));
             actions.add(MENU_SUMMARY);
+        }
+        if (state != null && !state.isGroup()) {
+            labels.add(getString(R.string.e2ee_menu_title));
+            actions.add(MENU_ENCRYPTION);
         }
         if (state != null && ChatToolbarPolicy.infoAvailable(state.isGroup())) {
             labels.add(getString(R.string.cd_group_info));
@@ -1355,6 +1397,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             LabelDialogFragment.show(requireActivity(), conversationId);
         } else if (action == MENU_SHARED_MEDIA) {
             openArchive();
+        } else if (action == MENU_ENCRYPTION) {
+            openEncryption();
         } else if (action == MENU_GROUP_BOARD) {
             openGroupBoard();
         }
@@ -1387,6 +1431,18 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             if (conversationId.equals(row.getId())) return row;
         }
         return null;
+    }
+
+    private void openEncryption() {
+        if (conversationId.isBlank()) {
+            return;
+        }
+        Bundle args = new Bundle();
+        args.putString(ARG_CONVERSATION_ID, conversationId);
+        args.putString("peerName", state != null ? state.getPeerName() : null);
+        try {
+            NavHostFragment.findNavController(this).navigate(R.id.encryptionFragment, args);
+        } catch (IllegalStateException ignored) { }
     }
 
     private void showConversationSettings() {

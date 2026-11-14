@@ -154,6 +154,33 @@
 
     <!-- Chat -->
     <string name="chat_input_hint">Message</string>
+    <string name="chat_input_hint_encrypted">Encrypted message</string>
+    <string name="e2ee_screen_title">Encryption</string>
+    <string name="e2ee_menu_title">Encryption</string>
+    <string name="e2ee_message_placeholder">Encrypted message</string>
+    <string name="e2ee_message_undecryptable">Can\'t decrypt this message on this device</string>
+    <string name="e2ee_toggle_title">End-to-end encryption</string>
+    <string name="e2ee_toggle_subtitle">Messages can only be read on registered devices.</string>
+    <string name="e2ee_enable_confirm_title">Turn on encryption?</string>
+    <string name="e2ee_enable_confirm_body">AI features turn off for this chat. Media messages are not supported.</string>
+    <string name="e2ee_disable_confirm_title">Turn off encryption?</string>
+    <string name="e2ee_disable_confirm_body">New messages will no longer be end-to-end encrypted.</string>
+    <string name="e2ee_safety_code_title">Verify security code</string>
+    <string name="e2ee_safety_code_body">Compare this code with %1$s on their device, in person or over another channel you trust.</string>
+    <string name="e2ee_devices_title">Devices</string>
+    <string name="e2ee_error_peer_not_ready">%1$s needs to update NexaChat first</string>
+    <string name="e2ee_error_unsupported">Encryption is only available in direct chats.</string>
+    <string name="e2ee_error_limit">The device limit was reached. Remove a device first.</string>
+    <string name="e2ee_error_conflict">This device id is already registered on another account.</string>
+    <string name="e2ee_send_disabled_retry">Encryption was turned off. Review and resend.</string>
+    <string name="e2ee_composer_unsupported">Media isn\'t available in encrypted chats yet</string>
+    <string name="cd_e2ee_lock">End-to-end encrypted</string>
+    <string name="e2ee_device_row">Device %1$s</string>
+    <string name="e2ee_device_row_owner">%1$s · Device %2$s</string>
+    <string name="e2ee_this_device">This device</string>
+    <string name="e2ee_peer_fallback">your contact</string>
+    <string name="e2ee_action_turn_on">Turn on</string>
+    <string name="e2ee_action_turn_off">Turn off</string>
     <string name="chat_typing">typing…</string>
     <string name="msg_seen">Seen</string>
     <string name="chat_offline">Disconnected</string>

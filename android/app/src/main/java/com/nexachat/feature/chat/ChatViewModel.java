@@ -761,11 +761,13 @@ public final class ChatViewModel extends ViewModel {
                 }, this::surfaceStreamFailure));
     }
 
-    /** Server edit affordance: own, delivered, live TEXT messages only. */
+    /** Server edit affordance: own, delivered, live TEXT messages only. Encrypted
+     *  messages cannot be re-keyed per recipient, so the server rejects edits. */
     public boolean canEdit(ChatMessage message) {
         return message.getMine()
                 && ChatBubbleRules.isMessageReplyable(message.getStatus())
                 && !message.isDeleted()
+                && !message.isEncrypted()
                 && MessageDto.TYPE_TEXT.equals(message.getType());
     }
 
@@ -981,6 +983,7 @@ public final class ChatViewModel extends ViewModel {
             }
         }
         if (message == null || !ChatBubbleRules.isMessageReplyable(message.getStatus())
+                || message.isEncrypted()
                 || !ForwardFilter.canForward(message.getType(), message.isDeleted())) {
             return;
         }
@@ -1102,7 +1105,8 @@ public final class ChatViewModel extends ViewModel {
     // ---- reply, reactions, and pins ----
 
     public void setReplyTarget(ChatMessage message) {
-        if (!ChatBubbleRules.isMessageReplyable(message.getStatus()) || message.isDeleted()) {
+        if (!ChatBubbleRules.isMessageReplyable(message.getStatus()) || message.isDeleted()
+                || message.isDecryptFailed()) {
             return;
         }
         String snippet = message.getContent() == null ? message.getType() : message.getContent();
@@ -1534,6 +1538,10 @@ public final class ChatViewModel extends ViewModel {
         @Nullable private final String otherUserId;
         private final boolean showSeen;
         private final boolean conversationPinned;
+        /** Server E2EE flag on this conversation; controls lock UI + send crypto. */
+        private final boolean e2eeEnabled;
+        /** Last-message preview is a ciphertext; only used by the inbox row. */
+        private final boolean lastMessageEncrypted;
 
         public UiState() {
             this("");
@@ -1541,7 +1549,8 @@ public final class ChatViewModel extends ViewModel {
 
         private UiState(String input) {
             this(true, List.of(), List.of(), input, false, null, false, true, true,
-                    false, null, List.of(), null, List.of(), 0L, 0L, null, null, true, false);
+                    false, null, List.of(), null, List.of(), 0L, 0L, null, null, true, false,
+                    false, false);
         }
 
         private UiState(
@@ -1564,7 +1573,11 @@ public final class ChatViewModel extends ViewModel {
                 @Nullable PeerPresence peerPresence,
                 @Nullable String otherUserId,
                 boolean showSeen,
-                boolean conversationPinned) {
+                boolean conversationPinned,
+                boolean e2eeEnabled,
+                boolean lastMessageEncrypted) {
+            this.e2eeEnabled = e2eeEnabled;
+            this.lastMessageEncrypted = lastMessageEncrypted;
             this.loading = loading;
             this.messages = List.copyOf(messages);
             this.sending = List.copyOf(sending);
@@ -1629,6 +1642,8 @@ public final class ChatViewModel extends ViewModel {
         @Nullable public String getOtherUserId() { return otherUserId; }
         public boolean isShowSeen() { return showSeen; }
         public boolean isConversationPinned() { return conversationPinned; }
+        public boolean isE2eeEnabled() { return e2eeEnabled; }
+        public boolean isLastMessageEncrypted() { return lastMessageEncrypted; }
 
         public boolean isPinned(String messageId) {
             for (ChatMessage pin : pins) {
@@ -1646,7 +1661,7 @@ public final class ChatViewModel extends ViewModel {
             return copy(loading, nextMessages, pending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
         }
 
         private UiState withConversation(ConversationSummary conversation) {
@@ -1660,42 +1675,44 @@ public final class ChatViewModel extends ViewModel {
                     conversation.getPeerPresence(),
                     blankToNull(conversation.getOtherUserId()),
                     showSeen,
-                    conversation.isPinned());
+                    conversation.isPinned(),
+                    conversation.isE2eeEnabled(),
+                    conversation.isLastMessageEncrypted());
         }
 
         private UiState withInput(String nextInput) {
             return copy(loading, messages, sending, nextInput, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
         }
 
         private UiState withPeerTyping(boolean nextPeerTyping) {
             return copy(loading, messages, sending, input, nextPeerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
         }
 
         private UiState withConnected(boolean nextConnected) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, nextConnected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
         }
 
         private UiState withHasMore(boolean nextHasMore) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, nextHasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
         }
 
         private UiState withLoading(boolean nextLoading) {
             return copy(nextLoading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
         }
 
         private UiState withError(@Nullable ApiError nextError) {
@@ -1716,7 +1733,7 @@ public final class ChatViewModel extends ViewModel {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, nextChatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
         }
 
         private UiState withoutErrorIf(
@@ -1735,28 +1752,28 @@ public final class ChatViewModel extends ViewModel {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pending, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
         }
 
         private UiState withReplyTarget(@Nullable ReplyTarget target) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, target, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
         }
 
         private UiState withPins(List<ChatMessage> nextPins) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, nextPins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
         }
 
         private UiState withShowSeen(boolean nextShowSeen) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    nextShowSeen, conversationPinned);
+                    nextShowSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
         }
 
         private static UiState copy(
@@ -1779,11 +1796,13 @@ public final class ChatViewModel extends ViewModel {
                 @Nullable PeerPresence peerPresence,
                 @Nullable String otherUserId,
                 boolean showSeen,
-                boolean conversationPinned) {
+                boolean conversationPinned,
+                boolean e2eeEnabled,
+                boolean lastMessageEncrypted) {
             return new UiState(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
         }
 
         @Nullable

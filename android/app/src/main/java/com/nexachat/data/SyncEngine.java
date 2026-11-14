@@ -3,6 +3,8 @@ package com.nexachat.data;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
+import com.nexachat.core.crypto.E2eeMessageMapping;
+import com.nexachat.core.crypto.E2eeSession;
 import com.nexachat.core.database.AppDatabase;
 import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.ConversationEntity;
@@ -66,6 +68,7 @@ public final class SyncEngine {
     private final Moshi moshi;
     private final TokenRefresher tokenRefresher;
     private final SessionOperationTracker operationTracker;
+    @Nullable private final E2eeSession e2eeSession;
     private final JsonAdapter<List<AttachmentDto>> attachmentsAdapter;
     private final AtomicBoolean hasPendingContinuation = new AtomicBoolean();
     /** Server time of the last successful sync, echoed back as {@code since} so edits/deletes/reactions delta-sync. */
@@ -77,7 +80,7 @@ public final class SyncEngine {
     private final SyncPageStore pageStore;
     @VisibleForTesting Runnable onFlightJoined = () -> {};
 
-    @Inject
+    /** Test seam without E2EE; production wiring uses the injected constructor. */
     public SyncEngine(
             AppDatabase appDatabase,
             MessageApi messageApi,
@@ -88,6 +91,23 @@ public final class SyncEngine {
             Moshi moshi,
             TokenRefresher tokenRefresher,
             SessionOperationTracker operationTracker) {
+        this(appDatabase, messageApi, messageDao, conversationDao, reactionDao, tokenStore,
+                moshi, tokenRefresher, operationTracker, null);
+    }
+
+    @Inject
+    public SyncEngine(
+            AppDatabase appDatabase,
+            MessageApi messageApi,
+            MessageDao messageDao,
+            ConversationDao conversationDao,
+            ReactionDao reactionDao,
+            TokenStore tokenStore,
+            Moshi moshi,
+            TokenRefresher tokenRefresher,
+            SessionOperationTracker operationTracker,
+            @Nullable E2eeSession e2eeSession) {
+        this.e2eeSession = e2eeSession;
         this.appDatabase = appDatabase;
         this.messageApi = messageApi;
         this.messageDao = messageDao;
@@ -98,7 +118,8 @@ public final class SyncEngine {
         this.tokenRefresher = tokenRefresher;
         this.operationTracker = operationTracker;
         this.attachmentsAdapter = moshi.adapter(Types.newParameterizedType(List.class, AttachmentDto.class));
-        this.pageStore = new SyncPageStore(appDatabase, tokenRefresher, tokenStore, moshi);
+        this.pageStore = new SyncPageStore(appDatabase, tokenRefresher, tokenStore, moshi,
+                e2eeSession);
     }
 
     /** Compatibility constructor for existing package-local sync tests. */
@@ -112,7 +133,7 @@ public final class SyncEngine {
             TokenStore tokenStore,
             Moshi moshi) {
         this(appDatabase, messageApi, messageDao, conversationDao, reactionDao, tokenStore, moshi,
-                testTokenRefresher(tokenStore), new SessionOperationTracker());
+                testTokenRefresher(tokenStore), new SessionOperationTracker(), null);
     }
 
     private static TokenRefresher testTokenRefresher(TokenStore tokenStore) {
@@ -656,7 +677,7 @@ public final class SyncEngine {
                                         conversationId, last.getSeq(),
                                         last.getContent() != null ? last.getContent() : last.getType(),
                                         last.getSenderDisplayName() != null ? last.getSenderDisplayName() : "",
-                                        last.getCreatedAt()
+                                        last.getCreatedAt(), last.isEncrypted()
                                 ).blockingAwait();
                             }
                             if (incoming > 0) {
@@ -774,6 +795,10 @@ public final class SyncEngine {
                 attachmentsJson = null;
             }
         }
+        E2eeMessageMapping.Resolved resolved = deleted
+                ? new E2eeMessageMapping.Resolved("", false, false)
+                : E2eeMessageMapping.resolve(dto, conversationId, null, e2eeSession);
+        boolean replyToEncrypted = E2eeMessageMapping.replyTargetEncrypted(dto.getReplyTo());
         return new MessageEntity(
                 dto.getId(),
                 conversationId,
@@ -781,17 +806,20 @@ public final class SyncEngine {
                 Optional.ofNullable(dto.getResolvedSenderId()).orElse(""),
                 dto.getResolvedSenderName(),
                 dto.getResolvedType(),
-                deleted ? "" : dto.getContent(),
+                deleted ? "" : resolved.content(),
                 dto.getClientMessageId(),
                 dto.getResolvedReplyToId(),
                 dto.getReplyTo() == null ? null : dto.getReplyTo().getResolvedSenderName(),
-                dto.getReplyTo() == null ? null : dto.getReplyTo().getResolvedSnippet(),
+                dto.getReplyTo() == null || replyToEncrypted ? null : dto.getReplyTo().getResolvedSnippet(),
                 TimeAndJwt.isoToEpochMs(dto.getCreatedAt()),
                 attachmentsJson,
                 TimeAndJwt.isoToEpochMsOrNull(dto.getEditedAt()),
                   TimeAndJwt.isoToEpochMsOrNull(dto.getDeletedAt()),
                   deleted ? "[]" : MessageMentionCodec.encode(dto.getMentions()),
-                  !deleted && dto.isMentionAll()
+                  !deleted && dto.isMentionAll(),
+                  dto.getChangeVersion() == null ? 0L : dto.getChangeVersion(),
+                  dto.getGeneration() == null ? 0L : dto.getGeneration(),
+                  resolved.encrypted(), resolved.decryptFailed(), replyToEncrypted
         );
     }
 

@@ -53,6 +53,10 @@ public final class ConversationSummary {
     @Nullable private final Long pinnedAtEpochMs;
     /** Caller-owned labels assigned to this conversation. */
     private final List<String> labelIds;
+    /** Server flag: E2EE enabled on this direct conversation. */
+    private final boolean e2eeEnabled;
+    /** The last-message preview is ciphertext; the inbox shows a neutral tag. */
+    private final boolean lastMessageEncrypted;
 
     public ConversationSummary(
             String id,
@@ -82,7 +86,7 @@ public final class ConversationSummary {
                 lastMessageSeq, unreadCount, 0L, otherUserName, otherUserAvatar, avatarUrl,
                 peerReadSeq, peerDeliveredSeq, myRole, otherUserId, lastMessageDeleted,
                 peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut, pinned,
-                pinnedAtEpochMs, List.of());
+                pinnedAtEpochMs, List.of(), false, false);
     }
 
     public ConversationSummary(
@@ -114,7 +118,7 @@ public final class ConversationSummary {
                 lastMessageSeq, unreadCount, 0L, otherUserName, otherUserAvatar, avatarUrl,
                 peerReadSeq, peerDeliveredSeq, myRole, otherUserId, lastMessageDeleted,
                 peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut, pinned,
-                pinnedAtEpochMs, labelIds);
+                pinnedAtEpochMs, labelIds, false, false);
     }
 
     public ConversationSummary(
@@ -142,7 +146,11 @@ public final class ConversationSummary {
             boolean aiOptOut,
             boolean pinned,
             @Nullable Long pinnedAtEpochMs,
-            List<String> labelIds) {
+            List<String> labelIds,
+            boolean e2eeEnabled,
+            boolean lastMessageEncrypted) {
+        this.e2eeEnabled = e2eeEnabled;
+        this.lastMessageEncrypted = lastMessageEncrypted;
         this.id = Objects.requireNonNull(id, "id");
         this.type = Objects.requireNonNull(type, "type");
         this.title = title;
@@ -321,6 +329,8 @@ public final class ConversationSummary {
     public boolean isPinned() { return pinned; }
     @Nullable public Long getPinnedAtEpochMs() { return pinnedAtEpochMs; }
     public List<String> getLabelIds() { return labelIds; }
+    public boolean isE2eeEnabled() { return e2eeEnabled; }
+    public boolean isLastMessageEncrypted() { return lastMessageEncrypted; }
 
     /**
      * A timed mute expires lazily: the stored flag stays true while the expiry

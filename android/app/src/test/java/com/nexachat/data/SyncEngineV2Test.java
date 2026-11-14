@@ -91,7 +91,7 @@ public final class SyncEngineV2Test {
         when(inbox.byId(anyString())).thenAnswer(i -> Maybe.fromCallable(() ->
                 conversations.stream().anyMatch(c -> c.getConversationId().equals(i.getArgument(0)))
                         ? conversation(i.getArgument(0)) : null));
-        when(inbox.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong()))
+        when(inbox.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong(), anyBoolean()))
                 .thenReturn(Completable.complete());
         when(inbox.updateLastMessageContent(anyString(), anyLong(), anyString()))
                 .thenReturn(Completable.complete());

@@ -14,6 +14,8 @@ public final class SendMessageRequest {
     @Nullable private final List<String> attachmentIds;
     @Nullable private final List<MessageMention> mentions;
     private final boolean mentionAll;
+    @Nullable private final String encryption;
+    @Nullable private final List<E2eeEnvelopeDto> e2eeEnvelopes;
 
     public SendMessageRequest() {
         this(null, MessageDto.TYPE_TEXT, null, null, List.of(), List.of(), false);
@@ -27,6 +29,15 @@ public final class SendMessageRequest {
             @Nullable String content, @Nullable String replyToId,
             @Nullable List<String> attachmentIds, @Nullable List<MessageMention> mentions,
             boolean mentionAll) {
+        this(clientMessageId, type, content, replyToId, attachmentIds, mentions, mentionAll,
+                null, null);
+    }
+
+    public SendMessageRequest(@NonNull String clientMessageId, @NonNull String type,
+            @Nullable String content, @Nullable String replyToId,
+            @Nullable List<String> attachmentIds, @Nullable List<MessageMention> mentions,
+            boolean mentionAll, @Nullable String encryption,
+            @Nullable List<E2eeEnvelopeDto> e2eeEnvelopes) {
         this.clientMessageId = clientMessageId;
         this.type = type;
         this.content = content;
@@ -34,6 +45,8 @@ public final class SendMessageRequest {
         this.attachmentIds = attachmentIds == null ? List.of() : attachmentIds;
         this.mentions = mentions == null ? List.of() : List.copyOf(mentions);
         this.mentionAll = mentionAll;
+        this.encryption = encryption;
+        this.e2eeEnvelopes = e2eeEnvelopes == null ? null : List.copyOf(e2eeEnvelopes);
     }
 
     @NonNull public String getClientMessageId() {
@@ -62,6 +75,23 @@ public final class SendMessageRequest {
 
     public boolean isMentionAll() { return mentionAll; }
     public boolean getMentionAll() { return mentionAll; }
+
+    @Nullable public String getEncryption() { return encryption; }
+
+    @Nullable public List<E2eeEnvelopeDto> getE2eeEnvelopes() { return e2eeEnvelopes; }
+
+    /** Copy with E2EE wire fields attached; used by the encrypted send path. */
+    @NonNull public SendMessageRequest withEncryption(@Nullable String nextEncryption,
+            @Nullable List<E2eeEnvelopeDto> nextEnvelopes) {
+        return new SendMessageRequest(clientMessageId, type, content, replyToId,
+                attachmentIds, mentions, mentionAll, nextEncryption, nextEnvelopes);
+    }
+
+    /** Copy with alternate wire content (e.g. ciphertext), preserving e2ee fields. */
+    @NonNull public SendMessageRequest withContent(@Nullable String nextContent) {
+        return new SendMessageRequest(clientMessageId, type, nextContent, replyToId,
+                attachmentIds, mentions, mentionAll, encryption, e2eeEnvelopes);
+    }
 
     @Override
     public boolean equals(Object other) {

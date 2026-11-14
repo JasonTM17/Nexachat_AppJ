@@ -11,18 +11,24 @@ public final class ReplyRefDto {
     @Nullable private final String senderDisplayName;
     @Nullable private final String snippet;
     @Nullable private final String content;
+    @Nullable private final Boolean encrypted;
 
     public ReplyRefDto() {
         this(null, null, null, null, null, null);
     }
 
     public ReplyRefDto(@Nullable String id, @Nullable String senderId, @Nullable String senderName, @Nullable String senderDisplayName, @Nullable String snippet, @Nullable String content) {
+        this(id, senderId, senderName, senderDisplayName, snippet, content, null);
+    }
+
+    public ReplyRefDto(@Nullable String id, @Nullable String senderId, @Nullable String senderName, @Nullable String senderDisplayName, @Nullable String snippet, @Nullable String content, @Nullable Boolean encrypted) {
         this.id = id;
         this.senderId = senderId;
         this.senderName = senderName;
         this.senderDisplayName = senderDisplayName;
         this.snippet = snippet;
         this.content = content;
+        this.encrypted = encrypted;
     }
 
     public ReplyRefDto(String id, String senderName, String snippet) {
@@ -51,6 +57,11 @@ public final class ReplyRefDto {
 
     @Nullable public String getContent() {
         return content;
+    }
+
+    /** True when the quoted row was encrypted, so the client shows a placeholder. */
+    @Nullable public Boolean getEncrypted() {
+        return encrypted;
     }
 
 

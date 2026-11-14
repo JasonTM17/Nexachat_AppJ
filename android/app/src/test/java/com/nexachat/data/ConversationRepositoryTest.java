@@ -349,6 +349,27 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
+    public void refreshInboxPersistsE2eeFlagsFromTheServerPayload() throws Exception {
+        buildRepository();
+        dao().upsert(conversation("conv-e2ee")).blockingAwait();
+        String createdAt = Instant.ofEpochSecond(50).toString();
+        InboxLastMessageDto lastMessage = new InboxLastMessageDto(
+                50L, "TEXT", null, "message-50", "sender", "Sender", "Sender",
+                createdAt, null);
+        ConversationInboxDto dto = new ConversationInboxDto(
+                "conv-e2ee", "DIRECT", "Binh", 50L, lastMessage, null, null, createdAt, 0, 0L,
+                null, null, null, null, List.of(member(MY_ID, "MEMBER")), null,
+                null, null, null, null, null, null, List.of(), Boolean.TRUE, Boolean.TRUE);
+        stubInbox(List.of(dto));
+
+        repository.refreshInbox().blockingGet();
+
+        ConversationEntity row = dao().rows.get("conv-e2ee");
+        assertTrue(row.isE2eeEnabled());
+        assertTrue(row.isLastMessageEncrypted());
+    }
+
+    @Test
     public void refreshInboxKeepsAGroupJustCreatedWhenThePayloadPredatesIt() throws Exception {
         buildRepository();
         when(groupApi.createGroup(any())).thenReturn(
@@ -1528,7 +1549,8 @@ public final class ConversationRepositoryTest {
 
         @Override
         public Completable updateLastMessage(
-                String conversationId, long seq, String content, String senderName, long at) {
+                String conversationId, long seq, String content, String senderName, long at,
+                boolean encrypted) {
             return Completable.fromAction(() -> {
                 ConversationEntity row = rows.get(conversationId);
                 if (row != null && seq > row.getLastMessageSeq()) {
@@ -1536,6 +1558,11 @@ public final class ConversationRepositoryTest {
                 }
                 publish();
             });
+        }
+
+        @Override
+        public Completable updateE2eeEnabled(String conversationId, boolean enabled) {
+            return Completable.complete();
         }
 
         @Override
