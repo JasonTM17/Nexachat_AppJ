@@ -9,8 +9,7 @@
     android:minHeight="@dimen/inbox_row_min_height"
     android:paddingStart="@dimen/space_md"
     android:paddingTop="@dimen/space_sm"
-    android:paddingEnd="@dimen/space_md"
-    android:paddingBottom="@dimen/space_sm">
+    android:paddingEnd="@dimen/space_md">
 
     <com.nexachat.core.ui.components.AvatarView
         android:id="@+id/avatar"
@@ -117,21 +116,29 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
-        android:layout_marginBottom="4dp"
         android:visibility="gone"
         app:chipSpacingHorizontal="4dp"
         app:chipSpacingVertical="2dp"
-        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="@id/title"
         app:layout_constraintTop_toBottomOf="@id/preview"
         app:singleLine="false" />
 
+    <!-- The divider sits one gap below the tallest of avatar, preview and chips, at any font scale. -->
+    <androidx.constraintlayout.widget.Barrier
+        android:id="@+id/rowContentBottom"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:barrierDirection="bottom"
+        app:constraint_referenced_ids="avatar,preview,labelChips,trailingBadges" />
+
     <View
         android:layout_width="0dp"
         android:layout_height="1dp"
+        android:layout_marginTop="@dimen/space_sm"
         android:background="?attr/colorOutlineVariant"
         app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/rowContentBottom"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="@id/title" />
 </androidx.constraintlayout.widget.ConstraintLayout>
