@@ -258,14 +258,10 @@ public final class RealtimeSessionEpochAdvanceTest {
         });
         epochAdvance.start();
         boolean advanceStarted = epochAdvanceStarted.await(5L, TimeUnit.SECONDS);
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5L);
-        while (advanceStarted && epochAdvance.isAlive()
-                && epochAdvance.getState() != Thread.State.BLOCKED
-                && System.nanoTime() < deadline) {
-            Thread.yield();
-        }
-        boolean epochAdvanceBlockedByPublication = advanceStarted
-                && epochAdvance.getState() == Thread.State.BLOCKED;
+        // The state observer is still parked here. Finishing within the timeout proves the epoch
+        // advance did not wait for it, without depending on thread scheduling states.
+        boolean epochAdvanceFinishedWhileObserverBlocked = advanceStarted
+                && epochAdvanceFinished.await(5L, TimeUnit.SECONDS);
         boolean oldEpochCurrentDuringPublication = refresher.isSessionCurrent(1L);
 
         releaseConnectingState.countDown();
@@ -274,8 +270,8 @@ public final class RealtimeSessionEpochAdvanceTest {
         assertFalse("token read publication should finish", tokenRead.isAlive());
         assertFalse("epoch advance should finish", epochAdvance.isAlive());
         assertTrue("Connecting state should reach the observer", connectingStateObserved);
-        assertFalse("session epoch advancement must not wait for a state observer",
-                epochAdvanceBlockedByPublication);
+        assertTrue("session epoch advancement must not wait for a state observer",
+                epochAdvanceFinishedWhileObserverBlocked);
         assertFalse("epoch should advance before the blocked observer is released",
                 oldEpochCurrentDuringPublication);
         assertNull(observerFailure.get());
