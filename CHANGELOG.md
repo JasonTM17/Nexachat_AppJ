@@ -6,6 +6,14 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Android: failed Inbox refreshes retain cached threads and show a visible Retry.
+  Empty filters show recovery instead of an unconfirmed empty state.
+- Android: Inbox loading continues while a server refresh is in flight, including
+  when cached rows change.
+- Android: rapid group-header taps open one group-details screen.
+- Android: the decorative recording indicator is excluded from accessibility focus.
+
 ## [1.2.7] - 2026-11-14
 
 Realtime liveness and server authorization release. No migration, no new
