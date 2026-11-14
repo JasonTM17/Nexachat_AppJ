@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
@@ -27,6 +28,7 @@ import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
 import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.subjects.MaybeSubject;
 import io.reactivex.rxjava3.observers.TestObserver;
 import io.reactivex.rxjava3.schedulers.TestScheduler;
 import java.io.IOException;
@@ -45,6 +47,7 @@ import okhttp3.MediaType;
 import okhttp3.ResponseBody;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.InOrder;
 import retrofit2.Call;
 import retrofit2.Response;
 
@@ -593,16 +596,17 @@ public final class E2eeSessionTest {
 
         TestObserver<Void> first = session.onSessionAvailable().test();
         assertTrue(entered.await(5, TimeUnit.SECONDS));
-        // A same-user session refresh is not an account boundary: the older
-        // in-flight registration keeps its right to finish.
-        session.onSessionAvailable().test().awaitDone(5, TimeUnit.SECONDS)
-                .assertComplete();
+        // A same-user session refresh is not an account boundary: it joins the
+        // shared in-flight registration instead of invalidating it or
+        // re-registering.
+        TestObserver<Void> second = session.onSessionAvailable().test();
         release.countDown();
+        second.awaitDone(5, TimeUnit.SECONDS).assertComplete();
         first.awaitDone(5, TimeUnit.SECONDS).assertComplete();
         // Once confirmed, another same-user boundary stays memoized.
         session.onSessionAvailable().test().awaitDone(5, TimeUnit.SECONDS)
                 .assertComplete();
-        verify(api, times(2)).registerDevice(eq("dev-1"), any());
+        verify(api, times(1)).registerDevice(eq("dev-1"), any());
     }
 
     @Test
@@ -767,6 +771,207 @@ public final class E2eeSessionTest {
         when(call.execute()).thenReturn(Response.error(status, ResponseBody.create(
                 MediaType.get("application/json"), "{}")));
         return call;
+    }
+
+
+    // ---- Capture-at-subscription + single-flight registration ----
+
+    @Test
+    public void delayedTokensAfterAccountSwitchAreDead() throws Exception {
+        AtomicReference<String> current = new AtomicReference<>("uA");
+        when(keyStore.currentUserId()).thenAnswer(inv -> current.get());
+        doAnswer(inv -> {
+            current.set(inv.getArgument(0));
+            return null;
+        }).when(keyStore).rememberCurrentUser(anyString());
+        doAnswer(inv -> {
+            current.set(null);
+            return null;
+        }).when(keyStore).forgetCurrentUser();
+        when(keyStore.identity("uA"))
+                .thenReturn(new Identity("dev-a", new byte[32], new byte[32]));
+        when(keyStore.identity("uB"))
+                .thenReturn(new Identity("dev-b", new byte[32], new byte[32]));
+        MaybeSubject<Tokens> delayed = MaybeSubject.create();
+        when(tokenStore.readTokens())
+                .thenReturn(delayed, Maybe.just(tokensFor("uB")));
+        Call<DeviceDto> ok = okCall();
+        when(api.registerDevice(eq("dev-a"), any())).thenReturn(ok);
+        when(api.registerDevice(eq("dev-b"), any())).thenReturn(ok);
+
+        TestObserver<Void> stale = session.onSessionAvailable().test();
+        session.onSessionAvailable().test().awaitDone(5, TimeUnit.SECONDS)
+                .assertComplete();
+        delayed.onSuccess(tokensFor("uA"));
+        stale.awaitDone(5, TimeUnit.SECONDS).assertError(
+                error -> error instanceof E2eeSession.E2eeException);
+        // The stale tokens never re-remembered the old account nor registered.
+        verify(keyStore, never()).rememberCurrentUser("uA");
+        verify(api, times(1)).registerDevice(anyString(), any());
+        assertEquals("uB", current.get());
+    }
+
+    @Test
+    public void delayedTokensAfterWipeCannotStartEncrypt() throws Exception {
+        when(keyStore.identity("u1"))
+                .thenReturn(new Identity("dev-1", new byte[32], new byte[32]));
+        MaybeSubject<Tokens> delayed = MaybeSubject.create();
+        when(tokenStore.readTokens()).thenReturn(delayed);
+        Call<DeviceDto> ok = okCall();
+        when(api.registerDevice(eq("dev-1"), any())).thenReturn(ok);
+
+        TestObserver<EncryptedMessage> observer =
+                session.encryptFor("c1", "hi", "u1", "m1").test();
+        session.wipeLocal("u1");
+        delayed.onSuccess(tokensFor("u1"));
+        observer.awaitDone(5, TimeUnit.SECONDS).assertError(error -> {
+            System.err.println("WIPE-ENCRYPT-ERR=" + error);
+            return error instanceof E2eeSession.E2eeException;
+        });
+        verify(api, never()).registerDevice(anyString(), any());
+        verify(keyStore, never()).rememberCurrentUser(anyString());
+    }
+
+    @Test
+    public void concurrentRegistrationsShareOneFlightAndPair() throws Exception {
+        E2eeCrypto.KeyPair oldPair = E2eeCrypto.generateDeviceKeyPair();
+        E2eeCrypto.KeyPair peerPair = E2eeCrypto.generateDeviceKeyPair();
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(tokensFor("u1")));
+        // Stateful keystore fake so regeneration clears and re-mints for real.
+        AtomicReference<Identity> stored = new AtomicReference<>(
+                new Identity("dev-1", oldPair.publicKey(), oldPair.privateKey()));
+        when(keyStore.identity("u1")).thenAnswer(inv -> stored.get());
+        doAnswer(inv -> {
+            stored.set(null);
+            return null;
+        }).when(keyStore).clear("u1");
+        doAnswer(inv -> {
+            String deviceId = inv.getArgument(1);
+            E2eeCrypto.KeyPair pair = inv.getArgument(2);
+            stored.set(new Identity(deviceId, pair.publicKey(), pair.privateKey()));
+            return null;
+        }).when(keyStore).put(eq("u1"), anyString(), any());
+        when(keyStore.deviceId("u1")).thenReturn("dev-new");
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Call<DeviceDto> conflict = mock(Call.class);
+        when(conflict.execute()).thenAnswer(inv -> {
+            entered.countDown();
+            release.await(5, TimeUnit.SECONDS);
+            return Response.error(409, ResponseBody.create(
+                    MediaType.get("application/json"),
+                    "{\"error\":{\"code\":\"E2EE_DEVICE_CONFLICT\"}}"));
+        });
+        Call<DeviceDto> freshOk = okCall();
+        when(api.registerDevice(eq("dev-1"), any())).thenReturn(conflict);
+        when(api.registerDevice(eq("dev-new"), any())).thenReturn(freshOk);
+        Call<ConversationE2eeDto> stateCall = mock(Call.class);
+        when(stateCall.execute()).thenAnswer(inv -> Response.success(
+                new ConversationE2eeDto(true, List.of(
+                        new MemberDeviceDto("u1", "dev-new",
+                                E2eeCrypto.b64url(stored.get().getPublicKey())),
+                        new MemberDeviceDto("u2", "dev-peer",
+                                E2eeCrypto.b64url(peerPair.publicKey()))))));
+        when(api.getE2ee("c1")).thenReturn(stateCall);
+
+        TestObserver<EncryptedMessage> first =
+                session.encryptFor("c1", "m1", "u1", "id-1").test();
+        TestObserver<EncryptedMessage> second =
+                session.encryptFor("c1", "m2", "u1", "id-2").test();
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+        release.countDown();
+        first.awaitDone(5, TimeUnit.SECONDS).assertValueCount(1);
+        second.awaitDone(5, TimeUnit.SECONDS).assertValueCount(1);
+        // One logical registration: one original call, one rotation, one fresh call.
+        verify(api, times(1)).registerDevice(eq("dev-1"), any());
+        verify(keyStore, times(1)).deviceId("u1");
+        verify(api, times(1)).registerDevice(eq("dev-new"), any());
+        // Both ciphertexts unwrap with the single stored-down pair.
+        E2eeCrypto crypto = new E2eeCrypto();
+        EncryptedMessage m1 = first.values().get(0);
+        EncryptedMessage m2 = second.values().get(0);
+        assertEquals("m1", crypto.decrypt(m1.content(), m1.envelopes(),
+                stored.get().getDeviceId(), stored.get().getPrivateKey(),
+                "c1", "u1", "id-1").orElseThrow(AssertionError::new));
+        assertEquals("m2", crypto.decrypt(m2.content(), m2.envelopes(),
+                stored.get().getDeviceId(), stored.get().getPrivateKey(),
+                "c1", "u1", "id-2").orElseThrow(AssertionError::new));
+    }
+
+    @Test
+    public void delayedRevokeDoesNotClearFreshIdentity() throws Exception {
+        AtomicReference<String> current = new AtomicReference<>("uA");
+        when(keyStore.currentUserId()).thenAnswer(inv -> current.get());
+        doAnswer(inv -> {
+            current.set(inv.getArgument(0));
+            return null;
+        }).when(keyStore).rememberCurrentUser(anyString());
+        doAnswer(inv -> {
+            current.set(null);
+            return null;
+        }).when(keyStore).forgetCurrentUser();
+        Identity oldIdentity = new Identity("dev-a", new byte[32], new byte[32]);
+        when(keyStore.identity("uA")).thenReturn(oldIdentity, (Identity) null);
+        when(keyStore.deviceId("uA")).thenReturn("dev-a2");
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(tokensFor("uA")));
+        Call<DeviceDto> ok = okCall();
+        when(api.registerDevice(eq("dev-a2"), any())).thenReturn(ok);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Call<Void> revokeCall = mock(Call.class);
+        when(revokeCall.execute()).thenAnswer(inv -> {
+            entered.countDown();
+            release.await(5, TimeUnit.SECONDS);
+            return Response.success(null);
+        });
+        when(api.revokeDevice("dev-a")).thenReturn(revokeCall);
+
+        TestObserver<Void> revoke = session.revokeCurrentDevice("uA").test();
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+        // Same user signs back in while the DELETE is still in flight: a
+        // fresh identity is minted and registered under the new boundary.
+        session.onSessionAvailable().test().awaitDone(5, TimeUnit.SECONDS)
+                .assertComplete();
+        release.countDown();
+        revoke.awaitDone(5, TimeUnit.SECONDS).assertComplete();
+        // The only local clear ran at revoke start, before the fresh mint;
+        // the late DELETE performs no local mutation.
+        InOrder order = inOrder(keyStore);
+        order.verify(keyStore).clear("uA");
+        order.verify(keyStore).deviceId("uA");
+        verify(keyStore, times(1)).clear("uA");
+        assertEquals("uA", current.get());
+    }
+
+    @Test
+    public void wipeLocalForOtherAccountPreservesCurrentSession() throws Exception {
+        AtomicReference<String> current = new AtomicReference<>("uB");
+        when(keyStore.currentUserId()).thenAnswer(inv -> current.get());
+        doAnswer(inv -> {
+            current.set(inv.getArgument(0));
+            return null;
+        }).when(keyStore).rememberCurrentUser(anyString());
+        doAnswer(inv -> {
+            current.set(null);
+            return null;
+        }).when(keyStore).forgetCurrentUser();
+        when(keyStore.identity("uB"))
+                .thenReturn(new Identity("dev-b", new byte[32], new byte[32]));
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(tokensFor("uB")));
+        Call<DeviceDto> ok = okCall();
+        when(api.registerDevice(eq("dev-b"), any())).thenReturn(ok);
+        session.onSessionAvailable().test().awaitDone(5, TimeUnit.SECONDS)
+                .assertComplete();
+
+        session.wipeLocal("uA");
+        verify(keyStore).clear("uA");
+        verify(keyStore, never()).clear("uB");
+        verify(keyStore, never()).forgetCurrentUser();
+        assertEquals("uB", current.get());
+        // B's readiness survives: a same-user boundary stays memoized.
+        session.onSessionAvailable().test().awaitDone(5, TimeUnit.SECONDS)
+                .assertComplete();
+        verify(api, times(1)).registerDevice(anyString(), any());
     }
 
     // ---- helpers ----
