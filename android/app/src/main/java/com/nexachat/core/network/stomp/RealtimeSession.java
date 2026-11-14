@@ -205,10 +205,7 @@ public final class RealtimeSession {
         presenceAdapter = moshi.adapter(PresenceEventDto.class);
         conversationUpdateAdapter = moshi.adapter(ConversationUpdateDto.class);
 
-        wantedSubscriptions.add(USER_INBOX_DESTINATION);
-        wantedSubscriptions.add(USER_ERRORS_DESTINATION);
-        // Presence must be subscribed before the first peer event can land.
-        wantedSubscriptions.add(USER_PRESENCE_DESTINATION);
+        addUserQueueSubscriptions();
 
         subscriptions.add(tokenStore.getHasValidRefresh()
                 .distinctUntilChanged()
@@ -228,6 +225,13 @@ public final class RealtimeSession {
                     }
                 }));
         subscriptions.add(stompClient.getFrames().subscribe(this::dispatch));
+    }
+
+    private void addUserQueueSubscriptions() {
+        wantedSubscriptions.add(USER_INBOX_DESTINATION);
+        wantedSubscriptions.add(USER_ERRORS_DESTINATION);
+        // Presence must be subscribed before the first peer event can land.
+        wantedSubscriptions.add(USER_PRESENCE_DESTINATION);
     }
 
     @NonNull
@@ -368,7 +372,10 @@ public final class RealtimeSession {
             attemptActive = false;
         }
         authRecovery.set(Disposable.empty());
+        // Per-conversation topics go with the account, but the user's own queues belong to every
+        // later session in this process, so a new sign-in must find them still wanted.
         wantedSubscriptions.clear();
+        addUserQueueSubscriptions();
         connection.set(Disposable.empty());
         parkedWake.set(Disposable.empty());
         stompClient.close();
