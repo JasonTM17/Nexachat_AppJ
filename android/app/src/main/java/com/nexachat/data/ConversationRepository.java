@@ -1471,7 +1471,11 @@ public final class ConversationRepository implements AutoCloseable {
                         row.isAiOptOut(),
                         preservePreferencePinned(old, row, row.getId()),
                         preservePreferencePinnedAt(old, row, row.getId()),
-                        row.getLabelIdsCsv()));
+                        row.getLabelIdsCsv(),
+                        row.isE2eeEnabled(),
+                        keepNewerLocalActivity
+                                ? old.isLastMessageEncrypted()
+                                : row.isLastMessageEncrypted()));
             }
             return conversationDao.upsertAll(merged);
         }).subscribeOn(Schedulers.io());

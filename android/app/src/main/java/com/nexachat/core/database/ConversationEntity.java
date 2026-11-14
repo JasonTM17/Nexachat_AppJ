@@ -334,7 +334,7 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId, lastMessageDeleted,
                 peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt,
-                labelIdsCsv);
+                labelIdsCsv, e2eeEnabled, lastMessageEncrypted);
     }
 
     /** Returns this row with its group avatar URL replaced. */
