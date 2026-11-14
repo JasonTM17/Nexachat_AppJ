@@ -146,6 +146,7 @@ public final class InboxFragment extends Fragment {
         });
         binding.createGroupFab.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.searchFragment));
+        binding.inboxRefreshRetry.setOnClickListener(v -> viewModel.refresh());
         binding.errorState.setOnRetry(() -> {
             if (lastLabelState != null && lastLabelState.getSelectedFilterId() != null
                     && lastLabelState.getFilterError() != LabelUiState.Error.NONE) {
@@ -415,18 +416,27 @@ public final class InboxFragment extends Fragment {
         renderActiveNowStrip(rows);
         binding.swipeRefresh.setRefreshing(state.isLoading() && !rows.isEmpty());
 
-        boolean showLoading = labelFilterLoading || (state.isLoading() && rows.isEmpty())
-                || (state.isLoadingMore() && visibleRows.isEmpty() && state.hasMore());
-        ApiError error = state.getError() != null ? state.getError() : state.getNextPageError();
-        boolean showError = labelFilterError || (error != null && rows.isEmpty());
-        boolean showEmpty = !showLoading && !showError && visibleRows.isEmpty();
         boolean showList = !visibleRows.isEmpty();
+        boolean showLoading = labelFilterLoading || (!labelFilterError && !showList
+                && (state.isLoading() || (state.isLoadingMore() && state.hasMore())));
+        ApiError error = state.getError() != null ? state.getError() : state.getNextPageError();
+        boolean showError = labelFilterError || (!showLoading && error != null && !showList);
+        boolean showEmpty = !showLoading && !showError && !showList;
+        boolean showRefreshError = showList && !state.isLoading() && state.getError() != null;
 
         binding.loadingState.setVisibility(showLoading ? View.VISIBLE : View.GONE);
         binding.conversationList.setVisibility(showList ? View.VISIBLE : View.GONE);
         binding.swipeRefresh.setVisibility(showList ? View.VISIBLE : View.GONE);
         binding.emptyState.setVisibility(showEmpty ? View.VISIBLE : View.GONE);
         binding.errorState.setVisibility(showError ? View.VISIBLE : View.GONE);
+        if (showRefreshError) {
+            int message = ChatErrorIds.messageId(state.getError());
+            String text = getString(message);
+            if (!TextUtils.equals(binding.inboxRefreshErrorMessage.getText(), text)) {
+                binding.inboxRefreshErrorMessage.setText(text);
+            }
+        }
+        binding.inboxRefreshError.setVisibility(showRefreshError ? View.VISIBLE : View.GONE);
         if (showEmpty) {
             if (labelFiltering) {
                 ConversationLabel selected = lastLabelState.getLabels().stream()
@@ -454,7 +464,8 @@ public final class InboxFragment extends Fragment {
         } else if (showError && error != null) {
             binding.errorState.setMessage(getString(ChatErrorIds.messageId(error)));
         }
-        showPaginationError(state);
+        if (showList) showPaginationError(state);
+        else lastPaginationErrorMessageId = 0;
     }
 
     private void submitRowsPreservingPosition(@NonNull List<ConversationSummary> rows) {

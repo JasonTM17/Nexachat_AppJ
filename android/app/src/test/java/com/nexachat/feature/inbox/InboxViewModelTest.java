@@ -74,6 +74,43 @@ public final class InboxViewModelTest {
     }
 
     @Test
+    public void roomEmissionDoesNotEndAnInFlightRefresh() {
+        SingleSubject<Result<Boolean>> pending = SingleSubject.create();
+        when(repository.refreshInboxPage(false)).thenReturn(pending);
+        viewModel.refresh();
+        inboxFlow.onNext(List.of(conversation("cached", 0)));
+
+        assertTrue(viewModel.getUiState().getValue().isLoading());
+        assertEquals(1, viewModel.getUiState().getValue().getConversations().size());
+
+        pending.onSuccess(Result.failure(new ApiError.Network("down")));
+        assertFalse(viewModel.getUiState().getValue().isLoading());
+        assertNotNull(viewModel.getUiState().getValue().getError());
+    }
+
+    @Test
+    public void roomEmissionDuringRefreshCompletionDoesNotRestartLoading() {
+        SingleSubject<Result<Boolean>> pending = SingleSubject.create();
+        when(repository.refreshInboxPage(false)).thenReturn(pending);
+        viewModel.refresh();
+        java.util.concurrent.atomic.AtomicBoolean emitted = new java.util.concurrent.atomic.AtomicBoolean();
+        androidx.lifecycle.Observer<InboxUiState> observer = state -> {
+            if (!state.isLoading() && emitted.compareAndSet(false, true)) {
+                inboxFlow.onNext(List.of(conversation("updated", 0)));
+            }
+        };
+        viewModel.getUiState().observeForever(observer);
+        try {
+            pending.onSuccess(new Result.Success<Boolean>(Boolean.TRUE));
+            assertTrue(emitted.get());
+            assertFalse(viewModel.getUiState().getValue().isLoading());
+            assertEquals("updated", viewModel.getUiState().getValue().getConversations().get(0).getId());
+        } finally {
+            viewModel.getUiState().removeObserver(observer);
+        }
+    }
+
+    @Test
     public void unreadCountsMapIntoRowsAndSumToTotalBadge() {
         inboxFlow.onNext(List.of(
                 conversation("c-1", 2),

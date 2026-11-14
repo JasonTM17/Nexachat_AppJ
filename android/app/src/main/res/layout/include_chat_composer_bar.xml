@@ -57,7 +57,7 @@
             android:id="@+id/recordingDot"
             android:layout_width="12dp"
             android:layout_height="12dp"
-            android:contentDescription="@null"
+            android:importantForAccessibility="no"
             android:src="@drawable/bg_recording_dot" />
 
         <TextView
