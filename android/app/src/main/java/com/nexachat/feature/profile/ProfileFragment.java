@@ -287,6 +287,12 @@ public final class ProfileFragment extends Fragment {
         if (error != null) binding.profileError.setText(ApiErrorText.text(requireContext(), error));
         if (state.isPasswordChanged()) { viewModel.consumePasswordChanged(); new MaterialAlertDialogBuilder(requireContext()).setMessage(R.string.profile_password_changed).setPositiveButton(android.R.string.ok, null).show(); }
         if (state.getAvatarError() != null) viewModel.consumeAvatarError();
+        // Sign-in rows combine linked-account config with the loaded profile; re-render
+        // so the phone row appears when the user arrives after the linked-accounts state.
+        LinkedAccountsViewModel.UiState linked = linkedAccountsViewModel.getUiState().getValue();
+        if (linked != null) {
+            renderLinkedAccounts(linked);
+        }
     }
 
     private void renderLinkedAccounts(LinkedAccountsViewModel.UiState state) {
@@ -298,10 +304,11 @@ public final class ProfileFragment extends Fragment {
         UserDto me = viewModel.getUiState().getValue() != null
                 ? viewModel.getUiState().getValue().getUser() : null;
         String accountPhone = me != null ? me.getPhone() : null;
-        boolean phoneVisible = accountPhone != null && !accountPhone.isBlank();
+        boolean phoneVisible = ProfileSignInMethodRules.phoneRowVisible(accountPhone);
         binding.signInMethodPhoneRow.setVisibility(phoneVisible ? View.VISIBLE : View.GONE);
         binding.signInMethodPhoneDivider.setVisibility(
-                googleVisible && phoneVisible ? View.VISIBLE : View.GONE);
+                ProfileSignInMethodRules.phoneDividerVisible(googleVisible, accountPhone)
+                        ? View.VISIBLE : View.GONE);
         if (phoneVisible) {
             binding.signInMethodPhoneRow.setSubtitle(accountPhone);
             binding.signInMethodPhoneRow.setContentDescription(
