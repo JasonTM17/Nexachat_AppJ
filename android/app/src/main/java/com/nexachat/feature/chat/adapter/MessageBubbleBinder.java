@@ -714,6 +714,12 @@ public final class MessageBubbleBinder {
                     root.getContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
             metaInclude.setBackground(null);
             metaInclude.setPadding(0, 0, 0, 0);
+            if (metaInclude.getLayoutParams() instanceof android.widget.LinearLayout.LayoutParams params
+                    && params.gravity != android.view.Gravity.CENTER_HORIZONTAL) {
+                // A system notice is centred, so its time sits under it rather than at a bubble edge.
+                params.gravity = android.view.Gravity.CENTER_HORIZONTAL;
+                metaInclude.setLayoutParams(params);
+            }
             if (edited != null) {
                 edited.setVisibility(View.GONE);
             }

@@ -107,7 +107,6 @@ public final class GroupDetailFragment extends Fragment {
                 binding.toolbar, com.google.android.material.R.attr.colorOnSurfaceVariant));
         renameItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
         binding.toolbar.setOnMenuItemClickListener(this::onMenuItem);
-        binding.membersHeader.setTitle(getString(R.string.group_detail_title));
         binding.addMemberButton.setOnClickListener(v -> viewModel.openAddMember());
         binding.inviteLinkButton.setOnClickListener(v -> openInviteManager());
         binding.leaveGroupButton.setOnClickListener(v -> onLeaveClicked());
@@ -171,6 +170,8 @@ public final class GroupDetailFragment extends Fragment {
         binding.groupTitle.setFocusable(isAdmin);
         memberAdapter.setShowRemove(state.isIAmAdmin());
         memberAdapter.submitList(state.getMembers());
+        binding.membersHeader.setTitle(com.nexachat.res.QuantityStrings.memberCount(
+                getResources(), state.getMembers().size()));
         binding.addMemberButton.setVisibility(state.isIAmAdmin() ? View.VISIBLE : View.GONE);
         binding.inviteLinkButton.setVisibility(state.isIAmAdmin() ? View.VISIBLE : View.GONE);
         binding.toolbar.getMenu().findItem(MENU_RENAME).setVisible(state.isIAmAdmin());
