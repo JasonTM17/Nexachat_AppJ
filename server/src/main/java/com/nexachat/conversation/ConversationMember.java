@@ -12,9 +12,10 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PostLoad;
 import jakarta.persistence.PostPersist;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
+import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
 import org.springframework.data.domain.Persistable;
 
 import java.time.Instant;
@@ -56,6 +57,8 @@ public class ConversationMember implements Persistable<ConversationMemberId> {
     @Column(name = "role", nullable = false, length = 6)
     private Role role = Role.MEMBER;
 
+    // Sync compares admission with database-timestamped messages and reaction events.
+    @Generated(event = EventType.INSERT, sql = "clock_timestamp()")
     @Column(name = "joined_at", nullable = false, updatable = false)
     private Instant joinedAt;
 
@@ -105,13 +108,6 @@ public class ConversationMember implements Persistable<ConversationMemberId> {
         member.user = user;
         member.role = role;
         return member;
-    }
-
-    @PrePersist
-    void onPrePersist() {
-        if (joinedAt == null) {
-            joinedAt = Instant.now();
-        }
     }
 
     @PostPersist

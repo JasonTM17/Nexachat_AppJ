@@ -299,7 +299,7 @@ public class BackendM1Iteration2RegressionTest {
             for (int i = 0; i < count; i++) {
                 UUID cId = UUID.randomUUID();
                 watermarks.add(new SyncRequest.ConversationWatermark(cId, (long) i));
-                lenient().when(messageRepository.findRowsAfter(eq(cId), eq((long) i), any(Pageable.class)))
+                lenient().when(messageRepository.findSyncRowsAfter(eq(userId), eq(cId), eq((long) i), any(Pageable.class)))
                         .thenReturn(List.of());
                 lenient().when(messageRepository.findMaxSeqByConversationId(cId)).thenReturn((long) i);
             }
@@ -318,7 +318,7 @@ public class BackendM1Iteration2RegressionTest {
             Instant since = Instant.now().minusSeconds(60);
             when(memberRepository.findMemberFlags(eq(userId), any())).thenReturn(
                     List.of(new MemberFlagsRow(cId, false, null, false, false, null)));
-            when(messageRepository.findRowsAfter(eq(cId), eq(10L), any(Pageable.class))).thenReturn(List.of());
+            when(messageRepository.findSyncRowsAfter(eq(userId), eq(cId), eq(10L), any(Pageable.class))).thenReturn(List.of());
 
             List<MessageRow> manyEdited = new ArrayList<>();
             List<UUID> manyDeleted = new ArrayList<>();
@@ -331,9 +331,9 @@ public class BackendM1Iteration2RegressionTest {
                 deletedChanges.add(new MessageDeletionChange(deletedId, since));
             }
 
-            when(messageRepository.findEditedRowsSince(eq(cId), eq(10L), eq(since))).thenReturn(manyEdited);
-            when(messageRepository.findDeletedMessageIdsSince(eq(cId), eq(10L), eq(since))).thenReturn(manyDeleted);
-            when(messageRepository.findDeletedChangesSince(eq(cId), eq(10L), eq(since))).thenReturn(deletedChanges);
+            when(messageRepository.findSyncEditedRowsSince(eq(userId), eq(cId), eq(10L), eq(since))).thenReturn(manyEdited);
+            when(messageRepository.findSyncDeletedMessageIdsSince(eq(userId), eq(cId), eq(10L), eq(since))).thenReturn(manyDeleted);
+            when(messageRepository.findSyncDeletedChangesSince(eq(userId), eq(cId), eq(10L), eq(since))).thenReturn(deletedChanges);
             when(messageRepository.findMaxSeqByConversationId(cId)).thenReturn(10L);
 
             SyncRequest request = new SyncRequest(List.of(new SyncRequest.ConversationWatermark(cId, 10L)), 50, since);
@@ -405,24 +405,24 @@ public class BackendM1Iteration2RegressionTest {
             reset(memberRepository, messageRepository);
             when(memberRepository.findMemberFlags(eq(userId), any())).thenReturn(
                     List.of(new MemberFlagsRow(conversationId, false, null, false, false, null)));
-            when(messageRepository.findRowsAfter(eq(conversationId), eq(lastSeq), any(Pageable.class)))
+            when(messageRepository.findSyncRowsAfter(eq(userId), eq(conversationId), eq(lastSeq), any(Pageable.class)))
                     .thenReturn(List.of());
             when(messageRepository.findMaxSeqByConversationId(conversationId)).thenReturn(lastSeq);
-            when(messageRepository.findEditedRowsSince(eq(conversationId), eq(lastSeq), any())).thenAnswer(invocation -> {
-                Instant since = invocation.getArgument(2);
+            when(messageRepository.findSyncEditedRowsSince(eq(userId), eq(conversationId), eq(lastSeq), any())).thenAnswer(invocation -> {
+                Instant since = invocation.getArgument(3);
                 return edits.stream().filter(row -> row.editedAt().isAfter(since)).toList();
             });
-            when(messageRepository.findDeletedMessageIdsSince(eq(conversationId), eq(lastSeq), any()))
+            when(messageRepository.findSyncDeletedMessageIdsSince(eq(userId), eq(conversationId), eq(lastSeq), any()))
                     .thenAnswer(invocation -> {
-                        Instant since = invocation.getArgument(2);
+                        Instant since = invocation.getArgument(3);
                         return deletes.stream()
                                 .filter(row -> row.deletedAt().isAfter(since))
                                 .map(MessageDeletionChange::messageId)
                                 .toList();
                     });
-            when(messageRepository.findDeletedChangesSince(eq(conversationId), eq(lastSeq), any()))
+            when(messageRepository.findSyncDeletedChangesSince(eq(userId), eq(conversationId), eq(lastSeq), any()))
                     .thenAnswer(invocation -> {
-                        Instant since = invocation.getArgument(2);
+                        Instant since = invocation.getArgument(3);
                         return deletes.stream().filter(row -> row.deletedAt().isAfter(since)).toList();
                     });
         }

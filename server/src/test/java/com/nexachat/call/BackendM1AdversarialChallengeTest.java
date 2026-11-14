@@ -293,7 +293,7 @@ public class BackendM1AdversarialChallengeTest {
             for (int i = 0; i < count; i++) {
                 UUID cId = UUID.randomUUID();
                 watermarks.add(new SyncRequest.ConversationWatermark(cId, (long) i));
-                lenient().when(messageRepository.findRowsAfter(eq(cId), eq((long) i), any(Pageable.class)))
+                lenient().when(messageRepository.findSyncRowsAfter(eq(userId), eq(cId), eq((long) i), any(Pageable.class)))
                         .thenReturn(List.of());
                 lenient().when(messageRepository.findMaxSeqByConversationId(cId)).thenReturn((long) i);
             }
@@ -313,7 +313,7 @@ public class BackendM1AdversarialChallengeTest {
 
             when(memberRepository.findMemberFlags(eq(userId), any())).thenReturn(
                     List.of(new MemberFlagsRow(memberConv, false, null, false, false, null)));
-            when(messageRepository.findRowsAfter(eq(memberConv), anyLong(), any(Pageable.class))).thenReturn(List.of());
+            when(messageRepository.findSyncRowsAfter(eq(userId), eq(memberConv), anyLong(), any(Pageable.class))).thenReturn(List.of());
             when(messageRepository.findMaxSeqByConversationId(memberConv)).thenReturn(10L);
 
             SyncRequest request = new SyncRequest(
@@ -345,7 +345,7 @@ public class BackendM1AdversarialChallengeTest {
                     now.minusSeconds(60), null, now
             );
 
-            when(messageRepository.findRowsAfter(eq(convId), eq(100L), any(Pageable.class)))
+            when(messageRepository.findSyncRowsAfter(eq(userId), eq(convId), eq(100L), any(Pageable.class)))
                     .thenReturn(List.of(deletedRow));
             when(messageRepository.findMaxSeqByConversationId(convId)).thenReturn(101L);
 
@@ -375,7 +375,7 @@ public class BackendM1AdversarialChallengeTest {
             when(messageRepository.findMaxSeqByConversationId(convId)).thenReturn(0L);
 
             ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
-            when(messageRepository.findRowsAfter(eq(convId), eq(0L), pageableCaptor.capture()))
+            when(messageRepository.findSyncRowsAfter(eq(userId), eq(convId), eq(0L), pageableCaptor.capture()))
                     .thenReturn(List.of());
 
             // Limit 5000 should be clamped to 100 (+1 for hasMore = 101)

@@ -689,32 +689,32 @@ public class MessageService {
             }
 
             // 1. New messages after lastSeq
-            List<MessageRow> newRows = messageRepository.findRowsAfter(
-                    conversationId, lastSeq, PageRequest.of(0, limit + 1));
+            List<MessageRow> newRows = messageRepository.findSyncRowsAfter(
+                    userId, conversationId, lastSeq, PageRequest.of(0, limit + 1));
             boolean hasMore = newRows.size() > limit;
             List<MessageRow> pageRows = hasMore ? newRows.subList(0, limit) : newRows;
-            List<MessageResponse> newMessages = hydrateResponses(pageRows, userId);
+            List<MessageResponse> newMessages = hydrateResponses(pageRows, userId, true);
 
             // 2. Edited messages since timestamp (with seq <= lastSeq)
             List<MessageResponse> editedMessages = List.of();
             if (since != null) {
-                List<MessageRow> editedRows = messageRepository.findEditedRowsSince(conversationId, lastSeq, since);
+                List<MessageRow> editedRows = messageRepository.findSyncEditedRowsSince(userId, conversationId, lastSeq, since);
                 TimestampedPage<MessageRow> editedPage = pageTimestampedChanges(
                         editedRows, limit, MessageRow::editedAt);
                 if (editedPage.hasMore()) {
                     hasMore = true;
                     legacyServerTime = earlier(legacyServerTime, editedPage.boundaryTimestamp());
                 }
-                editedMessages = hydrateResponses(editedPage.items(), userId);
+                editedMessages = hydrateResponses(editedPage.items(), userId, true);
             }
 
             // 3. Deleted message IDs since timestamp (with seq <= lastSeq)
             List<UUID> deletedMessageIds = List.of();
             if (since != null) {
-                List<UUID> allDeleted = messageRepository.findDeletedMessageIdsSince(conversationId, lastSeq, since);
+                List<UUID> allDeleted = messageRepository.findSyncDeletedMessageIdsSince(userId, conversationId, lastSeq, since);
                 if (allDeleted.size() > limit) {
-                    List<MessageDeletionChange> deletedChanges = messageRepository.findDeletedChangesSince(
-                            conversationId, lastSeq, since);
+                    List<MessageDeletionChange> deletedChanges = messageRepository.findSyncDeletedChangesSince(
+                            userId, conversationId, lastSeq, since);
                     TimestampedPage<MessageDeletionChange> deletedPage = pageTimestampedChanges(
                             deletedChanges, limit, MessageDeletionChange::deletedAt);
                     deletedMessageIds = deletedPage.items().stream()
@@ -743,7 +743,7 @@ public class MessageService {
                     // so a partial delta could silently miss changes.
                     reactionsFullRefresh = true;
                 } else {
-                    ReactionDelta reactionDelta = reactionUpdates(conversationId, since, wm.reactionCursor());
+                    ReactionDelta reactionDelta = reactionUpdates(userId, conversationId, since, wm.reactionCursor());
                     reactionUpdates = reactionDelta.updates();
                     reactionCursor = reactionDelta.cursor();
                     if (reactionDelta.truncated()) {
@@ -873,12 +873,12 @@ public class MessageService {
             boolean reactionsFullRefresh = false;
 
             if (!reset) {
-                List<MessageRow> rows = messageRepository.findChangesBetween(
-                        conversationId, requestedCursor, fence.changeUpperBound(),
+                List<MessageRow> rows = messageRepository.findSyncChangesBetween(
+                        userId, conversationId, requestedCursor, fence.changeUpperBound(),
                         PageRequest.of(0, limit + 1));
                 changeHasMore = rows.size() > limit;
                 List<MessageRow> page = changeHasMore ? rows.subList(0, limit) : rows;
-                changes = hydrateResponses(page, userId);
+                changes = hydrateResponses(page, userId, true);
                 nextCursor = changeHasMore
                         ? page.get(page.size() - 1).changeVersion()
                         : fence.changeUpperBound();
@@ -888,7 +888,7 @@ public class MessageService {
                         reactionsFullRefresh = true;
                     } else {
                         ReactionDelta reactionDelta = reactionUpdates(
-                                conversationId, since, watermark.reactionCursor());
+                                userId, conversationId, since, watermark.reactionCursor());
                         reactionUpdates = reactionDelta.updates();
                         reactionCursor = reactionDelta.cursor();
                     }
@@ -929,13 +929,13 @@ public class MessageService {
      * message ids are returned); when the page is full the cursor is the last
      * event id consumed and the caller must resume from it.
      */
-    private ReactionDelta reactionUpdates(UUID conversationId, java.time.Instant since, Long cursor) {
+    private ReactionDelta reactionUpdates(UUID userId, UUID conversationId, java.time.Instant since, Long cursor) {
         int cap = Math.max(1, syncProperties.getMaxReactionUpdates());
         // A separate statement after this lock gets a fresh READ COMMITTED
         // snapshot if it waited for a reaction transaction to commit.
         reactionEventRepository.lockConversationEvents(conversationId);
-        List<ReactionEventId> events = reactionEventRepository.findEventIdsSince(
-                conversationId, since, cursor, cap + 1);
+        List<ReactionEventId> events = reactionEventRepository.findSyncEventIdsSince(
+                userId, conversationId, since, cursor, cap + 1);
         boolean truncated = events.size() > cap;
         List<ReactionEventId> page = truncated ? events.subList(0, cap) : events;
         Long nextCursor = truncated && !page.isEmpty() ? page.get(page.size() - 1).getId() : null;
@@ -1329,6 +1329,10 @@ public class MessageService {
     }
 
     private List<MessageResponse> hydrateResponses(List<MessageRow> rows, UUID viewerId) {
+        return hydrateResponses(rows, viewerId, false);
+    }
+
+    private List<MessageResponse> hydrateResponses(List<MessageRow> rows, UUID viewerId, boolean sync) {
         if (rows.isEmpty()) {
             return List.of();
         }
@@ -1344,14 +1348,14 @@ public class MessageService {
         Map<UUID, ReplyRefResponse> replyRefsById = replyRefsById(rows.stream()
                 .map(MessageRow::replyToId)
                 .filter(Objects::nonNull)
-                .toList());
+                .toList(), viewerId, sync);
 
         return rows.stream()
                 .map(row -> toResponse(row,
                         attachmentsByMessage.getOrDefault(row.id(), List.of()),
                         reactionsByMessage.getOrDefault(row.id(), List.of()),
                         row.replyToId() == null ? null : replyRefsById.get(row.replyToId()),
-                        mentionsByMessage.getOrDefault(row.id(), List.of())))
+                        mentionsByMessage.getOrDefault(row.id(), List.of()), sync))
                 .toList();
     }
 
@@ -1359,11 +1363,13 @@ public class MessageService {
                                               List<AttachmentResponse> attachments,
                                               List<ReactionView> reactions,
                                               ReplyRefResponse replyTo,
-                                              List<MessageMentionResponse> mentions) {
+                                              List<MessageMentionResponse> mentions,
+                                              boolean sync) {
         boolean deleted = row.deletedAt() != null;
         return new MessageResponse(
                 row.id(), row.conversationId(), row.seq(), row.senderId(), row.senderDisplayName(),
-                row.type().name(), deleted ? null : row.content(), row.clientMessageId(), row.replyToId(),
+                row.type().name(), deleted ? null : row.content(), row.clientMessageId(),
+                sync && replyTo == null ? null : row.replyToId(),
                 replyTo, deleted ? List.of() : attachments, deleted ? List.of() : reactions,
                 row.createdAt(), row.editedAt(), row.deletedAt(), deleted ? List.of() : mentions,
                 !deleted && row.mentionAll(), row.changeVersion(), row.generation());
@@ -1398,12 +1404,14 @@ public class MessageService {
      * id and sender but loses its content ({@code deleted=true} renders the
      * "Tin nhắn đã bị xóa" placeholder — plan §9.3.6).
      */
-    private Map<UUID, ReplyRefResponse> replyRefsById(Collection<UUID> replyToIds) {
+    private Map<UUID, ReplyRefResponse> replyRefsById(Collection<UUID> replyToIds, UUID viewerId, boolean sync) {
         if (replyToIds.isEmpty()) {
             return Map.of();
         }
         Map<UUID, ReplyRefResponse> result = new LinkedHashMap<>();
-        for (ReplyRefRow row : messageRepository.findReplyRefsByIdIn(replyToIds)) {
+        List<ReplyRefRow> refs = sync ? messageRepository.findSyncReplyRefsByIdIn(viewerId, replyToIds)
+                : messageRepository.findReplyRefsByIdIn(replyToIds);
+        for (ReplyRefRow row : refs) {
             boolean deleted = row.deletedAt() != null;
             result.put(row.id(), new ReplyRefResponse(
                     row.id(), row.senderId(), row.senderDisplayName(), row.type().name(),

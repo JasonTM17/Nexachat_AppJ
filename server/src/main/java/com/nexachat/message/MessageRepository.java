@@ -62,9 +62,9 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Modifying
     @Query(value = """
             INSERT INTO messages
-                (conversation_id, sender_id, client_message_id, type, content, reply_to_id, change_version)
+                (conversation_id, sender_id, client_message_id, type, content, reply_to_id, change_version, created_at)
             SELECT :conversationId, :senderId, :clientMessageId, :type,
-                   CAST(:content AS text), CAST(:replyToId AS uuid), c.change_version
+                   CAST(:content AS text), CAST(:replyToId AS uuid), c.change_version, clock_timestamp()
             FROM conversations c WHERE c.id = :conversationId
             ON CONFLICT (sender_id, client_message_id) DO NOTHING
             """, nativeQuery = true)
@@ -79,9 +79,9 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query(value = """
             INSERT INTO messages
                 (conversation_id, sender_id, client_message_id, type, content, reply_to_id, mention_all,
-                 change_version)
+                 change_version, created_at)
             SELECT :conversationId, :senderId, :clientMessageId, :type,
-                   CAST(:content AS text), CAST(:replyToId AS uuid), :mentionAll, c.change_version
+                   CAST(:content AS text), CAST(:replyToId AS uuid), :mentionAll, c.change_version, clock_timestamp()
             FROM conversations c WHERE c.id = :conversationId
             ON CONFLICT (sender_id, client_message_id) DO NOTHING
             """, nativeQuery = true)
@@ -157,6 +157,69 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
                                    @Param("afterSeq") long afterSeq,
                                    Pageable pageable);
 
+    /** Sync cursors are positions, never authority to read a previous membership epoch. */
+    @Query("""
+            SELECT new com.nexachat.message.dto.MessageRow(
+                       m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+            FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
+            WHERE m.conversation.id = :conversationId AND m.seq > :afterSeq
+              AND EXISTS (SELECT 1 FROM ConversationMember member
+                          WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
+                            AND m.createdAt >= member.joinedAt)
+            ORDER BY m.seq ASC
+            """)
+    List<MessageRow> findSyncRowsAfter(@Param("userId") UUID userId,
+                                       @Param("conversationId") UUID conversationId,
+                                       @Param("afterSeq") long afterSeq, Pageable pageable);
+
+    @Query("""
+            SELECT new com.nexachat.message.dto.MessageRow(
+                       m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+            FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
+            WHERE m.conversation.id = :conversationId
+              AND m.changeVersion > :changeCursor AND m.changeVersion <= :changeUpperBound
+              AND EXISTS (SELECT 1 FROM ConversationMember member
+                          WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
+                            AND m.createdAt >= member.joinedAt)
+            ORDER BY m.changeVersion ASC, m.id ASC
+            """)
+    List<MessageRow> findSyncChangesBetween(@Param("userId") UUID userId,
+                                            @Param("conversationId") UUID conversationId,
+                                            @Param("changeCursor") long changeCursor,
+                                            @Param("changeUpperBound") long changeUpperBound, Pageable pageable);
+
+    @Query("""
+            SELECT new com.nexachat.message.dto.MessageRow(
+                       m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+            FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
+            WHERE m.conversation.id = :conversationId AND m.seq <= :lastSeq
+              AND m.editedAt > :since AND m.deletedAt IS NULL
+              AND EXISTS (SELECT 1 FROM ConversationMember member
+                          WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
+                            AND m.createdAt >= member.joinedAt)
+            ORDER BY m.editedAt ASC, m.id ASC
+            """)
+    List<MessageRow> findSyncEditedRowsSince(@Param("userId") UUID userId,
+                                             @Param("conversationId") UUID conversationId,
+                                             @Param("lastSeq") long lastSeq, @Param("since") Instant since);
+
+    @Query("""
+            SELECT m.id FROM Message m
+            WHERE m.conversation.id = :conversationId AND m.seq <= :lastSeq AND m.deletedAt > :since
+              AND EXISTS (SELECT 1 FROM ConversationMember member
+                          WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
+                            AND m.createdAt >= member.joinedAt)
+            """)
+    List<UUID> findSyncDeletedMessageIdsSince(@Param("userId") UUID userId,
+                                              @Param("conversationId") UUID conversationId,
+                                              @Param("lastSeq") long lastSeq, @Param("since") Instant since);
+
     /** Capture H/G and prove current membership in one plain scalar projection. */
     @Query("""
             SELECT new com.nexachat.message.dto.SyncFence(c.changeVersion, c.syncGeneration)
@@ -223,6 +286,21 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
                                                          @Param("lastSeq") long lastSeq,
                                                          @Param("since") Instant since);
 
+    @Query("""
+            SELECT new com.nexachat.message.dto.MessageDeletionChange(m.id, m.deletedAt)
+            FROM Message m
+            WHERE m.conversation.id = :conversationId
+              AND m.seq <= :lastSeq
+              AND m.deletedAt > :since
+              AND EXISTS (SELECT 1 FROM ConversationMember member
+                          WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
+                            AND m.createdAt >= member.joinedAt)
+            ORDER BY m.deletedAt ASC, m.id ASC
+            """)
+    List<MessageDeletionChange> findSyncDeletedChangesSince(@Param("userId") UUID userId, @Param("conversationId") UUID conversationId,
+                                                         @Param("lastSeq") long lastSeq,
+                                                         @Param("since") Instant since);
+
     /**
      * Conversation-scoped literal substring search, ordered through
      * idx_msg_conv_seq. The {@code f_unaccent} wrapper is the IMMUTABLE form
@@ -276,4 +354,15 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             WHERE m.id IN :ids
             """)
     List<ReplyRefRow> findReplyRefsByIdIn(@Param("ids") Collection<UUID> ids);
+
+    @Query("""
+            SELECT new com.nexachat.message.dto.ReplyRefRow(
+                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt)
+            FROM Message m JOIN m.sender u
+            WHERE m.id IN :ids
+              AND EXISTS (SELECT 1 FROM ConversationMember member
+                          WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
+                            AND m.createdAt >= member.joinedAt)
+            """)
+    List<ReplyRefRow> findSyncReplyRefsByIdIn(@Param("userId") UUID userId, @Param("ids") Collection<UUID> ids);
 }

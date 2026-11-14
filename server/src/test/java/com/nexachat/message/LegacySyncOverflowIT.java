@@ -129,6 +129,9 @@ class LegacySyncOverflowIT {
             members.saveAndFlush(ConversationMember.join(group, managed, ConversationMember.Role.ADMIN));
             return group.getId();
         });
+        // Model an existing membership on the same historical timeline as the seeded messages.
+        assertThat(jdbc.update("UPDATE conversation_members SET joined_at=? WHERE conversation_id=? AND user_id=?",
+                java.sql.Timestamp.from(SINCE.minusSeconds(20)), conversation, user)).isEqualTo(1);
         List<UUID> editIds = new ArrayList<>();
         List<UUID> recallIds = new ArrayList<>();
         long maxSeq = 0;

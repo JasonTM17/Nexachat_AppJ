@@ -63,4 +63,23 @@ public interface ReactionEventRepository extends JpaRepository<ReactionEvent, Lo
                                             @Param("since") Instant since,
                                             @Param("cursor") Long cursor,
                                             @Param("limit") int limit);
+
+    /** Apply current membership to both event and target before the cursor lookahead/limit. */
+    @Query(value = """
+            SELECT event.id, event.message_id AS "messageId"
+            FROM reaction_events event
+            JOIN conversation_members member ON member.conversation_id=event.conversation_id
+                                              AND member.user_id=:userId
+            JOIN messages message ON message.id=event.message_id
+            WHERE event.conversation_id=:conversationId
+              AND event.created_at >= member.joined_at AND message.created_at >= member.joined_at
+              AND (CAST(:cursor AS bigint) IS NOT NULL OR event.created_at > :since)
+              AND event.id > COALESCE(CAST(:cursor AS bigint),0)
+            ORDER BY event.id ASC
+            LIMIT :limit
+            """, nativeQuery = true)
+    List<ReactionEventId> findSyncEventIdsSince(@Param("userId") UUID userId,
+                                                @Param("conversationId") UUID conversationId,
+                                                @Param("since") Instant since,
+                                                @Param("cursor") Long cursor, @Param("limit") int limit);
 }

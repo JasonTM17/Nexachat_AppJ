@@ -93,7 +93,7 @@ class SyncControllerTest {
                 Message.Type.TEXT, "Hello delta", UUID.randomUUID(), null,
                 Instant.now(), null, null);
 
-        when(messageRepository.findRowsAfter(eq(conversationId), eq(100L), any(Pageable.class)))
+        when(messageRepository.findSyncRowsAfter(eq(userId), eq(conversationId), eq(100L), any(Pageable.class)))
                 .thenReturn(List.of(row1));
         when(messageRepository.findMaxSeqByConversationId(conversationId)).thenReturn(105L);
 
@@ -132,9 +132,9 @@ class SyncControllerTest {
                 v2Row(UUID.randomUUID(), 1L, 4L),
                 v2Row(UUID.randomUUID(), 2L, 4L),
                 v2Row(UUID.randomUUID(), 3L, 4L));
-        when(messageRepository.findChangesBetween(eq(conversationId), eq(0L), eq(12L), any(Pageable.class)))
+        when(messageRepository.findSyncChangesBetween(eq(userId), eq(conversationId), eq(0L), eq(12L), any(Pageable.class)))
                 .thenAnswer(invocation -> {
-                    Pageable pageable = invocation.getArgument(3);
+                    Pageable pageable = invocation.getArgument(4);
                     assertThat(pageable.getPageSize()).isEqualTo(3);
                     return rows;
                 });
@@ -171,7 +171,7 @@ class SyncControllerTest {
 
         assertResetOnly(ahead.deltas().get(0), 10L, 3L);
         assertResetOnly(mismatched.deltas().get(0), 10L, 3L);
-        verify(messageRepository, never()).findChangesBetween(eq(conversationId), anyLong(),
+        verify(messageRepository, never()).findSyncChangesBetween(eq(userId), eq(conversationId), anyLong(),
                 anyLong(), any(Pageable.class));
         verify(reactionEventRepository, never()).lockConversationEvents(any());
     }
@@ -192,7 +192,7 @@ class SyncControllerTest {
                 mock(com.nexachat.attachment.StorageService.class),
                 mock(ApplicationEventPublisher.class),
                 disabled);
-        when(messageRepository.findRowsAfter(eq(conversationId), eq(0L), any(Pageable.class)))
+        when(messageRepository.findSyncRowsAfter(eq(userId), eq(conversationId), eq(0L), any(Pageable.class)))
                 .thenReturn(List.of());
         SyncRequest request = v2Request(0L, null);
 
@@ -224,13 +224,13 @@ class SyncControllerTest {
         UUID deletedId = UUID.randomUUID();
         UUID reactionMsgId = UUID.randomUUID();
 
-        when(messageRepository.findRowsAfter(eq(conversationId), eq(100L), any(Pageable.class)))
+        when(messageRepository.findSyncRowsAfter(eq(userId), eq(conversationId), eq(100L), any(Pageable.class)))
                 .thenReturn(List.of());
-        when(messageRepository.findEditedRowsSince(conversationId, 100L, since))
+        when(messageRepository.findSyncEditedRowsSince(userId, conversationId, 100L, since))
                 .thenReturn(List.of(editedRow));
-        when(messageRepository.findDeletedMessageIdsSince(conversationId, 100L, since))
+        when(messageRepository.findSyncDeletedMessageIdsSince(userId, conversationId, 100L, since))
                 .thenReturn(List.of(deletedId));
-        when(reactionEventRepository.findEventIdsSince(eq(conversationId), eq(since), any(), anyInt()))
+        when(reactionEventRepository.findSyncEventIdsSince(eq(userId), eq(conversationId), eq(since), any(), anyInt()))
                 .thenReturn(List.of(new ReactionEventIdRow(1L, reactionMsgId)));
         when(reactionRepository.findRowsByMessageIdIn(any()))
                 .thenReturn(List.of(new ReactionRow(reactionMsgId, userId, "❤️")));
@@ -292,7 +292,7 @@ class SyncControllerTest {
         SyncController clockedController = new SyncController(clockedService);
 
         stubMembership();
-        when(messageRepository.findRowsAfter(eq(conversationId), eq(100L), any(Pageable.class)))
+        when(messageRepository.findSyncRowsAfter(eq(userId), eq(conversationId), eq(100L), any(Pageable.class)))
                 .thenReturn(List.of());
         when(messageRepository.findMaxSeqByConversationId(conversationId)).thenAnswer(invocation -> {
             clock.set(start.plusSeconds(5));
@@ -333,9 +333,9 @@ class SyncControllerTest {
         SyncController controller = new SyncController(capped);
 
         stubMembership();
-        when(messageRepository.findRowsAfter(eq(conversationId), eq(100L), any(Pageable.class)))
+        when(messageRepository.findSyncRowsAfter(eq(userId), eq(conversationId), eq(100L), any(Pageable.class)))
                 .thenReturn(List.of());
-        when(reactionEventRepository.findEventIdsSince(eq(conversationId), eq(since), any(), eq(3)))
+        when(reactionEventRepository.findSyncEventIdsSince(eq(userId), eq(conversationId), eq(since), any(), eq(3)))
                 .thenReturn(List.of(
                         new ReactionEventIdRow(10L, first),
                         new ReactionEventIdRow(11L, second),
@@ -378,7 +378,7 @@ class SyncControllerTest {
         SyncController controller = new SyncController(service);
 
         stubMembership();
-        when(messageRepository.findRowsAfter(eq(conversationId), eq(100L), any(Pageable.class)))
+        when(messageRepository.findSyncRowsAfter(eq(userId), eq(conversationId), eq(100L), any(Pageable.class)))
                 .thenReturn(List.of());
         when(messageRepository.findMaxSeqByConversationId(conversationId)).thenReturn(100L);
 
@@ -398,9 +398,9 @@ class SyncControllerTest {
         Instant since = Instant.now().minusSeconds(3600);
         UUID reactionMsgId = UUID.randomUUID();
         stubMembership();
-        when(messageRepository.findRowsAfter(eq(conversationId), eq(100L), any(Pageable.class)))
+        when(messageRepository.findSyncRowsAfter(eq(userId), eq(conversationId), eq(100L), any(Pageable.class)))
                 .thenReturn(List.of());
-        when(reactionEventRepository.findEventIdsSince(eq(conversationId), eq(since), eq(42L), anyInt()))
+        when(reactionEventRepository.findSyncEventIdsSince(eq(userId), eq(conversationId), eq(since), eq(42L), anyInt()))
                 .thenReturn(List.of(new ReactionEventIdRow(43L, reactionMsgId)));
         when(reactionRepository.findRowsByMessageIdIn(any()))
                 .thenReturn(List.of(new ReactionRow(reactionMsgId, userId, "👍")));
