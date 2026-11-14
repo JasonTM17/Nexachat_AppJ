@@ -124,16 +124,15 @@ public class AskService {
         if (!conversationRepository.existsById(conversationId)) {
             throw ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found");
         }
-        // findById (not the existsById above) so unit-test mocks that stub only
-        // the existence check still exercise the real ask path.
+        java.time.Instant admittedFrom = memberRepository.findJoinedAt(conversationId, userId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_MEMBER, "Conversation membership required"));
+        // Membership gates the e2ee flag so a non-member cannot probe it.
         boolean e2ee = conversationRepository.findById(conversationId)
                 .map(Conversation::isE2eeEnabled).orElse(false);
         if (e2ee) {
             throw ApiException.of(ApiErrorCode.E2EE_AI_UNAVAILABLE,
                     "AI features are unavailable in encrypted conversations");
         }
-        java.time.Instant admittedFrom = memberRepository.findJoinedAt(conversationId, userId)
-                .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_MEMBER, "Conversation membership required"));
         boolean contextOmitted = aiOptOuts.hasOptedOutMessages(conversationId);
         SummaryConsentRepository.ConsentSnapshot consentSnapshot = consentRepository.snapshot(userId);
         if (!properties.isEnabled()) {

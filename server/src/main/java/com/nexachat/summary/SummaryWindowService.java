@@ -45,12 +45,13 @@ public class SummaryWindowService {
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND,
                         "Conversation not found"));
+        ConversationMember member = memberRepository.findByConversation_IdAndUser_Id(conversationId, userId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_MEMBER, "Conversation membership required"));
+        // Membership gates the e2ee flag so a non-member cannot probe it.
         if (conversation.isE2eeEnabled()) {
             throw ApiException.of(ApiErrorCode.E2EE_AI_UNAVAILABLE,
                     "AI features are unavailable in encrypted conversations");
         }
-        ConversationMember member = memberRepository.findByConversation_IdAndUser_Id(conversationId, userId)
-                .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_MEMBER, "Conversation membership required"));
 
         Long afterSeq = request.scope() == SummaryScope.UNREAD ? member.getLastReadSeq() : null;
         Instant fromInclusive = null;

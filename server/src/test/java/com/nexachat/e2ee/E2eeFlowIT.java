@@ -506,4 +506,26 @@ class E2eeFlowIT {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("E2EE_AI_UNAVAILABLE"));
     }
+
+    @Test
+    void aiEndpointsDoNotRevealE2eeStateToNonMembers() throws Exception {
+        Pair pair = newEncryptedPair("ai-nonmember");
+        TestUser outsider = registerUser("outsider");
+        UUID conversationId = pair.conversationId();
+        // Membership must win over the e2ee check so outsiders cannot probe
+        // whether a conversation is encrypted.
+        mockMvc.perform(post("/api/v1/conversations/" + conversationId + "/summary")
+                        .header("Authorization", "Bearer " + outsider.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("scope", "LAST_N", "limit", 50))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("NOT_MEMBER"));
+        mockMvc.perform(post("/api/v1/conversations/" + conversationId + "/ask")
+                        .header("Authorization", "Bearer " + outsider.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("question", "hi?"))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("NOT_MEMBER"));
+    }
 }
