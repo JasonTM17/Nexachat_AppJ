@@ -280,7 +280,7 @@ public final class InboxViewModel extends ViewModel {
                 .subscribeOn(Schedulers.io())
                 .subscribe(
                         conversations -> updateState(state ->
-                                state.withConversations(conversations, false)),
+                                state.withConversations(conversations, state.isLoading() && refreshInFlight)),
                         error -> updateState(state -> state.withError(
                                 new ApiError.Network(error.getMessage())))));
         refresh();

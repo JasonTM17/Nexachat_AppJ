@@ -911,10 +911,14 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     }
 
     private void openGroupInfo() {
-        Bundle args = new Bundle();
-        args.putString(ARG_CONVERSATION_ID, conversationId);
+        if (binding == null) return;
         try {
-            NavHostFragment.findNavController(this).navigate(R.id.groupDetailFragment, args);
+            NavController nav = NavHostFragment.findNavController(this);
+            androidx.navigation.NavDestination current = nav.getCurrentDestination();
+            if (current == null || current.getId() != R.id.chatFragment) return;
+            Bundle args = new Bundle();
+            args.putString(ARG_CONVERSATION_ID, conversationId);
+            nav.navigate(R.id.groupDetailFragment, args);
         } catch (IllegalStateException ignored) {
             Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
         }
