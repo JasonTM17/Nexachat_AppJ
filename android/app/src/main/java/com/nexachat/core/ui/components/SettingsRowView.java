@@ -184,7 +184,8 @@ public class SettingsRowView extends LinearLayout {
                 rowWidthPx > 0 ? rowWidthPx : getWidth(),
                 valueVisible,
                 chevronVisible,
-                leadingVisible);
+                leadingVisible,
+                titleTextWidthPx());
         if (stack == valueStacked) {
             if (!stack && valueVisible) {
                 applyInlineValueStyle();
@@ -215,6 +216,15 @@ public class SettingsRowView extends LinearLayout {
             }
             applyInlineValueStyle();
         }
+        // This runs from onSizeChanged, inside a layout pass, where a direct requestLayout is dropped.
+        post(this::requestLayout);
+    }
+
+    private float titleTextWidthPx() {
+        if (titleView == null || titleView.getText() == null) {
+            return 0f;
+        }
+        return titleView.getPaint().measureText(titleView.getText().toString());
     }
 
     private LinearLayout.LayoutParams inlineLayoutParams() {

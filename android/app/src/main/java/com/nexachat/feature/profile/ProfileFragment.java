@@ -101,9 +101,13 @@ public final class ProfileFragment extends Fragment {
         binding.languageRow.setTitle(getString(R.string.settings_language));
         binding.languageRow.setLeadingIcon(R.drawable.ic_language);
         binding.languageRow.setOnClickListener(v -> NavHostFragment.findNavController(this).navigate(R.id.languageSettingsFragment));
+        binding.languageRow.setTrailingValue(getString(LanguageLabels.label(
+                com.nexachat.core.common.AppLocaleManager.current(requireContext()))));
         binding.themeRow.setTitle(getString(R.string.settings_theme_title));
         binding.themeRow.setLeadingIcon(R.drawable.ic_theme_mode);
         binding.themeRow.setOnClickListener(v -> showThemeDialog());
+        // The quick chips below already choose the theme; a chevron would promise another screen.
+        binding.themeRow.setShowChevron(false);
         View.OnClickListener onThemeChipClick = v -> {
             int id = v.getId();
             if (id == R.id.themeChipSystem) {

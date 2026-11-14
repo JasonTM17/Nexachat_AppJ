@@ -29,7 +29,7 @@
     <string name="error_password_mismatch">Passwords don\'t match</string>
 
     <!-- ApiError → user-facing messages -->
-    <string name="error_invalid_credentials">Wrong phone number or password</string>
+    <string name="error_invalid_credentials">Wrong email, phone number or password</string>
     <string name="error_phone_exists">This phone number is already registered</string>
     <string name="error_rate_limited">Too many attempts. Try again later</string>
     <string name="error_network">No connection. Check your network</string>

@@ -29,7 +29,7 @@
     <string name="error_password_mismatch">Mật khẩu nhập lại không khớp</string>
 
     <!-- ApiError → user-facing messages -->
-    <string name="error_invalid_credentials">Sai số điện thoại hoặc mật khẩu</string>
+    <string name="error_invalid_credentials">Sai email, số điện thoại hoặc mật khẩu</string>
     <string name="error_phone_exists">Số điện thoại này đã được đăng ký</string>
     <string name="error_rate_limited">Thử quá nhiều lần. Hãy thử lại sau.</string>
     <string name="error_network">Không có kết nối. Hãy kiểm tra mạng và thử lại.</string>
