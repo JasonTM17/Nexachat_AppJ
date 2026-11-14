@@ -89,10 +89,10 @@ public final class ActiveNowStripBinder {
         TextView yourName = yourStatusView.findViewById(R.id.activePeerName);
         View yourBadge = yourStatusView.findViewById(R.id.activePeerBadge);
         if (inboxUser != null) {
-            yourAvatar.setName(inboxUser.getDisplayName());
+            yourAvatar.setName(InboxIdentityRules.ownAvatarName(inboxUser));
             yourAvatar.setAvatarUrl(inboxUser.getAvatarUrl());
         } else {
-            yourAvatar.setName(context.getString(R.string.inbox_your_status));
+            yourAvatar.setName(InboxIdentityRules.ownAvatarName(null));
         }
         yourAvatar.setOnlineStatus(null);
         yourAvatar.setShowStoryRing(false);

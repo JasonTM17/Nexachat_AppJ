@@ -99,6 +99,9 @@ public final class InboxFragment extends Fragment {
         binding.inboxUserAvatar.setOnlineStatus(null);
         binding.inboxUserAvatar.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.profileFragment));
+        if (InboxIdentityRules.needsProfileLoad(profileViewModel.getUiState().getValue())) {
+            profileViewModel.load();
+        }
         profileViewModel.getUiState().observe(getViewLifecycleOwner(), this::renderInboxIdentity);
         binding.inboxContactsButton.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.contactsFragment));
