@@ -22,6 +22,7 @@
     <string name="summary_action_share">Gửi vào trò chuyện</string>
     <string name="summary_action_regenerate">Tạo lại</string>
     <string name="summary_action_retry">Thử lại</string>
+    <string name="summary_action_recent">Tóm tắt tin gần đây</string>
     <string name="summary_error_too_few">Chưa đủ tin nhắn</string>
     <string name="summary_error_too_few_desc">Cần ít nhất 5 tin nhắn để tóm tắt.</string>
     <string name="summary_error_rate_limited">Thử quá nhiều lần</string>
@@ -40,5 +41,6 @@
     <string name="settings_consent_update_failed">Không cập nhật được cài đặt AI. Hãy thử lại.</string>
     <string name="cd_summary_close">Đóng tóm tắt</string>
     <string name="cd_summary_citation_jump">Đi tới tin nhắn trích dẫn</string>
+    <string name="cd_summary_citation_from">Mở tin nhắn từ %1$s</string>
     <string name="cd_more_options">Tùy chọn khác</string>
 </resources>
