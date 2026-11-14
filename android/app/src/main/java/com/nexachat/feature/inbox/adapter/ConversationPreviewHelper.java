@@ -34,11 +34,6 @@ public final class ConversationPreviewHelper {
         if (raw == null || raw.isEmpty()) {
             return "";
         }
-        if ("SYSTEM".equals(conversation.getLastMessageType())) {
-            // Server event lines arrive in English; localize them instead of
-            // showing raw text or a redundant "Sender: Sender did X" prefix.
-            return SystemEventFormatter.format(context, raw, false).toString();
-        }
         InboxPreviewKind kind = InboxPreviewKind.fromContent(raw);
         if (kind == InboxPreviewKind.CALL) {
             CallLogResourceResolver.ResolvedCallLog callLog = CallLogResourceResolver.fromSystemMessage(
@@ -48,6 +43,11 @@ public final class ConversationPreviewHelper {
             return withGroupSender(
                     conversation,
                     context.getString(callLog.getResourceId(), callLog.getArguments()));
+        }
+        if ("SYSTEM".equals(conversation.getLastMessageType())) {
+            // Server event lines arrive in English; localize them instead of
+            // showing raw text or a redundant "Sender: Sender did X" prefix.
+            return SystemEventFormatter.format(context, raw, false).toString();
         }
         String preview;
         if (kind == InboxPreviewKind.PHOTO) {

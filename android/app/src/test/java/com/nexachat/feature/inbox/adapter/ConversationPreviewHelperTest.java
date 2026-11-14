@@ -1,6 +1,8 @@
 package com.nexachat.feature.inbox.adapter;
 
 import static org.junit.Assert.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -87,6 +89,18 @@ public final class ConversationPreviewHelperTest {
                 "GROUP", "Team", "An added Binh", "An", false, "TEXT");
 
         assertEquals("An: An added Binh",
+                ConversationPreviewHelper.previewText(context, group, "me"));
+    }
+
+    @Test
+    public void systemTypedCallLogStillResolvesDirectionAndPrefix() {
+        Context context = mock(Context.class);
+        when(context.getString(eq(R.string.call_log_outgoing_completed), any()))
+                .thenReturn("Outgoing call · 0:42");
+        ConversationSummary group = conversation(
+                "GROUP", "Team", "CALL|COMPLETED|42|me", "An", false, "SYSTEM");
+
+        assertEquals("An: Outgoing call · 0:42",
                 ConversationPreviewHelper.previewText(context, group, "me"));
     }
 
