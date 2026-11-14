@@ -29,6 +29,16 @@ public record InboxConversationRow(
         Instant mutedUntil,
         boolean archived,
         boolean pinned,
-        Instant pinnedAt
+        Instant pinnedAt,
+        boolean e2eeEnabled
 ) {
+
+    /** Pre-E2EE shape: non-encrypted conversation. */
+    public InboxConversationRow(UUID id, Conversation.Type type, String title, String avatarUrl,
+                                UUID lastMessageId, Long lastMessageSeq, Instant createdAt,
+                                long lastReadSeq, boolean muted, Instant mutedUntil,
+                                boolean archived, boolean pinned, Instant pinnedAt) {
+        this(id, type, title, avatarUrl, lastMessageId, lastMessageSeq, createdAt, lastReadSeq,
+                muted, mutedUntil, archived, pinned, pinnedAt, false);
+    }
 }

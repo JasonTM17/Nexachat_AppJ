@@ -1,5 +1,6 @@
 package com.nexachat.message.dto;
 
+import com.nexachat.e2ee.dto.E2eeEnvelopeRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -28,11 +29,19 @@ public record SendMessageRequest(
         UUID replyToId,
         List<UUID> attachmentIds,
         @Valid @Size(max = 20) List<MessageMentionRequest> mentions,
-        Boolean mentionAll
+        Boolean mentionAll,
+        String encryption,
+        @Valid @Size(max = 20) List<E2eeEnvelopeRequest> e2eeEnvelopes
 ) {
 
     public SendMessageRequest(UUID clientMessageId, String type, String content,
                               UUID replyToId, List<UUID> attachmentIds) {
-        this(clientMessageId, type, content, replyToId, attachmentIds, null, null);
+        this(clientMessageId, type, content, replyToId, attachmentIds, null, null, null, null);
+    }
+
+    public SendMessageRequest(UUID clientMessageId, String type, String content,
+                              UUID replyToId, List<UUID> attachmentIds,
+                              List<MessageMentionRequest> mentions, Boolean mentionAll) {
+        this(clientMessageId, type, content, replyToId, attachmentIds, mentions, mentionAll, null, null);
     }
 }

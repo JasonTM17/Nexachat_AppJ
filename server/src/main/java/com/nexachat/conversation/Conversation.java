@@ -82,6 +82,10 @@ public class Conversation {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    /** Opt-in E2EE flag (DIRECT only per DDL CHECK); the server stores ciphertext only. */
+    @Column(name = "e2ee_enabled", nullable = false)
+    private boolean e2eeEnabled;
+
     protected Conversation() {
         // JPA only
     }
@@ -156,6 +160,14 @@ public class Conversation {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public boolean isE2eeEnabled() {
+        return e2eeEnabled;
+    }
+
+    public void setE2eeEnabled(boolean e2eeEnabled) {
+        this.e2eeEnabled = e2eeEnabled;
     }
 
     /** Admin-only rename (GROUP) — same mutator convention as {@link User#changeDisplayName}. */

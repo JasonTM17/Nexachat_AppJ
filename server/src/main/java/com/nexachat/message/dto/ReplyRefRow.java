@@ -16,5 +16,6 @@ public record ReplyRefRow(UUID id,
                           Message.Type type,
                           String content,
                           Instant deletedAt,
-                          Instant createdAt) {
+                          Instant createdAt,
+                          String encryption) {
 }

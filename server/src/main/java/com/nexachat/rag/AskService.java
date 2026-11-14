@@ -2,6 +2,7 @@ package com.nexachat.rag;
 
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.summary.ConversationAiOptOuts;
@@ -125,6 +126,13 @@ public class AskService {
         }
         java.time.Instant admittedFrom = memberRepository.findJoinedAt(conversationId, userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_MEMBER, "Conversation membership required"));
+        // Membership gates the e2ee flag so a non-member cannot probe it.
+        boolean e2ee = conversationRepository.findById(conversationId)
+                .map(Conversation::isE2eeEnabled).orElse(false);
+        if (e2ee) {
+            throw ApiException.of(ApiErrorCode.E2EE_AI_UNAVAILABLE,
+                    "AI features are unavailable in encrypted conversations");
+        }
         boolean contextOmitted = aiOptOuts.hasOptedOutMessages(conversationId);
         SummaryConsentRepository.ConsentSnapshot consentSnapshot = consentRepository.snapshot(userId);
         if (!properties.isEnabled()) {

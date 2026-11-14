@@ -6,6 +6,16 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Server: end-to-end encryption for direct chats (v1). Device key API
+  (`PUT|DELETE /api/v1/e2ee/devices/{id}`), per-conversation opt-in
+  (`GET|PUT /api/v1/conversations/{id}/e2ee`), encrypted TEXT sends with
+  per-device key envelopes (`encryption: "E2EE_V1"` + `e2eeEnvelopes`),
+  `e2eeEnabled`/`lastMessageEncrypted`/`encrypted` read-surface flags, and
+  exclusion of encrypted rows from search, archive, summary, RAG, previews,
+  and push payloads. See `docs/architecture/e2ee.md` for the trust model and
+  v1 limits.
+
 ### Fixed
 - Android: failed Inbox refreshes retain cached threads and show a visible Retry.
   Empty filters show recovery instead of an unconfirmed empty state.

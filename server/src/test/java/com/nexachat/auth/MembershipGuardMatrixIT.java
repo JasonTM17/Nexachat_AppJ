@@ -21,6 +21,7 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -73,6 +74,8 @@ class MembershipGuardMatrixIT extends SecurityITBase {
             new Expectation(400, ApiErrorCode.VALIDATION_FAILED);
     private static final Expectation NOT_A_GROUP = new Expectation(400, ApiErrorCode.NOT_A_GROUP);
     private static final Expectation UNAUTHORIZED = new Expectation(401, ApiErrorCode.UNAUTHORIZED);
+    private static final Expectation E2EE_UNSUPPORTED =
+            new Expectation(409, ApiErrorCode.E2EE_UNSUPPORTED_CONVERSATION);
 
     private static final Map<String, Op> OPERATIONS = buildOperations();
 
@@ -125,7 +128,7 @@ class MembershipGuardMatrixIT extends SecurityITBase {
             assertCase(op, "removed member", f.removed(), group, op.removed());
 
             if (op.crossType() != null) {
-                if (op.probeId().equals("rest-036")) {
+                if (Set.of("rest-036", "rest-107", "rest-108").contains(op.probeId())) {
                     // Direct-only route probed on a GROUP: membership is checked
                     // before the conversation type.
                     assertCase(op, "group on direct-only route", f.owner(), group, op.crossType());
@@ -757,6 +760,15 @@ class MembershipGuardMatrixIT extends SecurityITBase {
         ops.put("rest-036", new Op("rest-036", "GET",
                 "/api/v1/conversations/{id}/calls", null, null, null,
                 CONVERSATION_NOT_FOUND, NOT_MEMBER, NOT_MEMBER, VALIDATION_FAILED, null));
+
+        // E2EE is DIRECT-only: membership is verified before the type check,
+        // so a group member sees the unsupported-conversation error.
+        ops.put("rest-107", new Op("rest-107", "GET",
+                "/api/v1/conversations/{conversationId}/e2ee", null, null, null,
+                CONVERSATION_NOT_FOUND, NOT_MEMBER, NOT_MEMBER, E2EE_UNSUPPORTED, null));
+        ops.put("rest-108", new Op("rest-108", "PUT",
+                "/api/v1/conversations/{conversationId}/e2ee", Map.of("enabled", false), null, null,
+                CONVERSATION_NOT_FOUND, NOT_MEMBER, NOT_MEMBER, E2EE_UNSUPPORTED, null));
 
         return Map.copyOf(ops);
     }

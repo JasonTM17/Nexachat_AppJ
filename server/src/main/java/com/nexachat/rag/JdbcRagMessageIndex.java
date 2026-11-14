@@ -36,6 +36,7 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
               AND m.deleted_at IS NULL
               AND m.content IS NOT NULL
               AND btrim(m.content) <> ''
+              AND m.encryption IS NULL
               AND NOT EXISTS (
                   SELECT 1 FROM conversation_ai_opt_outs o
                   WHERE o.conversation_id = m.conversation_id
@@ -186,6 +187,7 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
                   AND m.deleted_at IS NULL
                   AND m.content IS NOT NULL
                   AND btrim(m.content) <> ''
+                  AND m.encryption IS NULL
                   AND e.message_id IS NULL
                   AND NOT EXISTS (
                       SELECT 1 FROM conversation_ai_opt_outs o
@@ -205,7 +207,8 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
         }
         String sql = """
                 SELECT m.id, m.content, m.edited_at FROM messages m
-                WHERE m.deleted_at IS NULL AND m.content IS NOT NULL AND m.id = ANY(?)
+                WHERE m.deleted_at IS NULL AND m.content IS NOT NULL
+                  AND m.encryption IS NULL AND m.id = ANY(?)
                   AND NOT EXISTS (
                       SELECT 1 FROM conversation_ai_opt_outs o
                       WHERE o.conversation_id = m.conversation_id

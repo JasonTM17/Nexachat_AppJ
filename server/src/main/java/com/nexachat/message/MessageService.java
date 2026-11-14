@@ -10,6 +10,9 @@ import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.conversation.ConversationUpdatedEvent;
 import com.nexachat.conversation.dto.ConversationUpdatePayload;
 import com.nexachat.conversation.dto.MemberFlagsRow;
+import com.nexachat.e2ee.E2eeDeviceService;
+import com.nexachat.e2ee.E2eeEnvelopes;
+import com.nexachat.e2ee.dto.E2eeEnvelopeRequest;
 import com.nexachat.message.dto.AttachmentResponse;
 import com.nexachat.message.dto.EditMessageRequest;
 import com.nexachat.message.dto.MessageDeletionChange;
@@ -28,6 +31,7 @@ import com.nexachat.message.dto.ReactionUpdatedPayload;
 import com.nexachat.message.dto.ReactionView;
 import com.nexachat.message.dto.ReadRequest;
 import com.nexachat.message.dto.ReplyRefResponse;
+import com.nexachat.message.dto.MessageE2eeRow;
 import com.nexachat.message.dto.ReplyRefRow;
 import com.nexachat.message.dto.SendMessageRequest;
 import com.nexachat.message.dto.SyncRequest;
@@ -48,6 +52,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -111,6 +116,7 @@ public class MessageService {
     private final Clock clock;
     private final SyncProperties syncProperties;
     private final MessageRecallProperties recallProperties;
+    private final org.springframework.beans.factory.ObjectProvider<E2eeDeviceService> e2eeDeviceService;
 
     @Autowired
     public MessageService(MessageRepository messageRepository,
@@ -125,10 +131,12 @@ public class MessageService {
                           StorageService storageService,
                           ApplicationEventPublisher eventPublisher,
                           SyncProperties syncProperties,
-                          MessageRecallProperties recallProperties) {
+                          MessageRecallProperties recallProperties,
+                          org.springframework.beans.factory.ObjectProvider<E2eeDeviceService> e2eeDeviceService) {
         this(messageRepository, mentionRepository, attachmentRepository, reactionRepository, reactionEventRepository,
                 conversationRepository, memberRepository, pinnedMessageRepository, storageService,
-                eventPublisher, syncProperties, Clock.systemUTC(), recallProperties, userRepository);
+                eventPublisher, syncProperties, Clock.systemUTC(), recallProperties, userRepository,
+                e2eeDeviceService);
     }
 
     /** Compatibility constructor for isolated service tests that do not exercise mentions. */
@@ -195,7 +203,7 @@ public class MessageService {
                    MessageRecallProperties recallProperties) {
         this(messageRepository, mentionRepository, attachmentRepository, reactionRepository,
                 reactionEventRepository, conversationRepository, memberRepository, pinnedMessageRepository,
-                storageService, eventPublisher, syncProperties, clock, recallProperties, null);
+                storageService, eventPublisher, syncProperties, clock, recallProperties, null, null);
     }
 
     MessageService(MessageRepository messageRepository,
@@ -211,7 +219,9 @@ public class MessageService {
                    SyncProperties syncProperties,
                    Clock clock,
                    MessageRecallProperties recallProperties,
-                   UserRepository userRepository) {
+                   UserRepository userRepository,
+                   org.springframework.beans.factory.ObjectProvider<E2eeDeviceService> e2eeDeviceService) {
+        this.e2eeDeviceService = e2eeDeviceService;
         this.messageRepository = messageRepository;
         this.mentionRepository = mentionRepository;
         this.attachmentRepository = attachmentRepository;
@@ -260,7 +270,7 @@ public class MessageService {
         // claim locks above are part of the existing single-use upload path.
         lockUserParent(senderId);
         messageRepository.lockIdempotencyKey(senderId, request.clientMessageId());
-        lockConversationForWrite(conversationId);
+        Conversation conversation = lockConversationForWrite(conversationId);
         requireMember(conversationId, senderId);
         var retryAfterConversationLock = messageRepository.findRowBySenderAndClientMessageId(
                 senderId, request.clientMessageId());
@@ -268,13 +278,18 @@ public class MessageService {
             return replayExisting(conversationId, retryAfterConversationLock.get());
         }
 
+        String envelopesJson = validateE2eeSend(conversation, type, request);
         validateAttachmentsReady(senderId, type, attachmentIds, lockedAttachments);
         MentionState mentionState = validateMentions(conversationId, senderId, type, content,
                 request.mentions(), Boolean.TRUE.equals(request.mentionAll()));
         UUID replyToId = resolveReplyTo(conversationId, senderId, request.replyToId());
         allocateChangeVersion(conversationId);
 
-        int inserted = mentionState.mentionAll()
+        int inserted = envelopesJson != null
+                ? messageRepository.insertEncryptedIgnoringDuplicateKey(
+                        conversationId, senderId, request.clientMessageId(), type.name(), content,
+                        replyToId, "E2EE_V1", envelopesJson)
+                : mentionState.mentionAll()
                 ? messageRepository.insertIgnoringDuplicateKeyWithMentionAll(
                         conversationId, senderId, request.clientMessageId(), type.name(), content,
                         replyToId, true)
@@ -313,6 +328,76 @@ public class MessageService {
         eventPublisher.publishEvent(new MessageCreatedEvent(
                 conversationId, response, null, !created));
         return new SendResult(response, created);
+    }
+
+    /**
+     * E2EE send contract (v1). Returns the serialized envelope array for the
+     * insert when the request is encrypted, {@code null} for a plaintext send.
+     * Validation order follows the API contract: bad scheme → encryption on a
+     * non-E2EE chat → E2EE-chat constraints (TEXT only, scheme required,
+     * ciphertext prefix, no mentions, envelopes must name active devices of
+     * current members).
+     */
+    private String validateE2eeSend(Conversation conversation, Message.Type type,
+                                    SendMessageRequest request) {
+        if (request.encryption() != null && !"E2EE_V1".equals(request.encryption())) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "encryption must be E2EE_V1 when present");
+        }
+        if (!conversation.isE2eeEnabled()) {
+            if (request.encryption() != null) {
+                throw ApiException.of(ApiErrorCode.E2EE_NOT_ENABLED,
+                        "End-to-end encryption is not enabled for this conversation");
+            }
+            if (request.e2eeEnvelopes() != null && !request.e2eeEnvelopes().isEmpty()) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "e2eeEnvelopes require encryption");
+            }
+            return null;
+        }
+        if (type != Message.Type.TEXT) {
+            throw ApiException.of(ApiErrorCode.E2EE_MEDIA_UNSUPPORTED,
+                    "Encrypted conversations only accept TEXT messages");
+        }
+        if (request.encryption() == null) {
+            throw ApiException.of(ApiErrorCode.E2EE_REQUIRED,
+                    "This conversation requires end-to-end encrypted messages");
+        }
+        if (request.content() == null || !request.content().startsWith("e2ee1:")
+                || request.content().length() > MAX_CONTENT_LENGTH) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "Encrypted content must carry the e2ee1: envelope prefix");
+        }
+        if ((request.mentions() != null && !request.mentions().isEmpty())
+                || Boolean.TRUE.equals(request.mentionAll())) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "Encrypted messages do not support mentions");
+        }
+        List<E2eeEnvelopeRequest> envelopes = request.e2eeEnvelopes() == null
+                ? List.of() : request.e2eeEnvelopes();
+        if (envelopes.isEmpty() || envelopes.size() > 20) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "e2eeEnvelopes must contain 1 to 20 entries");
+        }
+        Set<UUID> deviceIds = new HashSet<>();
+        for (E2eeEnvelopeRequest envelope : envelopes) {
+            if (envelope == null || envelope.deviceId() == null
+                    || !deviceIds.add(envelope.deviceId())
+                    || envelope.wrappedKey() == null
+                    || envelope.wrappedKey().isBlank()
+                    || envelope.wrappedKey().length() > 128
+                    || !envelope.wrappedKey().matches("^[A-Za-z0-9_-]+$")) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "Each envelope needs a unique deviceId and a base64url wrappedKey <= 128 chars");
+            }
+        }
+        List<UUID> memberIds = memberRepository.findMemberUserIds(conversation.getId());
+        List<UUID> usable = e2eeDeviceService.getObject().activeDeviceIdsForUsers(memberIds, deviceIds);
+        if (usable.size() != deviceIds.size()) {
+            throw ApiException.of(ApiErrorCode.E2EE_STALE_DEVICES,
+                    "An envelope targets a revoked, unknown, or non-member device");
+        }
+        return E2eeEnvelopes.toJson(envelopes);
     }
 
     private SendResult replayExisting(UUID conversationId, MessageRow row) {
@@ -374,6 +459,10 @@ public class MessageService {
         }
         if (message.getType() != Message.Type.TEXT) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Only TEXT messages can be edited");
+        }
+        if (message.getEncryption() != null) {
+            throw ApiException.of(ApiErrorCode.E2EE_EDIT_UNSUPPORTED,
+                    "Encrypted messages cannot be edited");
         }
         if (request == null || request.content() == null) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "content is required");
@@ -1034,7 +1123,8 @@ public class MessageService {
                         ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found"));
         eventPublisher.publishEvent(new ConversationUpdatedEvent(conversationId,
                 new ConversationUpdatePayload(conversationId, conversation.getTitle(),
-                        conversation.getAvatarUrl(), change, memberRepository.findMembers(conversationId)),
+                        conversation.getAvatarUrl(), change, memberRepository.findMembers(conversationId),
+                        conversation.isE2eeEnabled()),
                 List.of()));
     }
 
@@ -1353,13 +1443,18 @@ public class MessageService {
                 .map(MessageRow::replyToId)
                 .filter(Objects::nonNull)
                 .toList(), viewerId, sync);
+        Map<UUID, MessageE2eeRow> e2eeById = new HashMap<>();
+        for (MessageE2eeRow e2eeRow : messageRepository.findE2eeByIdIn(messageIds)) {
+            e2eeById.put(e2eeRow.id(), e2eeRow);
+        }
 
         return rows.stream()
                 .map(row -> toResponse(row,
                         attachmentsByMessage.getOrDefault(row.id(), List.of()),
                         reactionsByMessage.getOrDefault(row.id(), List.of()),
                         row.replyToId() == null ? null : replyRefsById.get(row.replyToId()),
-                        mentionsByMessage.getOrDefault(row.id(), List.of()), sync))
+                        mentionsByMessage.getOrDefault(row.id(), List.of()),
+                        e2eeById.get(row.id()), sync))
                 .toList();
     }
 
@@ -1368,6 +1463,7 @@ public class MessageService {
                                               List<ReactionView> reactions,
                                               ReplyRefResponse replyTo,
                                               List<MessageMentionResponse> mentions,
+                                              MessageE2eeRow e2ee,
                                               boolean sync) {
         boolean deleted = row.deletedAt() != null;
         return new MessageResponse(
@@ -1376,7 +1472,9 @@ public class MessageService {
                 sync && replyTo == null ? null : row.replyToId(),
                 replyTo, deleted ? List.of() : attachments, deleted ? List.of() : reactions,
                 row.createdAt(), row.editedAt(), row.deletedAt(), deleted ? List.of() : mentions,
-                !deleted && row.mentionAll(), row.changeVersion(), row.generation());
+                !deleted && row.mentionAll(), row.changeVersion(), row.generation(),
+                e2ee == null ? null : e2ee.encryption(),
+                e2ee == null || deleted ? null : E2eeEnvelopes.parse(e2ee.e2eeEnvelopes()));
     }
 
     /**
@@ -1417,9 +1515,10 @@ public class MessageService {
                 : messageRepository.findReplyRefsByIdIn(replyToIds);
         for (ReplyRefRow row : refs) {
             boolean deleted = row.deletedAt() != null;
+            boolean encrypted = row.encryption() != null;
             result.put(row.id(), new ReplyRefResponse(
                     row.id(), row.senderId(), row.senderDisplayName(), row.type().name(),
-                    deleted ? null : row.content(), deleted, row.createdAt()));
+                    deleted || encrypted ? null : row.content(), deleted, row.createdAt(), encrypted));
         }
         return result;
     }

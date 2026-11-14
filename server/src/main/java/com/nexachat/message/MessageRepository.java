@@ -1,6 +1,7 @@
 package com.nexachat.message;
 
 import com.nexachat.message.dto.MessageDeletionChange;
+import com.nexachat.message.dto.MessageE2eeRow;
 import com.nexachat.message.dto.MessageRow;
 import com.nexachat.message.dto.MessageSearchProjection;
 import com.nexachat.message.dto.ReplyRefRow;
@@ -92,6 +93,28 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
                                                  @Param("content") String content,
                                                  @Param("replyToId") UUID replyToId,
                                                  @Param("mentionAll") boolean mentionAll);
+
+    /** Same idempotent insert carrying the E2EE envelope array as JSONB. */
+    @Modifying
+    @Query(value = """
+            INSERT INTO messages
+                (conversation_id, sender_id, client_message_id, type, content, reply_to_id,
+                 encryption, e2ee_envelopes, change_version, created_at)
+            SELECT :conversationId, :senderId, :clientMessageId, :type,
+                   CAST(:content AS text), CAST(:replyToId AS uuid),
+                   CAST(:encryption AS varchar), CAST(:envelopes AS jsonb),
+                   c.change_version, clock_timestamp()
+            FROM conversations c WHERE c.id = :conversationId
+            ON CONFLICT (sender_id, client_message_id) DO NOTHING
+            """, nativeQuery = true)
+    int insertEncryptedIgnoringDuplicateKey(@Param("conversationId") UUID conversationId,
+                                            @Param("senderId") UUID senderId,
+                                            @Param("clientMessageId") UUID clientMessageId,
+                                            @Param("type") String type,
+                                            @Param("content") String content,
+                                            @Param("replyToId") UUID replyToId,
+                                            @Param("encryption") String encryption,
+                                            @Param("envelopes") String envelopes);
 
     /**
      * Projection read-back after insert-or-skip: fetches the stored row plus
@@ -307,6 +330,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             WHERE m.conversation_id = :conversationId
               AND m.type = 'TEXT'
               AND m.deleted_at IS NULL
+              AND m.encryption IS NULL
               AND (:beforeSeq IS NULL OR m.seq < :beforeSeq)
               AND EXISTS (SELECT 1 FROM conversation_members cm
                           WHERE cm.conversation_id = m.conversation_id AND cm.user_id = :userId
@@ -331,6 +355,15 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             """)
     List<MessageRow> findRowsByIdIn(@Param("ids") Collection<UUID> ids);
 
+    /** Batch encryption sidecar for {@code MessageResponse} hydration. */
+    @Query("""
+            SELECT new com.nexachat.message.dto.MessageE2eeRow(
+                       m.id, m.encryption, m.e2eeEnvelopes)
+            FROM Message m
+            WHERE m.id IN :ids AND m.encryption IS NOT NULL
+            """)
+    List<MessageE2eeRow> findE2eeByIdIn(@Param("ids") Collection<UUID> ids);
+
     /**
      * Batch reply-target fetch for the {@code replyTo} preview (phase-10):
      * one IN query hydrates every {@code replyToId} on a message page — same
@@ -338,7 +371,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
      */
     @Query("""
             SELECT new com.nexachat.message.dto.ReplyRefRow(
-                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt, m.createdAt)
+                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt, m.createdAt, m.encryption)
             FROM Message m JOIN m.sender u
             WHERE m.id IN :ids
             """)
@@ -360,7 +393,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
 
     @Query("""
             SELECT new com.nexachat.message.dto.ReplyRefRow(
-                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt, m.createdAt)
+                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt, m.createdAt, m.encryption)
             FROM Message m JOIN m.sender u
             WHERE m.id IN :ids
               AND EXISTS (SELECT 1 FROM ConversationMember member

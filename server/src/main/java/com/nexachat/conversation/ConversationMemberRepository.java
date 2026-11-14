@@ -260,7 +260,8 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
             SELECT new com.nexachat.conversation.dto.InboxConversationRow(
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
-                       m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt)
+                       m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
+                       c.e2eeEnabled)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId AND m.archived = :archived
             ORDER BY m.pinned DESC, COALESCE(c.lastMessageSeq, 0) DESC,
@@ -274,7 +275,8 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
             SELECT new com.nexachat.conversation.dto.InboxConversationRow(
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
-                       m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt)
+                       m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
+                       c.e2eeEnabled)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId AND m.archived = :archived
               AND EXISTS (SELECT a.id FROM ConversationLabelAssignment a
@@ -298,7 +300,8 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
             SELECT new com.nexachat.conversation.dto.InboxConversationRow(
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
-                       m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt)
+                       m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
+                       c.e2eeEnabled)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId
               AND m.archived = :archived
@@ -328,7 +331,8 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
             SELECT new com.nexachat.conversation.dto.InboxConversationRow(
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
-                       m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt)
+                       m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
+                       c.e2eeEnabled)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId
               AND m.archived = :archived
@@ -362,7 +366,8 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
             SELECT new com.nexachat.conversation.dto.InboxConversationRow(
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
-                       m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt)
+                       m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
+                       c.e2eeEnabled)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId
               AND m.archived = :archived
@@ -391,7 +396,8 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
             SELECT new com.nexachat.conversation.dto.InboxConversationRow(
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
-                       m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt)
+                       m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
+                       c.e2eeEnabled)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId
               AND m.archived = :archived

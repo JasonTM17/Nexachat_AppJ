@@ -21,5 +21,12 @@ public record ReplyRefResponse(UUID id,
                                @JsonInclude(JsonInclude.Include.ALWAYS)
                                String content,
                                boolean deleted,
-                               Instant createdAt) {
+                               Instant createdAt,
+                               boolean encrypted) {
+
+    /** Non-encrypted reply preview (pre-E2EE callers). */
+    public ReplyRefResponse(UUID id, UUID senderId, String senderDisplayName, String type,
+                            String content, boolean deleted, Instant createdAt) {
+        this(id, senderId, senderDisplayName, type, content, deleted, createdAt, false);
+    }
 }

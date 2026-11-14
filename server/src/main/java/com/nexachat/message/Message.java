@@ -9,6 +9,8 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
@@ -102,6 +104,15 @@ public class Message {
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
+    /** {@code 'E2EE_V1'} when the body is client-side ciphertext; NULL for plaintext. */
+    @Column(name = "encryption", length = 10)
+    private String encryption;
+
+    /** JSON array of {@code {deviceId, wrappedKey}} envelopes; paired with {@link #encryption}. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "e2ee_envelopes", columnDefinition = "jsonb")
+    private String e2eeEnvelopes;
+
     protected Message() {
         // JPA only
     }
@@ -156,6 +167,14 @@ public class Message {
 
     public Instant getDeletedAt() {
         return deletedAt;
+    }
+
+    public String getEncryption() {
+        return encryption;
+    }
+
+    public String getE2eeEnvelopes() {
+        return e2eeEnvelopes;
     }
 
     public void editContent(String content, Instant editedAt) {

@@ -40,7 +40,7 @@ class AuthorizationFieldAllowlistIT extends SecurityITBase {
                         owner.accessToken())
                 .andExpect(status().isCreated()).andReturn();
         JsonNode group = objectMapper.readTree(groupResult.getResponse().getContentAsString());
-        assertKeys(group, Set.of("id", "type", "members", "createdAt", "aiOptOut"));
+        assertKeys(group, Set.of("id", "type", "members", "createdAt", "aiOptOut", "e2eeEnabled"));
         for (JsonNode groupMember : group.path("members")) {
             assertKeys(groupMember, Set.of("userId", "displayName", "phone", "deleted"));
         }
@@ -54,7 +54,8 @@ class AuthorizationFieldAllowlistIT extends SecurityITBase {
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
         assertKeys(message, Set.of("id", "conversationId", "seq", "senderId", "senderDisplayName", "type",
                 "content", "clientMessageId", "replyToId", "replyTo", "attachments", "reactions",
-                "createdAt", "editedAt", "deletedAt", "mentions", "mentionAll", "changeVersion", "generation"));
+                "createdAt", "editedAt", "deletedAt", "mentions", "mentionAll", "changeVersion", "generation",
+                "encryption", "e2eeEnvelopes"));
         assertNoSensitiveOtherUserFields(message);
 
         JsonNode inbox = objectMapper.readTree(getWithAuth("/api/v1/conversations", owner.accessToken())
@@ -62,7 +63,7 @@ class AuthorizationFieldAllowlistIT extends SecurityITBase {
         JsonNode inboxGroup = findById(inbox, groupId);
         assertKeys(inboxGroup, Set.of("id", "type", "title", "avatarUrl", "members", "lastMessage",
                 "unreadCount", "lastReadSeq", "peerPresence", "muted", "mutedUntil", "archived",
-                "aiOptOut", "pinned", "pinnedAt", "labels"));
+                "aiOptOut", "pinned", "pinnedAt", "labels", "e2eeEnabled", "lastMessageEncrypted"));
         for (JsonNode inboxMember : inboxGroup.path("members")) {
             assertKeys(inboxMember, Set.of("userId", "displayName", "phone", "avatarUrl", "role"));
         }

@@ -14,6 +14,7 @@ public record ConversationResponse(
         String type,
         List<ConversationMemberView> members,
         Instant createdAt,
-        boolean aiOptOut
+        boolean aiOptOut,
+        boolean e2eeEnabled
 ) {
 }

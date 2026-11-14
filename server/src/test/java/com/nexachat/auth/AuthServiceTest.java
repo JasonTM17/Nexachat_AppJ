@@ -13,6 +13,7 @@ import com.nexachat.user.User;
 import com.nexachat.user.UserAccountCreatedEvent;
 import com.nexachat.user.UserRepository;
 import com.nexachat.ws.StompRevocationFence;
+import com.nexachat.e2ee.E2eeDeviceService;
 import com.nexachat.user.dto.UserResponse;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -71,6 +72,8 @@ class AuthServiceTest {
     private ObjectProvider<PlatformTransactionManager> transactionManagerProvider;
     @Mock
     private StompRevocationFence revocationFence;
+    @Mock
+    private ObjectProvider<E2eeDeviceService> e2eeDeviceService;
 
     private AuthService authService;
 
@@ -102,7 +105,7 @@ class AuthServiceTest {
                 tokenService, accessTokenRevocationService, rateLimitService,
                 new AuthResponseFactory(jwtService, new MessageRecallProperties()),
                 (boundary, operation, userId, tokenId) -> { }, eventPublisher, transactionManagerProvider,
-                revocationFence);
+                revocationFence, e2eeDeviceService);
     }
 
     private static User userWithId(String phone, String passwordHash, String displayName) {

@@ -18,6 +18,12 @@ public record ConversationUpdatePayload(
         String title,
         String avatarUrl,
         String change,
-        List<MemberResponse> members
+        List<MemberResponse> members,
+        boolean e2eeEnabled
 ) {
+
+    public ConversationUpdatePayload(UUID conversationId, String title, String avatarUrl,
+                                     String change, List<MemberResponse> members) {
+        this(conversationId, title, avatarUrl, change, members, false);
+    }
 }

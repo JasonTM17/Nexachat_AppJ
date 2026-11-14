@@ -44,6 +44,7 @@ public interface ArchiveRepository extends Repository<Message, UUID> {
                           WHERE cm.conversation_id = m.conversation_id AND cm.user_id = :userId
                             AND m.created_at >= cm.joined_at)
               AND m.deleted_at IS NULL
+              AND m.encryption IS NULL
               AND m.type <> 'AUDIO'
               AND (CAST(:senderId AS uuid) IS NULL OR m.sender_id = CAST(:senderId AS uuid))
               AND (CAST(:fromTs AS timestamptz) IS NULL
@@ -80,6 +81,7 @@ public interface ArchiveRepository extends Repository<Message, UUID> {
                           WHERE cm.conversation_id = m.conversation_id AND cm.user_id = :userId
                             AND m.created_at >= cm.joined_at)
               AND m.deleted_at IS NULL
+              AND m.encryption IS NULL
               AND m.type <> 'AUDIO'
               AND (CAST(:senderId AS uuid) IS NULL OR m.sender_id = CAST(:senderId AS uuid))
               AND (CAST(:fromTs AS timestamptz) IS NULL
@@ -117,6 +119,7 @@ public interface ArchiveRepository extends Repository<Message, UUID> {
                           WHERE cm.conversation_id = m.conversation_id AND cm.user_id = :userId
                             AND m.created_at >= cm.joined_at)
               AND m.deleted_at IS NULL
+              AND m.encryption IS NULL
               AND m.type = 'TEXT'
               AND m.content IS NOT NULL
               AND m.content ~* 'https{0,1}://'
