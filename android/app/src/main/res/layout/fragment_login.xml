@@ -152,6 +152,7 @@
                     style="@style/Widget.NexaChat.TextInputLayout.Auth"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
                     android:hint="@string/auth_phone_label"
                     app:startIconDrawable="@drawable/ic_call">
 

@@ -138,6 +138,7 @@
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/nameLayout"
                     style="@style/Widget.NexaChat.TextInputLayout.Auth"
+                    android:layout_marginTop="@dimen/space_md"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:hint="@string/auth_display_name_label"
