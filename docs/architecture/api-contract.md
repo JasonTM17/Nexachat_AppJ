@@ -231,6 +231,16 @@ These keys are Spring properties; override them with the matching
 | `FILE_TOO_LARGE` | 413 | Upload exceeds the configured max size |
 | `PAYLOAD_TOO_LARGE` | 413 | JSON request body exceeds `nexachat.security.max-json-body-bytes` (default 1 MiB) |
 | `RATE_LIMITED` | 429 | Per-user/IP rate limit exceeded |
+| `E2EE_DEVICE_CONFLICT` | 409 | Device id reused with a different key/owner, or the id was revoked |
+| `E2EE_DEVICE_LIMIT` | 409 | User already has 10 active devices |
+| `E2EE_UNSUPPORTED_CONVERSATION` | 409 | E2EE state read/toggle attempted on a non-DIRECT conversation |
+| `E2EE_PEER_NOT_READY` | 409 | Enabling E2EE while some member has no active device |
+| `E2EE_REQUIRED` | 409 | Send to an `e2ee_enabled` conversation without `encryption: "E2EE_V1"` |
+| `E2EE_NOT_ENABLED` | 409 | `encryption` sent to a conversation that is not `e2ee_enabled` |
+| `E2EE_STALE_DEVICES` | 409 | An envelope targets a revoked, unknown, or non-member device — client refetches `GET /conversations/{id}/e2ee` and retries |
+| `E2EE_MEDIA_UNSUPPORTED` | 409 | Non-TEXT message in an `e2ee_enabled` conversation |
+| `E2EE_EDIT_UNSUPPORTED` | 409 | Edit attempted on an encrypted message |
+| `E2EE_AI_UNAVAILABLE` | 409 | Summary/ask invoked on an `e2ee_enabled` conversation |
 | `NOT_FOUND` | 404 | Unknown path |
 | `METHOD_NOT_ALLOWED` | 405 | Wrong HTTP method for the path |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | Request `Content-Type` not accepted |
@@ -501,6 +511,40 @@ Within their rate-limit allowance, password-reset and account-deletion request r
 
 `ContactResponse` = `{contactUserId, phone, displayName, aliasName, avatarUrl, createdAt}`;
 `aliasName` is the owner's override, `null` means render `displayName`.
+
+## E2EE — `/api/v1/e2ee` and `/api/v1/conversations/{id}/e2ee`
+
+End-to-end encrypted direct chats (v1, see `docs/architecture/e2ee.md` for the
+trust model and crypto). Devices publish an X25519 public key per
+installation; a DIRECT conversation opts in via a member-only toggle once
+every member owns at least one active device. Encrypted messages carry
+`encryption: "E2EE_V1"` on send plus an `e2eeEnvelopes` array of
+`{deviceId, wrappedKey}` entries (base64url, ≤128 chars, unique deviceIds that
+must all be ACTIVE devices of current members) and echo both fields back on
+every `MessageResponse` surface. Ciphertext `content` is prefixed `e2ee1:`.
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `PUT /api/v1/e2ee/devices/{deviceId}` | Bearer | `{publicKey}` — base64url no-padding, decodes to 32 bytes | `200` `{deviceId, publicKey, createdAt}`; idempotent for the same id+owner+key while active | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `E2EE_DEVICE_CONFLICT` 409 · `E2EE_DEVICE_LIMIT` 409 (10 active devices) · `RATE_LIMITED` 429 |
+| `DELETE /api/v1/e2ee/devices/{deviceId}` | Bearer (own device) | — | `204` (idempotent; sets `revoked_at`) | `UNAUTHORIZED` 401 · `E2EE_DEVICE_CONFLICT` 409 (not the owner's active device) |
+| `GET /conversations/{conversationId}/e2ee` | Bearer member, DIRECT only | — | `200` `{enabled, devices: [{userId, deviceId, publicKey}]}` — active devices of all current members | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `E2EE_UNSUPPORTED_CONVERSATION` 409 |
+| `PUT /conversations/{conversationId}/e2ee` | Bearer member, DIRECT only | `{enabled}` boolean | `200` same shape as GET; no-op when unchanged (no SYSTEM line) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `E2EE_UNSUPPORTED_CONVERSATION` 409 · `E2EE_PEER_NOT_READY` 409 |
+
+Toggling posts a `SYSTEM` line ("\<name\> turned on/off end-to-end encryption")
+and broadcasts the regular `CONVERSATION_UPDATED` snapshot. Logout-all and
+account deletion revoke every device of the user; plain logout does not.
+
+Encrypted sends additionally obey: TEXT only (`E2EE_MEDIA_UNSUPPORTED`),
+`encryption` must be `E2EE_V1` (`E2EE_REQUIRED` when absent in an enabled
+chat, `E2EE_NOT_ENABLED` in a plaintext chat, `VALIDATION_FAILED` for any
+other scheme), no mentions, 1–20 envelopes (`E2EE_STALE_DEVICES` when a
+deviceId is not an active member device). Edits of encrypted messages return
+`E2EE_EDIT_UNSUPPORTED`; delete/recall is unchanged. Summary and ask return
+`E2EE_AI_UNAVAILABLE` on `e2ee_enabled` conversations, and encrypted rows are
+excluded from message/archive search, summary windows, and RAG indexing.
+`InboxEntry` gains `e2eeEnabled` and `lastMessageEncrypted` (the last-message
+snippet is `null` for encrypted rows); `ReplyRefResponse` gains `encrypted`
+with `content: null` for encrypted quote targets.
 
 ## Conversations — `/api/v1/conversations`
 

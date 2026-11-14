@@ -385,8 +385,13 @@ the implementing source file.
 - `enableSimpleBroker("/topic","/queue")` is in-process fan-out
   (WebSocketConfig.java): correct for one instance; horizontal scaling needs a
   broker relay, and RateLimitService's in-memory buckets need Redis/JDBC.
-- No end-to-end encryption: message and file content is plaintext at rest and
-  protected only in transit (TLS in production). Production disaster recovery
+- E2EE v1 exists for DIRECT conversations (see `docs/architecture/e2ee.md`
+  and the limits row in `docs/quality/known-limitations.md`): the server
+  stores only device public keys and opaque ciphertext, excludes encrypted
+  rows from every AI/search/preview surface, refuses encrypted edits and
+  encrypted media, and revokes a user's devices on logout-all and account
+  deletion. All other content remains plaintext at rest, protected only in
+  transit (TLS in production). Production disaster recovery
   requires paired backups of Neon database snapshots and Supabase S3 object
   storage; scripts like `demo/backup.sh` are strictly scoped to the local
   Docker Compose demo.
