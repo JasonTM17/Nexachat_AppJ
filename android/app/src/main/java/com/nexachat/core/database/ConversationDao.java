@@ -76,11 +76,12 @@ public interface ConversationDao {
     @Query(
             "UPDATE conversations SET lastMessageSeq = :seq, lastMessageContent = :content, "
                     + "lastMessageSenderName = :senderName, lastMessageAt = :at, "
-                    + "lastMessageDeleted = 0, lastMessageEncrypted = :encrypted "
+                    + "lastMessageDeleted = 0, lastMessageEncrypted = :encrypted, "
+                    + "lastMessageType = :type "
                     + "WHERE id = :conversationId AND :seq > lastMessageSeq")
     Completable updateLastMessage(
             String conversationId, long seq, String content, String senderName, long at,
-            boolean encrypted);
+            boolean encrypted, String type);
 
     /** An edit refreshes the snippet only while the same message remains last. */
     @Query(

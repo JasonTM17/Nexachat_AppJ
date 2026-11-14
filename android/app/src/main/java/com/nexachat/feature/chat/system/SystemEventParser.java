@@ -25,6 +25,12 @@ public final class SystemEventParser {
     private static final Pattern RENAMED =
             Pattern.compile("^(.+) renamed the group to \"(.+)\"$");
     private static final Pattern ROLE_CHANGED = Pattern.compile("^(.+) changed (.+)'s role$");
+    private static final Pattern ADMIN_PROMOTED =
+            Pattern.compile("^(.+) made (.+) a group admin$");
+    private static final Pattern E2EE_ON =
+            Pattern.compile("^(.+) turned on end-to-end encryption$");
+    private static final Pattern E2EE_OFF =
+            Pattern.compile("^(.+) turned off end-to-end encryption$");
 
     private SystemEventParser() { }
 
@@ -64,6 +70,10 @@ public final class SystemEventParser {
                     argsRequired(raw, SystemEventType.GROUP_MEMBER_REMOVED, parts, 4, 2);
             case "GROUP_RENAMED" -> argsRequired(raw, SystemEventType.GROUP_RENAMED, parts, 4, 2);
             case "GROUP_ROLE_CHANGED" -> argsRequired(raw, SystemEventType.GROUP_ROLE_CHANGED, parts, 4, 2);
+            case "GROUP_ADMIN_PROMOTED" ->
+                    argsRequired(raw, SystemEventType.GROUP_ADMIN_PROMOTED, parts, 4, 2);
+            case "E2EE_ENABLED" -> argsRequired(raw, SystemEventType.E2EE_ENABLED, parts, 3, 1);
+            case "E2EE_DISABLED" -> argsRequired(raw, SystemEventType.E2EE_DISABLED, parts, 3, 1);
             default -> SystemEventPayload.unknown(raw);
         };
     }
@@ -93,6 +103,17 @@ public final class SystemEventParser {
 
     private static SystemEventPayload parseLegacyEnglish(String raw) {
         Matcher matcher;
+        // Specific templates run before the generic ADDED/REMOVED catch-alls.
+        if ((matcher = E2EE_ON.matcher(raw)).matches()) {
+            return SystemEventPayload.localized(SystemEventType.E2EE_ENABLED, matcher.group(1));
+        }
+        if ((matcher = E2EE_OFF.matcher(raw)).matches()) {
+            return SystemEventPayload.localized(SystemEventType.E2EE_DISABLED, matcher.group(1));
+        }
+        if ((matcher = ADMIN_PROMOTED.matcher(raw)).matches()) {
+            return SystemEventPayload.localized(
+                    SystemEventType.GROUP_ADMIN_PROMOTED, matcher.group(1), matcher.group(2));
+        }
         if ((matcher = APPROVED.matcher(raw)).matches()) {
             return SystemEventPayload.localized(
                     SystemEventType.GROUP_MEMBER_APPROVED,

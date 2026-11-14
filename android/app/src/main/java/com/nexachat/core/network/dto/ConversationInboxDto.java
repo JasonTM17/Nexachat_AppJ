@@ -406,6 +406,12 @@ public final class ConversationInboxDto {
         return lastMessageSeq;
     }
 
+    /** The server's last-message type ("TEXT", "SYSTEM", …); null on legacy flat payloads. */
+    @Nullable
+    public String resolvedLastType() {
+        return lastMessage == null ? null : lastMessage.getType();
+    }
+
     @Nullable
     public String resolvedOtherName(@Nullable String myUserId) {
         if (otherUser != null && otherUser.getDisplayName() != null) {

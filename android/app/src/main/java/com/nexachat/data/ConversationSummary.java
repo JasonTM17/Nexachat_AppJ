@@ -57,6 +57,8 @@ public final class ConversationSummary {
     private final boolean e2eeEnabled;
     /** The last-message preview is ciphertext; the inbox shows a neutral tag. */
     private final boolean lastMessageEncrypted;
+    /** Server type of the last message; SYSTEM lines localize through the event formatter. */
+    @Nullable private final String lastMessageType;
 
     public ConversationSummary(
             String id,
@@ -86,7 +88,7 @@ public final class ConversationSummary {
                 lastMessageSeq, unreadCount, 0L, otherUserName, otherUserAvatar, avatarUrl,
                 peerReadSeq, peerDeliveredSeq, myRole, otherUserId, lastMessageDeleted,
                 peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut, pinned,
-                pinnedAtEpochMs, List.of(), false, false);
+                pinnedAtEpochMs, List.of(), false, false, null);
     }
 
     public ConversationSummary(
@@ -118,7 +120,7 @@ public final class ConversationSummary {
                 lastMessageSeq, unreadCount, 0L, otherUserName, otherUserAvatar, avatarUrl,
                 peerReadSeq, peerDeliveredSeq, myRole, otherUserId, lastMessageDeleted,
                 peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut, pinned,
-                pinnedAtEpochMs, labelIds, false, false);
+                pinnedAtEpochMs, labelIds, false, false, null);
     }
 
     public ConversationSummary(
@@ -148,9 +150,11 @@ public final class ConversationSummary {
             @Nullable Long pinnedAtEpochMs,
             List<String> labelIds,
             boolean e2eeEnabled,
-            boolean lastMessageEncrypted) {
+            boolean lastMessageEncrypted,
+            @Nullable String lastMessageType) {
         this.e2eeEnabled = e2eeEnabled;
         this.lastMessageEncrypted = lastMessageEncrypted;
+        this.lastMessageType = lastMessageType;
         this.id = Objects.requireNonNull(id, "id");
         this.type = Objects.requireNonNull(type, "type");
         this.title = title;
@@ -331,6 +335,7 @@ public final class ConversationSummary {
     public List<String> getLabelIds() { return labelIds; }
     public boolean isE2eeEnabled() { return e2eeEnabled; }
     public boolean isLastMessageEncrypted() { return lastMessageEncrypted; }
+    @Nullable public String getLastMessageType() { return lastMessageType; }
 
     /**
      * A timed mute expires lazily: the stored flag stays true while the expiry
@@ -407,7 +412,8 @@ public final class ConversationSummary {
                 && Objects.equals(myRole, that.myRole)
                 && Objects.equals(otherUserId, that.otherUserId)
                 && Objects.equals(peerPresence, that.peerPresence)
-                && Objects.equals(mutedUntilEpochMs, that.mutedUntilEpochMs);
+                && Objects.equals(mutedUntilEpochMs, that.mutedUntilEpochMs)
+                && Objects.equals(lastMessageType, that.lastMessageType);
     }
 
     @Override
@@ -416,6 +422,6 @@ public final class ConversationSummary {
                 lastMessageAtEpochMs, lastMessageSeq, unreadCount, myLastReadSeq, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, peerDeliveredSeq, myRole, otherUserId,
                 lastMessageDeleted, peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut,
-                pinned, pinnedAtEpochMs, labelIds);
+                pinned, pinnedAtEpochMs, labelIds, lastMessageType);
     }
 }
