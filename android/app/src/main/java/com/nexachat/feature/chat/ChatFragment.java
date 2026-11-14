@@ -892,6 +892,18 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         View.OnClickListener open = group ? v -> openGroupInfo() : null;
         binding.chatToolbar.setOnClickListener(open);
         binding.chatToolbar.setClickable(group);
+        // TalkBack says "double-tap to open group info" instead of a bare "double-tap to activate".
+        if (group) {
+            androidx.core.view.ViewCompat.replaceAccessibilityAction(binding.chatToolbar,
+                    androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_CLICK,
+                    getString(R.string.cd_group_info), (view, args) -> {
+                        openGroupInfo();
+                        return true;
+                    });
+        } else {
+            androidx.core.view.ViewCompat.removeAccessibilityAction(binding.chatToolbar,
+                    android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK.getId());
+        }
         if (binding.chatHeaderAvatar != null) {
             binding.chatHeaderAvatar.setOnClickListener(open);
             binding.chatHeaderAvatar.setClickable(group);
@@ -1396,7 +1408,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 status.setText(ChatErrorText.messageId(state.getError()));
             }
             toggle.setOnCheckedChangeListener((button, checked) -> {
-                if (button.isPressed()) viewModel.setAiOptOut(checked);
+                viewModel.setAiOptOut(checked);
             });
         };
         viewModel.getAiOptOutState().observe(getViewLifecycleOwner(), observer);
