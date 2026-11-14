@@ -199,6 +199,9 @@ production does not pull it. Render builds from `server/Dockerfile`.
   Dashboard, and restore the previous environment variable values if any were
   changed. Use one env-var call per key, as in §4. The bulk
   `PUT .../env-vars` replaces every variable, so never use it for a single change.
+  Once an APK that signs in with `{identifier, password}` is published, do not
+  roll the server back past the first release that accepts `identifier`: email
+  sign-in from that APK would fail with `400`. Phone sign-in keeps working.
 - **Database**: Migrations are strictly forward-only (`validate-on-migrate: true`).
   Do not attempt a reverse Flyway migration. If a rolled-back commit cannot run
   on the migrated schema, deploy a forward fix commit. Hosted Neon Postgres backups
