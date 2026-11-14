@@ -105,3 +105,7 @@ POST	/api/v1/auth/password-reset/request	PUBLIC_AUTH	public_auth	rest-103
 POST	/api/v1/users/me/email/verify	AUTHENTICATED	authenticated_self	rest-104
 PUT	/api/v1/users/me/email	AUTHENTICATED	authenticated_self	rest-105
 POST	/api/v1/users/me/deletion-code	AUTHENTICATED	authenticated_self	rest-106
+GET	/api/v1/conversations/{conversationId}/e2ee	CONVERSATION_MEMBER	conversation_member	rest-107
+PUT	/api/v1/conversations/{conversationId}/e2ee	CONVERSATION_MEMBER	conversation_member	rest-108
+PUT	/api/v1/e2ee/devices/{deviceId}	AUTHENTICATED	authenticated_self	rest-109
+DELETE	/api/v1/e2ee/devices/{deviceId}	AUTHENTICATED	authenticated_self	rest-110

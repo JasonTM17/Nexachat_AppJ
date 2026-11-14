@@ -817,6 +817,7 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
             if (route.path().endsWith("/ask")) return 200;
             if (route.path().endsWith("/summary")) return 400;
             if (route.path().endsWith("/ai-opt-out")) return 200;
+            if (route.path().endsWith("/e2ee")) return 200;
         }
         if (route.method().equals("PATCH")) return 200;
         if (route.method().equals("DELETE") || route.method().equals("PUT")
@@ -860,6 +861,7 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
         boolean directPin = route.policy().equals("DIRECT_MEMBER_OR_GROUP_ADMIN")
                 && actor.userId().equals(fixtures.directPeer().userId());
         UUID conversationId = route.path().equals("/api/v1/conversations/{id}/calls")
+                || route.path().endsWith("/e2ee")
                 || directPin ? fixtures.directId() : fixtures.groupId();
         UUID messageId = directPin ? fixtures.directMessageId() : fixtures.messageId();
         UUID pathId = route.path().startsWith("/api/v1/attachments/")
@@ -893,6 +895,9 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
             return Map.of("upToSeq", 1);
         }
         if (path.endsWith("/mute") && route.method().equals("PUT")) return Map.of("forever", true);
+        // Disabled-state write is a no-op so the member probe succeeds without
+        // registering devices or emitting a system line into shared fixtures.
+        if (path.endsWith("/e2ee") && route.method().equals("PUT")) return Map.of("enabled", false);
         if (route.policy().equals("GROUP_ADMIN") && path.endsWith("/invite-link")
                 && route.method().equals("PATCH")) return Map.of("requiresApproval", true);
         if (route.policy().equals("GROUP_ADMIN") && path.equals("/api/v1/conversations/{conversationId}")
@@ -933,6 +938,7 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
 
     private static Registered actorForMemberRoute(Route route, RoleFixtures fixtures) {
         return route.path().equals("/api/v1/conversations/{id}/calls")
+                || route.path().endsWith("/e2ee")
                 ? fixtures.directPeer() : fixtures.member();
     }
 
