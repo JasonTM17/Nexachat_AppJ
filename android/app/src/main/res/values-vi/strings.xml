@@ -108,6 +108,7 @@
     <string name="search_title">Tìm người</string>
     <string name="search_label">SĐT hoặc tên</string>
     <string name="search_no_results">Không tìm thấy người dùng</string>
+    <string name="search_press_to_find">Nhấn tìm kiếm để tìm người trên NexaChat</string>
     <string name="add_by_phone_title">Thêm theo SĐT</string>
     <string name="contact_added">Đã thêm vào danh bạ</string>
     <string name="contact_alias_label">Biệt danh</string>

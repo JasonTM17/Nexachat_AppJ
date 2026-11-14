@@ -180,9 +180,21 @@ public final class MediaViewerFragment extends Fragment {
         if (ui == null || viewModel == null) {
             return;
         }
-        ui.viewerToolbar.setTitle(state.getDisplayName() == null
-                ? getString(R.string.media_attachment)
-                : state.getDisplayName());
+        String sentAtLabel = state.getSentAtEpochMs() > 0
+                ? com.nexachat.core.ui.components.ChatUiRules.resolveRelativeTimeLabel(
+                        state.getSentAtEpochMs(),
+                        System.currentTimeMillis(),
+                        getString(R.string.time_just_now),
+                        getString(R.string.time_yesterday))
+                : null;
+        MediaViewerChrome chrome = MediaViewerChrome.resolve(
+                state.isVisualMedia(),
+                state.getSenderName(),
+                sentAtLabel,
+                state.getDisplayName(),
+                getString(R.string.media_attachment));
+        ui.viewerToolbar.setTitle(chrome.getTitle());
+        ui.viewerToolbar.setSubtitle(chrome.getSubtitle());
         updateToolbarActions(state);
 
         hideContent(ui);

@@ -169,7 +169,11 @@ public class SettingsRowView extends LinearLayout {
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
-        applyTrailingValueLayout(w);
+        // Reparenting the value inside a layout pass leaves it laid out below
+        // the parent's already-measured bounds (clipped and absent from a11y);
+        // defer the placement until the pass completes so the next measure
+        // sees the child in its final parent.
+        post(() -> applyTrailingValueLayout(w));
     }
 
     private void applyTrailingValueLayout(int rowWidthPx) {
@@ -216,7 +220,8 @@ public class SettingsRowView extends LinearLayout {
             }
             applyInlineValueStyle();
         }
-        // This runs from onSizeChanged, inside a layout pass, where a direct requestLayout is dropped.
+        // This may still run inside a layout pass via a setter; a direct
+        // requestLayout there is dropped, so defer it to the next pass.
         post(this::requestLayout);
     }
 

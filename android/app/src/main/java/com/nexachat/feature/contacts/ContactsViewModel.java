@@ -100,7 +100,9 @@ public final class ContactsViewModel extends ViewModel {
         updateState(state -> state
                 .withQuery(value)
                 .withError(null)
-                .withSearched(state.isSearched() && hasNonWhitespace(value)));
+                // A changed query is a new unsubmitted query: stale server
+                // results must not shadow the local as-you-type filter.
+                .withSearched(state.isSearched() && value.equals(state.getQuery())));
     }
 
     /** True when a query begins with '+' or a Unicode digit. */

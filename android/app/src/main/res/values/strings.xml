@@ -108,6 +108,7 @@
     <string name="search_title">Search</string>
     <string name="search_label">Phone or name</string>
     <string name="search_no_results">No users found</string>
+    <string name="search_press_to_find">Press search to find people on NexaChat</string>
     <string name="add_by_phone_title">Add by phone</string>
     <string name="contact_added">Added to contacts</string>
     <string name="contact_alias_label">Alias</string>

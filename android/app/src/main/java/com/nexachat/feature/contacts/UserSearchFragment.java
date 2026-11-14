@@ -112,21 +112,29 @@ public final class UserSearchFragment extends Fragment {
         }
         rendering = false;
 
-        List<UserDto> users = state.getSearchResults();
+        List<UserDto> users = state.isSearched()
+                ? state.getSearchResults()
+                : java.util.Collections.emptyList();
         boolean showingSavedContacts = false;
-        if (!state.isSearched() && query.trim().isEmpty() && users.isEmpty() && !state.getContacts().isEmpty()) {
-            showingSavedContacts = true;
-            List<UserDto> contactUsers = new ArrayList<>(state.getContacts().size());
-            for (Contact c : state.getContacts()) {
-                contactUsers.add(new UserDto(
-                        c.getUserId(),
-                        c.getPhone(),
-                        c.getPrimaryLabel(),
-                        c.getAvatarUrl(),
-                        c.getEmail(),
-                        c.getEmailVerified()));
+        if (!state.isSearched() && users.isEmpty() && !state.getContacts().isEmpty()) {
+            // Saved contacts are filtered locally while typing; the server
+            // search only runs on explicit submit.
+            List<Contact> matched = ContactQueryFilter.filter(
+                    state.getContacts(), query.trim());
+            if (!matched.isEmpty()) {
+                showingSavedContacts = true;
+                List<UserDto> contactUsers = new ArrayList<>(matched.size());
+                for (Contact c : matched) {
+                    contactUsers.add(new UserDto(
+                            c.getUserId(),
+                            c.getPhone(),
+                            c.getPrimaryLabel(),
+                            c.getAvatarUrl(),
+                            c.getEmail(),
+                            c.getEmailVerified()));
+                }
+                users = contactUsers;
             }
-            users = contactUsers;
         }
         adapter.submitList(users);
         binding.sectionHeader.setVisibility(showingSavedContacts ? View.VISIBLE : View.GONE);
@@ -143,7 +151,10 @@ public final class UserSearchFragment extends Fragment {
         binding.errorState.setVisibility(showError ? View.VISIBLE : View.GONE);
         if (showEmpty) {
             binding.emptyState.setMessage(getString(
-                    state.isSearched() ? R.string.search_no_results : R.string.search_label));
+                    state.isSearched() ? R.string.search_no_results
+                            : query.trim().isEmpty()
+                                    ? R.string.search_label
+                                    : R.string.search_press_to_find));
         }
         if (showError && error != null) {
             binding.errorState.setMessage(getString(ContactErrorIds.messageId(error)));
