@@ -132,6 +132,8 @@ public class AuthService {
         }
         final String identifier = request.loginIdentifier();
         User foundUser;
+        String claimedEmail = null;
+        String claimedPhone = null;
         if (identifier.indexOf('@') >= 0) {
             String email;
             try {
@@ -141,6 +143,7 @@ public class AuthService {
                 throw invalidCredentials();
             }
             enforceCredentialRateLimit("login", "email|" + email);
+            claimedEmail = email;
             // Only a verified email identifies an account, so an unverified claim cannot squat a login.
             foundUser = userRepository.findActiveByVerifiedEmail(email).orElse(null);
         } else {
@@ -152,6 +155,7 @@ public class AuthService {
                 throw invalidCredentials();
             }
             enforcePhoneRateLimit("login", phone);
+            claimedPhone = phone;
             foundUser = userRepository.findByPhoneAndDeletedAtIsNull(phone).orElse(null);
         }
         if (foundUser == null) {
@@ -166,8 +170,17 @@ public class AuthService {
         }
         // The unlocked read above may already have placed a pre-lock snapshot in this persistence context.
         entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
+        // The identifier that located this account must still belong to it once the row is locked: an email
+        // removed or replaced (or an account deleted) between the lookup and the lock must not authorize a login.
+        boolean stillOwned = user.getDeletedAt() == null
+                && (claimedEmail == null
+                        || (claimedEmail.equals(user.getEmail()) && user.getEmailVerifiedAt() != null))
+                && (claimedPhone == null || claimedPhone.equals(user.getPhone()));
         String hash = user.getPasswordHash();
-        if (hash == null || hash.isBlank() || !passwordEncoder.matches(request.password(), hash)) {
+        boolean hasPassword = hash != null && !hash.isBlank();
+        // Always pay exactly one bcrypt compare, so a passwordless account is not faster than a wrong password.
+        boolean passwordMatches = passwordEncoder.matches(request.password(), hasPassword ? hash : dummyHash);
+        if (!stillOwned || !hasPassword || !passwordMatches) {
             throw invalidCredentials();
         }
         return issueSession(user, deviceLabel);
