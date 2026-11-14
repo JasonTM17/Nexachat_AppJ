@@ -343,14 +343,14 @@ public class MessageService {
 
         int pageSize = normalizeLimit(limit);
         List<MessageRow> rows = afterSeq != null
-                ? messageRepository.findRowsAfter(
-                        conversationId, afterSeq, PageRequest.of(0, pageSize + 1))
+                ? messageRepository.findSyncRowsAfter(
+                        userId, conversationId, afterSeq, PageRequest.of(0, pageSize + 1))
                 : messageRepository.findPageRows(
-                        conversationId, beforeSeq, PageRequest.of(0, pageSize + 1));
+                        userId, conversationId, beforeSeq, PageRequest.of(0, pageSize + 1));
         boolean hasMore = rows.size() > pageSize;
         List<MessageRow> page = hasMore ? rows.subList(0, pageSize) : rows;
 
-        List<MessageResponse> items = hydrateResponses(page, userId);
+        List<MessageResponse> items = hydrateResponses(page, userId, true);
         Long nextBeforeSeq = (afterSeq != null || items.isEmpty())
                 ? null : items.get(items.size() - 1).seq();
         return new MessagePageResponse(items, nextBeforeSeq, hasMore);
@@ -494,12 +494,12 @@ public class MessageService {
         int pageSize = normalizeSearchLimit(limit);
         String pattern = "%" + escapeLike(normalized) + "%";
         List<MessageRow> rows = messageRepository.searchTextRows(
-                        conversationId, pattern, beforeSeq, PageRequest.of(0, pageSize + 1)).stream()
+                        userId, conversationId, pattern, beforeSeq, PageRequest.of(0, pageSize + 1)).stream()
                 .map(MessageService::toMessageRow)
                 .toList();
         boolean hasMore = rows.size() > pageSize;
         List<MessageRow> page = hasMore ? rows.subList(0, pageSize) : rows;
-        List<MessageResponse> items = hydrateResponses(page, userId);
+        List<MessageResponse> items = hydrateResponses(page, userId, true);
         Long nextBeforeSeq = items.isEmpty() ? null : items.get(items.size() - 1).seq();
         return new MessagePageResponse(items, nextBeforeSeq, hasMore);
     }

@@ -59,26 +59,26 @@ class MessageSearchServiceTest {
 
     @Test
     void searchEscapesLikeMetacharactersAndPreservesQuoteAsLiteralInput() {
-        when(messageRepository.searchTextRows(any(), any(), any(), any())).thenReturn(List.of());
+        when(messageRepository.searchTextRows(any(), any(), any(), any(), any())).thenReturn(List.of());
 
         service.search(userId, conversationId, " a%_\\' ", 20, null);
 
         ArgumentCaptor<String> pattern = ArgumentCaptor.forClass(String.class);
         verify(messageRepository).searchTextRows(
-                org.mockito.ArgumentMatchers.eq(conversationId), pattern.capture(),
+                org.mockito.ArgumentMatchers.eq(userId), org.mockito.ArgumentMatchers.eq(conversationId), pattern.capture(),
                 org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.any());
         assertThat(pattern.getValue()).isEqualTo("%a\\%\\_\\\\'%");
     }
 
     @Test
     void searchAcceptsOneHundredCharactersButRejectsShortAndLongQueries() {
-        when(messageRepository.searchTextRows(any(), any(), any(), any())).thenReturn(List.of());
+        when(messageRepository.searchTextRows(any(), any(), any(), any(), any())).thenReturn(List.of());
         service.search(userId, conversationId, "x".repeat(100), null, null);
 
         assertThat(searchError("x").getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
         assertThat(searchError("x".repeat(101)).getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
         verify(messageRepository, times(1)).searchTextRows(
-                org.mockito.ArgumentMatchers.eq(conversationId), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.eq(userId), org.mockito.ArgumentMatchers.eq(conversationId), org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
@@ -95,7 +95,7 @@ class MessageSearchServiceTest {
     @Test
     void searchReturnsNewestFirstPageAndExclusiveNextCursor() {
         List<MessageSearchProjection> rows = List.of(projection(row(8)), projection(row(6)), projection(row(4)));
-        when(messageRepository.searchTextRows(org.mockito.ArgumentMatchers.eq(conversationId),
+        when(messageRepository.searchTextRows(org.mockito.ArgumentMatchers.eq(userId), org.mockito.ArgumentMatchers.eq(conversationId),
                 org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.isNull(),
                 org.mockito.ArgumentMatchers.any())).thenReturn(rows);
 
