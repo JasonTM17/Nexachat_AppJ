@@ -195,7 +195,7 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
             return;
         }
 
-        requiredBody(api.issueBridge())
+        Disposable bootstrap = requiredBody(api.issueBridge())
                 .subscribeOn(Schedulers.io())
                 .flatMap(bridge -> bootstrap(bridge, expectedEpoch, expectedGeneration))
                 .subscribe(ignored -> { }, ignored -> markUnavailable(expectedEpoch, expectedGeneration));
@@ -366,7 +366,7 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
         if (currentAuth != null) cleanup = cleanup.andThen(Completable.fromAction(currentAuth::signOut));
         if (currentApp != null) cleanup = cleanup.doFinally(currentApp::delete);
         if (currentDatabase != null || currentAuth != null || currentApp != null) {
-            authQueue.enqueue(cleanup).subscribeOn(Schedulers.io())
+            Disposable cleanupTask = authQueue.enqueue(cleanup).subscribeOn(Schedulers.io())
                     .subscribe(() -> { }, ignored -> { });
         }
         // A stop caused by the router is not itself a transport failure.
@@ -786,7 +786,8 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
 
     private void revokeBestEffort(@Nullable String id) {
         if (id == null || id.isBlank()) return;
-        ApiResult.safeApiCall(api.revokeBridge(id)).subscribeOn(Schedulers.io())
+        Disposable revoke = ApiResult.safeApiCall(api.revokeBridge(id))
+                .subscribeOn(Schedulers.io())
                 .subscribe(ignored -> { }, ignored -> { });
     }
 
@@ -824,7 +825,7 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
             runtime.database.goOffline();
         }).andThen(Completable.fromAction(runtime.auth::signOut))
                 .doFinally(runtime.app::delete);
-        authQueue.enqueue(cleanup).subscribeOn(Schedulers.io())
+        Disposable cleanupTask = authQueue.enqueue(cleanup).subscribeOn(Schedulers.io())
                 .subscribe(() -> { }, ignored -> { });
     }
 

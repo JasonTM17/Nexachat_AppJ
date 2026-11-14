@@ -7,6 +7,7 @@ import com.nexachat.core.storage.TokenStore;
 import com.nexachat.data.TimeAndJwt;
 import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.disposables.Disposable;
 import java.util.Objects;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -96,7 +97,8 @@ public final class DeviceTokenRegistrationManager {
                         scheduleRetry();
                         return;
                     }
-                    tokenStore.clearPendingDeviceTokenUnregister(token, ownerUserId)
+                    Disposable disposable = tokenStore
+                            .clearPendingDeviceTokenUnregister(token, ownerUserId)
                             .subscribe(() -> { }, ignored -> scheduleRetry());
                 }
 

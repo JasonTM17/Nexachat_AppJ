@@ -27,7 +27,6 @@
         android:background="@drawable/bg_date_separator"
         android:backgroundTint="?attr/colorSurfaceContainerHigh"
         android:gravity="center"
-        android:maxLines="2"
         android:paddingHorizontal="12dp"
         android:paddingVertical="6dp"
         android:textAppearance="?attr/textAppearanceLabelSmall"

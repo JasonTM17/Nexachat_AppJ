@@ -288,12 +288,10 @@ public final class AttachmentRepository {
             throw new OversizeException();
         }
 
-        InputStream input = context.getContentResolver().openInputStream(uri);
-        if (input == null) {
-            throw new IOException("cannot open selected attachment");
-        }
-
-        try (InputStream stream = input) {
+        try (InputStream stream = context.getContentResolver().openInputStream(uri)) {
+            if (stream == null) {
+                throw new IOException("cannot open selected attachment");
+            }
             int initialCapacity = declaredSize >= 1L && declaredSize <= MAX_UPLOAD_BYTES
                     ? (int) declaredSize
                     : READ_BUFFER;

@@ -7,7 +7,7 @@ import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
-import software.amazon.awssdk.core.retry.RetryPolicy;
+import software.amazon.awssdk.retries.StandardRetryStrategy;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -19,7 +19,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 public class S3StorageConfiguration {
 
     /** Bounded retries: an object-store stall must not hold a request thread indefinitely. */
-    private static final int MAX_RETRIES = 2;
+    private static final int MAX_ATTEMPTS = 3;
 
     @Bean(destroyMethod = "close")
     S3Client s3StorageClient(S3StorageProperties properties) {
@@ -35,7 +35,7 @@ public class S3StorageConfiguration {
                 .overrideConfiguration(ClientOverrideConfiguration.builder()
                         .apiCallTimeout(properties.apiCallTimeout())
                         .apiCallAttemptTimeout(properties.apiCallAttemptTimeout())
-                        .retryPolicy(RetryPolicy.builder().numRetries(MAX_RETRIES).build())
+                        .retryStrategy(StandardRetryStrategy.builder().maxAttempts(MAX_ATTEMPTS).build())
                         .build())
                 .build();
     }

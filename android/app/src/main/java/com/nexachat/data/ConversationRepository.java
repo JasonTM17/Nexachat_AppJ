@@ -4,6 +4,7 @@ import android.content.Context;
 import android.net.Uri;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.database.AppDatabase;
@@ -40,6 +41,7 @@ import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.processors.FlowableProcessor;
 import io.reactivex.rxjava3.processors.PublishProcessor;
@@ -656,6 +658,11 @@ public final class ConversationRepository implements AutoCloseable {
         subscriptions.dispose();
     }
 
+    @VisibleForTesting
+    int subscriptionCount() {
+        return subscriptions.size();
+    }
+
     /**
      * Realtime events are refresh triggers only; they are never rendered
      * directly. Reconnect requests also pull REST because it is the source
@@ -680,7 +687,8 @@ public final class ConversationRepository implements AutoCloseable {
                 groupUpdateIds.onNext(updated.getConversationId());
             }
             if (updated.isRemovalEvent()) {
-                handleConversationUpdate(updated).subscribe(
+                // One-shot: a completed Disposable must not accumulate in subscriptions.
+                Disposable disposable = handleConversationUpdate(updated).subscribe(
                         removed -> {
                             if (!removed) refreshRequests.onNext(Boolean.TRUE);
                         }, RxJavaPlugins::onError);

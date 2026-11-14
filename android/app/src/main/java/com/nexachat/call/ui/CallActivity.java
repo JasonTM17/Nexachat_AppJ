@@ -47,6 +47,9 @@ public class CallActivity extends ComponentActivity {
     private static final int REQUEST_MICROPHONE = 7210;
     private static final int REQUEST_NOTIFICATIONS = 7211;
     private static final long ENDED_SCREEN_MS = 1600L;
+    /** Upper bound so a missed release can never hold the screen off forever. */
+    private static final long PROXIMITY_WAKE_LOCK_TIMEOUT_MS =
+            java.util.concurrent.TimeUnit.HOURS.toMillis(8);
     private static final String STATE_PENDING_PERMISSION = "call.pendingPermission";
     private static final String STATE_CALL_ID = "call.callId";
 
@@ -593,7 +596,7 @@ public class CallActivity extends ComponentActivity {
             proximityWakeLock = powerManager.newWakeLock(
                     PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, getPackageName() + ":call-proximity");
             proximityWakeLock.setReferenceCounted(false);
-            proximityWakeLock.acquire();
+            proximityWakeLock.acquire(PROXIMITY_WAKE_LOCK_TIMEOUT_MS);
         } catch (RuntimeException ignored) {
             proximityWakeLock = null;
         }

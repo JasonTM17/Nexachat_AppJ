@@ -4,6 +4,7 @@ import androidx.annotation.NonNull;
 import com.nexachat.core.database.AppDatabase;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.subjects.CompletableSubject;
 import java.util.concurrent.CancellationException;
 import java.util.Objects;
@@ -141,7 +142,7 @@ public final class AccountDataCleaner {
                         : transitionTail.hide().onErrorComplete();
                 transitionTail = transition;
             }
-            prior.andThen(cancelOutbox.get())
+            Disposable disposable = prior.andThen(cancelOutbox.get())
                     .andThen(Completable.fromAction(() -> {
                         if (clearOutbox) database.clearAllTables();
                         else database.clearAccountDataPreservingOutbox();

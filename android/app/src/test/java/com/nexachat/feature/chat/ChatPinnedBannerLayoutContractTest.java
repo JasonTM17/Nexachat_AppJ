@@ -9,15 +9,16 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.File;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 public final class ChatPinnedBannerLayoutContractTest {
     private static final String ANDROID = "http://schemas.android.com/apk/res/android";
 
     @Test
-    public void pinnedTextAllowsTwoLinesAndIsHiddenFromAccessibilityTree() throws Exception {
+    public void pinnedTextWrapsAndIsHiddenFromAccessibilityTree() throws Exception {
         Document layout = parse("src/main/res/layout/include_chat_pinned_banner.xml");
         Element pinnedText = findById(layout, "pinnedText");
-        assertEquals("2", pinnedText.getAttributeNS(ANDROID, "maxLines"));
+        assertFalse(pinnedText.hasAttributeNS(ANDROID, "maxLines"));
         assertEquals("no", pinnedText.getAttributeNS(ANDROID, "importantForAccessibility"));
     }
 

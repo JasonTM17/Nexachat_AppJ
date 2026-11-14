@@ -20,6 +20,7 @@ import static org.mockito.Mockito.when;
 class RecoveryEmailRateLimitInterceptorTest {
 
     @Test
+    @SuppressWarnings("unchecked")
     void authenticatedEmailOtpRoutesHaveIndependentPerIpBuckets() {
         ClientIpResolver ipResolver = mock(ClientIpResolver.class);
         when(ipResolver.rateLimitClientIp(any())).thenReturn("198.51.100.31");

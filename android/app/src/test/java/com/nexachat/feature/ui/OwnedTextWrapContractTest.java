@@ -43,9 +43,9 @@ public final class OwnedTextWrapContractTest {
     }
 
     @Test
-    public void landscapeCallNameUsesTwoLines() throws Exception {
-        assertEquals("2", view("layout-land/activity_call.xml", "call_peer_name")
-                .getAttributeNS(ANDROID, "maxLines"));
+    public void landscapeCallNameIsNotLineCapped() throws Exception {
+        assertFalse(view("layout-land/activity_call.xml", "call_peer_name")
+                .hasAttributeNS(ANDROID, "maxLines"));
     }
 
     /** 320dp screen, 16dp page inset, 16dp card inset, 8dp gap, then button padding. */

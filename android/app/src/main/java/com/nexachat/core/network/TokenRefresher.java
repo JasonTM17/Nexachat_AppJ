@@ -242,7 +242,7 @@ public final class TokenRefresher {
     /** Invalidates pending refresh writes before the session is cleared. */
     public void onLogout() {
         SessionCloseMarker marker = closeAdmissionSynchronously();
-        tokenStore.reserveSessionClosing(marker.activeEpoch)
+        Disposable disposable = tokenStore.reserveSessionClosing(marker.activeEpoch)
                 .subscribeOn(Schedulers.io())
                 .subscribe(
                         ignored -> { },

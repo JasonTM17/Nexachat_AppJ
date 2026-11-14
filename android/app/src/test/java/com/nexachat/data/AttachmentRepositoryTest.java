@@ -33,6 +33,7 @@ import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
@@ -418,6 +419,23 @@ public final class AttachmentRepositoryTest {
         assertTrue("truncated download left behind: "
                 + (files == null ? List.of() : java.util.Arrays.asList(files)),
                 files == null || files.length == 0);
+    }
+
+    @Test
+    public void readBoundedClosesResolverStream() throws Exception {
+        stubResolver(new byte[] {1, 2, 3, 4}, "image/png", 4);
+        AtomicBoolean closed = new AtomicBoolean();
+        when(resolver.openInputStream(uri)).thenReturn(new ByteArrayInputStream(new byte[] {1, 2, 3, 4}) {
+            @Override
+            public void close() throws IOException {
+                closed.set(true);
+                super.close();
+            }
+        });
+
+        repository.readBounded(uri, 4);
+
+        assertTrue("picker stream must be closed after reading", closed.get());
     }
 
     private void stubResolver(byte[] bytes, String mime, long size) throws Exception {

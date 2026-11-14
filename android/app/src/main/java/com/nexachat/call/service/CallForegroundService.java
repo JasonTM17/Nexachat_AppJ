@@ -17,6 +17,7 @@ import com.nexachat.call.core.IncomingCallPushData;
 import com.nexachat.call.ui.CallNotificationActionRouter;
 import com.nexachat.call.ui.IncomingCallIntentCodec;
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import dagger.hilt.android.AndroidEntryPoint;
 import javax.inject.Inject;
 
@@ -31,6 +32,7 @@ public class CallForegroundService extends Service {
 
     private boolean foregroundStarted;
     private CallManager.CallListener listener;
+    private final CompositeDisposable pendingIntents = new CompositeDisposable();
 
     public static void startForCall(Context context) {
         Intent intent = new Intent(context, CallForegroundService.class).setAction(ACTION_START);
@@ -78,7 +80,7 @@ public class CallForegroundService extends Service {
                     discardIncomingDecline(startId);
                     return START_NOT_STICKY;
                 }
-                incomingCallPushAdmission.admitAndRunIfCurrent(
+                pendingIntents.add(incomingCallPushAdmission.admitAndRunIfCurrent(
                         pushData, () -> declineAdmittedCall(requestedCallId))
                         .observeOn(AndroidSchedulers.mainThread())
                         .subscribe(declined -> {
@@ -86,7 +88,7 @@ public class CallForegroundService extends Service {
                                 discardIncomingDecline(startId);
                             }
                         }, ignored -> discardIncomingDecline(startId),
-                                () -> discardIncomingDecline(startId));
+                                () -> discardIncomingDecline(startId)));
                 return START_NOT_STICKY;
             }
             CallSession session = callManager.currentSessionSnapshot();
@@ -122,6 +124,7 @@ public class CallForegroundService extends Service {
 
     @Override
     public void onDestroy() {
+        pendingIntents.clear();
         if (listener != null) callManager.removeListener(listener);
         if (foregroundStarted) stopForeground(STOP_FOREGROUND_REMOVE);
         super.onDestroy();

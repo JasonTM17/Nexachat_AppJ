@@ -732,6 +732,20 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
+    public void removalEventsDoNotAccumulateDisposables() {
+        buildRepository();
+        int baseline = repository.subscriptionCount();
+
+        for (int index = 0; index < 20; index++) {
+            chatEvents.onNext(new ChatEvent.ConversationUpdated(
+                    "conv-" + index, "MEMBER_REMOVED", List.of("other-member")));
+        }
+
+        assertEquals("one-shot removal subscriptions must not be retained",
+                baseline, repository.subscriptionCount());
+    }
+
+    @Test
     public void muteWritesThePresetInstantAndLocalFlag() {
         buildRepository();
         dao().upsert(conversation("conv-m")).blockingAwait();
