@@ -549,6 +549,9 @@
     <string name="system_event_group_member_removed">%1$s removed %2$s</string>
     <string name="system_event_group_renamed">%1$s renamed the group to “%2$s”</string>
     <string name="system_event_group_role_changed">%1$s changed %2$s’s role</string>
+    <string name="system_event_group_admin_promoted">%1$s made %2$s a group admin</string>
+    <string name="system_event_e2ee_enabled">%1$s turned on end-to-end encryption</string>
+    <string name="system_event_e2ee_disabled">%1$s turned off end-to-end encryption</string>
 
     <!-- Forgot password (brief 306 E4) -->
     <string name="action_forgot_password">Forgot password?</string>

@@ -234,7 +234,8 @@ public class MessageRepositoryTest {
                     row.getPeerReadSeq(), 0, row.getLastMessageDeleted()));
             return Completable.complete();
         });
-        when(conversationDao.updateLastMessage(anyString(), anyLong(), any(), any(), anyLong(), anyBoolean())).thenAnswer(call -> {
+        when(conversationDao.updateLastMessage(anyString(), anyLong(), any(), any(), anyLong(), anyBoolean(),
+                any())).thenAnswer(call -> {
             String id = call.getArgument(0); ConversationEntity row = conversations.get(id); long seq = call.getArgument(1);
             if (row != null && seq > row.getLastMessageSeq()) {
                 conversations.put(id, conversationLast(row, seq, call.getArgument(2), call.getArgument(3), call.getArgument(4), false));

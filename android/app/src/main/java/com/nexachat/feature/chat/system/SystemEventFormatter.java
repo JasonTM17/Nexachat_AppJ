@@ -45,7 +45,13 @@ public final class SystemEventFormatter {
             case GROUP_MEMBER_REMOVED -> R.string.system_event_group_member_removed;
             case GROUP_RENAMED -> R.string.system_event_group_renamed;
             case GROUP_ROLE_CHANGED -> R.string.system_event_group_role_changed;
-            default -> R.string.system_event_group_created;
+            case GROUP_ADMIN_PROMOTED -> R.string.system_event_group_admin_promoted;
+            case E2EE_ENABLED -> R.string.system_event_e2ee_enabled;
+            case E2EE_DISABLED -> R.string.system_event_e2ee_disabled;
+            // CALL_LOG resolves through CallLogResourceResolver and UNKNOWN never
+            // reaches this switch because non-localized payloads return earlier.
+            case CALL_LOG, UNKNOWN -> throw new IllegalStateException(
+                    "no string resource for " + type);
         };
     }
 }

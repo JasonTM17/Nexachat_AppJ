@@ -53,6 +53,8 @@ public final class ConversationEntity {
     @ColumnInfo(defaultValue = "0") private final boolean e2eeEnabled;
     /** Last-message preview is a ciphertext the client should not show verbatim. */
     @ColumnInfo(defaultValue = "0") private final boolean lastMessageEncrypted;
+    /** Server message type of the last row, so previews can localize SYSTEM lines. */
+    @Nullable private final String lastMessageType;
 
     @androidx.room.Ignore
     public ConversationEntity(
@@ -113,7 +115,7 @@ public final class ConversationEntity {
                 lastMessageAt, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
                 peerReadSeq, myRole, otherUserId, lastMessageDeleted, peerDeliveredSeq,
                 muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt, labelIdsCsv,
-                false, false);
+                false, false, null);
     }
 
     public ConversationEntity(
@@ -141,9 +143,11 @@ public final class ConversationEntity {
             @Nullable Long pinnedAt,
             @NonNull String labelIdsCsv,
             boolean e2eeEnabled,
-            boolean lastMessageEncrypted) {
+            boolean lastMessageEncrypted,
+            @Nullable String lastMessageType) {
         this.e2eeEnabled = e2eeEnabled;
         this.lastMessageEncrypted = lastMessageEncrypted;
+        this.lastMessageType = lastMessageType;
         this.id = id;
         this.type = type;
         this.title = title;
@@ -320,6 +324,7 @@ public final class ConversationEntity {
     @NonNull public String getLabelIdsCsv() { return labelIdsCsv; }
     public boolean isE2eeEnabled() { return e2eeEnabled; }
     public boolean isLastMessageEncrypted() { return lastMessageEncrypted; }
+    @Nullable public String getLastMessageType() { return lastMessageType; }
     @NonNull public List<String> getLabelIds() {
         if (labelIdsCsv.isBlank()) return List.of();
         return Arrays.stream(labelIdsCsv.split(","))
@@ -334,7 +339,7 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId, lastMessageDeleted,
                 peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt,
-                labelIdsCsv, e2eeEnabled, lastMessageEncrypted);
+                labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType);
     }
 
     /** Returns this row with its group avatar URL replaced. */
@@ -343,7 +348,7 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, newAvatarUrl, peerReadSeq, myRole, otherUserId,
                 lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
-                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted);
+                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType);
     }
 
     /** Returns this row with client-only values merged from local state. */
@@ -353,7 +358,7 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, newPeerReadSeq, newMyRole, newOtherUserId,
                 lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
-                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted);
+                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType);
     }
 
     /** Returns this row with updated peerDeliveredSeq. */
@@ -362,7 +367,7 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
                 lastMessageDeleted, newPeerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
-                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted);
+                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType);
     }
 
     /** Returns this row with updated pinned state. */
@@ -371,7 +376,7 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
                 lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
-                newPinned, newPinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted);
+                newPinned, newPinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType);
     }
 
     /** Returns this row with a replaced caller-owned label assignment cache. */
@@ -380,7 +385,7 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId, lastMessageDeleted,
                 peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt,
-                newLabelIdsCsv, e2eeEnabled, lastMessageEncrypted);
+                newLabelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType);
     }
 
     @Override public boolean equals(Object other) {
@@ -403,7 +408,8 @@ public final class ConversationEntity {
                 && Objects.equals(avatarUrl, that.avatarUrl) && Objects.equals(myRole, that.myRole)
                 && Objects.equals(otherUserId, that.otherUserId)
                 && Objects.equals(mutedUntilEpochMs, that.mutedUntilEpochMs)
-                && Objects.equals(labelIdsCsv, that.labelIdsCsv);
+                && Objects.equals(labelIdsCsv, that.labelIdsCsv)
+                && Objects.equals(lastMessageType, that.lastMessageType);
     }
 
     @Override public int hashCode() {
@@ -411,7 +417,7 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
                 lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
-                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted);
+                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType);
     }
 
     @NonNull @Override public String toString() {

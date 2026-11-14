@@ -677,7 +677,7 @@ public final class SyncEngine {
                                         conversationId, last.getSeq(),
                                         last.getContent() != null ? last.getContent() : last.getType(),
                                         last.getSenderDisplayName() != null ? last.getSenderDisplayName() : "",
-                                        last.getCreatedAt(), last.isEncrypted()
+                                        last.getCreatedAt(), last.isEncrypted(), last.getType()
                                 ).blockingAwait();
                             }
                             if (incoming > 0) {

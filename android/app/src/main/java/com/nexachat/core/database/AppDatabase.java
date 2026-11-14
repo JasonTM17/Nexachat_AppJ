@@ -25,7 +25,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             OfflineOutboxEntity.class,
             SyncCursorEntity.class
         },
-        version = 15,
+        version = 16,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -269,6 +269,13 @@ public abstract class AppDatabase extends RoomDatabase {
             db.execSQL("ALTER TABLE `messages` ADD COLUMN `replyToEncrypted` INTEGER NOT NULL DEFAULT 0");
             db.execSQL("ALTER TABLE `conversations` ADD COLUMN `e2eeEnabled` INTEGER NOT NULL DEFAULT 0");
             db.execSQL("ALTER TABLE `conversations` ADD COLUMN `lastMessageEncrypted` INTEGER NOT NULL DEFAULT 0");
+        }
+    };
+
+    /** Preview type column: pre-migration rows stay null and keep raw snippets. */
+    public static final Migration MIGRATION_15_16 = new Migration(15, 16) {
+        @Override public void migrate(SupportSQLiteDatabase db) {
+            db.execSQL("ALTER TABLE `conversations` ADD COLUMN `lastMessageType` TEXT");
         }
     };
 

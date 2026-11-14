@@ -61,6 +61,38 @@ public class SystemEventParserTest {
         assertEquals("", payload.getFallbackText());
     }
 
+    @Test
+    public void mapsLegacyE2eeAndAdminPromotionTemplates() {
+        assertType(SystemEventType.E2EE_ENABLED,
+                SystemEventParser.parse("An turned on end-to-end encryption"), "An");
+        assertType(SystemEventType.E2EE_DISABLED,
+                SystemEventParser.parse("An turned off end-to-end encryption"), "An");
+        assertType(SystemEventType.GROUP_ADMIN_PROMOTED,
+                SystemEventParser.parse("An made Binh a group admin"), "An", "Binh");
+    }
+
+    @Test
+    public void adminPromotionIsNotParsedAsMemberAdded() {
+        SystemEventPayload payload = SystemEventParser.parse("An made Binh a group admin");
+        assertEquals(SystemEventType.GROUP_ADMIN_PROMOTED, payload.getType());
+        assertFalse(SystemEventType.GROUP_MEMBER_ADDED == payload.getType());
+    }
+
+    @Test
+    public void recognizesNewStructuredEvtForms() {
+        assertType(SystemEventType.E2EE_ENABLED,
+                SystemEventParser.parse("EVT|E2EE_ENABLED|An"), "An");
+        assertType(SystemEventType.E2EE_DISABLED,
+                SystemEventParser.parse("EVT|E2EE_DISABLED|An"), "An");
+        assertType(SystemEventType.GROUP_ADMIN_PROMOTED,
+                SystemEventParser.parse("EVT|GROUP_ADMIN_PROMOTED|An|Binh"), "An", "Binh");
+
+        SystemEventPayload missing = SystemEventParser.parse("EVT|GROUP_ADMIN_PROMOTED|An");
+        assertFalse(missing.isLocalized());
+        SystemEventPayload missingName = SystemEventParser.parse("EVT|E2EE_ENABLED");
+        assertFalse(missingName.isLocalized());
+    }
+
     private static void assertType(SystemEventType expected, SystemEventPayload payload, String... args) {
         assertTrue(payload.isLocalized());
         assertEquals(expected, payload.getType());

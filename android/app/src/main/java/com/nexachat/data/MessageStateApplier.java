@@ -69,7 +69,7 @@ final class MessageStateApplier {
         db.conversationDao().updateLastMessage(conversation, row.getSeq(),
                 Objects.requireNonNullElse(row.getContent(), row.getType()),
                 Objects.requireNonNullElse(row.getSenderDisplayName(), ""), row.getCreatedAt(),
-                row.isEncrypted()).blockingAwait();
+                row.isEncrypted(), row.getType()).blockingAwait();
         if (row.getDeletedAtEpochMs() != null) {
             cleanupDelete(row);
         } else {

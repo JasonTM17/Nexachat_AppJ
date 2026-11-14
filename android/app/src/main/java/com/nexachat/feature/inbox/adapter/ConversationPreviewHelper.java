@@ -6,6 +6,7 @@ import androidx.annotation.Nullable;
 import com.nexachat.R;
 import com.nexachat.call.ui.CallLogResourceResolver;
 import com.nexachat.data.ConversationSummary;
+import com.nexachat.feature.chat.system.SystemEventFormatter;
 import com.nexachat.feature.inbox.CallPreviewDirection;
 import com.nexachat.feature.inbox.InboxPreviewKind;
 
@@ -32,6 +33,11 @@ public final class ConversationPreviewHelper {
         String raw = conversation.getLastMessageContent();
         if (raw == null || raw.isEmpty()) {
             return "";
+        }
+        if ("SYSTEM".equals(conversation.getLastMessageType())) {
+            // Server event lines arrive in English; localize them instead of
+            // showing raw text or a redundant "Sender: Sender did X" prefix.
+            return SystemEventFormatter.format(context, raw, false).toString();
         }
         InboxPreviewKind kind = InboxPreviewKind.fromContent(raw);
         if (kind == InboxPreviewKind.CALL) {

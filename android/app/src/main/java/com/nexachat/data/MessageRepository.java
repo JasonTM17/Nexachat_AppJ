@@ -1352,7 +1352,8 @@ public final class MessageRepository {
             boolean openHere = Objects.equals(activeConversation.get(), entity.getConversationId());
             Completable update = conversationDao.updateLastMessage(entity.getConversationId(), entity.getSeq(),
                     entity.getContent() != null ? entity.getContent() : entity.getType(),
-                    entity.getSenderDisplayName(), entity.getCreatedAt(), entity.isEncrypted());
+                    entity.getSenderDisplayName(), entity.getCreatedAt(), entity.isEncrypted(),
+                    entity.getType());
             if (!mine && !openHere) update = update.andThen(conversationDao.incrementUnread(entity.getConversationId(), 1));
             if (!mine && openHere) update = update.andThen(sendRead(entity.getConversationId(), entity.getSeq()));
             return update;

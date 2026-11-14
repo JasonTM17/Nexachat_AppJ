@@ -370,6 +370,26 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
+    public void refreshInboxPersistsLastMessageTypeFromTheServerPayload() throws Exception {
+        buildRepository();
+        dao().upsert(conversation("conv-sys")).blockingAwait();
+        String createdAt = Instant.ofEpochSecond(51).toString();
+        InboxLastMessageDto lastMessage = new InboxLastMessageDto(
+                51L, "SYSTEM", "An turned on end-to-end encryption", null,
+                "sender", "Sender", "Sender", createdAt, null);
+        ConversationInboxDto dto = new ConversationInboxDto(
+                "conv-sys", "DIRECT", "Binh", 51L, lastMessage, null, null, createdAt, 0, 0L,
+                null, null, null, null, List.of(member(MY_ID, "MEMBER")), null,
+                null, null, null, null, null, null, List.of(), Boolean.TRUE, null);
+        stubInbox(List.of(dto));
+
+        repository.refreshInbox().blockingGet();
+
+        ConversationEntity row = dao().rows.get("conv-sys");
+        assertEquals("SYSTEM", row.getLastMessageType());
+    }
+
+    @Test
     public void refreshInboxKeepsAGroupJustCreatedWhenThePayloadPredatesIt() throws Exception {
         buildRepository();
         when(groupApi.createGroup(any())).thenReturn(
@@ -1550,11 +1570,12 @@ public final class ConversationRepositoryTest {
         @Override
         public Completable updateLastMessage(
                 String conversationId, long seq, String content, String senderName, long at,
-                boolean encrypted) {
+                boolean encrypted, String type) {
             return Completable.fromAction(() -> {
                 ConversationEntity row = rows.get(conversationId);
                 if (row != null && seq > row.getLastMessageSeq()) {
-                    rows.put(conversationId, withLastMessage(row, seq, content, senderName, at, false));
+                    rows.put(conversationId, withLastMessage(row, seq, content, senderName, at,
+                            false, type));
                 }
                 publish();
             });
@@ -1571,7 +1592,8 @@ public final class ConversationRepositoryTest {
                 ConversationEntity row = rows.get(conversationId);
                 if (row != null && row.getLastMessageSeq() == seq) {
                     rows.put(conversationId, withLastMessage(row, seq, content,
-                            row.getLastMessageSenderName(), row.getLastMessageAt(), false));
+                            row.getLastMessageSenderName(), row.getLastMessageAt(), false,
+                            row.getLastMessageType()));
                 }
                 publish();
             });
@@ -1583,7 +1605,7 @@ public final class ConversationRepositoryTest {
                 ConversationEntity row = rows.get(conversationId);
                 if (row != null) rows.put(conversationId, withLastMessage(row,
                         row.getLastMessageSeq(), null, row.getLastMessageSenderName(),
-                        row.getLastMessageAt(), true));
+                        row.getLastMessageAt(), true, row.getLastMessageType()));
                 publish();
             });
         }
@@ -1777,14 +1799,16 @@ public final class ConversationRepositoryTest {
         }
 
         private ConversationEntity withLastMessage(
-                ConversationEntity row, long seq, String content, String sender, Long at, boolean deleted) {
+                ConversationEntity row, long seq, String content, String sender, Long at,
+                boolean deleted, String lastMessageType) {
             return new ConversationEntity(
                     row.getId(), row.getType(), row.getTitle(), seq, content, sender, at,
                     row.getUnreadCount(), row.getOtherUserName(), row.getOtherUserAvatar(), row.getAvatarUrl(),
                     row.getPeerReadSeq(), row.getMyRole(), row.getOtherUserId(), deleted,
                     row.getPeerDeliveredSeq(), row.isMuted(), row.getMutedUntilEpochMs(),
                     row.isArchived(), row.isAiOptOut(), row.isPinned(), row.getPinnedAt(),
-                    row.getLabelIdsCsv());
+                    row.getLabelIdsCsv(), row.isE2eeEnabled(), row.isLastMessageEncrypted(),
+                    lastMessageType);
         }
     }
 
