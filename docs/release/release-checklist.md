@@ -92,7 +92,7 @@ python tools/checks/check-release-r8-mapping.py
 ## 3. Roll out the database migration and server
 
 Flyway runs on application startup and is forward-only: `V1`–`V20`, `V22`, and
-`V24`–`V31` are the current files (`server/src/main/resources/db/migration/`);
+`V24`–`V33` are the current files (`server/src/main/resources/db/migration/`);
 `V21` and `V23` are reserved and have no files. There is no down-migration.
 The manual Render deploy in §4 boots the API from `server/Dockerfile`; Flyway
 applies pending migrations on that boot. There is no separate migration command.

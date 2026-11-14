@@ -111,17 +111,17 @@ bash tools/ops/prod-smoke.sh https://api.nexachat.io.vn --write
 ### Checks Performed by the Script
 
 1. **Cold-Start Health Polling**: Polls `GET /actuator/health` with bounded backoff (up to 120 seconds) until status is `{"status":"UP"}`.
-2. **TLS and Security Headers**: Validates HTTPS connectivity and verifies presence of the `Strict-Transport-Security` (HSTS) header.
+2. **TLS and Security Headers**: Validates HTTPS connectivity with certificate verification. If the API sends `Strict-Transport-Security`, its `max-age` must be positive; a missing header is only a warning because the HTTPS edge may add it, and fails the run only with `--require-hsts`.
 3. **CORS Preflight**: Sends `OPTIONS` request with `Origin: https://nexachat.io.vn` for public endpoints and checks `Access-Control-Allow-Origin: https://nexachat.io.vn`.
-4. **Authentication Gate**: Probes protected route `GET /api/v1/auth/me` without Bearer token and verifies HTTP `401 Unauthorized`.
-5. **Public Email OTP Endpoint**: Submits `POST /api/v1/auth/email/request-otp` with dummy address `smoke@example.invalid` (one call only); verifies uniform `202 {}` response without account enumeration.
+4. **Authentication Gate**: Probes protected route `GET /api/v1/users/me` without a Bearer token and verifies HTTP `401 Unauthorized` with a documented error code.
+5. **Public OTP Endpoint**: Submits `POST /api/v1/auth/password-reset/request` once with a reserved fake phone number; verifies the uniform `202 {}` response without account enumeration.
 6. **WebSocket / STOMP Handshake**: Initiates HTTP Upgrade on `/ws` to confirm the realtime gateway is reachable.
 7. **Write Verification (when `--write` is specified)**:
    - Registers a temporary user with a reserved test phone number.
    - Authenticates to obtain JWT access and refresh tokens.
    - Uploads a micro-avatar PNG to test Supabase S3 storage persistence.
    - Fetches back the uploaded avatar bytes and verifies content integrity.
-   - Calls `DELETE /api/v1/user` to exercise account deletion and cleanup.
+   - Calls `DELETE /api/v1/users/me` to exercise account deletion and cleanup.
    - Verifies that subsequent access with the revoked token returns `401 Unauthorized`.
 
 ---
