@@ -267,8 +267,11 @@
                 android:layout_marginStart="@dimen/space_xs"
                 android:minHeight="@dimen/min_touch_target"
                 android:text="@string/summary_action_copy"
+                android:textColor="@color/nexa_outlined_button_text"
                 app:icon="@drawable/ic_content_copy"
-                app:iconGravity="textStart" />
+                app:iconGravity="textStart"
+                app:iconTint="@color/nexa_outlined_button_text"
+                app:strokeColor="@color/stitch_chip_stroke_color" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/summaryShare"

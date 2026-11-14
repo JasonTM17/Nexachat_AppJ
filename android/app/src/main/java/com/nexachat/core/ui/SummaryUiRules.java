@@ -1,6 +1,7 @@
 package com.nexachat.core.ui;
 
 import com.nexachat.summary.CitationResolver;
+import com.nexachat.summary.SummaryError;
 import com.nexachat.summary.SummaryResponse;
 import com.nexachat.summary.SummaryScope;
 import com.nexachat.summary.SummaryUiState;
@@ -74,6 +75,14 @@ public final class SummaryUiRules {
         }
         String resolved = CitationResolver.resolve(messageId, localMessageIds);
         return !CitationResolver.UNAVAILABLE.equals(resolved);
+    }
+
+    /**
+     * The unread scope dead-ends on TOO_FEW when a conversation has activity but fewer
+     * than five unread messages; widening to the recent window keeps the sheet useful.
+     */
+    public static boolean shouldFallbackFromUnread(SummaryScope scope, SummaryError error) {
+        return scope == SummaryScope.UNREAD && error == SummaryError.TOO_FEW;
     }
 
     /**

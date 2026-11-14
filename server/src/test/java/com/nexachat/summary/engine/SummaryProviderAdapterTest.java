@@ -49,4 +49,21 @@ class SummaryProviderAdapterTest {
         assertTrue(result.content().decisions().stream().anyMatch(item -> item.messageIds().contains(firstId)));
         assertTrue(result.content().actionItems().stream().anyMatch(item -> item.messageIds().contains(secondId)));
     }
+
+    @Test
+    void overviewJoinsSentencesWithoutTerminalPunctuationWithAPeriod() {
+        SummaryCandidate first = candidate("Cuoc hop du an thu Sau nay");
+        SummaryCandidate second = candidate("Hop du an vao tuan sau");
+        SummaryCandidate third = candidate("Da chot lich.");
+
+        String overview = OverviewComposer.compose(List.of(first, second, third));
+
+        assertEquals("Cuoc hop du an thu Sau nay. Hop du an vao tuan sau. Da chot lich.", overview);
+    }
+
+    private static SummaryCandidate candidate(String text) {
+        return new SummaryCandidate(
+                new SummaryMessage(UUID.randomUUID().toString(), 1, "sender", "A", text),
+                List.of(), List.of(), 1.0);
+    }
 }

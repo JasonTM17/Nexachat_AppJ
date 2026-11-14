@@ -8,11 +8,14 @@ public final class OverviewComposer {
     private OverviewComposer() {
     }
 
+    private static final String TERMINAL_PUNCTUATION = ".!?…。！？";
+
     static String compose(List<SummaryCandidate> keyPoints) {
         String overview = keyPoints.stream()
                 .limit(3)
                 .map(candidate -> Tokenizer.firstSentence(candidate.message().text()))
                 .filter(sentence -> !sentence.isBlank())
+                .map(OverviewComposer::withTerminalPunctuation)
                 .reduce((left, right) -> left + " " + right)
                 .orElse("");
         if (overview.length() <= MAX_LENGTH) {
@@ -23,5 +26,15 @@ public final class OverviewComposer {
             end--;
         }
         return overview.substring(0, end).stripTrailing() + "…";
+    }
+
+    /**
+     * Messages without terminal punctuation would otherwise run into the next
+     * joined sentence ("...thu Sau nay Hop du an..."), so a period is appended.
+     */
+    private static String withTerminalPunctuation(String sentence) {
+        return TERMINAL_PUNCTUATION.indexOf(sentence.charAt(sentence.length() - 1)) < 0
+                ? sentence + "."
+                : sentence;
     }
 }

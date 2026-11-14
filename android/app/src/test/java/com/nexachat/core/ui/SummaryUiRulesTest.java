@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import com.nexachat.summary.SummaryError;
 import com.nexachat.summary.SummaryItem;
 import com.nexachat.summary.SummaryLanguage;
 import com.nexachat.summary.SummaryResponse;
@@ -152,6 +153,20 @@ public class SummaryUiRulesTest {
         assertTrue(emptyReady.regenerateEnabled);
         assertFalse(emptyReady.copyEnabled);
         assertFalse(emptyReady.shareEnabled);
+    }
+
+    @Test
+    public void shouldFallbackFromUnread_onlyOnUnreadTooFew() {
+        assertTrue(SummaryUiRules.shouldFallbackFromUnread(
+                SummaryScope.UNREAD, SummaryError.TOO_FEW));
+        assertFalse(SummaryUiRules.shouldFallbackFromUnread(
+                SummaryScope.LAST_N, SummaryError.TOO_FEW));
+        assertFalse(SummaryUiRules.shouldFallbackFromUnread(
+                SummaryScope.TODAY, SummaryError.TOO_FEW));
+        assertFalse(SummaryUiRules.shouldFallbackFromUnread(
+                SummaryScope.UNREAD, SummaryError.NETWORK));
+        assertFalse(SummaryUiRules.shouldFallbackFromUnread(
+                SummaryScope.UNREAD, null));
     }
 
     private static SummaryResponse minimalSummary(String overview) {

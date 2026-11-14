@@ -23,6 +23,7 @@
     <string name="summary_action_share">Share into chat</string>
     <string name="summary_action_regenerate">Regenerate</string>
     <string name="summary_action_retry">Retry</string>
+    <string name="summary_action_recent">Summarize recent messages</string>
     <string name="summary_error_too_few">Not enough messages</string>
     <string name="summary_error_too_few_desc">At least 5 messages are required to generate a summary.</string>
     <string name="summary_error_rate_limited">Too many requests</string>
@@ -41,5 +42,6 @@
     <string name="settings_consent_update_failed">Could not update AI settings. Try again.</string>
     <string name="cd_summary_close">Close summary</string>
     <string name="cd_summary_citation_jump">Jump to cited message</string>
+    <string name="cd_summary_citation_from">Open message from %1$s</string>
     <string name="cd_more_options">More options</string>
 </resources>

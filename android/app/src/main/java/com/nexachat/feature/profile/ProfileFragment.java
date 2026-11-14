@@ -81,6 +81,8 @@ public final class ProfileFragment extends Fragment {
         binding.nameInput.addTextChangedListener(new SimpleTextWatcher(s -> viewModel.onNameInputChange(s)));
         binding.saveName.setOnClickListener(v -> viewModel.saveDisplayName());
         binding.cancelName.setOnClickListener(v -> viewModel.cancelEditName());
+        binding.changePassword.setTitle(getString(R.string.profile_change_password));
+        binding.changePassword.setLeadingIcon(R.drawable.ic_lock);
         binding.changePassword.setOnClickListener(v -> {
             ProfileViewModel.UiState current = viewModel.getUiState().getValue();
             if (current != null && current.canChangePassword()) {
@@ -155,11 +157,9 @@ public final class ProfileFragment extends Fragment {
         binding.aiSummaryConsent.setOnCheckedChangeListener(this::onAiConsentToggled);
         binding.logoutRow.setTitle(getString(R.string.action_logout));
         binding.logoutRow.setLeadingIcon(R.drawable.ic_logout);
-        binding.logoutRow.setDestructive(true);
         binding.logoutRow.setOnClickListener(v -> new MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.action_logout).setMessage(R.string.action_logout_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout, (d, w) -> viewModel.logout()).show());
         binding.logoutAllRow.setTitle(getString(R.string.action_logout_all));
         binding.logoutAllRow.setLeadingIcon(R.drawable.ic_logout);
-        binding.logoutAllRow.setDestructive(true);
         binding.logoutAllRow.setOnClickListener(v -> new MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.action_logout_all).setMessage(R.string.profile_logout_all_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout_all, (d, w) -> viewModel.logoutAll()).show());
         binding.deleteAccountRow.setTitle(getString(R.string.action_delete_account));
         binding.deleteAccountRow.setLeadingIcon(R.drawable.ic_delete);
@@ -287,6 +287,12 @@ public final class ProfileFragment extends Fragment {
         if (error != null) binding.profileError.setText(ApiErrorText.text(requireContext(), error));
         if (state.isPasswordChanged()) { viewModel.consumePasswordChanged(); new MaterialAlertDialogBuilder(requireContext()).setMessage(R.string.profile_password_changed).setPositiveButton(android.R.string.ok, null).show(); }
         if (state.getAvatarError() != null) viewModel.consumeAvatarError();
+        // Sign-in rows combine linked-account config with the loaded profile; re-render
+        // so the phone row appears when the user arrives after the linked-accounts state.
+        LinkedAccountsViewModel.UiState linked = linkedAccountsViewModel.getUiState().getValue();
+        if (linked != null) {
+            renderLinkedAccounts(linked);
+        }
     }
 
     private void renderLinkedAccounts(LinkedAccountsViewModel.UiState state) {
@@ -298,10 +304,11 @@ public final class ProfileFragment extends Fragment {
         UserDto me = viewModel.getUiState().getValue() != null
                 ? viewModel.getUiState().getValue().getUser() : null;
         String accountPhone = me != null ? me.getPhone() : null;
-        boolean phoneVisible = accountPhone != null && !accountPhone.isBlank();
+        boolean phoneVisible = ProfileSignInMethodRules.phoneRowVisible(accountPhone);
         binding.signInMethodPhoneRow.setVisibility(phoneVisible ? View.VISIBLE : View.GONE);
         binding.signInMethodPhoneDivider.setVisibility(
-                googleVisible && phoneVisible ? View.VISIBLE : View.GONE);
+                ProfileSignInMethodRules.phoneDividerVisible(googleVisible, accountPhone)
+                        ? View.VISIBLE : View.GONE);
         if (phoneVisible) {
             binding.signInMethodPhoneRow.setSubtitle(accountPhone);
             binding.signInMethodPhoneRow.setContentDescription(

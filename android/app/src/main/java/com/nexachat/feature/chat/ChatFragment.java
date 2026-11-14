@@ -1496,12 +1496,18 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         com.nexachat.feature.summary.SummaryBottomSheetFragment sheet =
                 com.nexachat.feature.summary.SummaryBottomSheetFragment.newInstance(conversationId);
         java.util.Map<String, Long> seqMap = new java.util.HashMap<>();
+        java.util.Map<String, String> senderMap = new java.util.HashMap<>();
+        java.util.Map<String, Long> timeMap = new java.util.HashMap<>();
         for (ChatMessage m : state.getMessages()) {
             if (m.getId() != null && m.getSeq() != null) {
                 seqMap.put(m.getId(), m.getSeq());
+                if (m.getSenderDisplayName() != null) {
+                    senderMap.put(m.getId(), m.getSenderDisplayName());
+                }
+                timeMap.put(m.getId(), m.getCreatedAtEpochMs());
             }
         }
-        sheet.putCitationArgs(seqMap);
+        sheet.putCitationArgs(seqMap, senderMap, timeMap);
         attachSummaryListener(sheet);
         sheet.show(getChildFragmentManager(), "summary_sheet");
     }

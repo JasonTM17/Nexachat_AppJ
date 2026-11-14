@@ -163,7 +163,7 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Preferences Group Card (16dp radius) -->
+        <!-- Appearance: language and theme selection -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -236,12 +236,33 @@
                         android:layout_height="wrap_content"
                         android:text="@string/theme_dark" />
                 </com.google.android.material.chip.ChipGroup>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="72dp"
-                    android:background="?attr/colorOutlineVariant" />
+        <!-- Privacy: AI consent and presence visibility -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginTop="@dimen/space_md"
+            android:layout_marginBottom="6dp"
+            android:text="@string/settings_section_privacy"
+            android:textAppearance="?attr/textAppearanceLabelMedium"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardBackgroundColor="?attr/colorSurface"
+            app:cardCornerRadius="@dimen/corner_lg"
+            app:cardElevation="0dp"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
                 <!-- AI summary consent row -->
                 <LinearLayout
@@ -380,37 +401,42 @@
                         android:layout_height="wrap_content"
                         android:contentDescription="@string/cd_show_seen" />
                 </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="72dp"
-                    android:background="?attr/colorOutlineVariant" />
+        <!-- Notifications -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginTop="@dimen/space_md"
+            android:layout_marginBottom="6dp"
+            android:text="@string/settings_notifications"
+            android:textAppearance="?attr/textAppearanceLabelMedium"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardBackgroundColor="?attr/colorSurface"
+            app:cardCornerRadius="@dimen/corner_lg"
+            app:cardElevation="0dp"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
                 <com.nexachat.core.ui.components.SettingsRowView
                     android:id="@+id/notificationRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content" />
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="72dp"
-                    android:background="?attr/colorOutlineVariant" />
-
-                <!-- Change password action -->
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/changePassword"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_margin="12dp"
-                    android:minHeight="@dimen/min_touch_target"
-                    android:text="@string/profile_change_password"
-                    app:cornerRadius="12dp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Account: recovery email, sign-in methods, password -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -485,10 +511,21 @@
                     android:textAppearance="?attr/textAppearanceBodyMedium"
                     android:textColor="?attr/colorOnErrorContainer"
                     android:visibility="gone" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="72dp"
+                    android:background="?attr/colorOutlineVariant" />
+
+                <com.nexachat.core.ui.components.SettingsRowView
+                    android:id="@+id/changePassword"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Sign out Group Card in Error styling (16dp radius) -->
+        <!-- Session: sign out actions (neutral styling) -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -531,11 +568,12 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Destructive: delete account is the only error-styled row -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            app:cardBackgroundColor="?attr/colorSurface"
+            app:cardBackgroundColor="?attr/colorErrorContainer"
             app:cardCornerRadius="@dimen/corner_lg"
             app:cardElevation="0dp"
             app:strokeColor="?attr/colorOutlineVariant"
