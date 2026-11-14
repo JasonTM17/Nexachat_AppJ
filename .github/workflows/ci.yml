@@ -222,7 +222,7 @@ jobs:
 
   publish-container:
     # Publishes the server image to GitHub Packages (ghcr.io) after all gates pass on main.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'JasonTM17/Nexachat_AppJ'
     needs: [server-test, android-test, repo-hygiene, site-js-test, firebase-rules, secret-scan]
     runs-on: ubuntu-latest
     permissions:
