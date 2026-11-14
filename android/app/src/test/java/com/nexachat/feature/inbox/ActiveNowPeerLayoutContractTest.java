@@ -22,10 +22,15 @@ public final class ActiveNowPeerLayoutContractTest {
         factory.setNamespaceAware(true);
         Document document = factory.newDocumentBuilder().parse(layout);
         Element avatar = findElementByAndroidId(document.getDocumentElement(), "activePeerAvatar");
+        Element peerName = findElementByAndroidId(document.getDocumentElement(), "activePeerName");
         Element root = document.getDocumentElement();
         assertNotNull(avatar);
+        assertNotNull(peerName);
         assertEquals("56dp", androidAttr(avatar, "layout_width"));
         assertEquals("56dp", androidAttr(avatar, "layout_height"));
+        assertEquals("72dp", androidAttr(peerName, "layout_width"));
+        assertEquals("wrap_content", androidAttr(peerName, "layout_height"));
+        assertEquals("", androidAttr(peerName, "maxLines"));
         assertEquals("@dimen/min_touch_target", androidAttr(root, "minWidth"));
         assertEquals("@dimen/min_touch_target", androidAttr(root, "minHeight"));
     }

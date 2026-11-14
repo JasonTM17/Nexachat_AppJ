@@ -48,7 +48,6 @@
         android:ellipsize="end"
         android:gravity="center"
         android:importantForAccessibility="no"
-        android:maxLines="1"
         android:textAppearance="?attr/textAppearanceLabelSmall"
         android:textColor="?attr/colorOnSurface" />
 </LinearLayout>

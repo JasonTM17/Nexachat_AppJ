@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "total_findings": 27,
+  "total_findings": 26,
   "findings": [
     {
       "rule": "A6",
@@ -64,15 +64,6 @@
       "element_id": "@+id/summaryErrorIcon",
       "tag": "ImageView",
       "message": "ImageView without contentDescription and importantForAccessibility is not \"no\""
-    },
-    {
-      "rule": "A6",
-      "severity": "WARN",
-      "file": "layout/item_active_now_peer.xml",
-      "line": 43,
-      "element_id": "@+id/activePeerName",
-      "tag": "TextView",
-      "message": "maxLines=1 on message/title/error text may clip at large font"
     },
     {
       "rule": "A6",
