@@ -123,9 +123,8 @@ public class AskService {
         if (!conversationRepository.existsById(conversationId)) {
             throw ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found");
         }
-        if (!memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)) {
-            throw ApiException.of(ApiErrorCode.NOT_MEMBER, "Conversation membership required");
-        }
+        java.time.Instant admittedFrom = memberRepository.findJoinedAt(conversationId, userId)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_MEMBER, "Conversation membership required"));
         boolean contextOmitted = aiOptOuts.hasOptedOutMessages(conversationId);
         SummaryConsentRepository.ConsentSnapshot consentSnapshot = consentRepository.snapshot(userId);
         if (!properties.isEnabled()) {
@@ -141,7 +140,8 @@ public class AskService {
 
         AskKey key = new AskKey(conversationId, userId, questionHash, language, consentSnapshot);
         AskResponse response = computeOnce(key, () -> compute(
-                conversationId, userId, question, language, questionHash, consentSnapshot, contextOmitted));
+                conversationId, userId, question, language, questionHash, consentSnapshot, contextOmitted,
+                admittedFrom));
         return new AskExecution(consentSnapshot, response);
     }
 
@@ -193,12 +193,16 @@ public class AskService {
             SummaryLanguage language,
             String questionHash,
             SummaryConsentRepository.ConsentSnapshot consentSnapshot,
-            boolean contextOmitted) {
+            boolean contextOmitted,
+            java.time.Instant admittedFrom) {
         boolean consented = consentSnapshot.consented();
+        // Cached answers are shared per conversation and may cite or paraphrase content from
+        // before this member's admission, so a late or returning member always recomputes.
+        boolean sharedCacheVisible = !retrievalService.hasContentBeforeAdmission(conversationId, admittedFrom);
         RagEmbeddingService.EmbeddingOutcome questionEmbedding =
                 embeddingService.embedQuestion(question, consented);
 
-        if (consented) {
+        if (consented && sharedCacheVisible) {
             Optional<RagQuestionCache.CachedAsk> exact = questionCache.findExact(
                     conversationId, questionEmbedding.model(), questionHash);
             if (exact.isPresent()
@@ -221,7 +225,8 @@ public class AskService {
         }
 
         long contentVersion = questionCache.contentVersion(conversationId);
-        RetrievalResult retrieval = retrievalService.retrieve(conversationId, question, language, consented);
+        RetrievalResult retrieval = retrievalService.retrieve(
+                conversationId, question, language, consented, admittedFrom);
         if (retrieval.isEmpty()
                 || retrieval.bestScore() < properties.getRetrieval().getNotFoundThreshold()) {
             stats.recordNotFound();

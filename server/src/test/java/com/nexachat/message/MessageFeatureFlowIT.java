@@ -215,7 +215,7 @@ class MessageFeatureFlowIT {
         long seq = jdbcTemplate.queryForObject("SELECT seq FROM messages WHERE id = ?", Long.class, messageId);
 
         assertThat(summaryWindowRepository.findWindow(conversationId,
-                new SummaryRequest(SummaryScope.LAST_N, 5, null, null), null, null, null))
+                new SummaryRequest(SummaryScope.LAST_N, 5, null, null), null, null, null, Instant.EPOCH))
                 .anyMatch(message -> message.id().equals(messageId));
         assertThat(ragMessageIndex.lexicalCandidates(conversationId, List.of(marker), 5))
                 .anyMatch(message -> message.id().equals(messageId));
@@ -247,7 +247,7 @@ class MessageFeatureFlowIT {
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
         assertThat(archiveAfter.path("items")).isEmpty();
         assertThat(summaryWindowRepository.findWindow(conversationId,
-                new SummaryRequest(SummaryScope.LAST_N, 5, null, null), null, null, null))
+                new SummaryRequest(SummaryScope.LAST_N, 5, null, null), null, null, null, Instant.EPOCH))
                 .noneMatch(message -> message.id().equals(messageId));
         assertThat(ragMessageIndex.lexicalCandidates(conversationId, List.of(marker), 5))
                 .noneMatch(message -> message.id().equals(messageId));

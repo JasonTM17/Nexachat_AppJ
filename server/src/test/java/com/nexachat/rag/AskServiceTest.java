@@ -58,14 +58,14 @@ class AskServiceTest {
         userId = UUID.randomUUID();
         senderId = UUID.randomUUID();
         when(conversationRepository.existsById(conversationId)).thenReturn(true);
-        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        when(memberRepository.findJoinedAt(conversationId, userId)).thenReturn(java.util.Optional.of(java.time.Instant.EPOCH));
         setConsent(false);
         when(questionCache.citationsValid(any(), any())).thenReturn(true);
     }
 
     @Test
     void nonMemberIsRejected() {
-        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(false);
+        when(memberRepository.findJoinedAt(conversationId, userId)).thenReturn(java.util.Optional.empty());
 
         assertThatThrownBy(() -> service.ask(conversationId, userId, new AskRequest("Hello?", null)))
                 .isInstanceOf(ApiException.class)

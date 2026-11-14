@@ -19,6 +19,9 @@ class HistoryMembershipScopeIT extends ConcurrentDatabaseITSupport {
     @Autowired private MessageService messages;
     @Autowired private PinService pins;
     @Autowired private com.nexachat.archive.ArchiveService archive;
+    @Autowired private com.nexachat.summary.SummaryWindowService summaryWindows;
+    @Autowired private com.nexachat.rag.RagMessageIndex ragIndex;
+    @Autowired private com.nexachat.rag.RagRetrievalService retrieval;
 
     private record Scenario(UUID conversation, UUID owner, UUID reader,
                             MessageResponse before, MessageResponse hidden, MessageResponse visible) { }
@@ -99,6 +102,50 @@ class HistoryMembershipScopeIT extends ConcurrentDatabaseITSupport {
         assertThat(forReader.items()).extracting(i -> i.messageId()).containsExactly(s.visible().id());
         var forOwner = archive.browse(s.owner(), s.conversation(), "LINK", null, null, null, 50, null);
         assertThat(forOwner.items()).extracting(i -> i.messageId()).contains(s.hidden().id(), s.visible().id());
+    }
+
+    @Test
+    void summaryWindowExcludesTheAbsenceInterval() {
+        Scenario s = rejoined();
+        var forReader = summaryWindows.load(s.conversation(), s.reader(),
+                new com.nexachat.summary.SummaryRequest(com.nexachat.summary.SummaryScope.LAST_N, 50, null, null));
+        assertThat(forReader.window().messages()).extracting(m -> m.id())
+                .containsExactly(s.visible().id());
+        var forOwner = summaryWindows.load(s.conversation(), s.owner(),
+                new com.nexachat.summary.SummaryRequest(com.nexachat.summary.SummaryScope.LAST_N, 50, null, null));
+        assertThat(forOwner.window().messages()).extracting(m -> m.id())
+                .contains(s.before().id(), s.hidden().id(), s.visible().id());
+    }
+
+    @Test
+    void askRetrievalAndSharedAnswersExcludeTheAbsenceInterval() {
+        Scenario s = rejoined();
+        Instant readerJoined = jdbc.queryForObject(
+                "SELECT joined_at FROM conversation_members WHERE conversation_id=? AND user_id=?",
+                Timestamp.class, s.conversation(), s.reader()).toInstant();
+        assertThat(ragIndex.lexicalCandidates(s.conversation(), List.of("needle"), 50, readerJoined))
+                .extracting(m -> m.id()).containsExactly(s.visible().id());
+        assertThat(ragIndex.recentMessages(s.conversation(), 50, readerJoined))
+                .extracting(m -> m.id()).containsExactly(s.visible().id());
+        assertThat(retrieval.hasContentBeforeAdmission(s.conversation(), readerJoined)).isTrue();
+        Instant ownerJoined = jdbc.queryForObject(
+                "SELECT joined_at FROM conversation_members WHERE conversation_id=? AND user_id=?",
+                Timestamp.class, s.conversation(), s.owner()).toInstant();
+        assertThat(retrieval.hasContentBeforeAdmission(s.conversation(), ownerJoined)).isFalse();
+    }
+
+    @Test
+    void aRejoinedMemberCannotReplyToAMessageFromTheirAbsence() {
+        Scenario s = rejoined();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> messages.send(s.reader(), s.conversation(),
+                        new SendMessageRequest(UUID.randomUUID(), "TEXT", "quoting the gap", s.hidden().id(), List.of())))
+                .isInstanceOfSatisfying(com.nexachat.common.error.ApiException.class, e ->
+                        assertThat(e.getCode()).isEqualTo(com.nexachat.common.error.ApiErrorCode.MESSAGE_NOT_FOUND));
+        MessageResponse reply = messages.send(s.reader(), s.conversation(),
+                new SendMessageRequest(UUID.randomUUID(), "TEXT", "quoting what I can see", s.visible().id(), List.of()))
+                .message();
+        assertThat(reply.replyTo()).isNotNull();
+        assertThat(reply.replyTo().id()).isEqualTo(s.visible().id());
     }
 
     @Test

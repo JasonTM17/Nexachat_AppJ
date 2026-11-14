@@ -255,6 +255,55 @@ class StompConversationMembershipOutboundInterceptorTest {
         assertThat(interceptor.preSend(frame(conversationId, "MESSAGE_UPDATED", "\"not-a-time\""), channel)).isNull();
     }
 
+    @Test
+    void quotePreviewOfAMessageFromBeforeTheRecipientJoinedIsRemovedFromTheFrame() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        bindSessionTo(userId);
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        Instant sentAt = Instant.parse("2026-01-01T10:00:00Z");
+        Instant quotedAt = Instant.parse("2026-01-01T09:00:00Z");
+        when(memberRepository.existsAdmittedAt(conversationId, userId, sentAt)).thenReturn(true);
+        when(memberRepository.existsAdmittedAt(conversationId, userId, quotedAt)).thenReturn(false);
+
+        Message<byte[]> withQuote = replyFrame(conversationId, "2026-01-01T10:00:00Z", "2026-01-01T09:00:00Z");
+        Message<?> released = interceptor.preSend(withQuote, channel);
+
+        assertThat(released).isNotNull();
+        var payload = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree((byte[]) released.getPayload()).path("payload");
+        assertThat(payload.has("replyTo")).isFalse();
+        assertThat(payload.path("content").asText()).isEqualTo("reply");
+        assertThat(payload.path("replyToId").asText()).isNotEmpty();
+    }
+
+    @Test
+    void quotePreviewTheRecipientMayReadIsKept() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        bindSessionTo(userId);
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        when(memberRepository.existsAdmittedAt(org.mockito.ArgumentMatchers.eq(conversationId),
+                org.mockito.ArgumentMatchers.eq(userId), org.mockito.ArgumentMatchers.any())).thenReturn(true);
+
+        Message<byte[]> withQuote = replyFrame(conversationId, "2026-01-01T10:00:00Z", "2026-01-01T09:00:00Z");
+        assertThat(interceptor.preSend(withQuote, channel)).isSameAs(withQuote);
+    }
+
+    private static Message<byte[]> replyFrame(UUID conversationId, String createdAt, String quotedAt) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.MESSAGE);
+        accessor.setSessionId(SESSION_ID);
+        accessor.setDestination("/topic/conversations." + conversationId);
+        UUID quotedId = UUID.randomUUID();
+        String json = "{\"eventType\":\"MESSAGE_CREATED\",\"conversationId\":\"" + conversationId
+                + "\",\"payload\":{\"content\":\"reply\",\"createdAt\":\"" + createdAt
+                + "\",\"replyToId\":\"" + quotedId + "\",\"replyTo\":{\"id\":\"" + quotedId
+                + "\",\"content\":\"secret from the absence\",\"deleted\":false,\"createdAt\":\""
+                + quotedAt + "\"}}}";
+        return MessageBuilder.createMessage(
+                json.getBytes(java.nio.charset.StandardCharsets.UTF_8), accessor.getMessageHeaders());
+    }
+
     private void bindSessionTo(UUID userId) {
         when(sessionRegistry.isAuthenticatedSession(SESSION_ID)).thenReturn(true);
         SimpSession simpSession = mock(SimpSession.class);

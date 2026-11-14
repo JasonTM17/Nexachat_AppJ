@@ -164,7 +164,7 @@ class RagBenchmarkEvaluationTest {
         AskRateLimiter rateLimiter = mock(AskRateLimiter.class);
 
         when(conversationRepository.existsById(any())).thenReturn(true);
-        when(memberRepository.existsByConversation_IdAndUser_Id(any(), any())).thenReturn(true);
+        when(memberRepository.findJoinedAt(any(), any())).thenReturn(java.util.Optional.of(java.time.Instant.EPOCH));
         when(consentRepository.isConsented(any())).thenReturn(true);
         when(consentRepository.snapshot(any())).thenReturn(new ConsentSnapshot(true, 1));
         when(questionCache.citationsValid(any(), any())).thenReturn(true);

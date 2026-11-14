@@ -153,6 +153,13 @@ public class InMemoryRagMessageIndex implements RagMessageIndex {
     }
 
     @Override
+    public boolean hasMessagesBefore(UUID conversationId, java.time.Instant instant) {
+        return instant != null && messages.stream()
+                .anyMatch(message -> message.conversationId().equals(conversationId)
+                        && message.createdAt().isBefore(instant));
+    }
+
+    @Override
     public RagMessage findMessage(UUID conversationId, UUID messageId) {
         return messages.stream()
                 .filter(message -> message.conversationId().equals(conversationId))

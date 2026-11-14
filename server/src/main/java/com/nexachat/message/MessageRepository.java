@@ -338,7 +338,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
      */
     @Query("""
             SELECT new com.nexachat.message.dto.ReplyRefRow(
-                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt)
+                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt, m.createdAt)
             FROM Message m JOIN m.sender u
             WHERE m.id IN :ids
             """)
@@ -360,7 +360,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
 
     @Query("""
             SELECT new com.nexachat.message.dto.ReplyRefRow(
-                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt)
+                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt, m.createdAt)
             FROM Message m JOIN m.sender u
             WHERE m.id IN :ids
               AND EXISTS (SELECT 1 FROM ConversationMember member

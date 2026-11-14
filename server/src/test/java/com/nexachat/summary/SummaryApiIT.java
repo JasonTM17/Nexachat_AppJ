@@ -449,8 +449,10 @@ class SummaryApiIT {
     }
 
     private void addMember(UUID userId, long lastReadSeq) {
-        jdbcTemplate.update("INSERT INTO conversation_members (conversation_id, user_id, last_read_seq) "
-                        + "VALUES (?, ?, ?)",
+        // Members joined before every fixture message, which may carry a synthetic past time:
+        // a summary window only reads messages from the caller's admission onward.
+        jdbcTemplate.update("INSERT INTO conversation_members (conversation_id, user_id, last_read_seq, joined_at) "
+                        + "VALUES (?, ?, ?, now() - interval '30 days')",
                 conversationId, userId, lastReadSeq);
     }
 

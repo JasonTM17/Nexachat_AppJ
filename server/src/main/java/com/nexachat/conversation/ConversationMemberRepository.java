@@ -200,6 +200,11 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     Optional<ConversationMember> findByConversation_IdAndUser_Id(UUID conversationId, UUID userId);
 
     /** Fresh authority read after the conversation lock; bypasses managed membership snapshots. */
+    /** The member's current admission time; empty when the user is not a member. */
+    @Query("SELECT m.joinedAt FROM ConversationMember m WHERE m.conversation.id = :conversationId AND m.user.id = :userId")
+    Optional<java.time.Instant> findJoinedAt(@Param("conversationId") UUID conversationId,
+                                             @Param("userId") UUID userId);
+
     @Query("SELECT m.role FROM ConversationMember m WHERE m.conversation.id = :conversationId AND m.user.id = :userId")
     Optional<ConversationMember.Role> findCurrentRole(@Param("conversationId") UUID conversationId,
                                                      @Param("userId") UUID userId);

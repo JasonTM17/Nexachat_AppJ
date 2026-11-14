@@ -82,9 +82,43 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
         if (!admittedToFrame(conversationId, userId, message.getPayload())) {
             return null;
         }
+        Message<?> released = withoutUnadmittedQuote(conversationId, userId, message);
         // The membership lookup can block while revocation unbinds and closes
         // the socket, so validate the session again before releasing the frame.
-        return isAuthenticatedOrInternalMessage(sessionId) ? message : null;
+        return isAuthenticatedOrInternalMessage(sessionId) ? released : null;
+    }
+
+    /**
+     * A message frame may quote an older message. The quote preview is removed for a recipient who
+     * was not a member when the quoted message was sent, matching what history shows them.
+     */
+    private Message<?> withoutUnadmittedQuote(UUID conversationId, UUID userId, Message<?> message) {
+        if (!(message.getPayload() instanceof byte[] bytes)) {
+            return message;
+        }
+        try {
+            JsonNode root = FRAME_READER.readTree(bytes);
+            String type = root.path("eventType").asText("");
+            if (!"MESSAGE_CREATED".equals(type) && !"MESSAGE_UPDATED".equals(type)) {
+                return message;
+            }
+            JsonNode payload = root.path("payload");
+            JsonNode replyTo = payload.path("replyTo");
+            if (!replyTo.isObject()) {
+                return message;
+            }
+            Instant quotedAt = parseInstant(replyTo.path("createdAt"));
+            if (quotedAt != null && memberRepository.existsAdmittedAt(conversationId, userId, quotedAt)) {
+                return message;
+            }
+            ((com.fasterxml.jackson.databind.node.ObjectNode) payload).remove("replyTo");
+            return org.springframework.messaging.support.MessageBuilder
+                    .createMessage(FRAME_READER.writeValueAsBytes(root), message.getHeaders());
+        } catch (java.io.IOException | ClassCastException e) {
+            // An unreadable frame was already admitted by creation time; drop it rather than
+            // risk releasing a quote the recipient may not read.
+            return null;
+        }
     }
 
     /**

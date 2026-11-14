@@ -107,6 +107,33 @@ class MessageBroadcastListenerTest {
     }
 
     @Test
+    void inboxPushDropsTheQuotePreviewForMembersWhoJoinedAfterTheQuotedMessage() {
+        Instant quotedAt = Instant.parse("2026-01-01T00:00:00Z");
+        Instant sentAt = Instant.parse("2026-01-02T00:00:00Z");
+        UUID quotedId = UUID.randomUUID();
+        var quote = new com.nexachat.message.dto.ReplyRefResponse(
+                quotedId, memberA, "A", "TEXT", "said before B joined", false, quotedAt);
+        MessageResponse message = new MessageResponse(
+                UUID.randomUUID(), conversationId, 9L, memberA, "A", "TEXT",
+                "reply", UUID.randomUUID(), quotedId, quote, List.of(), List.of(),
+                sentAt, null, null, List.of(), false);
+        when(memberRepository.findAdmittedUserIds(conversationId, sentAt)).thenReturn(List.of(memberA, memberB));
+        when(memberRepository.findAdmittedUserIds(conversationId, quotedAt)).thenReturn(List.of(memberA));
+
+        listener.onMessageCreated(new MessageCreatedEvent(conversationId, message));
+
+        ArgumentCaptor<EventEnvelope> toA = ArgumentCaptor.forClass(EventEnvelope.class);
+        verify(messaging).convertAndSendToUser(eq(memberA.toString()), eq("/queue/inbox"), toA.capture());
+        assertThat(((MessageResponse) toA.getValue().payload()).replyTo()).isEqualTo(quote);
+        ArgumentCaptor<EventEnvelope> toB = ArgumentCaptor.forClass(EventEnvelope.class);
+        verify(messaging).convertAndSendToUser(eq(memberB.toString()), eq("/queue/inbox"), toB.capture());
+        MessageResponse forB = (MessageResponse) toB.getValue().payload();
+        assertThat(forB.replyTo()).isNull();
+        assertThat(forB.replyToId()).isEqualTo(quotedId);
+        assertThat(forB.content()).isEqualTo("reply");
+    }
+
+    @Test
     void messageRead_broadcastsReceiptToTopic() {
         when(userRepository.findShowSeenById(memberA)).thenReturn(java.util.Optional.of(true));
 

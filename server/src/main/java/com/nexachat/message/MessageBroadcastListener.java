@@ -54,9 +54,19 @@ public class MessageBroadcastListener {
         // interceptor), and the inbox push below goes only to members admitted when the message was
         // created, so a replayed send never announces an old message to someone admitted later.
         messaging.convertAndSend(topicDestination(event.conversationId()), envelope);
+        // A quote preview reaches only members admitted when the quoted message was sent; the
+        // others get the message without it, as history shows it to them.
+        var replyTo = event.message().replyTo();
+        java.util.Set<UUID> admittedToQuote = replyTo == null || replyTo.createdAt() == null
+                ? java.util.Set.of()
+                : java.util.Set.copyOf(memberRepository.findAdmittedUserIds(
+                        event.conversationId(), replyTo.createdAt()));
+        EventEnvelope withoutQuote = replyTo == null ? envelope : EventEnvelope.of(
+                WsEventType.MESSAGE_CREATED, event.conversationId(), event.message().withoutReplyPreview());
         for (UUID memberId : memberRepository.findAdmittedUserIds(
                 event.conversationId(), event.message().createdAt())) {
-            messaging.convertAndSendToUser(memberId.toString(), "/queue/inbox", envelope);
+            messaging.convertAndSendToUser(memberId.toString(), "/queue/inbox",
+                    replyTo == null || admittedToQuote.contains(memberId) ? envelope : withoutQuote);
         }
     }
 
