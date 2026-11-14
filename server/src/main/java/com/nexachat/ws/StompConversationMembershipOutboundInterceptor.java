@@ -1,5 +1,7 @@
 package com.nexachat.ws;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.conversation.ConversationMemberRepository;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.lang.NonNull;
@@ -16,6 +18,7 @@ import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -32,6 +35,8 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
             "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
     private static final Pattern CONVERSATION_TOPIC =
             Pattern.compile("^/topic/conversations\\.(" + UUID_PATTERN + ")$");
+
+    private static final ObjectMapper FRAME_READER = new ObjectMapper();
 
     private final ConversationMemberRepository memberRepository;
     private final SimpUserRegistry userRegistry;
@@ -74,9 +79,86 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
         if (userId == null || !memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)) {
             return null;
         }
+        if (!admittedToFrame(conversationId, userId, message.getPayload())) {
+            return null;
+        }
+        Message<?> released = withoutUnadmittedQuote(conversationId, userId, message);
         // The membership lookup can block while revocation unbinds and closes
         // the socket, so validate the session again before releasing the frame.
-        return isAuthenticatedOrInternalMessage(sessionId) ? message : null;
+        return isAuthenticatedOrInternalMessage(sessionId) ? released : null;
+    }
+
+    /**
+     * A message frame may quote an older message. The quote preview is removed for a recipient who
+     * was not a member when the quoted message was sent, matching what history shows them.
+     */
+    private Message<?> withoutUnadmittedQuote(UUID conversationId, UUID userId, Message<?> message) {
+        if (!(message.getPayload() instanceof byte[] bytes)) {
+            return message;
+        }
+        try {
+            JsonNode root = FRAME_READER.readTree(bytes);
+            String type = root.path("eventType").asText("");
+            if (!"MESSAGE_CREATED".equals(type) && !"MESSAGE_UPDATED".equals(type)) {
+                return message;
+            }
+            JsonNode payload = root.path("payload");
+            JsonNode replyTo = payload.path("replyTo");
+            if (!replyTo.isObject()) {
+                return message;
+            }
+            Instant quotedAt = parseInstant(replyTo.path("createdAt"));
+            if (quotedAt != null && memberRepository.existsAdmittedAt(conversationId, userId, quotedAt)) {
+                return message;
+            }
+            ((com.fasterxml.jackson.databind.node.ObjectNode) payload).remove("replyTo");
+            return org.springframework.messaging.support.MessageBuilder
+                    .createMessage(FRAME_READER.writeValueAsBytes(root), message.getHeaders());
+        } catch (java.io.IOException | ClassCastException e) {
+            // An unreadable frame was already admitted by creation time; drop it rather than
+            // risk releasing a quote the recipient may not read.
+            return null;
+        }
+    }
+
+    /**
+     * A message frame reaches only members who were in the conversation when the message was
+     * created, so a rejoined member never receives an edit or recall of content from their absence.
+     */
+    private boolean admittedToFrame(UUID conversationId, UUID userId, Object payload) {
+        if (!(payload instanceof byte[] bytes)) {
+            return true;
+        }
+        String type;
+        JsonNode created;
+        try {
+            JsonNode root = FRAME_READER.readTree(bytes);
+            type = root.path("eventType").asText("");
+            if (!"MESSAGE_CREATED".equals(type) && !"MESSAGE_UPDATED".equals(type)) {
+                return true;
+            }
+            created = root.path("payload").path("createdAt");
+        } catch (java.io.IOException e) {
+            return true;
+        }
+        Instant createdAt = parseInstant(created);
+        // A message frame without a readable creation time cannot be admitted: fail closed.
+        return createdAt != null && memberRepository.existsAdmittedAt(conversationId, userId, createdAt);
+    }
+
+    @Nullable
+    private static Instant parseInstant(JsonNode node) {
+        try {
+            if (node.isNumber()) {
+                java.math.BigDecimal seconds = node.decimalValue();
+                long whole = seconds.longValue();
+                return Instant.ofEpochSecond(whole, seconds.subtract(java.math.BigDecimal.valueOf(whole))
+                        .movePointRight(9).longValue());
+            }
+            return node.isTextual() ? Instant.parse(node.asText()) : null;
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     private boolean isAuthenticatedOrInternalMessage(@Nullable String sessionId) {

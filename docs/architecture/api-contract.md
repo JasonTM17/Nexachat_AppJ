@@ -190,7 +190,7 @@ These keys are Spring properties; override them with the matching
 | Code | HTTP | Meaning |
 |---|---|---|
 | `VALIDATION_FAILED` | 400 | Body failed bean validation or a service rule |
-| `INVALID_CREDENTIALS` | 401 | Unknown phone or wrong password on login |
+| `INVALID_CREDENTIALS` | 401 | Unknown email or phone, or wrong password, on login |
 | `TOKEN_EXPIRED` | 401 | Access/refresh token past its TTL |
 | `TOKEN_INVALID` | 401 | Malformed, unknown or revoked token |
 | `TOKEN_REUSED` | 401 | Rotated refresh token presented again (family revoked) |
@@ -399,7 +399,7 @@ Each item of `attachments` is an `AttachmentResponse` =
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
 | `POST /auth/register` | Public | `{phone, password, displayName}` — password 8+ chars and ≤72 UTF-8 bytes, no NUL; displayName ≤60 | `201` `AuthResponse` | `VALIDATION_FAILED` 400 · `PHONE_EXISTS` 409 · `RATE_LIMITED` 429 |
-| `POST /auth/login` | Public | `{phone, password}` | `200` `AuthResponse` | `VALIDATION_FAILED` 400 · `INVALID_CREDENTIALS` 401 · `RATE_LIMITED` 429 |
+| `POST /auth/login` | Public | `{phone, password}` or `{identifier, password}` (`identifier`: a verified email or a phone number) | `200` `AuthResponse` | `VALIDATION_FAILED` 400 · `INVALID_CREDENTIALS` 401 · `RATE_LIMITED` 429 |
 | `POST /auth/refresh` | Public | `{refreshToken}`; optional canonical UUIDv4 `Idempotency-Key` | `200` `AuthResponse` (new token pair or original response replay) | `VALIDATION_FAILED` 400 · `TOKEN_INVALID` / `TOKEN_EXPIRED` / `TOKEN_REUSED` 401 · `REFRESH_RECOVERY_UNAVAILABLE` 409 · `REFRESH_SERVICE_UNAVAILABLE` 503 · `RATE_LIMITED` 429 |
 | `POST /auth/logout` | Bearer | `{refreshToken}` | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `POST /auth/logout-all` | Bearer | — | `204` empty | `UNAUTHORIZED` 401 |

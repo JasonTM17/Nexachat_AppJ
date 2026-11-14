@@ -143,7 +143,7 @@ public final class RealtimeSession {
     private volatile boolean authFailurePending;
     @Nullable private volatile String attemptAccessToken;
 
-    /** Destinations that must be (re-)subscribed on every Open. */
+    /** Conversation destinations owned by the current account. */
     private final Set<String> wantedSubscriptions = ConcurrentHashMap.newKeySet();
 
     @Inject
@@ -204,11 +204,6 @@ public final class RealtimeSession {
         messageDeletedAdapter = moshi.adapter(MessageDeletedDto.class);
         presenceAdapter = moshi.adapter(PresenceEventDto.class);
         conversationUpdateAdapter = moshi.adapter(ConversationUpdateDto.class);
-
-        wantedSubscriptions.add(USER_INBOX_DESTINATION);
-        wantedSubscriptions.add(USER_ERRORS_DESTINATION);
-        // Presence must be subscribed before the first peer event can land.
-        wantedSubscriptions.add(USER_PRESENCE_DESTINATION);
 
         subscriptions.add(tokenStore.getHasValidRefresh()
                 .distinctUntilChanged()
@@ -676,6 +671,9 @@ public final class RealtimeSession {
     }
 
     private void resubscribeWanted() {
+        stompClient.subscribe(USER_INBOX_DESTINATION);
+        stompClient.subscribe(USER_ERRORS_DESTINATION);
+        stompClient.subscribe(USER_PRESENCE_DESTINATION);
         for (String destination : wantedSubscriptions) {
             stompClient.subscribe(destination);
         }

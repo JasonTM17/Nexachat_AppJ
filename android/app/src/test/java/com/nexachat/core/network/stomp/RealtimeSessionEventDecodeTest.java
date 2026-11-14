@@ -5,7 +5,9 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -87,6 +89,50 @@ public final class RealtimeSessionEventDecodeTest {
         when(stomp.connect(any(), any())).thenReturn(Flowable.just(StompClient.State.Open.INSTANCE));
         session(store, stomp, null, true);
         verify(stomp, times(1)).subscribe(RealtimeSession.USER_PRESENCE_DESTINATION);
+    }
+
+    @Test
+    public void signingInAgainAfterLogoutRestoresTheUserQueues() {
+        BehaviorProcessor<Boolean> hasRefresh = BehaviorProcessor.createDefault(true);
+        BehaviorProcessor<Boolean> admitted = BehaviorProcessor.createDefault(true);
+        TokenStore store = mock(TokenStore.class);
+        when(store.getHasValidRefresh()).thenReturn(hasRefresh);
+        when(store.readTokens()).thenReturn(Maybe.just(new Tokens("access", Long.MAX_VALUE, "refresh")));
+        StompClient stomp = stomp();
+        PublishProcessor<StompClient.State> socket = PublishProcessor.create();
+        when(stomp.connect(any(), any())).thenReturn(socket);
+        NetworkMonitor monitor = mock(NetworkMonitor.class);
+        when(monitor.getIsOnline()).thenReturn(Flowable.just(false));
+        AppForegroundState foreground = () -> Flowable.just(false);
+        TokenRefresher refresher = mock(TokenRefresher.class);
+        when(refresher.sessionAdmission()).thenReturn(admitted);
+        when(refresher.sessionEpochChanges()).thenReturn(Flowable.never());
+        TestSessionSignals.stub(refresher);
+        when(refresher.sessionEpoch()).thenReturn(1L);
+        when(refresher.isSessionCurrent(1L)).thenAnswer(ignored -> admitted.getValue());
+        when(refresher.runIfSessionCurrent(anyLong(), any())).thenAnswer(invocation -> {
+            if (invocation.getArgument(0, Long.class) != 1L || !admitted.getValue()) return false;
+            invocation.<Runnable>getArgument(1).run();
+            return true;
+        });
+        RealtimeSession session = new RealtimeSession(stomp, store, refresher, new Moshi.Builder().build(),
+                new ReconnectPolicy(), monitor, foreground);
+        socket.onNext(StompClient.State.Open.INSTANCE);
+        verify(stomp, times(1)).subscribe(RealtimeSession.USER_INBOX_DESTINATION);
+        session.watchConversation("previous-account");
+        verify(stomp).subscribe(RealtimeSession.TOPIC_PREFIX + "previous-account");
+
+        hasRefresh.onNext(false);
+        admitted.onNext(false);
+        clearInvocations(stomp);
+        hasRefresh.onNext(true);
+        admitted.onNext(true);
+        socket.onNext(StompClient.State.Open.INSTANCE);
+
+        verify(stomp).subscribe(RealtimeSession.USER_INBOX_DESTINATION);
+        verify(stomp).subscribe(RealtimeSession.USER_ERRORS_DESTINATION);
+        verify(stomp).subscribe(RealtimeSession.USER_PRESENCE_DESTINATION);
+        verify(stomp, never()).subscribe(RealtimeSession.TOPIC_PREFIX + "previous-account");
     }
 
     @Test

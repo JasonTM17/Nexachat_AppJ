@@ -15,5 +15,6 @@ public record ReplyRefRow(UUID id,
                           String senderDisplayName,
                           Message.Type type,
                           String content,
-                          Instant deletedAt) {
+                          Instant deletedAt,
+                          Instant createdAt) {
 }

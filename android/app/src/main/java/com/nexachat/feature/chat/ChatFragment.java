@@ -749,6 +749,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         });
         viewModel.getGroupMembers().observe(getViewLifecycleOwner(), next -> {
             groupMembers = next == null ? List.of() : next;
+            renderSubtitle();
             if (binding != null) updateMentionPicker(
                     binding.composerBar.messageInput.getText().toString(),
                     binding.composerBar.messageInput.getSelectionStart());
@@ -808,6 +809,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             }
             binding.chatHeaderAvatar.setOnlineStatus(peerOnline);
         }
+        bindGroupInfoShortcut(state.isGroup());
         renderSubtitle();
         binding.callButton.setVisibility(ChatToolbarPolicy.callAvailable(state.isGroup()) ? View.VISIBLE : View.GONE);
         binding.searchInChatButton.setVisibility(View.GONE);
@@ -885,6 +887,29 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         }
     }
 
+    /** In a group, tapping the header name or avatar opens the group details, as in most messengers. */
+    private void bindGroupInfoShortcut(boolean group) {
+        View.OnClickListener open = group ? v -> openGroupInfo() : null;
+        binding.chatToolbar.setOnClickListener(open);
+        binding.chatToolbar.setClickable(group);
+        // TalkBack says "double-tap to open group info" instead of a bare "double-tap to activate".
+        if (group) {
+            androidx.core.view.ViewCompat.replaceAccessibilityAction(binding.chatToolbar,
+                    androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat.ACTION_CLICK,
+                    getString(R.string.cd_group_info), (view, args) -> {
+                        openGroupInfo();
+                        return true;
+                    });
+        } else {
+            androidx.core.view.ViewCompat.removeAccessibilityAction(binding.chatToolbar,
+                    android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK.getId());
+        }
+        if (binding.chatHeaderAvatar != null) {
+            binding.chatHeaderAvatar.setOnClickListener(open);
+            binding.chatHeaderAvatar.setClickable(group);
+        }
+    }
+
     private void openGroupInfo() {
         Bundle args = new Bundle();
         args.putString(ARG_CONVERSATION_ID, conversationId);
@@ -902,7 +927,14 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         int subtitleRes = ChatSubtitle.textRes(
                 state.getPeerTyping(), state.getConnected(), state.isGroup(), peerForSubtitle,
                 serverStarting);
-        binding.chatToolbar.setSubtitle(subtitleRes == 0 ? "" : getString(subtitleRes));
+        if (subtitleRes != 0) {
+            binding.chatToolbar.setSubtitle(getString(subtitleRes));
+        } else if (state.isGroup() && !groupMembers.isEmpty()) {
+            binding.chatToolbar.setSubtitle(
+                    com.nexachat.res.QuantityStrings.memberCount(getResources(), groupMembers.size()));
+        } else {
+            binding.chatToolbar.setSubtitle("");
+        }
     }
 
     private void renderPinned() {
@@ -1355,7 +1387,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
     private void showConversationSettings() {
         View content = getLayoutInflater().inflate(R.layout.dialog_conversation_settings, null);
-        com.google.android.material.switchmaterial.SwitchMaterial toggle =
+        com.google.android.material.materialswitch.MaterialSwitch toggle =
                 content.findViewById(R.id.aiOptOutSwitch);
         TextView status = content.findViewById(R.id.aiOptOutStatus);
         View row = content.findViewById(R.id.aiOptOutRow);
@@ -1376,7 +1408,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 status.setText(ChatErrorText.messageId(state.getError()));
             }
             toggle.setOnCheckedChangeListener((button, checked) -> {
-                if (button.isPressed()) viewModel.setAiOptOut(checked);
+                viewModel.setAiOptOut(checked);
             });
         };
         viewModel.getAiOptOutState().observe(getViewLifecycleOwner(), observer);

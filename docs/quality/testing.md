@@ -88,11 +88,6 @@ WebSocket endpoints (`docs/architecture/api-contract.md`, `docs/architecture/web
 | `tools/e2e/summary/summary_e2e.py` | AI summary API against a live backend |
 | `tools/e2e/calls/call_e2e.py` | Call signaling journey |
 
-`tools/e2e/P0E2ETestRunner.java` is an **illustrative synthetic fixture** only: it
-runs 81 JDK-only assertions on locally constructed data without starting the server
-or Android app. Do not treat its output as live E2E acceptance. See
-[`tools/e2e/README.md`](../../tools/e2e/README.md).
-
 `tools/e2e/final/final_live.py` covers the checks that need a disposable stack:
 parallel joins at `maxUses`, revoke during a join, approval limits, recall
 purging the ask cache, and a spoofed `X-Forwarded-For` that must not reset the

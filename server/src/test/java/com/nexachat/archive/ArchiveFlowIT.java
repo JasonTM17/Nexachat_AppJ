@@ -222,6 +222,11 @@ class ArchiveFlowIT {
 
     private UUID seedMessage(UUID conversationId, TestUser sender, String type,
                              String content, Instant createdAt) {
+        // Seeded messages carry synthetic past timestamps; members must have been admitted by then.
+        jdbcTemplate.update("""
+                UPDATE conversation_members SET joined_at = LEAST(joined_at, ?)
+                WHERE conversation_id = ?
+                """, Timestamp.from(createdAt), conversationId);
         return jdbcTemplate.queryForObject("""
                 INSERT INTO messages (conversation_id, sender_id, client_message_id,
                                       type, content, created_at)

@@ -18,6 +18,21 @@ public final class SettingsRowLayoutRules {
       boolean valueVisible,
       boolean chevronVisible,
       boolean leadingIconVisible) {
+        return shouldStackTrailingValue(
+                density, rowWidthPx, valueVisible, chevronVisible, leadingIconVisible, 0f);
+    }
+
+    /**
+     * Stacks the value under the title when the inline value would leave the title too narrow,
+     * or narrower than its own single-line width (so the title never wraps beside a value).
+     */
+    public static boolean shouldStackTrailingValue(
+            float density,
+            int rowWidthPx,
+            boolean valueVisible,
+            boolean chevronVisible,
+            boolean leadingIconVisible,
+            float titleTextWidthPx) {
         if (!valueVisible || rowWidthPx <= 0) {
             return false;
         }
@@ -28,6 +43,6 @@ public final class SettingsRowLayoutRules {
             trailing += Math.round(CHEVRON_BLOCK_DP * density);
         }
         int titleSpace = inner - leading - trailing;
-        return titleSpace < Math.round(MIN_TITLE_WIDTH_DP * density);
+        return titleSpace < Math.round(MIN_TITLE_WIDTH_DP * density) || titleTextWidthPx > titleSpace;
     }
 }

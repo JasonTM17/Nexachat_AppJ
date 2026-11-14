@@ -95,7 +95,7 @@ public final class LlmSummaryProvider implements SummaryProvider {
         LlmClient.TargetConfig secondary;
 
         if (isComplex) {
-            // Complex window ("quá khó"): prioritize Cloud DeepSeek, fall back to Local Server Model
+            // Complex window ("quá khó"): prioritize the primary cloud model, fall back to Local Server Model
             if (properties.isUsable()) {
                 primary = client.cloudTarget();
                 secondary = properties.isLocalUsable() ? client.localTarget() : null;
@@ -104,7 +104,7 @@ public final class LlmSummaryProvider implements SummaryProvider {
                 secondary = null;
             }
         } else {
-            // Routine window: prioritize Local Server Model, escalate to Cloud DeepSeek
+            // Routine window: prioritize Local Server Model, escalate to the primary cloud model
             if (properties.isLocalUsable()) {
                 primary = client.localTarget();
                 secondary = properties.isUsable() ? client.cloudTarget() : null;

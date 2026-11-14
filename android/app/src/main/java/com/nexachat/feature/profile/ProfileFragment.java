@@ -53,6 +53,8 @@ public final class ProfileFragment extends Fragment {
     private ActivityResultLauncher<String> avatarPicker;
     private ActivityResultLauncher<String> notificationPermissionRequest;
     private boolean syncingAiConsent;
+    /** True while a switch shows a stored value, so the change is not saved back as a user edit. */
+    private boolean syncingPrivacy;
 
     public ProfileFragment() {
         avatarPicker = registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> { if (uri != null && viewModel != null) viewModel.uploadAvatar(uri); });
@@ -101,9 +103,13 @@ public final class ProfileFragment extends Fragment {
         binding.languageRow.setTitle(getString(R.string.settings_language));
         binding.languageRow.setLeadingIcon(R.drawable.ic_language);
         binding.languageRow.setOnClickListener(v -> NavHostFragment.findNavController(this).navigate(R.id.languageSettingsFragment));
+        binding.languageRow.setTrailingValue(getString(LanguageLabels.label(
+                com.nexachat.core.common.AppLocaleManager.current(requireContext()))));
         binding.themeRow.setTitle(getString(R.string.settings_theme_title));
         binding.themeRow.setLeadingIcon(R.drawable.ic_theme_mode);
         binding.themeRow.setOnClickListener(v -> showThemeDialog());
+        // The quick chips below already choose the theme; a chevron would promise another screen.
+        binding.themeRow.setShowChevron(false);
         View.OnClickListener onThemeChipClick = v -> {
             int id = v.getId();
             if (id == R.id.themeChipSystem) {
@@ -117,18 +123,20 @@ public final class ProfileFragment extends Fragment {
         binding.themeChipSystem.setOnClickListener(onThemeChipClick);
         binding.themeChipLight.setOnClickListener(onThemeChipClick);
         binding.themeChipDark.setOnClickListener(onThemeChipClick);
-        binding.showPresence.setOnCheckedChangeListener((button, checked) -> { if (button.isPressed()) viewModel.setShowPresence(checked); });
-        binding.showPresenceRow.setOnClickListener(v -> {
-            boolean next = !binding.showPresence.isChecked();
-            binding.showPresence.setChecked(next);
-            viewModel.setShowPresence(next);
+        // Render persisted values from the model; widget restoration could invoke the save listeners.
+        binding.showPresence.setSaveEnabled(false);
+        binding.showSeen.setSaveEnabled(false);
+        binding.aiSummaryConsent.setSaveEnabled(false);
+        // Save every user change, including TalkBack, keyboard and Switch Access toggles that never
+        // press the view; only values pushed in from storage are skipped.
+        binding.showPresence.setOnCheckedChangeListener((button, checked) -> {
+            if (!syncingPrivacy) viewModel.setShowPresence(checked);
         });
-        binding.showSeen.setOnCheckedChangeListener((button, checked) -> { if (button.isPressed()) viewModel.setShowSeen(checked); });
-        binding.showSeenRow.setOnClickListener(v -> {
-            boolean next = !binding.showSeen.isChecked();
-            binding.showSeen.setChecked(next);
-            viewModel.setShowSeen(next);
+        binding.showPresenceRow.setOnClickListener(v -> binding.showPresence.toggle());
+        binding.showSeen.setOnCheckedChangeListener((button, checked) -> {
+            if (!syncingPrivacy) viewModel.setShowSeen(checked);
         });
+        binding.showSeenRow.setOnClickListener(v -> binding.showSeen.toggle());
         binding.notificationRow.setTitle(getString(R.string.settings_notifications));
         binding.notificationRow.setLeadingIcon(R.drawable.ic_chat_bubble_outline);
         binding.notificationRow.setOnClickListener(v -> openNotificationSettings());
@@ -170,8 +178,16 @@ public final class ProfileFragment extends Fragment {
         binding.profileLoadRetry.setOnClickListener(v -> viewModel.load());
         linkedAccountsViewModel.getUiState().observe(getViewLifecycleOwner(), this::renderLinkedAccounts);
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
-        viewModel.getShowPresence().observe(getViewLifecycleOwner(), value -> binding.showPresence.setChecked(Boolean.TRUE.equals(value)));
-        viewModel.getShowSeen().observe(getViewLifecycleOwner(), value -> binding.showSeen.setChecked(Boolean.TRUE.equals(value)));
+        viewModel.getShowPresence().observe(getViewLifecycleOwner(), value -> {
+            syncingPrivacy = true;
+            binding.showPresence.setChecked(Boolean.TRUE.equals(value));
+            syncingPrivacy = false;
+        });
+        viewModel.getShowSeen().observe(getViewLifecycleOwner(), value -> {
+            syncingPrivacy = true;
+            binding.showSeen.setChecked(Boolean.TRUE.equals(value));
+            syncingPrivacy = false;
+        });
         settingsViewModel.getThemeMode().observe(getViewLifecycleOwner(), mode -> {
             ThemeMode active = mode != null ? mode : ThemeMode.SYSTEM;
             binding.themeRow.setTrailingValue(ProfileThemeUiRules.resolveThemeRowTrailingValue(
@@ -471,7 +487,7 @@ public final class ProfileFragment extends Fragment {
         dialog.show();
     }
     private void onAiConsentToggled(CompoundButton button, boolean checked) {
-        if (syncingAiConsent || !button.isPressed()) {
+        if (syncingAiConsent) {
             return;
         }
         if (checked) {

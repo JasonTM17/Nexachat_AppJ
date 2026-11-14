@@ -271,7 +271,7 @@ public class MessageService {
         validateAttachmentsReady(senderId, type, attachmentIds, lockedAttachments);
         MentionState mentionState = validateMentions(conversationId, senderId, type, content,
                 request.mentions(), Boolean.TRUE.equals(request.mentionAll()));
-        UUID replyToId = resolveReplyTo(conversationId, request.replyToId());
+        UUID replyToId = resolveReplyTo(conversationId, senderId, request.replyToId());
         allocateChangeVersion(conversationId);
 
         int inserted = mentionState.mentionAll()
@@ -343,14 +343,14 @@ public class MessageService {
 
         int pageSize = normalizeLimit(limit);
         List<MessageRow> rows = afterSeq != null
-                ? messageRepository.findRowsAfter(
-                        conversationId, afterSeq, PageRequest.of(0, pageSize + 1))
+                ? messageRepository.findSyncRowsAfter(
+                        userId, conversationId, afterSeq, PageRequest.of(0, pageSize + 1))
                 : messageRepository.findPageRows(
-                        conversationId, beforeSeq, PageRequest.of(0, pageSize + 1));
+                        userId, conversationId, beforeSeq, PageRequest.of(0, pageSize + 1));
         boolean hasMore = rows.size() > pageSize;
         List<MessageRow> page = hasMore ? rows.subList(0, pageSize) : rows;
 
-        List<MessageResponse> items = hydrateResponses(page, userId);
+        List<MessageResponse> items = hydrateResponses(page, userId, true);
         Long nextBeforeSeq = (afterSeq != null || items.isEmpty())
                 ? null : items.get(items.size() - 1).seq();
         return new MessagePageResponse(items, nextBeforeSeq, hasMore);
@@ -494,12 +494,12 @@ public class MessageService {
         int pageSize = normalizeSearchLimit(limit);
         String pattern = "%" + escapeLike(normalized) + "%";
         List<MessageRow> rows = messageRepository.searchTextRows(
-                        conversationId, pattern, beforeSeq, PageRequest.of(0, pageSize + 1)).stream()
+                        userId, conversationId, pattern, beforeSeq, PageRequest.of(0, pageSize + 1)).stream()
                 .map(MessageService::toMessageRow)
                 .toList();
         boolean hasMore = rows.size() > pageSize;
         List<MessageRow> page = hasMore ? rows.subList(0, pageSize) : rows;
-        List<MessageResponse> items = hydrateResponses(page, userId);
+        List<MessageResponse> items = hydrateResponses(page, userId, true);
         Long nextBeforeSeq = items.isEmpty() ? null : items.get(items.size() - 1).seq();
         return new MessagePageResponse(items, nextBeforeSeq, hasMore);
     }
@@ -1182,9 +1182,10 @@ public class MessageService {
 
     /**
      * A reply target must exist and live in the SAME conversation — quoting a
-     * message across conversations is a client bug (and would leak its id).
+     * message across conversations is a client bug (and would leak its id). The sender must also
+     * have been a member when the target was sent; otherwise it does not exist for them.
      */
-    private UUID resolveReplyTo(UUID conversationId, UUID replyToId) {
+    private UUID resolveReplyTo(UUID conversationId, UUID senderId, UUID replyToId) {
         if (replyToId == null) {
             return null;
         }
@@ -1193,6 +1194,9 @@ public class MessageService {
         if (!conversationId.equals(target.getConversation().getId())) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "replyToId belongs to a different conversation");
+        }
+        if (!memberRepository.existsAdmittedAt(conversationId, senderId, target.getCreatedAt())) {
+            throw ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Reply target not found");
         }
         return replyToId;
     }
@@ -1325,7 +1329,7 @@ public class MessageService {
 
     /** Batch hydration shared by history and pinned-message read models. */
     List<MessageResponse> toResponses(List<MessageRow> rows, UUID viewerId) {
-        return hydrateResponses(rows, viewerId);
+        return hydrateResponses(rows, viewerId, true);
     }
 
     private List<MessageResponse> hydrateResponses(List<MessageRow> rows, UUID viewerId) {
@@ -1415,7 +1419,7 @@ public class MessageService {
             boolean deleted = row.deletedAt() != null;
             result.put(row.id(), new ReplyRefResponse(
                     row.id(), row.senderId(), row.senderDisplayName(), row.type().name(),
-                    deleted ? null : row.content(), deleted));
+                    deleted ? null : row.content(), deleted, row.createdAt()));
         }
         return result;
     }

@@ -59,10 +59,14 @@ public class SummaryWindowRepository {
             SummaryRequest request,
             Long afterSeq,
             Instant fromInclusive,
-            Instant toExclusive) {
+            Instant toExclusive,
+            Instant admittedFrom) {
         StringBuilder sql = new StringBuilder(SELECT_MESSAGES);
         List<Object> parameters = new ArrayList<>();
         parameters.add(conversationId);
+        // A member summarises only what they could read: nothing from before their admission.
+        sql.append(" AND m.created_at >= ?");
+        parameters.add(OffsetDateTime.ofInstant(admittedFrom, ZoneOffset.UTC));
         if (afterSeq != null) {
             sql.append(" AND m.seq > ?");
             parameters.add(afterSeq);

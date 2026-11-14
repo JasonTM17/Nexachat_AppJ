@@ -8,6 +8,9 @@ import org.springframework.stereotype.Repository;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -73,12 +76,22 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
 
     @Override
     public List<RagMessage> lexicalCandidates(UUID conversationId, List<String> terms, int limit) {
+        return lexicalCandidates(conversationId, terms, limit, null);
+    }
+
+    @Override
+    public List<RagMessage> lexicalCandidates(
+            UUID conversationId, List<String> terms, int limit, Instant admittedFrom) {
         if (terms == null || terms.isEmpty()) {
             return List.of();
         }
         StringBuilder sql = new StringBuilder("SELECT " + MESSAGE_COLUMNS + MESSAGE_WHERE);
         List<Object> parameters = new ArrayList<>();
         parameters.add(conversationId);
+        if (admittedFrom != null) {
+            sql.append(" AND m.created_at >= ?");
+            parameters.add(OffsetDateTime.ofInstant(admittedFrom, ZoneOffset.UTC));
+        }
         sql.append(" AND (");
         for (int index = 0; index < terms.size(); index++) {
             if (index > 0) {
@@ -226,6 +239,17 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
                 statement -> statement.setArray(1, uuidArray(statement, messageIds)),
                 (rs, rowNum) -> rs.getObject("id", UUID.class));
         return Set.copyOf(ids);
+    }
+
+    @Override
+    public boolean hasMessagesBefore(UUID conversationId, Instant instant) {
+        if (instant == null) {
+            return false;
+        }
+        Boolean exists = jdbcTemplate.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM messages WHERE conversation_id = ? AND created_at < ?)",
+                Boolean.class, conversationId, OffsetDateTime.ofInstant(instant, ZoneOffset.UTC));
+        return Boolean.TRUE.equals(exists);
     }
 
     @Override

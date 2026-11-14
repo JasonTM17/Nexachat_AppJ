@@ -2,6 +2,7 @@ package com.nexachat.feature.chat.adapter;
 
 import android.view.View;
 import androidx.annotation.NonNull;
+import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.constraintlayout.widget.Guideline;
 import com.nexachat.R;
 
@@ -24,11 +25,17 @@ public final class MessageBubbleLayoutBinder {
         }
         Guideline start = (Guideline) startView;
         Guideline end = (Guideline) endView;
-        View.OnLayoutChangeListener listener = (view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
-                apply(view, start, end);
+        View.OnLayoutChangeListener listener = (view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (right - left != oldRight - oldLeft) {
+                // Guideline setters request another layout, so apply them outside this layout pass.
+                view.post(() -> apply(view, start, end));
+            }
+        };
         root.setTag(R.id.bubbleStartLimit, listener);
         root.addOnLayoutChangeListener(listener);
-        apply(root, start, end);
+        if (root.isLaidOut()) {
+            root.post(() -> apply(root, start, end));
+        }
     }
 
     private static void apply(@NonNull View root, @NonNull Guideline start, @NonNull Guideline end) {
@@ -36,7 +43,16 @@ public final class MessageBubbleLayoutBinder {
         float density = root.getResources().getDisplayMetrics().density;
         float fontScale = root.getResources().getConfiguration().fontScale;
         int maxWidth = MessageBubbleLayoutRules.maxBubbleWidthPx(innerWidth, fontScale, density);
-        start.setGuidelinePercent(MessageBubbleLayoutRules.startGuidePercent(maxWidth, innerWidth));
-        end.setGuidelinePercent(MessageBubbleLayoutRules.endGuidePercent(maxWidth, innerWidth));
+        if (maxWidth > 0) {
+            updatePercent(start, MessageBubbleLayoutRules.startGuidePercent(maxWidth, innerWidth));
+            updatePercent(end, MessageBubbleLayoutRules.endGuidePercent(maxWidth, innerWidth));
+        }
+    }
+
+    private static void updatePercent(Guideline guideline, float percent) {
+        ConstraintLayout.LayoutParams params = (ConstraintLayout.LayoutParams) guideline.getLayoutParams();
+        if (params.guidePercent != percent) {
+            guideline.setGuidelinePercent(percent);
+        }
     }
 }

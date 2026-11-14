@@ -16,6 +16,11 @@ public final class QuantityStrings {
         return resources.getQuantityString(R.plurals.invite_member_count, count, count);
     }
 
+    /** Member count for a group, shown where a group needs its size at a glance. */
+    public static String memberCount(Resources resources, int count) {
+        return resources.getQuantityString(R.plurals.invite_member_count, count, count);
+    }
+
     public static String inviteUsageUnlimited(Resources resources, int useCount) {
         return resources.getQuantityString(R.plurals.invite_usage_unlimited, useCount, useCount);
     }

@@ -57,7 +57,7 @@ public class SummaryWindowService {
         }
 
         List<SummaryMessage> messages = windowRepository.findWindow(
-                conversationId, request, afterSeq, fromInclusive, toExclusive);
+                conversationId, request, afterSeq, fromInclusive, toExclusive, member.getJoinedAt());
         return new SummaryReadContext(
                 new SummaryWindow(conversationId, 0, 0, messages),
                 consentRepository.isConsented(userId));

@@ -11,8 +11,10 @@ import java.net.URI;
 public class LlmProperties {
 
     private boolean enabled;
-    private String baseUrl = "https://api.deepseek.com";
-    private String model = "deepseek-flash";
+    // Same defaults as application.yml: the primary cloud model is Gemini Flash-Lite through
+    // Google's OpenAI-compatible endpoint; DeepSeek is the separate fallback (LlmFallbackProperties).
+    private String baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai";
+    private String model = "gemini-3.1-flash-lite";
     private String apiKey = "";
     private int timeoutMs = 30_000;
     private int maxInputChars = 24_000;

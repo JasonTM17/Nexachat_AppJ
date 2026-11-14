@@ -31,6 +31,21 @@ public final class SessionOperationTracker {
         }
     }
 
+    /** The boundary a request started under; compare with {@link #invalidateIfCurrent}. */
+    public long currentGeneration() {
+        synchronized (lock) {
+            return generation;
+        }
+    }
+
+    /** Like {@link #invalidate()}, but refuses (returns -1) when a newer boundary already passed. */
+    public long invalidateIfCurrent(long expectedGeneration) {
+        synchronized (lock) {
+            if (generation != expectedGeneration) return -1L;
+            return invalidate();
+        }
+    }
+
     /** Enables work only if no newer session boundary has superseded this login. */
     public boolean activate(long expectedGeneration) {
         synchronized (lock) {

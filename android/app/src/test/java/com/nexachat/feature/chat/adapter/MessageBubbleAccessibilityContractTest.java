@@ -34,15 +34,19 @@ public final class MessageBubbleAccessibilityContractTest {
     }
 
     @Test
-    public void reactionByMeUsesLocalizedDescription() throws Exception {
+    public void reactionByMeIsSpokenButNeverShownAsText() throws Exception {
         String source = readSource("feature/chat/adapter/MessageBubbleBinder.java");
         String reactionLoop = between(source,
                 "for (ReactionChip chip : reactions)",
                 "view.setCheckable(false)").replaceAll("\\s+", "");
-        assertTrue("reaction label must branch on reactedByMe",
-                reactionLoop.contains("mineReaction?R.string.a11y_reaction_chip_by_me"));
-        assertTrue("reaction label must retain the ordinary localized description",
-                reactionLoop.contains(":R.string.a11y_reaction_chip"));
+        assertTrue("visible chip text is always emoji and count",
+                reactionLoop.contains("view.setText(root.getResources().getString(R.string.a11y_reaction_chip,"));
+        assertTrue("ownership is announced through the content description only",
+                reactionLoop.contains("if(mineReaction){")
+                        && reactionLoop.contains("view.setContentDescription(")
+                        && reactionLoop.contains("R.string.a11y_reaction_chip_by_me"));
+        assertTrue("the spoken-only string must not be rendered as chip text",
+                !reactionLoop.contains("setText(root.getResources().getString(mineReaction"));
     }
 
     private static String between(String source, String startMarker, String endMarker) {

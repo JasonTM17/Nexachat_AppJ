@@ -18,6 +18,8 @@ public final class AccountDataCleaner {
     private final AppDatabase database;
     private final Supplier<Completable> cancelOutbox;
     private final Runnable scheduleOutbox;
+    private static final long NO_ATTEMPT = Long.MIN_VALUE;
+
     private final SessionOperationTracker operationTracker;
     private CompletableSubject transitionTail;
 
@@ -78,6 +80,23 @@ public final class AccountDataCleaner {
         return enqueueTransition(persistSession, true, false, publishSessionAvailable);
     }
 
+    /** The session boundary a sign-in request starts under. */
+    public long sessionBoundary() {
+        return operationTracker.currentGeneration();
+    }
+
+    /**
+     * Like {@link #startSession(Completable, Completable)}, but a response that arrives after another
+     * boundary (a logout or another sign-in) is dropped instead of replacing the newer session.
+     */
+    @NonNull
+    public Completable startSession(
+            @NonNull Completable persistSession,
+            @NonNull Completable publishSessionAvailable,
+            long attemptBoundary) {
+        return enqueueTransition(persistSession, true, false, publishSessionAvailable, attemptBoundary);
+    }
+
     /** Serializes cleanup and token/event updates as one logout transition. */
     @NonNull
     public Completable clearForLogout(@NonNull Completable finishBoundary) {
@@ -95,12 +114,28 @@ public final class AccountDataCleaner {
             boolean activateSession,
             boolean clearOutbox,
             @NonNull Completable finishAfterActivation) {
+        return enqueueTransition(finishBeforeActivation, activateSession, clearOutbox,
+                finishAfterActivation, NO_ATTEMPT);
+    }
+
+    private Completable enqueueTransition(
+            @NonNull Completable finishBeforeActivation,
+            boolean activateSession,
+            boolean clearOutbox,
+            @NonNull Completable finishAfterActivation,
+            long attemptBoundary) {
         return Completable.defer(() -> {
             Completable prior;
             CompletableSubject transition = CompletableSubject.create();
             long generation;
             synchronized (lock) {
-                generation = operationTracker.invalidate();
+                generation = attemptBoundary == NO_ATTEMPT
+                        ? operationTracker.invalidate()
+                        : operationTracker.invalidateIfCurrent(attemptBoundary);
+                if (generation < 0) {
+                    return Completable.error(new CancellationException(
+                            "A newer account boundary superseded this sign-in"));
+                }
                 prior = transitionTail == null
                         ? Completable.complete()
                         : transitionTail.hide().onErrorComplete();

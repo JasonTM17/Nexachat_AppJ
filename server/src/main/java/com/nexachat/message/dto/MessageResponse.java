@@ -59,4 +59,11 @@ public record MessageResponse(
                 clientMessageId, replyToId, replyTo, attachments, reactions,
                 createdAt, editedAt, deletedAt, mentions, mentionAll, null, null);
     }
+
+    /** The same message without its quote preview, for a recipient not admitted to the quoted message. */
+    public MessageResponse withoutReplyPreview() {
+        return new MessageResponse(id, conversationId, seq, senderId, senderDisplayName, type, content,
+                clientMessageId, replyToId, null, attachments, reactions, createdAt, editedAt, deletedAt,
+                mentions, mentionAll, changeVersion, generation);
+    }
 }

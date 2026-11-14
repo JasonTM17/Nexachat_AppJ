@@ -37,15 +37,27 @@ public class RagRetrievalService {
 
     public RetrievalResult retrieve(
             UUID conversationId, String question, SummaryLanguage language, boolean consented) {
+        return retrieve(conversationId, question, language, consented, null);
+    }
+
+    /**
+     * Retrieves only messages created at or after {@code admittedFrom}, the asking member's
+     * admission time, so an answer never draws on content from before they joined. Null means
+     * no bound.
+     */
+    public RetrievalResult retrieve(
+            UUID conversationId, String question, SummaryLanguage language, boolean consented,
+            java.time.Instant admittedFrom) {
         RagProperties.Retrieval config = properties.getRetrieval();
-        List<RagMessage> recent = index.recentMessages(conversationId, config.getMaxCandidateMessages());
+        List<RagMessage> recent = index.recentMessages(
+                conversationId, config.getMaxCandidateMessages(), admittedFrom);
         if (recent.isEmpty()) {
             return RetrievalResult.empty();
         }
 
         List<String> terms = RagQuestionTerms.extract(question, language, config.getLexicalTermLimit());
         List<RagMessage> lexicalCandidates = index.lexicalCandidates(
-                conversationId, terms, config.getLexicalCandidateLimit());
+                conversationId, terms, config.getLexicalCandidateLimit(), admittedFrom);
 
         Map<UUID, RagMessage> vectorCandidateMap = new LinkedHashMap<>();
         int recentWindow = Math.min(config.getVectorCandidateLimit(), recent.size());
@@ -88,7 +100,7 @@ public class RagRetrievalService {
         }
 
         RagContextBuilder.ContextResult contextResult = RagContextBuilder.build(
-                ranked, recent, index, config);
+                ranked, recent, index, config, admittedFrom);
         return new RetrievalResult(
                 ranked,
                 ranked.get(0).message(),
@@ -98,6 +110,13 @@ public class RagRetrievalService {
                 contextResult.messages());
     }
 
+    /**
+     * True when the conversation holds content from before {@code admittedFrom}. Answers cached
+     * for the conversation may draw on that content, so such a member must not be served them.
+     */
+    public boolean hasContentBeforeAdmission(UUID conversationId, java.time.Instant admittedFrom) {
+        return index.hasMessagesBefore(conversationId, admittedFrom);
+    }
     private static SummaryCandidate toSummaryCandidate(ScoredMessage scored, SummaryLanguage language) {
         RagMessage message = scored.message();
         SummaryMessage summaryMessage = new SummaryMessage(

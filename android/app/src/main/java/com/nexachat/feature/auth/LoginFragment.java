@@ -65,8 +65,9 @@ public final class LoginFragment extends Fragment {
                     getString(AuthLoadingOverlay.contentDescriptionResId()));
         }
         binding.forgotPasswordAction.setOnClickListener(v -> {
-            String phone = binding.phoneInput.getText() == null
+            String typed = binding.phoneInput.getText() == null
                     ? "" : binding.phoneInput.getText().toString();
+            String phone = typed.contains("@") ? "" : typed;
             Bundle args = new Bundle();
             args.putString(ForgotPasswordViewModel.ARG_PREFILL_PHONE, phone);
             NavHostFragment.findNavController(this).navigate(R.id.forgotPasswordFragment, args);
@@ -125,10 +126,11 @@ public final class LoginFragment extends Fragment {
     }; }
 
     private void submit() {
-        String phone = AuthFieldValidators.normalizeE164(binding.phoneInput.getText().toString());
-        binding.phoneLayout.setError(AuthFieldValidators.isE164(phone) ? null : getString(R.string.error_phone_invalid));
-        if (!AuthFieldValidators.isE164(phone)) return;
-        viewModel.onPhoneChange(phone);
+        String identifier = AuthFieldValidators.normalizeLoginIdentifier(binding.phoneInput.getText().toString());
+        boolean valid = AuthFieldValidators.isLoginIdentifier(identifier);
+        binding.phoneLayout.setError(valid ? null : getString(R.string.error_login_identifier_invalid));
+        if (!valid) return;
+        viewModel.onPhoneChange(identifier);
         viewModel.login();
     }
 
@@ -137,7 +139,7 @@ public final class LoginFragment extends Fragment {
         rendering = true;
         if (!binding.phoneInput.getText().toString().equals(state.getPhone())) binding.phoneInput.setText(state.getPhone());
         if (!binding.passwordInput.getText().toString().equals(state.getPassword())) binding.passwordInput.setText(state.getPassword());
-        binding.phoneLayout.setError(state.getPhoneError() ? getString(R.string.error_phone_required) : null);
+        binding.phoneLayout.setError(state.getPhoneError() ? getString(R.string.error_login_identifier_required) : null);
         binding.passwordLayout.setError(state.getPasswordError() ? getString(R.string.error_password_short) : null);
         boolean googleEmailInUse = GoogleAuthErrors.isGoogleEmailInUse(state.getError());
         binding.googleEmailInUseError.getRoot().setVisibility(
