@@ -69,6 +69,12 @@ public class E2eeDeviceService {
     public E2eeDeviceResponse register(UUID userId, UUID deviceId, String publicKey) {
         consumeRegisterBudget(userId);
         byte[] key = decodePublicKey(publicKey);
+        // Lock the owner row before counting/inserting so two concurrent
+        // registrations for the same user serialize on the device cap.
+        User owner = userRepository.findByIdForUpdate(userId)
+                .filter(user -> user.getDeletedAt() == null)
+                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND,
+                        "User not found"));
         Optional<E2eeDevice> existing = deviceRepository.findById(deviceId);
         if (existing.isPresent()) {
             E2eeDevice device = existing.get();
@@ -85,8 +91,6 @@ public class E2eeDeviceService {
             throw ApiException.of(ApiErrorCode.E2EE_DEVICE_LIMIT,
                     "At most " + MAX_ACTIVE_DEVICES + " active devices per user");
         }
-        User owner = userRepository.findById(userId)
-                .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
         E2eeDevice saved = deviceRepository.save(E2eeDevice.register(deviceId, owner, key));
         return toResponse(saved);
     }

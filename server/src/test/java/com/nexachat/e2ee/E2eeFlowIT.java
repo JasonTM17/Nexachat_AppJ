@@ -20,10 +20,19 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 
+import com.nexachat.common.error.ApiErrorCode;
+import com.nexachat.common.error.ApiException;
+
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -66,6 +75,8 @@ class E2eeFlowIT {
     private JdbcTemplate jdbcTemplate;
     @Autowired
     private AuthService authService;
+    @Autowired
+    private E2eeDeviceService e2eeDeviceService;
 
     private record TestUser(UUID id, String displayName, String accessToken) {
     }
@@ -528,4 +539,73 @@ class E2eeFlowIT {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("NOT_MEMBER"));
     }
+
+    @Test
+    void concurrentRegistrationsSerializePerOwnerCap() throws Exception {
+        TestUser user = registerUser("dev-race");
+        for (int i = 0; i < 9; i++) {
+            putDevice(user, UUID.randomUUID(), publicKey(10 + i))
+                    .andExpect(status().isOk());
+        }
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch go = new CountDownLatch(1);
+        try {
+            Callable<MvcResult> putFirst = () -> {
+                ready.countDown();
+                go.await(10, TimeUnit.SECONDS);
+                return putDevice(user, first, publicKey(30)).andReturn();
+            };
+            Callable<MvcResult> putSecond = () -> {
+                ready.countDown();
+                go.await(10, TimeUnit.SECONDS);
+                return putDevice(user, second, publicKey(31)).andReturn();
+            };
+            Future<MvcResult> futureFirst = pool.submit(putFirst);
+            Future<MvcResult> futureSecond = pool.submit(putSecond);
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            go.countDown();
+            MvcResult firstResult = futureFirst.get(30, TimeUnit.SECONDS);
+            MvcResult secondResult = futureSecond.get(30, TimeUnit.SECONDS);
+
+            List<MvcResult> results = List.of(firstResult, secondResult);
+            long successes = results.stream()
+                    .filter(r -> r.getResponse().getStatus() == 200).count();
+            assertThat(successes).as("exactly one registration may pass the cap")
+                    .isEqualTo(1);
+            MvcResult loser = results.stream()
+                    .filter(r -> r.getResponse().getStatus() != 200)
+                    .findFirst().orElseThrow();
+            JsonNode body = objectMapper.readTree(
+                    loser.getResponse().getContentAsString());
+            assertThat(body.path("error").path("code").asText())
+                    .isEqualTo("E2EE_DEVICE_LIMIT");
+            Integer active = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM e2ee_devices"
+                            + " WHERE user_id = ? AND revoked_at IS NULL",
+                    Integer.class, user.id());
+            assertThat(active).isEqualTo(10);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void devicePutRejectsDeletedOwner() throws Exception {
+        TestUser ghost = registerUser("ghost");
+        // Soft-delete is the tombstone state produced by account deletion;
+        // stamping it directly avoids the OTP round-trip and keeps the test
+        // scoped to the service-level owner check.
+        jdbcTemplate.update("UPDATE users SET deleted_at = now() WHERE id = ?",
+                ghost.id());
+        ApiException thrown = org.assertj.core.api.Assertions.catchThrowableOfType(
+                () -> e2eeDeviceService.register(ghost.id(), UUID.randomUUID(),
+                        publicKey(50)),
+                ApiException.class);
+        assertThat(thrown).isNotNull();
+        assertThat(thrown.getCode()).isEqualTo(ApiErrorCode.USER_NOT_FOUND);
+    }
+
 }
