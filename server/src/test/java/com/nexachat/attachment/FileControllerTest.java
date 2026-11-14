@@ -438,15 +438,17 @@ class FileControllerTest {
     @Test
     void serve_largeFile_isReadIncrementallyNotWholeIntoHeap() throws Exception {
         int size = 30 * 1024 * 1024;
-        byte[] body = new byte[size];
-        Arrays.fill(body, (byte) 'A');
         int[] maxSingleRead = {0};
         InputStream source = new InputStream() {
             private int position = 0;
 
             @Override
             public int read() {
-                return position < size ? (body[position++] & 0xFF) : -1;
+                if (position >= size) {
+                    return -1;
+                }
+                position++;
+                return 'A';
             }
 
             @Override
@@ -456,7 +458,7 @@ class FileControllerTest {
                 if (chunk <= 0) {
                     return -1;
                 }
-                System.arraycopy(body, position, b, off, chunk);
+                Arrays.fill(b, off, off + chunk, (byte) 'A');
                 position += chunk;
                 return chunk;
             }
@@ -471,7 +473,13 @@ class FileControllerTest {
         assertThat(response.getStatusCodeValue()).isEqualTo(200);
         MockHttpServletResponse servletResponse = drain(response);
         assertThat(servletResponse.getContentLength()).isEqualTo(size);
-        assertThat(servletResponse.getContentAsByteArray()).hasSize(size).containsOnly((byte) 'A');
+        byte[] served = servletResponse.getContentAsByteArray();
+        assertThat(served).hasSize(size);
+        for (int i = 0; i < served.length; i++) {
+            if (served[i] != (byte) 'A') {
+                throw new AssertionError("Unexpected response byte at index " + i);
+            }
+        }
         // The converter never asks the source for more than its bounded buffer
         // (16 KiB), never for the whole 30 MB file.
         assertThat(maxSingleRead[0]).isLessThanOrEqualTo(16 * 1024);
