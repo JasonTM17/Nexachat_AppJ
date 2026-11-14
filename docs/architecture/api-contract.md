@@ -190,7 +190,7 @@ These keys are Spring properties; override them with the matching
 | Code | HTTP | Meaning |
 |---|---|---|
 | `VALIDATION_FAILED` | 400 | Body failed bean validation or a service rule |
-| `INVALID_CREDENTIALS` | 401 | Unknown phone or wrong password on login |
+| `INVALID_CREDENTIALS` | 401 | Unknown email or phone, or wrong password, on login |
 | `TOKEN_EXPIRED` | 401 | Access/refresh token past its TTL |
 | `TOKEN_INVALID` | 401 | Malformed, unknown or revoked token |
 | `TOKEN_REUSED` | 401 | Rotated refresh token presented again (family revoked) |

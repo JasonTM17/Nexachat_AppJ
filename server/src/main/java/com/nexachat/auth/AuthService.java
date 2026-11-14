@@ -309,7 +309,7 @@ public class AuthService {
     }
 
     private static ApiException invalidCredentials() {
-        return ApiException.of(ApiErrorCode.INVALID_CREDENTIALS, "Invalid phone number or password");
+        return ApiException.of(ApiErrorCode.INVALID_CREDENTIALS, "Invalid email, phone number or password");
     }
 
     /**
