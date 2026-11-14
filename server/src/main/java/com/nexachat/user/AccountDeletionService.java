@@ -59,6 +59,7 @@ public class AccountDeletionService {
     private final AccountDeletionCoordination coordination;
     private final StompRevocationFence revocationFence;
     private final EmailOtpService emailOtpService;
+    private final com.nexachat.e2ee.E2eeDeviceService e2eeDeviceService;
 
     public AccountDeletionService(UserRepository userRepository,
                                   PasswordEncoder passwordEncoder,
@@ -75,7 +76,8 @@ public class AccountDeletionService {
                                   ApplicationEventPublisher eventPublisher,
                                   AccountDeletionCoordination coordination,
                                   StompRevocationFence revocationFence,
-                                  EmailOtpService emailOtpService) {
+                                  EmailOtpService emailOtpService,
+                                  com.nexachat.e2ee.E2eeDeviceService e2eeDeviceService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
@@ -92,6 +94,7 @@ public class AccountDeletionService {
         this.coordination = coordination;
         this.revocationFence = revocationFence;
         this.emailOtpService = emailOtpService;
+        this.e2eeDeviceService = e2eeDeviceService;
     }
 
     @Transactional
@@ -167,6 +170,7 @@ public class AccountDeletionService {
         jdbcSupport.deleteEmailOtps(userId);
 
         tokenService.revokeAllForUser(userId);
+        e2eeDeviceService.revokeAllForUser(userId);
 
         user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));

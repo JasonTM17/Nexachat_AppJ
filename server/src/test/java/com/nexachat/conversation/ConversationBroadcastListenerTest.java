@@ -52,7 +52,7 @@ class ConversationBroadcastListenerTest {
         ConversationUpdatePayload payload = new ConversationUpdatePayload(
                 conversationId, "Team", null, "MEMBER_REMOVED", List.of(
                         new MemberResponse(memberA, "A", "+84901", null,
-                                ConversationMember.Role.ADMIN, Instant.now())));
+                                ConversationMember.Role.ADMIN, Instant.now())), false);
         return new ConversationUpdatedEvent(conversationId, payload, extraAudience);
     }
 

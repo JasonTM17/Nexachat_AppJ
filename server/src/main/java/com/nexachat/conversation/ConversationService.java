@@ -136,7 +136,8 @@ public class ConversationService {
                 new ConversationResponse(
                         conversation.getId(), conversation.getType().name(), members,
                         conversation.getCreatedAt(),
-                        aiOptOuts.isOptedOut(conversation.getId(), callerId)),
+                        aiOptOuts.isOptedOut(conversation.getId(), callerId),
+                        conversation.isE2eeEnabled()),
                 created);
     }
 

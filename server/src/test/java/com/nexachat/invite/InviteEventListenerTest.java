@@ -66,7 +66,7 @@ class InviteEventListenerTest {
         when(userRepository.findById(kickedUserId)).thenReturn(Optional.of(kickedUser));
 
         ConversationUpdatePayload payload = new ConversationUpdatePayload(
-                conversationId, "Group", null, "MEMBER_REMOVED", List.of());
+                conversationId, "Group", null, "MEMBER_REMOVED", List.of(), false);
         ConversationUpdatedEvent event = new ConversationUpdatedEvent(
                 conversationId, payload, List.of(kickedUserId));
 
@@ -86,7 +86,7 @@ class InviteEventListenerTest {
                 kickedUserId, "Kicked", "+84901111111", null,
                 ConversationMember.Role.MEMBER, Instant.now());
         ConversationUpdatePayload payload = new ConversationUpdatePayload(
-                conversationId, "Group", null, "MEMBERS_ADDED", List.of(member));
+                conversationId, "Group", null, "MEMBERS_ADDED", List.of(member), false);
         ConversationUpdatedEvent event = new ConversationUpdatedEvent(
                 conversationId, payload, List.of());
 
@@ -98,7 +98,7 @@ class InviteEventListenerTest {
     @Test
     void ignoresUnrelatedChanges() {
         ConversationUpdatePayload payload = new ConversationUpdatePayload(
-                conversationId, "Group", null, "RENAMED", List.of());
+                conversationId, "Group", null, "RENAMED", List.of(), false);
         ConversationUpdatedEvent event = new ConversationUpdatedEvent(
                 conversationId, payload, List.of());
 

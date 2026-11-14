@@ -189,7 +189,7 @@ public class GroupService {
                 memberRepository.findMemberViews(conversation.getId());
         return new ConversationResponse(
                 conversation.getId(), conversation.getType().name(), memberViews,
-                conversation.getCreatedAt(), false);
+                conversation.getCreatedAt(), false, conversation.isE2eeEnabled());
     }
 
     /**
@@ -745,7 +745,7 @@ public class GroupService {
         List<MemberResponse> members = memberRepository.findMembers(conversation.getId());
         ConversationUpdatePayload payload = new ConversationUpdatePayload(
                 conversation.getId(), conversation.getTitle(), conversation.getAvatarUrl(),
-                change, members);
+                change, members, conversation.isE2eeEnabled());
         eventPublisher.publishEvent(new ConversationUpdatedEvent(
                 conversation.getId(), payload, extraAudienceUserIds));
         return payload;
