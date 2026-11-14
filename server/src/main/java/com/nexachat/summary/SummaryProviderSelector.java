@@ -60,7 +60,7 @@ public class SummaryProviderSelector {
 
     /**
      * Local-first routing: the local engine/model serves routine windows;
-     * DeepSeek Cloud is escalated to only when a window is complex or an explicit refresh is requested.
+     * the primary cloud model is escalated to only when a window is complex or an explicit refresh is requested.
      */
     public PreparedSummaryProvider prepare(boolean consented, SummaryWindow window, boolean refresh) {
         PreparedSummaryProvider base = prepare(consented);
