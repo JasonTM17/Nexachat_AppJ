@@ -217,6 +217,9 @@ public final class RealtimeSession {
                     applySessionSignals();
                 }));
         subscriptions.add(tokenRefresher.sessionSignals().subscribe(this::onSessionSignal));
+        subscriptions.add(foreground.getIsForeground()
+                .distinctUntilChanged()
+                .subscribe(stompClient::setInForeground));
         subscriptions.add(networkMonitor.getIsOnline()
                 .filter(Boolean::booleanValue)
                 .subscribe(ignored -> {

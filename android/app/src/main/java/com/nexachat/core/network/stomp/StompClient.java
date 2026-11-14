@@ -8,6 +8,7 @@ import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
 import io.reactivex.rxjava3.core.BackpressureStrategy;
 import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.disposables.SerialDisposable;
 import io.reactivex.rxjava3.processors.PublishProcessor;
@@ -24,6 +25,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.LongSupplier;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.LongPredicate;
@@ -134,7 +137,25 @@ public final class StompClient {
     private static final int HTTP_FORBIDDEN = 403;
 
     public static final long HEARTBEAT_MS = 10_000L;
+    /**
+     * Background silence limit. The heart-beat task samples it every
+     * {@link #HEARTBEAT_MS}, so a half-open socket is cancelled on the first
+     * tick strictly after this age: 40 seconds when the last frame arrived on a tick.
+     */
     public static final long DEAD_AFTER_MS = 30_000L;
+    /**
+     * Foreground silence that still accepts one late server heart-beat.
+     * The negotiated interval is {@link #HEARTBEAT_MS}; this leaves 4 seconds of jitter.
+     */
+    public static final long FOREGROUND_DEAD_AFTER_MS = 14_000L;
+    /** Foreground poll. It does not write to the socket. */
+    public static final long FOREGROUND_LIVENESS_POLL_MS = 1_000L;
+    /**
+     * Worst-case foreground detection: the silence limit plus one poll period,
+     * because the poll can run just before the limit is crossed.
+     */
+    public static final long FOREGROUND_DETECT_BOUND_MS =
+            FOREGROUND_DEAD_AFTER_MS + FOREGROUND_LIVENESS_POLL_MS;
     public static final long CONNECT_ACK_TIMEOUT_MS = 8_000L;
     public static final int NORMAL_CLOSURE_CODE = 1000;
     @NonNull
@@ -170,6 +191,16 @@ public final class StompClient {
     private volatile WebSocket socket;
     private volatile boolean open;
     private volatile long lastInboundMs;
+    private final AtomicBoolean inForeground = new AtomicBoolean();
+    private static final Runnable NO_OP = () -> { };
+    private volatile Runnable startForegroundPoll = NO_OP;
+    private volatile Runnable stopForegroundPoll = NO_OP;
+
+    @Nullable
+    private volatile Scheduler watchdogSchedulerForTests;
+
+    @Nullable
+    private volatile LongSupplier clockForTests;
 
     @Inject
     public StompClient(@NonNull OkHttpClient okHttpClient, @NonNull TokenStore tokenStore) {
@@ -275,6 +306,36 @@ public final class StompClient {
     void setTestWebSocketFactoryForTests(
             @Nullable BiFunction<WebSocketListener, Long, WebSocket> factory) {
         testWebSocketFactory = factory;
+    }
+
+    /**
+     * Process foreground. While true, a silent socket is cancelled after
+     * {@link #FOREGROUND_DEAD_AFTER_MS}. Background keeps {@link #DEAD_AFTER_MS}.
+     */
+    public void setInForeground(boolean inForeground) {
+        this.inForeground.set(inForeground);
+        if (inForeground) {
+            startForegroundPoll.run();
+        } else {
+            stopForegroundPoll.run();
+        }
+    }
+
+    /** Virtual time for the liveness checks. Production uses the wall clock. */
+    @VisibleForTesting
+    void setClockForTests(@Nullable LongSupplier clock) {
+        clockForTests = clock;
+    }
+
+    /** Virtual scheduler for heart-beats and the foreground poll. */
+    @VisibleForTesting
+    void setWatchdogSchedulerForTests(@Nullable Scheduler scheduler) {
+        watchdogSchedulerForTests = scheduler;
+    }
+
+    private long now() {
+        LongSupplier clock = clockForTests;
+        return clock == null ? System.currentTimeMillis() : clock.getAsLong();
     }
 
     private void beginAttempt(
@@ -422,7 +483,7 @@ public final class StompClient {
             public void onOpen(@NonNull WebSocket webSocket, @NonNull Response response) {
                 if (!liveness.runIfCurrent(() -> {
                     socket = webSocket;
-                    lastInboundMs = System.currentTimeMillis();
+                    lastInboundMs = now();
                     LinkedHashMap<String, String> headers = new LinkedHashMap<>();
                     headers.put("accept-version", "1.2");
                     headers.put("host", wsUrl.host());
@@ -436,7 +497,7 @@ public final class StompClient {
 
             @Override
             public void onMessage(@NonNull WebSocket webSocket, @NonNull String text) {
-                if (!liveness.runIfCurrent(() -> lastInboundMs = System.currentTimeMillis())) {
+                if (!liveness.runIfCurrent(() -> lastInboundMs = now())) {
                     return;
                 }
                 for (StompFrame frame : parser.feed(text)) {
@@ -519,17 +580,17 @@ public final class StompClient {
             webSocket.cancel();
             return () -> { };
         }
-        ScheduledExecutorService scheduler = newAttemptScheduler();
+        WatchdogScheduler watchdog = newWatchdogScheduler();
         AtomicBoolean cleanedUp = new AtomicBoolean();
-        ScheduledFuture<?> connectTimeout = scheduler.schedule(() -> {
+        CancelHandle connectTimeout = watchdog.schedule(() -> {
             liveness.runIfCurrent(() -> {
                 if (!open && !cleanedUp.get()) {
                     sink.trySend(new State.Failed(REASON_CONNECT_TIMEOUT, false, true));
                     webSocket.cancel();
                 }
             });
-        }, CONNECT_ACK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-        ScheduledFuture<?> heartbeat = scheduler.scheduleWithFixedDelay(() -> {
+        }, CONNECT_ACK_TIMEOUT_MS);
+        CancelHandle heartbeat = watchdog.scheduleRepeating(() -> {
             liveness.runIfCurrent(() -> {
                 if (cleanedUp.get()) {
                     return;
@@ -539,11 +600,41 @@ public final class StompClient {
                     return;
                 }
                 active.send(HEARTBEAT_FRAME);
-                if (System.currentTimeMillis() - lastInboundMs > DEAD_AFTER_MS) {
+                if (now() - lastInboundMs > DEAD_AFTER_MS) {
                     active.cancel();
                 }
             });
-        }, HEARTBEAT_MS, HEARTBEAT_MS, TimeUnit.MILLISECONDS);
+        }, HEARTBEAT_MS, HEARTBEAT_MS);
+        AtomicReference<CancelHandle> foregroundPoll = new AtomicReference<>();
+        Runnable stopPoll = () -> {
+            synchronized (foregroundPoll) {
+                CancelHandle activePoll = foregroundPoll.getAndSet(null);
+                if (activePoll != null) {
+                    activePoll.cancel();
+                }
+            }
+        };
+        Runnable startPoll = () -> {
+            synchronized (foregroundPoll) {
+                if (cleanedUp.get() || foregroundPoll.get() != null) {
+                    return;
+                }
+                CancelHandle poll = watchdog.scheduleRepeating(() -> {
+                    liveness.runIfCurrent(() -> {
+                        if (!cleanedUp.get() && inForeground.get() && open
+                                && now() - lastInboundMs > FOREGROUND_DEAD_AFTER_MS) {
+                            webSocket.cancel();
+                        }
+                    });
+                }, FOREGROUND_LIVENESS_POLL_MS, FOREGROUND_LIVENESS_POLL_MS);
+                foregroundPoll.set(poll);
+            }
+        };
+        startForegroundPoll = startPoll;
+        stopForegroundPoll = stopPoll;
+        if (inForeground.get()) {
+            startPoll.run();
+        }
 
         return () -> {
             if (!cleanedUp.compareAndSet(false, true)) {
@@ -558,9 +649,14 @@ public final class StompClient {
                     }
                 }
             }
-            connectTimeout.cancel(false);
-            heartbeat.cancel(false);
-            scheduler.shutdownNow();
+            connectTimeout.cancel();
+            heartbeat.cancel();
+            stopPoll.run();
+            if (startForegroundPoll == startPoll) {
+                startForegroundPoll = NO_OP;
+                stopForegroundPoll = NO_OP;
+            }
+            watchdog.shutdown();
             try {
                 webSocket.send(StompCodec.encode(new StompFrame(StompCommand.DISCONNECT)));
             } catch (RuntimeException ignored) {
@@ -571,9 +667,78 @@ public final class StompClient {
         };
     }
 
+    private WatchdogScheduler newWatchdogScheduler() {
+        Scheduler testScheduler = watchdogSchedulerForTests;
+        if (testScheduler != null) {
+            return new RxWatchdog(testScheduler);
+        }
+        return new ExecutorWatchdog();
+    }
+
     private boolean sendFrame(@NonNull StompFrame frame) {
         WebSocket active = socket;
         return active != null && active.send(StompCodec.encode(frame));
+    }
+
+    private interface CancelHandle {
+        void cancel();
+    }
+
+    /** Per-attempt timers. Production uses one daemon thread; tests inject a virtual scheduler. */
+    private interface WatchdogScheduler {
+        CancelHandle schedule(Runnable command, long delayMs);
+
+        CancelHandle scheduleRepeating(Runnable command, long initialDelayMs, long periodMs);
+
+        void shutdown();
+    }
+
+    private static final class ExecutorWatchdog implements WatchdogScheduler {
+        private final ScheduledExecutorService executor = newAttemptScheduler();
+
+        @Override
+        public CancelHandle schedule(Runnable command, long delayMs) {
+            ScheduledFuture<?> future = executor.schedule(command, delayMs, TimeUnit.MILLISECONDS);
+            return () -> future.cancel(false);
+        }
+
+        @Override
+        public CancelHandle scheduleRepeating(Runnable command, long initialDelayMs, long periodMs) {
+            ScheduledFuture<?> future = executor.scheduleWithFixedDelay(
+                    command, initialDelayMs, periodMs, TimeUnit.MILLISECONDS);
+            return () -> future.cancel(false);
+        }
+
+        @Override
+        public void shutdown() {
+            executor.shutdownNow();
+        }
+    }
+
+    private static final class RxWatchdog implements WatchdogScheduler {
+        private final Scheduler scheduler;
+
+        private RxWatchdog(Scheduler scheduler) {
+            this.scheduler = scheduler;
+        }
+
+        @Override
+        public CancelHandle schedule(Runnable command, long delayMs) {
+            Disposable disposable = scheduler.scheduleDirect(command, delayMs, TimeUnit.MILLISECONDS);
+            return disposable::dispose;
+        }
+
+        @Override
+        public CancelHandle scheduleRepeating(Runnable command, long initialDelayMs, long periodMs) {
+            Disposable disposable = scheduler.schedulePeriodicallyDirect(
+                    command, initialDelayMs, periodMs, TimeUnit.MILLISECONDS);
+            return disposable::dispose;
+        }
+
+        @Override
+        public void shutdown() {
+            // The test owns this scheduler and keeps using it after the attempt ends.
+        }
     }
 
     private static ScheduledExecutorService newAttemptScheduler() {
