@@ -1626,6 +1626,13 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     @Override public void onOpenMedia(@NonNull String messageId, @NonNull AttachmentDto attachment) {
         if (attachment.getId() == null) return;
         Bundle args = new Bundle(); args.putString("attachmentId", attachment.getId()); args.putString("name", attachment.getOriginalName()); args.putString("mime", attachment.getMimeType());
+        for (ChatMessage message : state.getMessages()) {
+            if (messageId.equals(message.getId())) {
+                args.putString("sender", message.getSenderDisplayName());
+                args.putLong("sentAt", message.getCreatedAtEpochMs());
+                break;
+            }
+        }
         try { NavHostFragment.findNavController(this).navigate(R.id.mediaViewerFragment, args); } catch (RuntimeException ignored) { }
     }
     @Override public void onOpenFile(@NonNull String messageId, @NonNull AttachmentDto attachment) {
