@@ -3,6 +3,8 @@
 NexaChat is a real-time messaging platform monorepo: a Spring Boot 3.5.16 server
 (`server/`) and a Java 21 LTS Android app (`android/`). This document covers
 environment setup, running and testing the project, and contribution standards.
+For supported versions and private vulnerability reporting, see
+[SECURITY.md](SECURITY.md).
 
 ## Prerequisites
 

@@ -379,7 +379,8 @@ points: [docs/architecture/architecture.md](docs/architecture/architecture.md) �
 Conventional commits (`feat(server/auth): …`, `fix(app/chat): …`), PR per
 `feature/<scope>` branch into `main`, ≥1 cross-review before squash merge.
 Never commit secrets, keystores, `.env`, or `local.properties` — `.gitignore`
-and the CI secret scan enforce this.
+and the CI secret scan enforce this. For vulnerability reports, follow
+[SECURITY.md](SECURITY.md) and report privately through GitHub.
 
 ## License & status
 
