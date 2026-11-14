@@ -69,6 +69,9 @@ public final class SummaryCitationAdapter extends ListAdapter<SummaryCitationIte
 
         void bind(@NonNull SummaryCitationItem item, @NonNull Listener listener) {
             chip.setText(item.getChipLabel());
+            chip.setContentDescription(item.getContentDescription() != null
+                    ? item.getContentDescription()
+                    : item.getChipLabel());
             chip.setEnabled(item.isJumpable());
             chip.setClickable(item.isJumpable());
             int bg = item.isJumpable()

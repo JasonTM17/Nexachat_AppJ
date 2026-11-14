@@ -59,6 +59,8 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
 
     private static final String ARG_MESSAGE_IDS = "summary_message_ids";
     private static final String ARG_MESSAGE_SEQS = "summary_message_seqs";
+    private static final String ARG_MESSAGE_SENDERS = "summary_message_senders";
+    private static final String ARG_MESSAGE_TIMES = "summary_message_times";
 
     @Inject
     AiConsentRepository consentRepository;
@@ -70,9 +72,13 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
     @Nullable
     private OnCitationClickListener citationListener;
     private final Map<String, Long> messageSeqMap = new HashMap<>();
+    private final Map<String, String> messageSenderMap = new HashMap<>();
+    private final Map<String, Long> messageTimeMap = new HashMap<>();
     private final Set<String> localMessageIds = new HashSet<>();
     private boolean preferAiMode;
     private boolean userOverrodeMode;
+    private boolean userSelectedScope;
+    private boolean autoFallbackPending = true;
 
     @NonNull
     public static SummaryBottomSheetFragment newInstance(@NonNull String conversationId) {
@@ -93,12 +99,18 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
 
     public void setCitationContext(
             @NonNull Map<String, Long> seqMap,
-            @NonNull Set<String> messageIds
+            @NonNull Set<String> messageIds,
+            @NonNull Map<String, String> senders,
+            @NonNull Map<String, Long> times
     ) {
         messageSeqMap.clear();
         messageSeqMap.putAll(seqMap);
         localMessageIds.clear();
         localMessageIds.addAll(messageIds);
+        messageSenderMap.clear();
+        messageSenderMap.putAll(senders);
+        messageTimeMap.clear();
+        messageTimeMap.putAll(times);
     }
 
     @Nullable
@@ -131,7 +143,12 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
             updateModeSelection();
         });
         viewModel.state().observe(getViewLifecycleOwner(), this::render);
-        viewModel.request(SummaryScope.UNREAD, null);
+        requestScope(SummaryScope.UNREAD);
+    }
+
+    private void requestScope(@NonNull SummaryScope scope) {
+        Integer limit = scope == SummaryScope.LAST_N ? 50 : null;
+        viewModel.request(scope, limit);
     }
 
     private void readCitationArgs() {
@@ -141,14 +158,24 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
         }
         String[] ids = args.getStringArray(ARG_MESSAGE_IDS);
         long[] seqs = args.getLongArray(ARG_MESSAGE_SEQS);
+        String[] senders = args.getStringArray(ARG_MESSAGE_SENDERS);
+        long[] times = args.getLongArray(ARG_MESSAGE_TIMES);
         if (ids == null || seqs == null || ids.length != seqs.length) {
             return;
         }
         messageSeqMap.clear();
         localMessageIds.clear();
+        messageSenderMap.clear();
+        messageTimeMap.clear();
         for (int i = 0; i < ids.length; i++) {
             messageSeqMap.put(ids[i], seqs[i]);
             localMessageIds.add(ids[i]);
+            if (senders != null && senders.length == ids.length && senders[i] != null) {
+                messageSenderMap.put(ids[i], senders[i]);
+            }
+            if (times != null && times.length == ids.length) {
+                messageTimeMap.put(ids[i], times[i]);
+            }
         }
     }
 
@@ -166,8 +193,8 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
                     R.style.Widget_NexaChat_Chip_Filter);
             chip.setTag(scope);
             chip.setCheckable(true);
-            chip.setCheckedIconVisible(false);
             chip.setText(scopeLabel(scope));
+            com.nexachat.feature.inbox.InboxFilterChipColourRules.apply(chip, context);
             chip.setOnClickListener(v -> {
                 if (!(v.getTag() instanceof SummaryScope selected)) {
                     return;
@@ -176,8 +203,8 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
                 if (current != null && current.getScope() == selected) {
                     return;
                 }
-                Integer limit = selected == SummaryScope.LAST_N ? 50 : null;
-                viewModel.request(selected, limit);
+                userSelectedScope = true;
+                requestScope(selected);
             });
             group.addView(chip);
         }
@@ -351,13 +378,30 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
             SummaryError err = state.getStatus() == SummaryUiState.Status.ERROR
                     ? state.getError()
                     : SummaryError.UNKNOWN;
-            SummaryErrorViewHelper.bind(binding.summaryError.getRoot(), err, viewModel::retry);
+            // One automatic retry on a broader scope when the initial unread request
+            // has nothing to summarize; explicit user picks keep the error view.
+            if (autoFallbackPending && !userSelectedScope
+                    && SummaryUiRules.shouldFallbackFromUnread(state.getScope(), err)) {
+                autoFallbackPending = false;
+                requestScope(SummaryScope.LAST_N);
+                return;
+            }
+            Runnable recentAction = SummaryUiRules.shouldFallbackFromUnread(state.getScope(), err)
+                    ? () -> {
+                        userSelectedScope = true;
+                        requestScope(SummaryScope.LAST_N);
+                    }
+                    : null;
+            SummaryErrorViewHelper.bind(
+                    binding.summaryError.getRoot(), err, viewModel::retry, recentAction);
         }
         if (ready && state.getSummary() != null) {
             SummarySheetContentBinder binder = new SummarySheetContentBinder(
                     requireContext(),
                     messageSeqMap,
                     localMessageIds,
+                    messageSenderMap,
+                    messageTimeMap,
                     messageId -> handleCitationClick(messageId)
             );
             binder.bind(binding.summaryContent, state.getSummary());
@@ -443,20 +487,31 @@ public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment 
         binding = null;
     }
 
-    public void putCitationArgs(@NonNull Map<String, Long> seqMap) {
+    public void putCitationArgs(
+            @NonNull Map<String, Long> seqMap,
+            @NonNull Map<String, String> senders,
+            @NonNull Map<String, Long> times
+    ) {
         if (getArguments() == null) {
             setArguments(new Bundle());
         }
         Bundle args = requireArguments();
         String[] ids = seqMap.keySet().toArray(new String[0]);
         long[] seqs = new long[ids.length];
+        String[] senderArray = new String[ids.length];
+        long[] timeArray = new long[ids.length];
         for (int i = 0; i < ids.length; i++) {
             Long seq = seqMap.get(ids[i]);
             seqs[i] = seq == null ? 0L : seq;
+            senderArray[i] = senders.get(ids[i]);
+            Long time = times.get(ids[i]);
+            timeArray[i] = time == null ? 0L : time;
         }
         args.putStringArray(ARG_MESSAGE_IDS, ids);
         args.putLongArray(ARG_MESSAGE_SEQS, seqs);
-        setCitationContext(seqMap, new HashSet<>(seqMap.keySet()));
+        args.putStringArray(ARG_MESSAGE_SENDERS, senderArray);
+        args.putLongArray(ARG_MESSAGE_TIMES, timeArray);
+        setCitationContext(seqMap, new HashSet<>(seqMap.keySet()), senders, times);
     }
 
     /** Footer labels stack when intrinsic widths plus margins no longer fit the sheet. */

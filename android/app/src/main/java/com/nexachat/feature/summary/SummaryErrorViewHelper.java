@@ -21,6 +21,19 @@ public final class SummaryErrorViewHelper {
             @Nullable SummaryError error,
             @NonNull Runnable onRetry
     ) {
+        bind(root, error, onRetry, null);
+    }
+
+    /**
+     * Binds an error; when {@code onRecentAction} is provided for a TOO_FEW error the
+     * action button offers summarizing recent messages instead of a plain retry.
+     */
+    public static void bind(
+            @NonNull View root,
+            @Nullable SummaryError error,
+            @NonNull Runnable onRetry,
+            @Nullable Runnable onRecentAction
+    ) {
         SummaryError resolved = error == null ? SummaryError.UNKNOWN : error;
         ImageView icon = root.findViewById(R.id.summaryErrorIcon);
         TextView title = root.findViewById(R.id.summaryErrorText);
@@ -37,7 +50,7 @@ public final class SummaryErrorViewHelper {
                 iconRes = R.drawable.ic_chat_bubble_outline;
                 titleRes = R.string.summary_error_too_few;
                 descRes = R.string.summary_error_too_few_desc;
-                showRetry = false;
+                showRetry = onRecentAction != null;
                 iconTintAttr = com.google.android.material.R.attr.colorOnSurfaceVariant;
                 break;
             case RATE_LIMITED:
@@ -87,9 +100,21 @@ public final class SummaryErrorViewHelper {
                 desc.setVisibility(View.GONE);
             }
         }
-        if (retry != null) {
-            retry.setVisibility(showRetry ? View.VISIBLE : View.GONE);
-            retry.setOnClickListener(showRetry ? v -> onRetry.run() : null);
+        if (retry != null && retry instanceof com.google.android.material.button.MaterialButton) {
+            com.google.android.material.button.MaterialButton retryButton =
+                    (com.google.android.material.button.MaterialButton) retry;
+            retryButton.setVisibility(showRetry ? View.VISIBLE : View.GONE);
+            boolean recentFallback = resolved == SummaryError.TOO_FEW && onRecentAction != null;
+            retryButton.setText(recentFallback
+                    ? R.string.summary_action_recent
+                    : R.string.summary_action_retry);
+            retryButton.setIcon(recentFallback
+                    ? null
+                    : androidx.core.content.ContextCompat.getDrawable(
+                            root.getContext(), R.drawable.ic_refresh));
+            retryButton.setOnClickListener(showRetry
+                    ? v -> (recentFallback ? onRecentAction : onRetry).run()
+                    : null);
         }
     }
 }

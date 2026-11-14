@@ -39,6 +39,8 @@ public final class SummarySheetContentBinder {
     private final Context context;
     private final Map<String, Long> messageSeqMap;
     private final Set<String> localMessageIds;
+    private final Map<String, String> messageSenderMap;
+    private final Map<String, Long> messageTimeMap;
     private final OnCitationClickListener citationListener;
     private final HashMap<String, Boolean> actionChecked = new HashMap<>();
 
@@ -46,11 +48,15 @@ public final class SummarySheetContentBinder {
             @NonNull Context context,
             @NonNull Map<String, Long> messageSeqMap,
             @NonNull Set<String> localMessageIds,
+            @NonNull Map<String, String> messageSenderMap,
+            @NonNull Map<String, Long> messageTimeMap,
             @NonNull OnCitationClickListener citationListener
     ) {
         this.context = context;
         this.messageSeqMap = messageSeqMap;
         this.localMessageIds = localMessageIds;
+        this.messageSenderMap = messageSenderMap;
+        this.messageTimeMap = messageTimeMap;
         this.citationListener = citationListener;
     }
 
@@ -193,13 +199,25 @@ public final class SummarySheetContentBinder {
             Long seq = messageSeqMap.get(messageId);
             boolean jumpable = com.nexachat.core.ui.SummaryUiRules.isCitationJumpable(
                     messageId, localMessageIds);
-            String label = seq != null
-                    ? context.getString(R.string.summary_citation_seq, seq)
-                    : SummaryCitationLabels.messageIdPrefix(messageId);
+            Long createdAt = messageTimeMap.get(messageId);
+            String senderTime = SummaryCitationLabels.senderTime(
+                    messageSenderMap.get(messageId),
+                    createdAt == null ? 0L : createdAt,
+                    System.currentTimeMillis(),
+                    java.util.Locale.getDefault());
+            String label = senderTime != null
+                    ? senderTime
+                    : seq != null
+                            ? context.getString(R.string.summary_citation_seq, seq)
+                            : SummaryCitationLabels.messageIdPrefix(messageId);
             String chipText = jumpable
                     ? context.getString(R.string.summary_citation_chip, label)
                     : context.getString(R.string.summary_citation_unavailable);
-            items.add(new SummaryCitationItem(messageId, chipText, jumpable));
+            String contentDescription = senderTime != null
+                    ? context.getString(R.string.cd_summary_citation_from, senderTime)
+                    : null;
+            items.add(new SummaryCitationItem(
+                    messageId, chipText, contentDescription, jumpable));
         }
         adapter.submitList(items);
     }
