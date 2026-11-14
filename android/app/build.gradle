@@ -484,6 +484,9 @@ dependencies {
 
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
+    // E2EE v1: X25519 + HKDF subtle primitives for direct-chat encryption
+    implementation(libs.tink.android)
+
     // Activity / Navigation / Lifecycle / Views
     implementation(libs.androidx.appcompat)
     implementation(libs.material)

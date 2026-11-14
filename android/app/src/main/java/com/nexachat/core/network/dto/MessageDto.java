@@ -32,6 +32,8 @@ public final class MessageDto {
     @Nullable private final String deletedAt;
     @Nullable private final List<MessageMention> mentions;
     private final boolean mentionAll;
+    @Nullable private final String encryption;
+    @Nullable private final List<E2eeEnvelopeDto> e2eeEnvelopes;
     @Nullable private Long changeVersion;
     @Nullable private Long generation;
 
@@ -57,6 +59,22 @@ public final class MessageDto {
             @Nullable List<AttachmentDto> attachments, @Nullable String createdAt,
             @Nullable String editedAt, @Nullable String deletedAt,
             @Nullable List<MessageMention> mentions, boolean mentionAll) {
+        this(id, seq, conversationId, senderId, senderDisplayName, sender, clientMessageId,
+                type, content, replyTo, replyToId, reactions, attachments, createdAt, editedAt,
+                deletedAt, mentions, mentionAll, null, null);
+    }
+
+    public MessageDto(@NonNull String id, @Nullable Long seq, @Nullable String conversationId,
+            @Nullable String senderId, @Nullable String senderDisplayName,
+            @Nullable SenderRefDto sender, @Nullable String clientMessageId,
+            @Nullable String type, @Nullable String content, @Nullable ReplyRefDto replyTo,
+            @Nullable String replyToId, @Nullable List<ReactionSummaryDto> reactions,
+            @Nullable List<AttachmentDto> attachments, @Nullable String createdAt,
+            @Nullable String editedAt, @Nullable String deletedAt,
+            @Nullable List<MessageMention> mentions, boolean mentionAll,
+            @Nullable String encryption, @Nullable List<E2eeEnvelopeDto> e2eeEnvelopes) {
+        this.encryption = encryption;
+        this.e2eeEnvelopes = e2eeEnvelopes == null ? List.of() : List.copyOf(e2eeEnvelopes);
         this.id = id;
         this.seq = seq;
         this.conversationId = conversationId;
@@ -159,6 +177,15 @@ public final class MessageDto {
 
     public boolean isMentionAll() { return mentionAll; }
     public boolean getMentionAll() { return mentionAll; }
+
+    /** {@code "E2EE_V1"} on encrypted rows; null for plaintext. */
+    @Nullable public String getEncryption() {
+        return encryption;
+    }
+
+    @NonNull public List<E2eeEnvelopeDto> getE2eeEnvelopes() {
+        return e2eeEnvelopes == null ? List.of() : e2eeEnvelopes;
+    }
 
 
     @Nullable

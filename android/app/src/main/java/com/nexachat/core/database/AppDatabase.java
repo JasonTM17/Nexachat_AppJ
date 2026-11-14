@@ -25,7 +25,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             OfflineOutboxEntity.class,
             SyncCursorEntity.class
         },
-        version = 14,
+        version = 15,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -258,6 +258,17 @@ public abstract class AppDatabase extends RoomDatabase {
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_sync_cursors_ownerUserId_conversationId` "
                     + "ON `sync_cursors` (`ownerUserId`, `conversationId`)");
             installSyncCacheTriggers(db);
+        }
+    };
+
+    /** E2EE flags: plaintext rows keep 0; decrypt failures mark existing rows as unknown. */
+    public static final Migration MIGRATION_14_15 = new Migration(14, 15) {
+        @Override public void migrate(SupportSQLiteDatabase db) {
+            db.execSQL("ALTER TABLE `messages` ADD COLUMN `encrypted` INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE `messages` ADD COLUMN `decryptFailed` INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE `messages` ADD COLUMN `replyToEncrypted` INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE `conversations` ADD COLUMN `e2eeEnabled` INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE `conversations` ADD COLUMN `lastMessageEncrypted` INTEGER NOT NULL DEFAULT 0");
         }
     };
 

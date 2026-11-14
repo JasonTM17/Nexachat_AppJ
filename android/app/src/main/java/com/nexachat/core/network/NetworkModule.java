@@ -142,4 +142,10 @@ public final class NetworkModule {
     public static FirebaseRealtimeApi provideFirebaseRealtimeApi(Retrofit retrofit) {
         return retrofit.create(FirebaseRealtimeApi.class);
     }
+
+    @Provides
+    @Singleton
+    public static E2eeApi provideE2eeApi(Retrofit retrofit) {
+        return retrofit.create(E2eeApi.class);
+    }
 }
