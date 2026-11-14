@@ -61,7 +61,7 @@ class GoogleSignInServiceTest {
     void setUp() {
         GoogleSignInProperties properties = new GoogleSignInProperties(
                 true, GoogleTestKeys.AUDIENCE, "http://test/certs", 300,
-                java.util.List.of(GoogleTestKeys.ANDROID_CLIENT_ID), true);
+                java.util.List.of(GoogleTestKeys.ANDROID_CLIENT_ID), true, null);
         AuthResponseFactory responseFactory = new AuthResponseFactory(
                 jwtService, new MessageRecallProperties());
         lenient().when(jwtService.generateAccessToken(any())).thenReturn("access");
@@ -80,7 +80,7 @@ class GoogleSignInServiceTest {
     void signUpDisabled_returnsNotLinked() {
         GoogleSignInProperties off = new GoogleSignInProperties(
                 true, GoogleTestKeys.AUDIENCE, "http://test/certs", 300,
-                java.util.List.of(GoogleTestKeys.ANDROID_CLIENT_ID), false);
+                java.util.List.of(GoogleTestKeys.ANDROID_CLIENT_ID), false, null);
         service = new GoogleSignInService(off, verifier, nonceService, identityRepository,
                 userRepository, passwordEncoder, tokenService,
                 new AuthResponseFactory(jwtService, new MessageRecallProperties()),

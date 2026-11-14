@@ -59,7 +59,7 @@ public class GoogleSignInConfiguration {
                 .restOperations(jwksRestOperations())
                 .build();
         decoder.setJwtValidator(GoogleIdTokenValidators.forAudience(
-                properties.webClientId(), properties.androidClientIds()));
+                properties.webClientId(), properties.androidClientIds(), properties.issuer()));
         return decoder;
     }
 

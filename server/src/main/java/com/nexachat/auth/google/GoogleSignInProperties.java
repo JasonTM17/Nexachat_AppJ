@@ -19,6 +19,7 @@ import java.util.List;
  *                         trusted as the token's {@code azp} when Google sets it
  * @param signupEnabled    when true with {@code enabled}, an unknown Google {@code sub}
  *                         may create a new NexaChat account on {@code POST /auth/google}
+ * @param issuer           non-empty exact allow-list of accepted ID-token {@code iss} claim values
  */
 @ConfigurationProperties(prefix = "nexachat.google.signin")
 public record GoogleSignInProperties(
@@ -27,7 +28,8 @@ public record GoogleSignInProperties(
         String jwksUri,
         long nonceTtlSeconds,
         List<String> androidClientIds,
-        boolean signupEnabled) {
+        boolean signupEnabled,
+        List<String> issuer) {
 
     public GoogleSignInProperties {
         if (jwksUri == null || jwksUri.isBlank()) {
@@ -42,5 +44,14 @@ public record GoogleSignInProperties(
                         .filter(value -> value != null && !value.isBlank())
                         .map(String::trim)
                         .toList();
+        issuer = issuer == null
+                ? GoogleIdTokenValidators.DEFAULT_ISSUERS
+                : issuer.stream()
+                        .map(value -> value == null ? "" : value.trim())
+                        .toList();
+        if (issuer.isEmpty() || issuer.stream().anyMatch(String::isBlank)) {
+            throw new IllegalArgumentException(
+                    "nexachat.google.signin.issuer must contain at least one non-blank issuer");
+        }
     }
 }

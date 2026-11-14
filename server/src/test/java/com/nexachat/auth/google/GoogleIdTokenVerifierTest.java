@@ -51,6 +51,28 @@ class GoogleIdTokenVerifierTest {
     }
 
     @Test
+    void acceptsOnlyTheConfiguredCustomIssuer() {
+        String customIssuer = "https://identity.example.test";
+        GoogleIdTokenVerifier customVerifier = new GoogleIdTokenVerifier(decoder(
+                GoogleTestKeys.keyA(), List.of(GoogleTestKeys.ANDROID_CLIENT_ID), List.of(customIssuer)));
+        String customToken = GoogleTestKeys.token(claims -> {
+            claims.nonce = NONCE;
+            claims.issuer = customIssuer;
+        });
+
+        assertThat(customVerifier.verify(customToken, NONCE).subject()).isEqualTo(GoogleTestKeys.SUBJECT);
+
+        String googleToken = GoogleTestKeys.token(claims -> {
+            claims.nonce = NONCE;
+            claims.issuer = "https://accounts.google.com";
+        });
+        assertThatThrownBy(() -> customVerifier.verify(googleToken, NONCE))
+                .isInstanceOf(ApiException.class)
+                .satisfies(exception -> assertThat(((ApiException) exception).getCode())
+                        .isEqualTo(ApiErrorCode.GOOGLE_SIGN_IN_FAILED));
+    }
+
+    @Test
     void rejectsATokenForAnotherAudience() {
         String token = GoogleTestKeys.token(claims -> {
             claims.nonce = NONCE;
@@ -182,12 +204,18 @@ class GoogleIdTokenVerifierTest {
     }
 
     private static JwtDecoder decoder(RSAKey key) {
+        return decoder(key, List.of(GoogleTestKeys.ANDROID_CLIENT_ID), null);
+    }
+
+    private static JwtDecoder decoder(RSAKey key, List<String> androidClientIds,
+                                      List<String> issuers) {
         try {
             NimbusJwtDecoder decoder = NimbusJwtDecoder.withPublicKey(
                             (java.security.interfaces.RSAPublicKey) key.toRSAPublicKey())
                     .build();
-            decoder.setJwtValidator(GoogleIdTokenValidators.forAudience(
-                    GoogleTestKeys.AUDIENCE, List.of(GoogleTestKeys.ANDROID_CLIENT_ID)));
+            decoder.setJwtValidator(issuers == null
+                    ? GoogleIdTokenValidators.forAudience(GoogleTestKeys.AUDIENCE, androidClientIds)
+                    : GoogleIdTokenValidators.forAudience(GoogleTestKeys.AUDIENCE, androidClientIds, issuers));
             return decoder;
         } catch (com.nimbusds.jose.JOSEException exception) {
             throw new IllegalStateException("Could not expose the test public key", exception);

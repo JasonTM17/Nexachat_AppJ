@@ -99,6 +99,7 @@ Android client can consume the API but no dedicated screen is merged into
 | `nexachat.google.signin.enabled` (`NEXACHAT_GOOGLE_SIGNIN_ENABLED`) | `false` | Enables the Google Identity endpoints; every one answers 404 while off. |
 | `nexachat.google.signin.web-client-id` (`NEXACHAT_GOOGLE_WEB_CLIENT_ID`) | empty | Required when the feature is on; the expected `aud` of the ID token and the client ID the Android app passes to Credential Manager. |
 | `nexachat.google.signin.android-client-ids` (`NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS`) | empty | Required when Google sign-in is enabled; comma-separated Android OAuth client IDs trusted as the ID token's `azp`. |
+| `nexachat.google.signin.issuer` (`NEXACHAT_GOOGLE_SIGNIN_ISSUER`) | `accounts.google.com,https://accounts.google.com` | Comma-separated exact allowed ID-token `iss` claims; replaces the default list, and blank/empty configuration fails startup. |
 | `nexachat.google.signin.jwks-uri` (`NEXACHAT_GOOGLE_JWKS_URI`) | `https://www.googleapis.com/oauth2/v3/certs` | Google's rotating public keys; override only for tests. |
 | `nexachat.google.signin.nonce-ttl-seconds` (`NEXACHAT_GOOGLE_NONCE_TTL_SECONDS`) | `300` | Single-use nonce lifetime. |
 | `nexachat.google.signin.signup-enabled` (`NEXACHAT_GOOGLE_SIGNUP_ENABLED`) | `false` | When true with Google sign-in enabled, an unknown `sub` on `POST /auth/google` creates a new account (`201` + `newAccount:true`). |

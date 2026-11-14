@@ -19,7 +19,7 @@ import java.util.Set;
  *
  * <p>Beyond the stock signature/expiry checks this enforces:
  * <ul>
- *   <li>the issuer is one of Google's two accepted spellings;</li>
+ *   <li>the issuer is in the configured allow-list (Google's two accepted spellings by default);</li>
  *   <li>{@code aud} contains exactly this application's web client ID — a token
  *       minted for another client (even with ours added) is rejected;</li>
  *   <li>{@code azp}, when Google sets it, is one of our own clients (the web
@@ -30,7 +30,11 @@ import java.util.Set;
  */
 public final class GoogleIdTokenValidators {
 
-    /** The two accepted ID-token issuer spellings. */
+    /** Default accepted ID-token issuer spellings, in configuration/documentation order. */
+    public static final List<String> DEFAULT_ISSUERS =
+            List.of("accounts.google.com", "https://accounts.google.com");
+
+    /** Backwards-compatible set of the default accepted issuer spellings. */
     public static final Set<String> ISSUERS =
             Set.of("accounts.google.com", "https://accounts.google.com");
 
@@ -42,7 +46,7 @@ public final class GoogleIdTokenValidators {
 
     /** @param audience the OAuth web client ID the Android app requested the token for */
     public static OAuth2TokenValidator<Jwt> forAudience(String audience) {
-        return forAudience(audience, List.of());
+        return forAudience(audience, List.of(), DEFAULT_ISSUERS);
     }
 
     /**
@@ -51,9 +55,26 @@ public final class GoogleIdTokenValidators {
      */
     public static OAuth2TokenValidator<Jwt> forAudience(String audience,
                                                         List<String> androidClientIds) {
+        return forAudience(audience, androidClientIds, DEFAULT_ISSUERS);
+    }
+
+    /**
+     * @param audience         the OAuth web client ID the Android app requested the token for
+     * @param androidClientIds additional trusted {@code azp} values (Android OAuth clients)
+     * @param issuers          exact accepted {@code iss} claim values
+     */
+    public static OAuth2TokenValidator<Jwt> forAudience(String audience,
+                                                        List<String> androidClientIds,
+                                                        List<String> issuers) {
         if (audience == null || audience.isBlank()) {
             throw new IllegalArgumentException("Google web client ID is required");
         }
+        if (issuers == null || issuers.isEmpty()
+                || issuers.stream().anyMatch(value -> value == null || value.isBlank())) {
+            throw new IllegalArgumentException("nexachat.google.signin.issuer must contain a non-blank issuer");
+        }
+        Set<String> trustedIssuers = new LinkedHashSet<>();
+        issuers.stream().map(String::trim).forEach(trustedIssuers::add);
         Set<String> trustedAuthorizedParties = new LinkedHashSet<>();
         trustedAuthorizedParties.add(audience);
         if (androidClientIds != null) {
@@ -65,7 +86,7 @@ public final class GoogleIdTokenValidators {
         OAuth2TokenValidator<Jwt> timestamp = new JwtTimestampValidator(CLOCK_SKEW);
         OAuth2TokenValidator<Jwt> issuer = jwt -> {
             String value = jwt.getClaimAsString("iss");
-            return value != null && ISSUERS.contains(value)
+            return value != null && trustedIssuers.contains(value)
                     ? OAuth2TokenValidatorResult.success()
                     : failure("ID token issuer is not Google");
         };

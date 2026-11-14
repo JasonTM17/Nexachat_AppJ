@@ -38,13 +38,16 @@ Spring binds `nexachat.google.signin.*` in
 | `NEXACHAT_GOOGLE_SIGNIN_ENABLED` | Master switch (`false` = all `/api/v1/auth/google/*` return 404) |
 | `NEXACHAT_GOOGLE_WEB_CLIENT_ID` | Required when enabled; expected token `aud` |
 | `NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` | Required when enabled; **comma-separated** Android OAuth client IDs trusted as token `azp` |
+| `NEXACHAT_GOOGLE_SIGNIN_ISSUER` | Optional; comma-separated exact token `iss` values (default: `accounts.google.com,https://accounts.google.com`); blank or empty configuration fails startup |
 | `NEXACHAT_GOOGLE_JWKS_URI` | Optional; default Google's JWKS URL (override only in tests) |
 | `NEXACHAT_GOOGLE_NONCE_TTL_SECONDS` | Optional; single-use nonce lifetime (default `300`) |
 | `NEXACHAT_GOOGLE_SIGNUP_ENABLED` | Google **account creation** from an unknown Google `sub` (default `false`); requires sign-in enabled and a verified Google email |
 
 `GoogleSignInProperties` and `GoogleSignInConfiguration` require a non-blank web
 client ID and at least one Android client ID when sign-in is enabled; startup
-fails closed otherwise.
+fails closed otherwise. The issuer allow-list is validated at startup even while
+Google sign-in is disabled. Setting it replaces the defaults; include every
+exact issuer spelling the deployment trusts.
 
 ### Operator env name mismatch (debug + release IDs)
 
