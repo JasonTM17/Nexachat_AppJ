@@ -7,6 +7,7 @@ import com.nexachat.auth.dto.RefreshRequest;
 import com.nexachat.auth.dto.RegisterRequest;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.recovery.EmailOtpService;
 import com.nexachat.user.PhoneService;
 import com.nexachat.user.User;
 import com.nexachat.user.UserAccountCreatedEvent;
@@ -129,16 +130,30 @@ public class AuthService {
             passwordEncoder.matches("nexachat-timing-equalization", dummyHash);
             throw invalidCredentials();
         }
-        String phone;
-        try {
-            phone = phoneService.toE164(request.phone());
-        } catch (IllegalArgumentException e) {
-            passwordEncoder.matches(request.password(), dummyHash);
-            throw invalidCredentials();
+        final String identifier = request.loginIdentifier();
+        User foundUser;
+        if (identifier.indexOf('@') >= 0) {
+            String email;
+            try {
+                email = EmailOtpService.normalizeEmail(identifier);
+            } catch (ApiException e) {
+                passwordEncoder.matches(request.password(), dummyHash);
+                throw invalidCredentials();
+            }
+            enforceCredentialRateLimit("login", "email|" + email);
+            // Only a verified email identifies an account, so an unverified claim cannot squat a login.
+            foundUser = userRepository.findActiveByVerifiedEmail(email).orElse(null);
+        } else {
+            String phone;
+            try {
+                phone = phoneService.toE164(identifier);
+            } catch (IllegalArgumentException e) {
+                passwordEncoder.matches(request.password(), dummyHash);
+                throw invalidCredentials();
+            }
+            enforcePhoneRateLimit("login", phone);
+            foundUser = userRepository.findByPhoneAndDeletedAtIsNull(phone).orElse(null);
         }
-        enforcePhoneRateLimit("login", phone);
-
-        User foundUser = userRepository.findByPhoneAndDeletedAtIsNull(phone).orElse(null);
         if (foundUser == null) {
             // Pay one bcrypt compare anyway so unknown vs known users take the same time.
             passwordEncoder.matches(request.password(), dummyHash);
@@ -290,8 +305,12 @@ public class AuthService {
      * phone is normalized so the key is canonical E.164.
      */
     private void enforcePhoneRateLimit(String action, String phone) {
+        enforceCredentialRateLimit(action, "phone|" + phone);
+    }
+
+    private void enforceCredentialRateLimit(String action, String subject) {
         RateLimitService.Consumption consumption = rateLimitService.tryConsume(
-                action + "|phone|" + phone, PHONE_RATE_CAPACITY, PHONE_RATE_PERIOD);
+                action + "|" + subject, PHONE_RATE_CAPACITY, PHONE_RATE_PERIOD);
         if (!consumption.allowed()) {
             throw ApiException.of(
                     ApiErrorCode.RATE_LIMITED,

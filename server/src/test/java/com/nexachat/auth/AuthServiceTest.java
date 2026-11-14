@@ -236,6 +236,56 @@ class AuthServiceTest {
         verify(passwordEncoder).matches("whatever123", "hashed:nexachat-timing-equalization");
     }
 
+    @Test
+    void login_verifiedEmail_issuesTokens() {
+        User user = userWithId("+84912345678", "stored-hash", "Minh");
+        when(userRepository.findActiveByVerifiedEmail("minh@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("secret123", "stored-hash")).thenReturn(true);
+
+        AuthResponse response = authService.login(
+                new LoginRequest(null, "  Minh@Example.COM ", "secret123"), "JUnit");
+
+        assertThat(response.user().id()).isEqualTo(user.getId());
+        verify(phoneService, never()).toE164(anyString());
+    }
+
+    @Test
+    void login_unknownEmail_isIndistinguishableFromWrongPassword() {
+        when(userRepository.findActiveByVerifiedEmail("ghost@example.com")).thenReturn(Optional.empty());
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest(null, "ghost@example.com", "whatever123"), null));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.INVALID_CREDENTIALS);
+        assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
+        verify(passwordEncoder).matches("whatever123", "hashed:nexachat-timing-equalization");
+    }
+
+    @Test
+    void login_malformedEmail_throwsInvalidCredentialsNotValidation() {
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest(null, "not an@email", "whatever123"), null));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.INVALID_CREDENTIALS);
+        verify(userRepository, never()).findActiveByVerifiedEmail(anyString());
+        verify(passwordEncoder).matches("whatever123", "hashed:nexachat-timing-equalization");
+    }
+
+    @Test
+    void login_identifierWinsOverLegacyPhoneAndSpellingsShareOneRateBudget() {
+        when(userRepository.findActiveByVerifiedEmail("minh@example.com")).thenReturn(Optional.empty());
+
+        catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest("0912345678", "MINH@example.com", "whatever123"), null));
+        catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest(null, " minh@EXAMPLE.com ", "whatever123"), null));
+
+        verify(rateLimitService, org.mockito.Mockito.times(2)).tryConsume(
+                org.mockito.ArgumentMatchers.eq("login|email|minh@example.com"),
+                org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any());
+    }
+
     // -------------------------------------------------------------- refresh
 
     @Test
