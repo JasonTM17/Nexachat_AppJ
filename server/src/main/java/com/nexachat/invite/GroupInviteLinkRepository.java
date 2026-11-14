@@ -30,10 +30,10 @@ public interface GroupInviteLinkRepository extends JpaRepository<GroupInviteLink
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
             UPDATE group_invite_links
-               SET use_count = use_count + 1, updated_at = CURRENT_TIMESTAMP
+               SET use_count = use_count + 1, updated_at = clock_timestamp()
              WHERE id = :id
                AND revoked_at IS NULL
-               AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+               AND (expires_at IS NULL OR expires_at > clock_timestamp())
                AND (max_uses IS NULL OR use_count < max_uses)
             """, nativeQuery = true)
     int tryConsumeUse(@Param("id") UUID id);

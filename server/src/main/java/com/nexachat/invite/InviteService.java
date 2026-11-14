@@ -277,7 +277,10 @@ public class InviteService {
         GroupInviteLink link = linkRepository.findByTokenHash(tokenHash)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_FOUND, "Invite link not found or inactive"));
 
-        if (!tokenGenerator.constantTimeEquals(link.getTokenHash(), tokenHash) || !link.isValid(Instant.now())) {
+        // Exhaustion must not reject an acknowledgement of a join already committed by this user.
+        // New admissions still check every validity condition on the locked row below.
+        if (!tokenGenerator.constantTimeEquals(link.getTokenHash(), tokenHash)
+                || link.isRevoked() || link.isExpired(Instant.now())) {
             throw ApiException.of(ApiErrorCode.NOT_FOUND, "Invite link not found or inactive");
         }
 
