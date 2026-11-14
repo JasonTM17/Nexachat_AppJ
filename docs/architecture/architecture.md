@@ -1,9 +1,9 @@
 # NexaChat Architecture
 
 > Current implementation view: Android app (Java 21 LTS, XML Views + Fragments +
-> ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v14) → REST
+> ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v16) → REST
 > `/api/v1` + STOMP over WebSocket → Spring Boot 3.5.16 modular monolith → PostgreSQL 16
-> (Flyway V1–V20 + V22 + V24–V33; V21/V23 reserved) + local or S3-compatible file storage. Conversation RAG is available through the
+> (Flyway V1–V20 + V22 + V24–V34; V21/V23 reserved) + local or S3-compatible file storage. Conversation RAG is available through the
 > server API (`POST /api/v1/conversations/{id}/ask`) and Android Ask screen
 > ([docs/architecture/rag.md](rag.md)).
 > Call signaling shares STOMP (`server/call`,
@@ -25,7 +25,7 @@ flowchart LR
             REST["Retrofit/OkHttp<br/>+ AuthInterceptor/Authenticator"]
             STOMP["StompClient<br/>(OkHttp WebSocket + STOMP frames)"]
             ROUTER["EphemeralStateRouter<br/>(STOMP default, opt-in Firebase)"]
-            ROOM[("Room DB v14 (RxJava 3)<br/>cache · caller-owned labels · owner-scoped outbox · offline_outbox · users · call_logs")]
+            ROOM[("Room DB v16 (RxJava 3)<br/>cache · caller-owned labels · owner-scoped outbox · offline_outbox · users · call_logs")]
             STORE["RxDataStore + TokenStore<br/>(Android Keystore AES)"]
             SETTINGS["Local theme + locale settings"]
         end
@@ -63,7 +63,7 @@ flowchart LR
         PRESENCE["PresenceSessionRegistry<br/>(in-memory, per node)"]
     end
 
-    PG[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V33 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin · sync cursors · google_signup")]
+    PG[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V34 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin · sync cursors · google_signup")]
     STORAGE["File storage<br/>(StorageService: local or S3-compatible)"]
     FCM[["FCM (HTTP v1 OAuth2, GoogleHttpFcmGateway)"]]
 
@@ -155,7 +155,7 @@ sequenceDiagram
   keys are not referenced elsewhere. The deleted message's attachments cannot
   be downloaded through the message binding.
 - **Delta Sync:** client `SyncEngine` aggregates all conversation watermark sequences
-  from Room v14, requests `POST /api/v1/sync`, and atomically applies new messages,
+  from Room v16, requests `POST /api/v1/sync`, and atomically applies new messages,
   edits, tombstones, and reaction updates in a single Room transaction, backed by
   server covering index `idx_messages_delta_sync` on `(conversation_id, seq)` and the
   append-only `reaction_events` audit table (Flyway V10) with additive reaction cursors.
