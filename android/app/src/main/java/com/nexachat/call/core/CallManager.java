@@ -7,6 +7,7 @@ import androidx.annotation.VisibleForTesting;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -69,6 +70,7 @@ public final class CallManager implements AutoCloseable {
     private final List<QueuedOutboundSignal> pendingOutboundSignals = new ArrayList<>();
     private final Map<String, Long> terminalCallIds = new LinkedHashMap<>();
     private final Handler mainHandler;
+    private final CompositeDisposable pendingSubscriptions = new CompositeDisposable();
 
     private volatile CallSession currentSession = CallSession.idle();
     @Nullable private volatile PushAdmission pushAdmission;
@@ -204,9 +206,10 @@ public final class CallManager implements AutoCloseable {
             long serverTs) {
         long startedAtMs = serverTs > 0L ? serverTs : clock.getAsLong();
         long deadlineMs = safeDeadline(startedAtMs, ringTimeoutMs);
-        admitIncomingPush(callId, conversationId, callerId, callerName, startedAtMs,
-                "test-recipient", 0L, deadlineMs, () -> true)
-                .subscribe(ignored -> { }, ignored -> { });
+        pendingSubscriptions.add(admitIncomingPush(
+                        callId, conversationId, callerId, callerName, startedAtMs,
+                        "test-recipient", 0L, deadlineMs, () -> true)
+                .subscribe(ignored -> { }, ignored -> { }));
     }
 
     /**
@@ -493,6 +496,7 @@ public final class CallManager implements AutoCloseable {
                 finish(CallEndReason.FAILED, null, null);
             }
             closed = true;
+            pendingSubscriptions.clear();
             cancelRingTimeout();
             stopMedia();
             signaling.stop();

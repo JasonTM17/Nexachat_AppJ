@@ -9,6 +9,7 @@ import dagger.hilt.EntryPoint;
 import dagger.hilt.InstallIn;
 import dagger.hilt.android.EntryPointAccessors;
 import dagger.hilt.components.SingletonComponent;
+import io.reactivex.rxjava3.disposables.Disposable;
 
 /**
  * Firebase Cloud Messaging service handling incoming lightweight push notifications.
@@ -56,7 +57,7 @@ public class NexaFirebaseMessagingService extends FirebaseMessagingService {
         try {
             DeviceTokenRegistrationManager manager = resolveRegistrationManager(this);
             if (manager != null) {
-                manager.onNewToken(token).subscribe(() -> { },
+                Disposable disposable = manager.onNewToken(token).subscribe(() -> { },
                         error -> DeviceTokenDiagnostics.warnError(error.getClass()));
             } else {
                 DeviceTokenDiagnostics.warn(DeviceTokenDiagnostics.TOKEN_CALLBACK_FAILED);

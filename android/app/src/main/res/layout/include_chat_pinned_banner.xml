@@ -39,7 +39,6 @@
             android:layout_weight="1"
             android:ellipsize="end"
             android:importantForAccessibility="no"
-            android:maxLines="2"
             android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="?attr/colorOnSurface" />
     </LinearLayout>

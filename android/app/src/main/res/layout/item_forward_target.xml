@@ -26,7 +26,6 @@
             android:layout_marginHorizontal="12dp"
             android:layout_weight="1"
             android:ellipsize="end"
-            android:maxLines="2"
             android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textColor="?attr/colorOnSurface" />
 

@@ -13,6 +13,7 @@ import dagger.hilt.EntryPoints;
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
 import io.reactivex.rxjava3.disposables.Disposable;
 import java.io.File;
+import java.lang.ref.WeakReference;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -20,7 +21,8 @@ import java.util.Map;
 public final class VoicePlaybackViewModel extends ViewModel {
 
     private VoicePlaybackController controller;
-    private Lifecycle observedLifecycle;
+    /** Weak so the view lifecycle owner is never kept alive by this ViewModel. */
+    private WeakReference<Lifecycle> observedLifecycle;
     private final LifecycleEventObserver lifecycleObserver = this::onLifecycleEvent;
 
     @NonNull
@@ -46,13 +48,14 @@ public final class VoicePlaybackViewModel extends ViewModel {
     }
 
     public synchronized void observeViewLifecycle(@NonNull Lifecycle lifecycle) {
-        if (observedLifecycle == lifecycle) {
+        Lifecycle observed = observedLifecycle != null ? observedLifecycle.get() : null;
+        if (observed == lifecycle) {
             return;
         }
-        if (observedLifecycle != null) {
-            observedLifecycle.removeObserver(lifecycleObserver);
+        if (observed != null) {
+            observed.removeObserver(lifecycleObserver);
         }
-        observedLifecycle = lifecycle;
+        observedLifecycle = new WeakReference<>(lifecycle);
         lifecycle.addObserver(lifecycleObserver);
     }
 
@@ -66,19 +69,18 @@ public final class VoicePlaybackViewModel extends ViewModel {
             controller.stop();
         } else if (event == Lifecycle.Event.ON_DESTROY) {
             controller.releaseForViewDestroy();
-            if (observedLifecycle != null) {
-                observedLifecycle.removeObserver(lifecycleObserver);
-                observedLifecycle = null;
-            }
+            source.getLifecycle().removeObserver(lifecycleObserver);
+            observedLifecycle = null;
         }
     }
 
     @Override
     protected synchronized void onCleared() {
-        if (observedLifecycle != null) {
-            observedLifecycle.removeObserver(lifecycleObserver);
-            observedLifecycle = null;
+        Lifecycle observed = observedLifecycle != null ? observedLifecycle.get() : null;
+        if (observed != null) {
+            observed.removeObserver(lifecycleObserver);
         }
+        observedLifecycle = null;
         if (controller != null) {
             controller.close();
             controller = null;

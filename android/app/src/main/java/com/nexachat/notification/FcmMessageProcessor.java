@@ -21,6 +21,7 @@ import com.squareup.moshi.Moshi;
 import dagger.hilt.android.qualifiers.ApplicationContext;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Scheduler;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.function.LongSupplier;
 import java.util.Map.Entry;
@@ -72,6 +73,7 @@ public final class FcmMessageProcessor {
     private final ForegroundConversationTracker foregroundConversationTracker;
     private final Scheduler ioScheduler;
     private final LongSupplier clock;
+    private final CompositeDisposable subscriptions = new CompositeDisposable();
 
     @Inject
     public FcmMessageProcessor(
@@ -116,7 +118,7 @@ public final class FcmMessageProcessor {
         this.foregroundConversationTracker = foregroundConversationTracker;
         this.ioScheduler = ioScheduler;
         this.clock = clock;
-        this.tokenRefresher.sessionSignals().subscribe(signal -> {
+        subscriptions.add(this.tokenRefresher.sessionSignals().subscribe(signal -> {
             if (signal instanceof TokenRefresher.SessionSignal.EpochChanged
                     || signal instanceof TokenRefresher.SessionSignal.AdmissionChanged) {
                 if (signal instanceof TokenRefresher.SessionSignal.AdmissionChanged changed
@@ -125,7 +127,7 @@ public final class FcmMessageProcessor {
                 }
                 this.callManager.onSessionStateChanged();
             }
-        }, ignored -> { });
+        }, ignored -> { }));
     }
 
     private static IncomingCallLauncher defaultLauncher(Context appContext) {
@@ -258,13 +260,13 @@ public final class FcmMessageProcessor {
         final long callStartedAtMs = serverTs;
         final String callCallerId = callerId;
         final String callCallerName = callerName;
-        currentSessionCredential().subscribeOn(ioScheduler).subscribe(credential -> {
+        subscriptions.add(currentSessionCredential().subscribeOn(ioScheduler).subscribe(credential -> {
             String currentUserId = TimeAndJwt.userIdFromJwt(credential.accessToken, moshi);
             if (!recipientId.equals(currentUserId)
                     || !tokenRefresher.isSessionCurrent(credential.sessionEpoch)) {
                 return;
             }
-            callManager.admitIncomingPush(
+            subscriptions.add(callManager.admitIncomingPush(
                             callId,
                             conversationId,
                             callCallerId,
@@ -294,8 +296,8 @@ public final class FcmMessageProcessor {
                                     CallNotifications.showIncoming(context, session, pushData);
                                 } catch (Throwable ignored) {
                                 }
-                            }), ignored -> { });
-        }, ignored -> { });
+                            }), ignored -> { }));
+        }, ignored -> { }));
     }
 
     private Maybe<SessionCredential> currentSessionCredential() {
@@ -340,7 +342,7 @@ public final class FcmMessageProcessor {
         if (!NotificationWorkRequest.isOccurrenceKey(occurrence)) {
             return;
         }
-        notificationAdmission.admitPush(recipientId, conversationId)
+        subscriptions.add(notificationAdmission.admitPush(recipientId, conversationId)
                 .subscribeOn(ioScheduler)
                 .subscribe(session -> {
                     if (!recipientId.equals(session.recipientId())) return;
@@ -351,7 +353,7 @@ public final class FcmMessageProcessor {
                                 recipientId, session.sessionEpoch(), conversationId,
                                 reminderId, occurrence));
                     });
-                }, ignored -> { });
+                }, ignored -> { }));
     }
 
     private void handleNewMessage(@NonNull Map<String, String> data) {
@@ -372,7 +374,7 @@ public final class FcmMessageProcessor {
         } catch (NumberFormatException malformedSequence) {
             return;
         }
-        notificationAdmission.admitPush(recipientId, conversationId)
+        subscriptions.add(notificationAdmission.admitPush(recipientId, conversationId)
                 .subscribeOn(ioScheduler)
                 .subscribe(session -> {
                     if (!recipientId.equals(session.recipientId())
@@ -383,7 +385,7 @@ public final class FcmMessageProcessor {
                             notificationWorkScheduler.enqueue(NotificationWorkRequest.message(
                                     recipientId, session.sessionEpoch(), conversationId,
                                     messageId, sequence)));
-                }, ignored -> { });
+                }, ignored -> { }));
     }
 
     private static boolean hasText(@Nullable String value) {

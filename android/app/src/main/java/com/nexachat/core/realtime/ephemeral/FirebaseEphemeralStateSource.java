@@ -26,6 +26,7 @@ import com.nexachat.data.PeerPresence;
 import com.nexachat.data.TypingEvent;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.processors.BehaviorProcessor;
 import io.reactivex.rxjava3.processors.PublishProcessor;
@@ -79,6 +80,7 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
             Collections.newSetFromMap(new IdentityHashMap<>());
 
     private final FirebaseAuthQueue authQueue = new FirebaseAuthQueue();
+    private final CompositeDisposable pendingOperations = new CompositeDisposable();
     @Nullable private FirebaseApp firebaseApp;
     @Nullable private FirebaseAuth firebaseAuth;
     @Nullable private FirebaseDatabase database;
@@ -195,10 +197,10 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
             return;
         }
 
-        requiredBody(api.issueBridge())
+        pendingOperations.add(requiredBody(api.issueBridge())
                 .subscribeOn(Schedulers.io())
                 .flatMap(bridge -> bootstrap(bridge, expectedEpoch, expectedGeneration))
-                .subscribe(ignored -> { }, ignored -> markUnavailable(expectedEpoch, expectedGeneration));
+                .subscribe(ignored -> { }, ignored -> markUnavailable(expectedEpoch, expectedGeneration)));
     }
 
     private Single<Boolean> bootstrap(
@@ -366,8 +368,8 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
         if (currentAuth != null) cleanup = cleanup.andThen(Completable.fromAction(currentAuth::signOut));
         if (currentApp != null) cleanup = cleanup.doFinally(currentApp::delete);
         if (currentDatabase != null || currentAuth != null || currentApp != null) {
-            authQueue.enqueue(cleanup).subscribeOn(Schedulers.io())
-                    .subscribe(() -> { }, ignored -> { });
+            pendingOperations.add(authQueue.enqueue(cleanup).subscribeOn(Schedulers.io())
+                    .subscribe(() -> { }, ignored -> { }));
         }
         // A stop caused by the router is not itself a transport failure.
     }
@@ -786,8 +788,9 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
 
     private void revokeBestEffort(@Nullable String id) {
         if (id == null || id.isBlank()) return;
-        ApiResult.safeApiCall(api.revokeBridge(id)).subscribeOn(Schedulers.io())
-                .subscribe(ignored -> { }, ignored -> { });
+        pendingOperations.add(ApiResult.safeApiCall(api.revokeBridge(id))
+                .subscribeOn(Schedulers.io())
+                .subscribe(ignored -> { }, ignored -> { }));
     }
 
     private FirebaseRuntime initializeRuntime(String url, long expectedEpoch, long expectedGeneration) {
@@ -824,8 +827,8 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
             runtime.database.goOffline();
         }).andThen(Completable.fromAction(runtime.auth::signOut))
                 .doFinally(runtime.app::delete);
-        authQueue.enqueue(cleanup).subscribeOn(Schedulers.io())
-                .subscribe(() -> { }, ignored -> { });
+        pendingOperations.add(authQueue.enqueue(cleanup).subscribeOn(Schedulers.io())
+                .subscribe(() -> { }, ignored -> { }));
     }
 
     private Completable waitForConnection(

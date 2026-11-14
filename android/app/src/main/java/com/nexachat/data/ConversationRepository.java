@@ -680,10 +680,10 @@ public final class ConversationRepository implements AutoCloseable {
                 groupUpdateIds.onNext(updated.getConversationId());
             }
             if (updated.isRemovalEvent()) {
-                handleConversationUpdate(updated).subscribe(
+                subscriptions.add(handleConversationUpdate(updated).subscribe(
                         removed -> {
                             if (!removed) refreshRequests.onNext(Boolean.TRUE);
-                        }, RxJavaPlugins::onError);
+                        }, RxJavaPlugins::onError));
                 return;
             }
             refreshRequests.onNext(Boolean.TRUE);
