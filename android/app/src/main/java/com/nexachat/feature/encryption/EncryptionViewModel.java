@@ -78,6 +78,10 @@ public final class EncryptionViewModel extends ViewModel {
         return session.currentDeviceId();
     }
 
+    @Nullable public String currentUserId() {
+        return session.currentUserId();
+    }
+
     public void load(@NonNull String conversationId) {
         this.conversationId = conversationId;
         disposables.add(session.e2eeState(conversationId)

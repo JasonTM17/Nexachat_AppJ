@@ -166,6 +166,12 @@ public final class E2eeSession {
         return userId == null ? null : keyStore.storedDeviceId(userId);
     }
 
+    /** The signed-in account id backing the device identity, or null before first registration. */
+    @Nullable
+    public String currentUserId() {
+        return keyStore.currentUserId();
+    }
+
     /** Drops the cached member-device list for one conversation. */
     public void invalidateDevices(@NonNull String conversationId) {
         deviceCache.remove(conversationId);

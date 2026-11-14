@@ -165,7 +165,7 @@
     <string name="e2ee_disable_confirm_body">Tin nhắn mới sẽ không còn được mã hóa đầu-cuối.</string>
     <string name="e2ee_safety_code_title">Xác minh mã bảo mật</string>
     <string name="e2ee_safety_code_body">So sánh mã này với %1$s trên thiết bị của họ, trực tiếp hoặc qua kênh khác mà bạn tin cậy.</string>
-    <string name="e2ee_devices_title">Thiết bị của bạn</string>
+    <string name="e2ee_devices_title">Thiết bị</string>
     <string name="e2ee_error_peer_not_ready">%1$s cần cập nhật NexaChat trước</string>
     <string name="e2ee_error_unsupported">Mã hóa chỉ khả dụng trong trò chuyện trực tiếp.</string>
     <string name="e2ee_error_limit">Đã đạt giới hạn thiết bị. Hãy xóa một thiết bị trước.</string>
@@ -174,6 +174,7 @@
     <string name="e2ee_composer_unsupported">Tính năng đa phương tiện chưa khả dụng trong trò chuyện mã hóa</string>
     <string name="cd_e2ee_lock">Đã mã hóa đầu-cuối</string>
     <string name="e2ee_device_row">Thiết bị %1$s</string>
+    <string name="e2ee_device_row_owner">%1$s · Thiết bị %2$s</string>
     <string name="e2ee_this_device">Thiết bị này</string>
     <string name="e2ee_peer_fallback">người liên hệ</string>
     <string name="e2ee_action_turn_on">Bật</string>

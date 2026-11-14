@@ -10,6 +10,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
+import androidx.navigation.fragment.NavHostFragment;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.materialswitch.MaterialSwitch;
 import com.nexachat.R;
@@ -61,6 +62,9 @@ public final class EncryptionFragment extends Fragment {
         safetyHint = view.findViewById(R.id.safetyHint);
         devicesCard = view.findViewById(R.id.devicesCard);
         devicesList = view.findViewById(R.id.devicesList);
+        view.<com.google.android.material.appbar.MaterialToolbar>findViewById(R.id.toolbar)
+                .setNavigationOnClickListener(ignored ->
+                        NavHostFragment.findNavController(this).navigateUp());
         view.findViewById(R.id.copyCodeButton).setOnClickListener(v -> {
             CharSequence code = safetyCode.getText();
             if (code == null || code.length() == 0) {
@@ -137,13 +141,21 @@ public final class EncryptionFragment extends Fragment {
         } else {
             devicesCard.setVisibility(View.VISIBLE);
             String currentId = viewModel.currentDeviceId();
+            String myUserId = viewModel.currentUserId();
             for (MemberDeviceDto d : state.devices) {
                 TextView row = new TextView(requireContext());
                 String shortId = d.getDeviceId() != null && d.getDeviceId().length() > 8
                         ? d.getDeviceId().substring(0, 8) : String.valueOf(d.getDeviceId());
-                String label = getString(R.string.e2ee_device_row, shortId);
-                if (d.getDeviceId() != null && d.getDeviceId().equals(currentId)) {
-                    label += " · " + getString(R.string.e2ee_this_device);
+                String label;
+                if (EncryptionDeviceLabels.isOwnDevice(d, myUserId, currentId)) {
+                    label = getString(R.string.e2ee_device_row, shortId);
+                    if (d.getDeviceId() != null && d.getDeviceId().equals(currentId)) {
+                        label += " · " + getString(R.string.e2ee_this_device);
+                    }
+                } else if (peerName != null && !peerName.isBlank()) {
+                    label = getString(R.string.e2ee_device_row_owner, peerName, shortId);
+                } else {
+                    label = getString(R.string.e2ee_device_row, shortId);
                 }
                 row.setText(label);
                 row.setTextAppearance(R.style.TextAppearance_NexaChat_BodyMedium);
