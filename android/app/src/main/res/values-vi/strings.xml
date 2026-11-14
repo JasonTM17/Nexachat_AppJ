@@ -5,6 +5,9 @@
     <!-- Splash -->
 
     <!-- Auth -->
+    <string name="auth_login_identifier_label">Email hoặc số điện thoại</string>
+    <string name="error_login_identifier_required">Nhập email hoặc số điện thoại</string>
+    <string name="error_login_identifier_invalid">Nhập email hoặc số điện thoại quốc tế hợp lệ</string>
     <string name="auth_phone_label">Số điện thoại</string>
     <string name="auth_password_label">Mật khẩu</string>
     <string name="auth_display_name_label">Tên hiển thị</string>

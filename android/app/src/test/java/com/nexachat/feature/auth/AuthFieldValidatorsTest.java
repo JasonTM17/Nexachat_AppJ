@@ -41,4 +41,21 @@ public final class AuthFieldValidatorsTest {
         assertFalse(AuthFieldValidators.passwordsMatch("secret", "Secret"));
         assertFalse(AuthFieldValidators.passwordsMatch("secret", "secret "));
     }
+
+    @Test
+    public void loginIdentifierAcceptsEmailOrPhoneAndNormalizesEach() {
+        assertEquals("jason@gmail.com", AuthFieldValidators.normalizeLoginIdentifier("  Jason@Gmail.COM "));
+        assertEquals("+84901234567", AuthFieldValidators.normalizeLoginIdentifier(" +84 901 234-567 "));
+        assertTrue(AuthFieldValidators.isLoginIdentifier("jason@gmail.com"));
+        assertTrue(AuthFieldValidators.isLoginIdentifier("+84901234567"));
+    }
+
+    @Test
+    public void loginIdentifierRejectsMalformedInput() {
+        assertFalse(AuthFieldValidators.isLoginIdentifier(""));
+        assertFalse(AuthFieldValidators.isLoginIdentifier("jason@"));
+        assertFalse(AuthFieldValidators.isLoginIdentifier("@gmail.com"));
+        assertFalse(AuthFieldValidators.isLoginIdentifier("jason gmail@x.com"));
+        assertFalse(AuthFieldValidators.isLoginIdentifier("0901234567"));
+    }
 }

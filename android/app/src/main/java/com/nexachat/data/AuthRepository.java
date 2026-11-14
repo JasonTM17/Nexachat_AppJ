@@ -624,8 +624,12 @@ public final class AuthRepository {
     }
 
     @NonNull
-    LoginRequest loginRequest(@NonNull String phone, @NonNull String password) {
-        return new LoginRequest(PhoneNormalizer.toE164(phone), password);
+    LoginRequest loginRequest(@NonNull String identifier, @NonNull String password) {
+        String trimmed = identifier.trim();
+        if (trimmed.contains("@")) {
+            return LoginRequest.byEmail(trimmed.toLowerCase(java.util.Locale.ROOT), password);
+        }
+        return new LoginRequest(PhoneNormalizer.toE164(identifier), password);
     }
 
     @NonNull
