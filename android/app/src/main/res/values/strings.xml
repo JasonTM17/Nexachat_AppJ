@@ -172,6 +172,7 @@
     <string name="e2ee_error_unsupported">Encryption is only available in direct chats.</string>
     <string name="e2ee_error_limit">The device limit was reached. Remove a device first.</string>
     <string name="e2ee_error_conflict">This device id is already registered on another account.</string>
+    <string name="e2ee_send_disabled_retry">Encryption was turned off. Review and resend.</string>
     <string name="e2ee_composer_unsupported">Media isn\'t available in encrypted chats yet</string>
     <string name="cd_e2ee_lock">End-to-end encrypted</string>
     <string name="e2ee_device_row">Device %1$s</string>

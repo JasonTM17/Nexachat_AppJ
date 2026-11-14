@@ -163,7 +163,7 @@ public final class E2eeSession {
     @Nullable
     public String currentDeviceId() {
         String userId = keyStore.currentUserId();
-        return userId == null ? null : keyStore.deviceId(userId);
+        return userId == null ? null : keyStore.storedDeviceId(userId);
     }
 
     /** Drops the cached member-device list for one conversation. */

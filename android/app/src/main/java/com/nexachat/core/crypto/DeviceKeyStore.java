@@ -60,6 +60,11 @@ public final class DeviceKeyStore {
         return context.getSharedPreferences(PREFS_PREFIX + userId, Context.MODE_PRIVATE);
     }
 
+    /** The already-stored device id, or null; unlike {@link #deviceId} never mints one. */
+    @Nullable public String storedDeviceId(@NonNull String userId) {
+        return prefs(userId).getString(KEY_DEVICE_ID, null);
+    }
+
     /** Stable per-installation device id for this user; generated once. */
     @NonNull public String deviceId(@NonNull String userId) {
         SharedPreferences prefs = prefs(userId);

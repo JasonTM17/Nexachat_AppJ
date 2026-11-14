@@ -1008,14 +1008,11 @@ public final class MessageRepository {
                                                             workerAttempt)));
                 }
                 if (ERROR_E2EE_NOT_ENABLED.equals(e2eeCode)) {
-                    // The flag flipped off: refresh the row and resend plaintext when the
-                    // server confirms the conversation is now unencrypted.
+                    // Never downgrade a message composed under encryption to
+                    // plaintext: refresh the local flag, fail the row, and let
+                    // the user resend under the now-visible conversation state.
                     return e2eeRefreshFlag(entry.getConversationId())
-                            .andThen(prepareSendRequest(entry, ownerUserId, true))
-                            .flatMapCompletable(retry ->
-                                    call(messageApi.sendMessage(entry.getConversationId(), retry))
-                                            .flatMapCompletable(retryResult ->
-                                                    completeSend(entry, ownerUserId, retryResult, workerAttempt)));
+                            .andThen(completeSend(entry, ownerUserId, result, workerAttempt));
                 }
                 return completeSend(entry, ownerUserId, result, workerAttempt);
             });
@@ -1097,7 +1094,8 @@ public final class MessageRepository {
         } else if (error instanceof ApiError.Unknown unknown
                 && (ERROR_VALIDATION_FAILED.equals(unknown.getCode())
                 || ERROR_NOT_ADMIN.equals(unknown.getCode())
-                || ERROR_E2EE_MEDIA_UNSUPPORTED.equals(unknown.getCode()))) {
+                || ERROR_E2EE_MEDIA_UNSUPPORTED.equals(unknown.getCode())
+                || ERROR_E2EE_NOT_ENABLED.equals(unknown.getCode()))) {
             interactionEvents.onNext(unknown);
         }
         return outboxDao.updateState(entry.getClientMessageId(), ownerUserId,
@@ -1242,6 +1240,33 @@ public final class MessageRepository {
             if (ERROR_RATE_LIMITED.equals(rejected.getCode())) {
                 scheduleRateLimitRetry();
                 return Completable.complete();
+            }
+            // E2EE rejections arrive here (instead of as REST failures) for
+            // messages sent over the socket; they get the same handling.
+            if (ERROR_E2EE_STALE_DEVICES.equals(rejected.getCode())
+                    || ERROR_E2EE_REQUIRED.equals(rejected.getCode())) {
+                return currentUserId().flatMapCompletable(ownerUserId ->
+                        outboxDao.byId(clientId, ownerUserId).flatMapCompletable(entry ->
+                                Completable.fromAction(() -> {
+                                            if (e2eeSession != null) {
+                                                e2eeSession.invalidateDevices(
+                                                        entry.getConversationId());
+                                            }
+                                        })
+                                        .andThen(ERROR_E2EE_REQUIRED.equals(rejected.getCode())
+                                                ? e2eeRefreshFlag(entry.getConversationId())
+                                                : Completable.complete())
+                                        .andThen(dispatchOutbox(entry, ownerUserId, true))));
+            }
+            if (ERROR_E2EE_NOT_ENABLED.equals(rejected.getCode())) {
+                return currentUserId().flatMapCompletable(ownerUserId ->
+                        outboxDao.byId(clientId, ownerUserId).flatMapCompletable(entry ->
+                                e2eeRefreshFlag(entry.getConversationId()))
+                                .andThen(Completable.fromAction(() ->
+                                        interactionEvents.onNext(
+                                                new ApiError.Unknown(ERROR_E2EE_NOT_ENABLED))))
+                                .andThen(outboxDao.updateState(clientId, ownerUserId,
+                                        OutboxState.FAILED)));
             }
             if (ERROR_NOT_MEMBER.equals(rejected.getCode())
                     || ERROR_CONVERSATION_NOT_FOUND.equals(rejected.getCode())) {

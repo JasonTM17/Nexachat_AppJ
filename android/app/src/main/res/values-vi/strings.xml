@@ -170,6 +170,7 @@
     <string name="e2ee_error_unsupported">Mã hóa chỉ khả dụng trong trò chuyện trực tiếp.</string>
     <string name="e2ee_error_limit">Đã đạt giới hạn thiết bị. Hãy xóa một thiết bị trước.</string>
     <string name="e2ee_error_conflict">ID thiết bị này đã được đăng ký trên tài khoản khác.</string>
+    <string name="e2ee_send_disabled_retry">Mã hóa đầu cuối đã tắt. Kiểm tra rồi gửi lại.</string>
     <string name="e2ee_composer_unsupported">Tính năng đa phương tiện chưa khả dụng trong trò chuyện mã hóa</string>
     <string name="cd_e2ee_lock">Đã mã hóa đầu-cuối</string>
     <string name="e2ee_device_row">Thiết bị %1$s</string>

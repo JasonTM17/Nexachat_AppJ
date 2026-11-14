@@ -152,6 +152,15 @@ public final class E2eeSessionTest {
         verify(keyStore).forgetCurrentUser();
     }
 
+    @Test
+    public void currentDeviceIdIsReadOnly() {
+        when(keyStore.currentUserId()).thenReturn("u1");
+        when(keyStore.storedDeviceId("u1")).thenReturn(null);
+
+        org.junit.Assert.assertNull(session.currentDeviceId());
+        verify(keyStore, never()).deviceId(anyString());
+    }
+
     private static Tokens tokensFor(String userId) {
         String payload = Base64.getUrlEncoder().withoutPadding().encodeToString(
                 ("{\"sub\":\"" + userId + "\"}").getBytes(StandardCharsets.UTF_8));
