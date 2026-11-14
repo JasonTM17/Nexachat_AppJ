@@ -107,7 +107,7 @@ public final class SyncEngineTest {
         when(conversationDao.incrementUnread(anyString(), anyInt())).thenReturn(Completable.complete());
         when(conversationDao.updateLastMessageContent(anyString(), anyLong(), anyString()))
                 .thenReturn(Completable.complete());
-        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong()))
+        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong(), anyBoolean()))
                 .thenReturn(Completable.complete());
         when(conversationDao.deleteById(anyString())).thenReturn(Completable.complete());
         when(conversationDao.updatePin(anyString(), anyBoolean(), any())).thenReturn(Completable.complete());
@@ -157,7 +157,7 @@ public final class SyncEngineTest {
                 Maybe.just(new Tokens(jwt("user-1"), 1800000000000L, "refresh")));
         when(tokenStore.readSyncServerTime("user-1")).thenReturn(Maybe.just("cursor-start"));
         when(messageDao.upsertAll(anyList())).thenReturn(Completable.complete());
-        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong()))
+        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong(), anyBoolean()))
                 .thenReturn(Completable.complete());
 
         int[] counts = {100, 101, 250};
@@ -213,7 +213,7 @@ public final class SyncEngineTest {
         when(messageDao.getAllMaxSeqs()).thenReturn(Single.just(watermarks(250)));
         when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
         when(messageDao.upsertAll(anyList())).thenReturn(Completable.complete());
-        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong()))
+        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong(), anyBoolean()))
                 .thenReturn(Completable.complete());
 
         MessageDto message = new MessageDto(
@@ -326,7 +326,7 @@ public final class SyncEngineTest {
                 .thenReturn(Completable.complete());
         when(messageDao.upsertAll(anyList())).thenReturn(Completable.complete());
         when(conversationDao.updateLastMessage(
-                anyString(), anyLong(), anyString(), anyString(), anyLong()))
+                anyString(), anyLong(), anyString(), anyString(), anyLong(), anyBoolean()))
                 .thenReturn(Completable.complete());
 
         SyncResponse firstPage = new SyncResponse(List.of(
@@ -393,7 +393,7 @@ public final class SyncEngineTest {
         }
 
         when(messageDao.upsertAll(anyList())).thenReturn(Completable.complete());
-        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong()))
+        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong(), anyBoolean()))
                 .thenReturn(Completable.complete());
         when(conversationDao.bumpPeerReadSeq(anyString(), anyLong())).thenReturn(Completable.complete());
 
@@ -413,7 +413,8 @@ public final class SyncEngineTest {
                 org.mockito.ArgumentMatchers.eq(15L),
                 org.mockito.ArgumentMatchers.eq("Hello World"),
                 org.mockito.ArgumentMatchers.eq("Bob"),
-                anyLong()
+                anyLong(),
+                anyBoolean()
         );
         verify(conversationDao, never()).bumpPeerDeliveredSeq(anyString(), anyLong());
         verify(conversationDao, never()).bumpPeerReadSeq(anyString(), anyLong());
@@ -546,7 +547,7 @@ public final class SyncEngineTest {
         }
 
         when(messageDao.upsertAll(anyList())).thenReturn(Completable.complete());
-        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong()))
+        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong(), anyBoolean()))
                 .thenReturn(Completable.complete());
 
         TestObserver<Void> observer = syncEngine.sync().test();
@@ -614,7 +615,7 @@ public final class SyncEngineTest {
         when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
         when(messageDao.upsertAll(anyList())).thenReturn(Completable.complete());
         when(messageDao.update(any(MessageEntity.class))).thenReturn(Completable.complete());
-        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong()))
+        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong(), anyBoolean()))
                 .thenReturn(Completable.complete());
 
         MessageDto created = message("m-11", 11L, "c1", "hello");
@@ -809,7 +810,7 @@ public final class SyncEngineTest {
                 Single.just(List.of(new ConversationWatermark("c1", 10L))));
         when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
         when(messageDao.upsertAll(anyList())).thenReturn(Completable.complete());
-        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong()))
+        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong(), anyBoolean()))
                 .thenReturn(Completable.complete());
 
         AtomicInteger pageCounter = new AtomicInteger();

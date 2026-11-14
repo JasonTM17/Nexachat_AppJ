@@ -15,9 +15,16 @@ import java.util.Optional;
 final class MessageStateApplier {
     private final AppDatabase db;
     private final JsonAdapter<List<AttachmentDto>> attachments;
+    @Nullable private final com.nexachat.core.crypto.E2eeSession e2eeSession;
 
     MessageStateApplier(AppDatabase db, Moshi moshi) {
+        this(db, moshi, null);
+    }
+
+    MessageStateApplier(AppDatabase db, Moshi moshi,
+            @Nullable com.nexachat.core.crypto.E2eeSession e2eeSession) {
         this.db = db;
+        this.e2eeSession = e2eeSession;
         attachments = moshi.adapter(Types.newParameterizedType(List.class, AttachmentDto.class));
     }
 
@@ -61,7 +68,8 @@ final class MessageStateApplier {
         else db.messageDao().update(row).blockingAwait();
         db.conversationDao().updateLastMessage(conversation, row.getSeq(),
                 Objects.requireNonNullElse(row.getContent(), row.getType()),
-                Objects.requireNonNullElse(row.getSenderDisplayName(), ""), row.getCreatedAt()).blockingAwait();
+                Objects.requireNonNullElse(row.getSenderDisplayName(), ""), row.getCreatedAt(),
+                row.isEncrypted()).blockingAwait();
         if (row.getDeletedAtEpochMs() != null) {
             cleanupDelete(row);
         } else {
@@ -119,15 +127,22 @@ final class MessageStateApplier {
 
     private MessageEntity toEntity(MessageDto dto, String conversation, long generation) {
         boolean deleted = dto.getDeletedAt() != null && !dto.getDeletedAt().isBlank();
+        com.nexachat.core.crypto.E2eeMessageMapping.Resolved resolved = deleted
+                ? new com.nexachat.core.crypto.E2eeMessageMapping.Resolved("", false, false)
+                : com.nexachat.core.crypto.E2eeMessageMapping.resolve(dto, conversation, null,
+                        e2eeSession);
+        boolean replyToEncrypted = com.nexachat.core.crypto.E2eeMessageMapping
+                .replyTargetEncrypted(dto.getReplyTo());
         return new MessageEntity(dto.getId(), conversation, dto.getSeq() == null ? 0 : dto.getSeq(),
                 Optional.ofNullable(dto.getResolvedSenderId()).orElse(""), dto.getResolvedSenderName(),
-                dto.getResolvedType(), deleted ? "" : dto.getContent(), dto.getClientMessageId(),
+                dto.getResolvedType(), deleted ? "" : resolved.content(), dto.getClientMessageId(),
                 dto.getResolvedReplyToId(), dto.getReplyTo() == null ? null : dto.getReplyTo().getResolvedSenderName(),
-                dto.getReplyTo() == null ? null : dto.getReplyTo().getResolvedSnippet(),
+                dto.getReplyTo() == null || replyToEncrypted ? null : dto.getReplyTo().getResolvedSnippet(),
                 TimeAndJwt.isoToEpochMs(dto.getCreatedAt()),
                 deleted || dto.getAttachments().isEmpty() ? null : attachments.toJson(dto.getAttachments()),
                 TimeAndJwt.isoToEpochMsOrNull(dto.getEditedAt()), TimeAndJwt.isoToEpochMsOrNull(dto.getDeletedAt()),
                 deleted ? "[]" : MessageMentionCodec.encode(dto.getMentions()), !deleted && dto.isMentionAll(),
-                dto.getChangeVersion() == null ? 0 : dto.getChangeVersion(), generation);
+                dto.getChangeVersion() == null ? 0 : dto.getChangeVersion(), generation,
+                resolved.encrypted(), resolved.decryptFailed(), replyToEncrypted);
     }
 }

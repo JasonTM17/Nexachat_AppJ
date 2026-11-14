@@ -1528,7 +1528,8 @@ public final class ConversationRepositoryTest {
 
         @Override
         public Completable updateLastMessage(
-                String conversationId, long seq, String content, String senderName, long at) {
+                String conversationId, long seq, String content, String senderName, long at,
+                boolean encrypted) {
             return Completable.fromAction(() -> {
                 ConversationEntity row = rows.get(conversationId);
                 if (row != null && seq > row.getLastMessageSeq()) {
@@ -1536,6 +1537,11 @@ public final class ConversationRepositoryTest {
                 }
                 publish();
             });
+        }
+
+        @Override
+        public Completable updateE2eeEnabled(String conversationId, boolean enabled) {
+            return Completable.complete();
         }
 
         @Override

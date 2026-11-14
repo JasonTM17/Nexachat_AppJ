@@ -6,6 +6,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -469,7 +470,7 @@ public final class SyncAndOutboxRegressionTest {
         when(messageDao.byId(anyString())).thenReturn(Maybe.empty());
         when(messageDao.upsertAll(anyList())).thenReturn(Completable.complete());
         when(conversationDao.incrementUnread(anyString(), anyInt())).thenReturn(Completable.complete());
-        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong()))
+        when(conversationDao.updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong(), anyBoolean()))
                 .thenReturn(Completable.complete());
 
         when(messageDao.getAllMaxSeqs()).thenReturn(Single.just(List.of(new ConversationWatermark("c1", 10L))));
@@ -538,7 +539,7 @@ public final class SyncAndOutboxRegressionTest {
         observer.assertComplete();
 
         // When newMessages is empty: updateLastMessage is NEVER called on conversationDao
-        verify(conversationDao, never()).updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong());
+        verify(conversationDao, never()).updateLastMessage(anyString(), anyLong(), anyString(), anyString(), anyLong(), anyBoolean());
 
         // Note that lastMessageSeq in conversations table is never advanced when there are no new messages,
         // so conversationDao.getAllWatermarks() will remain at its old value!

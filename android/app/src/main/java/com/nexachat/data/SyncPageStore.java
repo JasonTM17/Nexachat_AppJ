@@ -22,11 +22,16 @@ final class SyncPageStore {
     private volatile long legacyEpoch = Long.MIN_VALUE;
 
     SyncPageStore(AppDatabase db, TokenRefresher refresher, TokenStore tokens, Moshi moshi) {
+        this(db, refresher, tokens, moshi, null);
+    }
+
+    SyncPageStore(AppDatabase db, TokenRefresher refresher, TokenStore tokens, Moshi moshi,
+            @androidx.annotation.Nullable com.nexachat.core.crypto.E2eeSession e2eeSession) {
         this.db = db;
         this.refresher = refresher;
         this.tokens = tokens;
         this.moshi = moshi;
-        messages = new MessageStateApplier(db, moshi);
+        messages = new MessageStateApplier(db, moshi, e2eeSession);
     }
 
     SyncCursorEntity read(String owner, String conversation) {

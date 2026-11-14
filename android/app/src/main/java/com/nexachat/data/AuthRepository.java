@@ -34,6 +34,7 @@ import com.nexachat.notification.ReminderNotifications;
 import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
@@ -71,6 +72,25 @@ public final class AuthRepository {
     @Nullable private final Moshi moshi;
     @Nullable private final LoginNotice loginNotice;
     @Nullable private final ServerWakeGate serverWakeGate;
+    @Nullable private final com.nexachat.core.crypto.E2eeSession e2eeSession;
+
+    /** Test seam without E2EE; production wiring uses the injected constructor. */
+    public AuthRepository(
+            @NonNull AuthApi authApi,
+            @NonNull UserApi userApi,
+            @NonNull TokenStore tokenStore,
+            @NonNull SessionEvents sessionEvents,
+            @NonNull TokenRefresher tokenRefresher,
+            @NonNull DeviceTokenRegistrationManager deviceTokenRegistrationManager,
+            @NonNull AccountDataCleaner accountDataCleaner,
+            @NonNull MediaCacheCleaner mediaCacheCleaner,
+            @NonNull Moshi moshi,
+            @NonNull LoginNotice loginNotice,
+            @NonNull ServerWakeGate serverWakeGate) {
+        this(authApi, userApi, tokenStore, sessionEvents, tokenRefresher,
+                deviceTokenRegistrationManager, accountDataCleaner, mediaCacheCleaner,
+                moshi, loginNotice, serverWakeGate, null);
+    }
 
     @Inject
     public AuthRepository(
@@ -84,7 +104,8 @@ public final class AuthRepository {
             @NonNull MediaCacheCleaner mediaCacheCleaner,
             @NonNull Moshi moshi,
             @NonNull LoginNotice loginNotice,
-            @NonNull ServerWakeGate serverWakeGate) {
+            @NonNull ServerWakeGate serverWakeGate,
+            @Nullable com.nexachat.core.crypto.E2eeSession e2eeSession) {
         this.authApi = Objects.requireNonNull(authApi, "authApi");
         this.userApi = Objects.requireNonNull(userApi, "userApi");
         this.tokenStore = Objects.requireNonNull(tokenStore, "tokenStore");
@@ -97,6 +118,7 @@ public final class AuthRepository {
         this.moshi = Objects.requireNonNull(moshi, "moshi");
         this.loginNotice = Objects.requireNonNull(loginNotice, "loginNotice");
         this.serverWakeGate = Objects.requireNonNull(serverWakeGate, "serverWakeGate");
+        this.e2eeSession = e2eeSession;
     }
 
     /** Preserves the narrow constructor used by local auth repository tests. */
@@ -119,6 +141,7 @@ public final class AuthRepository {
         this.moshi = null;
         this.loginNotice = null;
         this.serverWakeGate = null;
+        this.e2eeSession = null;
     }
 
     /** Focused constructor for tests that exercise the readiness gate before login. */
@@ -142,6 +165,7 @@ public final class AuthRepository {
         this.moshi = null;
         this.loginNotice = null;
         this.serverWakeGate = Objects.requireNonNull(serverWakeGate, "serverWakeGate");
+        this.e2eeSession = null;
     }
 
     /** Preserves the narrow constructor used by local auth repository tests. */
@@ -165,6 +189,7 @@ public final class AuthRepository {
         this.moshi = Objects.requireNonNull(moshi, "moshi");
         this.loginNotice = null;
         this.serverWakeGate = null;
+        this.e2eeSession = null;
     }
 
     AuthRepository(
@@ -188,6 +213,7 @@ public final class AuthRepository {
         this.moshi = null;
         this.loginNotice = Objects.requireNonNull(loginNotice, "loginNotice");
         this.serverWakeGate = null;
+        this.e2eeSession = null;
     }
 
     /** Preserves the narrow constructor used by local auth repository tests. */
@@ -209,6 +235,7 @@ public final class AuthRepository {
         this.moshi = null;
         this.loginNotice = null;
         this.serverWakeGate = null;
+        this.e2eeSession = null;
     }
 
     /** Hilt also installs this at splash restore, including after a process restart. */
@@ -274,6 +301,8 @@ public final class AuthRepository {
                         if (accountDataCleaner != null) accountDataCleaner.scheduleOutbox();
                         return deviceTokenRegistrationManager.onSessionAvailable()
                                 .onErrorComplete()
+                                .andThen(e2eeSession == null ? Completable.complete()
+                                        : e2eeSession.onSessionAvailable().onErrorComplete())
                                 .andThen(Single.just(result));
                     }
                     return Single.just(result);
@@ -312,7 +341,15 @@ public final class AuthRepository {
                             : ApiResult.safeApiCall(authApi.logout(
                                     logoutRequest(tokens.get().getRefreshToken())))
                                     .ignoreElement().onErrorComplete();
+                    Completable revokeDevice = tokens.isEmpty() || e2eeSession == null
+                            ? Completable.complete()
+                            : Maybe.fromCallable(() -> TimeAndJwt.userIdFromJwt(
+                                            tokens.get().getAccessToken(), moshi))
+                                    .flatMapCompletable(userId ->
+                                            e2eeSession.revokeCurrentDevice(userId))
+                                    .onErrorComplete();
                     return Completable.fromAction(tokenRefresher::onLogout)
+                            .andThen(revokeDevice)
                             .andThen(clearAndFinishLogout(deviceTokenRegistrationManager.onLogout()
                                     .onErrorComplete()
                                     .andThen(revoke)
@@ -564,6 +601,8 @@ public final class AuthRepository {
                                 attemptBoundary);
                 return establishSession
                         .andThen(deviceTokenRegistrationManager.onSessionAvailable().onErrorComplete())
+                        .andThen(e2eeSession == null ? Completable.complete()
+                                : e2eeSession.onSessionAvailable().onErrorComplete())
                         .andThen(Single.just(result));
             }));
         }).subscribeOn(Schedulers.io());
@@ -574,9 +613,12 @@ public final class AuthRepository {
     }
 
     private Completable clearAndFinishLogout(Completable finishBoundary, boolean clearOutbox) {
+        Completable wipe = e2eeSession == null
+                ? Completable.complete()
+                : Completable.fromAction(e2eeSession::wipeCurrent);
         return accountDataCleaner == null
-                ? finishBoundary
-                : accountDataCleaner.clearForLogout(finishBoundary, clearOutbox);
+                ? wipe.andThen(finishBoundary)
+                : accountDataCleaner.clearForLogout(wipe.andThen(finishBoundary), clearOutbox);
     }
 
     @NonNull

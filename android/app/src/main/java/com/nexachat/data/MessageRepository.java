@@ -4,6 +4,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.crypto.E2eeMessageMapping;
+import com.nexachat.core.crypto.E2eeSession;
 import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.ConversationEntity;
 import com.nexachat.core.database.AppDatabase;
@@ -106,6 +108,11 @@ public final class MessageRepository {
     public static final String ERROR_RATE_LIMITED = "RATE_LIMITED";
     public static final String ERROR_NOT_MEMBER = "NOT_MEMBER";
     public static final String ERROR_CONVERSATION_NOT_FOUND = "CONVERSATION_NOT_FOUND";
+    /** Server send-validation codes for the E2EE flow; see docs/e2ee.md. */
+    public static final String ERROR_E2EE_REQUIRED = "E2EE_REQUIRED";
+    public static final String ERROR_E2EE_NOT_ENABLED = "E2EE_NOT_ENABLED";
+    public static final String ERROR_E2EE_STALE_DEVICES = "E2EE_STALE_DEVICES";
+    public static final String ERROR_E2EE_MEDIA_UNSUPPORTED = "E2EE_MEDIA_UNSUPPORTED";
     public static final String ERROR_INTERNAL = "INTERNAL_ERROR";
     public static final long RATE_LIMIT_RETRY_DELAY_MS = 10_000L;
     /** Envelope keys that may wrap the id list returned by {@code GET /pins}. */
@@ -126,6 +133,7 @@ public final class MessageRepository {
     private final TokenStore tokenStore;
     private final SessionEvents sessionEvents;
     @Nullable private final EphemeralStateRouter ephemeralRouter;
+    @Nullable private final E2eeSession e2eeSession;
     private final SessionOperationTracker operationTracker;
     private final Moshi moshi;
     private final JsonAdapter<List<AttachmentDto>> attachmentsAdapter;
@@ -166,11 +174,11 @@ public final class MessageRepository {
             OfflineOutboxDao offlineOutboxDao, OfflineActionApi offlineActionApi,
             OfflineOutboxScheduler offlineOutboxScheduler,
             SessionOperationTracker operationTracker, NetworkMonitor networkMonitor,
-            EphemeralStateRouter ephemeralRouter) {
+            EphemeralStateRouter ephemeralRouter, E2eeSession e2eeSession) {
         this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
                 session, tokenStore, sessionEvents, moshi, Schedulers.computation(),
                 appDatabase, offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
-                operationTracker, networkMonitor, ephemeralRouter, syncEngine);
+                operationTracker, networkMonitor, ephemeralRouter, syncEngine, e2eeSession);
     }
 
     /** Package constructor lets deterministic Rx tests control the rate-limit clock. */
@@ -266,6 +274,22 @@ public final class MessageRepository {
             OfflineActionApi offlineActionApi, @Nullable OfflineOutboxScheduler offlineOutboxScheduler,
             SessionOperationTracker operationTracker, @Nullable NetworkMonitor networkMonitor,
             @Nullable EphemeralStateRouter ephemeralRouter, @Nullable SyncEngine syncEngine) {
+        this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
+                session, tokenStore, sessionEvents, moshi, timerScheduler, appDatabase,
+                offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
+                operationTracker, networkMonitor, ephemeralRouter, syncEngine, null);
+    }
+
+    MessageRepository(MessageApi messageApi, MessageDao messageDao,
+            ConversationDao conversationDao, OutboxDao outboxDao, ReactionDao reactionDao,
+            PinDao pinDao, RealtimeSession session, TokenStore tokenStore,
+            SessionEvents sessionEvents, Moshi moshi, Scheduler timerScheduler,
+            AppDatabase appDatabase, OfflineOutboxDao offlineOutboxDao,
+            OfflineActionApi offlineActionApi, @Nullable OfflineOutboxScheduler offlineOutboxScheduler,
+            SessionOperationTracker operationTracker, @Nullable NetworkMonitor networkMonitor,
+            @Nullable EphemeralStateRouter ephemeralRouter, @Nullable SyncEngine syncEngine,
+            @Nullable E2eeSession e2eeSession) {
+        this.e2eeSession = e2eeSession;
         this.messageApi = messageApi;
         this.messageDao = messageDao;
         this.conversationDao = conversationDao;
@@ -943,10 +967,8 @@ public final class MessageRepository {
             return outboxDao.delete(entry.getClientMessageId(), ownerUserId)
                     .andThen(Completable.fromAction(this::emitNotMember));
         }
-        return Completable.fromAction(session::ensureConnected).andThen(Completable.defer(() -> {
-            SendMessageRequest request = new SendMessageRequest(entry.getClientMessageId(), entry.getType(),
-                    entry.getContent(), entry.getReplyToId(), attachmentIds(entry),
-                    MessageMentionCodec.decode(entry.getMentionsJson()), entry.isMentionAll());
+        return Completable.fromAction(session::ensureConnected).andThen(Completable.defer(() ->
+                prepareSendRequest(entry, ownerUserId, false).flatMapCompletable(request -> {
             if (!workerAttempt && session.sendMessage(entry.getConversationId(), request)) {
                 return Completable.complete();
             }
@@ -960,34 +982,126 @@ public final class MessageRepository {
                             (MessageDto) success.getValue());
                 }
                 ApiError error = ((Result.Failure<?>) result).getError();
-                boolean rateLimited = error instanceof ApiError.RateLimited;
-                boolean transientFailure = error instanceof ApiError.Network
-                        || rateLimited
-                        || (error instanceof ApiError.Unknown unknown
-                                && (unknown.getHttpStatus() >= 500
-                                        || ERROR_INTERNAL.equals(unknown.getCode())));
-                if (transientFailure) {
-                    if (workerAttempt) {
-                        return Completable.error(new IOException("outbox delivery will retry"));
-                    }
-                    if (rateLimited) scheduleRateLimitRetry();
-                    if (offlineOutboxScheduler != null) offlineOutboxScheduler.schedule();
-                    return Completable.complete();
+                String e2eeCode = error instanceof ApiError.Unknown unknown
+                        ? unknown.getCode() : null;
+                if (ERROR_E2EE_STALE_DEVICES.equals(e2eeCode)) {
+                    // The member-device list changed mid-send: refresh and retry once.
+                    return Completable.fromAction(() -> {
+                                if (e2eeSession != null) {
+                                    e2eeSession.invalidateDevices(entry.getConversationId());
+                                }
+                            })
+                            .andThen(prepareSendRequest(entry, ownerUserId, true))
+                            .flatMapCompletable(retry ->
+                                    call(messageApi.sendMessage(entry.getConversationId(), retry))
+                                            .flatMapCompletable(retryResult ->
+                                                    completeSend(entry, ownerUserId, retryResult, workerAttempt)));
                 }
-                if (error instanceof ApiError.Unknown unknown
-                        && (ERROR_NOT_MEMBER.equals(unknown.getCode())
-                        || ERROR_CONVERSATION_NOT_FOUND.equals(unknown.getCode()))) {
-                    removedConversations.add(entry.getConversationId());
-                    interactionEvents.onNext(new ApiError.Unknown(ERROR_NOT_MEMBER));
-                } else if (error instanceof ApiError.Unknown unknown
-                        && (ERROR_VALIDATION_FAILED.equals(unknown.getCode())
-                        || ERROR_NOT_ADMIN.equals(unknown.getCode()))) {
-                    interactionEvents.onNext(unknown);
+                if (ERROR_E2EE_REQUIRED.equals(e2eeCode)) {
+                    // The flag flipped on after this message queued: re-read it, encrypt, retry.
+                    return e2eeRefreshFlag(entry.getConversationId())
+                            .andThen(prepareSendRequest(entry, ownerUserId, true))
+                            .flatMapCompletable(retry ->
+                                    call(messageApi.sendMessage(entry.getConversationId(), retry))
+                                            .flatMapCompletable(retryResult ->
+                                                    completeSend(entry, ownerUserId, retryResult,
+                                                            workerAttempt)));
                 }
-                return outboxDao.updateState(entry.getClientMessageId(), ownerUserId,
-                        OutboxState.FAILED);
+                if (ERROR_E2EE_NOT_ENABLED.equals(e2eeCode)) {
+                    // The flag flipped off: refresh the row and resend plaintext when the
+                    // server confirms the conversation is now unencrypted.
+                    return e2eeRefreshFlag(entry.getConversationId())
+                            .andThen(prepareSendRequest(entry, ownerUserId, true))
+                            .flatMapCompletable(retry ->
+                                    call(messageApi.sendMessage(entry.getConversationId(), retry))
+                                            .flatMapCompletable(retryResult ->
+                                                    completeSend(entry, ownerUserId, retryResult, workerAttempt)));
+                }
+                return completeSend(entry, ownerUserId, result, workerAttempt);
             });
-        }));
+        })));
+    }
+
+    /**
+     * Maps the outbox row to the wire request, encrypting via {@link E2eeSession}
+     * when the conversation row says E2EE is enabled. {@code forced} is set by
+     * the retry paths after a fresh device list or flag, bypassing the cached
+     * entity so a stale flag cannot loop the same failure.
+     */
+    private Single<SendMessageRequest> prepareSendRequest(
+            OutboxEntity entry, String ownerUserId, boolean forced) {
+        SendMessageRequest base = new SendMessageRequest(entry.getClientMessageId(), entry.getType(),
+                entry.getContent(), entry.getReplyToId(), attachmentIds(entry),
+                MessageMentionCodec.decode(entry.getMentionsJson()), entry.isMentionAll());
+        if (e2eeSession == null || entry.getContent() == null || entry.getContent().isBlank()) {
+            return Single.just(base);
+        }
+        return conversationDao.byId(entry.getConversationId())
+                .map(ConversationEntity::isE2eeEnabled)
+                .defaultIfEmpty(false)
+                .flatMap(enabled -> {
+                    if (!enabled) return Single.just(base);
+                    return e2eeSession.encryptFor(entry.getConversationId(), entry.getContent(),
+                                    ownerUserId, entry.getClientMessageId())
+                            .map(encrypted -> base.withContent(encrypted.content())
+                                    .withEncryption("E2EE_V1",
+                                            toEnvelopeDtos(encrypted.envelopes())));
+                });
+    }
+
+    /** Re-reads the server E2EE flag into the local conversation row. */
+    private Completable e2eeRefreshFlag(String conversationId) {
+        if (e2eeSession == null) return Completable.complete();
+        return e2eeSession.e2eeState(conversationId)
+                .flatMapCompletable(state -> conversationDao.updateE2eeEnabled(
+                        conversationId, state.isEnabled()))
+                .onErrorComplete();
+    }
+
+    private static List<com.nexachat.core.network.dto.E2eeEnvelopeDto> toEnvelopeDtos(
+            List<com.nexachat.core.crypto.E2eeCrypto.Envelope> envelopes) {
+        List<com.nexachat.core.network.dto.E2eeEnvelopeDto> out = new ArrayList<>(envelopes.size());
+        for (com.nexachat.core.crypto.E2eeCrypto.Envelope envelope : envelopes) {
+            out.add(new com.nexachat.core.network.dto.E2eeEnvelopeDto(
+                    envelope.deviceId(), envelope.wrappedKey()));
+        }
+        return out;
+    }
+
+    /** Terminal send handling: acknowledge on success, classify the failure. */
+    private Completable completeSend(OutboxEntity entry, String ownerUserId, Result<?> result, boolean workerAttempt) {
+        if (result instanceof Result.Success<?> success) {
+            return acknowledge(ownerUserId, entry.getConversationId(),
+                    (MessageDto) success.getValue());
+        }
+        ApiError error = ((Result.Failure<?>) result).getError();
+        boolean rateLimited = error instanceof ApiError.RateLimited;
+        boolean transientFailure = error instanceof ApiError.Network
+                || rateLimited
+                || (error instanceof ApiError.Unknown unknown
+                        && (unknown.getHttpStatus() >= 500
+                                || ERROR_INTERNAL.equals(unknown.getCode())));
+        if (transientFailure) {
+            if (workerAttempt) {
+                return Completable.error(new IOException("outbox delivery will retry"));
+            }
+            if (rateLimited) scheduleRateLimitRetry();
+            if (offlineOutboxScheduler != null) offlineOutboxScheduler.schedule();
+            return Completable.complete();
+        }
+        if (error instanceof ApiError.Unknown unknown
+                && (ERROR_NOT_MEMBER.equals(unknown.getCode())
+                || ERROR_CONVERSATION_NOT_FOUND.equals(unknown.getCode()))) {
+            removedConversations.add(entry.getConversationId());
+            interactionEvents.onNext(new ApiError.Unknown(ERROR_NOT_MEMBER));
+        } else if (error instanceof ApiError.Unknown unknown
+                && (ERROR_VALIDATION_FAILED.equals(unknown.getCode())
+                || ERROR_NOT_ADMIN.equals(unknown.getCode())
+                || ERROR_E2EE_MEDIA_UNSUPPORTED.equals(unknown.getCode()))) {
+            interactionEvents.onNext(unknown);
+        }
+        return outboxDao.updateState(entry.getClientMessageId(), ownerUserId,
+                OutboxState.FAILED);
     }
 
     private List<String> attachmentIds(OutboxEntity entry) {
@@ -1213,7 +1327,7 @@ public final class MessageRepository {
             boolean openHere = Objects.equals(activeConversation.get(), entity.getConversationId());
             Completable update = conversationDao.updateLastMessage(entity.getConversationId(), entity.getSeq(),
                     entity.getContent() != null ? entity.getContent() : entity.getType(),
-                    entity.getSenderDisplayName(), entity.getCreatedAt());
+                    entity.getSenderDisplayName(), entity.getCreatedAt(), entity.isEncrypted());
             if (!mine && !openHere) update = update.andThen(conversationDao.incrementUnread(entity.getConversationId(), 1));
             if (!mine && openHere) update = update.andThen(sendRead(entity.getConversationId(), entity.getSeq()));
             return update;
@@ -1747,7 +1861,8 @@ public final class MessageRepository {
                 row.getClientMessageId(), DeliveryStatus.SENT, Objects.equals(row.getSenderId(), myId),
                 attachments(row.getAttachmentsJson()), reactions, row.getEditedAtEpochMs(),
                 row.getDeletedAtEpochMs(), MessageMentionCodec.decode(row.getMentionsJson()),
-                row.isMentionAll());
+                row.isMentionAll(), row.isEncrypted(), row.isDecryptFailed(),
+                row.isReplyToEncrypted());
     }
 
     private ChatMessage toChatMessage(OutboxEntity row) {
@@ -1775,17 +1890,22 @@ public final class MessageRepository {
             try { attachmentsJson = attachmentsAdapter.toJson(dto.getAttachments()); }
             catch (RuntimeException ignored) { attachmentsJson = null; }
         }
+        E2eeMessageMapping.Resolved resolved = deleted
+                ? new E2eeMessageMapping.Resolved("", false, false)
+                : E2eeMessageMapping.resolve(dto, conversationId, null, e2eeSession);
+        boolean replyToEncrypted = E2eeMessageMapping.replyTargetEncrypted(dto.getReplyTo());
         return new MessageEntity(dto.getId(), conversationId, dto.getSeq() == null ? 0L : dto.getSeq(),
                 Optional.ofNullable(dto.getResolvedSenderId()).orElse(""), dto.getResolvedSenderName(),
-                dto.getResolvedType(), deleted ? "" : dto.getContent(), dto.getClientMessageId(),
+                dto.getResolvedType(), deleted ? "" : resolved.content(), dto.getClientMessageId(),
                 dto.getResolvedReplyToId(), dto.getReplyTo() == null ? null : dto.getReplyTo().getResolvedSenderName(),
-                dto.getReplyTo() == null ? null : dto.getReplyTo().getResolvedSnippet(),
+                dto.getReplyTo() == null || replyToEncrypted ? null : dto.getReplyTo().getResolvedSnippet(),
                 TimeAndJwt.isoToEpochMs(dto.getCreatedAt()), attachmentsJson,
                 TimeAndJwt.isoToEpochMsOrNull(dto.getEditedAt()), TimeAndJwt.isoToEpochMsOrNull(dto.getDeletedAt()),
                 deleted ? "[]" : MessageMentionCodec.encode(dto.getMentions()),
-                !deleted && dto.isMentionAll()).withSyncVersion(
-                        dto.getChangeVersion() == null ? 0 : dto.getChangeVersion(),
-                        dto.getGeneration() == null ? 0 : dto.getGeneration());
+                !deleted && dto.isMentionAll(),
+                dto.getChangeVersion() == null ? 0 : dto.getChangeVersion(),
+                dto.getGeneration() == null ? 0 : dto.getGeneration(),
+                resolved.encrypted(), resolved.decryptFailed(), replyToEncrypted);
     }
 
     /** Parses attachmentsJson; missing, blank, or malformed data becomes an empty list. */
