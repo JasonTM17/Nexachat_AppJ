@@ -10,13 +10,14 @@
         android:layout_width="0dp"
         android:layout_height="1dp"
         android:layout_weight="1"
-        android:background="?attr/colorOutlineVariant" />
+        android:background="?attr/colorSurfaceContainerHighest" />
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="@dimen/space_inset"
         android:text="@string/auth_or_divider"
+        android:textAllCaps="true"
         android:textAppearance="?attr/textAppearanceLabelSmall"
         android:textColor="?attr/colorOnSurfaceVariant" />
 
@@ -24,5 +25,5 @@
         android:layout_width="0dp"
         android:layout_height="1dp"
         android:layout_weight="1"
-        android:background="?attr/colorOutlineVariant" />
+        android:background="?attr/colorSurfaceContainerHighest" />
 </LinearLayout>

@@ -44,12 +44,9 @@
           android:layout_marginTop="@dimen/space_md"
           android:layout_marginBottom="@dimen/space_lg"
           android:accessibilityHeading="true"
-          android:fontFamily="@font/manrope"
           android:text="@string/complete_profile_title"
           android:textAppearance="?attr/textAppearanceHeadlineMedium"
-          android:textColor="?attr/colorOnSurface"
-          android:textFontWeight="700"
-          tools:targetApi="p" />
+          android:textColor="?attr/colorOnSurface" />
 
         <com.nexachat.core.ui.components.AvatarView
           android:id="@+id/completeProfileAvatar"
@@ -158,7 +155,7 @@
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
           android:layout_marginTop="@dimen/space_lg"
-          android:minHeight="56dp"
+          android:minHeight="48dp"
           android:text="@string/action_continue"
           android:textStyle="bold"
           app:cornerRadius="@dimen/corner_md" />

@@ -18,6 +18,14 @@ public final class ActiveNowPeerRules {
         return fontScale >= 1.3f ? 2 : 1;
     }
 
+    public static int captionWidthDp(float fontScale) {
+        return fontScale >= 1.5f ? 96 : 72;
+    }
+
+    public static boolean yourStatusCaptionEllipsizes(float fontScale) {
+        return fontScale < 1.5f;
+    }
+
     @NonNull
     public static List<ConversationSummary> selectOnlineDirectPeers(
             @NonNull List<ConversationSummary> rows) {
