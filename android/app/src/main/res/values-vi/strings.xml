@@ -169,6 +169,7 @@
     <string name="e2ee_safety_code_title">Mã đối chiếu khóa thiết bị</string>
     <string name="e2ee_safety_code_body">Chỉ dùng đối chiếu với %1$s. Trùng mã không xác thực người gửi nếu máy chủ bị xâm nhập.</string>
     <string name="e2ee_devices_title">Thiết bị</string>
+    <string name="e2ee_directory_incomplete">Một số thiết bị chưa thể hiển thị</string>
     <string name="e2ee_error_peer_not_ready">%1$s cần cập nhật NexaChat trước</string>
     <string name="e2ee_error_unsupported">Mã hóa chỉ khả dụng trong trò chuyện trực tiếp.</string>
     <string name="e2ee_error_limit">Đã đạt giới hạn thiết bị. Hãy xóa một thiết bị trước.</string>
