@@ -41,7 +41,7 @@ public final class GroupAddMemberEmptyStateTest {
         assertTrue(source.contains("addMemberEmpty.setVisibility"));
         assertTrue(source.contains("addMemberInviteLink.setVisibility"));
         assertTrue(source.contains("addMemberConfirm.setVisibility"));
-        assertTrue(source.contains("openInviteManager"));
+        assertTrue(source.contains("addMemberInviteLink.setOnClickListener"));
     }
 
     private static Document loadSheet() throws Exception {
