@@ -75,11 +75,11 @@ public final class InboxThemeContrastTest {
     }
 
     /**
-     * Checked inbox filter chips use the shared brand fill and on-fill roles in
-     * both themes; the night primary remains an accent for text, icons and strokes.
+     * Checked inbox filter chips use the tonal primary-container and on-container
+     * roles in both themes; the pressed checked fill stays a container step darker.
      */
     @Test
-    public void checkedFilterChipTextOnPrimaryMeetsContrast() throws Exception {
+    public void checkedFilterChipTextOnTonalContainerMeetsContrast() throws Exception {
         Document styles = DocumentBuilderFactory.newInstance()
                 .newDocumentBuilder()
                 .parse(new File(resDir, "values/styles_nexachat.xml"));
@@ -99,10 +99,10 @@ public final class InboxThemeContrastTest {
                 filterStyle, "chipBackgroundColor", true, true);
         Map<String, String> light = loadThemeColors(false);
         Map<String, String> dark = loadThemeColors(true);
-        assertPair(dark, textName, "brand_fill", 4.5);
-        assertPair(light, textName, "brand_fill", 4.5);
-        assertEquals("checked filter label must use the on-fill token",
-                "brand_on_fill", textName);
+        assertEquals("checked filter label must use the on-container token",
+                "colorOnPrimaryContainer", textName);
+        assertPair(light, textName, "colorPrimaryContainer", 4.5);
+        assertPair(dark, textName, "colorPrimaryContainer", 4.5);
         assertPair(light, textName, pressedFillName, 4.5);
         assertPair(dark, textName, pressedFillName, 4.5);
     }

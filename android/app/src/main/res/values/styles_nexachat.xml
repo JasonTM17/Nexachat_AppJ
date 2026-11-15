@@ -69,7 +69,7 @@
         <item name="iconPadding">@dimen/space_sm</item>
         <item name="backgroundTint">@color/nexa_filled_button_bg</item>
         <item name="android:textColor">@color/nexa_filled_button_text</item>
-        <item name="rippleColor">@android:color/transparent</item>
+        <item name="rippleColor">@color/nexa_filled_button_ripple</item>
     </style>
 
     <style name="Widget.NexaChat.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
@@ -98,11 +98,12 @@
         <item name="rippleColor">@color/nexa_button_ripple</item>
     </style>
 
-    <style name="Widget.NexaChat.TextInputLayout" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+    <style name="Widget.NexaChat.TextInputLayout" parent="Widget.Material3.TextInputLayout.FilledBox">
+        <item name="boxBackgroundColor">@color/colorSurfaceContainerHigh</item>
         <item name="boxCornerRadiusTopStart">@dimen/corner_md</item>
         <item name="boxCornerRadiusTopEnd">@dimen/corner_md</item>
-        <item name="boxCornerRadiusBottomStart">@dimen/corner_md</item>
-        <item name="boxCornerRadiusBottomEnd">@dimen/corner_md</item>
+        <item name="boxCornerRadiusBottomStart">0dp</item>
+        <item name="boxCornerRadiusBottomEnd">0dp</item>
         <item name="boxStrokeWidth">@dimen/control_stroke_width</item>
         <item name="boxStrokeWidthFocused">@dimen/focus_stroke_width</item>
         <item name="android:minHeight">56dp</item>
@@ -110,20 +111,20 @@
 
     <style name="Widget.NexaChat.Chip.Filter" parent="Widget.Material3.Chip.Filter">
         <item name="checkedIconVisible">true</item>
-        <item name="chipCornerRadius">@dimen/corner_full</item>
+        <item name="chipCornerRadius">@dimen/corner_sm</item>
         <item name="chipBackgroundColor">@color/nexa_filter_chip_bg</item>
         <item name="android:textColor">@color/nexa_filter_chip_text</item>
         <item name="checkedIconTint">@color/nexa_filter_chip_text</item>
         <item name="chipStrokeColor">@color/stitch_chip_stroke_color</item>
         <item name="chipStrokeWidth">@dimen/control_stroke_width</item>
-        <item name="chipMinHeight">32dp</item>
+        <item name="chipMinHeight">@dimen/chip_min_height</item>
         <item name="android:minHeight">@dimen/min_touch_target</item>
         <item name="chipMinTouchTargetSize">@dimen/min_touch_target</item>
         <item name="ensureMinTouchTargetSize">true</item>
         <item name="android:textAppearance">@style/TextAppearance.NexaChat.LabelLarge</item>
         <item name="chipStartPadding">12dp</item>
         <item name="chipEndPadding">12dp</item>
-        <item name="rippleColor">@android:color/transparent</item>
+        <item name="rippleColor">@color/nexa_button_ripple</item>
     </style>
 
     <style name="Widget.NexaChat.Button.Google" parent="Widget.Material3.Button.OutlinedButton">
@@ -143,8 +144,6 @@
     </style>
 
     <style name="Widget.NexaChat.TextInputLayout.Auth" parent="Widget.NexaChat.TextInputLayout">
-        <item name="boxBackgroundMode">outline</item>
-        <item name="boxBackgroundColor">@color/colorSurface</item>
         <item name="startIconTint">?attr/colorOnSurfaceVariant</item>
     </style>
 </resources>
