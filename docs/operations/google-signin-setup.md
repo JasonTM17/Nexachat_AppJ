@@ -23,8 +23,11 @@ for security rules see [docs/quality/security.md](../quality/security.md).
    - **Android** — create **two** clients:
      - **Debug** — package name `com.nexachat.debug`; register the SHA-1 of the **debug signing key** (see
        [Android OAuth fingerprints](#android-oauth-fingerprints)).
-     - **Release** — package name `com.nexachat`; register the SHA-1 of your **upload/release signing key**
-       (see [docs/release/android-release.md](../release/android-release.md)).
+     - **Release** — package name `com.nexachat`; register the SHA-1 of the key that
+       **actually signs the APK users install** — for GitHub-release APKs that is
+       the keystore in the `ANDROID_KEYSTORE_BASE64` Actions secret, not
+       necessarily a local upload keystore (see
+       [Android OAuth fingerprints](#android-oauth-fingerprints)).
      Each Android OAuth client has its own client ID string. The server does not
      read those IDs from separate env vars; list both in one place (below).
 
@@ -110,12 +113,33 @@ keytool -list -v -keystore "$env:USERPROFILE\.android\debug.keystore" -alias and
 
 Use the **SHA-1** line on the **debug** Android OAuth client in Google Cloud.
 
-**Release** (signed APK / Play-style builds): use the upload keystore from
-[docs/release/android-release.md](../release/android-release.md) (`keytool -list -v -keystore ...`).
-Use that SHA-1 on the **release** Android OAuth client.
+**Release** (signed APK / Play-style builds): Google matches the certificate of
+the **installed APK**, not any keystore on disk. Print the signer's fingerprints
+straight off the distributed APK instead of trusting a local keystore:
+
+```bash
+apksigner verify --print-certs nexachat-<version>.apk
+```
+
+Verified on the `v1.2.7` GitHub release APK — signer
+`CN=Nguyen Tien Son, O=NexaChat, C=VN`:
+
+| Digest | Fingerprint |
+|---|---|
+| SHA-1 | `94:AD:07:4D:52:AC:20:52:89:DE:00:93:68:62:12:97:68:D0:6B:D5` |
+| SHA-256 | `E7:41:9A:48:A4:9D:20:4E:55:70:60:6E:B8:33:96:8D:CD:A7:28:E2:AC:99:D7:24:3B:2C:FE:8C:15:8A:39:DF` |
+
+Register that SHA-1 on the **release** Android OAuth client. For Play
+distribution, Google Play re-signs the downloaded APK with the Play App Signing
+key — register **that** certificate's SHA-1 as well (Play Console → Setup → App
+integrity → App signing key certificate) and keep the `ANDROID_KEYSTORE_BASE64`
+key's SHA-1 for APKs installed from GitHub releases.
 
 If Google sign-in fails only on one build type, the usual cause is a missing or
-wrong SHA-1 on the matching Android OAuth client.
+wrong SHA-1 on the matching Android OAuth client. Credential Manager surfaces it
+as `NoCredentialException` (`Auth.Api.Credentials` logs `bgit: [28433]` in
+logcat) — the same exception an emulator with no Google account produces, so
+verify the registered fingerprint before assuming the account is the problem.
 
 ## Local testing
 
