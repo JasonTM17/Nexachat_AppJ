@@ -6,6 +6,7 @@ import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.crypto.E2eeMessageMapping;
 import com.nexachat.core.crypto.E2eeSession;
+import com.nexachat.core.crypto.KeysetTrustStore;
 import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.ConversationEntity;
 import com.nexachat.core.database.AppDatabase;
@@ -66,6 +67,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.inject.Inject;
@@ -113,6 +115,8 @@ public final class MessageRepository {
     public static final String ERROR_E2EE_NOT_ENABLED = "E2EE_NOT_ENABLED";
     public static final String ERROR_E2EE_STALE_DEVICES = "E2EE_STALE_DEVICES";
     public static final String ERROR_E2EE_MEDIA_UNSUPPORTED = "E2EE_MEDIA_UNSUPPORTED";
+    /** Raised locally when a verified keyset no longer matches; a terminal pause, never retried. */
+    public static final String ERROR_E2EE_KEYSET_CHANGED = "E2EE_KEYSET_CHANGED";
     public static final String ERROR_INTERNAL = "INTERNAL_ERROR";
     public static final long RATE_LIMIT_RETRY_DELAY_MS = 10_000L;
     /** Envelope keys that may wrap the id list returned by {@code GET /pins}. */
@@ -134,6 +138,7 @@ public final class MessageRepository {
     private final SessionEvents sessionEvents;
     @Nullable private final EphemeralStateRouter ephemeralRouter;
     @Nullable private final E2eeSession e2eeSession;
+    @Nullable private final KeysetTrustStore keysetTrustStore;
     private final SessionOperationTracker operationTracker;
     private final Moshi moshi;
     private final JsonAdapter<List<AttachmentDto>> attachmentsAdapter;
@@ -154,6 +159,13 @@ public final class MessageRepository {
     private final java.util.Set<String> confirmedDeleteIds = ConcurrentHashMap.newKeySet();
     /** Coalesces RATE_LIMITED responses into one delayed outbox flush. */
     private final Object rateLimitRetryLock = new Object();
+    /**
+     * Keyset-change episodes already surfaced on {@link #interactionEvents},
+     * keyed by owner:conversation with the trust record's update stamp. One
+     * roster change notifies once no matter how many queued rows pause on it;
+     * a change after re-verification carries a new stamp and notifies again.
+     */
+    private final ConcurrentHashMap<String, Long> keysetPauseNotified = new ConcurrentHashMap<>();
     private final AtomicLong lastOutboxCreatedAt = new AtomicLong();
     private final FlowableProcessor<TypingEvent> typingEvents = PublishProcessor.<TypingEvent>create().toSerialized();
     private final FlowableProcessor<ReadEvent> readEvents = PublishProcessor.<ReadEvent>create().toSerialized();
@@ -174,11 +186,13 @@ public final class MessageRepository {
             OfflineOutboxDao offlineOutboxDao, OfflineActionApi offlineActionApi,
             OfflineOutboxScheduler offlineOutboxScheduler,
             SessionOperationTracker operationTracker, NetworkMonitor networkMonitor,
-            EphemeralStateRouter ephemeralRouter, E2eeSession e2eeSession) {
+            EphemeralStateRouter ephemeralRouter, E2eeSession e2eeSession,
+            KeysetTrustStore keysetTrustStore) {
         this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
                 session, tokenStore, sessionEvents, moshi, Schedulers.computation(),
                 appDatabase, offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
-                operationTracker, networkMonitor, ephemeralRouter, syncEngine, e2eeSession);
+                operationTracker, networkMonitor, ephemeralRouter, syncEngine, e2eeSession,
+                keysetTrustStore);
     }
 
     /** Package constructor lets deterministic Rx tests control the rate-limit clock. */
@@ -277,7 +291,7 @@ public final class MessageRepository {
         this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
                 session, tokenStore, sessionEvents, moshi, timerScheduler, appDatabase,
                 offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
-                operationTracker, networkMonitor, ephemeralRouter, syncEngine, null);
+                operationTracker, networkMonitor, ephemeralRouter, syncEngine, null, null);
     }
 
     MessageRepository(MessageApi messageApi, MessageDao messageDao,
@@ -288,8 +302,9 @@ public final class MessageRepository {
             OfflineActionApi offlineActionApi, @Nullable OfflineOutboxScheduler offlineOutboxScheduler,
             SessionOperationTracker operationTracker, @Nullable NetworkMonitor networkMonitor,
             @Nullable EphemeralStateRouter ephemeralRouter, @Nullable SyncEngine syncEngine,
-            @Nullable E2eeSession e2eeSession) {
+            @Nullable E2eeSession e2eeSession, @Nullable KeysetTrustStore keysetTrustStore) {
         this.e2eeSession = e2eeSession;
+        this.keysetTrustStore = keysetTrustStore;
         this.messageApi = messageApi;
         this.messageDao = messageDao;
         this.conversationDao = conversationDao;
@@ -1016,7 +1031,7 @@ public final class MessageRepository {
                 }
                 return completeSend(entry, ownerUserId, result, workerAttempt);
             });
-        })));
+        })).onErrorResumeNext(error -> pauseOnTerminalE2eeRefusal(entry, ownerUserId, error)));
     }
 
     /**
@@ -1044,6 +1059,59 @@ public final class MessageRepository {
                                     .withEncryption("E2EE_V1",
                                             toEnvelopeDtos(encrypted.envelopes())));
                 });
+    }
+
+    /**
+     * Terminal pause for rows refused by the E2EE trust gate because the
+     * verified keyset changed. The row becomes FAILED with its content intact
+     * for a manual resend after re-verification — no automatic retry, no
+     * rate-limit reschedule, never a plaintext request. One conversation
+     * emits one notice per change episode rather than once per row; every
+     * other error propagates untouched.
+     */
+    private Completable pauseOnTerminalE2eeRefusal(
+            OutboxEntity entry, String ownerUserId, Throwable error) {
+        if (!(error instanceof E2eeSession.E2eeException)
+                || !ERROR_E2EE_KEYSET_CHANGED.equals(error.getMessage())) {
+            return Completable.error(error);
+        }
+        return emitKeysetChangedOnce(ownerUserId, entry.getConversationId())
+                .onErrorComplete()
+                .andThen(outboxDao.updateState(entry.getClientMessageId(),
+                        ownerUserId, OutboxState.FAILED));
+    }
+
+    /**
+     * Emits {@code E2EE_KEYSET_CHANGED} once per conversation per change
+     * episode. The stored trust record's update stamp identifies the episode:
+     * rows pausing on the same change share its stamp, while a change after
+     * re-verification rewrites the record with a new stamp and notifies again.
+     * A missing record means the pause can no longer be attributed — notify
+     * rather than leave the failure silent.
+     */
+    private Completable emitKeysetChangedOnce(String ownerUserId, String conversationId) {
+        if (keysetTrustStore == null) {
+            return Completable.fromAction(() -> interactionEvents.onNext(
+                    new ApiError.Unknown(ERROR_E2EE_KEYSET_CHANGED)));
+        }
+        return keysetTrustStore.state(ownerUserId, conversationId)
+                .flatMapCompletable(record -> Completable.fromAction(() -> {
+                    if (record.isEmpty()) {
+                        interactionEvents.onNext(new ApiError.Unknown(ERROR_E2EE_KEYSET_CHANGED));
+                        return;
+                    }
+                    long stamp = record.get().updatedAtMs();
+                    AtomicBoolean emit = new AtomicBoolean();
+                    keysetPauseNotified.compute(ownerUserId + ':' + conversationId,
+                            (key, previous) -> {
+                                if (previous != null && previous == stamp) return previous;
+                                emit.set(true);
+                                return stamp;
+                            });
+                    if (emit.get()) {
+                        interactionEvents.onNext(new ApiError.Unknown(ERROR_E2EE_KEYSET_CHANGED));
+                    }
+                }));
     }
 
     /** Re-reads the server E2EE flag into the local conversation row. */
@@ -1095,7 +1163,8 @@ public final class MessageRepository {
                 && (ERROR_VALIDATION_FAILED.equals(unknown.getCode())
                 || ERROR_NOT_ADMIN.equals(unknown.getCode())
                 || ERROR_E2EE_MEDIA_UNSUPPORTED.equals(unknown.getCode())
-                || ERROR_E2EE_NOT_ENABLED.equals(unknown.getCode()))) {
+                || ERROR_E2EE_NOT_ENABLED.equals(unknown.getCode())
+                || ERROR_E2EE_KEYSET_CHANGED.equals(unknown.getCode()))) {
             interactionEvents.onNext(unknown);
         }
         return outboxDao.updateState(entry.getClientMessageId(), ownerUserId,
@@ -1272,7 +1341,8 @@ public final class MessageRepository {
                     || ERROR_CONVERSATION_NOT_FOUND.equals(rejected.getCode())) {
                 interactionEvents.onNext(new ApiError.Unknown(ERROR_NOT_MEMBER));
             } else if (ERROR_VALIDATION_FAILED.equals(rejected.getCode())
-                    || ERROR_NOT_ADMIN.equals(rejected.getCode())) {
+                    || ERROR_NOT_ADMIN.equals(rejected.getCode())
+                    || ERROR_E2EE_KEYSET_CHANGED.equals(rejected.getCode())) {
                 interactionEvents.onNext(new ApiError.Unknown(rejected.getCode()));
             }
             return currentUserId().flatMapCompletable(ownerUserId ->
@@ -1854,6 +1924,7 @@ public final class MessageRepository {
         removedConversations.clear();
         pendingDeleteIds.clear();
         confirmedDeleteIds.clear();
+        keysetPauseNotified.clear();
         tokenToUser = null;
         lastOutboxCreatedAt.set(0L);
         Disposable retry = rateLimitRetry;
