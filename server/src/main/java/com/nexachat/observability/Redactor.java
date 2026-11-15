@@ -64,6 +64,18 @@ public final class Redactor {
             "(?i)(email|e-?mail|mail)\\s*[:=]\\s*['\"]?"
                     + "([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,})['\"]?");
 
+    /**
+     * Postgres constraint DETAIL values: {@code Key (col, ...)=(val, ...)}.
+     * The value list is masked up to the last {@code )} that precedes a known
+     * DETAIL continuation or the end of the line, so values containing
+     * parentheses or commas stay covered; column names are kept because they
+     * are schema metadata, not personal data.
+     */
+    private static final Pattern POSTGRES_KEY_DETAIL = Pattern.compile(
+            "(?i)\\bkey \\(([^)]*)\\)=\\((.*)\\)"
+                    + "(?= already exists\\.| is still referenced| is not present"
+                    + "| conflicts|[ \\t]*(?:\\r?\\n|$))");
+
     /** JSON message/content fields. */
     private static final Pattern CONTENT_JSON = Pattern.compile(
             "(?i)(\"content\"|\"body\"|\"text\"|\"message\")\\s*:\\s*\"[^\"]*\"");
@@ -91,6 +103,7 @@ public final class Redactor {
         result = replaceAll(OPENAI_KEY, result, REDACTED);
         result = replaceAll(PHONE_FIELD, result, "$1=" + REDACTED);
         result = replaceAll(EMAIL_FIELD, result, "$1=" + REDACTED);
+        result = replaceAll(POSTGRES_KEY_DETAIL, result, "Key ($1)=(" + REDACTED + ")");
         result = replaceAll(PHONE, result, REDACTED);
         result = replaceAll(CONTENT_JSON, result, "$1:\"" + REDACTED + "\"");
         result = replaceAll(CONTENT_PARAM, result, "$1=" + REDACTED);

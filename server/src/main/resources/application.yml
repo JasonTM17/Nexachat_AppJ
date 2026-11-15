@@ -1,6 +1,15 @@
 server:
   port: 8080
 
+logging:
+  level:
+    # Hibernate's JDBC exception logger prints the Postgres DETAIL line
+    # (Key (col)=(value)) at WARN/ERROR on constraint violations, which carries
+    # user emails and phones into logs. Every DataIntegrityViolationException
+    # path in the app is translated to a domain error — the conflict sites log
+    # only the constraint name — so this logger stays off in every profile.
+    org.hibernate.engine.jdbc.spi.SqlExceptionHelper: OFF
+
 spring:
   mail:
     host: ${MAIL_SMTP_HOST:smtp.gmail.com}

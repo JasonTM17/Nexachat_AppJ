@@ -5,6 +5,7 @@ import com.nexachat.common.dto.ErrorResponse;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -185,6 +186,18 @@ public class GlobalExceptionHandler {
         log.warn("IllegalArgumentException reached advice ({})", ex.getClass().getSimpleName());
         return ResponseEntity.badRequest().body(ErrorResponse.of(
                 ApiErrorCode.VALIDATION_FAILED, "Invalid request"));
+    }
+
+    /**
+     * Integrity violations that reach the advice are unexpected, so they keep
+     * the generic 500 — but the constraint name is logged because the exception
+     * message can embed the offending column values.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        log.error("Unhandled data integrity violation (constraint={})", ConstraintNames.of(ex));
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ErrorResponse.of(
+                ApiErrorCode.INTERNAL_ERROR, "Internal server error"));
     }
 
     @ExceptionHandler(Exception.class)
