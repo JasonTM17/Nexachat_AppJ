@@ -82,10 +82,13 @@ automatically rewritten when the flag flips. On Android, the compiled
   `e2eeEnvelopes` (1–20 unique entries). The envelope device set must EQUAL
   the active devices of all current members — including every device of the
   sender, which wraps a content key for itself — else `E2EE_STALE_DEVICES`.
-  Before the conversation row lock, the send takes `FOR NO KEY UPDATE` on
-  every member's `users` row in UUID order — the same lock registration
-  holds for its whole transaction (`FOR KEY SHARE` cannot substitute:
-  PostgreSQL does not conflict it with `FOR NO KEY UPDATE`). A device
+  Before the conversation row lock, an encrypted send into a DIRECT
+  conversation takes `FOR NO KEY UPDATE` on every member's `users` row in
+  UUID order — the same lock registration holds for its whole transaction
+  (`FOR KEY SHARE` cannot substitute: PostgreSQL does not conflict it with
+  `FOR NO KEY UPDATE`). An encrypted-flagged send into a GROUP takes only
+  the sender-row lock before the same validation rejects it, so a large
+  member list cannot be turned into a lock-amplification. A device
   enrolled concurrently therefore either commits before the send's locks
   (and must be covered) or waits for the send to finish; a client on a
   stale snapshot refetches the directory and re-encrypts on this error. Enabled conversations require the field

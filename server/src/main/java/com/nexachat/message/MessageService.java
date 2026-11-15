@@ -274,9 +274,14 @@ public class MessageService {
         // set is locked in UUID order before the conversation, never after
         // (a reverse-direction sender's KEY SHARE would otherwise complete a
         // lock cycle). The sender is a member, so this subsumes
-        // lockUserParent. Direct-chat membership is immutable, so the member
-        // list read here is the same roster validateE2eeSend checks later.
-        if (request.encryption() != null || request.e2eeEnvelopes() != null) {
+        // lockUserParent. E2EE v1 only exists on DIRECT conversations, whose
+        // membership is immutable, so the member list read here is the same
+        // roster validateE2eeSend checks later; an encrypted request into a
+        // GROUP keeps the single-sender lock because validation rejects it
+        // anyway — widening to hundreds of member rows would only block
+        // unrelated writers for the transaction's duration.
+        if ((request.encryption() != null || request.e2eeEnvelopes() != null)
+                && isDirectConversation(conversationId)) {
             lockMemberDeviceOwners(conversationId);
         } else {
             lockUserParent(senderId);
@@ -1084,6 +1089,13 @@ public class MessageService {
         }
     }
 
+    /** Non-locking read of the immutable conversation discriminator. */
+    private boolean isDirectConversation(UUID conversationId) {
+        return conversationRepository.findTypeById(conversationId)
+                .map(Conversation.Type.DIRECT::equals)
+                .orElse(false);
+    }
+
     /**
      * {@code FOR NO KEY UPDATE} on every member's {@code users} row, in UUID
      * order — the same lock mode and rows device registration serializes on
@@ -1098,8 +1110,12 @@ public class MessageService {
      * committed active device.
      */
     private void lockMemberDeviceOwners(UUID conversationId) {
+        // userRepository is only null in the legacy no-repository unit test
+        // constructors; the Spring wiring always injects it. A silent skip
+        // would void the enrollment race guarantee, so refuse loudly instead.
         if (userRepository == null) {
-            return;
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR,
+                    "Encrypted sends require member row locking");
         }
         List<UUID> memberIds = memberRepository.findMemberUserIds(conversationId)
                 .stream().sorted().toList();

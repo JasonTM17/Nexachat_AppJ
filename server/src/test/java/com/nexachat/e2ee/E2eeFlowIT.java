@@ -23,6 +23,10 @@ import org.springframework.test.web.servlet.ResultActions;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -537,6 +541,94 @@ class E2eeFlowIT {
                         + " AND ? = ANY(pg_blocking_pids(pid))",
                 Integer.class, pid);
         return count == null ? 0 : count;
+    }
+
+    @Test
+    void encryptedSendIntoGroupDoesNotLockOtherMemberRows() throws Exception {
+        TestUser memberB = registerUser("glock-b");
+        TestUser memberC = registerUser("glock-c");
+        MvcResult group = mockMvc.perform(post("/api/v1/conversations/group")
+                        .header("Authorization", "Bearer " + alice.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("title", "grp",
+                                "memberIds", List.of(
+                                        memberB.id().toString(), memberC.id().toString())))))
+                .andExpect(status().is2xxSuccessful())
+                .andReturn();
+        UUID groupId = UUID.fromString(objectMapper
+                .readTree(group.getResponse().getContentAsString()).get("id").asText());
+
+        ExecutorService pool = Executors.newFixedThreadPool(1);
+        try (Connection gate = lockConnection();
+             Connection probe = lockConnection()) {
+            // Park the send on the group conversation row: by the time it
+            // waits there, every users-row lock it took is already held and
+            // observable from a second session.
+            int gatePid = lockRowForUpdate(gate, groupId);
+            Future<MvcResult> sendFuture = pool.submit(() ->
+                    send(groupId, alice, encryptedSend(UUID.randomUUID(), aliceDevice))
+                            .andReturn());
+            com.nexachat.testutil.TestWaits.until(
+                    "send transaction waits on the group conversation row",
+                    () -> backendsBlockedBy(gatePid) >= 1);
+            // Other members' rows accept FOR NO KEY UPDATE instantly — the
+            // rejected send never fanned out to the member roster.
+            assertThat(tryRowLockNowait(probe, memberB.id(), "NO KEY UPDATE")).isTrue();
+            assertThat(tryRowLockNowait(probe, memberC.id(), "NO KEY UPDATE")).isTrue();
+            // The sender row IS locked: its FOR KEY SHARE blocks a FOR UPDATE
+            // probe, proving the send reached the lock section at all.
+            assertThat(tryRowLockNowait(probe, alice.id(), "UPDATE")).isFalse();
+
+            gate.rollback();
+            MvcResult result = sendFuture.get(30, TimeUnit.SECONDS);
+            assertThat(result.getResponse().getStatus()).isEqualTo(409);
+            JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+            assertThat(body.path("error").path("code").asText())
+                    .isEqualTo("E2EE_NOT_ENABLED");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private Connection lockConnection() throws SQLException {
+        Connection connection = DriverManager.getConnection(
+                env("IT_DB_URL", "jdbc:postgresql://localhost:5433/nexachat"),
+                env("IT_DB_USER", "nexachat"),
+                env("IT_DB_PASSWORD", "nexachat"));
+        connection.setAutoCommit(false);
+        return connection;
+    }
+
+    /** Holds {@code FOR UPDATE} on the conversation row; returns the backend pid. */
+    private int lockRowForUpdate(Connection connection, UUID conversationId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id FROM conversations WHERE id = ? FOR UPDATE")) {
+            statement.setObject(1, conversationId);
+            try (var rows = statement.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+            }
+        }
+        try (var statement = connection.createStatement();
+             var rows = statement.executeQuery("SELECT pg_backend_pid()")) {
+            rows.next();
+            return rows.getInt(1);
+        }
+    }
+
+    /** True when the row lock was granted, false on {@code lock_not_available} (55P03). */
+    private boolean tryRowLockNowait(Connection connection, UUID userId, String mode)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id FROM users WHERE id = ? FOR " + mode + " NOWAIT")) {
+            statement.setObject(1, userId);
+            statement.executeQuery().close();
+            return true;
+        } catch (SQLException failure) {
+            if ("55P03".equals(failure.getSQLState())) {
+                return false;
+            }
+            throw failure;
+        }
     }
 
     @Test
