@@ -19,19 +19,24 @@ public final class JwksServer implements AutoCloseable {
     private final HttpServer server;
     private final AtomicReference<String> body;
     private final AtomicInteger status;
+    private final AtomicInteger requests;
 
-    private JwksServer(HttpServer server, AtomicReference<String> body, AtomicInteger status) {
+    private JwksServer(HttpServer server, AtomicReference<String> body, AtomicInteger status,
+                       AtomicInteger requests) {
         this.server = server;
         this.body = body;
         this.status = status;
+        this.requests = requests;
     }
 
     public static JwksServer start(List<RSAKey> initialKeys) {
         try {
             AtomicReference<String> body = new AtomicReference<>(GoogleTestKeys.jwks(initialKeys));
             AtomicInteger status = new AtomicInteger(200);
+            AtomicInteger requests = new AtomicInteger();
             HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
             server.createContext("/certs", exchange -> {
+                requests.incrementAndGet();
                 int responseStatus = status.get();
                 if (responseStatus != 200) {
                     exchange.sendResponseHeaders(responseStatus, -1);
@@ -46,7 +51,7 @@ public final class JwksServer implements AutoCloseable {
                 exchange.close();
             });
             server.start();
-            return new JwksServer(server, body, status);
+            return new JwksServer(server, body, status, requests);
         } catch (Exception exception) {
             throw new IllegalStateException("Could not start the test JWKS server", exception);
         }
@@ -60,6 +65,11 @@ public final class JwksServer implements AutoCloseable {
     public void publish(List<RSAKey> keys) {
         body.set(GoogleTestKeys.jwks(keys));
         status.set(200);
+    }
+
+    /** Total JWKS document requests served, across key rotations and failures. */
+    public int requestCount() {
+        return requests.get();
     }
 
     /** Simulates an unavailable JWKS origin when Nimbus refreshes an unknown key ID. */

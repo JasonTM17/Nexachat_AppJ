@@ -20,6 +20,7 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.StringRes;
 import androidx.core.content.ContextCompat;
 import androidx.core.graphics.ColorUtils;
 import androidx.core.widget.TextViewCompat;
@@ -78,6 +79,9 @@ public final class MessageBubbleBinder {
 
     private final DateFormat timeFormat;
     @Nullable private String currentUserId;
+    /** While non-zero, a conversation-level send pause is in force: FAILED rows
+     *  show this short reason instead of the retry label and taps do not retry. */
+    @StringRes private int pausedFailReasonRes;
     @Nullable
     private final Function<String, ChatMessage> resolveOriginal;
     @Nullable
@@ -111,6 +115,11 @@ public final class MessageBubbleBinder {
     }
 
     public void setCurrentUserId(@Nullable String userId) { currentUserId = userId; }
+
+    /** Sets the failure reason shown on FAILED rows while sends are paused, or 0. */
+    public void setPausedFailReason(@StringRes int reasonRes) {
+        pausedFailReasonRes = reasonRes;
+    }
 
     public void bindMessageRow(@NonNull View root, @NonNull MessageListItem item) {
         ChatMessage message = item.getMessage();
@@ -211,7 +220,8 @@ public final class MessageBubbleBinder {
             return;
         }
         boolean tombstone = MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs());
-        boolean retry = ChatBubbleRules.isRetryAffordanceVisible(message.getStatus());
+        boolean retry = ChatBubbleRules.isRetryAffordanceVisible(
+                message.getStatus(), pausedFailReasonRes != 0);
         root.setOnLongClickListener(v -> {
             if (!tombstone && actionListener != null) {
                 actionListener.onMessageLongPress(message.getId());
@@ -839,7 +849,10 @@ public final class MessageBubbleBinder {
         if (message.getStatus() == DeliveryStatus.FAILED) {
             if (deliveryText != null) {
                 deliveryText.setVisibility(View.VISIBLE);
-                deliveryText.setText(R.string.action_retry);
+                // A paused conversation shows *why* resend is refused instead of
+                // offering a retry that can only fail again.
+                deliveryText.setText(pausedFailReasonRes != 0
+                        ? pausedFailReasonRes : R.string.action_retry);
                 deliveryText.setTextColor(
                         ContextCompat.getColor(root.getContext(), R.color.colorError)
                 );
