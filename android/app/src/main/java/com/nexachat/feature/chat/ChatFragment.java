@@ -504,7 +504,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                     accessibleVoiceRecordingActive = false;
                     resetAccessibleVoiceRecordingUi();
                     if (!beginVoiceRecording(v)) {
-                        return false;
+                        // Consume the tap so it cannot fall through to the accessible
+                        // click path and retry silently; the hint explains the gesture.
+                        Toast.makeText(requireContext(),
+                                VoiceTapFeedbackRules.quickTapHintMessageId(),
+                                Toast.LENGTH_SHORT).show();
+                        return true;
                     }
                     return true;
 
@@ -697,6 +702,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         }
         if (cancel) {
             voiceRecorder.cancel();
+        } else if (VoiceTapFeedbackRules.finishWithoutRecordingIsQuiet(
+                cancel, voiceRecorder.isRecording())) {
+            resetAccessibleVoiceRecordingUi();
+            return;
         } else {
             long durationMs = voiceRecorder.getDurationMs();
             File audioFile = voiceRecorder.stop();
