@@ -6,6 +6,47 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.9] - 2026-11-15
+
+Android APK release. `v1.2.8` shipped server-only — its APK build failed the
+release signing gate — so this APK also carries the `v1.2.8` client changes.
+No server or schema changes. See
+[docs/release-notes/v1.2.9.md](docs/release-notes/v1.2.9.md).
+
+### Added
+- Android: Google sign-in reports why it failed — unavailable on the server,
+  no Google account on the device, developer configuration, network or a
+  cancelled prompt — instead of a generic message.
+
+### Fixed
+- Site: `assetlinks.json` declares the release signing certificate first, so
+  `https://nexachat.io.vn/join/…` invite links verify for the published APKs;
+  the upload certificate stays as a second entry.
+- Android sign-in: international phone numbers are accepted without a leading
+  `+`; outlined and text buttons get their press feedback back; the
+  sign-in/create-account switch announces the selected mode to screen readers
+  and keeps the selected pill fully rounded; the app name is no longer
+  announced twice; forgot-password uses the auth design tokens.
+- Android chat: hidden duplicate header buttons removed — search, group info
+  and summary remain in the overflow menu; the AI opt-out row no longer adds
+  an unlabeled TalkBack stop.
+- Android encryption: progress while loading or toggling, an informational
+  (not error-colored) unavailable note, announced status changes, a one-line
+  hint for devices that cannot be shown and padded device rows; direct-chat
+  boards show only the Reminders tab and clamp a restored tab index.
+- Android contacts and profile: contact dialog errors are announced in the
+  error color and IME Done saves the alias; contact and search subtitles wrap
+  to two lines at large font; the avatar camera badge is reachable by
+  keyboard and D-pad.
+- Android invite join: failures render in the error color and the normal
+  color returns on success.
+- Android settings and social screens adopt semantic dimension tokens;
+  pixel-identical except the invite-join card corner now matches the 16dp
+  card convention.
+
+### Removed
+- Android: the unreachable `ChatPlaceholderFragment` and its string.
+
 ## [1.2.8] - 2026-11-15
 
 Sign-in, polish, membership-scope and experimental E2EE release. Flyway V34
@@ -784,7 +825,8 @@ First tagged release (`v1.0.0`).
 - Architecture diagrams, REST/STOMP contracts, security notes, operations
   guide and UI design documentation.
 
-[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.8...HEAD
+[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.9...HEAD
+[1.2.9]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.8...v1.2.9
 [1.2.8]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.7...v1.2.8
 [1.1.1]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.0.0...v1.1.0
