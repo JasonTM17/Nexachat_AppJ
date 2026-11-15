@@ -3,6 +3,8 @@ package com.nexachat.feature.contacts;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.View;
+import android.view.inputmethod.EditorInfo;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -12,6 +14,7 @@ import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 import androidx.fragment.app.Fragment;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.color.MaterialColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
@@ -163,6 +166,10 @@ final class ContactDetailBinder {
         if (content.showsError()) {
             TextView err = new TextView(fragment.requireContext());
             err.setText(content.getErrorMessageId());
+            err.setTextAppearance(R.style.TextAppearance_NexaChat_BodyMedium);
+            err.setTextColor(MaterialColors.getColor(
+                    err, com.google.android.material.R.attr.colorError));
+            err.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
             LinearLayout.LayoutParams errLp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -180,6 +187,14 @@ final class ContactDetailBinder {
             aliasLayout.setBoxCornerRadii(radius, radius, radius, radius);
             TextInputEditText alias = new TextInputEditText(aliasLayout.getContext());
             alias.setSingleLine(true);
+            alias.setImeOptions(EditorInfo.IME_ACTION_DONE);
+            alias.setOnEditorActionListener((v, actionId, event) -> {
+                if (actionId == EditorInfo.IME_ACTION_DONE) {
+                    viewModel.saveAlias();
+                    return true;
+                }
+                return false;
+            });
             renderingAlias = true;
             alias.setText(content.getAliasValue());
             renderingAlias = false;

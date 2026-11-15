@@ -6,4 +6,3 @@ Contents:
   (`AddContactInputDetector`, `SelfContactGuard`), and contact detail actions
 - `UserSearchFragment` — user discovery by phone or name prefix
 - `adapter/` — `ContactListAdapter`, `UserSearchAdapter`
-- `ChatPlaceholderFragment` — empty destination kept for hosts not yet on the chat fragment
