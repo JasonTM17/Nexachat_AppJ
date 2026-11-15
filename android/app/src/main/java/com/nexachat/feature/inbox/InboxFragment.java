@@ -99,10 +99,8 @@ public final class InboxFragment extends Fragment {
         binding.inboxUserAvatar.setOnlineStatus(null);
         binding.inboxUserAvatar.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.profileFragment));
-        if (InboxIdentityRules.needsProfileLoad(profileViewModel.getUiState().getValue())) {
-            profileViewModel.load();
-        }
         profileViewModel.getUiState().observe(getViewLifecycleOwner(), this::renderInboxIdentity);
+        ensureSessionIdentity();
         binding.inboxContactsButton.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.contactsFragment));
         binding.moreButton.setOnClickListener(this::showInboxMenu);
@@ -206,13 +204,32 @@ public final class InboxFragment extends Fragment {
             return;
         }
         boundInboxUser = state.getUser();
-        if (boundInboxUser != null) {
-            binding.inboxUserAvatar.setName(boundInboxUser.getDisplayName());
-            binding.inboxUserAvatar.setAvatarUrl(boundInboxUser.getAvatarUrl());
-        }
+        binding.inboxUserAvatar.setName(InboxIdentityRules.ownAvatarName(boundInboxUser));
+        binding.inboxUserAvatar.setAvatarUrl(
+                boundInboxUser == null ? null : boundInboxUser.getAvatarUrl());
         binding.inboxUserAvatar.setOnlineStatus(null);
+        ensureSessionIdentity();
         if (lastState != null) {
             renderActiveNowStrip(lastState.getConversations());
+        }
+    }
+
+    /**
+     * The shared profile state is activity-scoped and can outlive the session that loaded it.
+     * A missing user — or one whose id does not match the signed-in session — triggers a
+     * reload so the inbox never renders the previous account's identity.
+     */
+    private void ensureSessionIdentity() {
+        if (profileViewModel == null) {
+            return;
+        }
+        ProfileViewModel.UiState profileState = profileViewModel.getUiState().getValue();
+        if (profileState != null && profileState.isLoading()) {
+            return;
+        }
+        String signedInUserId = lastState == null ? null : lastState.getCurrentUserId();
+        if (InboxIdentityRules.needsProfileLoad(profileState, signedInUserId)) {
+            profileViewModel.load();
         }
     }
 
@@ -395,6 +412,7 @@ public final class InboxFragment extends Fragment {
         }
         lastState = state;
         ensureAdapter(state.getCurrentUserId());
+        ensureSessionIdentity();
         if (lastLabelState != null) adapter.setLabelDefinitions(lastLabelState.getLabels());
         List<ConversationSummary> rows = state.getConversations();
         List<ConversationSummary> visibleRows = state.getVisibleConversations();

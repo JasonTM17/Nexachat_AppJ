@@ -17,7 +17,22 @@ final class InboxIdentityRules {
      * an idempotent read.
      */
     static boolean needsProfileLoad(@Nullable ProfileViewModel.UiState state) {
-        return state == null || state.getUser() == null;
+        return needsProfileLoad(state, null);
+    }
+
+    /**
+     * The shared profile state also survives a logout to login transition. When the cached
+     * user belongs to a different account than the signed-in session, the previous identity
+     * must be reloaded rather than rendered.
+     */
+    static boolean needsProfileLoad(
+            @Nullable ProfileViewModel.UiState state,
+            @Nullable String signedInUserId) {
+        if (state == null || state.getUser() == null) {
+            // A settled failure stays quiet; auto-retrying would loop on a dead network.
+            return state == null || state.getError() == null;
+        }
+        return signedInUserId != null && !signedInUserId.equals(state.getUser().getId());
     }
 
     /** Own avatar label. Blank (drawn as a neutral mark) until the user is known. */

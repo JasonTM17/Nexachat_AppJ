@@ -198,7 +198,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         super.onViewCreated(view, savedInstanceState);
         conversationId = getArguments() == null ? "" : getArguments().getString(ARG_CONVERSATION_ID, "");
         viewModel = new ViewModelProvider(this).get(ChatViewModel.class);
-        inboxViewModel = new ViewModelProvider(requireActivity()).get(InboxViewModel.class);
+        // Fragment scope, not the activity store: a retained instance would keep the
+        // previous account's user id and inbox rows across an account switch.
+        inboxViewModel = new ViewModelProvider(this).get(InboxViewModel.class);
         summaryViewModel = new ViewModelProvider(this).get(SummaryViewModel.class);
         configureList();
         configureMentionPicker();

@@ -7,6 +7,7 @@ import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.network.SessionEvents;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.data.AuthRepository;
 import com.nexachat.data.ContactsRepository;
@@ -36,6 +37,25 @@ public final class ProfileViewModel extends ViewModel {
     private UiState currentState = mutableUiState.getValue();
 
     @Inject
+    public ProfileViewModel(
+            ContactsRepository contactsRepository,
+            AuthRepository authRepository,
+            SettingsRepository settingsRepository,
+            SessionEvents sessionEvents) {
+        this(contactsRepository, authRepository, settingsRepository);
+        // This state is activity-scoped, so it survives a logout to login
+        // transition; the profile must follow the session, not the screen.
+        disposables.add(Objects.requireNonNull(sessionEvents, "sessionEvents")
+                .getEvents()
+                .subscribe(event -> {
+                    if (event instanceof SessionEvents.Event.LoggedOut
+                            || event instanceof SessionEvents.Event.ReauthenticationRequired) {
+                        resetForSignedOutSession();
+                    }
+                }, error -> { }));
+    }
+
+    /** Test seam without session events. */
     public ProfileViewModel(
             ContactsRepository contactsRepository,
             AuthRepository authRepository,
@@ -251,6 +271,11 @@ public final class ProfileViewModel extends ViewModel {
                                 : state.withSaveError(((Result.Failure<?>) result).getError())),
                         error -> updateState(state -> state.withSaveError(
                                 new ApiError.Network(error.getMessage())))));
+    }
+
+    /** Drops the previous account's cached state when the session ends. */
+    private void resetForSignedOutSession() {
+        updateState(state -> new UiState().withLoading(false));
     }
 
     /** Clears the local session and broadcasts LoggedOut. */

@@ -4,6 +4,7 @@ import android.net.Uri;
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.network.SessionEvents;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.data.AuthRepository;
 import com.nexachat.data.ContactsRepository;
@@ -60,6 +61,12 @@ public final class ProfileViewModelTest {
     private ProfileViewModel createViewModel(Result<UserDto> meResult) {
         when(contactsRepository.getMe()).thenReturn(Single.just(meResult));
         return new ProfileViewModel(contactsRepository, authRepository, settingsRepository);
+    }
+
+    private ProfileViewModel createViewModel(Result<UserDto> meResult, SessionEvents sessionEvents) {
+        when(contactsRepository.getMe()).thenReturn(Single.just(meResult));
+        return new ProfileViewModel(
+                contactsRepository, authRepository, settingsRepository, sessionEvents);
     }
 
     @Test
@@ -159,6 +166,51 @@ public final class ProfileViewModelTest {
         assertEquals(new ApiError.Network("down"), state.getSaveError());
         assertTrue(state.isEditingName());
         assertFalse(state.isSaving());
+    }
+
+    @Test
+    public void loggedOutEventDropsTheCachedUser() {
+        SessionEvents sessionEvents = new SessionEvents();
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me), sessionEvents);
+        assertEquals(me, viewModel.getUiState().getValue().getUser());
+
+        sessionEvents.emitLoggedOut();
+
+        assertNull(viewModel.getUiState().getValue().getUser());
+        assertFalse(viewModel.getUiState().getValue().isEditingName());
+        // The reset must be an idle state: a lingering loading flag would block
+        // the inbox identity check that reloads the new account's profile.
+        assertFalse(viewModel.getUiState().getValue().isLoading());
+    }
+
+    @Test
+    public void reauthenticationRequiredEventDropsTheCachedUser() {
+        SessionEvents sessionEvents = new SessionEvents();
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me), sessionEvents);
+        assertEquals(me, viewModel.getUiState().getValue().getUser());
+
+        sessionEvents.emitReauthenticationRequired();
+
+        assertNull(viewModel.getUiState().getValue().getUser());
+    }
+
+    @Test
+    public void accountSwitchShowsTheNewUserAndNeverThePreviousOne() {
+        UserDto previous = new UserDto("user-a", "+84900000201", "Lan Anh", null);
+        UserDto signedIn = new UserDto("user-b", "+84900000202", "Minh Khoa", null);
+        SessionEvents sessionEvents = new SessionEvents();
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(previous), sessionEvents);
+        assertEquals(previous, viewModel.getUiState().getValue().getUser());
+
+        sessionEvents.emitLoggedOut();
+        assertNull(viewModel.getUiState().getValue().getUser());
+
+        when(contactsRepository.getMe()).thenReturn(Single.just(new Result.Success<>(signedIn)));
+        viewModel.load();
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertEquals(signedIn, state.getUser());
+        assertEquals("user-b", state.getUser().getId());
     }
 
     @Test
