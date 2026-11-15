@@ -44,10 +44,10 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
                 app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
-                app:cardCornerRadius="16dp"
+                app:cardCornerRadius="@dimen/corner_lg"
                 app:cardElevation="0dp"
                 app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="1dp">
+                app:strokeWidth="@dimen/control_stroke_width">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -89,7 +89,7 @@
                         android:layout_marginTop="@dimen/space_sm"
                         android:minHeight="@dimen/min_touch_target"
                         android:text="@string/invite_expiry"
-                        app:cornerRadius="12dp" />
+                        app:cornerRadius="@dimen/corner_md" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/maxUsesButton"
@@ -99,7 +99,7 @@
                         android:layout_marginTop="@dimen/space_xs"
                         android:minHeight="@dimen/min_touch_target"
                         android:text="@string/invite_max_uses"
-                        app:cornerRadius="12dp" />
+                        app:cornerRadius="@dimen/corner_md" />
 
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/approvalSwitch"
@@ -115,7 +115,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_sm"
                         android:minHeight="@dimen/min_touch_target"
-                        app:cornerRadius="12dp" />
+                        app:cornerRadius="@dimen/corner_md" />
 
                     <TextView
                         android:id="@+id/shareUrl"
@@ -156,7 +156,7 @@
                             android:maxLines="2"
                             android:minHeight="@dimen/min_touch_target"
                             android:text="@string/invite_copy"
-                            app:cornerRadius="12dp" />
+                            app:cornerRadius="@dimen/corner_md" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/shareButton"
@@ -169,7 +169,7 @@
                             android:maxLines="2"
                             android:minHeight="@dimen/min_touch_target"
                             android:text="@string/invite_share"
-                            app:cornerRadius="12dp" />
+                            app:cornerRadius="@dimen/corner_md" />
                     </LinearLayout>
 
                     <com.google.android.material.button.MaterialButton
@@ -182,7 +182,7 @@
                         android:text="@string/invite_revoke"
                         android:textColor="?attr/colorError"
                         android:visibility="gone"
-                        app:cornerRadius="12dp" />
+                        app:cornerRadius="@dimen/corner_md" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -217,7 +217,7 @@
                     android:layout_height="wrap_content"
                     android:minHeight="@dimen/min_touch_target"
                     android:text="@string/invite_refresh_requests"
-                    app:cornerRadius="12dp" />
+                    app:cornerRadius="@dimen/corner_md" />
             </LinearLayout>
 
             <TextView

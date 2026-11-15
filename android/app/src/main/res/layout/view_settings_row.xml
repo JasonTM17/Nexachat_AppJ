@@ -6,22 +6,22 @@
     android:layout_height="wrap_content"
     android:background="?attr/selectableItemBackground"
     android:gravity="center_vertical"
-    android:minHeight="64dp"
+    android:minHeight="@dimen/list_item_min_height"
     android:orientation="horizontal"
-    android:paddingHorizontal="16dp"
-    android:paddingVertical="12dp">
+    android:paddingHorizontal="@dimen/space_md"
+    android:paddingVertical="@dimen/space_inset">
 
     <FrameLayout
         android:id="@+id/rowIconTile"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:layout_marginEnd="16dp"
+        android:layout_width="@dimen/icon_tile_size"
+        android:layout_height="@dimen/icon_tile_size"
+        android:layout_marginEnd="@dimen/space_md"
         android:background="@drawable/bg_settings_tile_tint">
 
         <ImageView
             android:id="@+id/rowIcon"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="@dimen/icon_size"
+            android:layout_height="@dimen/icon_size"
             android:layout_gravity="center"
             android:importantForAccessibility="no"
             app:tint="?attr/colorPrimary" />
@@ -46,7 +46,7 @@
             android:id="@+id/rowSubtitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
+            android:layout_marginTop="@dimen/space_xxs"
             android:ellipsize="end"
             android:textAppearance="?attr/textAppearanceBodySmall"
             android:textColor="?attr/colorOnSurfaceVariant"
@@ -57,17 +57,17 @@
         android:id="@+id/rowValue"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
-        android:layout_marginEnd="4dp"
+        android:layout_marginStart="@dimen/space_sm"
+        android:layout_marginEnd="@dimen/space_xs"
         android:textAppearance="?attr/textAppearanceBodyMedium"
         android:textColor="?attr/colorOnSurfaceVariant"
         android:visibility="gone" />
 
     <ImageView
         android:id="@+id/rowChevron"
-        android:layout_width="20dp"
-        android:layout_height="20dp"
-        android:layout_marginStart="4dp"
+        android:layout_width="@dimen/icon_size_sm"
+        android:layout_height="@dimen/icon_size_sm"
+        android:layout_marginStart="@dimen/space_xs"
         android:importantForAccessibility="no"
         android:src="@drawable/ic_keyboard_arrow_right"
         app:tint="?attr/colorOnSurfaceVariant" />

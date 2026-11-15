@@ -52,12 +52,28 @@ public final class DeleteAccountLayoutContractTest {
         assertEquals("@string/voice_status_loading", progress.getAttributeNS(ANDROID, "contentDescription"));
     }
 
-    private static void assertMinTouchTarget(Element node) {
+    private static void assertMinTouchTarget(Element node) throws Exception {
         String minHeight = node.getAttributeNS(ANDROID, "minHeight");
         boolean token = minHeight.contains("min_touch_target");
         boolean literalAtLeast48 = minHeight.matches("\\d+dp")
                 && Integer.parseInt(minHeight.replace("dp", "")) >= 48;
-        assertTrue("minHeight must be at least 48dp: " + minHeight, token || literalAtLeast48);
+        boolean dimenAtLeast48 = minHeight.startsWith("@dimen/")
+                && dimenValueAtLeast(minHeight.substring("@dimen/".length()), 48);
+        assertTrue("minHeight must be at least 48dp: " + minHeight,
+                token || literalAtLeast48 || dimenAtLeast48);
+    }
+
+    private static boolean dimenValueAtLeast(String name, int minDp) throws Exception {
+        NodeList nodes = parse("values/dimens_nexachat.xml").getElementsByTagName("dimen");
+        for (int i = 0; i < nodes.getLength(); i++) {
+            Element dimen = (Element) nodes.item(i);
+            if (name.equals(dimen.getAttribute("name"))) {
+                String value = dimen.getTextContent().trim();
+                return value.endsWith("dp")
+                        && Integer.parseInt(value.substring(0, value.length() - 2)) >= minDp;
+            }
+        }
+        return false;
     }
 
     private static Element requireId(String file, String id) throws Exception {

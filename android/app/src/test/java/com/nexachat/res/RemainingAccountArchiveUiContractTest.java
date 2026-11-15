@@ -1,5 +1,6 @@
 package com.nexachat.res;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -71,7 +72,7 @@ public final class RemainingAccountArchiveUiContractTest {
         assertTrue(confirm.getAttribute("style").contains("Widget.NexaChat.Button"));
         assertTrue(confirm.getAttributeNS(NS_ANDROID, "textColor").contains("colorOnError"));
         assertTrue(confirm.getAttributeNS(NS_APP, "backgroundTint").contains("colorError"));
-        assertTrue(confirm.getAttributeNS(NS_ANDROID, "minHeight").contains("56"));
+        assertEquals("56dp", resolveDimen(confirm.getAttributeNS(NS_ANDROID, "minHeight")));
     }
 
     @Test
@@ -105,6 +106,22 @@ public final class RemainingAccountArchiveUiContractTest {
             }
         }
         throw new AssertionError("Missing @" + id + " in " + layoutPath);
+    }
+
+    private String resolveDimen(String value) throws Exception {
+        if (!value.startsWith("@dimen/")) {
+            return value;
+        }
+        Document doc = parse(new File(resDir, "values/dimens_nexachat.xml"));
+        NodeList nodes = doc.getElementsByTagName("dimen");
+        String name = value.substring("@dimen/".length());
+        for (int i = 0; i < nodes.getLength(); i++) {
+            Element dimen = (Element) nodes.item(i);
+            if (name.equals(dimen.getAttribute("name"))) {
+                return dimen.getTextContent().trim();
+            }
+        }
+        return value;
     }
 
     private static Document parse(File file) throws Exception {

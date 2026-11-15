@@ -36,10 +36,10 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_lg"
                 app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
-                app:cardCornerRadius="20dp"
+                app:cardCornerRadius="@dimen/corner_lg"
                 app:cardElevation="0dp"
                 app:strokeColor="?attr/colorOutlineVariant"
-                app:strokeWidth="1dp">
+                app:strokeWidth="@dimen/control_stroke_width">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -50,8 +50,8 @@
 
                     <com.nexachat.core.ui.components.AvatarView
                         android:id="@+id/groupAvatar"
-                        android:layout_width="96dp"
-                        android:layout_height="96dp"
+                        android:layout_width="@dimen/avatar_xl"
+                        android:layout_height="@dimen/avatar_xl"
                         android:contentDescription="@string/invite_group_avatar_cd" />
 
                     <TextView
@@ -103,7 +103,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
                 android:minHeight="@dimen/min_touch_target"
-                app:cornerRadius="12dp" />
+                app:cornerRadius="@dimen/corner_md" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/checkStatusButton"
@@ -114,7 +114,7 @@
                 android:minHeight="@dimen/min_touch_target"
                 android:text="@string/invite_check_status"
                 android:visibility="gone"
-                app:cornerRadius="12dp" />
+                app:cornerRadius="@dimen/corner_md" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/openChatButton"
@@ -124,7 +124,7 @@
                 android:minHeight="@dimen/min_touch_target"
                 android:text="@string/invite_open_chat"
                 android:visibility="gone"
-                app:cornerRadius="12dp" />
+                app:cornerRadius="@dimen/corner_md" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/retryButton"
@@ -135,7 +135,7 @@
                 android:minHeight="@dimen/min_touch_target"
                 android:text="@string/invite_retry"
                 android:visibility="gone"
-                app:cornerRadius="12dp" />
+                app:cornerRadius="@dimen/corner_md" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/signInButton"
@@ -146,7 +146,7 @@
                 android:minHeight="@dimen/min_touch_target"
                 android:text="@string/invite_sign_in"
                 android:visibility="gone"
-                app:cornerRadius="12dp" />
+                app:cornerRadius="@dimen/corner_md" />
 
             <ProgressBar
                 android:id="@+id/loading"
