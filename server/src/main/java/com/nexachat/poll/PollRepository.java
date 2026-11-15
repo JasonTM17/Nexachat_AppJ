@@ -30,19 +30,29 @@ public interface PollRepository extends JpaRepository<Poll, UUID> {
     @Query(value = "SELECT nextval('poll_version_seq')", nativeQuery = true)
     Long nextVersion();
 
-    /** First newest-first page; no cursor means no nullable timestamp bind. */
+    /**
+     * First newest-first page; no cursor means no nullable timestamp bind.
+     * Only polls the viewer was a member for: a poll created before the
+     * viewer's admission is never listed.
+     */
     @Query("""
             SELECT p FROM Poll p
             WHERE p.conversation.id = :conversationId
               AND p.deletedAt IS NULL
+              AND EXISTS (SELECT 1 FROM ConversationMember member
+                          WHERE member.conversation.id = p.conversation.id
+                            AND member.user.id = :userId
+                            AND p.createdAt >= member.joinedAt)
             ORDER BY p.createdAt DESC, p.id DESC
             """)
     List<Poll> findVisibleFirstPage(@Param("conversationId") UUID conversationId,
+                                    @Param("userId") UUID userId,
                                     Pageable pageable);
 
     /**
      * Newest-first page after a cursor. Both cursor fields are non-null; the
-     * previous page's last poll supplies them.
+     * previous page's last poll supplies them. Same admission bound as
+     * {@link #findVisibleFirstPage}.
      */
     @Query("""
             SELECT p FROM Poll p
@@ -50,21 +60,36 @@ public interface PollRepository extends JpaRepository<Poll, UUID> {
               AND p.deletedAt IS NULL
               AND (p.createdAt < :beforeCreatedAt
                    OR (p.createdAt = :beforeCreatedAt AND p.id < :beforeId))
+              AND EXISTS (SELECT 1 FROM ConversationMember member
+                          WHERE member.conversation.id = p.conversation.id
+                            AND member.user.id = :userId
+                            AND p.createdAt >= member.joinedAt)
             ORDER BY p.createdAt DESC, p.id DESC
             """)
     List<Poll> findVisiblePageBefore(@Param("conversationId") UUID conversationId,
+                                     @Param("userId") UUID userId,
                                      @Param("beforeCreatedAt") Instant beforeCreatedAt,
                                      @Param("beforeId") UUID beforeId,
                                      Pageable pageable);
 
-    /** Change feed: every revision after {@code since}, oldest first, tombstones included. */
+    /**
+     * Change feed: every revision after {@code since}, oldest first,
+     * tombstones included. Same admission bound as the page queries — a
+     * member admitted after a poll was created never sees its live body or
+     * its tombstone.
+     */
     @Query("""
             SELECT p FROM Poll p
             WHERE p.conversation.id = :conversationId
               AND p.version > :since
+              AND EXISTS (SELECT 1 FROM ConversationMember member
+                          WHERE member.conversation.id = p.conversation.id
+                            AND member.user.id = :userId
+                            AND p.createdAt >= member.joinedAt)
             ORDER BY p.version ASC
             """)
     List<Poll> findChanges(@Param("conversationId") UUID conversationId,
+                           @Param("userId") UUID userId,
                            @Param("since") long since,
                            Pageable pageable);
 }
