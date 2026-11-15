@@ -497,7 +497,7 @@ def scenario_spoofed_forwarded_for(results: Results, client: Client) -> None:
     """Spoofed X-Forwarded-For must not mint a fresh per-IP preview bucket.
 
     Bucket4j refills the 60/minute bucket greedily, so a few requests past 60
-    can still succeed (``P1InviteIpRateLimitIT`` loops to 75 for the same
+    can still succeed (``InviteJoinIpRateLimitIT`` loops to 75 for the same
     reason). The contract is therefore bounded: changing the forwarded
     address on every call must never reset the bucket, so a 429
     ``RATE_LIMITED`` has to appear within ``XFF_MAX_REQUESTS`` attempts.

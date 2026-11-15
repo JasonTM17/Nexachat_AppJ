@@ -31,15 +31,15 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Adversarial review repro: a link's maxUses is enforced on direct joins but
- * never checked when a pending approval is approved, so an approval-required
- * link with maxUses=1 can admit an unbounded number of pending requesters.
+ * A link's maxUses is enforced on direct joins but never checked when a
+ * pending approval is approved, so an approval-required link with maxUses=1
+ * can admit an unbounded number of pending requesters.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 @ActiveProfiles("it")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class P1InviteApprovalMaxUsesIT {
+class InviteApprovalMaxUsesIT {
 
     @DynamicPropertySource
     static void datasourceProps(DynamicPropertyRegistry registry) {
@@ -76,7 +76,7 @@ class P1InviteApprovalMaxUsesIT {
 
     @BeforeAll
     void setUp() {
-        ItPhoneRanges.clean(jdbcTemplate, P1InviteApprovalMaxUsesIT.class);
+        ItPhoneRanges.clean(jdbcTemplate, InviteApprovalMaxUsesIT.class);
 
         alice = createTestUser("MaxUses Alice");
         dave = createTestUser("MaxUses Dave");
@@ -136,7 +136,7 @@ class P1InviteApprovalMaxUsesIT {
     }
 
     private TestUser createTestUser(String displayName) {
-        String phone = ItPhoneRanges.nextPhone(P1InviteApprovalMaxUsesIT.class);
+        String phone = ItPhoneRanges.nextPhone(InviteApprovalMaxUsesIT.class);
         User user = User.create(phone, "hash", displayName);
         user = userRepository.saveAndFlush(user);
         return new TestUser(user.getId(), jwtService.generateAccessToken(user));
