@@ -28,8 +28,7 @@
             android:ellipsize="end"
             android:maxLines="1"
             android:textAppearance="?attr/textAppearanceBodyLarge"
-            android:textColor="?attr/colorOnSurface"
-            android:textStyle="bold" />
+            android:textColor="?attr/colorOnSurface" />
 
         <com.google.android.material.chip.Chip
             android:id="@+id/memberRole"
@@ -46,7 +45,7 @@
             android:checkable="false"
             app:checkedIconVisible="false"
             app:chipBackgroundColor="?attr/colorSecondaryContainer"
-            app:chipCornerRadius="@dimen/corner_full"
+            app:chipCornerRadius="@dimen/corner_sm"
             app:chipMinHeight="@dimen/chip_min_height"
             app:chipStrokeWidth="0dp"
             app:ensureMinTouchTargetSize="false" />
@@ -58,7 +57,7 @@
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/action_delete"
             android:src="@drawable/ic_person_remove"
-            app:tint="?attr/colorError" />
+            app:tint="?attr/colorOnSurfaceVariant" />
     </LinearLayout>
 
     <View
@@ -66,5 +65,5 @@
         android:layout_height="@dimen/divider_height"
         android:layout_gravity="bottom"
         android:layout_marginStart="@dimen/divider_inset"
-        android:background="?attr/colorOutlineVariant" />
+        android:background="?attr/colorSurfaceContainerHighest" />
 </FrameLayout>
