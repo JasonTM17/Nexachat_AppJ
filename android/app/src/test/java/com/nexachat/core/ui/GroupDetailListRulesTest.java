@@ -18,4 +18,12 @@ public final class GroupDetailListRulesTest {
         assertFalse(GroupDetailListRules.showLoadError(false, false, true));
         assertFalse(GroupDetailListRules.showLoadError(false, true, false));
     }
+
+    @Test
+    public void showAddMemberEmptyState_onlyAfterTheContactsLoadFinished() {
+        assertFalse(GroupDetailListRules.showAddMemberEmptyState(false, true));
+        assertFalse(GroupDetailListRules.showAddMemberEmptyState(false, false));
+        assertTrue(GroupDetailListRules.showAddMemberEmptyState(true, true));
+        assertFalse(GroupDetailListRules.showAddMemberEmptyState(true, false));
+    }
 }
