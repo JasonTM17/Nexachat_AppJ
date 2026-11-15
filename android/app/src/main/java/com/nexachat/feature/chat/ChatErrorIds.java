@@ -56,6 +56,12 @@ public final class ChatErrorIds {
             if (com.nexachat.data.MessageRepository.ERROR_E2EE_NOT_ENABLED.equals(code)) {
                 return R.string.e2ee_send_disabled_retry;
             }
+            if (com.nexachat.data.MessageRepository.ERROR_E2EE_KEYSET_CHANGED.equals(code)) {
+                return R.string.e2ee_keyset_changed_notice;
+            }
+            if (com.nexachat.data.MessageRepository.ERROR_E2EE_DOWNGRADE_BLOCKED.equals(code)) {
+                return R.string.e2ee_send_blocked_downgrade;
+            }
             if (com.nexachat.data.MessageRepository.ERROR_NOT_MEMBER.equals(code)
                     || com.nexachat.data.MessageRepository.ERROR_CONVERSATION_NOT_FOUND.equals(code)) {
                 return R.string.error_not_member;

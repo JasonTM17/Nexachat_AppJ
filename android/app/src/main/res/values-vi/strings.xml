@@ -190,6 +190,13 @@
     <string name="e2ee_verify_confirm_title">Đánh dấu đã xác minh?</string>
     <string name="e2ee_verify_confirm_body">Chỉ xác minh sau khi bạn đã đối chiếu mã với %1$s và hai mã trùng nhau.</string>
     <string name="e2ee_code_changed_refresh">Mã đã thay đổi. Hãy đối chiếu lại.</string>
+    <string name="e2ee_keyset_changed_notice">Mã bảo mật đã thay đổi. Đang tạm dừng gửi cho đến khi bạn đối chiếu lại.</string>
+    <string name="e2ee_keyset_notice_action">Đối chiếu</string>
+    <string name="e2ee_downgrade_notice">Mã hóa đang tắt trong trò chuyện này. Đang tạm dừng gửi.</string>
+    <string name="e2ee_downgrade_notice_action">Xem lại</string>
+    <string name="e2ee_send_blocked_downgrade">Mã hóa đang tắt trong trò chuyện này. Bật lại để gửi.</string>
+    <string name="e2ee_failed_keyset_changed">Chưa gửi — mã đã đổi</string>
+    <string name="e2ee_failed_downgrade_blocked">Chưa gửi — mã hóa đã tắt</string>
 
     <string name="chat_typing">đang nhập…</string>
     <string name="msg_seen">Đã xem</string>

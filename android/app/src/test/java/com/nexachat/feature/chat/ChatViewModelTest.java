@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelStore;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.common.Unit;
+import com.nexachat.core.crypto.KeysetTrustStore;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.core.network.dto.MessagePageDto;
@@ -193,6 +194,28 @@ public final class ChatViewModelTest {
                 handle, messageRepository, conversationRepository, attachmentRepository, session, tokenStore);
         viewModelStore.put("chat-" + (++viewModelCount), created);
         return created;
+    }
+
+    private ChatViewModel newKeysetViewModel(KeysetTrustStore trustStore) {
+        ChatViewModel created = new ChatViewModel(
+                new SavedStateHandle(Map.of("conversationId", CONVERSATION_ID)),
+                messageRepository, conversationRepository, attachmentRepository,
+                session, tokenStore, trustStore);
+        viewModelStore.put("chat-" + (++viewModelCount), created);
+        return created;
+    }
+
+    private static KeysetTrustStore.Record trustRecord(
+            KeysetTrustStore.TrustState trustState) {
+        return new KeysetTrustStore.Record(trustState, "00", new byte[] {1}, null, 1L);
+    }
+
+    private static ConversationSummary e2eeSummary(boolean e2eeEnabled) {
+        return new ConversationSummary(
+                CONVERSATION_ID, "DIRECT", null, null, null, null,
+                0L, 0, 0L, "Peer", null, null, 0L, 0L, null, "peer-1",
+                false, null, false, null, false, false, false, null,
+                List.of(), e2eeEnabled, false, null);
     }
 
     private ChatViewModel.UiState state() {
@@ -1163,5 +1186,126 @@ public final class ChatViewModelTest {
         assertEquals(new ChatActionEvent.PreferenceChanged(
                         ChatActionEvent.PreferenceChanged.Kind.MUTED),
                 event.consume());
+    }
+
+    @Test
+    public void changedKeysetPauseFollowsTheDurableVerdict() {
+        KeysetTrustStore trustStore = Mockito.mock(KeysetTrustStore.class);
+        when(messageRepository.currentUserId()).thenReturn(Maybe.just("me-1"));
+        when(trustStore.state("me-1", CONVERSATION_ID)).thenReturn(
+                Single.just(Optional.of(trustRecord(KeysetTrustStore.TrustState.CHANGED))));
+        ChatViewModel vm = newKeysetViewModel(trustStore);
+        conversationFlow.onNext(Optional.of(e2eeSummary(true)));
+
+        ChatViewModel.UiState ui = vm.getUiState().getValue();
+        assertEquals(ChatViewModel.KeysetTrust.CHANGED, ui.getKeysetTrust());
+        assertEquals(ChatViewModel.KeysetPause.CHANGED, ui.getKeysetPause());
+        assertTrue(ui.isSendingPaused());
+    }
+
+    @Test
+    public void verifiedKeysetWithEncryptionOffIsDowngradeBlocked() {
+        // Mirroring the send gate's order: the flag-off refusal lands first,
+        // so a trusted-but-off conversation is downgrade-blocked.
+        KeysetTrustStore trustStore = Mockito.mock(KeysetTrustStore.class);
+        when(messageRepository.currentUserId()).thenReturn(Maybe.just("me-1"));
+        when(trustStore.state("me-1", CONVERSATION_ID)).thenReturn(
+                Single.just(Optional.of(trustRecord(KeysetTrustStore.TrustState.VERIFIED))));
+        ChatViewModel vm = newKeysetViewModel(trustStore);
+        conversationFlow.onNext(Optional.of(e2eeSummary(false)));
+
+        ChatViewModel.UiState ui = vm.getUiState().getValue();
+        assertEquals(ChatViewModel.KeysetTrust.VERIFIED, ui.getKeysetTrust());
+        assertEquals(ChatViewModel.KeysetPause.DOWNGRADE_BLOCKED, ui.getKeysetPause());
+        assertTrue(ui.isSendingPaused());
+    }
+
+    @Test
+    public void noTrustRecordLeavesSendsUnpaused() {
+        KeysetTrustStore trustStore = Mockito.mock(KeysetTrustStore.class);
+        when(messageRepository.currentUserId()).thenReturn(Maybe.just("me-1"));
+        when(trustStore.state("me-1", CONVERSATION_ID))
+                .thenReturn(Single.just(Optional.empty()));
+        ChatViewModel vm = newKeysetViewModel(trustStore);
+        conversationFlow.onNext(Optional.of(e2eeSummary(true)));
+
+        ChatViewModel.UiState ui = vm.getUiState().getValue();
+        assertEquals(ChatViewModel.KeysetTrust.NONE, ui.getKeysetTrust());
+        assertEquals(ChatViewModel.KeysetPause.NONE, ui.getKeysetPause());
+        assertFalse(ui.isSendingPaused());
+    }
+
+    @Test
+    public void keysetChangedInteractionEventRefreshesTheVerdict() {
+        KeysetTrustStore trustStore = Mockito.mock(KeysetTrustStore.class);
+        when(messageRepository.currentUserId()).thenReturn(Maybe.just("me-1"));
+        when(trustStore.state("me-1", CONVERSATION_ID))
+                .thenReturn(Single.just(Optional.empty()))
+                .thenReturn(Single.just(Optional.of(
+                        trustRecord(KeysetTrustStore.TrustState.CHANGED))));
+        ChatViewModel vm = newKeysetViewModel(trustStore);
+        conversationFlow.onNext(Optional.of(e2eeSummary(true)));
+        assertEquals(ChatViewModel.KeysetTrust.NONE,
+                vm.getUiState().getValue().getKeysetTrust());
+
+        interactionFlow.onNext(new ApiError.Unknown(
+                MessageRepository.ERROR_E2EE_KEYSET_CHANGED));
+
+        ChatViewModel.UiState ui = vm.getUiState().getValue();
+        assertEquals(ChatViewModel.KeysetTrust.CHANGED, ui.getKeysetTrust());
+        assertTrue(ui.isSendingPaused());
+    }
+
+    @Test
+    public void sendWhilePausedKeepsTheDraftAndSkipsTheRepository() {
+        KeysetTrustStore trustStore = Mockito.mock(KeysetTrustStore.class);
+        when(messageRepository.currentUserId()).thenReturn(Maybe.just("me-1"));
+        when(trustStore.state("me-1", CONVERSATION_ID)).thenReturn(
+                Single.just(Optional.of(trustRecord(KeysetTrustStore.TrustState.CHANGED))));
+        ChatViewModel vm = newKeysetViewModel(trustStore);
+        conversationFlow.onNext(Optional.of(e2eeSummary(true)));
+
+        vm.onInputChange("hello");
+        vm.send();
+
+        verify(messageRepository, never()).send(
+                anyString(), any(), any(), anyString(), any());
+        ChatViewModel.UiState ui = vm.getUiState().getValue();
+        assertEquals("hello", ui.getInput());
+        assertTrue(ui.getError() instanceof ApiError.Unknown);
+    }
+
+    @Test
+    public void retryFailedWhilePausedSkipsTheRepository() {
+        KeysetTrustStore trustStore = Mockito.mock(KeysetTrustStore.class);
+        when(messageRepository.currentUserId()).thenReturn(Maybe.just("me-1"));
+        when(trustStore.state("me-1", CONVERSATION_ID)).thenReturn(
+                Single.just(Optional.of(trustRecord(KeysetTrustStore.TrustState.CHANGED))));
+        ChatViewModel vm = newKeysetViewModel(trustStore);
+        conversationFlow.onNext(Optional.of(e2eeSummary(true)));
+
+        vm.retryFailed("cmid-1");
+
+        verify(messageRepository, never()).retry(anyString());
+    }
+
+    @Test
+    public void resumeRefreshReReadsTheVerdict() {
+        KeysetTrustStore trustStore = Mockito.mock(KeysetTrustStore.class);
+        when(messageRepository.currentUserId()).thenReturn(Maybe.just("me-1"));
+        when(trustStore.state("me-1", CONVERSATION_ID))
+                .thenReturn(Single.just(Optional.of(
+                        trustRecord(KeysetTrustStore.TrustState.CHANGED))))
+                .thenReturn(Single.just(Optional.of(
+                        trustRecord(KeysetTrustStore.TrustState.VERIFIED))));
+        ChatViewModel vm = newKeysetViewModel(trustStore);
+        conversationFlow.onNext(Optional.of(e2eeSummary(true)));
+        assertTrue(vm.getUiState().getValue().isSendingPaused());
+
+        vm.refreshKeysetNotice();
+
+        ChatViewModel.UiState ui = vm.getUiState().getValue();
+        assertEquals(ChatViewModel.KeysetTrust.VERIFIED, ui.getKeysetTrust());
+        assertFalse(ui.isSendingPaused());
     }
 }

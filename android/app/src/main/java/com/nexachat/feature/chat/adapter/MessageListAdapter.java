@@ -5,6 +5,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.StringRes;
 import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.lifecycle.LifecycleOwner;
@@ -21,6 +22,7 @@ public final class MessageListAdapter extends ListAdapter<MessageListItem, Recyc
 
     private final MessageBubbleBinder binder;
     @Nullable private String currentUserId;
+    private int pausedFailReasonRes;
 
     public MessageListAdapter(
             @NonNull DateFormat timeFormat,
@@ -46,6 +48,14 @@ public final class MessageListAdapter extends ListAdapter<MessageListItem, Recyc
         if (java.util.Objects.equals(currentUserId, userId)) return;
         currentUserId = userId;
         binder.setCurrentUserId(userId);
+        notifyDataSetChanged();
+    }
+
+    /** Propagates the conversation-level send pause into row binding. */
+    public void setPausedFailReason(@StringRes int reasonRes) {
+        if (pausedFailReasonRes == reasonRes) return;
+        pausedFailReasonRes = reasonRes;
+        binder.setPausedFailReason(reasonRes);
         notifyDataSetChanged();
     }
 

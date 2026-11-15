@@ -164,7 +164,8 @@
         <TextView android:id="@+id/chatErrorMessage" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginEnd="@dimen/space_sm" android:layout_weight="1" android:textColor="?attr/colorOnErrorContainer" />
         <com.google.android.material.button.MaterialButton android:id="@+id/chatErrorRetry" style="@style/Widget.NexaChat.Button.Text" android:layout_width="wrap_content" android:layout_height="wrap_content" android:minHeight="@dimen/min_touch_target" android:text="@string/action_retry" android:visibility="gone" />
     </LinearLayout>
-    <LinearLayout android:id="@+id/pendingAttachments" android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:paddingHorizontal="@dimen/space_md" android:paddingVertical="@dimen/space_xs" android:visibility="gone" app:layout_constraintBottom_toTopOf="@id/chatError" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" />
+    <include android:id="@+id/keysetNotice" layout="@layout/include_chat_keyset_notice" android:layout_width="0dp" android:layout_height="wrap_content" app:layout_constraintBottom_toTopOf="@id/chatError" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" />
+    <LinearLayout android:id="@+id/pendingAttachments" android:layout_width="0dp" android:layout_height="wrap_content" android:orientation="vertical" android:paddingHorizontal="@dimen/space_md" android:paddingVertical="@dimen/space_xs" android:visibility="gone" app:layout_constraintBottom_toTopOf="@id/keysetNotice" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" />
 
     <com.nexachat.core.ui.components.EmptyStateView
         android:id="@+id/emptyState"
