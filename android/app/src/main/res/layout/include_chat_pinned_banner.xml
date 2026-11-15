@@ -4,7 +4,7 @@
     android:id="@+id/pinnedRoot"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="?attr/colorSurface"
+    android:background="?attr/colorSurfaceContainerLow"
     android:contentDescription="@string/pinned_title"
     android:minHeight="@dimen/min_touch_target"
     android:orientation="vertical"
@@ -42,9 +42,4 @@
             android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="?attr/colorOnSurface" />
     </LinearLayout>
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="?attr/colorOutlineVariant" />
 </LinearLayout>
