@@ -6,43 +6,66 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
-## [1.2.9] - 2026-11-15
+## [1.2.9] - 2026-11-16
 
-Android APK release. `v1.2.8` shipped server-only — its APK build failed the
-release signing gate — so this APK also carries the `v1.2.8` client changes.
-No server or schema changes. See
+Android APK release with a new look. `v1.2.8` shipped server-only — its APK
+build failed the release signing gate — so this APK also carries the `v1.2.8`
+client changes plus everything merged since. The matching server revision
+applies Flyway V35 and issues Google sign-in nonces in one round trip; the
+APK does not require it. See
 [docs/release-notes/v1.2.9.md](docs/release-notes/v1.2.9.md).
 
 ### Added
-- Android: Google sign-in reports why it failed — unavailable on the server,
-  no Google account on the device, developer configuration, network or a
-  cancelled prompt — instead of a generic message.
+- Android: Tonal Plum design — light and dark palettes, the Inter typeface,
+  tonal cards and chips, filled text fields, 48dp buttons and circular
+  settings tiles across the inbox, profile, settings, group, auth, sheets,
+  chat and contacts screens.
+- Android: device-keyset verification for experimental E2EE direct chats —
+  an NC1 security code, local Verified/Changed trust state and a
+  paused-sending notice; sends pause when the keyset changes or the member
+  list is unreadable, and a verified conversation refuses to fall back to
+  plaintext when the server turns encryption off.
+
+### Changed
+- Android: faster Google sign-in — the nonce is prefetched while the auth
+  screen is idle, a recent wake-gate probe is reused, and the server issues
+  the nonce and cleans expired rows in one statement.
+- Android sign-in: international phone numbers are accepted without a
+  leading `+`; the sign-in/create-account switch announces the selected mode
+  to screen readers and keeps the selected pill fully rounded; outlined and
+  text buttons get their press feedback back; the app name is no longer
+  announced twice; forgot-password uses the auth design tokens; Google
+  sign-in reports the actual failure reason — server disabled, no Google
+  account on the device, developer configuration or network — and a
+  cancelled prompt stays silent.
+- Android session: sign-out clears the previous account's cached profile
+  and drops profile results that land after sign-out, so the next account
+  never sees the old name or avatar.
 
 ### Fixed
 - Site: `assetlinks.json` declares the release signing certificate first, so
   `https://nexachat.io.vn/join/…` invite links verify for the published APKs;
   the upload certificate stays as a second entry.
-- Android sign-in: international phone numbers are accepted without a leading
-  `+`; outlined and text buttons get their press feedback back; the
-  sign-in/create-account switch announces the selected mode to screen readers
-  and keeps the selected pill fully rounded; the app name is no longer
-  announced twice; forgot-password uses the auth design tokens.
-- Android chat: hidden duplicate header buttons removed — search, group info
-  and summary remain in the overflow menu; the AI opt-out row no longer adds
-  an unlabeled TalkBack stop.
-- Android encryption: progress while loading or toggling, an informational
-  (not error-colored) unavailable note, announced status changes, a one-line
-  hint for devices that cannot be shown and padded device rows; direct-chat
-  boards show only the Reminders tab and clamp a restored tab index.
-- Android contacts and profile: contact dialog errors are announced in the
-  error color and IME Done saves the alias; contact and search subtitles wrap
-  to two lines at large font; the avatar camera badge is reachable by
-  keyboard and D-pad.
-- Android invite join: failures render in the error color and the normal
-  color returns on success.
-- Android settings and social screens adopt semantic dimension tokens;
-  pixel-identical except the invite-join card corner now matches the 16dp
-  card convention.
+- Android chat: archiving from a chat returns to the inbox with an Undo
+  action whose restore is confirmed; a mic tap that cannot start recording
+  shows the hold-to-record hint; failed rows whose retry is suppressed
+  during a send pause no longer show a Retry label; the chat header stays
+  compact — search, group info and summary remain in the overflow menu and
+  the AI opt-out row no longer adds an unlabeled TalkBack stop.
+- Android contacts, profile and invite: contact dialog errors are announced
+  in the error color and IME Done saves the alias; contact and search
+  subtitles wrap to two lines at large font; the avatar camera badge is
+  reachable by keyboard and D-pad; invite-join failures render in the error
+  color and the normal color returns on success.
+- Android group: the add-member sheet explains an empty list and offers the
+  invite link; the remove-member icon is neutral and member names are no
+  longer bold.
+- Server: Flyway V35 backfills messages stored without a `change_version`
+  (demo-seeded conversations could render empty on sync clients); both
+  statements are no-ops on healthy databases, and the demo seed now writes
+  proper revisions. No new environment variable.
+- Server: the Google nonce insert and expired-row cleanup run as one
+  statement; hashing, TTL and single-use are unchanged.
 
 ### Removed
 - Android: the unreachable `ChatPlaceholderFragment` and its string.
