@@ -726,7 +726,8 @@ public final class InboxFragment extends Fragment {
             actionParams.setMarginStart(gap);
             actionParams.topMargin = 0;
         }
-        row.requestLayout();
+        binding.activeNowTitle.setLayoutParams(titleParams);
+        binding.activeNowViewAll.setLayoutParams(actionParams);
     }
 
     /** Widest laid-out line; falls back to the one-line desired width pre-layout. */
