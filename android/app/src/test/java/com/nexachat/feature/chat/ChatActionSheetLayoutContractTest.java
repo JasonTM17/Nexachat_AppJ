@@ -9,7 +9,6 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Path;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -19,7 +18,6 @@ import static org.junit.Assert.assertTrue;
 /** Layout contracts for the chat bubble, date chip and message action sheet. */
 public final class ChatActionSheetLayoutContractTest {
     private static final String ANDROID = "http://schemas.android.com/apk/res/android";
-    private static final String APP = "http://schemas.android.com/apk/res-auto";
 
     @Test
     public void incomingBubbleHasNoStroke() throws Exception {
@@ -94,10 +92,28 @@ public final class ChatActionSheetLayoutContractTest {
         int end = source.indexOf("private static void confirmDelete(", start);
         assertTrue("reaction tile builder must exist", start >= 0 && end > start);
         String loop = source.substring(start, end);
-        assertTrue("each emoji must sit on a circular borderless ripple tile",
-                loop.contains("selectableItemBackgroundBorderless"));
+        assertTrue("each emoji must sit on the bounded circular ripple tile",
+                loop.contains("R.drawable.bg_reaction_tile"));
+        assertTrue("the tile lookup must not re-resolve a theme attr per emoji",
+                !loop.contains("resolveAttribute"));
         assertTrue("reaction tiles must keep the 48dp touch target",
                 loop.contains("R.dimen.min_touch_target"));
+
+        Document tile = parse("src/main/res/drawable/bg_reaction_tile.xml");
+        assertEquals("tile background must be a ripple",
+                "ripple", tile.getDocumentElement().getTagName());
+        NodeList shapes = tile.getElementsByTagName("shape");
+        boolean circularMask = false;
+        for (int i = 0; i < shapes.getLength(); i++) {
+            Element shape = (Element) shapes.item(i);
+            Element item = (Element) shape.getParentNode();
+            if ("oval".equals(shape.getAttributeNS(ANDROID, "shape"))
+                    && "@android:id/mask".equals(
+                            item.getAttributeNS(ANDROID, "id"))) {
+                circularMask = true;
+            }
+        }
+        assertTrue("ripple must be masked to a circle", circularMask);
     }
 
     @Test
