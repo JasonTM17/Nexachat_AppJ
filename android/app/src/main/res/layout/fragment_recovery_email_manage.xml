@@ -34,8 +34,13 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:accessibilityLiveRegion="polite"
+            android:background="@drawable/bg_auth_inline_error"
+            android:drawableStart="@drawable/ic_error_outline"
+            android:drawableTint="?attr/colorError"
+            android:drawablePadding="@dimen/space_sm"
+            android:padding="@dimen/space_inset"
             android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:textColor="?attr/colorError"
+            android:textColor="?attr/colorOnErrorContainer"
             android:visibility="gone" />
 
         <com.google.android.material.button.MaterialButton
@@ -45,7 +50,7 @@
             android:layout_marginTop="20dp"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/recovery_email_change"
-            app:cornerRadius="12dp" />
+            app:cornerRadius="@dimen/corner_md" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/recoveryEmailRemove"
@@ -55,7 +60,7 @@
             android:layout_marginTop="8dp"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/recovery_email_remove"
-            app:cornerRadius="12dp" />
+            app:cornerRadius="@dimen/corner_md" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/recoveryEmailAdd"
@@ -64,7 +69,7 @@
             android:layout_marginTop="20dp"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/recovery_email_add"
-            app:cornerRadius="12dp" />
+            app:cornerRadius="@dimen/corner_md" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/recoveryEmailRetry"
@@ -75,6 +80,6 @@
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/action_retry"
             android:visibility="gone"
-            app:cornerRadius="12dp" />
+            app:cornerRadius="@dimen/corner_md" />
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>
