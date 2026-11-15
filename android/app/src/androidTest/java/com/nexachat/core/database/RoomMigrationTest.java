@@ -204,6 +204,38 @@ public final class RoomMigrationTest {
     }
 
     @Test
+    public void v16ToV17MigrationCreatesKeysetTrustTable() throws Exception {
+        helper.createDatabase(EXPORTED_DB, 16).close();
+
+        SupportSQLiteDatabase db = helper.runMigrationsAndValidate(
+                EXPORTED_DB, 17, true, AppDatabase.MIGRATION_16_17);
+        try {
+            db.execSQL(
+                    "INSERT INTO e2ee_keyset_trust (owner_user_id, conversation_id, state, "
+                            + "verified_digest_hex, verified_transcript, changed_digest_hex, "
+                            + "updated_at_ms) VALUES ('u-1', 'c-1', 'VERIFIED', 'AA', "
+                            + "x'01020304', NULL, 100)");
+            try (Cursor cursor = db.query(
+                    "SELECT state, verified_transcript, changed_digest_hex "
+                            + "FROM e2ee_keyset_trust WHERE owner_user_id = 'u-1'")) {
+                assertTrue(cursor.moveToFirst());
+                assertEquals("VERIFIED", cursor.getString(0));
+                assertEquals(4, cursor.getBlob(1).length);
+                assertTrue(cursor.isNull(2));
+            }
+            db.execSQL(
+                    "UPDATE e2ee_keyset_trust SET state = 'CHANGED', "
+                            + "changed_digest_hex = 'BB' WHERE owner_user_id = 'u-1'");
+            assertEquals("CHANGED",
+                    singleString(db, "SELECT state FROM e2ee_keyset_trust"));
+            assertEquals("BB",
+                    singleString(db, "SELECT changed_digest_hex FROM e2ee_keyset_trust"));
+        } finally {
+            db.close();
+        }
+    }
+
+    @Test
     public void v9SchemaCreatesFromExportedJson() throws Exception {
         helper.createDatabase(EXPORTED_DB, 9).close();
     }

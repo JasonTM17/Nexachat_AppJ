@@ -12,5 +12,11 @@
             android:name="com.nexachat.debug.DebugPushInjectionReceiver"
             android:exported="true"
             android:permission="android.permission.DUMP" />
+
+        <activity
+            android:name="com.nexachat.debug.LayoutPreviewActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            android:theme="@style/Theme.NexaChat" />
     </application>
 </manifest>

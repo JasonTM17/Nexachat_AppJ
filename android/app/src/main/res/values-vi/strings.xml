@@ -63,6 +63,7 @@
     <string name="conversation_muted">Đã tắt thông báo</string>
     <string name="conversation_unmuted">Đã bật thông báo</string>
     <string name="conversation_archived">Đã lưu trữ</string>
+    <string name="conversation_archived_snackbar">Đã lưu trữ cuộc trò chuyện</string>
     <string name="conversation_unarchived">Đã bỏ lưu trữ</string>
     <string name="conversation_settings_title">Cài đặt trò chuyện</string>
     <string name="conversation_ai_opt_out_title">Không dùng tin nhắn của tôi cho AI</string>
@@ -183,6 +184,23 @@
     <string name="e2ee_peer_fallback">người liên hệ</string>
     <string name="e2ee_action_turn_on">Bật</string>
     <string name="e2ee_action_turn_off">Tắt</string>
+    <string name="e2ee_verify_state_not_verified">Chưa xác minh</string>
+    <string name="e2ee_verify_state_verified">Đã xác minh</string>
+    <string name="e2ee_verify_state_changed">Đã thay đổi — hãy đối chiếu lại</string>
+    <string name="e2ee_verify_state_unavailable">Không đọc được trạng thái xác minh</string>
+    <string name="e2ee_action_mark_verified">Đánh dấu đã xác minh</string>
+    <string name="e2ee_verify_confirm_title">Đánh dấu đã xác minh?</string>
+    <string name="e2ee_verify_confirm_body">Chỉ xác minh sau khi bạn đã đối chiếu mã với %1$s và hai mã trùng nhau.</string>
+    <string name="e2ee_code_changed_refresh">Mã đã thay đổi. Hãy đối chiếu lại.</string>
+    <string name="e2ee_keyset_changed_notice">Mã bảo mật đã thay đổi. Đang tạm dừng gửi cho đến khi bạn đối chiếu lại.</string>
+    <string name="e2ee_keyset_notice_action">Đối chiếu</string>
+    <string name="e2ee_downgrade_notice">Mã hóa đang tắt trong trò chuyện này. Đang tạm dừng gửi.</string>
+    <string name="e2ee_downgrade_notice_action">Xem lại</string>
+    <string name="e2ee_send_blocked_downgrade">Mã hóa đang tắt trong trò chuyện này. Bật lại để gửi.</string>
+    <string name="e2ee_send_keyset_invalid">Không đọc được danh sách thành viên của trò chuyện này. Chưa gửi.</string>
+    <string name="e2ee_failed_keyset_changed">Chưa gửi — mã đã đổi</string>
+    <string name="e2ee_failed_downgrade_blocked">Chưa gửi — mã hóa đã tắt</string>
+
     <string name="chat_typing">đang nhập…</string>
     <string name="msg_seen">Đã xem</string>
     <string name="chat_offline">Mất kết nối</string>
@@ -327,6 +345,7 @@
     <string name="voice_slide_to_cancel">&lt; Trượt sang trái để hủy</string>
     <string name="voice_release_to_cancel">Thả tay để hủy</string>
     <string name="voice_too_short">Giữ để ghi âm, thả để gửi</string>
+    <string name="voice_hold_to_record">Giữ để ghi âm</string>
     <string name="voice_permission_required">Hãy cấp quyền micrô để ghi âm tin nhắn thoại.</string>
     <string name="voice_play">Phát tin nhắn thoại</string>
     <string name="voice_pause">Tạm dừng tin nhắn thoại</string>
