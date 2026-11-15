@@ -60,6 +60,13 @@ APK does not require it. See
 - Android group: the add-member sheet explains an empty list and offers the
   invite link; the remove-member icon is neutral and member names are no
   longer bold.
+- Android inbox: at large font scales the filter chips wrap onto rows and
+  the Active now header stacks under its title, so every chip stays
+  reachable; archived groups open group info.
+- Android profile and chat: the change-password dialog paints its title,
+  labelled fields and buttons again and keeps a persistent inline error on
+  failure instead of closing; the Forward icon in the message action sheet
+  is a forward arrow instead of a play triangle.
 - Server: Flyway V35 backfills messages stored without a `change_version`
   (demo-seeded conversations could render empty on sync clients); both
   statements are no-ops on healthy databases, and the demo seed now writes
