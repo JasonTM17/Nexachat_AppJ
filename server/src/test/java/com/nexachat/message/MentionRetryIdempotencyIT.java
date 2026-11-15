@@ -38,7 +38,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 @ActiveProfiles("it")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class P1MentionRetryIdempotencyIT {
+class MentionRetryIdempotencyIT {
 
     @DynamicPropertySource
     static void datasourceProps(DynamicPropertyRegistry registry) {
@@ -109,7 +109,7 @@ class P1MentionRetryIdempotencyIT {
     }
 
     private TestUser createTestUser(String displayName) {
-        String phone = ItPhoneRanges.nextPhone(P1MentionRetryIdempotencyIT.class);
+        String phone = ItPhoneRanges.nextPhone(MentionRetryIdempotencyIT.class);
         User user = User.create(phone, "hash", displayName);
         user = userRepository.saveAndFlush(user);
         return new TestUser(user.getId(), jwtService.generateAccessToken(user));

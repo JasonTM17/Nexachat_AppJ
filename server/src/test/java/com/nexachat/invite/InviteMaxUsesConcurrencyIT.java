@@ -37,8 +37,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Adversarial review repro: two direct joins racing past the same link load can
- * both satisfy {@code useCount < maxUses} because the conversation row lock only
+ * Two direct joins racing past the same link load can both satisfy
+ * {@code useCount < maxUses} because the conversation row lock only
  * serializes the member-cap section; the link row is read (and cached in the
  * persistence context) before the lock. With maxUses=1 at most one joiner may
  * be admitted.
@@ -47,7 +47,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 @ActiveProfiles("it")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class P1InviteMaxUsesRaceIT {
+class InviteMaxUsesConcurrencyIT {
 
     @DynamicPropertySource
     static void datasourceProps(DynamicPropertyRegistry registry) {
@@ -324,7 +324,7 @@ class P1InviteMaxUsesRaceIT {
     }
 
     private TestUser createTestUser(String displayName) {
-        String phone = ItPhoneRanges.nextPhone(P1InviteMaxUsesRaceIT.class);
+        String phone = ItPhoneRanges.nextPhone(InviteMaxUsesConcurrencyIT.class);
         User user = User.create(phone, "hash", displayName);
         user = userRepository.saveAndFlush(user);
         return new TestUser(user.getId(), jwtService.generateAccessToken(user));

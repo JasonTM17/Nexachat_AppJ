@@ -50,7 +50,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("it")
 @TestPropertySource(properties = "server.forward-headers-strategy=framework")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class P1InviteIpRateLimitIT {
+class InviteJoinIpRateLimitIT {
 
     /** Frozen bucket time: 60 requests must exhaust the minute budget exactly. */
     private static final MutableTimeMeter BUCKET_TIME = new MutableTimeMeter();
@@ -165,7 +165,7 @@ class P1InviteIpRateLimitIT {
     }
 
     private TestUser createTestUser(String displayName) {
-        String phone = ItPhoneRanges.nextPhone(P1InviteIpRateLimitIT.class);
+        String phone = ItPhoneRanges.nextPhone(InviteJoinIpRateLimitIT.class);
         User user = User.create(phone, "hash", displayName);
         user = userRepository.saveAndFlush(user);
         return new TestUser(user.getId(), jwtService.generateAccessToken(user));

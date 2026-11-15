@@ -47,7 +47,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 @ActiveProfiles("it")
-class P1AskRecallUncitedCacheIT {
+class AskRecallUncitedCacheIT {
 
     private static final FakeOpenAiServer LLM = startServer();
     private static final AtomicInteger LLM_CALLS = new AtomicInteger();
@@ -190,7 +190,7 @@ class P1AskRecallUncitedCacheIT {
     }
 
     private User createUser(String displayName) {
-        String phone = ItPhoneRanges.nextPhone(P1AskRecallUncitedCacheIT.class);
+        String phone = ItPhoneRanges.nextPhone(AskRecallUncitedCacheIT.class);
         return userRepository.save(User.create(phone, "x".repeat(60), displayName));
     }
 
