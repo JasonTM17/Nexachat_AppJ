@@ -56,6 +56,12 @@ public final class AuthErrorIds {
             if (com.nexachat.core.auth.GoogleSignInFlow.CODE_NO_ACCOUNT.equals(code)) {
                 return R.string.error_google_no_account;
             }
+            if (com.nexachat.core.auth.GoogleSignInFlow.CODE_NOT_AVAILABLE.equals(code)) {
+                return R.string.error_google_not_available;
+            }
+            if (com.nexachat.core.auth.GoogleSignInFlow.CODE_DEVELOPER_ERROR.equals(code)) {
+                return R.string.error_google_developer_error;
+            }
         }
         return R.string.error_generic;
     }

@@ -622,6 +622,8 @@
     <string name="error_google_not_linked">This Google account is not linked. Sign in with your phone and password, then link Google in Profile.</string>
     <string name="error_google_already_linked">That Google account is already linked to another account.</string>
     <string name="error_google_no_account">No Google account found on this device.</string>
+    <string name="error_google_not_available">Google sign-in isn\'t available right now.</string>
+    <string name="error_google_developer_error">Google sign-in isn\'t set up correctly on this device. Sign in with your phone number instead.</string>
     <string name="error_last_sign_in_method">Set a password before removing this sign-in method.</string>
     <string name="error_no_password_set">This account does not have a password.</string>
     <!-- Google signup auth -->

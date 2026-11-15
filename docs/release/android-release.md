@@ -26,7 +26,22 @@ certificate fingerprints with:
 keytool -list -v -keystore $keystore -alias nexachat
 ```
 
-Use the SHA-1 fingerprint with the Android OAuth client for package
+Google and Firebase match the certificate embedded in the **installed APK**, so
+always confirm the fingerprints of what CI actually ships:
+
+```bash
+apksigner verify --print-certs nexachat-<version>.apk
+```
+
+Verified on the `v1.2.7` GitHub release APK — signer
+`CN=Nguyen Tien Son, O=NexaChat, C=VN`, SHA-1
+`94:AD:07:4D:52:AC:20:52:89:DE:00:93:68:62:12:97:68:D0:6B:D5`, SHA-256
+`E7:41:9A:48:A4:9D:20:4E:55:70:60:6E:B8:33:96:8D:CD:A7:28:E2:AC:99:D7:24:3B:2C:FE:8C:15:8A:39:DF`.
+This is the key material in the `ANDROID_KEYSTORE_BASE64` secret; if a local
+upload keystore prints a different fingerprint, the APK's signer — not the local
+keystore — is what to register.
+
+Use the APK's SHA-1 fingerprint with the Android OAuth client for package
 `com.nexachat`. Add both SHA-1 and SHA-256 fingerprints to the matching Android
 app in Firebase Project settings. These fingerprints identify the signing key
 used by distributed APKs.
@@ -40,7 +55,7 @@ Cloud (see [docs/operations/google-signin-setup.md](../operations/google-signin-
 |---|---|
 | **Web application** | Android `GOOGLE_WEB_CLIENT_ID` in `local.properties` or `-PgoogleWebClientId=`; server `NEXACHAT_GOOGLE_WEB_CLIENT_ID` — ID token `aud` |
 | **Android (debug)** | Google Cloud Android client with the **debug keystore** SHA-1 (`~/.android/debug.keystore`, alias `androiddebugkey`) |
-| **Android (release)** | Google Cloud Android client with the **upload keystore** SHA-1 from the keystore section above |
+| **Android (release)** | Google Cloud Android client with the SHA-1 of the key that signs the distributed APK — verified `94:AD:07:4D:52:AC:20:52:89:DE:00:93:68:62:12:97:68:D0:6B:D5` on `v1.2.7`; for Play installs, add the Play App Signing key certificate SHA-1 too |
 
 The Android app always passes the **web** client ID to Credential Manager. The
 server trusts the **Android** client IDs as the token's `azp` via

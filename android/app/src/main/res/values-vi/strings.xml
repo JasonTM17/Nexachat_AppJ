@@ -615,6 +615,8 @@
     <string name="error_google_not_linked">Tài khoản Google này chưa được liên kết. Hãy đăng nhập bằng số điện thoại và mật khẩu, sau đó liên kết Google trong Hồ sơ.</string>
     <string name="error_google_already_linked">Tài khoản Google này đã được liên kết với một tài khoản khác.</string>
     <string name="error_google_no_account">Không tìm thấy tài khoản Google trên thiết bị này.</string>
+    <string name="error_google_not_available">Đăng nhập Google hiện không khả dụng.</string>
+    <string name="error_google_developer_error">Đăng nhập Google chưa được thiết lập đúng trên thiết bị này. Hãy đăng nhập bằng số điện thoại.</string>
     <string name="error_last_sign_in_method">Hãy đặt mật khẩu trước khi gỡ phương thức đăng nhập này.</string>
     <string name="error_no_password_set">Tài khoản này chưa có mật khẩu.</string>
     <!-- Google signup auth -->

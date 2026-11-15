@@ -10,6 +10,10 @@ public final class GoogleSignInException extends Exception {
         NO_ACCOUNT,
         /** Credential Manager or Play Services is unavailable or misconfigured. */
         UNAVAILABLE,
+        /** The provider rejected the request setup (client ID, fingerprint, or consent). */
+        DEVELOPER_ERROR,
+        /** The provider reported a network failure reaching Google. */
+        NETWORK,
         /** The returned credential was not a parseable Google ID token. */
         FAILED
     }

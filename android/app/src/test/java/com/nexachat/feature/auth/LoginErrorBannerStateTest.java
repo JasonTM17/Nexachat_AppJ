@@ -51,4 +51,20 @@ public final class LoginErrorBannerStateTest {
 
         assertFalse(banner.isVisible());
     }
+
+    @Test
+    public void loadingHidesAnErrorBanner() {
+        LoginErrorBannerState banner = LoginErrorBannerState.resolve(
+                false, ApiError.InvalidCredentials.INSTANCE, false, true);
+
+        assertFalse(banner.isVisible());
+    }
+
+    @Test
+    public void loadingHidesTheServerStartingBanner() {
+        LoginErrorBannerState banner = LoginErrorBannerState.resolve(
+                false, null, true, true);
+
+        assertFalse(banner.isVisible());
+    }
 }

@@ -49,6 +49,10 @@ public final class ApiErrorTextTest {
                 new ApiError.Unknown("NO_PASSWORD_SET", 409)));
         assertEquals(R.string.error_google_no_account, ApiErrorText.resource(
                 new ApiError.Unknown(com.nexachat.core.auth.GoogleSignInFlow.CODE_NO_ACCOUNT)));
+        assertEquals(R.string.error_google_not_available, ApiErrorText.resource(
+                new ApiError.Unknown(com.nexachat.core.auth.GoogleSignInFlow.CODE_NOT_AVAILABLE)));
+        assertEquals(R.string.error_google_developer_error, ApiErrorText.resource(
+                new ApiError.Unknown(com.nexachat.core.auth.GoogleSignInFlow.CODE_DEVELOPER_ERROR)));
     }
 
     @Test
@@ -75,6 +79,8 @@ public final class ApiErrorTextTest {
             new ApiError.Unknown("LAST_SIGN_IN_METHOD"),
             new ApiError.Unknown("NO_PASSWORD_SET"),
             new ApiError.Unknown(com.nexachat.core.auth.GoogleSignInFlow.CODE_NO_ACCOUNT),
+            new ApiError.Unknown(com.nexachat.core.auth.GoogleSignInFlow.CODE_NOT_AVAILABLE),
+            new ApiError.Unknown(com.nexachat.core.auth.GoogleSignInFlow.CODE_DEVELOPER_ERROR),
         };
         for (ApiError error : errors) {
             assertEquals(AuthErrorIds.messageId(error), ApiErrorText.resource(error));

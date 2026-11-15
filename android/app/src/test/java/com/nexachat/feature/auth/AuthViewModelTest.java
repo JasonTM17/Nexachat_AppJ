@@ -311,6 +311,37 @@ public final class AuthViewModelTest {
     }
 
     @Test
+    public void googleSignInDisabledOnServerEndsLoadingWithNotAvailable() {
+        viewModel = googleViewModel(new FakeGoogleSignInClient(true, "google-id-token"));
+        when(repository.requestGoogleNonce()).thenReturn(
+                Single.just(Result.failure(new ApiError.Unknown("NOT_FOUND", 404))));
+        List<AuthViewModel.Event> events = observeEvents();
+
+        viewModel.googleSignIn(null);
+
+        assertTrue(events.isEmpty());
+        assertFalse(viewModel.getUiState().getValue().getLoading());
+        assertEquals(GoogleSignInFlow.CODE_NOT_AVAILABLE,
+                ((ApiError.Unknown) viewModel.getUiState().getValue().getError()).getCode());
+    }
+
+    @Test
+    public void googleSignInDeveloperErrorEndsLoading() {
+        viewModel = googleViewModel(new FakeGoogleSignInClient(true,
+                new GoogleSignInException(GoogleSignInException.Reason.DEVELOPER_ERROR)));
+        when(repository.requestGoogleNonce()).thenReturn(
+                Single.just(new Result.Success<>(new GoogleNonceResponse("nonce-1", 300))));
+        List<AuthViewModel.Event> events = observeEvents();
+
+        viewModel.googleSignIn(null);
+
+        assertTrue(events.isEmpty());
+        assertFalse(viewModel.getUiState().getValue().getLoading());
+        assertEquals(GoogleSignInFlow.CODE_DEVELOPER_ERROR,
+                ((ApiError.Unknown) viewModel.getUiState().getValue().getError()).getCode());
+    }
+
+    @Test
     public void googleSignInNetworkErrorShowsBannerWithoutNavigation() {
         viewModel = googleViewModel(new FakeGoogleSignInClient(true, "google-id-token"));
         when(repository.requestGoogleNonce()).thenReturn(
