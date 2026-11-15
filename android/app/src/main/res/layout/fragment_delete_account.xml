@@ -10,7 +10,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingBottom="24dp">
+        android:paddingBottom="@dimen/space_lg">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/deleteAccountToolbar"
@@ -61,7 +61,7 @@
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="@dimen/space_md"
             android:layout_marginTop="@dimen/space_lg"
-            android:minHeight="56dp"
+            android:minHeight="@dimen/button_min_height"
             android:text="@string/delete_account_send_code"
             android:visibility="gone"
             app:cornerRadius="@dimen/corner_md" />
@@ -71,7 +71,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="@dimen/space_md"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="@dimen/space_inset"
             android:accessibilityLiveRegion="polite"
             android:text="@string/delete_account_code_sent"
             android:textAppearance="?attr/textAppearanceBodyMedium"
@@ -134,7 +134,7 @@
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="@dimen/space_md"
             android:layout_marginTop="@dimen/space_lg"
-            android:minHeight="56dp"
+            android:minHeight="@dimen/button_min_height"
             android:text="@string/delete_account_confirm"
             android:textColor="?attr/colorOnError"
             android:visibility="gone"

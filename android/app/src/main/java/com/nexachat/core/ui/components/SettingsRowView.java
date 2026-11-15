@@ -85,8 +85,9 @@ public class SettingsRowView extends LinearLayout {
             subtitleView.setMaxLines(large ? Integer.MAX_VALUE : 2);
             subtitleView.setEllipsize(large ? null : android.text.TextUtils.TruncateAt.END);
         }
-        int minDp = subtitleView != null && subtitleView.getVisibility() == VISIBLE ? 80 : 64;
-        setMinimumHeight(Math.round(minDp * getResources().getDisplayMetrics().density));
+        int minHeightRes = subtitleView != null && subtitleView.getVisibility() == VISIBLE
+                ? R.dimen.list_item_two_line_min_height : R.dimen.list_item_min_height;
+        setMinimumHeight(getResources().getDimensionPixelSize(minHeightRes));
     }
 
     public void setTrailingValue(@Nullable CharSequence value) {
@@ -235,25 +236,20 @@ public class SettingsRowView extends LinearLayout {
     private LinearLayout.LayoutParams inlineLayoutParams() {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        int gap = (int) TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 8, getResources().getDisplayMetrics());
-        lp.setMarginStart(gap);
-        lp.setMarginEnd((int) TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 4, getResources().getDisplayMetrics()));
+        lp.setMarginStart(getResources().getDimensionPixelSize(R.dimen.space_sm));
+        lp.setMarginEnd(getResources().getDimensionPixelSize(R.dimen.space_xs));
         return lp;
     }
 
     private LinearLayout.LayoutParams stackedLayoutParams() {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = (int) TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 2, getResources().getDisplayMetrics());
+        lp.topMargin = getResources().getDimensionPixelSize(R.dimen.space_xxs);
         return lp;
     }
 
     private void applyInlineValueStyle() {
-        valueView.setMaxWidth((int) TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 140, getResources().getDisplayMetrics()));
+        valueView.setMaxWidth(getResources().getDimensionPixelSize(R.dimen.value_max_width));
         valueView.setMaxLines(1);
         valueView.setEllipsize(android.text.TextUtils.TruncateAt.END);
     }

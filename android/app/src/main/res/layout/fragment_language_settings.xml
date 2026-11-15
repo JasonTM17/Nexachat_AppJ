@@ -19,19 +19,19 @@
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_margin="16dp"
+        android:layout_margin="@dimen/space_md"
         app:cardBackgroundColor="?attr/colorSurface"
-        app:cardCornerRadius="16dp"
+        app:cardCornerRadius="@dimen/corner_lg"
         app:cardElevation="0dp"
         app:strokeColor="?attr/colorOutlineVariant"
-        app:strokeWidth="1dp">
+        app:strokeWidth="@dimen/control_stroke_width">
 
         <RadioGroup
             android:id="@+id/languageOptions"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingHorizontal="16dp"
-            android:paddingVertical="8dp" />
+            android:paddingHorizontal="@dimen/space_md"
+            android:paddingVertical="@dimen/space_sm" />
     </com.google.android.material.card.MaterialCardView>
 </LinearLayout>
