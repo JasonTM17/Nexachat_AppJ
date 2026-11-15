@@ -2,9 +2,11 @@ package com.nexachat.recovery;
 
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.common.error.ConstraintNames;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
-import org.hibernate.exception.ConstraintViolationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +20,8 @@ import java.util.UUID;
 
 @Service
 public class EmailOtpService {
+
+    private static final Logger log = LoggerFactory.getLogger(EmailOtpService.class);
 
     static final Duration CODE_TTL = Duration.ofMinutes(10);
     static final Duration SEND_COOLDOWN = Duration.ofSeconds(60);
@@ -139,6 +143,9 @@ public class EmailOtpService {
             userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException exception) {
             if (isVerifiedEmailConflict(exception)) {
+                // Only the constraint name is logged; the violation message can
+                // embed the contested email address.
+                log.info("Verified-email conflict on constraint {}", ConstraintNames.of(exception));
                 throw invalidCode();
             }
             throw exception;
@@ -254,15 +261,7 @@ public class EmailOtpService {
     }
 
     private static boolean isVerifiedEmailConflict(DataIntegrityViolationException exception) {
-        Throwable current = exception;
-        while (current != null) {
-            if (current instanceof ConstraintViolationException violation
-                    && VERIFIED_EMAIL_INDEX.equals(violation.getConstraintName())) {
-                return true;
-            }
-            current = current.getCause();
-        }
-        return false;
+        return VERIFIED_EMAIL_INDEX.equals(ConstraintNames.of(exception));
     }
 
     private static ApiException invalidCode() {

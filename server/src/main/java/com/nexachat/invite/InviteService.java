@@ -2,6 +2,7 @@ package com.nexachat.invite;
 
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.common.error.ConstraintNames;
 import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationMember;
 import com.nexachat.conversation.ConversationMemberRepository;
@@ -143,6 +144,9 @@ public class InviteService {
         try {
             link = linkRepository.save(link);
         } catch (DataIntegrityViolationException e) {
+            // Only the constraint name is logged; the violation message can
+            // embed the offending column values.
+            log.info("Invite link insert hit unique constraint {}", ConstraintNames.of(e));
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "Invite link was rotated concurrently; retry");
         }

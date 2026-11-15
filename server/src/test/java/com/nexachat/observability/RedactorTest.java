@@ -186,4 +186,46 @@ class RedactorTest {
         assertThat(redacted).doesNotContain("abcdefghijklmnop");
         assertThat(redacted).contains("private_key=[REDACTED]");
     }
+
+    @Test
+    void masksPostgresKeyDetailEmailValue() {
+        String redacted = Redactor.redact(
+                "Detail: Key (email)=(user@example.com) already exists.");
+
+        assertThat(redacted).doesNotContain("user@example.com");
+        assertThat(redacted).contains("Key (email)=([REDACTED])");
+        assertThat(redacted).contains("already exists");
+    }
+
+    @Test
+    void masksPostgresKeyDetailPhoneAndMultiColumnValues() {
+        String redacted = Redactor.redact(
+                "Detail: Key (phone)=(+84912345678) already exists.\n"
+                        + "Detail: Key (tenant_id, email)=(42, user@example.com) already exists.");
+
+        assertThat(redacted).doesNotContain("84912345678");
+        assertThat(redacted).doesNotContain("user@example.com");
+        assertThat(redacted).contains("Key (phone)=([REDACTED])");
+        assertThat(redacted).contains("Key (tenant_id, email)=([REDACTED])");
+    }
+
+    @Test
+    void masksPostgresKeyDetailValuesContainingParentheses() {
+        String redacted = Redactor.redact(
+                "Detail: Key (note)=(see (the) details) already exists.");
+
+        assertThat(redacted).doesNotContain("see (the) details");
+        assertThat(redacted).contains("Key (note)=([REDACTED])");
+        assertThat(redacted).contains("already exists");
+    }
+
+    @Test
+    void masksPostgresKeyDetailForeignKeyShape() {
+        String redacted = Redactor.redact(
+                "Detail: Key (owner_id)=(user-7f3a) is still referenced from table \"audit\".");
+
+        assertThat(redacted).doesNotContain("user-7f3a");
+        assertThat(redacted).contains("Key (owner_id)=([REDACTED])");
+        assertThat(redacted).contains("is still referenced");
+    }
 }

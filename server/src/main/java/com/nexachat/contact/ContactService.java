@@ -2,6 +2,7 @@ package com.nexachat.contact;
 
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.common.error.ConstraintNames;
 import com.nexachat.contact.dto.ContactResponse;
 import com.nexachat.recovery.EmailOtpService;
 import com.nexachat.user.PhoneService;
@@ -116,6 +117,9 @@ public class ContactService {
         try {
             contact = contactRepository.saveAndFlush(contact);
         } catch (DataIntegrityViolationException e) {
+            // Only the constraint name is logged; the violation message can
+            // embed the offending column values.
+            log.info("Contact insert hit unique constraint {}", ConstraintNames.of(e));
             throw ApiException.of(ApiErrorCode.ALREADY_CONTACT, "User is already in contacts");
         }
         log.info("Contact added owner={} contact={}", ownerId, target.getId());

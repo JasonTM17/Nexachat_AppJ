@@ -11,6 +11,7 @@ import com.nexachat.auth.google.dto.LinkedIdentitiesResponse;
 import com.nexachat.auth.google.dto.LinkedIdentityResponse;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.common.error.ConstraintNames;
 import com.nexachat.user.User;
 import com.nexachat.user.UserAccountCreatedEvent;
 import com.nexachat.user.UserRepository;
@@ -114,6 +115,9 @@ public class GoogleSignInService {
         try {
             return isolatedCreateTransaction().execute(status -> createAccountFromGoogle(claims, deviceLabel));
         } catch (DataIntegrityViolationException exception) {
+            // Only the constraint name is logged; the violation message can
+            // embed the contested email address.
+            log.info("Google sign-up hit unique constraint {}", ConstraintNames.of(exception));
             return transactionTemplate().execute(status ->
                     signInExisting(identityRepository
                                     .findByProviderAndSubject(UserIdentity.PROVIDER_GOOGLE, claims.subject())
@@ -227,6 +231,9 @@ public class GoogleSignInService {
                             claims.email()));
         } catch (DataIntegrityViolationException exception) {
             // A concurrent link won the unique constraint; keep the generic answer.
+            // Only the constraint name is logged; the violation message can
+            // embed column values.
+            log.info("Google identity link hit unique constraint {}", ConstraintNames.of(exception));
             throw alreadyLinked();
         }
     }
