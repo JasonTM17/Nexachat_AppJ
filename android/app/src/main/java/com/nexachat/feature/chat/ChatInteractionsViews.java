@@ -4,6 +4,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.res.ColorStateList;
+import android.view.Gravity;
 import android.view.View;
 import android.view.LayoutInflater;
 import android.widget.FrameLayout;
@@ -12,13 +13,13 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.core.widget.ImageViewCompat;
+import androidx.core.widget.TextViewCompat;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
-import com.google.android.material.button.MaterialButton;
 import com.google.android.material.color.MaterialColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.nexachat.R;
@@ -193,14 +194,17 @@ public final class ChatInteractionsViews {
             java.util.function.Consumer<String> onPick) {
         HorizontalScrollView scroll = new HorizontalScrollView(context);
         scroll.setHorizontalScrollBarEnabled(false);
+        scroll.setFillViewport(true);
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setBackgroundColor(MaterialColors.getColor(row,
-                com.google.android.material.R.attr.colorSurfaceContainerLow));
-        int pad = context.getResources().getDimensionPixelSize(R.dimen.space_sm);
-        row.setPadding(pad, pad, pad, pad);
+        row.setGravity(Gravity.CENTER_HORIZONTAL);
+        row.setBackgroundResource(R.drawable.bg_reaction_strip);
+        int padH = context.getResources().getDimensionPixelSize(R.dimen.space_sm);
+        int padV = context.getResources().getDimensionPixelSize(R.dimen.space_xs);
+        row.setPadding(padH, padV, padH, padV);
         populateReactionButtons(row, context, onPick);
-        scroll.addView(row);
+        scroll.addView(row, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT));
         return scroll;
     }
 
@@ -209,19 +213,35 @@ public final class ChatInteractionsViews {
             @NonNull Context context,
             @NonNull java.util.function.Consumer<String> onPick) {
         row.removeAllViews();
+        int target = context.getResources().getDimensionPixelSize(R.dimen.min_touch_target);
+        int gap = context.getResources().getDimensionPixelSize(R.dimen.space_xs);
         for (int i = 0; i < REACTIONS.length; i++) {
             String emoji = REACTIONS[i];
-            MaterialButton button = new MaterialButton(context, null,
-                    com.google.android.material.R.attr.borderlessButtonStyle);
-            button.setText(emoji);
-            button.setTextAppearance(R.style.TextAppearance_NexaChat_TitleLarge);
-            button.setContentDescription(context.getString(REACTION_NAMES[i]));
-            int target = context.getResources().getDimensionPixelSize(R.dimen.min_touch_target);
-            button.setMinWidth(target);
-            button.setMinHeight(target);
-            button.setOnClickListener(v -> onPick.accept(emoji));
-            row.addView(button, new LinearLayout.LayoutParams(-2, -2));
+            // Circular tiles: a borderless ripple masks to a circle inside the
+            // pill strip, matching the per-emoji hover tiles in the reference.
+            TextView tile = new TextView(context);
+            tile.setText(emoji);
+            TextViewCompat.setTextAppearance(tile, R.style.TextAppearance_NexaChat_TitleLarge);
+            tile.setContentDescription(context.getString(REACTION_NAMES[i]));
+            tile.setGravity(Gravity.CENTER);
+            tile.setMinWidth(target);
+            tile.setMinHeight(target);
+            tile.setBackgroundResource(resolveCircularTileBackground(context));
+            tile.setFocusable(true);
+            tile.setOnClickListener(v -> onPick.accept(emoji));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, -2);
+            if (i > 0) {
+                params.setMarginStart(gap);
+            }
+            row.addView(tile, params);
         }
+    }
+
+    private static int resolveCircularTileBackground(@NonNull Context context) {
+        android.util.TypedValue value = new android.util.TypedValue();
+        context.getTheme().resolveAttribute(
+                android.R.attr.selectableItemBackgroundBorderless, value, true);
+        return value.resourceId;
     }
 
     private static void confirmDelete(
