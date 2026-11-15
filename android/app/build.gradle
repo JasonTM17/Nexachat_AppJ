@@ -112,6 +112,16 @@ if (!releaseInviteLinkHttpsHost.isEmpty() && !(releaseInviteLinkHttpsHost ==~ in
 }
 releaseInviteLinkHttpsHost = releaseInviteLinkHttpsHost.toLowerCase(Locale.ROOT)
 
+// Experimental E2EE v1 client allowance. Compiled false in every variant by
+// default; only debug and localSmoke honor the -Pe2eeV1ActivationEnabled=true
+// opt-in. Release stays false even when the property is set.
+def e2eeV1ActivationProp = providers.gradleProperty('e2eeV1ActivationEnabled')
+        .orElse('false').get().trim()
+if (!(e2eeV1ActivationProp in ['true', 'false'])) {
+    throw new GradleException("e2eeV1ActivationEnabled must be 'true' or 'false'.")
+}
+def e2eeV1ActivationOptIn = e2eeV1ActivationProp == 'true'
+
 def generatedReleaseManifest = layout.buildDirectory
     .file('generated/invite-link/release/AndroidManifest.xml').get().asFile
 def generateReleaseInviteManifest = tasks.register('generateReleaseInviteManifest') {
@@ -184,6 +194,8 @@ android {
         buildConfigField 'boolean', 'FIREBASE_REALTIME_ENABLED', "${firebaseRealtimeEnabled}"
         buildConfigField 'boolean', 'FIREBASE_CALL_STATUS_ENABLED', "${firebaseCallStatusEnabled}"
         buildConfigField 'String', 'GOOGLE_WEB_CLIENT_ID', "\"${googleWebClientId}\""
+        // Experimental E2EE v1 activation is off for every variant by default.
+        buildConfigField 'boolean', 'E2EE_V1_ACTIVATION_ALLOWED', 'false'
         buildConfigField 'String', 'INVITE_LINK_HTTPS_HOST', '""'
         manifestPlaceholders = [inviteLinkHttpsHost: '']
         resValue 'string', 'invite_https_deep_link_pattern', nonReleaseInviteDeepLinkPattern
@@ -206,6 +218,9 @@ android {
             shrinkResources true
             signingConfig = (hasReleaseSigning && !skipSigning) ? signingConfigs.getByName('release') : null
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Release never compiles experimental E2EE v1 activation on, even
+            // when -Pe2eeV1ActivationEnabled=true is passed for other variants.
+            buildConfigField 'boolean', 'E2EE_V1_ACTIVATION_ALLOWED', 'false'
             // Release uses the verified domain for App Links and invite sharing
             buildConfigField 'String', 'INVITE_LINK_HTTPS_HOST', "\"${releaseInviteLinkHttpsHost}\""
             manifestPlaceholders = [inviteLinkHttpsHost: releaseInviteLinkHttpsHost]
@@ -213,6 +228,8 @@ android {
         }
         debug {
             applicationIdSuffix '.debug'
+            // Debug may opt experimental E2EE v1 activation in via the property.
+            buildConfigField 'boolean', 'E2EE_V1_ACTIVATION_ALLOWED', "${e2eeV1ActivationOptIn}"
             // Debug and localSmoke leave INVITE_LINK_HTTPS_HOST empty so developers are not tied to the domain.
             // The nav pattern stays the custom scheme so the graph can inflate without an HTTPS filter.
             buildConfigField 'String', 'INVITE_LINK_HTTPS_HOST', '""'
@@ -225,6 +242,8 @@ android {
             initWith debug
             applicationIdSuffix '.localsmoke'
             matchingFallbacks = ['debug']
+            // Same opt-in surface as debug for local smoke deployments.
+            buildConfigField 'boolean', 'E2EE_V1_ACTIVATION_ALLOWED', "${e2eeV1ActivationOptIn}"
             buildConfigField 'String', 'INVITE_LINK_HTTPS_HOST', '""'
             manifestPlaceholders = [inviteLinkHttpsHost: '']
             resValue 'string', 'invite_https_deep_link_pattern', nonReleaseInviteDeepLinkPattern

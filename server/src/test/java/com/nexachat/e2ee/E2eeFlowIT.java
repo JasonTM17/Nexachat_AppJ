@@ -60,6 +60,9 @@ class E2eeFlowIT {
         registry.add("spring.datasource.username", () -> env("IT_DB_USER", "nexachat"));
         registry.add("spring.datasource.password", () -> env("IT_DB_PASSWORD", "nexachat"));
         registry.add("spring.datasource.hikari.maximum-pool-size", () -> "4");
+        // This suite exercises the enabled contract, so it opts the
+        // experimental activation gate in explicitly; the default stays off.
+        registry.add("nexachat.e2ee.v1-activation-enabled", () -> "true");
     }
 
     private static String env(String name, String fallback) {

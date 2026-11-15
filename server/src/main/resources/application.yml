@@ -168,6 +168,12 @@ nexachat:
     batch-size: ${NEXACHAT_AVATAR_SWEEP_BATCH_SIZE:100}
     min-age-hours: ${NEXACHAT_AVATAR_SWEEP_MIN_AGE_HOURS:24}
     interval-ms: ${NEXACHAT_AVATAR_SWEEP_INTERVAL_MS:86400000}
+  e2ee:
+    # Experimental E2EE v1 activation gate. While false, newly turning
+    # encryption on in a chat is denied with 409 E2EE_V1_ACTIVATION_DISABLED.
+    # Turning off, reading state, registered devices and already-enabled chats
+    # are unaffected — this is a rollout gate, not a kill switch.
+    v1-activation-enabled: ${NEXACHAT_E2EE_V1_ACTIVATION_ENABLED:false}
   sync:
     # Negotiated change-cursor pages can be rolled back to legacy sync.
     change-cursors-enabled: ${NEXACHAT_SYNC_CHANGE_CURSORS_ENABLED:true}

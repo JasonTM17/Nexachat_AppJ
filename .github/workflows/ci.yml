@@ -83,6 +83,9 @@ jobs:
       - name: Android tests, lint and debug assembly
         working-directory: android
         run: ./gradlew testDebugUnitTest lintDebug assembleDebug --no-daemon
+      - name: Android release E2EE activation policy
+        working-directory: android
+        run: ./gradlew :app:testReleaseUnitTest --tests 'com.nexachat.feature.encryption.EncryptionReleasePolicyTest' -Pe2eeV1ActivationEnabled=true --no-daemon
       - name: Upload Android test reports on failure
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

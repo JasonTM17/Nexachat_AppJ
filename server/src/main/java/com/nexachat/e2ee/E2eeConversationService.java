@@ -35,19 +35,22 @@ public class E2eeConversationService {
     private final E2eeDeviceService deviceService;
     private final MessageService messageService;
     private final ApplicationEventPublisher eventPublisher;
+    private final E2eeProperties e2eeProperties;
 
     public E2eeConversationService(ConversationRepository conversationRepository,
                                    ConversationMemberRepository memberRepository,
                                    UserRepository userRepository,
                                    E2eeDeviceService deviceService,
                                    MessageService messageService,
-                                   ApplicationEventPublisher eventPublisher) {
+                                   ApplicationEventPublisher eventPublisher,
+                                   E2eeProperties e2eeProperties) {
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
         this.deviceService = deviceService;
         this.messageService = messageService;
         this.eventPublisher = eventPublisher;
+        this.e2eeProperties = e2eeProperties;
     }
 
     @Transactional(readOnly = true)
@@ -66,6 +69,13 @@ public class E2eeConversationService {
 
         if (conversation.isE2eeEnabled() == enabled) {
             return state(conversation);
+        }
+        // Experimental v1 is off by default: a false->true activation is denied
+        // before any device-readiness work or state write. Idempotent calls and
+        // explicit disable never consult the gate.
+        if (enabled && !e2eeProperties.isV1ActivationEnabled()) {
+            throw ApiException.of(ApiErrorCode.E2EE_V1_ACTIVATION_DISABLED,
+                    "Experimental E2EE v1 activation is disabled on this server");
         }
         if (enabled) {
             List<UUID> memberIds = memberRepository.findMemberUserIds(conversationId);
@@ -94,7 +104,8 @@ public class E2eeConversationService {
     private ConversationE2eeStateResponse state(Conversation conversation) {
         List<UUID> memberIds = memberRepository.findMemberUserIds(conversation.getId());
         return new ConversationE2eeStateResponse(
-                conversation.isE2eeEnabled(), deviceService.activeDevicesForMembers(memberIds));
+                conversation.isE2eeEnabled(), deviceService.activeDevicesForMembers(memberIds),
+                e2eeProperties.isV1ActivationEnabled());
     }
 
     private Conversation requireDirectForMember(UUID conversationId, UUID userId) {

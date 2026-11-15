@@ -100,11 +100,20 @@ public final class EncryptionFragment extends Fragment {
     }
 
     private void showToggleConfirmation(boolean enabling) {
+        EncryptionViewModel.UiState state = viewModel.getUiState().getValue();
+        int body;
+        if (enabling) {
+            body = R.string.e2ee_enable_confirm_body;
+        } else {
+            // When reactivation is unavailable the disable warning must say so.
+            boolean canReactivate = state != null && state.activationAllowed;
+            body = canReactivate ? R.string.e2ee_disable_confirm_body
+                    : R.string.e2ee_disable_confirm_body_unavailable;
+        }
         new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(enabling ? R.string.e2ee_enable_confirm_title
                         : R.string.e2ee_disable_confirm_title)
-                .setMessage(enabling ? R.string.e2ee_enable_confirm_body
-                        : R.string.e2ee_disable_confirm_body)
+                .setMessage(body)
                 .setPositiveButton(enabling ? R.string.e2ee_action_turn_on
                                 : R.string.e2ee_action_turn_off,
                         (d, w) -> viewModel.setEnabled(enabling))
@@ -113,16 +122,21 @@ public final class EncryptionFragment extends Fragment {
     }
 
     private void render(@NonNull EncryptionViewModel.UiState state) {
-        toggle.setEnabled(!state.busy && !state.loading);
+        toggle.setEnabled(!state.busy && !state.loading
+                && (state.enabled || state.activationAllowed));
         toggle.setOnCheckedChangeListener(null);
         toggle.setChecked(state.enabled);
         toggle.setOnCheckedChangeListener(toggleListener);
 
-        if (state.errorCode == null) {
-            status.setVisibility(View.GONE);
-        } else {
+        if (state.errorCode != null) {
             status.setVisibility(View.VISIBLE);
             status.setText(errorText(state.errorCode));
+        } else if (!state.loading && !state.enabled && !state.activationAllowed) {
+            // The disabled toggle must explain itself even before any attempt.
+            status.setVisibility(View.VISIBLE);
+            status.setText(R.string.e2ee_activation_unavailable);
+        } else {
+            status.setVisibility(View.GONE);
         }
 
         if (state.safetyCode == null) {
@@ -136,32 +150,36 @@ public final class EncryptionFragment extends Fragment {
         }
 
         devicesList.removeAllViews();
-        if (state.devices.isEmpty()) {
-            devicesCard.setVisibility(View.GONE);
-        } else {
-            devicesCard.setVisibility(View.VISIBLE);
-            String currentId = viewModel.currentDeviceId();
-            String myUserId = viewModel.currentUserId();
-            for (MemberDeviceDto d : state.devices) {
-                TextView row = new TextView(requireContext());
-                String shortId = d.getDeviceId() != null && d.getDeviceId().length() > 8
-                        ? d.getDeviceId().substring(0, 8) : String.valueOf(d.getDeviceId());
-                String label;
-                if (EncryptionDeviceLabels.isOwnDevice(d, myUserId, currentId)) {
-                    label = getString(R.string.e2ee_device_row, shortId);
-                    if (d.getDeviceId() != null && d.getDeviceId().equals(currentId)) {
-                        label += " · " + getString(R.string.e2ee_this_device);
-                    }
-                } else if (peerName != null && !peerName.isBlank()) {
-                    label = getString(R.string.e2ee_device_row_owner, peerName, shortId);
-                } else {
-                    label = getString(R.string.e2ee_device_row, shortId);
-                }
-                row.setText(label);
-                row.setTextAppearance(R.style.TextAppearance_NexaChat_BodyMedium);
-                devicesList.addView(row);
+        int rowCount = 0;
+        String currentId = viewModel.currentDeviceId();
+        String myUserId = viewModel.currentUserId();
+        for (MemberDeviceDto d : state.devices) {
+            // Malformed directory rows are skipped, never rendered as blanks.
+            if (d == null || d.getUserId() == null || d.getUserId().isBlank()
+                    || d.getDeviceId() == null || d.getDeviceId().isBlank()
+                    || d.getPublicKey() == null || d.getPublicKey().isBlank()) {
+                continue;
             }
+            TextView row = new TextView(requireContext());
+            String shortId = d.getDeviceId().length() > 8
+                    ? d.getDeviceId().substring(0, 8) : d.getDeviceId();
+            String label;
+            if (EncryptionDeviceLabels.isOwnDevice(d, myUserId, currentId)) {
+                label = getString(R.string.e2ee_device_row, shortId);
+                if (d.getDeviceId().equals(currentId)) {
+                    label += " · " + getString(R.string.e2ee_this_device);
+                }
+            } else if (peerName != null && !peerName.isBlank()) {
+                label = getString(R.string.e2ee_device_row_owner, peerName, shortId);
+            } else {
+                label = getString(R.string.e2ee_device_row, shortId);
+            }
+            row.setText(label);
+            row.setTextAppearance(R.style.TextAppearance_NexaChat_BodyMedium);
+            devicesList.addView(row);
+            rowCount++;
         }
+        devicesCard.setVisibility(rowCount == 0 ? View.GONE : View.VISIBLE);
     }
 
     @NonNull
@@ -177,6 +195,8 @@ public final class EncryptionFragment extends Fragment {
                 return getString(R.string.e2ee_error_limit);
             case "E2EE_DEVICE_CONFLICT":
                 return getString(R.string.e2ee_error_conflict);
+            case "E2EE_V1_ACTIVATION_DISABLED":
+                return getString(R.string.e2ee_activation_unavailable);
             default:
                 return getString(R.string.error_generic);
         }

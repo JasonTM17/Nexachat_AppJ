@@ -50,16 +50,34 @@ fallback.
 
 ## Server surface
 
+Experimental status: v1 is a rollout-gated preview, not a certified feature.
+`nexachat.e2ee.v1-activation-enabled`
+(`NEXACHAT_E2EE_V1_ACTIVATION_ENABLED`, default `false`) controls whether a
+conversation may newly turn encryption on. The gate is deliberately narrow:
+it rejects only false→true transitions with `E2EE_V1_ACTIVATION_DISABLED`
+before any readiness check or write. It is **not** a kill switch — already
+enabled conversations keep sending, reading and turning off, device
+registration and encrypted sends are unaffected, and nothing is
+automatically rewritten when the flag flips. On Android, the compiled
+`BuildConfig.E2EE_V1_ACTIVATION_ALLOWED` must also be true: it compiles
+`false` in every variant by default, with an explicit opt-in for
+`debug`/`localSmoke` via `-Pe2eeV1ActivationEnabled=true`, and stays
+`false` in release even when the property is passed.
+
 - `PUT /api/v1/e2ee/devices/{deviceId}` — idempotent registration of a
   base64url 32-byte public key; 409 `E2EE_DEVICE_CONFLICT` on id/owner/key
   mismatch or reuse of a revoked id; 409 `E2EE_DEVICE_LIMIT` beyond 10 active
   devices; rate limited. `DELETE` revokes (own device only, idempotent).
   Logout-all and account deletion revoke every device of the user.
 - `GET|PUT /api/v1/conversations/{id}/e2ee` — DIRECT only. GET returns
-  `{enabled, devices}` (active devices of all members). PUT toggles;
-  enabling requires every member to own an active device
-  (`E2EE_PEER_NOT_READY`), is a no-op when unchanged, and otherwise posts a
-  SYSTEM line plus the regular `CONVERSATION_UPDATED` snapshot.
+  `{enabled, devices, experimentalV1ActivationAllowed}` (active devices of
+  all members, plus the server rollout capability). PUT toggles; enabling
+  requires every member to own an active device (`E2EE_PEER_NOT_READY`), is
+  a no-op when unchanged, and otherwise posts a SYSTEM line plus the
+  regular `CONVERSATION_UPDATED` snapshot. New false→true activation is
+  additionally gated by the experimental rollout flag and returns 409
+  `E2EE_V1_ACTIVATION_DISABLED` while it is off; turning encryption off
+  never consults the gate.
 - `POST /conversations/{id}/messages` with `encryption: "E2EE_V1"` and
   `e2eeEnvelopes` (1–20 unique entries, every deviceId an ACTIVE device of a
   current member else `E2EE_STALE_DEVICES`). Enabled conversations require

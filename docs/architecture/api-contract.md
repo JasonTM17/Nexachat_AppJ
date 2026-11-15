@@ -235,6 +235,7 @@ These keys are Spring properties; override them with the matching
 | `E2EE_DEVICE_LIMIT` | 409 | User already has 10 active devices |
 | `E2EE_UNSUPPORTED_CONVERSATION` | 409 | E2EE state read/toggle attempted on a non-DIRECT conversation |
 | `E2EE_PEER_NOT_READY` | 409 | Enabling E2EE while some member has no active device |
+| `E2EE_V1_ACTIVATION_DISABLED` | 409 | New E2EE activation while the experimental rollout flag is off — only false→true; reads and disabling stay allowed |
 | `E2EE_REQUIRED` | 409 | Send to an `e2ee_enabled` conversation without `encryption: "E2EE_V1"` |
 | `E2EE_NOT_ENABLED` | 409 | `encryption` sent to a conversation that is not `e2ee_enabled` |
 | `E2EE_STALE_DEVICES` | 409 | An envelope targets a revoked, unknown, or non-member device — client refetches `GET /conversations/{id}/e2ee` and retries |
@@ -527,8 +528,8 @@ every `MessageResponse` surface. Ciphertext `content` is prefixed `e2ee1:`.
 |---|---|---|---|---|
 | `PUT /api/v1/e2ee/devices/{deviceId}` | Bearer | `{publicKey}` — base64url no-padding, decodes to 32 bytes | `200` `{deviceId, publicKey, createdAt}`; idempotent for the same id+owner+key while active | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `E2EE_DEVICE_CONFLICT` 409 · `E2EE_DEVICE_LIMIT` 409 (10 active devices) · `RATE_LIMITED` 429 |
 | `DELETE /api/v1/e2ee/devices/{deviceId}` | Bearer (own device) | — | `204` (idempotent; sets `revoked_at`) | `UNAUTHORIZED` 401 · `E2EE_DEVICE_CONFLICT` 409 (not the owner's active device) |
-| `GET /conversations/{conversationId}/e2ee` | Bearer member, DIRECT only | — | `200` `{enabled, devices: [{userId, deviceId, publicKey}]}` — active devices of all current members | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `E2EE_UNSUPPORTED_CONVERSATION` 409 |
-| `PUT /conversations/{conversationId}/e2ee` | Bearer member, DIRECT only | `{enabled}` boolean | `200` same shape as GET; no-op when unchanged (no SYSTEM line) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `E2EE_UNSUPPORTED_CONVERSATION` 409 · `E2EE_PEER_NOT_READY` 409 |
+| `GET /conversations/{conversationId}/e2ee` | Bearer member, DIRECT only | — | `200` `{enabled, devices: [{userId, deviceId, publicKey}], experimentalV1ActivationAllowed}` — active devices of all current members, plus the server rollout capability (`false` while new activation is gated off) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `E2EE_UNSUPPORTED_CONVERSATION` 409 |
+| `PUT /conversations/{conversationId}/e2ee` | Bearer member, DIRECT only | `{enabled}` boolean | `200` same shape as GET; no-op when unchanged (no SYSTEM line) | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `E2EE_UNSUPPORTED_CONVERSATION` 409 · `E2EE_PEER_NOT_READY` 409 · `E2EE_V1_ACTIVATION_DISABLED` 409 (only false→true while `nexachat.e2ee.v1-activation-enabled=false`) |
 
 Toggling posts a `SYSTEM` line ("\<name\> turned on/off end-to-end encryption")
 and broadcasts the regular `CONVERSATION_UPDATED` snapshot. Logout-all and

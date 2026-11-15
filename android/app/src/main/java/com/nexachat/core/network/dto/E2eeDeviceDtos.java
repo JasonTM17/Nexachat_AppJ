@@ -70,18 +70,37 @@ public final class E2eeDeviceDtos {
     public static final class ConversationE2eeDto {
         private final boolean enabled;
         @Nullable private final List<MemberDeviceDto> devices;
+        @Nullable private final Boolean experimentalV1ActivationAllowed;
 
         public ConversationE2eeDto() {
-            this(false, List.of());
+            this(false, List.of(), null);
         }
 
+        /**
+         * Compatibility constructor for callers and servers that predate the
+         * capability field; an absent capability means activation is not allowed.
+         */
         public ConversationE2eeDto(boolean enabled, @Nullable List<MemberDeviceDto> devices) {
+            this(enabled, devices, null);
+        }
+
+        public ConversationE2eeDto(boolean enabled, @Nullable List<MemberDeviceDto> devices,
+                @Nullable Boolean experimentalV1ActivationAllowed) {
             this.enabled = enabled;
             this.devices = devices;
+            this.experimentalV1ActivationAllowed = experimentalV1ActivationAllowed;
         }
 
         public boolean isEnabled() {
             return enabled;
+        }
+
+        /**
+         * Server rollout permission to newly enable experimental v1 in this
+         * conversation. Absent or {@code null} means not allowed.
+         */
+        public boolean isExperimentalV1ActivationAllowed() {
+            return Boolean.TRUE.equals(experimentalV1ActivationAllowed);
         }
 
         @NonNull public List<MemberDeviceDto> getDevices() {
