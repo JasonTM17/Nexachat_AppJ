@@ -7,6 +7,7 @@ import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.ViewModel;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.network.SessionEvents;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.data.AuthRepository;
 import com.nexachat.data.ContactsRepository;
@@ -34,8 +35,28 @@ public final class ProfileViewModel extends ViewModel {
     private final MutableLiveData<Boolean> showPresence = new MutableLiveData<>(true);
     private final MutableLiveData<Boolean> showSeen = new MutableLiveData<>(true);
     private UiState currentState = mutableUiState.getValue();
+    private long sessionGeneration;
 
     @Inject
+    public ProfileViewModel(
+            ContactsRepository contactsRepository,
+            AuthRepository authRepository,
+            SettingsRepository settingsRepository,
+            SessionEvents sessionEvents) {
+        this(contactsRepository, authRepository, settingsRepository);
+        // This state is activity-scoped, so it survives a logout to login
+        // transition; the profile must follow the session, not the screen.
+        disposables.add(Objects.requireNonNull(sessionEvents, "sessionEvents")
+                .getEvents()
+                .subscribe(event -> {
+                    if (event instanceof SessionEvents.Event.LoggedOut
+                            || event instanceof SessionEvents.Event.ReauthenticationRequired) {
+                        resetForSignedOutSession();
+                    }
+                }, error -> { }));
+    }
+
+    /** Test seam without session events. */
     public ProfileViewModel(
             ContactsRepository contactsRepository,
             AuthRepository authRepository,
@@ -67,16 +88,19 @@ public final class ProfileViewModel extends ViewModel {
     }
 
     public void load() {
-        updateState(state -> state.withLoading(true).withError(null));
+        long generation = currentSessionGeneration();
+        updateStateIfCurrent(generation,
+                state -> state.withLoading(true).withError(null));
         disposables.add(contactsRepository.getMe()
                 .subscribeOn(Schedulers.io())
                 .subscribe(
-                        result -> updateState(state -> result instanceof Result.Success<?> success
-                                ? state.withLoading(false).withUser((UserDto) success.getValue())
-                                : state.withLoading(false).withError(
-                                        ((Result.Failure<?>) result).getError())),
-                        error -> updateState(state -> state.withLoading(false).withError(
-                                new ApiError.Network(error.getMessage())))));
+                        result -> updateStateIfCurrent(generation, state ->
+                                result instanceof Result.Success<?> success
+                                        ? state.withLoading(false).withUser((UserDto) success.getValue())
+                                        : state.withLoading(false).withError(
+                                                ((Result.Failure<?>) result).getError())),
+                        error -> updateStateIfCurrent(generation, state -> state.withLoading(false)
+                                .withError(new ApiError.Network(error.getMessage())))));
     }
 
     public void startEditName() {
@@ -109,17 +133,20 @@ public final class ProfileViewModel extends ViewModel {
         if (name.isEmpty() || state.isSaving()) {
             return;
         }
-        updateState(current -> current.withSaving(true).withSaveError(null));
+        long generation = currentSessionGeneration();
+        updateStateIfCurrent(generation,
+                current -> current.withSaving(true).withSaveError(null));
         disposables.add(contactsRepository.updateDisplayName(name)
                 .subscribeOn(Schedulers.io())
                 .subscribe(
-                        result -> updateState(current -> result instanceof Result.Success<?> success
-                                ? current.withSaving(false).withEditingName(false)
-                                        .withUser((UserDto) success.getValue())
-                                : current.withSaving(false).withSaveError(
-                                        ((Result.Failure<?>) result).getError())),
-                        error -> updateState(current -> current.withSaving(false).withSaveError(
-                                new ApiError.Network(error.getMessage())))));
+                        result -> updateStateIfCurrent(generation, current ->
+                                result instanceof Result.Success<?> success
+                                        ? current.withSaving(false).withEditingName(false)
+                                                .withUser((UserDto) success.getValue())
+                                        : current.withSaving(false).withSaveError(
+                                                ((Result.Failure<?>) result).getError())),
+                        error -> updateStateIfCurrent(generation, current -> current.withSaving(false)
+                                .withSaveError(new ApiError.Network(error.getMessage())))));
     }
 
     public void openPasswordDialog() {
@@ -212,16 +239,19 @@ public final class ProfileViewModel extends ViewModel {
         if (currentState().isAvatarUploading()) {
             return;
         }
-        updateState(state -> state.withAvatarUploading(true).withAvatarError(null));
+        long generation = currentSessionGeneration();
+        updateStateIfCurrent(generation,
+                state -> state.withAvatarUploading(true).withAvatarError(null));
         disposables.add(contactsRepository.uploadAvatar(uri)
                 .subscribeOn(Schedulers.io())
                 .subscribe(
-                        result -> updateState(state -> result instanceof Result.Success<?> success
-                                ? state.withAvatarUploading(false)
-                                        .withUser((UserDto) success.getValue())
-                                : state.withAvatarUploading(false).withAvatarError(
-                                        ((Result.Failure<?>) result).getError())),
-                        error -> updateState(state -> state.withAvatarUploading(false)
+                        result -> updateStateIfCurrent(generation, state ->
+                                result instanceof Result.Success<?> success
+                                        ? state.withAvatarUploading(false)
+                                                .withUser((UserDto) success.getValue())
+                                        : state.withAvatarUploading(false).withAvatarError(
+                                                ((Result.Failure<?>) result).getError())),
+                        error -> updateStateIfCurrent(generation, state -> state.withAvatarUploading(false)
                                 .withAvatarError(new ApiError.Network(error.getMessage())))));
     }
 
@@ -253,6 +283,16 @@ public final class ProfileViewModel extends ViewModel {
                                 new ApiError.Network(error.getMessage())))));
     }
 
+    /** Drops the previous account's cached state when the session ends. */
+    private void resetForSignedOutSession() {
+        // The bump shares the state lock, so a result from the dead session cannot
+        // slip between the reset and the generation check that drops stale writes.
+        synchronized (this) {
+            sessionGeneration++;
+            updateState(state -> new UiState().withLoading(false));
+        }
+    }
+
     /** Clears the local session and broadcasts LoggedOut. */
     public void logout() {
         disposables.add(authRepository.logout()
@@ -274,6 +314,23 @@ public final class ProfileViewModel extends ViewModel {
     private synchronized void updateState(UnaryOperator<UiState> reducer) {
         currentState = Objects.requireNonNull(reducer.apply(currentState), "state");
         mutableUiState.postValue(currentState);
+    }
+
+    private synchronized long currentSessionGeneration() {
+        return sessionGeneration;
+    }
+
+    /**
+     * Applies a request's updates only while the session that started it is still live. A
+     * result landing after a sign-out reset belongs to the dead session and must not
+     * re-cache the previous account's identity on the fresh state.
+     */
+    private synchronized void updateStateIfCurrent(
+            long generation, UnaryOperator<UiState> reducer) {
+        if (generation != sessionGeneration) {
+            return;
+        }
+        updateState(reducer);
     }
 
     @Override

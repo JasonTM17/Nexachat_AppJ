@@ -1,6 +1,7 @@
 package com.nexachat.feature.chat;
 
 import android.net.Uri;
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
@@ -8,6 +9,7 @@ import androidx.lifecycle.SavedStateHandle;
 import androidx.lifecycle.ViewModel;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.crypto.KeysetTrustStore;
 import com.nexachat.core.network.MessageApi;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.MessageDto;
@@ -74,6 +76,12 @@ public final class ChatViewModel extends ViewModel {
         OTHER
     }
 
+    /** The durable keyset-verification verdict stored for this conversation. */
+    public enum KeysetTrust { NONE, VERIFIED, CHANGED }
+
+    /** How the keyset verdict currently constrains sends here. */
+    public enum KeysetPause { NONE, CHANGED, DOWNGRADE_BLOCKED }
+
     public static final long TYPING_SEND_INTERVAL_MS = 3_000L;
     public static final long PEER_TYPING_TTL_MS = 5_000L;
     public static final int MIN_SEARCH_CHARS = 2;
@@ -97,6 +105,7 @@ public final class ChatViewModel extends ViewModel {
             new MutableLiveData<>(RecallWindowConfig.DEFAULT);
     private final MutableLiveData<Boolean> serverStarting = new MutableLiveData<>(false);
     @Nullable private final SettingsRepository settingsRepository;
+    @Nullable private final KeysetTrustStore keysetTrustStore;
     private final MutableLiveData<UiState> mutableUiState;
     private final MutableLiveData<ChatEditSession> editSession;
     private boolean editSubmitInFlight;
@@ -140,9 +149,10 @@ public final class ChatViewModel extends ViewModel {
             RealtimeSession session,
             TokenStore tokenStore,
             EphemeralStateRouter ephemeralRouter,
-            @Nullable SettingsRepository settingsRepository) {
+            @Nullable SettingsRepository settingsRepository,
+            KeysetTrustStore keysetTrustStore) {
         this(savedStateHandle, messageRepository, conversationRepository, attachmentRepository,
-                session, tokenStore, settingsRepository, ephemeralRouter);
+                session, tokenStore, settingsRepository, ephemeralRouter, keysetTrustStore);
     }
 
     /** Compatibility constructor for existing focused ViewModel tests. */
@@ -155,7 +165,7 @@ public final class ChatViewModel extends ViewModel {
             TokenStore tokenStore,
             @Nullable SettingsRepository settingsRepository) {
         this(savedStateHandle, messageRepository, conversationRepository, attachmentRepository,
-                session, tokenStore, settingsRepository, null);
+                session, tokenStore, settingsRepository, null, null);
     }
 
     private ChatViewModel(
@@ -166,7 +176,8 @@ public final class ChatViewModel extends ViewModel {
             RealtimeSession session,
             TokenStore tokenStore,
             @Nullable SettingsRepository settingsRepository,
-            @Nullable EphemeralStateRouter ephemeralRouter) {
+            @Nullable EphemeralStateRouter ephemeralRouter,
+            @Nullable KeysetTrustStore keysetTrustStore) {
         this.savedStateHandle = Objects.requireNonNull(savedStateHandle, "savedStateHandle");
         this.messageRepository = Objects.requireNonNull(messageRepository, "messageRepository");
         this.conversationRepository = Objects.requireNonNull(
@@ -182,6 +193,7 @@ public final class ChatViewModel extends ViewModel {
                     .subscribe(recallWindowConfig::setValue, ignored -> {}));
         }
         this.settingsRepository = settingsRepository;
+        this.keysetTrustStore = keysetTrustStore;
         String savedConversationId = savedStateHandle.get("conversationId");
         this.conversationId = savedConversationId == null ? "" : savedConversationId;
         String input = savedStateHandle.get(KEY_INPUT);
@@ -262,7 +274,8 @@ public final class ChatViewModel extends ViewModel {
             AttachmentRepository attachmentRepository,
             RealtimeSession session) {
         this(savedStateHandle, messageRepository, conversationRepository,
-                attachmentRepository, session, null, null);
+                attachmentRepository, session, (TokenStore) null,
+                (SettingsRepository) null);
     }
 
     public ChatViewModel(
@@ -273,7 +286,21 @@ public final class ChatViewModel extends ViewModel {
             RealtimeSession session,
             TokenStore tokenStore) {
         this(savedStateHandle, messageRepository, conversationRepository,
-                attachmentRepository, session, tokenStore, null);
+                attachmentRepository, session, tokenStore, (SettingsRepository) null);
+    }
+
+    /** Test seam: exercises the keyset pause against a fake trust store. */
+    public ChatViewModel(
+            SavedStateHandle savedStateHandle,
+            MessageRepository messageRepository,
+            ConversationRepository conversationRepository,
+            AttachmentRepository attachmentRepository,
+            RealtimeSession session,
+            TokenStore tokenStore,
+            KeysetTrustStore keysetTrustStore) {
+        this(savedStateHandle, messageRepository, conversationRepository,
+                attachmentRepository, session, tokenStore, (SettingsRepository) null,
+                (EphemeralStateRouter) null, keysetTrustStore);
     }
 
     public LiveData<UiState> getUiState() {
@@ -387,7 +414,15 @@ public final class ChatViewModel extends ViewModel {
         disposables.add(messageRepository.getInteractionEvents()
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(error -> updateUiState(state -> state.withError(error)),
+                .subscribe(error -> {
+                    if (isKeysetPauseEvent(error)) {
+                        // The durable verdict just moved; re-read it so the
+                        // notice, the send gate and the failed-row affordances
+                        // all follow the new truth.
+                        refreshKeysetNotice();
+                    }
+                    updateUiState(state -> state.withError(error));
+                },
                         this::surfaceStreamFailure));
         disposables.add(messageRepository.getTypingEvents()
                 .subscribeOn(Schedulers.io())
@@ -398,6 +433,37 @@ public final class ChatViewModel extends ViewModel {
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(ignored -> clearTypingIndicator(), this::surfaceStreamFailure));
         }
+        refreshKeysetNotice();
+    }
+
+    private static boolean isKeysetPauseEvent(ApiError error) {
+        return error instanceof ApiError.Unknown unknown
+                && (MessageRepository.ERROR_E2EE_KEYSET_CHANGED.equals(unknown.getCode())
+                || MessageRepository.ERROR_E2EE_DOWNGRADE_BLOCKED.equals(unknown.getCode())
+                || MessageRepository.ERROR_E2EE_KEYSET_INVALID.equals(unknown.getCode()));
+    }
+
+    /**
+     * Re-reads the durable keyset verdict for this conversation and folds it
+     * into render state. Called at open, on every keyset interaction event and
+     * whenever the screen returns to the foreground; a read failure leaves the
+     * current verdict in place rather than flap the notice.
+     */
+    public void refreshKeysetNotice() {
+        if (keysetTrustStore == null || conversationId.isEmpty()) {
+            return;
+        }
+        disposables.add(messageRepository.currentUserId()
+                .subscribeOn(Schedulers.io())
+                .flatMapSingle(owner -> keysetTrustStore.state(owner, conversationId))
+                .map(record -> record
+                        .map(r -> r.state() == KeysetTrustStore.TrustState.VERIFIED
+                                ? KeysetTrust.VERIFIED : KeysetTrust.CHANGED)
+                        .orElse(KeysetTrust.NONE))
+                .defaultIfEmpty(KeysetTrust.NONE)
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(trust -> updateUiState(state -> state.withKeysetTrust(trust)),
+                        ignored -> { }));
     }
 
     private void updateConnectivityState() {
@@ -711,6 +777,17 @@ public final class ChatViewModel extends ViewModel {
     /** Optimistic send — the outbox row renders SENDING immediately. */
     public void send() {
         UiState state = currentUiState();
+        KeysetPause pause = state.getKeysetPause();
+        if (pause != KeysetPause.NONE) {
+            // The durable verdict refuses this send before the outbox row is
+            // even written; keep the draft in the box and re-announce the
+            // reason instead of minting another FAILED row.
+            updateUiState(current -> current.withError(new ApiError.Unknown(
+                    pause == KeysetPause.CHANGED
+                            ? MessageRepository.ERROR_E2EE_KEYSET_CHANGED
+                            : MessageRepository.ERROR_E2EE_DOWNGRADE_BLOCKED)));
+            return;
+        }
         MentionDraft draft = getMentionDraft().trimmed();
         String text = draft.getContent();
         if (text.isEmpty()) {
@@ -736,6 +813,11 @@ public final class ChatViewModel extends ViewModel {
 
     /** Tap a FAILED bubble to requeue it in the outbox. */
     public void retryFailed(String clientMessageId) {
+        if (currentUiState().getKeysetPause() != KeysetPause.NONE) {
+            // Bubble-level retry affordances already hide while paused; this
+            // guards the chat-error retry path reaching the same refusal.
+            return;
+        }
         disposables.add(messageRepository.retry(clientMessageId)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
@@ -1542,6 +1624,8 @@ public final class ChatViewModel extends ViewModel {
         private final boolean e2eeEnabled;
         /** Last-message preview is a ciphertext; only used by the inbox row. */
         private final boolean lastMessageEncrypted;
+        /** Durable keyset verdict last read from the trust store for this conversation. */
+        private final KeysetTrust keysetTrust;
 
         public UiState() {
             this("");
@@ -1550,7 +1634,7 @@ public final class ChatViewModel extends ViewModel {
         private UiState(String input) {
             this(true, List.of(), List.of(), input, false, null, false, true, true,
                     false, null, List.of(), null, List.of(), 0L, 0L, null, null, true, false,
-                    false, false);
+                    false, false, KeysetTrust.NONE);
         }
 
         private UiState(
@@ -1575,9 +1659,11 @@ public final class ChatViewModel extends ViewModel {
                 boolean showSeen,
                 boolean conversationPinned,
                 boolean e2eeEnabled,
-                boolean lastMessageEncrypted) {
+                boolean lastMessageEncrypted,
+                @NonNull KeysetTrust keysetTrust) {
             this.e2eeEnabled = e2eeEnabled;
             this.lastMessageEncrypted = lastMessageEncrypted;
+            this.keysetTrust = keysetTrust;
             this.loading = loading;
             this.messages = List.copyOf(messages);
             this.sending = List.copyOf(sending);
@@ -1622,6 +1708,10 @@ public final class ChatViewModel extends ViewModel {
             if (chatError == null || !chatError.canRetry()) {
                 return false;
             }
+            if (chatError.getOperation() == ErrorOperation.SEND && isSendingPaused()) {
+                // A send retry can only hit the same durable refusal while paused.
+                return false;
+            }
             if (chatError.getOperation() != ErrorOperation.SEND) {
                 return true;
             }
@@ -1644,6 +1734,27 @@ public final class ChatViewModel extends ViewModel {
         public boolean isConversationPinned() { return conversationPinned; }
         public boolean isE2eeEnabled() { return e2eeEnabled; }
         public boolean isLastMessageEncrypted() { return lastMessageEncrypted; }
+        @NonNull public KeysetTrust getKeysetTrust() { return keysetTrust; }
+
+        /**
+         * The send constraint implied by the durable verdict plus the live
+         * e2ee flag — mirrored on {@code MessageRepository}'s send gate: a
+         * verified conversation whose flag flipped off is downgrade-blocked,
+         * a CHANGED record pauses sends until the new keyset is verified.
+         */
+        @NonNull public KeysetPause getKeysetPause() {
+            if (!e2eeEnabled && keysetTrust != KeysetTrust.NONE) {
+                return KeysetPause.DOWNGRADE_BLOCKED;
+            }
+            if (keysetTrust == KeysetTrust.CHANGED) {
+                return KeysetPause.CHANGED;
+            }
+            return KeysetPause.NONE;
+        }
+
+        public boolean isSendingPaused() {
+            return getKeysetPause() != KeysetPause.NONE;
+        }
 
         public boolean isPinned(String messageId) {
             for (ChatMessage pin : pins) {
@@ -1661,7 +1772,7 @@ public final class ChatViewModel extends ViewModel {
             return copy(loading, nextMessages, pending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust);
         }
 
         private UiState withConversation(ConversationSummary conversation) {
@@ -1677,42 +1788,43 @@ public final class ChatViewModel extends ViewModel {
                     showSeen,
                     conversation.isPinned(),
                     conversation.isE2eeEnabled(),
-                    conversation.isLastMessageEncrypted());
+                    conversation.isLastMessageEncrypted(),
+                    keysetTrust);
         }
 
         private UiState withInput(String nextInput) {
             return copy(loading, messages, sending, nextInput, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust);
         }
 
         private UiState withPeerTyping(boolean nextPeerTyping) {
             return copy(loading, messages, sending, input, nextPeerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust);
         }
 
         private UiState withConnected(boolean nextConnected) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, nextConnected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust);
         }
 
         private UiState withHasMore(boolean nextHasMore) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, nextHasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust);
         }
 
         private UiState withLoading(boolean nextLoading) {
             return copy(nextLoading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust);
         }
 
         private UiState withError(@Nullable ApiError nextError) {
@@ -1733,7 +1845,7 @@ public final class ChatViewModel extends ViewModel {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, nextChatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust);
         }
 
         private UiState withoutErrorIf(
@@ -1752,28 +1864,35 @@ public final class ChatViewModel extends ViewModel {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pending, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust);
         }
 
         private UiState withReplyTarget(@Nullable ReplyTarget target) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, target, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust);
         }
 
         private UiState withPins(List<ChatMessage> nextPins) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, nextPins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust);
         }
 
         private UiState withShowSeen(boolean nextShowSeen) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    nextShowSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
+                    nextShowSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust);
+        }
+
+        private UiState withKeysetTrust(@NonNull KeysetTrust next) {
+            return copy(loading, messages, sending, input, peerTyping, peerName, group,
+                    canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
+                    peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, next);
         }
 
         private static UiState copy(
@@ -1798,11 +1917,12 @@ public final class ChatViewModel extends ViewModel {
                 boolean showSeen,
                 boolean conversationPinned,
                 boolean e2eeEnabled,
-                boolean lastMessageEncrypted) {
+                boolean lastMessageEncrypted,
+                @NonNull KeysetTrust keysetTrust) {
             return new UiState(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust);
         }
 
         @Nullable
