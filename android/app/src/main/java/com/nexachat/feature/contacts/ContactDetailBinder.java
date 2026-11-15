@@ -4,6 +4,7 @@ import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
+import android.view.inputmethod.EditorInfo;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -186,6 +187,14 @@ final class ContactDetailBinder {
             aliasLayout.setBoxCornerRadii(radius, radius, radius, radius);
             TextInputEditText alias = new TextInputEditText(aliasLayout.getContext());
             alias.setSingleLine(true);
+            alias.setImeOptions(EditorInfo.IME_ACTION_DONE);
+            alias.setOnEditorActionListener((v, actionId, event) -> {
+                if (actionId == EditorInfo.IME_ACTION_DONE) {
+                    viewModel.saveAlias();
+                    return true;
+                }
+                return false;
+            });
             renderingAlias = true;
             alias.setText(content.getAliasValue());
             renderingAlias = false;
