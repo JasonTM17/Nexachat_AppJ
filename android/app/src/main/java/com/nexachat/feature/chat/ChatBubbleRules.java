@@ -1,5 +1,7 @@
 package com.nexachat.feature.chat;
 
+import androidx.annotation.StringRes;
+import com.nexachat.R;
 import com.nexachat.data.ChatMessage;
 import com.nexachat.data.DeliveryStatus;
 import com.nexachat.core.ui.components.MessageGroupPosition;
@@ -29,6 +31,37 @@ public final class ChatBubbleRules {
 
     public static boolean isRetryAffordanceVisible(DeliveryStatus status) {
         return status == DeliveryStatus.FAILED;
+    }
+
+    /**
+     * While the keyset pause holds, a FAILED row can only ever fail again:
+     * the durable verdict refuses the resend until re-verification, so the
+     * tap-to-retry affordance stays off rather than looping the same refusal.
+     */
+    public static boolean isRetryAffordanceVisible(
+            DeliveryStatus status, boolean sendingPaused) {
+        return status == DeliveryStatus.FAILED && !sendingPaused;
+    }
+
+    /**
+     * The FAILED meta label must agree with the tap: while sends are paused
+     * the retry affordance is off for every failed row, so an ordinary
+     * failure wears the neutral not-sent stamp instead of promising a retry
+     * that does nothing. Only the rows the pause itself failed keep the
+     * paused reason.
+     */
+    @StringRes
+    public static int failedRowLabelRes(
+            DeliveryStatus status,
+            boolean pausedRefusal,
+            @StringRes int pausedReasonRes) {
+        if (status != DeliveryStatus.FAILED) {
+            return 0;
+        }
+        if (pausedReasonRes != 0) {
+            return pausedRefusal ? pausedReasonRes : R.string.message_not_sent;
+        }
+        return R.string.action_retry;
     }
 
     public static int resolveSenderPaletteIndex(String senderId) {

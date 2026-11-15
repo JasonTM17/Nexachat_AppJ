@@ -33,11 +33,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:hint="@string/recovery_email_otp_label"
-            app:boxCornerRadiusBottomEnd="12dp"
-            app:boxCornerRadiusBottomStart="12dp"
-            app:boxCornerRadiusTopEnd="12dp"
-            app:boxCornerRadiusTopStart="12dp">
+            android:hint="@string/recovery_email_otp_label">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/recoveryOtpInput"
@@ -58,8 +54,13 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:accessibilityLiveRegion="polite"
+            android:background="@drawable/bg_auth_inline_error"
+            android:drawableStart="@drawable/ic_error_outline"
+            android:drawableTint="?attr/colorError"
+            android:drawablePadding="@dimen/space_sm"
+            android:padding="@dimen/space_inset"
             android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:textColor="?attr/colorError"
+            android:textColor="?attr/colorOnErrorContainer"
             android:visibility="gone" />
 
         <com.google.android.material.button.MaterialButton
@@ -69,7 +70,7 @@
             android:layout_marginTop="16dp"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/recovery_email_verify"
-            app:cornerRadius="12dp" />
+            app:cornerRadius="@dimen/corner_md" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/recoveryOtpResend"
@@ -79,6 +80,6 @@
             android:layout_marginTop="8dp"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/recovery_email_resend"
-            app:cornerRadius="12dp" />
+            app:cornerRadius="@dimen/corner_md" />
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

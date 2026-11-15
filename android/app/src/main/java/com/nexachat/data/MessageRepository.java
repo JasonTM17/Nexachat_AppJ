@@ -6,6 +6,7 @@ import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.crypto.E2eeMessageMapping;
 import com.nexachat.core.crypto.E2eeSession;
+import com.nexachat.core.crypto.KeysetTrustStore;
 import com.nexachat.core.database.ConversationDao;
 import com.nexachat.core.database.ConversationEntity;
 import com.nexachat.core.database.AppDatabase;
@@ -66,6 +67,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.inject.Inject;
@@ -113,6 +115,14 @@ public final class MessageRepository {
     public static final String ERROR_E2EE_NOT_ENABLED = "E2EE_NOT_ENABLED";
     public static final String ERROR_E2EE_STALE_DEVICES = "E2EE_STALE_DEVICES";
     public static final String ERROR_E2EE_MEDIA_UNSUPPORTED = "E2EE_MEDIA_UNSUPPORTED";
+    /** Raised locally when a verified keyset no longer matches; a terminal pause, never retried. */
+    public static final String ERROR_E2EE_KEYSET_CHANGED = "E2EE_KEYSET_CHANGED";
+    /** Raised locally when a trusted conversation would send plaintext; a terminal pause. */
+    public static final String ERROR_E2EE_DOWNGRADE_BLOCKED = "E2EE_DOWNGRADE_BLOCKED";
+    /** Raised locally when the roster cannot be parsed into a direct transcript; a terminal pause. */
+    public static final String ERROR_E2EE_KEYSET_INVALID = "E2EE_KEYSET_INVALID";
+    /** Episode stamp for a terminal refusal that left no trust record to stamp. */
+    private static final long NO_RECORD_EPISODE = -1L;
     public static final String ERROR_INTERNAL = "INTERNAL_ERROR";
     public static final long RATE_LIMIT_RETRY_DELAY_MS = 10_000L;
     /** Envelope keys that may wrap the id list returned by {@code GET /pins}. */
@@ -134,6 +144,7 @@ public final class MessageRepository {
     private final SessionEvents sessionEvents;
     @Nullable private final EphemeralStateRouter ephemeralRouter;
     @Nullable private final E2eeSession e2eeSession;
+    @Nullable private final KeysetTrustStore keysetTrustStore;
     private final SessionOperationTracker operationTracker;
     private final Moshi moshi;
     private final JsonAdapter<List<AttachmentDto>> attachmentsAdapter;
@@ -154,6 +165,16 @@ public final class MessageRepository {
     private final java.util.Set<String> confirmedDeleteIds = ConcurrentHashMap.newKeySet();
     /** Coalesces RATE_LIMITED responses into one delayed outbox flush. */
     private final Object rateLimitRetryLock = new Object();
+    /**
+     * Terminal-pause episodes already surfaced on {@link #interactionEvents},
+     * keyed by owner:conversation. The value pairs the refusal code with its
+     * episode stamp — the trust record's update stamp, or {@link
+     * #NO_RECORD_EPISODE} for a refusal that left no record — so one episode
+     * notifies once no matter how many queued rows pause on it. A new stamp
+     * (re-verification then a fresh change) or a cleared marker (a successful
+     * encrypted send proved the roster usable again) notifies anew.
+     */
+    private final ConcurrentHashMap<String, String> keysetPauseNotified = new ConcurrentHashMap<>();
     private final AtomicLong lastOutboxCreatedAt = new AtomicLong();
     private final FlowableProcessor<TypingEvent> typingEvents = PublishProcessor.<TypingEvent>create().toSerialized();
     private final FlowableProcessor<ReadEvent> readEvents = PublishProcessor.<ReadEvent>create().toSerialized();
@@ -174,11 +195,13 @@ public final class MessageRepository {
             OfflineOutboxDao offlineOutboxDao, OfflineActionApi offlineActionApi,
             OfflineOutboxScheduler offlineOutboxScheduler,
             SessionOperationTracker operationTracker, NetworkMonitor networkMonitor,
-            EphemeralStateRouter ephemeralRouter, E2eeSession e2eeSession) {
+            EphemeralStateRouter ephemeralRouter, E2eeSession e2eeSession,
+            KeysetTrustStore keysetTrustStore) {
         this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
                 session, tokenStore, sessionEvents, moshi, Schedulers.computation(),
                 appDatabase, offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
-                operationTracker, networkMonitor, ephemeralRouter, syncEngine, e2eeSession);
+                operationTracker, networkMonitor, ephemeralRouter, syncEngine, e2eeSession,
+                keysetTrustStore);
     }
 
     /** Package constructor lets deterministic Rx tests control the rate-limit clock. */
@@ -277,7 +300,7 @@ public final class MessageRepository {
         this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
                 session, tokenStore, sessionEvents, moshi, timerScheduler, appDatabase,
                 offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
-                operationTracker, networkMonitor, ephemeralRouter, syncEngine, null);
+                operationTracker, networkMonitor, ephemeralRouter, syncEngine, null, null);
     }
 
     MessageRepository(MessageApi messageApi, MessageDao messageDao,
@@ -288,8 +311,9 @@ public final class MessageRepository {
             OfflineActionApi offlineActionApi, @Nullable OfflineOutboxScheduler offlineOutboxScheduler,
             SessionOperationTracker operationTracker, @Nullable NetworkMonitor networkMonitor,
             @Nullable EphemeralStateRouter ephemeralRouter, @Nullable SyncEngine syncEngine,
-            @Nullable E2eeSession e2eeSession) {
+            @Nullable E2eeSession e2eeSession, @Nullable KeysetTrustStore keysetTrustStore) {
         this.e2eeSession = e2eeSession;
+        this.keysetTrustStore = keysetTrustStore;
         this.messageApi = messageApi;
         this.messageDao = messageDao;
         this.conversationDao = conversationDao;
@@ -1016,34 +1040,143 @@ public final class MessageRepository {
                 }
                 return completeSend(entry, ownerUserId, result, workerAttempt);
             });
-        })));
+        })).onErrorResumeNext(error -> pauseOnTerminalE2eeRefusal(entry, ownerUserId, error)));
     }
 
     /**
      * Maps the outbox row to the wire request, encrypting via {@link E2eeSession}
      * when the conversation row says E2EE is enabled. {@code forced} is set by
      * the retry paths after a fresh device list or flag, bypassing the cached
-     * entity so a stale flag cannot loop the same failure.
+     * entity so a stale flag cannot loop the same failure. When the flag is
+     * off but a durable trust record exists, the row is refused with
+     * {@code E2EE_DOWNGRADE_BLOCKED} rather than sent as plaintext: a remotely
+     * toggled flag can never strip encryption from a verified conversation.
      */
     private Single<SendMessageRequest> prepareSendRequest(
             OutboxEntity entry, String ownerUserId, boolean forced) {
         SendMessageRequest base = new SendMessageRequest(entry.getClientMessageId(), entry.getType(),
                 entry.getContent(), entry.getReplyToId(), attachmentIds(entry),
                 MessageMentionCodec.decode(entry.getMentionsJson()), entry.isMentionAll());
-        if (e2eeSession == null || entry.getContent() == null || entry.getContent().isBlank()) {
+        if (e2eeSession == null) {
             return Single.just(base);
         }
         return conversationDao.byId(entry.getConversationId())
                 .map(ConversationEntity::isE2eeEnabled)
                 .defaultIfEmpty(false)
                 .flatMap(enabled -> {
-                    if (!enabled) return Single.just(base);
+                    if (!enabled) {
+                        // A durable trust record means this conversation was
+                        // verified: a remotely flipped-off flag can never pull
+                        // its sends back to plaintext. Refuse locally instead.
+                        return keysetTrustBlocksPlaintext(ownerUserId, entry.getConversationId())
+                                .flatMap(blocked -> blocked
+                                        ? Single.error(new E2eeSession.E2eeException(
+                                                ERROR_E2EE_DOWNGRADE_BLOCKED))
+                                        : Single.just(base));
+                    }
+                    if (entry.getContent() == null || entry.getContent().isBlank()) {
+                        return Single.just(base);
+                    }
                     return e2eeSession.encryptFor(entry.getConversationId(), entry.getContent(),
                                     ownerUserId, entry.getClientMessageId())
+                            // A built encrypted request proves the roster parsed
+                            // and the trust verdict allowed it: every pause
+                            // episode recorded for this pair has ended, so its
+                            // notice re-arms for the next refusal.
+                            .doOnSuccess(ignored -> keysetPauseNotified.remove(
+                                    ownerUserId + ':' + entry.getConversationId()))
                             .map(encrypted -> base.withContent(encrypted.content())
                                     .withEncryption("E2EE_V1",
                                             toEnvelopeDtos(encrypted.envelopes())));
                 });
+    }
+
+    /**
+     * Whether a stored trust record exists for this owner/conversation — the
+     * pair was verified, or changed since. When it does, a server-controlled
+     * E2EE-off flag must not strip encryption: sending the plaintext request
+     * is refused before it is ever built.
+     */
+    private Single<Boolean> keysetTrustBlocksPlaintext(String ownerUserId, String conversationId) {
+        if (keysetTrustStore == null) return Single.just(false);
+        return keysetTrustStore.state(ownerUserId, conversationId).map(Optional::isPresent);
+    }
+
+    /**
+     * Terminal pause for rows the local E2EE trust gate refused: the verified
+     * keyset changed, a trusted conversation would go out as plaintext, or the
+     * roster cannot be parsed into a direct transcript. The row becomes
+     * {@link OutboxState#FAILED_PAUSED} — a FAILED row stamped so the UI can
+     * tell pause-caused failures from ordinary rejections — with its content
+     * intact for a manual resend after re-verification — no automatic retry,
+     * no rate-limit reschedule, never a plaintext request.
+     * Refusals notify once per conversation per episode rather than once per
+     * row; every other error propagates untouched.
+     */
+    private Completable pauseOnTerminalE2eeRefusal(
+            OutboxEntity entry, String ownerUserId, Throwable error) {
+        if (!(error instanceof E2eeSession.E2eeException)) {
+            return Completable.error(error);
+        }
+        String code = error.getMessage();
+        if (!ERROR_E2EE_KEYSET_CHANGED.equals(code)
+                && !ERROR_E2EE_DOWNGRADE_BLOCKED.equals(code)
+                && !ERROR_E2EE_KEYSET_INVALID.equals(code)) {
+            return Completable.error(error);
+        }
+        return emitTerminalPauseOnce(ownerUserId, entry.getConversationId(), code)
+                .onErrorComplete()
+                .andThen(outboxDao.updateState(entry.getClientMessageId(),
+                        ownerUserId, OutboxState.FAILED_PAUSED));
+    }
+
+    /**
+     * The refusal code of the open terminal-pause episode for this owner and
+     * conversation — the same marker that dedupes its notice — or empty once
+     * a successful encrypted send cleared it. Of the terminal codes only
+     * {@link #ERROR_E2EE_KEYSET_INVALID} has no durable read-back (an unusable
+     * roster leaves no trust record), so this is the view model's window into
+     * that episode.
+     */
+    public Single<Optional<String>> keysetPauseCode(String ownerUserId, String conversationId) {
+        return Single.fromCallable(() -> {
+            String episode = keysetPauseNotified.get(ownerUserId + ':' + conversationId);
+            return episode == null ? Optional.empty()
+                    : Optional.of(episode.substring(0, episode.indexOf(':')));
+        });
+    }
+
+    /**
+     * Emits the terminal refusal {@code code} once per conversation per
+     * episode. A stored trust record identifies its episode by update stamp:
+     * rows pausing on the same change share its stamp, while a change after
+     * re-verification rewrites the record with a new stamp and notifies again.
+     * A refusal that left no record — an unusable roster that was never
+     * verified — shares one unattributed episode until a successful encrypted
+     * send clears the marker.
+     */
+    private Completable emitTerminalPauseOnce(String ownerUserId, String conversationId,
+            String code) {
+        if (keysetTrustStore == null) {
+            return Completable.fromAction(() -> interactionEvents.onNext(
+                    new ApiError.Unknown(code)));
+        }
+        return keysetTrustStore.state(ownerUserId, conversationId)
+                .flatMapCompletable(record -> Completable.fromAction(() -> {
+                    String episode = code + ':' + record
+                            .map(KeysetTrustStore.Record::updatedAtMs)
+                            .orElse(NO_RECORD_EPISODE);
+                    AtomicBoolean emit = new AtomicBoolean();
+                    keysetPauseNotified.compute(ownerUserId + ':' + conversationId,
+                            (key, previous) -> {
+                                if (episode.equals(previous)) return previous;
+                                emit.set(true);
+                                return episode;
+                            });
+                    if (emit.get()) {
+                        interactionEvents.onNext(new ApiError.Unknown(code));
+                    }
+                }));
     }
 
     /** Re-reads the server E2EE flag into the local conversation row. */
@@ -1095,7 +1228,10 @@ public final class MessageRepository {
                 && (ERROR_VALIDATION_FAILED.equals(unknown.getCode())
                 || ERROR_NOT_ADMIN.equals(unknown.getCode())
                 || ERROR_E2EE_MEDIA_UNSUPPORTED.equals(unknown.getCode())
-                || ERROR_E2EE_NOT_ENABLED.equals(unknown.getCode()))) {
+                || ERROR_E2EE_NOT_ENABLED.equals(unknown.getCode())
+                || ERROR_E2EE_KEYSET_CHANGED.equals(unknown.getCode())
+                || ERROR_E2EE_DOWNGRADE_BLOCKED.equals(unknown.getCode())
+                || ERROR_E2EE_KEYSET_INVALID.equals(unknown.getCode()))) {
             interactionEvents.onNext(unknown);
         }
         return outboxDao.updateState(entry.getClientMessageId(), ownerUserId,
@@ -1272,7 +1408,10 @@ public final class MessageRepository {
                     || ERROR_CONVERSATION_NOT_FOUND.equals(rejected.getCode())) {
                 interactionEvents.onNext(new ApiError.Unknown(ERROR_NOT_MEMBER));
             } else if (ERROR_VALIDATION_FAILED.equals(rejected.getCode())
-                    || ERROR_NOT_ADMIN.equals(rejected.getCode())) {
+                    || ERROR_NOT_ADMIN.equals(rejected.getCode())
+                    || ERROR_E2EE_KEYSET_CHANGED.equals(rejected.getCode())
+                    || ERROR_E2EE_DOWNGRADE_BLOCKED.equals(rejected.getCode())
+                    || ERROR_E2EE_KEYSET_INVALID.equals(rejected.getCode())) {
                 interactionEvents.onNext(new ApiError.Unknown(rejected.getCode()));
             }
             return currentUserId().flatMapCompletable(ownerUserId ->
@@ -1854,6 +1993,7 @@ public final class MessageRepository {
         removedConversations.clear();
         pendingDeleteIds.clear();
         confirmedDeleteIds.clear();
+        keysetPauseNotified.clear();
         tokenToUser = null;
         lastOutboxCreatedAt.set(0L);
         Disposable retry = rateLimitRetry;
@@ -1892,12 +2032,14 @@ public final class MessageRepository {
     }
 
     private ChatMessage toChatMessage(OutboxEntity row) {
+        boolean pausedRefusal = OutboxState.FAILED_PAUSED.equals(row.getState());
         return new ChatMessage(row.getClientMessageId(), row.getConversationId(), null, "", null,
                 row.getType(), row.getContent(), row.getReplyToId(), null, null, row.getCreatedAt(),
-                row.getClientMessageId(), OutboxState.FAILED.equals(row.getState())
+                row.getClientMessageId(), pausedRefusal || OutboxState.FAILED.equals(row.getState())
                         ? DeliveryStatus.FAILED : DeliveryStatus.SENDING,
                 true, attachments(row.getAttachmentsJson()), Collections.emptyList(), null, null,
-                MessageMentionCodec.decode(row.getMentionsJson()), row.isMentionAll());
+                MessageMentionCodec.decode(row.getMentionsJson()), row.isMentionAll(),
+                false, false, false, pausedRefusal);
     }
 
     private ChatMessage pinStub(PinnedMessageEntity pin) {

@@ -161,9 +161,7 @@ public final class ServerWakeAuthPreflightTest {
     }
 
     @Test
-    public void googleSignInPreflightsNonceAndSessionExchange() throws Exception {
-        server.enqueue(response(503));
-        server.enqueue(response(200));
+    public void googleSignInPreflightsNonceOnceAndReusesItForTheExchange() throws Exception {
         server.enqueue(response(503));
         server.enqueue(response(200));
         TestScheduler retryClock = new TestScheduler();
@@ -199,16 +197,15 @@ public final class ServerWakeAuthPreflightTest {
                 .assertValue(value -> value instanceof com.nexachat.core.common.Result.Success<?>);
         verify(authApi, times(1)).googleNonce();
 
+        // The nonce probe just proved the server reachable, so the exchange is
+        // gated but does not pay for a second health round trip.
         var exchangeStarting = gate.getIsStarting().test();
         var exchangeResult = repository.googleSignIn("google-id-token", "nonce").test();
-        assertHealthRequest(server.takeRequest(2, TimeUnit.SECONDS));
-        exchangeStarting.awaitCount(2).assertValues(false, true);
-        verify(authApi, never()).googleSignIn(any());
-        retryClock.advanceTimeBy(1L, TimeUnit.SECONDS);
-        assertHealthRequest(server.takeRequest(2, TimeUnit.SECONDS));
         exchangeResult.awaitDone(5L, TimeUnit.SECONDS)
                 .assertValue(value -> value instanceof com.nexachat.core.common.Result.Success<?>);
         verify(authApi, times(1)).googleSignIn(any());
+        assertEquals(2, server.getRequestCount());
+        exchangeStarting.assertValues(false);
     }
 
     private ServerWakeGate gate(TestScheduler retryClock) {

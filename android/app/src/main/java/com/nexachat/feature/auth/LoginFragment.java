@@ -50,6 +50,9 @@ public final class LoginFragment extends Fragment {
         binding.googleSignIn.setVisibility(googleVisibility);
         binding.authOrDivider.getRoot().setVisibility(googleVisibility);
         binding.googleSignIn.setOnClickListener(v -> viewModel.googleSignIn(requireActivity()));
+        if (googleVisibility == View.VISIBLE) {
+            viewModel.prefetchGoogleSignInNonce();
+        }
         View.OnClickListener openRegister = v -> {
             Bundle args = AuthNav.inviteReturnArgs(returnInviteToken);
             NavHostFragment.findNavController(this).navigate(
@@ -146,7 +149,7 @@ public final class LoginFragment extends Fragment {
         binding.googleEmailInUseError.getRoot().setVisibility(
                 googleEmailInUse ? View.VISIBLE : View.GONE);
         LoginErrorBannerState banner = LoginErrorBannerState.resolve(
-                sessionExpired, state.getError(), serverStarting);
+                sessionExpired, state.getError(), serverStarting, state.getLoading());
         binding.errorBanner.setVisibility(banner.isVisible() ? View.VISIBLE : View.GONE);
         if (banner.isVisible()) {
             binding.errorBanner.setText(banner.getMessageRes());
@@ -162,6 +165,8 @@ public final class LoginFragment extends Fragment {
         binding.googleSignIn.setEnabled(notLoading);
         binding.forgotPasswordAction.setEnabled(notLoading);
         binding.authModeRegister.setEnabled(notLoading);
+        binding.loadingState.setLabel(
+                state.getLoading() && serverStarting ? getString(R.string.server_starting) : null);
         binding.loadingState.setVisibility(state.getLoading() ? View.VISIBLE : View.GONE);
         binding.primaryAction.setText(R.string.action_sign_in);
         rendering = false;

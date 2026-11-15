@@ -4,11 +4,10 @@
     android:id="@+id/forwardDialogRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    app:cardBackgroundColor="?attr/colorSurface"
+    app:cardBackgroundColor="?attr/colorSurfaceContainerLowest"
     app:cardCornerRadius="@dimen/corner_xl"
     app:cardElevation="0dp"
-    app:strokeColor="?attr/colorOutlineVariant"
-    app:strokeWidth="@dimen/elevation_level1">
+    app:strokeWidth="0dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -23,8 +22,8 @@
             android:layout_gravity="center_horizontal"
             android:layout_marginTop="@dimen/space_sm"
             android:importantForAccessibility="no"
-            app:cardBackgroundColor="?attr/colorOutlineVariant"
-            app:cardCornerRadius="2dp"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerHighest"
+            app:cardCornerRadius="@dimen/corner_full"
             app:cardElevation="0dp"
             app:strokeWidth="0dp" />
 
@@ -46,7 +45,7 @@
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="@dimen/space_md"
             android:hint="@string/forward_search_placeholder"
-            app:boxBackgroundColor="?attr/colorSurfaceContainerHigh"
+            app:boxBackgroundColor="?attr/colorSurfaceContainerLow"
             app:boxCornerRadiusBottomEnd="@dimen/corner_full"
             app:boxCornerRadiusBottomStart="@dimen/corner_full"
             app:boxCornerRadiusTopEnd="@dimen/corner_full"

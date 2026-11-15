@@ -32,9 +32,13 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_sm"
             android:accessibilityLiveRegion="polite"
-            android:gravity="center"
+            android:background="@drawable/bg_auth_inline_error"
+            android:drawableStart="@drawable/ic_error_outline"
+            android:drawableTint="?attr/colorError"
+            android:drawablePadding="@dimen/space_sm"
+            android:padding="@dimen/space_inset"
             android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:textColor="?attr/colorError"
+            android:textColor="?attr/colorOnErrorContainer"
             android:visibility="gone" />
 
         <com.google.android.material.button.MaterialButton
@@ -52,11 +56,10 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_sm"
-            app:cardBackgroundColor="?attr/colorSurface"
-            app:cardCornerRadius="@dimen/corner_lg"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+            app:cardCornerRadius="@dimen/corner_md"
             app:cardElevation="0dp"
-            app:strokeColor="?attr/colorOutlineVariant"
-            app:strokeWidth="1dp">
+            app:strokeWidth="0dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -96,8 +99,7 @@
                     android:layout_marginTop="@dimen/space_inset"
                     android:gravity="center"
                     android:textAppearance="?attr/textAppearanceHeadlineSmall"
-                    android:textColor="?attr/colorOnSurface"
-                    android:textStyle="bold" />
+                    android:textColor="?attr/colorOnSurface" />
 
                 <TextView
                     android:id="@+id/profilePhone"
@@ -113,11 +115,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_inset"
                     android:hint="@string/auth_display_name_label"
-                    android:visibility="gone"
-                    app:boxCornerRadiusBottomEnd="@dimen/corner_md"
-                    app:boxCornerRadiusBottomStart="@dimen/corner_md"
-                    app:boxCornerRadiusTopEnd="@dimen/corner_md"
-                    app:boxCornerRadiusTopStart="@dimen/corner_md">
+                    android:visibility="gone">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/nameInput"
@@ -155,7 +153,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/editName"
-                    style="?attr/materialButtonOutlinedStyle"
+                    style="@style/Widget.Material3.Button.TonalButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_sm"
@@ -172,18 +170,19 @@
             android:layout_marginStart="@dimen/space_xs"
             android:layout_marginTop="@dimen/space_md"
             android:layout_marginBottom="6dp"
+            android:letterSpacing="0.08"
             android:text="@string/settings_section_appearance"
+            android:textAllCaps="true"
             android:textAppearance="?attr/textAppearanceLabelMedium"
-            android:textColor="?attr/colorOnSurfaceVariant" />
+            android:textColor="?attr/colorSecondary" />
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardBackgroundColor="?attr/colorSurface"
-            app:cardCornerRadius="@dimen/corner_lg"
+            app:cardBackgroundColor="?attr/colorSurfaceContainer"
+            app:cardCornerRadius="@dimen/corner_md"
             app:cardElevation="0dp"
-            app:strokeColor="?attr/colorOutlineVariant"
-            app:strokeWidth="1dp">
+            app:strokeWidth="0dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -198,8 +197,8 @@
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:layout_marginStart="72dp"
-                    android:background="?attr/colorOutlineVariant" />
+                    android:layout_marginStart="56dp"
+                    android:background="?attr/colorSurfaceContainerHighest" />
 
                 <com.nexachat.core.ui.components.SettingsRowView
                     android:id="@+id/themeRow"
@@ -248,18 +247,19 @@
             android:layout_marginStart="@dimen/space_xs"
             android:layout_marginTop="@dimen/space_md"
             android:layout_marginBottom="6dp"
+            android:letterSpacing="0.08"
             android:text="@string/settings_section_privacy"
+            android:textAllCaps="true"
             android:textAppearance="?attr/textAppearanceLabelMedium"
-            android:textColor="?attr/colorOnSurfaceVariant" />
+            android:textColor="?attr/colorSecondary" />
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardBackgroundColor="?attr/colorSurface"
-            app:cardCornerRadius="@dimen/corner_lg"
+            app:cardBackgroundColor="?attr/colorSurfaceContainer"
+            app:cardCornerRadius="@dimen/corner_md"
             app:cardElevation="0dp"
-            app:strokeColor="?attr/colorOutlineVariant"
-            app:strokeWidth="1dp">
+            app:strokeWidth="0dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -311,8 +311,8 @@
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:layout_marginStart="72dp"
-                    android:background="?attr/colorOutlineVariant" />
+                    android:layout_marginStart="56dp"
+                    android:background="?attr/colorSurfaceContainerHighest" />
 
                 <!-- Online presence row -->
                 <LinearLayout
@@ -359,8 +359,8 @@
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:layout_marginStart="72dp"
-                    android:background="?attr/colorOutlineVariant" />
+                    android:layout_marginStart="56dp"
+                    android:background="?attr/colorSurfaceContainerHighest" />
 
                 <!-- Seen privacy row -->
                 <LinearLayout
@@ -413,18 +413,19 @@
             android:layout_marginStart="@dimen/space_xs"
             android:layout_marginTop="@dimen/space_md"
             android:layout_marginBottom="6dp"
+            android:letterSpacing="0.08"
             android:text="@string/settings_notifications"
+            android:textAllCaps="true"
             android:textAppearance="?attr/textAppearanceLabelMedium"
-            android:textColor="?attr/colorOnSurfaceVariant" />
+            android:textColor="?attr/colorSecondary" />
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardBackgroundColor="?attr/colorSurface"
-            app:cardCornerRadius="@dimen/corner_lg"
+            app:cardBackgroundColor="?attr/colorSurfaceContainer"
+            app:cardCornerRadius="@dimen/corner_md"
             app:cardElevation="0dp"
-            app:strokeColor="?attr/colorOutlineVariant"
-            app:strokeWidth="1dp">
+            app:strokeWidth="0dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -445,18 +446,19 @@
             android:layout_marginStart="@dimen/space_xs"
             android:layout_marginTop="@dimen/space_md"
             android:layout_marginBottom="6dp"
+            android:letterSpacing="0.08"
             android:text="@string/settings_section_account"
+            android:textAllCaps="true"
             android:textAppearance="?attr/textAppearanceLabelMedium"
-            android:textColor="?attr/colorOnSurfaceVariant" />
+            android:textColor="?attr/colorSecondary" />
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardBackgroundColor="?attr/colorSurface"
-            app:cardCornerRadius="@dimen/corner_lg"
+            app:cardBackgroundColor="?attr/colorSurfaceContainer"
+            app:cardCornerRadius="@dimen/corner_md"
             app:cardElevation="0dp"
-            app:strokeColor="?attr/colorOutlineVariant"
-            app:strokeWidth="1dp">
+            app:strokeWidth="0dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -472,8 +474,8 @@
                     android:id="@+id/signInMethodGoogleDivider"
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:layout_marginStart="72dp"
-                    android:background="?attr/colorOutlineVariant"
+                    android:layout_marginStart="56dp"
+                    android:background="?attr/colorSurfaceContainerHighest"
                     android:visibility="gone" />
 
                 <com.nexachat.core.ui.components.SettingsRowView
@@ -487,8 +489,8 @@
                     android:id="@+id/signInMethodPhoneDivider"
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:layout_marginStart="72dp"
-                    android:background="?attr/colorOutlineVariant"
+                    android:layout_marginStart="56dp"
+                    android:background="?attr/colorSurfaceContainerHighest"
                     android:visibility="gone" />
 
                 <com.nexachat.core.ui.components.SettingsRowView
@@ -517,8 +519,8 @@
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:layout_marginStart="72dp"
-                    android:background="?attr/colorOutlineVariant" />
+                    android:layout_marginStart="56dp"
+                    android:background="?attr/colorSurfaceContainerHighest" />
 
                 <com.nexachat.core.ui.components.SettingsRowView
                     android:id="@+id/changePassword"
@@ -534,18 +536,19 @@
             android:layout_marginStart="@dimen/space_xs"
             android:layout_marginTop="@dimen/space_md"
             android:layout_marginBottom="6dp"
+            android:letterSpacing="0.08"
             android:text="@string/settings_section_session"
+            android:textAllCaps="true"
             android:textAppearance="?attr/textAppearanceLabelMedium"
-            android:textColor="?attr/colorOnSurfaceVariant" />
+            android:textColor="?attr/colorSecondary" />
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardBackgroundColor="?attr/colorSurface"
-            app:cardCornerRadius="@dimen/corner_lg"
+            app:cardBackgroundColor="?attr/colorSurfaceContainer"
+            app:cardCornerRadius="@dimen/corner_md"
             app:cardElevation="0dp"
-            app:strokeColor="?attr/colorOutlineVariant"
-            app:strokeWidth="1dp">
+            app:strokeWidth="0dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -560,8 +563,8 @@
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:layout_marginStart="72dp"
-                    android:background="?attr/colorOutlineVariant" />
+                    android:layout_marginStart="56dp"
+                    android:background="?attr/colorSurfaceContainerHighest" />
 
                 <com.nexachat.core.ui.components.SettingsRowView
                     android:id="@+id/logoutAllRow"
@@ -576,10 +579,9 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
             app:cardBackgroundColor="?attr/colorErrorContainer"
-            app:cardCornerRadius="@dimen/corner_lg"
+            app:cardCornerRadius="@dimen/corner_md"
             app:cardElevation="0dp"
-            app:strokeColor="?attr/colorOutlineVariant"
-            app:strokeWidth="1dp">
+            app:strokeWidth="0dp">
 
             <com.nexachat.core.ui.components.SettingsRowView
                 android:id="@+id/deleteAccountRow"
@@ -593,9 +595,13 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_md"
             android:accessibilityLiveRegion="polite"
-            android:gravity="center"
+            android:background="@drawable/bg_auth_inline_error"
+            android:drawableStart="@drawable/ic_error_outline"
+            android:drawableTint="?attr/colorError"
+            android:drawablePadding="@dimen/space_sm"
+            android:padding="@dimen/space_inset"
             android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:textColor="?attr/colorError"
+            android:textColor="?attr/colorOnErrorContainer"
             android:visibility="gone" />
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

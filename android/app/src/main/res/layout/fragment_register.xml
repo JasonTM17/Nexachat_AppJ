@@ -46,12 +46,9 @@
                     android:layout_marginTop="@dimen/space_md"
                     android:layout_marginBottom="@dimen/space_md"
                     android:accessibilityHeading="true"
-                    android:fontFamily="@font/manrope"
                     android:text="@string/app_name"
                     android:textAppearance="?attr/textAppearanceHeadlineMedium"
-                    android:textColor="?attr/colorOnSurface"
-                    android:textFontWeight="700"
-                    tools:targetApi="p" />
+                    android:textColor="?attr/colorOnSurface" />
 
                 <LinearLayout
                     android:id="@+id/authModeSwitch"
@@ -60,7 +57,7 @@
                     android:layout_marginTop="@dimen/space_md"
                     android:background="?attr/colorSurfaceContainerLow"
                     android:gravity="center_vertical"
-                    android:minHeight="48dp"
+                    android:minHeight="@dimen/min_touch_target"
                     android:orientation="horizontal"
                     android:padding="@dimen/space_xs">
 
@@ -75,9 +72,10 @@
                         android:insetBottom="0dp"
                         android:minHeight="@dimen/min_touch_target"
                         android:text="@string/action_sign_in"
-                        android:textColor="?attr/colorOnSurfaceVariant"
-                        app:backgroundTint="@android:color/transparent"
+                        android:textColor="@color/nexa_auth_mode_text"
+                        app:backgroundTint="@color/nexa_auth_mode_bg"
                         app:cornerRadius="@dimen/corner_sm"
+                        app:rippleColor="@color/nexa_button_ripple"
                         app:toggleCheckedStateOnClick="false" />
 
                     <com.google.android.material.button.MaterialButton
@@ -91,9 +89,10 @@
                         android:insetBottom="0dp"
                         android:minHeight="@dimen/min_touch_target"
                         android:text="@string/action_create_account"
-                        android:textColor="@color/brand_on_fill"
-                        app:backgroundTint="@color/brand_fill"
+                        android:textColor="@color/nexa_auth_mode_text"
+                        app:backgroundTint="@color/nexa_auth_mode_bg"
                         app:cornerRadius="@dimen/corner_sm"
+                        app:rippleColor="@color/nexa_button_ripple"
                         app:toggleCheckedStateOnClick="false" />
                 </LinearLayout>
 
@@ -123,13 +122,10 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_md"
                     android:contentDescription="@string/cd_continue_with_google"
-                    android:minHeight="56dp"
                     android:text="@string/action_continue_with_google"
                     android:visibility="gone"
                     app:icon="@drawable/ic_google_g"
                     app:iconGravity="textStart"
-                    app:iconPadding="@dimen/space_inset"
-                    app:iconTint="@null"
                     tools:visibility="visible" />
 
                 <include
@@ -233,7 +229,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_lg"
-                    android:minHeight="56dp"
+                    android:minHeight="@dimen/min_touch_target"
                     android:text="@string/action_create_account"
                     android:textStyle="bold"
                     app:cornerRadius="@dimen/corner_md" />
@@ -245,6 +241,9 @@
         android:id="@+id/loadingState"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:background="?android:attr/colorBackground"
+        android:clickable="true"
+        android:focusable="true"
         android:visibility="gone" />
 
     <com.nexachat.core.ui.components.ErrorStateView

@@ -11,7 +11,7 @@
         android:layout_height="@dimen/sheet_handle_height"
         android:layout_gravity="center_horizontal"
         android:layout_marginTop="@dimen/space_sm"
-        android:background="?attr/colorOutlineVariant"
+        android:background="@drawable/bg_sheet_handle"
         android:importantForAccessibility="no" />
 
     <TextView
@@ -27,15 +27,21 @@
         android:id="@+id/reactionScroller"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/space_md"
+        android:layout_marginTop="@dimen/space_xs"
+        android:layout_marginBottom="@dimen/space_sm"
+        android:background="@drawable/bg_reaction_strip"
+        android:fillViewport="true"
         android:scrollbars="none">
 
         <LinearLayout
             android:id="@+id/reactionRow"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:background="?attr/colorSurfaceContainerLow"
+            android:gravity="center_horizontal"
             android:orientation="horizontal"
-            android:padding="@dimen/space_sm" />
+            android:paddingHorizontal="@dimen/space_sm"
+            android:paddingVertical="@dimen/space_xs" />
     </HorizontalScrollView>
 
     <LinearLayout

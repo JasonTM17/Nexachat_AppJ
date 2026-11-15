@@ -6,7 +6,7 @@ import android.view.Gravity;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 import androidx.annotation.Nullable;
-import androidx.core.content.ContextCompat;
+import com.google.android.material.color.MaterialColors;
 import com.nexachat.R;
 import java.util.Locale;
 
@@ -28,7 +28,8 @@ public class SectionHeaderView extends FrameLayout {
         int v = getResources().getDimensionPixelSize(R.dimen.space_sm);
         titleView.setPadding(h, v, h, v);
         titleView.setTextAppearance(R.style.TextAppearance_NexaChat_LabelMedium);
-        titleView.setTextColor(ContextCompat.getColor(context, R.color.colorOnSurfaceVariant));
+        titleView.setTextColor(MaterialColors.getColor(
+                titleView, com.google.android.material.R.attr.colorSecondary));
         addView(titleView, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.START));
     }
 

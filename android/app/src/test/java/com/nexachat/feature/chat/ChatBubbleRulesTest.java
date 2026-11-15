@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import com.nexachat.R;
 import com.nexachat.core.ui.components.MessageGroupPosition;
 import com.nexachat.data.ChatMessage;
 import com.nexachat.data.DeliveryStatus;
@@ -124,6 +125,33 @@ public final class ChatBubbleRulesTest {
         assertTrue(ChatBubbleRules.isRetryAffordanceVisible(DeliveryStatus.FAILED));
         assertFalse(ChatBubbleRules.isRetryAffordanceVisible(DeliveryStatus.SENT));
         assertFalse(ChatBubbleRules.isRetryAffordanceVisible(DeliveryStatus.DELIVERED));
+    }
+
+    @Test
+    public void pausedConversationDisablesTheRetryAffordance() {
+        assertFalse(ChatBubbleRules.isRetryAffordanceVisible(DeliveryStatus.FAILED, true));
+        assertTrue(ChatBubbleRules.isRetryAffordanceVisible(DeliveryStatus.FAILED, false));
+        assertFalse(ChatBubbleRules.isRetryAffordanceVisible(DeliveryStatus.SENT, false));
+    }
+
+    @Test
+    public void pausedConversationLabelsOrdinaryFailuresWithoutARetryPromise() {
+        // The pause suppressed the retry tap for every FAILED row, so the
+        // label on a row the pause did not stamp must not say "Retry".
+        assertEquals(R.string.message_not_sent,
+                ChatBubbleRules.failedRowLabelRes(
+                        DeliveryStatus.FAILED, false, R.string.e2ee_failed_keyset_changed));
+        // Rows the pause itself failed keep their honest reason.
+        assertEquals(R.string.e2ee_failed_keyset_changed,
+                ChatBubbleRules.failedRowLabelRes(
+                        DeliveryStatus.FAILED, true, R.string.e2ee_failed_keyset_changed));
+        // With no pause active, the affordance is live and the label may retry.
+        assertEquals(R.string.action_retry,
+                ChatBubbleRules.failedRowLabelRes(DeliveryStatus.FAILED, true, 0));
+        assertEquals(R.string.action_retry,
+                ChatBubbleRules.failedRowLabelRes(DeliveryStatus.FAILED, false, 0));
+        assertEquals(0,
+                ChatBubbleRules.failedRowLabelRes(DeliveryStatus.SENT, false, 0));
     }
 
     @Test

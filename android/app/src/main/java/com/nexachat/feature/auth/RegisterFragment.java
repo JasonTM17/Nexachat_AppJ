@@ -21,6 +21,7 @@ public final class RegisterFragment extends Fragment {
     private FragmentRegisterBinding binding;
     private AuthViewModel viewModel;
     private boolean rendering;
+    private boolean serverStarting;
     private String confirmation = "";
     private boolean confirmChecked;
     @Nullable private String returnInviteToken;
@@ -45,6 +46,9 @@ public final class RegisterFragment extends Fragment {
         binding.googleSignIn.setVisibility(googleVisibility);
         binding.authOrDivider.getRoot().setVisibility(googleVisibility);
         binding.googleSignIn.setOnClickListener(v -> viewModel.googleSignIn(requireActivity()));
+        if (googleVisibility == View.VISIBLE) {
+            viewModel.prefetchGoogleSignInNonce();
+        }
         View.OnClickListener openLogin = v -> {
             Bundle args = AuthNav.inviteReturnArgs(returnInviteToken);
             NavHostFragment.findNavController(this).navigate(
@@ -61,6 +65,11 @@ public final class RegisterFragment extends Fragment {
                     getString(AuthLoadingOverlay.contentDescriptionResId()));
         }
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
+        viewModel.getServerStarting().observe(getViewLifecycleOwner(), starting -> {
+            serverStarting = Boolean.TRUE.equals(starting);
+            AuthViewModel.UiState current = viewModel.getUiState().getValue();
+            if (current != null) render(current);
+        });
         viewModel.getEvents().observe(getViewLifecycleOwner(), this::onAuthEvent);
         if (viewModel.hasPendingCompleteProfile()) {
             navigateToCompleteProfile();
@@ -127,7 +136,7 @@ public final class RegisterFragment extends Fragment {
         boolean googleEmailInUse = GoogleAuthErrors.isGoogleEmailInUse(s.getError());
         binding.googleEmailInUseError.getRoot().setVisibility(
                 googleEmailInUse ? View.VISIBLE : View.GONE);
-        boolean showBanner = s.getError() != null && !googleEmailInUse;
+        boolean showBanner = s.getError() != null && !googleEmailInUse && !s.getLoading();
         binding.errorBanner.setVisibility(showBanner ? View.VISIBLE : View.GONE);
         if (showBanner) {
             binding.errorBanner.setText(ApiErrorText.text(requireContext(), s.getError()));
@@ -140,6 +149,8 @@ public final class RegisterFragment extends Fragment {
         binding.registerButton.setEnabled(notLoading);
         binding.googleSignIn.setEnabled(notLoading);
         binding.authModeLogin.setEnabled(notLoading);
+        binding.loadingState.setLabel(
+                s.getLoading() && serverStarting ? getString(R.string.server_starting) : null);
         binding.loadingState.setVisibility(s.getLoading() ? View.VISIBLE : View.GONE);
         rendering = false;
     }

@@ -58,17 +58,18 @@ public class GoogleNonceService {
         SECURE_RANDOM.nextBytes(bytes);
         String nonce = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
         JdbcTemplate jdbcTemplate = jdbcTemplate();
+        // One round trip: the write CTE issues the nonce while the outer DELETE
+        // scrubs a bounded batch of expired rows, exactly as a second statement did.
         jdbcTemplate.update(
-                "INSERT INTO google_signin_nonces"
+                "WITH issued AS (INSERT INTO google_signin_nonces"
                         + " (nonce_hash, purpose, user_id, access_token_id_hash, expires_at)"
-                        + " VALUES (?, ?, ?, ?, now() + (? * INTERVAL '1 second'))",
+                        + " VALUES (?, ?, ?, ?, now() + (? * INTERVAL '1 second')))"
+                        + " DELETE FROM google_signin_nonces WHERE id IN ("
+                        + "SELECT id FROM google_signin_nonces WHERE expires_at < now() LIMIT "
+                        + CLEANUP_BATCH + ")",
                 sha256Hex(nonce), purpose, userId,
                 accessTokenId == null ? null : sha256Hex(accessTokenId),
                 properties.nonceTtlSeconds());
-        jdbcTemplate.update(
-                "DELETE FROM google_signin_nonces WHERE id IN ("
-                        + "SELECT id FROM google_signin_nonces WHERE expires_at < now() LIMIT "
-                        + CLEANUP_BATCH + ")");
         return new IssuedNonce(nonce, properties.nonceTtlSeconds());
     }
 
