@@ -4,7 +4,7 @@
     android:id="@+id/summarySheetRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?attr/colorSurface"
+    android:background="?attr/colorSurfaceContainerLowest"
     android:orientation="vertical">
 
     <androidx.core.widget.NestedScrollView
@@ -27,8 +27,8 @@
             android:layout_marginTop="8dp"
             android:layout_marginBottom="8dp"
             android:importantForAccessibility="no"
-            app:cardBackgroundColor="?attr/colorOutlineVariant"
-            app:cardCornerRadius="2dp"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerHighest"
+            app:cardCornerRadius="@dimen/corner_full"
             app:cardElevation="0dp"
             app:strokeWidth="0dp" />
 
@@ -206,7 +206,7 @@
             android:layout_height="1dp"
             android:layout_marginTop="@dimen/space_xs"
             android:layout_marginBottom="@dimen/space_sm"
-            android:background="?attr/colorSurfaceContainerHigh" />
+            android:background="?attr/colorSurfaceContainerHighest" />
 
         <include
             android:id="@+id/summarySkeleton"
@@ -232,7 +232,7 @@
             android:layout_height="1dp"
             android:layout_marginTop="@dimen/space_md"
             android:layout_marginBottom="@dimen/space_sm"
-            android:background="?attr/colorSurfaceContainerHigh" />
+            android:background="?attr/colorSurfaceContainerHighest" />
 
     </LinearLayout>
     </androidx.core.widget.NestedScrollView>

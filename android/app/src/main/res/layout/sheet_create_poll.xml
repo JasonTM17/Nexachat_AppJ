@@ -18,8 +18,8 @@
             android:layout_marginTop="@dimen/space_sm"
             android:layout_marginBottom="@dimen/space_sm"
             android:importantForAccessibility="no"
-            app:cardBackgroundColor="?attr/colorOutlineVariant"
-            app:cardCornerRadius="2dp"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerHighest"
+            app:cardCornerRadius="@dimen/corner_full"
             app:cardElevation="0dp"
             app:strokeWidth="0dp" />
 
