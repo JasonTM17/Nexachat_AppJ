@@ -145,11 +145,11 @@ uses a separate `CallEvent` payload on `/user/queue/calls`; see
 |---|---|
 | `MESSAGE_CREATED` | Full `MessageResponse` payload (including `id`, `conversationId`, `seq`, `senderId`, `type`, content/tombstone fields, `mentions`, `mentionAll`, and timestamps) |
 | `MESSAGE_UPDATED` | full `MessageResponse` with edited `content`/`editedAt` and revalidated mention metadata |
-| `MESSAGE_DELETED` | `{messageId, deletedAt, changeVersion, generation}`; clients apply a tombstone and clear cached content and attachments; deleted content is never rebroadcast. `changeVersion` and `generation` are omitted together when the frame is unversioned |
+| `MESSAGE_DELETED` | `{messageId, deletedAt, changeVersion, generation, messageCreatedAt}`; clients apply a tombstone and clear cached content and attachments; deleted content is never rebroadcast. `changeVersion` and `generation` are omitted together when the frame is unversioned |
 | `MESSAGE_DELIVERED` | `{userId, upToSeq}`; conversation id is in the envelope; indicates member has received up to `upToSeq` (renders 2 gray ticks on sender) |
 | `MESSAGE_READ` | `{userId, upToSeq}`; conversation id is in the envelope; indicates member has read up to `upToSeq` (renders 2 blue ticks on sender). Not broadcast when the reader has `showSeen=false`, and not delivered to a recipient whose own `showSeen=false` (reciprocal) |
-| `REACTION_UPDATED` | `{messageId, reactions:[{emoji, count, userIds}]}`; complete post-toggle reaction state for that message |
-| `PIN_UPDATED` | `{messageId, pinned}`; conversation id is in the envelope |
+| `REACTION_UPDATED` | `{messageId, reactions:[{emoji, count, userIds}], messageCreatedAt}`; complete post-toggle reaction state for that message |
+| `PIN_UPDATED` | `{messageId, pinned, messageCreatedAt}`; conversation id is in the envelope |
 | `USER_TYPING` | `{userId}`; conversation id is in the envelope and the Android client expires the indicator after a local 5 s TTL |
 | `CONVERSATION_UPDATED` | `{conversationId, title, avatarUrl, change, members[]}` state snapshot; `change` is `CREATED`, `MEMBERS_ADDED`, `MEMBER_JOINED`, `MEMBER_REMOVED`, `MEMBER_LEFT` or `UPDATED`, and `members[]` are full member rows (`{userId, displayName, phone, avatarUrl, role, joinedAt}`); also refreshes inbox snippets when the last message is edited or deleted |
 | `USER_ONLINE` | `{userId, online:true, lastSeenAt:null}`; `conversationId` is null |
@@ -167,6 +167,18 @@ that user. The last disconnect persists
 reconnect in that window cancels the transient offline event. This registry
 and Spring `SimpleBroker` are single-node only; multiple backend instances
 would need shared presence state and a broker relay.
+
+**Member admission scope.** A member only receives frames about messages
+created at or after their current admission (`conversation_members.joined_at`;
+rejoining starts a new boundary). Per-message frames — `MESSAGE_CREATED`,
+`MESSAGE_UPDATED`, `MESSAGE_DELETED`, `PIN_UPDATED`, `REACTION_UPDATED` — are
+delivered per recipient only when the named message's `createdAt` meets that
+member's admission; interaction frames carry `messageCreatedAt` so the check
+applies to the target message, not the event time. A frame that cannot carry a
+readable creation time fails closed and is dropped. The same boundary strips
+the `replyTo` preview per recipient when the quoted message predates their
+admission (`replyToId` stays so clients can render the reply affordance), and
+`NEW_MESSAGE` pushes go only to members admitted at the message's `createdAt`.
 
 Malformed STOMP payload conversion or bean-validation failures are sent to
 `/user/queue/errors` as `{"code":"VALIDATION_FAILED"}`. Unexpected handler
