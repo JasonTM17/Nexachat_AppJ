@@ -72,7 +72,7 @@ public final class RemainingAccountArchiveUiContractTest {
         assertTrue(confirm.getAttribute("style").contains("Widget.NexaChat.Button"));
         assertTrue(confirm.getAttributeNS(NS_ANDROID, "textColor").contains("colorOnError"));
         assertTrue(confirm.getAttributeNS(NS_APP, "backgroundTint").contains("colorError"));
-        assertEquals("56dp", resolveDimen(confirm.getAttributeNS(NS_ANDROID, "minHeight")));
+        assertEquals("48dp", resolveDimen(confirm.getAttributeNS(NS_ANDROID, "minHeight")));
     }
 
     @Test

@@ -1,50 +1,50 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="TextAppearance.NexaChat.HeadlineLarge" parent="TextAppearance.Material3.HeadlineLarge">
-        <item name="android:fontFamily">@font/manrope</item>
-        <item name="android:textSize">28sp</item>
-        <item name="android:lineHeight">36sp</item>
-        <item name="android:textFontWeight">700</item>
-        <item name="android:letterSpacing">-0.015</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textSize">32sp</item>
+        <item name="android:lineHeight">40sp</item>
+        <item name="android:textFontWeight">600</item>
+        <item name="android:letterSpacing">0</item>
         <item name="android:includeFontPadding">true</item>
     </style>
     <style name="TextAppearance.NexaChat.HeadlineMedium" parent="TextAppearance.Material3.HeadlineMedium">
-        <item name="android:fontFamily">@font/manrope</item>
+        <item name="android:fontFamily">@font/inter</item>
         <item name="android:textSize">24sp</item>
         <item name="android:lineHeight">32sp</item>
         <item name="android:textFontWeight">600</item>
-        <item name="android:letterSpacing">-0.01</item>
+        <item name="android:letterSpacing">0</item>
         <item name="android:includeFontPadding">true</item>
     </style>
     <style name="TextAppearance.NexaChat.HeadlineSmall" parent="TextAppearance.Material3.HeadlineSmall">
-        <item name="android:fontFamily">@font/manrope</item>
+        <item name="android:fontFamily">@font/inter</item>
         <item name="android:textSize">20sp</item>
         <item name="android:lineHeight">28sp</item>
-        <item name="android:textFontWeight">600</item>
+        <item name="android:textFontWeight">500</item>
         <item name="android:letterSpacing">0</item>
         <item name="android:includeFontPadding">true</item>
     </style>
     <style name="TextAppearance.NexaChat.TitleLarge" parent="TextAppearance.Material3.TitleLarge">
-        <item name="android:fontFamily">@font/manrope</item>
-        <item name="android:textSize">20sp</item>
-        <item name="android:lineHeight">28sp</item>
-        <item name="android:textFontWeight">600</item>
-        <item name="android:letterSpacing">0</item>
-        <item name="android:includeFontPadding">true</item>
-    </style>
-    <style name="TextAppearance.NexaChat.TitleMedium" parent="TextAppearance.Material3.TitleMedium">
-        <item name="android:fontFamily">@font/manrope</item>
-        <item name="android:textSize">16sp</item>
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textSize">18sp</item>
         <item name="android:lineHeight">24sp</item>
         <item name="android:textFontWeight">600</item>
         <item name="android:letterSpacing">0</item>
         <item name="android:includeFontPadding">true</item>
     </style>
+    <style name="TextAppearance.NexaChat.TitleMedium" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:lineHeight">24sp</item>
+        <item name="android:textFontWeight">500</item>
+        <item name="android:letterSpacing">0.01</item>
+        <item name="android:includeFontPadding">true</item>
+    </style>
     <style name="TextAppearance.NexaChat.TitleSmall" parent="TextAppearance.Material3.TitleSmall">
-        <item name="android:fontFamily">@font/manrope</item>
+        <item name="android:fontFamily">@font/inter</item>
         <item name="android:textSize">14sp</item>
         <item name="android:lineHeight">20sp</item>
-        <item name="android:textFontWeight">600</item>
+        <item name="android:textFontWeight">500</item>
         <item name="android:letterSpacing">0</item>
         <item name="android:includeFontPadding">true</item>
     </style>
@@ -53,7 +53,7 @@
         <item name="android:textSize">16sp</item>
         <item name="android:lineHeight">24sp</item>
         <item name="android:textFontWeight">400</item>
-        <item name="android:letterSpacing">0</item>
+        <item name="android:letterSpacing">0.03</item>
         <item name="android:includeFontPadding">true</item>
     </style>
     <style name="TextAppearance.NexaChat.BodyMedium" parent="TextAppearance.Material3.BodyMedium">
@@ -61,7 +61,7 @@
         <item name="android:textSize">14sp</item>
         <item name="android:lineHeight">20sp</item>
         <item name="android:textFontWeight">400</item>
-        <item name="android:letterSpacing">0</item>
+        <item name="android:letterSpacing">0.02</item>
         <item name="android:includeFontPadding">true</item>
     </style>
     <style name="TextAppearance.NexaChat.BodySmall" parent="TextAppearance.Material3.BodySmall">
@@ -69,14 +69,14 @@
         <item name="android:textSize">12sp</item>
         <item name="android:lineHeight">16sp</item>
         <item name="android:textFontWeight">400</item>
-        <item name="android:letterSpacing">0.01</item>
+        <item name="android:letterSpacing">0.03</item>
         <item name="android:includeFontPadding">true</item>
     </style>
     <style name="TextAppearance.NexaChat.LabelLarge" parent="TextAppearance.Material3.LabelLarge">
         <item name="android:fontFamily">@font/inter</item>
         <item name="android:textSize">14sp</item>
         <item name="android:lineHeight">20sp</item>
-        <item name="android:textFontWeight">600</item>
+        <item name="android:textFontWeight">500</item>
         <item name="android:letterSpacing">0.01</item>
         <item name="android:includeFontPadding">true</item>
     </style>
@@ -84,15 +84,15 @@
         <item name="android:fontFamily">@font/inter</item>
         <item name="android:textSize">12sp</item>
         <item name="android:lineHeight">16sp</item>
-        <item name="android:textFontWeight">600</item>
+        <item name="android:textFontWeight">500</item>
         <item name="android:letterSpacing">0.01</item>
         <item name="android:includeFontPadding">true</item>
     </style>
     <style name="TextAppearance.NexaChat.LabelSmall" parent="TextAppearance.Material3.LabelSmall">
         <item name="android:fontFamily">@font/inter</item>
-        <item name="android:textSize">12sp</item>
+        <item name="android:textSize">11sp</item>
         <item name="android:lineHeight">16sp</item>
-        <item name="android:textFontWeight">600</item>
+        <item name="android:textFontWeight">500</item>
         <item name="android:letterSpacing">0.01</item>
         <item name="android:includeFontPadding">true</item>
     </style>

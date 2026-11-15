@@ -87,7 +87,7 @@ public final class LauncherVectorContractTest {
         Map<String, String> day = loadColors(false);
         Map<String, String> night = loadColors(true);
         assertEquals("#FF733F68", day.get("nexa_logo_mark"));
-        assertEquals("#FFD2A9C7", night.get("nexa_logo_mark"));
+        assertEquals("#FFF4B2E2", night.get("nexa_logo_mark"));
         assertEquals("#FFFFFCFF", day.get("nexa_logo_on_brand"));
         assertEquals("#FFFFFCFF", night.get("nexa_logo_on_brand"));
         assertEquals("#FF733F68", day.get("ic_launcher_background"));
