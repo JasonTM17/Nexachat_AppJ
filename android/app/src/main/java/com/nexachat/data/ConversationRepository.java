@@ -532,14 +532,32 @@ public final class ConversationRepository implements AutoCloseable {
     /**
      * Member list and title for the group detail screen. No individual detail
      * endpoint is assumed, so this walks the inbox's opaque cursor pages until
-     * it finds the row and writes it through to Room.
+     * it finds the row and writes it through to Room. The Room row's archive
+     * flag picks the matching inbox variant first; when that flag is stale or
+     * the row is absent the other variant is walked once before the lookup is
+     * declared missing.
      */
     @NonNull
     public Single<Result<GroupDetail>> groupDetail(@NonNull String conversationId) {
         return operationTracker.track(currentUserIdOptional()
-                .flatMap(myId -> groupDetailPage(
-                        conversationId, myId.orElse(null), null, new HashSet<>()))
+                .flatMap(myId -> conversationDao.byId(conversationId)
+                        .map(ConversationEntity::isArchived)
+                        .defaultIfEmpty(false)
+                        .flatMap(archived -> groupDetailPage(
+                                        conversationId, myId.orElse(null), null,
+                                        new HashSet<>(), archived)
+                                .flatMap(result -> isConversationNotFound(result)
+                                        ? groupDetailPage(conversationId, myId.orElse(null),
+                                                null, new HashSet<>(), !archived)
+                                        : Single.just(result))))
                 .subscribeOn(Schedulers.io()));
+    }
+
+    /** True only for the walk-exhausted lookup miss; real failures must not retry. */
+    private static boolean isConversationNotFound(@NonNull Result<GroupDetail> result) {
+        return result instanceof Result.Failure<?> failure
+                && failure.getError() instanceof ApiError.Unknown unknown
+                && MessageRepository.ERROR_CONVERSATION_NOT_FOUND.equals(unknown.getCode());
     }
 
     @NonNull
@@ -776,8 +794,9 @@ public final class ConversationRepository implements AutoCloseable {
             String conversationId,
             @Nullable String myId,
             @Nullable String cursor,
-            Set<String> seenCursors) {
-        return fetchInboxItems(MEMBERS_PAGE_LIMIT, cursor, false).flatMap(result -> {
+            Set<String> seenCursors,
+            boolean archived) {
+        return fetchInboxItems(MEMBERS_PAGE_LIMIT, cursor, archived).flatMap(result -> {
             if (result instanceof Result.Failure<?>) {
                 return Single.<Result<GroupDetail>>just(Result.cast(result));
             }
@@ -803,7 +822,7 @@ public final class ConversationRepository implements AutoCloseable {
                 return Single.just(Result.<GroupDetail>failure(
                         new ApiError.Unknown("INVALID_INBOX_CURSOR")));
             }
-            return groupDetailPage(conversationId, myId, fetch.nextCursor, seenCursors);
+            return groupDetailPage(conversationId, myId, fetch.nextCursor, seenCursors, archived);
         });
     }
 

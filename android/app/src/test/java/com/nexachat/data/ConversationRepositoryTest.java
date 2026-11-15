@@ -671,6 +671,67 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
+    public void groupDetailReadsTheArchivedInboxWhenRoomFlagsTheGroupArchived() throws Exception {
+        buildRepository();
+        dao().upsert(withPreferences(conversation("conv-target"), false, null, true, false))
+                .blockingAwait();
+        String archivedPage = "[{\"id\":\"conv-target\",\"type\":\"GROUP\","
+                + "\"title\":\"Archived Team\",\"archived\":true,\"members\":["
+                + "{\"userId\":\"u-1\",\"displayName\":\"An\",\"role\":\"ADMIN\"}]}]";
+        when(messageApi.getArchivedConversations(eq(100), isNull())).thenReturn(
+                asCall(Response.success(ResponseBody.create(
+                        okhttp3.MediaType.parse("application/json"), archivedPage))));
+        when(messageApi.getConversations(eq(100), isNull())).thenReturn(asCall(Response.success(
+                ResponseBody.create(okhttp3.MediaType.parse("application/json"), "[]"))));
+
+        Result<GroupDetail> result = repository.groupDetail("conv-target").blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        GroupDetail detail = ((Result.Success<GroupDetail>) result).getValue();
+        assertEquals("Archived Team", detail.getTitle());
+        assertEquals(1, detail.getMembers().size());
+        assertEquals("An", detail.getMembers().get(0).getDisplayName());
+        verify(messageApi, never()).getConversations(any(), any());
+    }
+
+    @Test
+    public void groupDetailFallsBackToTheArchivedInboxWhenTheLocalRowIsMissing() throws Exception {
+        buildRepository();
+        when(messageApi.getConversations(eq(100), isNull())).thenReturn(asCall(Response.success(
+                ResponseBody.create(okhttp3.MediaType.parse("application/json"), "[]"))));
+        String archivedPage = "[{\"id\":\"conv-target\",\"type\":\"GROUP\","
+                + "\"title\":\"Archived Team\",\"archived\":true,\"members\":[]}]";
+        when(messageApi.getArchivedConversations(eq(100), isNull())).thenReturn(
+                asCall(Response.success(ResponseBody.create(
+                        okhttp3.MediaType.parse("application/json"), archivedPage))));
+
+        Result<GroupDetail> result = repository.groupDetail("conv-target").blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        assertEquals("Archived Team", ((Result.Success<GroupDetail>) result).getValue().getTitle());
+    }
+
+    @Test
+    public void groupDetailFallsBackToTheDefaultInboxWhenTheLocalArchivedFlagIsStale()
+            throws Exception {
+        buildRepository();
+        dao().upsert(withPreferences(conversation("conv-target"), false, null, true, false))
+                .blockingAwait();
+        when(messageApi.getArchivedConversations(eq(100), isNull())).thenReturn(
+                asCall(Response.success(ResponseBody.create(
+                        okhttp3.MediaType.parse("application/json"), "[]"))));
+        when(messageApi.getConversations(eq(100), isNull())).thenReturn(asCall(Response.success(
+                ResponseBody.create(okhttp3.MediaType.parse("application/json"),
+                        "[{\"id\":\"conv-target\",\"type\":\"GROUP\",\"title\":\"Team\","
+                                + "\"members\":[]}]"))));
+
+        Result<GroupDetail> result = repository.groupDetail("conv-target").blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        assertEquals("Team", ((Result.Success<GroupDetail>) result).getValue().getTitle());
+    }
+
+    @Test
     public void groupAvatarReadStopsAfterConfiguredByteCap() throws Exception {
         buildRepository();
         Uri uri = org.mockito.Mockito.mock(Uri.class);
