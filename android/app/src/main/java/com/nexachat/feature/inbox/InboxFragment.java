@@ -658,8 +658,7 @@ public final class InboxFragment extends Fragment {
                     action.getMinWidth());
             ViewGroup.MarginLayoutParams actionParams =
                     (ViewGroup.MarginLayoutParams) action.getLayoutParams();
-            float separation = actionParams.getMarginStart()
-                    + getResources().getDimension(R.dimen.space_md);
+            float separation = actionParams.getMarginStart();
             float available = row.getWidth() - row.getPaddingLeft() - row.getPaddingRight();
             boolean wrapped = title.getLayout() != null && title.getLineCount() > 1;
             applyActiveNowHeaderOrientation(
