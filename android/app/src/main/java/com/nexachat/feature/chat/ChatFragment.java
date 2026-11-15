@@ -996,18 +996,28 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             root.setVisibility(View.GONE);
         } else {
             boolean changed = pause == ChatViewModel.KeysetPause.CHANGED;
+            boolean invalid = pause == ChatViewModel.KeysetPause.INVALID;
             binding.keysetNotice.keysetNoticeText.setText(changed
-                    ? R.string.e2ee_keyset_changed_notice : R.string.e2ee_downgrade_notice);
-            binding.keysetNotice.keysetNoticeAction.setText(changed
-                    ? R.string.e2ee_keyset_notice_action
-                    : R.string.e2ee_downgrade_notice_action);
-            binding.keysetNotice.keysetNoticeAction.setOnClickListener(
-                    v -> openEncryption());
+                    ? R.string.e2ee_keyset_changed_notice
+                    : invalid ? R.string.e2ee_keyset_invalid_notice
+                    : R.string.e2ee_downgrade_notice);
+            // An unusable roster has no trust record to compare against, so
+            // the notice only explains the refusal — no action is offered.
+            binding.keysetNotice.keysetNoticeAction.setVisibility(
+                    invalid ? View.GONE : View.VISIBLE);
+            if (!invalid) {
+                binding.keysetNotice.keysetNoticeAction.setText(changed
+                        ? R.string.e2ee_keyset_notice_action
+                        : R.string.e2ee_downgrade_notice_action);
+                binding.keysetNotice.keysetNoticeAction.setOnClickListener(
+                        v -> openEncryption());
+            }
             root.setVisibility(View.VISIBLE);
         }
         if (adapter != null) {
             adapter.setPausedFailReason(switch (pause) {
                 case CHANGED -> R.string.e2ee_failed_keyset_changed;
+                case INVALID -> R.string.e2ee_failed_keyset_invalid;
                 case DOWNGRADE_BLOCKED -> R.string.e2ee_failed_downgrade_blocked;
                 default -> 0;
             });

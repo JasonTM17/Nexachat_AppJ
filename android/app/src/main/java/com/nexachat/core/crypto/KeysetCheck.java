@@ -74,8 +74,12 @@ public final class KeysetCheck {
         }
     }
 
-    /** A verified QR payload split back into transcript and claimed digest. */
-    public record ParsedPayload(@NonNull byte[] transcript, @NonNull byte[] digest) {
+    /**
+     * Reserved for the in-person QR verification feature: package-private so
+     * nothing outside this crypto package can depend on the format before the
+     * feature ships.
+     */
+    record ParsedPayload(@NonNull byte[] transcript, @NonNull byte[] digest) {
         public ParsedPayload {
             transcript = transcript.clone();
             digest = digest.clone();
@@ -157,9 +161,13 @@ public final class KeysetCheck {
         return out.toString();
     }
 
-    /** {@code "nexachat-keyset:1:"} + base64url (no padding) of transcript||digest. */
+    /**
+     * {@code "nexachat-keyset:1:"} + base64url (no padding) of
+     * transcript||digest. Reserved for the QR feature; package-private until
+     * it ships.
+     */
     @NonNull
-    public static String qrPayload(@NonNull byte[] transcript, @NonNull byte[] digest) {
+    static String qrPayload(@NonNull byte[] transcript, @NonNull byte[] digest) {
         byte[] blob = new byte[transcript.length + digest.length];
         System.arraycopy(transcript, 0, blob, 0, transcript.length);
         System.arraycopy(digest, 0, blob, transcript.length, digest.length);
@@ -171,9 +179,10 @@ public final class KeysetCheck {
      * {@code nexachat-keyset:1:} prefix, the unpadded base64url alphabet, the
      * transcript header followed by at least a digest, and a recomputed
      * SHA-256 equal to the claimed digest (compared in constant time).
+     * Reserved for the QR feature; package-private until it ships.
      */
     @NonNull
-    public static ParsedPayload parseQrPayload(@Nullable String payload)
+    static ParsedPayload parseQrPayload(@Nullable String payload)
             throws InvalidKeysetException {
         if (payload == null || !payload.startsWith(QR_PREFIX)) {
             throw new InvalidKeysetException("unrecognized keyset payload");
@@ -207,9 +216,10 @@ public final class KeysetCheck {
 
     /**
      * True only when {@code scannedPayload} parses, its digest verifies and its
-     * transcript equals {@code localTranscript} byte-for-byte.
+     * transcript equals {@code localTranscript} byte-for-byte. Reserved for
+     * the QR feature; package-private until it ships.
      */
-    public static boolean matches(@Nullable byte[] localTranscript,
+    static boolean matches(@Nullable byte[] localTranscript,
             @Nullable String scannedPayload) {
         if (localTranscript == null) {
             return false;

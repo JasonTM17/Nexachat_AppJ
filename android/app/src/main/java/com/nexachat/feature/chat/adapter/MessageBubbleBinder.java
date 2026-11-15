@@ -79,8 +79,9 @@ public final class MessageBubbleBinder {
 
     private final DateFormat timeFormat;
     @Nullable private String currentUserId;
-    /** While non-zero, a conversation-level send pause is in force: FAILED rows
-     *  show this short reason instead of the retry label and taps do not retry. */
+    /** While non-zero, a conversation-level send pause is in force: rows the
+     *  pause itself failed show this short reason instead of the retry label
+     *  and taps do not retry; ordinary FAILED rows keep their own copy. */
     @StringRes private int pausedFailReasonRes;
     @Nullable
     private final Function<String, ChatMessage> resolveOriginal;
@@ -849,9 +850,9 @@ public final class MessageBubbleBinder {
         if (message.getStatus() == DeliveryStatus.FAILED) {
             if (deliveryText != null) {
                 deliveryText.setVisibility(View.VISIBLE);
-                // A paused conversation shows *why* resend is refused instead of
-                // offering a retry that can only fail again.
-                deliveryText.setText(pausedFailReasonRes != 0
+                // Only rows the send pause itself failed wear the paused
+                // reason; unrelated rejections keep their honest retry copy.
+                deliveryText.setText(pausedFailReasonRes != 0 && message.isPausedRefusal()
                         ? pausedFailReasonRes : R.string.action_retry);
                 deliveryText.setTextColor(
                         ContextCompat.getColor(root.getContext(), R.color.colorError)

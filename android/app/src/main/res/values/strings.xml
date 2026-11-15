@@ -200,7 +200,9 @@
     <string name="e2ee_downgrade_notice_action">Review</string>
     <string name="e2ee_send_blocked_downgrade">Encryption is off for this chat. Turn it back on to send.</string>
     <string name="e2ee_send_keyset_invalid">This chat\'s member list can\'t be read. Not sent.</string>
+    <string name="e2ee_keyset_invalid_notice">This chat\'s member list can\'t be read. Sending is paused.</string>
     <string name="e2ee_failed_keyset_changed">Not sent — code changed</string>
+    <string name="e2ee_failed_keyset_invalid">Not sent — member list unreadable</string>
     <string name="e2ee_failed_downgrade_blocked">Not sent — encryption off</string>
 
     <string name="chat_typing">typing…</string>

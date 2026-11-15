@@ -198,7 +198,9 @@
     <string name="e2ee_downgrade_notice_action">Xem lại</string>
     <string name="e2ee_send_blocked_downgrade">Mã hóa đang tắt trong trò chuyện này. Bật lại để gửi.</string>
     <string name="e2ee_send_keyset_invalid">Không đọc được danh sách thành viên của trò chuyện này. Chưa gửi.</string>
+    <string name="e2ee_keyset_invalid_notice">Không đọc được danh sách thành viên của trò chuyện này. Đang tạm dừng gửi.</string>
     <string name="e2ee_failed_keyset_changed">Chưa gửi — mã đã đổi</string>
+    <string name="e2ee_failed_keyset_invalid">Chưa gửi — không đọc được danh sách thành viên</string>
     <string name="e2ee_failed_downgrade_blocked">Chưa gửi — mã hóa đã tắt</string>
 
     <string name="chat_typing">đang nhập…</string>
