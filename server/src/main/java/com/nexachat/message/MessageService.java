@@ -268,7 +268,19 @@ public class MessageService {
 
         // Parent lock order is user -> conversation -> message. Attachment
         // claim locks above are part of the existing single-use upload path.
-        lockUserParent(senderId);
+        // An encrypted send widens the "user" parent to EVERY member row: the
+        // device roster is serialized on the owner rows — registration takes
+        // FOR NO KEY UPDATE there for its whole transaction — so the member
+        // set is locked in UUID order before the conversation, never after
+        // (a reverse-direction sender's KEY SHARE would otherwise complete a
+        // lock cycle). The sender is a member, so this subsumes
+        // lockUserParent. Direct-chat membership is immutable, so the member
+        // list read here is the same roster validateE2eeSend checks later.
+        if (request.encryption() != null || request.e2eeEnvelopes() != null) {
+            lockMemberDeviceOwners(conversationId);
+        } else {
+            lockUserParent(senderId);
+        }
         messageRepository.lockIdempotencyKey(senderId, request.clientMessageId());
         Conversation conversation = lockConversationForWrite(conversationId);
         requireMember(conversationId, senderId);
@@ -335,8 +347,9 @@ public class MessageService {
      * insert when the request is encrypted, {@code null} for a plaintext send.
      * Validation order follows the API contract: bad scheme → encryption on a
      * non-E2EE chat → E2EE-chat constraints (TEXT only, scheme required,
-     * ciphertext prefix, no mentions, envelopes must name active devices of
-     * current members).
+     * ciphertext prefix, no mentions, envelope device set must equal the
+     * active devices of every member — including the sender's own, which the
+     * client wraps a content key for).
      */
     private String validateE2eeSend(Conversation conversation, Message.Type type,
                                     SendMessageRequest request) {
@@ -392,10 +405,17 @@ public class MessageService {
             }
         }
         List<UUID> memberIds = memberRepository.findMemberUserIds(conversation.getId());
-        List<UUID> usable = e2eeDeviceService.getObject().activeDeviceIdsForUsers(memberIds, deviceIds);
-        if (usable.size() != deviceIds.size()) {
+        // The wire set must equal the whole active device set of the members —
+        // a missing device (e.g. enrolled after the sender's directory
+        // snapshot) could never unwrap, and an extra one is rejected the same
+        // way so the client cannot distinguish them. The member owner rows
+        // were locked FOR NO KEY UPDATE before the conversation row, so this
+        // snapshot cannot interleave with an in-flight enrollment.
+        Set<UUID> required = new HashSet<>(
+                e2eeDeviceService.getObject().activeDeviceIdsForMembers(memberIds));
+        if (!required.equals(deviceIds)) {
             throw ApiException.of(ApiErrorCode.E2EE_STALE_DEVICES,
-                    "An envelope targets a revoked, unknown, or non-member device");
+                    "e2eeEnvelopes must cover exactly the active devices of all members");
         }
         return E2eeEnvelopes.toJson(envelopes);
     }
@@ -1061,6 +1081,30 @@ public class MessageService {
     private void lockUserParent(UUID userId) {
         if (userRepository != null) {
             userRepository.lockForKeyShareSorted(List.of(userId));
+        }
+    }
+
+    /**
+     * {@code FOR NO KEY UPDATE} on every member's {@code users} row, in UUID
+     * order — the same lock mode and rows device registration serializes on
+     * ({@code E2eeDeviceService.register} holds it for its whole transaction,
+     * including the insert flush at commit), so an encrypted send either
+     * snapshots the roster before a registration starts or waits for it to
+     * commit; a device enrolled mid-send can never be committed yet invisible
+     * to the check. {@code FOR KEY SHARE} cannot substitute: PostgreSQL does
+     * not let it conflict with {@code FOR NO KEY UPDATE}. Only enrollment can
+     * grow the set — revocation and membership loss only shrink it — so the
+     * equality checked afterwards can never accept a send that misses a
+     * committed active device.
+     */
+    private void lockMemberDeviceOwners(UUID conversationId) {
+        if (userRepository == null) {
+            return;
+        }
+        List<UUID> memberIds = memberRepository.findMemberUserIds(conversationId)
+                .stream().sorted().toList();
+        if (!memberIds.isEmpty()) {
+            userRepository.findActiveUsersByIdsForUpdate(memberIds);
         }
     }
 

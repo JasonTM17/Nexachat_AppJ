@@ -124,13 +124,20 @@ public class E2eeDeviceService {
                 .toList();
     }
 
-    /** Ids from {@code deviceIds} that are currently active and owned by one of {@code userIds}. */
+    /**
+     * Ids of every active device owned by one of {@code memberUserIds} — the
+     * exact envelope set an encrypted send must cover. Same readiness
+     * predicate the member directory serves ({@code revoked_at IS NULL}).
+     * Callers needing race freedom against enrollment hold the member
+     * {@code users} rows {@code FOR NO KEY UPDATE} first — the same lock
+     * {@link #register} takes for its whole transaction.
+     */
     @Transactional(readOnly = true)
-    public List<UUID> activeDeviceIdsForUsers(Collection<UUID> userIds, Collection<UUID> deviceIds) {
-        if (deviceIds == null || deviceIds.isEmpty()) {
+    public List<UUID> activeDeviceIdsForMembers(Collection<UUID> memberUserIds) {
+        if (memberUserIds == null || memberUserIds.isEmpty()) {
             return List.of();
         }
-        return deviceRepository.findActiveIdsForUsers(userIds, deviceIds);
+        return deviceRepository.findActiveIdsForMembers(memberUserIds);
     }
 
     /** Whether every listed member owns at least one active device. */
