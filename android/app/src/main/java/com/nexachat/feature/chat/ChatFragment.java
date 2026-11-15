@@ -1338,6 +1338,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         searchOpen = open;
         binding.chatSearchBar.setVisibility(open ? View.VISIBLE : View.GONE);
         binding.messageList.setVisibility(View.VISIBLE);
+        RecyclerView.LayoutManager layoutManager = binding.messageList.getLayoutManager();
+        if (layoutManager instanceof LinearLayoutManager) {
+            ((LinearLayoutManager) layoutManager).setStackFromEnd(!open);
+        }
         if (open) {
             binding.chatSearchInput.requestFocus();
             renderSearchResults();
