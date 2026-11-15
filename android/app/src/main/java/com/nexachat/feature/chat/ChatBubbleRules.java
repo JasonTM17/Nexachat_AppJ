@@ -31,6 +31,16 @@ public final class ChatBubbleRules {
         return status == DeliveryStatus.FAILED;
     }
 
+    /**
+     * While the keyset pause holds, a FAILED row can only ever fail again:
+     * the durable verdict refuses the resend until re-verification, so the
+     * tap-to-retry affordance stays off rather than looping the same refusal.
+     */
+    public static boolean isRetryAffordanceVisible(
+            DeliveryStatus status, boolean sendingPaused) {
+        return status == DeliveryStatus.FAILED && !sendingPaused;
+    }
+
     public static int resolveSenderPaletteIndex(String senderId) {
         return Math.floorMod(senderId == null ? 0 : senderId.hashCode(), SENDER_PALETTE_SIZE);
     }

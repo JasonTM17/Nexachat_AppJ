@@ -23,9 +23,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             UserEntity.class,
             CallLogEntity.class,
             OfflineOutboxEntity.class,
-            SyncCursorEntity.class
+            SyncCursorEntity.class,
+            KeysetTrustEntity.class
         },
-        version = 16,
+        version = 17,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -37,6 +38,7 @@ public abstract class AppDatabase extends RoomDatabase {
     public abstract CallLogDao callLogDao();
     public abstract OfflineOutboxDao offlineOutboxDao();
     public abstract SyncCursorDao syncCursorDao();
+    public abstract KeysetTrustDao keysetTrustDao();
 
     /** Clears cached account data and other offline actions while retaining message sends. */
     public void clearAccountDataPreservingOutbox() {
@@ -50,6 +52,7 @@ public abstract class AppDatabase extends RoomDatabase {
             db.execSQL("DELETE FROM `call_logs`");
             db.execSQL("DELETE FROM `offline_outbox`");
             db.execSQL("DELETE FROM `sync_cursors`");
+            db.execSQL("DELETE FROM `e2ee_keyset_trust`");
         });
     }
 
@@ -276,6 +279,18 @@ public abstract class AppDatabase extends RoomDatabase {
     public static final Migration MIGRATION_15_16 = new Migration(15, 16) {
         @Override public void migrate(SupportSQLiteDatabase db) {
             db.execSQL("ALTER TABLE `conversations` ADD COLUMN `lastMessageType` TEXT");
+        }
+    };
+
+    /** Per-account keyset trust records for verified direct conversations. */
+    public static final Migration MIGRATION_16_17 = new Migration(16, 17) {
+        @Override public void migrate(SupportSQLiteDatabase db) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS `e2ee_keyset_trust` ("
+                    + "`owner_user_id` TEXT NOT NULL, `conversation_id` TEXT NOT NULL, "
+                    + "`state` TEXT NOT NULL, `verified_digest_hex` TEXT NOT NULL, "
+                    + "`verified_transcript` BLOB NOT NULL, `changed_digest_hex` TEXT, "
+                    + "`updated_at_ms` INTEGER NOT NULL, "
+                    + "PRIMARY KEY(`owner_user_id`, `conversation_id`))");
         }
     };
 

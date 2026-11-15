@@ -25,12 +25,15 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
@@ -71,6 +74,7 @@ public final class E2eeSession {
     private final Moshi moshi;
     private final E2eeCrypto crypto;
     private final Scheduler delayScheduler;
+    private final KeysetTrustStore trustStore;
     private final Object identityLock = new Object();
     /**
      * Session epoch, read and bumped only under {@link #identityLock}. Every
@@ -97,26 +101,30 @@ public final class E2eeSession {
 
     @Inject
     public E2eeSession(@NonNull E2eeApi api, @NonNull DeviceKeyStore keyStore,
-            @NonNull TokenStore tokenStore, @NonNull Moshi moshi) {
-        this(api, keyStore, tokenStore, moshi, new E2eeCrypto());
+            @NonNull TokenStore tokenStore, @NonNull Moshi moshi,
+            @NonNull KeysetTrustStore trustStore) {
+        this(api, keyStore, tokenStore, moshi, new E2eeCrypto(), trustStore);
     }
 
     E2eeSession(@NonNull E2eeApi api, @NonNull DeviceKeyStore keyStore,
             @NonNull TokenStore tokenStore, @NonNull Moshi moshi,
-            @NonNull E2eeCrypto crypto) {
-        this(api, keyStore, tokenStore, moshi, crypto, Schedulers.computation());
+            @NonNull E2eeCrypto crypto, @NonNull KeysetTrustStore trustStore) {
+        this(api, keyStore, tokenStore, moshi, crypto, Schedulers.computation(),
+                trustStore);
     }
 
     /** Test seam: registration backoff runs on the supplied scheduler. */
     E2eeSession(@NonNull E2eeApi api, @NonNull DeviceKeyStore keyStore,
             @NonNull TokenStore tokenStore, @NonNull Moshi moshi,
-            @NonNull E2eeCrypto crypto, @NonNull Scheduler delayScheduler) {
+            @NonNull E2eeCrypto crypto, @NonNull Scheduler delayScheduler,
+            @NonNull KeysetTrustStore trustStore) {
         this.api = Objects.requireNonNull(api, "api");
         this.keyStore = Objects.requireNonNull(keyStore, "keyStore");
         this.tokenStore = Objects.requireNonNull(tokenStore, "tokenStore");
         this.moshi = Objects.requireNonNull(moshi, "moshi");
         this.crypto = Objects.requireNonNull(crypto, "crypto");
         this.delayScheduler = Objects.requireNonNull(delayScheduler, "delayScheduler");
+        this.trustStore = Objects.requireNonNull(trustStore, "trustStore");
     }
 
     /**
@@ -602,7 +610,13 @@ public final class E2eeSession {
      * {@code E2EE_NOT_ENABLED} when the conversation is off,
      * {@code E2EE_STALE_DEVICES} when the snapshot is malformed, lacks this
      * device's exact key, or lists no peer device. A snapshot missing the
-     * just-registered own device is refetched once before erroring.
+     * just-registered own device is refetched once before erroring. For a
+     * direct roster the {@link KeysetTrustStore} verdict gates the crypto:
+     * {@code E2EE_KEYSET_CHANGED} when the verified keyset no longer matches,
+     * {@code E2EE_KEYSET_INVALID} when the roster cannot be parsed. A roster
+     * that cannot produce a direct transcript still consults the record — a
+     * verified direct shape that was reshaped is itself a keyset change,
+     * while an untracked roster keeps its previous behavior.
      */
     @NonNull
     private Single<E2eeCrypto.EncryptedMessage> encryptForConversation(
@@ -649,21 +663,181 @@ public final class E2eeSession {
                     return encryptForConversation(conversationId, plaintext, senderId,
                             clientMessageId, selfUserId, identity, true, epoch);
                 }
-                return Single.<E2eeCrypto.EncryptedMessage>error(
-                        new E2eeException("E2EE_STALE_DEVICES"));
+                // A roster that stayed undeliverable after the refetch still
+                // gets the trust verdict when it can no longer form a direct
+                // transcript: a stored record means the verified shape was
+                // reshaped, which is a keyset change, not stale devices.
+                return directKeysetTranscript(conversationId, state.getDevices()) == null
+                        ? continueIfUntracked(selfUserId, conversationId,
+                                () -> Single.error(new E2eeException("E2EE_STALE_DEVICES")))
+                        : Single.<E2eeCrypto.EncryptedMessage>error(
+                                new E2eeException("E2EE_STALE_DEVICES"));
             }
-            // The ciphertext is computed without the lock, then delivered
-            // through the fenced emitter: a member GET released after a
-            // boundary can never emit a sendable message for the retired
-            // account.
-            try {
-                return fencedEmit(epoch, crypto.encrypt(plaintext, conversationId,
-                        senderId, clientMessageId, recipients));
-            } catch (GeneralSecurityException failure) {
-                return Single.<E2eeCrypto.EncryptedMessage>error(
-                        new E2eeException("E2EE_CRYPTO"));
+            // The verified-roster check runs on the exact member-device list
+            // that is about to receive envelopes, before any crypto work. A
+            // CHANGED verdict fails the send. A roster that cannot produce a
+            // direct transcript is not let through unchecked either: a stored
+            // record means a verified direct shape was reshaped, which fails
+            // the same way; only untracked rosters (groups, never-verified
+            // chats) keep the previous behavior.
+            byte[] transcript = directKeysetTranscript(conversationId, state.getDevices());
+            if (transcript == null) {
+                return continueIfUntracked(selfUserId, conversationId,
+                        () -> encryptAndFence(epoch, plaintext, conversationId,
+                                senderId, clientMessageId, recipients));
             }
+            return trustStore.checkBeforeEncrypt(selfUserId, conversationId, transcript)
+                    .flatMap(result -> result == KeysetTrustStore.CheckResult.CHANGED
+                            ? Single.<E2eeCrypto.EncryptedMessage>error(
+                                    new E2eeException("E2EE_KEYSET_CHANGED"))
+                            : encryptAndFence(epoch, plaintext, conversationId,
+                                    senderId, clientMessageId, recipients));
         });
+    }
+
+    /**
+     * The canonical {@link KeysetCheck} transcript for a direct (exactly two
+     * distinct users) member list, or {@code null} when the roster is not a
+     * direct chat — a {@code null} shape still answers to the trust record
+     * through {@link #continueIfUntracked}, never a free pass. Any id or
+     * key that cannot be parsed into the transcript fails closed with
+     * {@code E2EE_KEYSET_INVALID}; a malformed roster is never skipped.
+     */
+    @Nullable
+    private static byte[] directKeysetTranscript(@NonNull String conversationId,
+            @NonNull List<MemberDeviceDto> devices) {
+        Map<String, List<MemberDeviceDto>> byUser = new LinkedHashMap<>();
+        int malformedRows = 0;
+        for (MemberDeviceDto device : devices) {
+            String userId = device == null ? null : device.getUserId();
+            if (userId == null || device.getDeviceId() == null
+                    || device.getPublicKey() == null) {
+                malformedRows++;
+                continue;
+            }
+            byUser.computeIfAbsent(userId, key -> new ArrayList<>()).add(device);
+            if (byUser.size() > 2) {
+                return null;
+            }
+        }
+        if (byUser.size() != 2) {
+            return null;
+        }
+        if (malformedRows > 0) {
+            throw new E2eeException("E2EE_KEYSET_INVALID");
+        }
+        try {
+            List<KeysetCheck.UserRoster> rosters = new ArrayList<>(2);
+            for (Map.Entry<String, List<MemberDeviceDto>> entry : byUser.entrySet()) {
+                List<KeysetCheck.Device> keys = new ArrayList<>(entry.getValue().size());
+                for (MemberDeviceDto device : entry.getValue()) {
+                    keys.add(new KeysetCheck.Device(
+                            UUID.fromString(device.getDeviceId()),
+                            KeysetCheck.ALGORITHM_X25519,
+                            E2eeCrypto.b64urlDecode(device.getPublicKey())));
+                }
+                rosters.add(new KeysetCheck.UserRoster(
+                        UUID.fromString(entry.getKey()), keys));
+            }
+            return KeysetCheck.transcript(UUID.fromString(conversationId), rosters);
+        } catch (KeysetCheck.InvalidKeysetException | RuntimeException invalid) {
+            throw new E2eeException("E2EE_KEYSET_INVALID");
+        }
+    }
+
+    /**
+     * Verdict for a roster that produced no direct transcript: a stored trust
+     * record means a verified direct shape was reshaped — itself a keyset
+     * change — so the send fails before any crypto work. An untracked roster
+     * defers to {@code fallback}, supplied lazily so the fallback's work
+     * (such as envelope encryption) never runs on the failure path.
+     */
+    @NonNull
+    private Single<E2eeCrypto.EncryptedMessage> continueIfUntracked(
+            @NonNull String selfUserId, @NonNull String conversationId,
+            @NonNull Supplier<Single<E2eeCrypto.EncryptedMessage>> fallback) {
+        return trustStore.checkUntrackedShape(selfUserId, conversationId)
+                .flatMap(result -> result == KeysetTrustStore.ShapeResult.CHANGED
+                        ? Single.<E2eeCrypto.EncryptedMessage>error(
+                                new E2eeException("E2EE_KEYSET_CHANGED"))
+                        : fallback.get());
+    }
+
+    /**
+     * The ciphertext is computed without the lock, then delivered through the
+     * fenced emitter: a member GET released after a boundary can never emit a
+     * sendable message for the retired account.
+     */
+    @NonNull
+    private Single<E2eeCrypto.EncryptedMessage> encryptAndFence(int epoch,
+            @NonNull String plaintext, @NonNull String conversationId,
+            @NonNull String senderId, @NonNull String clientMessageId,
+            @NonNull List<DevicePublicKey> recipients) {
+        try {
+            return fencedEmit(epoch, crypto.encrypt(plaintext, conversationId,
+                    senderId, clientMessageId, recipients));
+        } catch (GeneralSecurityException failure) {
+            return Single.<E2eeCrypto.EncryptedMessage>error(
+                    new E2eeException("E2EE_CRYPTO"));
+        }
+    }
+
+    /**
+     * The canonical {@link KeysetCheck} transcript of the conversation's
+     * current member-device roster — the same snapshot source and parsing as
+     * the encrypt path. The verification screen displays the {@code NC1} code
+     * over these exact bytes and hands them back to {@link #markVerified}.
+     * Errors with {@code E2EE_NOT_ENABLED} when the conversation is off and
+     * {@code E2EE_KEYSET_INVALID} when the roster is not a parseable direct
+     * chat; a later fetch can never silently stand in for the bytes shown.
+     */
+    @NonNull
+    public Single<byte[]> currentTranscript(@NonNull String conversationId) {
+        final int epoch;
+        synchronized (identityLock) {
+            epoch = sessionGeneration;
+        }
+        return e2eeState(conversationId, epoch).flatMap(state -> {
+            if (!state.isEnabled()) {
+                return Single.<byte[]>error(new E2eeException("E2EE_NOT_ENABLED"));
+            }
+            byte[] transcript = directKeysetTranscript(conversationId, state.getDevices());
+            if (transcript == null) {
+                return Single.<byte[]>error(new E2eeException("E2EE_KEYSET_INVALID"));
+            }
+            return fencedEmit(epoch, transcript);
+        }).subscribeOn(Schedulers.io());
+    }
+
+    /**
+     * Persists {@code transcript} — the bytes shown to the user for comparison
+     * — as the verified keyset for this conversation under the signed-in
+     * account. Binding to the displayed bytes (never a fresh fetch) means a
+     * roster change between display and tap cannot be approved silently.
+     */
+    @NonNull
+    public Completable markVerified(@NonNull String conversationId,
+            @NonNull byte[] transcript) {
+        final int startEpoch;
+        synchronized (identityLock) {
+            startEpoch = sessionGeneration;
+        }
+        return tokenStore.readTokens()
+                .switchIfEmpty(Single.<Tokens>error(new E2eeException("E2EE_NO_SESSION")))
+                .flatMapCompletable(tokens -> {
+                    String userId = TimeAndJwt.userIdFromJwt(
+                            tokens.getAccessToken(), moshi);
+                    if (userId == null) {
+                        return Completable.error(new E2eeException("E2EE_NO_SESSION"));
+                    }
+                    synchronized (identityLock) {
+                        if (isStale(startEpoch)) {
+                            return Completable.error(staleSessionError());
+                        }
+                    }
+                    return trustStore.markVerified(userId, conversationId, transcript);
+                })
+                .subscribeOn(Schedulers.io());
     }
 
     /**
