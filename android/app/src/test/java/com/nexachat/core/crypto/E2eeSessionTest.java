@@ -7,6 +7,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -23,6 +24,7 @@ import com.nexachat.core.network.E2eeApi;
 import com.nexachat.core.network.dto.E2eeDeviceDtos.ConversationE2eeDto;
 import com.nexachat.core.network.dto.E2eeDeviceDtos.DeviceDto;
 import com.nexachat.core.network.dto.E2eeDeviceDtos.MemberDeviceDto;
+import com.nexachat.core.network.dto.E2eeDeviceDtos.RegisterDeviceRequest;
 import com.nexachat.core.network.dto.E2eeEnvelopeDto;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
@@ -200,7 +202,7 @@ public final class E2eeSessionTest {
 
         TestObserver<Void> observer = timed.onSessionAvailable().test();
         verify(api, timeout(3_000).times(1)).registerDevice(eq("dev-1"), any());
-        advanceUntilRegisterCount(scheduler, 2);
+        advanceUntilAtLeastRegisterCount(scheduler, 2);
         observer.awaitDone(5, TimeUnit.SECONDS).assertComplete();
         verify(api, times(2)).registerDevice(eq("dev-1"), any());
     }
@@ -215,8 +217,8 @@ public final class E2eeSessionTest {
 
         TestObserver<Void> observer = timed.onSessionAvailable().test();
         verify(api, timeout(3_000).times(1)).registerDevice(eq("dev-1"), any());
-        advanceUntilRegisterCount(scheduler, 2);
-        advanceUntilRegisterCount(scheduler, 3);
+        advanceUntilAtLeastRegisterCount(scheduler, 2);
+        advanceUntilAtLeastRegisterCount(scheduler, 3);
         observer.awaitDone(5, TimeUnit.SECONDS)
                 .assertError(error -> error instanceof E2eeSession.E2eeException
                         && "E2EE_NETWORK".equals(error.getMessage()));
@@ -236,7 +238,7 @@ public final class E2eeSessionTest {
 
         TestObserver<Void> observer = timed.onSessionAvailable().test();
         verify(api, timeout(3_000).times(1)).registerDevice(eq("dev-1"), any());
-        advanceUntilRegisterCount(scheduler, 2);
+        advanceUntilAtLeastRegisterCount(scheduler, 2);
         observer.awaitDone(5, TimeUnit.SECONDS).assertComplete();
         verify(api, times(2)).registerDevice(eq("dev-1"), any());
     }
@@ -739,8 +741,8 @@ public final class E2eeSessionTest {
 
         TestObserver<Void> observer = timed.onSessionAvailable().test();
         verify(api, timeout(3_000).times(1)).registerDevice(eq("dev-old"), any());
-        advanceUntilRegisterCount(scheduler, 2);
-        advanceUntilRegisterCount(scheduler, 3);
+        advanceUntilAtLeastRegisterCount(scheduler, 2);
+        advanceUntilAtLeastRegisterCount(scheduler, 3);
         observer.awaitDone(5, TimeUnit.SECONDS).assertError(
                 error -> error instanceof E2eeSession.E2eeException);
         // One shared budget for the whole logical registration: 3 calls total.
@@ -761,13 +763,26 @@ public final class E2eeSessionTest {
 
         TestObserver<Void> observer = timed.onSessionAvailable().test();
         verify(api, timeout(3_000).times(1)).registerDevice(eq("dev-1"), any());
-        advanceUntilRegisterCount(scheduler, 2);
-        advanceUntilRegisterCount(scheduler, 3);
+        advanceUntilAtLeastRegisterCount(scheduler, 2);
+        advanceUntilAtLeastRegisterCount(scheduler, 3);
         observer.awaitDone(5, TimeUnit.SECONDS).assertError(
                 error -> error instanceof E2eeSession.E2eeException
                         && "E2EE_DEVICE_CONFLICT".equals(error.getMessage()));
         verify(api, times(3)).registerDevice(anyString(), any());
         verify(keyStore, never()).deviceId("u1");
+    }
+
+    @Test
+    public void registrationProgressWaitAcceptsPassedIntermediateMilestone()
+            throws Exception {
+        TestScheduler scheduler = new TestScheduler();
+        api.registerDevice("dev-1", new RegisterDeviceRequest("unused"));
+        api.registerDevice("dev-1", new RegisterDeviceRequest("unused"));
+        api.registerDevice("dev-1", new RegisterDeviceRequest("unused"));
+
+        advanceUntilAtLeastRegisterCount(scheduler, 2);
+
+        verify(api, times(3)).registerDevice(anyString(), any());
     }
 
     private static Call<DeviceDto> errorCall(int status) throws IOException {
@@ -1052,25 +1067,28 @@ public final class E2eeSessionTest {
 
     /**
      * Drives the test scheduler in small steps until the device registration
-     * has been attempted {@code expected} times (or a real-time deadline),
-     * absorbing the race between the delayed retry being scheduled on the IO
-     * worker and virtual time advancing.
+     * has been attempted at least {@code minimum} times (or a real-time
+     * deadline), absorbing the race between the delayed retry being scheduled
+     * on the IO worker and virtual time advancing. The milestone may already
+     * have been passed - an immediate conflict rotation can fire the next
+     * attempt before the test thread polls - so callers assert exact terminal
+     * counts separately.
      */
 
 
-    private void advanceUntilRegisterCount(TestScheduler scheduler, int expected)
+    private void advanceUntilAtLeastRegisterCount(TestScheduler scheduler, int minimum)
             throws InterruptedException {
         long deadline = System.currentTimeMillis() + 5_000;
         while (System.currentTimeMillis() < deadline) {
             scheduler.advanceTimeBy(100, TimeUnit.MILLISECONDS);
             try {
-                verify(api, times(expected)).registerDevice(anyString(), any());
+                verify(api, atLeast(minimum)).registerDevice(anyString(), any());
                 return;
             } catch (AssertionError notYet) {
                 Thread.sleep(10);
             }
         }
-        verify(api, times(expected)).registerDevice(anyString(), any());
+        verify(api, atLeast(minimum)).registerDevice(anyString(), any());
     }
 
     private E2eeSession timedSession(TestScheduler scheduler) {
