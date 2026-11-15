@@ -912,7 +912,7 @@ def scenario_xff(results: Results, client: Client, admin: dict, peer: dict, outs
 
     Bucket4j refills greedily, so the 61st call can still succeed. The
     unchanged final_live.py assertion stops there. This check keeps going, the
-    same way P1InviteIpRateLimitIT does, and requires a 429 before a new
+    same way InviteJoinIpRateLimitIT does, and requires a 429 before a new
     forwarded address could have granted another full window.
     """
     group = create_group(client, admin["token"], "E2E xff ext", [peer["id"]])
