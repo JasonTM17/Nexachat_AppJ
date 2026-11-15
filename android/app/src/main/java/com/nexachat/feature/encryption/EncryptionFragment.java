@@ -11,6 +11,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
+import com.google.android.material.color.MaterialColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.materialswitch.MaterialSwitch;
 import com.nexachat.R;
@@ -28,12 +29,14 @@ public final class EncryptionFragment extends Fragment {
 
     private EncryptionViewModel viewModel;
     private MaterialSwitch toggle;
+    private View loadingIndicator;
     private TextView status;
     private TextView safetyCode;
     private TextView safetyHint;
     private View safetyCard;
     private View devicesCard;
     private LinearLayout devicesList;
+    private TextView directoryHint;
     private String peerName;
     private android.widget.CompoundButton.OnCheckedChangeListener toggleListener;
 
@@ -56,12 +59,14 @@ public final class EncryptionFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
         toggle = view.findViewById(R.id.e2eeToggle);
+        loadingIndicator = view.findViewById(R.id.e2eeLoading);
         status = view.findViewById(R.id.e2eeStatus);
         safetyCard = view.findViewById(R.id.safetyCard);
         safetyCode = view.findViewById(R.id.safetyCode);
         safetyHint = view.findViewById(R.id.safetyHint);
         devicesCard = view.findViewById(R.id.devicesCard);
         devicesList = view.findViewById(R.id.devicesList);
+        directoryHint = view.findViewById(R.id.e2eeDirectoryHint);
         view.<com.google.android.material.appbar.MaterialToolbar>findViewById(R.id.toolbar)
                 .setNavigationOnClickListener(ignored ->
                         NavHostFragment.findNavController(this).navigateUp());
@@ -128,12 +133,19 @@ public final class EncryptionFragment extends Fragment {
         toggle.setChecked(state.enabled);
         toggle.setOnCheckedChangeListener(toggleListener);
 
+        loadingIndicator.setVisibility(
+                state.loading || state.busy ? View.VISIBLE : View.GONE);
+
         if (state.errorCode != null) {
             status.setVisibility(View.VISIBLE);
+            status.setTextColor(MaterialColors.getColor(
+                    status, StatusRules.statusTextColorAttr(state)));
             status.setText(errorText(state.errorCode));
         } else if (!state.loading && !state.enabled && !state.activationAllowed) {
             // The disabled toggle must explain itself even before any attempt.
             status.setVisibility(View.VISIBLE);
+            status.setTextColor(MaterialColors.getColor(
+                    status, StatusRules.statusTextColorAttr(state)));
             status.setText(R.string.e2ee_activation_unavailable);
         } else {
             status.setVisibility(View.GONE);
@@ -151,6 +163,7 @@ public final class EncryptionFragment extends Fragment {
 
         devicesList.removeAllViews();
         int rowCount = 0;
+        int rowPadding = getResources().getDimensionPixelSize(R.dimen.space_xs);
         String currentId = viewModel.currentDeviceId();
         String myUserId = viewModel.currentUserId();
         for (MemberDeviceDto d : state.devices) {
@@ -176,10 +189,13 @@ public final class EncryptionFragment extends Fragment {
             }
             row.setText(label);
             row.setTextAppearance(R.style.TextAppearance_NexaChat_BodyMedium);
+            row.setPadding(0, rowPadding, 0, rowPadding);
             devicesList.addView(row);
             rowCount++;
         }
         devicesCard.setVisibility(rowCount == 0 ? View.GONE : View.VISIBLE);
+        directoryHint.setVisibility(
+                StatusRules.showDirectoryHint(state) ? View.VISIBLE : View.GONE);
     }
 
     @NonNull
@@ -199,6 +215,25 @@ public final class EncryptionFragment extends Fragment {
                 return getString(R.string.e2ee_activation_unavailable);
             default:
                 return getString(R.string.error_generic);
+        }
+    }
+
+    /** Pure presentation rules for the status line and the directory caption. */
+    static final class StatusRules {
+        private StatusRules() { }
+
+        /** Only a server failure is an error; the resting unavailability note is informational. */
+        static int statusTextColorAttr(@NonNull EncryptionViewModel.UiState state) {
+            return state.errorCode != null
+                    ? com.google.android.material.R.attr.colorError
+                    : com.google.android.material.R.attr.colorOnSurfaceVariant;
+        }
+
+        /** Two or more listed devices without a comparison code can only mean
+         *  the upstream directory dropped rows: a complete directory with that
+         *  many complete devices always produces a code. */
+        static boolean showDirectoryHint(@NonNull EncryptionViewModel.UiState state) {
+            return state.safetyCode == null && state.devices.size() >= 2;
         }
     }
 }

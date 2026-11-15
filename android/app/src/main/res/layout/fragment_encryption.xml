@@ -78,13 +78,23 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
+        <ProgressBar
+            android:id="@+id/e2eeLoading"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="@dimen/space_md"
+            android:contentDescription="@string/voice_status_loading"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/e2eeStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_sm"
+            android:accessibilityLiveRegion="polite"
             android:textAppearance="?attr/textAppearanceBodySmall"
-            android:textColor="?attr/colorError"
+            android:textColor="?attr/colorOnSurfaceVariant"
             android:visibility="gone" />
 
         <com.google.android.material.card.MaterialCardView
@@ -169,6 +179,17 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_xs"
                     android:orientation="vertical" />
+
+                <TextView
+                    android:id="@+id/e2eeDirectoryHint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:accessibilityLiveRegion="polite"
+                    android:text="@string/e2ee_directory_incomplete"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:visibility="gone" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
     </LinearLayout>
