@@ -15,6 +15,7 @@ import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.TextView;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
@@ -55,6 +56,8 @@ public final class ProfileFragment extends Fragment {
     private boolean syncingAiConsent;
     /** True while a switch shows a stored value, so the change is not saved back as a user edit. */
     private boolean syncingPrivacy;
+    @Nullable private AlertDialog passwordDialog;
+    @Nullable private TextView passwordDialogError;
 
     public ProfileFragment() {
         avatarPicker = registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> { if (uri != null && viewModel != null) viewModel.uploadAvatar(uri); });
@@ -285,6 +288,20 @@ public final class ProfileFragment extends Fragment {
         ApiError error = state.getSaveError() != null ? state.getSaveError() : state.getPasswordError() != null ? state.getPasswordError() : state.getAvatarError();
         binding.profileError.setVisibility(error == null ? View.GONE : View.VISIBLE);
         if (error != null) binding.profileError.setText(ApiErrorText.text(requireContext(), error));
+        if (passwordDialog != null && !state.isShowPasswordDialog()) {
+            passwordDialog.dismiss();
+        }
+        if (passwordDialogError != null) {
+            ApiError passwordError = state.getPasswordError();
+            passwordDialogError.setVisibility(passwordError == null ? View.GONE : View.VISIBLE);
+            if (passwordError != null) {
+                passwordDialogError.setText(ApiErrorText.text(requireContext(), passwordError));
+            }
+        }
+        if (passwordDialog != null && passwordDialog.isShowing()) {
+            passwordDialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                    .setEnabled(!state.isPasswordSaving());
+        }
         if (state.isPasswordChanged()) { viewModel.consumePasswordChanged(); new MaterialAlertDialogBuilder(requireContext()).setMessage(R.string.profile_password_changed).setPositiveButton(android.R.string.ok, null).show(); }
         if (state.getAvatarError() != null) viewModel.consumeAvatarError();
         // Sign-in rows combine linked-account config with the loaded profile; re-render
@@ -445,6 +462,30 @@ public final class ProfileFragment extends Fragment {
         form.addView(oldLayout, lp1);
         form.addView(nextLayout, lp2);
         form.addView(confirmLayout, lp3);
+
+        TextView errorLine = new TextView(requireContext());
+        errorLine.setId(R.id.password_dialog_error);
+        errorLine.setVisibility(View.GONE);
+        errorLine.setBackgroundResource(R.drawable.bg_auth_inline_error);
+        int inset = getResources().getDimensionPixelSize(R.dimen.space_inset);
+        errorLine.setPadding(inset, inset, inset, inset);
+        errorLine.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_error_outline, 0, 0, 0);
+        errorLine.setCompoundDrawableTintList(ColorStateList.valueOf(MaterialColors.getColor(
+                errorLine, com.google.android.material.R.attr.colorError)));
+        errorLine.setCompoundDrawablePadding(spaceSm);
+        errorLine.setTextColor(MaterialColors.getColor(
+                errorLine, com.google.android.material.R.attr.colorOnErrorContainer));
+        android.util.TypedValue body = new android.util.TypedValue();
+        requireContext().getTheme().resolveAttribute(
+                com.google.android.material.R.attr.textAppearanceBodyMedium, body, true);
+        errorLine.setTextAppearance(body.resourceId);
+        androidx.core.view.ViewCompat.setAccessibilityLiveRegion(
+                errorLine, androidx.core.view.ViewCompat.ACCESSIBILITY_LIVE_REGION_POLITE);
+        LinearLayout.LayoutParams errorLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        errorLp.topMargin = spaceSm;
+        form.addView(errorLine, errorLp);
+
         ScrollView scroll = new ScrollView(requireContext());
         scroll.addView(form);
 
@@ -455,10 +496,13 @@ public final class ProfileFragment extends Fragment {
                 .setPositiveButton(R.string.action_save, null)
                 .setOnCancelListener(d -> viewModel.dismissPasswordDialog())
                 .create();
+        passwordDialog = dialog;
+        passwordDialogError = errorLine;
+        dialog.setOnDismissListener(d -> {
+            passwordDialog = null;
+            passwordDialogError = null;
+        });
         dialog.setOnShowListener(ignored -> {
-            if (dialog.getWindow() != null) {
-                ImeInsets.applyToDecor(dialog.getWindow());
-            }
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             String oldValue = old == null || old.getText() == null ? "" : old.getText().toString();
             String newValue = next == null || next.getText() == null ? "" : next.getText().toString();
@@ -482,12 +526,12 @@ public final class ProfileFragment extends Fragment {
             } else {
                 confirmLayout.setError(null);
             }
+            errorLine.setVisibility(View.GONE);
             if (valid) {
                 viewModel.onOldPasswordChange(oldValue);
                 viewModel.onNewPasswordChange(newValue);
                 viewModel.onConfirmPasswordChange(confirmValue);
                 viewModel.submitPasswordChange();
-                dialog.dismiss();
             }
             });
         });
@@ -540,7 +584,13 @@ public final class ProfileFragment extends Fragment {
         layout.addView(input);
         return layout;
     }
-    @Override public void onDestroyView() { super.onDestroyView(); binding = null; }
+    @Override public void onDestroyView() {
+        if (passwordDialog != null) {
+            passwordDialog.dismiss();
+        }
+        binding = null;
+        super.onDestroyView();
+    }
 
     private static final class SimpleTextWatcher implements android.text.TextWatcher {
         private final java.util.function.Consumer<String> consumer; SimpleTextWatcher(java.util.function.Consumer<String> consumer) { this.consumer = consumer; }
