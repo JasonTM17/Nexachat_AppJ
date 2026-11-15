@@ -6,23 +6,66 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.8] - 2026-11-15
+
+Sign-in, polish, membership-scope and experimental E2EE release. Flyway V34
+adds the E2EE device registry and conversation flag; deploy the server before
+publishing the APK — the `v1.2.7` app also works with the new server. See
+[docs/release-notes/v1.2.8.md](docs/release-notes/v1.2.8.md).
+
 ### Added
-- Server: end-to-end encryption for direct chats (v1). Device key API
-  (`PUT|DELETE /api/v1/e2ee/devices/{id}`), per-conversation opt-in
-  (`GET|PUT /api/v1/conversations/{id}/e2ee`), encrypted TEXT sends with
-  per-device key envelopes (`encryption: "E2EE_V1"` + `e2eeEnvelopes`),
-  `e2eeEnabled`/`lastMessageEncrypted`/`encrypted` read-surface flags, and
-  exclusion of encrypted rows from search, archive, summary, RAG, previews,
-  and push payloads. See `docs/architecture/e2ee.md` for the trust model and
-  v1 limits.
+- Sign in with a verified email or a phone number (server and Android).
+- Server: configurable accepted Google ID-token issuers; defaults are
+  unchanged.
+- Server and Android: end-to-end encryption for direct chats (v1), an
+  experimental rollout-gated preview that is off by default on the server
+  (`NEXACHAT_E2EE_V1_ACTIVATION_ENABLED=false`) and in release Android builds.
+  Device key API (`PUT|DELETE /api/v1/e2ee/devices/{id}`), per-conversation
+  opt-in (`GET|PUT /api/v1/conversations/{id}/e2ee`), encrypted TEXT sends
+  whose envelope device set must equal the active devices of all members
+  (`encryption: "E2EE_V1"` + `e2eeEnvelopes`), `e2eeEnabled`/
+  `lastMessageEncrypted`/`encrypted` read-surface flags, and exclusion of
+  encrypted rows from search, archive, summary, RAG, previews, and push
+  payloads. See `docs/architecture/e2ee.md` for the trust model and v1
+  limits.
 
 ### Fixed
-- Android: failed Inbox refreshes retain cached threads and show a visible Retry.
-  Empty filters show recovery instead of an unconfirmed empty state.
-- Android: Inbox loading continues while a server refresh is in flight, including
-  when cached rows change.
+- Server: history, forward resync, search, pins, archive, attachments,
+  realtime delivery, AI summary, AI ask, shared AI answers and live quote
+  previews are scoped to the member's admission time; replies to messages
+  from before admission are rejected.
+- Server: inbox last-message preview and unread count, REST reply previews,
+  realtime pin, reaction and recall frames, push notifications and group
+  polls are scoped the same way; those realtime frames carry a new optional
+  `messageCreatedAt` field that older clients ignore.
+- Server: credential ownership is rechecked under the user lock and password
+  work is equalized.
+- Server: the default primary summary model points to the configured Gemini
+  endpoint.
+- Android: failed Inbox refreshes retain cached threads and show a visible
+  Retry. Empty filters show recovery instead of an unconfirmed empty state.
+- Android: Inbox loading continues while a server refresh is in flight,
+  including when cached rows change.
 - Android: rapid group-header taps open one group-details screen.
-- Android: the decorative recording indicator is excluded from accessibility focus.
+- Android: the decorative recording indicator is excluded from accessibility
+  focus.
+- Android: readable chat bubbles and reply quotes; group header shows the
+  member count and opens group info.
+- Android: settings rows wrap long titles, the Language row shows the current
+  language, and privacy switches save from any input.
+- Android: AI summary and ask requests wait up to 130 seconds.
+- Android: own avatar on a restored session, View all alignment, wrapping
+  Active now names, visible reaction text and inbox divider spacing.
+- Android: realtime user queues stay subscribed after sign-out and sign-in; a
+  stale sign-in response after a newer session is dropped.
+
+### Security
+- Server: Postgres constraint-violation DETAIL values, which can carry emails
+  and phone numbers, are kept out of logs in every profile; integrity
+  violation paths log only the constraint name.
+
+### Removed
+- The synthetic P0 e2e fixture runner.
 
 ## [1.2.7] - 2026-11-14
 
@@ -741,7 +784,8 @@ First tagged release (`v1.0.0`).
 - Architecture diagrams, REST/STOMP contracts, security notes, operations
   guide and UI design documentation.
 
-[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.8...HEAD
+[1.2.8]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.7...v1.2.8
 [1.1.1]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/JasonTM17/Nexachat_AppJ/releases/tag/v1.0.0
