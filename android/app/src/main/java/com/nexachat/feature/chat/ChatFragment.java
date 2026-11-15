@@ -259,9 +259,6 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             if (peerId == null) peerId = state.getMessages().stream().filter(m -> !m.getMine()).map(ChatMessage::getSenderId).findFirst().orElse("");
             CallLauncher.start(requireContext(), conversationId, peerId, state.getPeerName() == null ? "" : state.getPeerName());
         });
-        binding.searchInChatButton.setOnClickListener(v -> setSearchOpen(true));
-        binding.infoButton.setOnClickListener(v -> openGroupInfo());
-        binding.summaryButton.setOnClickListener(v -> showSummary());
         binding.moreButton.setOnClickListener(v -> showMoreOptions());
         binding.closeChatSearch.setOnClickListener(v -> setSearchOpen(false));
         binding.chatSearchInput.setOnEditorActionListener((text, actionId, event) -> {
@@ -828,9 +825,6 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         bindGroupInfoShortcut(state.isGroup());
         renderSubtitle();
         binding.callButton.setVisibility(ChatToolbarPolicy.callAvailable(state.isGroup()) ? View.VISIBLE : View.GONE);
-        binding.searchInChatButton.setVisibility(View.GONE);
-        binding.infoButton.setVisibility(View.GONE);
-        binding.summaryButton.setVisibility(View.GONE);
         applyLargeTypeToolbar();
         renderConversationState();
         binding.chatError.setVisibility(state.getError() == null ? View.GONE : View.VISIBLE);
