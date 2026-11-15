@@ -202,6 +202,7 @@
     <string name="e2ee_failed_keyset_changed">Chưa gửi — mã đã đổi</string>
     <string name="e2ee_failed_keyset_invalid">Chưa gửi — không đọc được danh sách thành viên</string>
     <string name="e2ee_failed_downgrade_blocked">Chưa gửi — mã hóa đã tắt</string>
+    <string name="message_not_sent">Chưa gửi</string>
 
     <string name="chat_typing">đang nhập…</string>
     <string name="msg_seen">Đã xem</string>

@@ -155,7 +155,7 @@
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
           android:layout_marginTop="@dimen/space_lg"
-          android:minHeight="48dp"
+          android:minHeight="@dimen/min_touch_target"
           android:text="@string/action_continue"
           android:textStyle="bold"
           app:cornerRadius="@dimen/corner_md" />

@@ -57,7 +57,7 @@
                     android:layout_marginTop="@dimen/space_md"
                     android:background="?attr/colorSurfaceContainerLow"
                     android:gravity="center_vertical"
-                    android:minHeight="48dp"
+                    android:minHeight="@dimen/min_touch_target"
                     android:orientation="horizontal"
                     android:padding="@dimen/space_xs">
 
@@ -134,14 +134,10 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_md"
                     android:contentDescription="@string/cd_continue_with_google"
-                    android:minHeight="48dp"
                     android:text="@string/action_continue_with_google"
                     android:visibility="gone"
-                    app:backgroundTint="?attr/colorSurfaceContainerLowest"
                     app:icon="@drawable/ic_google_g"
                     app:iconGravity="textStart"
-                    app:iconPadding="@dimen/space_inset"
-                    app:iconTint="@null"
                     tools:visibility="visible" />
 
                 <include
@@ -210,7 +206,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_lg"
-                    android:minHeight="48dp"
+                    android:minHeight="@dimen/min_touch_target"
                     android:text="@string/action_sign_in"
                     android:textStyle="bold"
                     app:cornerRadius="@dimen/corner_md" />

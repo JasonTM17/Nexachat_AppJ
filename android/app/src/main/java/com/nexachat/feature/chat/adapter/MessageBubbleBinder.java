@@ -850,10 +850,9 @@ public final class MessageBubbleBinder {
         if (message.getStatus() == DeliveryStatus.FAILED) {
             if (deliveryText != null) {
                 deliveryText.setVisibility(View.VISIBLE);
-                // Only rows the send pause itself failed wear the paused
-                // reason; unrelated rejections keep their honest retry copy.
-                deliveryText.setText(pausedFailReasonRes != 0 && message.isPausedRefusal()
-                        ? pausedFailReasonRes : R.string.action_retry);
+                deliveryText.setText(ChatBubbleRules.failedRowLabelRes(
+                        message.getStatus(), message.isPausedRefusal(),
+                        pausedFailReasonRes));
                 deliveryText.setTextColor(
                         ContextCompat.getColor(root.getContext(), R.color.colorError)
                 );
