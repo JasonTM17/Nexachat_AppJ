@@ -20,11 +20,10 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_margin="@dimen/space_md"
-        app:cardBackgroundColor="?attr/colorSurface"
-        app:cardCornerRadius="@dimen/corner_lg"
+        app:cardBackgroundColor="?attr/colorSurfaceContainer"
+        app:cardCornerRadius="@dimen/corner_md"
         app:cardElevation="0dp"
-        app:strokeColor="?attr/colorOutlineVariant"
-        app:strokeWidth="@dimen/control_stroke_width">
+        app:strokeWidth="0dp">
 
         <RadioGroup
             android:id="@+id/languageOptions"
