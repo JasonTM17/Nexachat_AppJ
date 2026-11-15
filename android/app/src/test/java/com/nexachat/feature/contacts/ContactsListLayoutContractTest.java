@@ -42,6 +42,8 @@ public final class ContactsListLayoutContractTest {
         Element list = findById(parse("layout/fragment_contacts.xml"), "contactList");
         assertEquals(BAND_DRAWABLE, attr(list, "background"));
         assertEquals("true", attr(list, "clipToOutline"));
+        assertEquals("band must hug the rows, not fill the viewport",
+                "wrap_content", attr(list, "layout_height"));
     }
 
     @Test
@@ -49,6 +51,8 @@ public final class ContactsListLayoutContractTest {
         Element list = findById(parse("layout/fragment_user_search.xml"), "resultsList");
         assertEquals(BAND_DRAWABLE, attr(list, "background"));
         assertEquals("true", attr(list, "clipToOutline"));
+        assertEquals("band must hug the rows, not fill the viewport",
+                "wrap_content", attr(list, "layout_height"));
     }
 
     @Test
