@@ -24,7 +24,6 @@ import androidx.navigation.fragment.NavHostFragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
-import com.google.android.material.button.MaterialButton;
 import com.google.android.material.color.MaterialColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
@@ -55,7 +54,7 @@ public final class GroupDetailFragment extends Fragment {
     @Nullable private AlertDialog onlyAdminDialog;
     @Nullable private Dialog addMemberDialog;
     @Nullable private SelectableContactAdapter addMemberPickerAdapter;
-    @Nullable private MaterialButton addMemberConfirmButton;
+    @Nullable private BottomSheetGroupAddMemberBinding addMemberSheetBinding;
     @Nullable private EditText renameInput;
     private boolean renderingRename;
     @Nullable private ApiError lastSnackbarError;
@@ -232,7 +231,7 @@ public final class GroupDetailFragment extends Fragment {
             addMemberDialog.dismiss();
             addMemberDialog = null;
             addMemberPickerAdapter = null;
-            addMemberConfirmButton = null;
+            addMemberSheetBinding = null;
         }
 
         binding.loadingState.setVisibility(state.isLoading() || state.isBusy() ? View.VISIBLE : View.GONE);
@@ -323,8 +322,8 @@ public final class GroupDetailFragment extends Fragment {
             if (addMemberPickerAdapter != null) {
                 addMemberPickerAdapter.submit(state.getAddableContacts(), state.getSelectedAddIds());
             }
-            if (addMemberConfirmButton != null) {
-                addMemberConfirmButton.setEnabled(!state.getSelectedAddIds().isEmpty() && !state.isBusy());
+            if (addMemberSheetBinding != null) {
+                renderAddMemberPickerState(addMemberSheetBinding, state);
             }
             return;
         }
@@ -334,9 +333,16 @@ public final class GroupDetailFragment extends Fragment {
         addMemberPickerAdapter.submit(state.getAddableContacts(), state.getSelectedAddIds());
         sheet.addMemberList.setLayoutManager(new LinearLayoutManager(requireContext()));
         sheet.addMemberList.setAdapter(addMemberPickerAdapter);
-        addMemberConfirmButton = sheet.addMemberConfirm;
-        addMemberConfirmButton.setEnabled(!state.getSelectedAddIds().isEmpty() && !state.isBusy());
-        addMemberConfirmButton.setOnClickListener(v -> viewModel.addSelectedMembers());
+        addMemberSheetBinding = sheet;
+        sheet.addMemberConfirm.setEnabled(!state.getSelectedAddIds().isEmpty() && !state.isBusy());
+        sheet.addMemberConfirm.setOnClickListener(v -> viewModel.addSelectedMembers());
+        sheet.addMemberInviteLink.setOnClickListener(v -> {
+            Dialog dialog = addMemberDialog;
+            if (dialog != null) {
+                dialog.dismiss();
+            }
+            openInviteManager();
+        });
 
         BottomSheetDialog dialog = new BottomSheetDialog(requireContext());
         dialog.setContentView(sheet.getRoot());
@@ -354,10 +360,30 @@ public final class GroupDetailFragment extends Fragment {
             viewModel.dismissAddMember();
             addMemberDialog = null;
             addMemberPickerAdapter = null;
-            addMemberConfirmButton = null;
+            addMemberSheetBinding = null;
         });
         addMemberDialog = dialog;
         dialog.show();
+    }
+
+    /**
+     * An empty addable list means every contact is already a member: the
+     * disabled confirm is swapped for an explanation and an invite-link
+     * shortcut. Only applied once the contacts result has arrived; while the
+     * fetch is in flight the sheet shows an empty list with a disabled
+     * confirm instead of a false empty state.
+     */
+    private void renderAddMemberPickerState(
+            @NonNull BottomSheetGroupAddMemberBinding sheet,
+            @NonNull GroupDetailUiState state) {
+        boolean noAddable = GroupDetailListRules.showAddMemberEmptyState(
+                state.isAddableContactsLoaded(), state.getAddableContacts().isEmpty());
+        sheet.addMemberList.setVisibility(noAddable ? View.GONE : View.VISIBLE);
+        sheet.addMemberEmptyState.setVisibility(noAddable ? View.VISIBLE : View.GONE);
+        sheet.addMemberEmpty.setVisibility(noAddable ? View.VISIBLE : View.GONE);
+        sheet.addMemberInviteLink.setVisibility(noAddable ? View.VISIBLE : View.GONE);
+        sheet.addMemberConfirm.setVisibility(noAddable ? View.GONE : View.VISIBLE);
+        sheet.addMemberConfirm.setEnabled(!state.getSelectedAddIds().isEmpty() && !state.isBusy());
     }
 
     @Override
@@ -377,7 +403,7 @@ public final class GroupDetailFragment extends Fragment {
         if (addMemberDialog != null) {
             addMemberDialog.dismiss();
             addMemberPickerAdapter = null;
-            addMemberConfirmButton = null;
+            addMemberSheetBinding = null;
         }
         if (binding != null) {
             binding.memberList.setAdapter(null);
