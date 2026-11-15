@@ -11,13 +11,33 @@ public final class AuthFieldValidatorsTest {
     @Test
     public void normalizeE164_trimsAndStripsCommonPunctuation() {
         assertEquals("+84901234567", AuthFieldValidators.normalizeE164("  +84 901 234-567  "));
-        assertEquals("2025550123", AuthFieldValidators.normalizeE164("(202) 555-0123"));
+        assertEquals("+2025550123", AuthFieldValidators.normalizeE164("(202) 555-0123"));
         assertEquals("+442079460123", AuthFieldValidators.normalizeE164("+44.20.7946.0123"));
     }
 
     @Test
     public void normalizeE164_convertsLeading00ToPlus() {
         assertEquals("+84901234567", AuthFieldValidators.normalizeE164("0084901234567"));
+    }
+
+    @Test
+    public void normalizeE164_prependsPlusToBareInternationalDigits() {
+        assertEquals("+84901234567", AuthFieldValidators.normalizeE164("84901234567"));
+        assertEquals("+12345678", AuthFieldValidators.normalizeE164("12345678"));
+        assertEquals("+123456789012345", AuthFieldValidators.normalizeE164("123456789012345"));
+        assertEquals(
+                "+12025550123",
+                AuthFieldValidators.normalizeE164("+1 (202) 555-0123"));
+    }
+
+    @Test
+    public void normalizeE164_leavesLeadingZeroAndOutOfRangeDigitsAlone() {
+        // Numbers that look national stay invalid: the form never guesses a default country.
+        assertEquals("0901234567", AuthFieldValidators.normalizeE164("0901234567"));
+        assertEquals("01234567", AuthFieldValidators.normalizeE164("01234567"));
+        assertEquals("1234567", AuthFieldValidators.normalizeE164("1234567"));
+        assertEquals("1234567890123456", AuthFieldValidators.normalizeE164("1234567890123456"));
+        assertEquals("+123", AuthFieldValidators.normalizeE164("00123"));
     }
 
     @Test

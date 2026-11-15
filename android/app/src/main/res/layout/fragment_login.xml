@@ -154,6 +154,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_md"
                     android:hint="@string/auth_login_identifier_label"
+                    app:placeholderText="@string/auth_phone_placeholder"
                     app:startIconDrawable="@drawable/ic_person_outline">
 
                     <com.google.android.material.textfield.TextInputEditText
