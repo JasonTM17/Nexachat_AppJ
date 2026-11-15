@@ -28,18 +28,12 @@
 
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/searchLayout"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            style="@style/Widget.NexaChat.TextInputLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="@dimen/space_md"
             android:layout_marginTop="@dimen/space_sm"
             android:hint="@string/search_label"
-            app:boxBackgroundColor="?attr/colorSurfaceContainerHigh"
-            app:boxCornerRadiusBottomEnd="@dimen/corner_full"
-            app:boxCornerRadiusBottomStart="@dimen/corner_full"
-            app:boxCornerRadiusTopEnd="@dimen/corner_full"
-            app:boxCornerRadiusTopStart="@dimen/corner_full"
-            app:boxStrokeWidth="0dp"
             app:endIconContentDescription="@string/cd_clear_search"
             app:endIconMode="clear_text"
             app:endIconTint="?attr/colorOnSurfaceVariant"
@@ -75,6 +69,9 @@
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
+            android:layout_marginHorizontal="@dimen/space_md"
+            android:background="@drawable/bg_grouped_list_band"
+            android:clipToOutline="true"
             android:clipToPadding="false"
             android:paddingTop="@dimen/space_sm" />
     </LinearLayout>

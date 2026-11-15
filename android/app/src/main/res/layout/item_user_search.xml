@@ -33,7 +33,7 @@
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textAppearance="?attr/textAppearanceTitleMedium"
+                android:textAppearance="@style/TextAppearance.NexaChat.TitleMedium"
                 android:textColor="?attr/colorOnSurface" />
 
             <TextView
@@ -62,5 +62,5 @@
         android:layout_height="1dp"
         android:layout_gravity="bottom"
         android:layout_marginStart="76dp"
-        android:background="?attr/colorOutlineVariant" />
+        android:background="?attr/colorSurfaceContainerHighest" />
 </FrameLayout>
