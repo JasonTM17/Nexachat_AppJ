@@ -43,13 +43,20 @@ public final class GroupBoardFragment extends Fragment {
         binding = FragmentGroupBoardBinding.bind(view);
         binding.boardToolbar.setNavigationOnClickListener(
                 ignored -> NavHostFragment.findNavController(this).navigateUp());
+        boolean isGroup = argumentsIsGroup();
         binding.boardTabs.addTab(binding.boardTabs.newTab()
                 .setText(R.string.group_board_tab_reminders), true);
-        binding.boardTabs.addTab(binding.boardTabs.newTab()
-                .setText(R.string.group_board_tab_polls));
+        if (TabRules.stripVisible(isGroup)) {
+            binding.boardTabs.addTab(binding.boardTabs.newTab()
+                    .setText(R.string.group_board_tab_polls));
+        } else {
+            // Direct chats board only reminders; a lone tab has no strip.
+            binding.boardTabs.setVisibility(View.GONE);
+        }
         selectedTab = savedInstanceState == null
                 ? 0
-                : savedInstanceState.getInt(STATE_TAB, 0);
+                : TabRules.clampSelectedTab(
+                        savedInstanceState.getInt(STATE_TAB, 0), isGroup);
         if (savedInstanceState == null) {
             addTabs();
         }
@@ -90,7 +97,11 @@ public final class GroupBoardFragment extends Fragment {
         FragmentManager manager = getChildFragmentManager();
         FragmentTransaction transaction = manager.beginTransaction();
         transaction.add(R.id.boardContent, ReminderFragment.class, args, TAG_REMINDERS);
-        transaction.add(R.id.boardContent, PollFragment.class, args, TAG_POLLS);
+        // Polls only exist for groups; on a direct-chat board the tab would be
+        // a dead-end error surface with no retry.
+        if (argumentsIsGroup()) {
+            transaction.add(R.id.boardContent, PollFragment.class, args, TAG_POLLS);
+        }
         transaction.commitNow();
         Fragment reminders = manager.findFragmentByTag(TAG_REMINDERS);
         Fragment polls = manager.findFragmentByTag(TAG_POLLS);
@@ -107,7 +118,15 @@ public final class GroupBoardFragment extends Fragment {
         FragmentManager manager = getChildFragmentManager();
         Fragment reminders = manager.findFragmentByTag(TAG_REMINDERS);
         Fragment polls = manager.findFragmentByTag(TAG_POLLS);
-        if (reminders == null || polls == null) {
+        if (reminders == null) {
+            return;
+        }
+        if (polls == null) {
+            // Single-tab board: reminders is the only content fragment.
+            manager.beginTransaction()
+                    .show(reminders)
+                    .setMaxLifecycle(reminders, Lifecycle.State.RESUMED)
+                    .commit();
             return;
         }
         boolean showPolls = position == 1;
@@ -130,5 +149,26 @@ public final class GroupBoardFragment extends Fragment {
 
     private boolean argumentsIsGroup() {
         return getArguments() != null && getArguments().getBoolean(ARG_IS_GROUP, false);
+    }
+
+    /** Tab geometry shared by the initial build and the saved-state restore. */
+    static final class TabRules {
+        private TabRules() { }
+
+        /** Groups get reminders plus polls; direct chats get reminders only. */
+        static int tabCount(boolean isGroup) {
+            return isGroup ? 2 : 1;
+        }
+
+        /** The strip is only meaningful with at least two tabs. */
+        static boolean stripVisible(boolean isGroup) {
+            return tabCount(isGroup) > 1;
+        }
+
+        /** A position saved on a wider board (or corrupted) clamps into range. */
+        static int clampSelectedTab(int position, boolean isGroup) {
+            int last = tabCount(isGroup) - 1;
+            return position < 0 ? 0 : Math.min(position, last);
+        }
     }
 }
