@@ -944,7 +944,16 @@ vote; the poll creator or a group ADMIN may close or delete. A former member's
 votes stay counted but that user cannot vote again, because membership is
 rechecked on every request. A DIRECT conversation returns `400 NOT_A_GROUP`;
 a non-member of any conversation returns `403 NOT_MEMBER` before the type is
-checked.
+checked. Every poll surface is scoped to the caller's admission
+(`conversation_members.joined_at`, the same boundary message history
+applies): a member admitted after a poll was created cannot read, vote,
+retract, close or delete it — every per-poll route answers
+`404 POLL_NOT_FOUND`, indistinguishable from an unknown id even for a group
+ADMIN — `GET /polls` and `GET /polls/changes` omit pre-admission polls,
+tombstones included, and a `before` cursor naming one is `VALIDATION_FAILED`
+like any invalid cursor. Voter lists are unaffected: a late joiner's vote on
+an admitted poll is shown to admitted members under the usual anonymity
+rules.
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|

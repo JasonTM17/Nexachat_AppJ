@@ -44,7 +44,12 @@ import java.util.stream.Collectors;
  * conversations with 400 {@code NOT_A_GROUP}. The type check comes after
  * membership so a non-member never learns the conversation type. Closing and
  * deleting additionally require the poll creator or a group ADMIN
- * (403 {@code NOT_ADMIN}).
+ * (403 {@code NOT_ADMIN}). Every surface is also scoped to the member's
+ * admission ({@code conversation_members.joined_at}), the same boundary
+ * history applies to messages: a member admitted after a poll was created
+ * gets 404 {@code POLL_NOT_FOUND} on every per-poll operation —
+ * indistinguishable from an unknown id — and never sees the poll in the
+ * list or change-feed queries.
  *
  * <p><b>Concurrency:</b> every write locks the conversation row before taking
  * the poll row, so revisions are assigned in commit order for the per-group
@@ -154,12 +159,16 @@ public class PollService {
         PageRequest pageRequest = PageRequest.of(0, limit + 1);
         List<Poll> rows;
         if (before == null) {
-            rows = pollRepository.findVisibleFirstPage(conversationId, pageRequest);
+            rows = pollRepository.findVisibleFirstPage(conversationId, userId, pageRequest);
         } else {
+            // A cursor the caller could not have received — a poll from before
+            // their admission — answers like any invalid cursor, not 404.
             Poll cursor = pollRepository.findByIdAndConversation_Id(before, conversationId)
+                    .filter(poll -> memberRepository.existsAdmittedAt(
+                            conversationId, userId, poll.getCreatedAt()))
                     .orElseThrow(() -> ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                             "before is not a poll of this conversation"));
-            rows = pollRepository.findVisiblePageBefore(conversationId,
+            rows = pollRepository.findVisiblePageBefore(conversationId, userId,
                     cursor.getCreatedAt(), cursor.getId(), pageRequest);
         }
         boolean hasMore = rows.size() > limit;
@@ -177,7 +186,7 @@ public class PollService {
     @Transactional(readOnly = true)
     public PollResponse get(UUID userId, UUID conversationId, UUID pollId) {
         requireGroupConversation(conversationId, userId);
-        Poll poll = visiblePoll(pollId, conversationId);
+        Poll poll = visiblePoll(pollId, conversationId, userId);
         return single(poll, userId, clock.instant());
     }
 
@@ -192,7 +201,7 @@ public class PollService {
         rateLimiter.checkVote(userId);
         userRepository.lockForKeyShareSorted(List.of(userId));
         lockGroupConversation(conversationId, userId);
-        Poll poll = lockVisiblePoll(pollId, conversationId);
+        Poll poll = lockVisiblePoll(pollId, conversationId, userId);
 
         LinkedHashSet<UUID> requested = normalizeSelection(request);
         List<PollOption> options = optionRepository.findByPoll_IdOrderByPositionAsc(pollId);
@@ -223,7 +232,7 @@ public class PollService {
         rateLimiter.checkVote(userId);
         userRepository.lockForKeyShareSorted(List.of(userId));
         lockGroupConversation(conversationId, userId);
-        Poll poll = lockVisiblePoll(pollId, conversationId);
+        Poll poll = lockVisiblePoll(pollId, conversationId, userId);
 
         List<UUID> current = voteRepository.findOptionIdsByPollAndUser(pollId, userId);
         if (current.isEmpty()) {
@@ -249,7 +258,7 @@ public class PollService {
         rateLimiter.checkManage(userId);
         userRepository.lockForKeyShareSorted(List.of(userId));
         lockGroupConversation(conversationId, userId);
-        Poll poll = lockVisiblePoll(pollId, conversationId);
+        Poll poll = lockVisiblePoll(pollId, conversationId, userId);
         ConversationMember member = requireMember(conversationId, userId);
         requireManageRole(poll, member, userId);
 
@@ -274,7 +283,7 @@ public class PollService {
     public void delete(UUID userId, UUID conversationId, UUID pollId) {
         rateLimiter.checkManage(userId);
         lockGroupConversation(conversationId, userId);
-        Poll poll = lockPoll(pollId, conversationId);
+        Poll poll = lockPoll(pollId, conversationId, userId);
         ConversationMember member = requireMember(conversationId, userId);
         requireManageRole(poll, member, userId);
         if (poll.getDeletedAt() != null) {
@@ -299,7 +308,7 @@ public class PollService {
         }
         requireLimit(limit, MAX_CHANGES_LIMIT);
 
-        List<Poll> rows = pollRepository.findChanges(conversationId, since,
+        List<Poll> rows = pollRepository.findChanges(conversationId, userId, since,
                 PageRequest.of(0, limit + 1));
         boolean hasMore = rows.size() > limit;
         List<Poll> page = hasMore ? rows.subList(0, limit) : rows;
@@ -366,32 +375,48 @@ public class PollService {
         }
     }
 
-    private Poll lockVisiblePoll(UUID pollId, UUID conversationId) {
-        Poll poll = lockPoll(pollId, conversationId);
+    private Poll lockVisiblePoll(UUID pollId, UUID conversationId, UUID userId) {
+        Poll poll = lockPoll(pollId, conversationId, userId);
         if (poll.getDeletedAt() != null) {
             throw ApiException.of(ApiErrorCode.POLL_NOT_FOUND, "Poll not found");
         }
         return poll;
     }
 
-    private Poll lockPoll(UUID pollId, UUID conversationId) {
+    private Poll lockPoll(UUID pollId, UUID conversationId, UUID userId) {
         Poll poll = pollRepository.findByIdForUpdate(pollId)
                 .orElseThrow(() -> ApiException.of(
                         ApiErrorCode.POLL_NOT_FOUND, "Poll not found"));
         if (!poll.getConversation().getId().equals(conversationId)) {
             throw ApiException.of(ApiErrorCode.POLL_NOT_FOUND, "Poll not found");
         }
+        requireAdmission(poll, userId);
         return poll;
     }
 
-    private Poll visiblePoll(UUID pollId, UUID conversationId) {
+    private Poll visiblePoll(UUID pollId, UUID conversationId, UUID userId) {
         Poll poll = pollRepository.findByIdAndConversation_Id(pollId, conversationId)
                 .orElseThrow(() -> ApiException.of(
                         ApiErrorCode.POLL_NOT_FOUND, "Poll not found"));
+        requireAdmission(poll, userId);
         if (poll.getDeletedAt() != null) {
             throw ApiException.of(ApiErrorCode.POLL_NOT_FOUND, "Poll not found");
         }
         return poll;
+    }
+
+    /**
+     * The admission bound for one poll: a member admitted after the poll was
+     * created may not read or act on it. Every per-poll operation fails with
+     * {@code POLL_NOT_FOUND} so the response is indistinguishable from an
+     * unknown id — including for a group ADMIN, matching the message
+     * boundary where admission precedes role checks.
+     */
+    private void requireAdmission(Poll poll, UUID userId) {
+        if (!memberRepository.existsAdmittedAt(
+                poll.getConversation().getId(), userId, poll.getCreatedAt())) {
+            throw ApiException.of(ApiErrorCode.POLL_NOT_FOUND, "Poll not found");
+        }
     }
 
     private long nextVersion() {

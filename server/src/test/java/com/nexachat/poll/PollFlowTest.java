@@ -404,6 +404,11 @@ class PollFlowTest {
     @Test
     void listIsNewestFirstAndCursorPaged() throws Exception {
         UUID group = createGroup(alice, List.of(bob), "Paging group " + System.nanoTime());
+        // The members joined before the stamped poll dates, so every poll
+        // stays inside their admission window.
+        jdbcTemplate.update("UPDATE conversation_members SET joined_at = ?"
+                        + " WHERE conversation_id = ?",
+                java.sql.Timestamp.from(java.time.Instant.parse("2025-01-01T00:00:00Z")), group);
         JsonNode first = createPoll(alice, group, "P1", List.of("A", "B"), false, false, null);
         JsonNode second = createPoll(alice, group, "P2", List.of("A", "B"), false, false, null);
         JsonNode third = createPoll(alice, group, "P3", List.of("A", "B"), false, false, null);
