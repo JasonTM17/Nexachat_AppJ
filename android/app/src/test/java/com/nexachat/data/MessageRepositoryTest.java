@@ -891,6 +891,71 @@ public class MessageRepositoryTest {
         }
     }
 
+    @Test public void verifiedConversationRefusesPlaintextWhileFlagIsOff() {
+        com.nexachat.core.crypto.E2eeSession e2ee =
+                mock(com.nexachat.core.crypto.E2eeSession.class);
+        ConversationEntity conv = mock(ConversationEntity.class);
+        // The conversation row reports E2EE off, e.g. after the server-side
+        // flag flipped: the verified keyset must not be downgraded.
+        when(conv.isE2eeEnabled()).thenReturn(false);
+        conversations.put(CONVERSATION_ID, conv);
+        InMemoryKeysetTrustDao trustDao = new InMemoryKeysetTrustDao();
+        com.nexachat.core.crypto.KeysetTrustStore trustStore =
+                new com.nexachat.core.crypto.KeysetTrustStore(trustDao);
+        await(trustStore.markVerified("me-1", CONVERSATION_ID, new byte[]{7}));
+        MessageRepository repo = repositoryWithTrust(e2ee, trustStore);
+        try {
+            TestSubscriber<ApiError> errors = repo.getInteractionEvents().test();
+            await(repo.send(CONVERSATION_ID, "must never leave as plaintext"));
+            OutboxEntity row = outbox.values().iterator().next();
+            assertEquals(OutboxState.FAILED, row.getState());
+            assertEquals("must never leave as plaintext", row.getContent());
+            verify(session, org.mockito.Mockito.never()).sendMessage(anyString(), any());
+            verify(messageApi, org.mockito.Mockito.never()).sendMessage(anyString(), any());
+            verify(e2ee, org.mockito.Mockito.never()).encryptFor(
+                    anyString(), anyString(), anyString(), anyString());
+            errors.assertValueCount(1);
+            errors.assertValueAt(0, error -> error instanceof ApiError.Unknown unknown
+                    && MessageRepository.ERROR_E2EE_DOWNGRADE_BLOCKED.equals(unknown.getCode()));
+            // A changed-but-still-recorded keyset blocks plaintext the same way.
+            trustDao.put(changedTrustRow(2_000L));
+            await(repo.send(CONVERSATION_ID, "still blocked"));
+            errors.assertValueCount(2);
+            errors.assertValueAt(1, error -> error instanceof ApiError.Unknown unknown
+                    && MessageRepository.ERROR_E2EE_DOWNGRADE_BLOCKED.equals(unknown.getCode()));
+        } finally {
+            repo.dispose();
+        }
+    }
+
+    @Test public void unverifiedConversationStillSendsPlaintextWhenFlagOff() {
+        com.nexachat.core.crypto.E2eeSession e2ee =
+                mock(com.nexachat.core.crypto.E2eeSession.class);
+        ConversationEntity conv = mock(ConversationEntity.class);
+        when(conv.isE2eeEnabled()).thenReturn(false);
+        conversations.put(CONVERSATION_ID, conv);
+        com.nexachat.core.crypto.KeysetTrustStore trustStore =
+                new com.nexachat.core.crypto.KeysetTrustStore(new InMemoryKeysetTrustDao());
+        MessageRepository repo = repositoryWithTrust(e2ee, trustStore);
+        try {
+            TestSubscriber<ApiError> errors = repo.getInteractionEvents().test();
+            List<SendMessageRequest> captured = new ArrayList<>();
+            when(session.sendMessage(anyString(), any())).thenAnswer(call -> {
+                captured.add(call.getArgument(1));
+                return true;
+            });
+            await(repo.send(CONVERSATION_ID, "plain hello"));
+            assertEquals(1, captured.size());
+            assertEquals("plain hello", captured.get(0).getContent());
+            assertNull(captured.get(0).getEncryption());
+            verify(e2ee, org.mockito.Mockito.never()).encryptFor(
+                    anyString(), anyString(), anyString(), anyString());
+            errors.assertNoValues();
+        } finally {
+            repo.dispose();
+        }
+    }
+
     @Test public void workerFlushPausesChangedRowInsteadOfRetrying() {
         com.nexachat.core.crypto.E2eeSession e2ee =
                 mock(com.nexachat.core.crypto.E2eeSession.class);

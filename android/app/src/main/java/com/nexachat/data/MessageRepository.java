@@ -117,6 +117,8 @@ public final class MessageRepository {
     public static final String ERROR_E2EE_MEDIA_UNSUPPORTED = "E2EE_MEDIA_UNSUPPORTED";
     /** Raised locally when a verified keyset no longer matches; a terminal pause, never retried. */
     public static final String ERROR_E2EE_KEYSET_CHANGED = "E2EE_KEYSET_CHANGED";
+    /** Raised locally when a trusted conversation would send plaintext; a terminal pause. */
+    public static final String ERROR_E2EE_DOWNGRADE_BLOCKED = "E2EE_DOWNGRADE_BLOCKED";
     public static final String ERROR_INTERNAL = "INTERNAL_ERROR";
     public static final long RATE_LIMIT_RETRY_DELAY_MS = 10_000L;
     /** Envelope keys that may wrap the id list returned by {@code GET /pins}. */
@@ -1038,21 +1040,36 @@ public final class MessageRepository {
      * Maps the outbox row to the wire request, encrypting via {@link E2eeSession}
      * when the conversation row says E2EE is enabled. {@code forced} is set by
      * the retry paths after a fresh device list or flag, bypassing the cached
-     * entity so a stale flag cannot loop the same failure.
+     * entity so a stale flag cannot loop the same failure. When the flag is
+     * off but a durable trust record exists, the row is refused with
+     * {@code E2EE_DOWNGRADE_BLOCKED} rather than sent as plaintext: a remotely
+     * toggled flag can never strip encryption from a verified conversation.
      */
     private Single<SendMessageRequest> prepareSendRequest(
             OutboxEntity entry, String ownerUserId, boolean forced) {
         SendMessageRequest base = new SendMessageRequest(entry.getClientMessageId(), entry.getType(),
                 entry.getContent(), entry.getReplyToId(), attachmentIds(entry),
                 MessageMentionCodec.decode(entry.getMentionsJson()), entry.isMentionAll());
-        if (e2eeSession == null || entry.getContent() == null || entry.getContent().isBlank()) {
+        if (e2eeSession == null) {
             return Single.just(base);
         }
         return conversationDao.byId(entry.getConversationId())
                 .map(ConversationEntity::isE2eeEnabled)
                 .defaultIfEmpty(false)
                 .flatMap(enabled -> {
-                    if (!enabled) return Single.just(base);
+                    if (!enabled) {
+                        // A durable trust record means this conversation was
+                        // verified: a remotely flipped-off flag can never pull
+                        // its sends back to plaintext. Refuse locally instead.
+                        return keysetTrustBlocksPlaintext(ownerUserId, entry.getConversationId())
+                                .flatMap(blocked -> blocked
+                                        ? Single.error(new E2eeSession.E2eeException(
+                                                ERROR_E2EE_DOWNGRADE_BLOCKED))
+                                        : Single.just(base));
+                    }
+                    if (entry.getContent() == null || entry.getContent().isBlank()) {
+                        return Single.just(base);
+                    }
                     return e2eeSession.encryptFor(entry.getConversationId(), entry.getContent(),
                                     ownerUserId, entry.getClientMessageId())
                             .map(encrypted -> base.withContent(encrypted.content())
@@ -1062,23 +1079,42 @@ public final class MessageRepository {
     }
 
     /**
-     * Terminal pause for rows refused by the E2EE trust gate because the
-     * verified keyset changed. The row becomes FAILED with its content intact
-     * for a manual resend after re-verification — no automatic retry, no
-     * rate-limit reschedule, never a plaintext request. One conversation
-     * emits one notice per change episode rather than once per row; every
-     * other error propagates untouched.
+     * Whether a stored trust record exists for this owner/conversation — the
+     * pair was verified, or changed since. When it does, a server-controlled
+     * E2EE-off flag must not strip encryption: sending the plaintext request
+     * is refused before it is ever built.
+     */
+    private Single<Boolean> keysetTrustBlocksPlaintext(String ownerUserId, String conversationId) {
+        if (keysetTrustStore == null) return Single.just(false);
+        return keysetTrustStore.state(ownerUserId, conversationId).map(Optional::isPresent);
+    }
+
+    /**
+     * Terminal pause for rows the local E2EE trust gate refused: the verified
+     * keyset changed, or a trusted conversation would go out as plaintext. The
+     * row becomes FAILED with its content intact for a manual resend after
+     * re-verification — no automatic retry, no rate-limit reschedule, never a
+     * plaintext request. Keyset changes notify once per conversation per
+     * change episode rather than once per row; every other error propagates
+     * untouched.
      */
     private Completable pauseOnTerminalE2eeRefusal(
             OutboxEntity entry, String ownerUserId, Throwable error) {
-        if (!(error instanceof E2eeSession.E2eeException)
-                || !ERROR_E2EE_KEYSET_CHANGED.equals(error.getMessage())) {
+        if (!(error instanceof E2eeSession.E2eeException)) {
             return Completable.error(error);
         }
-        return emitKeysetChangedOnce(ownerUserId, entry.getConversationId())
-                .onErrorComplete()
-                .andThen(outboxDao.updateState(entry.getClientMessageId(),
-                        ownerUserId, OutboxState.FAILED));
+        String code = error.getMessage();
+        Completable emit;
+        if (ERROR_E2EE_KEYSET_CHANGED.equals(code)) {
+            emit = emitKeysetChangedOnce(ownerUserId, entry.getConversationId());
+        } else if (ERROR_E2EE_DOWNGRADE_BLOCKED.equals(code)) {
+            emit = Completable.fromAction(() -> interactionEvents.onNext(
+                    new ApiError.Unknown(ERROR_E2EE_DOWNGRADE_BLOCKED)));
+        } else {
+            return Completable.error(error);
+        }
+        return emit.onErrorComplete().andThen(outboxDao.updateState(entry.getClientMessageId(),
+                ownerUserId, OutboxState.FAILED));
     }
 
     /**
@@ -1164,7 +1200,8 @@ public final class MessageRepository {
                 || ERROR_NOT_ADMIN.equals(unknown.getCode())
                 || ERROR_E2EE_MEDIA_UNSUPPORTED.equals(unknown.getCode())
                 || ERROR_E2EE_NOT_ENABLED.equals(unknown.getCode())
-                || ERROR_E2EE_KEYSET_CHANGED.equals(unknown.getCode()))) {
+                || ERROR_E2EE_KEYSET_CHANGED.equals(unknown.getCode())
+                || ERROR_E2EE_DOWNGRADE_BLOCKED.equals(unknown.getCode()))) {
             interactionEvents.onNext(unknown);
         }
         return outboxDao.updateState(entry.getClientMessageId(), ownerUserId,
@@ -1342,7 +1379,8 @@ public final class MessageRepository {
                 interactionEvents.onNext(new ApiError.Unknown(ERROR_NOT_MEMBER));
             } else if (ERROR_VALIDATION_FAILED.equals(rejected.getCode())
                     || ERROR_NOT_ADMIN.equals(rejected.getCode())
-                    || ERROR_E2EE_KEYSET_CHANGED.equals(rejected.getCode())) {
+                    || ERROR_E2EE_KEYSET_CHANGED.equals(rejected.getCode())
+                    || ERROR_E2EE_DOWNGRADE_BLOCKED.equals(rejected.getCode())) {
                 interactionEvents.onNext(new ApiError.Unknown(rejected.getCode()));
             }
             return currentUserId().flatMapCompletable(ownerUserId ->
