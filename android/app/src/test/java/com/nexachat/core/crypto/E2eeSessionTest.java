@@ -30,8 +30,11 @@ import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
 import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.Scheduler;
+import io.reactivex.rxjava3.core.Scheduler.Worker;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.core.SingleObserver;
+import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.subjects.MaybeSubject;
 import io.reactivex.rxjava3.observers.TestObserver;
@@ -574,15 +577,34 @@ public final class E2eeSessionTest {
         Call<DeviceDto> dead = failingCall(new IOException("offline"));
         when(api.registerDevice(eq("dev-1"), any())).thenReturn(dead);
         TestScheduler scheduler = new TestScheduler();
-        E2eeSession timed = timedSession(scheduler);
+        // Counts down once the first attempt's failure has been processed and
+        // the backoff timer is queued, so the wipe lands inside the armed
+        // retry window instead of racing the io worker that schedules it.
+        CountDownLatch retryArmed = new CountDownLatch(1);
+        E2eeSession timed = timedSession(new Scheduler() {
+            @Override
+            public Worker createWorker() {
+                return scheduler.createWorker();
+            }
+
+            @Override
+            public Disposable scheduleDirect(Runnable run, long delay,
+                    TimeUnit unit) {
+                Disposable disposable = scheduler.scheduleDirect(run, delay, unit);
+                retryArmed.countDown();
+                return disposable;
+            }
+        });
 
         TestObserver<Void> observer = timed.onSessionAvailable().test();
         verify(api, timeout(3_000).times(1)).registerDevice(eq("dev-1"), any());
+        assertTrue(retryArmed.await(5, TimeUnit.SECONDS));
         timed.wipeLocal("u1");
         scheduler.advanceTimeBy(10, TimeUnit.SECONDS);
         // The delayed retry was armed before the wipe; it must not fire.
         verify(api, times(1)).registerDevice(eq("dev-1"), any());
-        observer.assertError(error -> error instanceof E2eeSession.E2eeException);
+        observer.awaitDone(5, TimeUnit.SECONDS)
+                .assertError(error -> error instanceof E2eeSession.E2eeException);
     }
 
     @Test
@@ -1091,7 +1113,7 @@ public final class E2eeSessionTest {
         verify(api, atLeast(minimum)).registerDevice(anyString(), any());
     }
 
-    private E2eeSession timedSession(TestScheduler scheduler) {
+    private E2eeSession timedSession(Scheduler scheduler) {
         return new E2eeSession(api, keyStore, tokenStore, new Moshi.Builder().build(),
                 new E2eeCrypto(), scheduler);
     }
