@@ -6,8 +6,10 @@ This directory contains the minimal static site for `nexachat.io.vn`, deployed o
 
 Android uses Digital Asset Links to verify App Links ownership for opening HTTPS invite links (`https://nexachat.io.vn/join/<token>`) directly in the NexaChat Android app.
 
-Currently, `site/.well-known/assetlinks.json` contains the production declaration for package `com.nexachat` with the upload key certificate fingerprint:
-- SHA-256: `AA:A9:6B:96:7C:ED:C6:78:DE:9C:77:35:78:5C:87:8C:B2:5D:AA:43:52:9B:E0:DF:EF:0B:73:93:4D:BE:01:7A`
+Currently, `site/.well-known/assetlinks.json` contains the production declaration for package `com.nexachat` with these certificate fingerprints, in this order:
+- Release signing key, which signs every APK published on GitHub Releases. It must stay first: the release workflow and `site/check.py` compare entry 0 with the APK signer.
+  SHA-256: `E7:41:9A:48:A4:9D:20:4E:55:70:60:6E:B8:33:96:8D:CD:A7:28:E2:AC:99:D7:24:3B:2C:FE:8C:15:8A:39:DF`
+- Upload key: `AA:A9:6B:96:7C:ED:C6:78:DE:9C:77:35:78:5C:87:8C:B2:5D:AA:43:52:9B:E0:DF:EF:0B:73:93:4D:BE:01:7A`
 
 ### Appending Play App Signing Key Fingerprint
 
@@ -28,6 +30,7 @@ When deploying the app to Google Play with Google Play App Signing enabled, Goog
          "namespace": "android_app",
          "package_name": "com.nexachat",
          "sha256_cert_fingerprints": [
+           "E7:41:9A:48:A4:9D:20:4E:55:70:60:6E:B8:33:96:8D:CD:A7:28:E2:AC:99:D7:24:3B:2C:FE:8C:15:8A:39:DF",
            "AA:A9:6B:96:7C:ED:C6:78:DE:9C:77:35:78:5C:87:8C:B2:5D:AA:43:52:9B:E0:DF:EF:0B:73:93:4D:BE:01:7A",
            "PLAY_APP_SIGNING_SHA256_FINGERPRINT_HERE"
          ]

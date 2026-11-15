@@ -108,6 +108,7 @@ adb shell am start -a android.intent.action.VIEW -d "https://nexachat.io.vn/join
 | **Redirect on `assetlinks.json`** | Android OS requires HTTP 200 without any HTTP redirects for `/.well-known/assetlinks.json`. A 301/302 redirect causes immediate verification failure. | Ensure apex domain serves `assetlinks.json` directly. `site/vercel.json` ensures zero redirects for the apex assetlinks path. |
 | **Wrong `Content-Type`** | Served as `text/plain` or `text/html` instead of `application/json`. | `site/vercel.json` explicitly headers `/.well-known/assetlinks.json` with `Content-Type: application/json`. |
 | **WWW vs Apex Mismatch** | Manifest specifies `android:host="nexachat.io.vn"`. User visits `www.nexachat.io.vn`. | `www` domain redirects to apex `nexachat.io.vn`. Asset links verification strictly checks the host declared in `AndroidManifest.xml` (`nexachat.io.vn`). |
+| **Fingerprint Mismatch (GitHub APK)** | `assetlinks.json` must list the certificate that signs the published APK. The release workflow refuses to publish when entry 0 differs from the APK signer. | Keep the release signing key (`E7:41:9A:…:39:DF`) as entry 0; `python site/check.py` enforces it. |
 | **Fingerprint Mismatch (Play Store)** | Google Play App Signing re-signs the APK with a distinct key on store publishing. If only the upload key is present, store installs fail verification. | Add both the upload key and Play App Signing key fingerprints to `assetlinks.json`. |
 | **Cached Failed Verification** | Android caches failed verification states indefinitely or across reboots. | Run `adb shell pm verify-app-links --re-verify com.nexachat` or uninstall and reinstall the app. |
 
@@ -132,6 +133,7 @@ When deploying the app to the Google Play Store with Play App Signing:
          "namespace": "android_app",
          "package_name": "com.nexachat",
          "sha256_cert_fingerprints": [
+           "E7:41:9A:48:A4:9D:20:4E:55:70:60:6E:B8:33:96:8D:CD:A7:28:E2:AC:99:D7:24:3B:2C:FE:8C:15:8A:39:DF",
            "AA:A9:6B:96:7C:ED:C6:78:DE:9C:77:35:78:5C:87:8C:B2:5D:AA:43:52:9B:E0:DF:EF:0B:73:93:4D:BE:01:7A",
            "NEW_PLAY_APP_SIGNING_SHA256_FINGERPRINT_HERE"
          ]
