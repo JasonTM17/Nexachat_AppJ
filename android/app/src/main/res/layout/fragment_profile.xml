@@ -15,8 +15,8 @@
         android:layout_height="wrap_content"
         android:gravity="center_horizontal"
         android:orientation="vertical"
-        android:paddingHorizontal="16dp"
-        android:paddingBottom="24dp">
+        android:paddingHorizontal="@dimen/space_md"
+        android:paddingBottom="@dimen/space_lg">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/profileToolbar"
@@ -30,7 +30,7 @@
             android:id="@+id/profileLoadError"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="@dimen/space_sm"
             android:accessibilityLiveRegion="polite"
             android:gravity="center"
             android:textAppearance="?attr/textAppearanceBodyMedium"
@@ -42,11 +42,11 @@
             style="?attr/materialButtonOutlinedStyle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="@dimen/space_sm"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/action_retry"
             android:visibility="gone"
-            app:cornerRadius="12dp" />
+            app:cornerRadius="@dimen/corner_md" />
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
@@ -93,7 +93,7 @@
                     android:id="@+id/profileName"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
+                    android:layout_marginTop="@dimen/space_inset"
                     android:gravity="center"
                     android:textAppearance="?attr/textAppearanceHeadlineSmall"
                     android:textColor="?attr/colorOnSurface"
@@ -103,7 +103,7 @@
                     android:id="@+id/profilePhone"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
+                    android:layout_marginTop="@dimen/space_xs"
                     android:textAppearance="?attr/textAppearanceBodyMedium"
                     android:textColor="?attr/colorOnSurfaceVariant" />
 
@@ -111,13 +111,13 @@
                     android:id="@+id/nameLayout"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
+                    android:layout_marginTop="@dimen/space_inset"
                     android:hint="@string/auth_display_name_label"
                     android:visibility="gone"
-                    app:boxCornerRadiusBottomEnd="12dp"
-                    app:boxCornerRadiusBottomStart="12dp"
-                    app:boxCornerRadiusTopEnd="12dp"
-                    app:boxCornerRadiusTopStart="12dp">
+                    app:boxCornerRadiusBottomEnd="@dimen/corner_md"
+                    app:boxCornerRadiusBottomStart="@dimen/corner_md"
+                    app:boxCornerRadiusTopEnd="@dimen/corner_md"
+                    app:boxCornerRadiusTopStart="@dimen/corner_md">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/nameInput"
@@ -130,7 +130,7 @@
                     android:id="@+id/nameActions"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
+                    android:layout_marginTop="@dimen/space_sm"
                     android:gravity="end"
                     android:visibility="gone">
 
@@ -139,10 +139,10 @@
                         style="?attr/materialButtonOutlinedStyle"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginEnd="8dp"
+                        android:layout_marginEnd="@dimen/space_sm"
                         android:minHeight="@dimen/min_touch_target"
                         android:text="@string/action_cancel"
-                        app:cornerRadius="12dp" />
+                        app:cornerRadius="@dimen/corner_md" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/saveName"
@@ -150,7 +150,7 @@
                         android:layout_height="wrap_content"
                         android:minHeight="@dimen/min_touch_target"
                         android:text="@string/action_save"
-                        app:cornerRadius="12dp" />
+                        app:cornerRadius="@dimen/corner_md" />
                 </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton
@@ -158,10 +158,10 @@
                     style="?attr/materialButtonOutlinedStyle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
+                    android:layout_marginTop="@dimen/space_sm"
                     android:minHeight="@dimen/min_touch_target"
                     android:text="@string/cd_edit_name"
-                    app:cornerRadius="12dp" />
+                    app:cornerRadius="@dimen/corner_md" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -169,7 +169,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
+            android:layout_marginStart="@dimen/space_xs"
             android:layout_marginTop="@dimen/space_md"
             android:layout_marginBottom="6dp"
             android:text="@string/settings_section_appearance"
@@ -211,7 +211,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginHorizontal="16dp"
-                    android:layout_marginBottom="8dp"
+                    android:layout_marginBottom="@dimen/space_sm"
                     app:chipSpacingHorizontal="@dimen/space_xs"
                     app:chipSpacingVertical="@dimen/space_xs"
                     app:selectionRequired="true"
@@ -245,7 +245,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
+            android:layout_marginStart="@dimen/space_xs"
             android:layout_marginTop="@dimen/space_md"
             android:layout_marginBottom="6dp"
             android:text="@string/settings_section_privacy"
@@ -275,18 +275,18 @@
                     android:gravity="center_vertical"
                     android:minHeight="56dp"
                     android:orientation="horizontal"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="8dp">
+                    android:paddingHorizontal="@dimen/space_md"
+                    android:paddingVertical="@dimen/space_sm">
 
                     <FrameLayout
                         android:layout_width="40dp"
                         android:layout_height="40dp"
-                        android:layout_marginEnd="16dp"
+                        android:layout_marginEnd="@dimen/space_md"
                         android:background="@drawable/bg_settings_tile_tint">
 
                         <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="@dimen/icon_size"
+                            android:layout_height="@dimen/icon_size"
                             android:layout_gravity="center"
                             android:importantForAccessibility="no"
                             android:src="@drawable/ic_auto_awesome"
@@ -323,18 +323,18 @@
                     android:gravity="center_vertical"
                     android:minHeight="56dp"
                     android:orientation="horizontal"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="8dp">
+                    android:paddingHorizontal="@dimen/space_md"
+                    android:paddingVertical="@dimen/space_sm">
 
                     <FrameLayout
                         android:layout_width="40dp"
                         android:layout_height="40dp"
-                        android:layout_marginEnd="16dp"
+                        android:layout_marginEnd="@dimen/space_md"
                         android:background="@drawable/bg_settings_tile_tint">
 
                         <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="@dimen/icon_size"
+                            android:layout_height="@dimen/icon_size"
                             android:layout_gravity="center"
                             android:importantForAccessibility="no"
                             android:src="@drawable/ic_check_circle"
@@ -371,18 +371,18 @@
                     android:gravity="center_vertical"
                     android:minHeight="56dp"
                     android:orientation="horizontal"
-                    android:paddingHorizontal="16dp"
-                    android:paddingVertical="8dp">
+                    android:paddingHorizontal="@dimen/space_md"
+                    android:paddingVertical="@dimen/space_sm">
 
                     <FrameLayout
                         android:layout_width="40dp"
                         android:layout_height="40dp"
-                        android:layout_marginEnd="16dp"
+                        android:layout_marginEnd="@dimen/space_md"
                         android:background="@drawable/bg_settings_tile_tint">
 
                         <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
+                            android:layout_width="@dimen/icon_size"
+                            android:layout_height="@dimen/icon_size"
                             android:layout_gravity="center"
                             android:importantForAccessibility="no"
                             android:src="@drawable/ic_visibility"
@@ -410,7 +410,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
+            android:layout_marginStart="@dimen/space_xs"
             android:layout_marginTop="@dimen/space_md"
             android:layout_marginBottom="6dp"
             android:text="@string/settings_notifications"
@@ -442,7 +442,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
+            android:layout_marginStart="@dimen/space_xs"
             android:layout_marginTop="@dimen/space_md"
             android:layout_marginBottom="6dp"
             android:text="@string/settings_section_account"
@@ -531,7 +531,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
+            android:layout_marginStart="@dimen/space_xs"
             android:layout_marginTop="@dimen/space_md"
             android:layout_marginBottom="6dp"
             android:text="@string/settings_section_session"
@@ -591,7 +591,7 @@
             android:id="@+id/profileError"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="@dimen/space_md"
             android:accessibilityLiveRegion="polite"
             android:gravity="center"
             android:textAppearance="?attr/textAppearanceBodyMedium"
