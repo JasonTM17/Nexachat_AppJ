@@ -34,6 +34,11 @@ SITE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.dirname(SITE_DIR)
 
 FINGERPRINT_PATTERN = re.compile(r"^[0-9A-F]{2}(:[0-9A-F]{2}){31}$")
+# Certificate that signs every published release APK (CI secret and the local release
+# keystore). The release workflow requires it to be the FIRST fingerprint.
+EXPECTED_RELEASE_SIGNING_FINGERPRINT = (
+    "E7:41:9A:48:A4:9D:20:4E:55:70:60:6E:B8:33:96:8D:CD:A7:28:E2:AC:99:D7:24:3B:2C:FE:8C:15:8A:39:DF"
+)
 EXPECTED_UPLOAD_FINGERPRINT = (
     "AA:A9:6B:96:7C:ED:C6:78:DE:9C:77:35:78:5C:87:8C:B2:5D:AA:43:52:9B:E0:DF:EF:0B:73:93:4D:BE:01:7A"
 )
@@ -164,6 +169,7 @@ def test_assetlinks_structure(asset_data):
 
     # 3. Unit tests of FINGERPRINT_PATTERN
     fp_test_cases = [
+        (EXPECTED_RELEASE_SIGNING_FINGERPRINT, True, "release signing key fingerprint"),
         (EXPECTED_UPLOAD_FINGERPRINT, True, "expected upload key fingerprint"),
         ("00:" * 31 + "00", True, "all 00 hex bytes"),
         ("FF:" * 31 + "FF", True, "all FF hex bytes"),
@@ -222,6 +228,13 @@ def test_assetlinks_structure(asset_data):
                     )
                 else:
                     log_pass(f"Statement {idx} fingerprint {fp_idx} valid 32-byte uppercase hex: {fp}")
+
+            if fps[0] != EXPECTED_RELEASE_SIGNING_FINGERPRINT:
+                failures.append(
+                    f"Statement {idx} fingerprint 0 must be the release signing key {EXPECTED_RELEASE_SIGNING_FINGERPRINT}"
+                )
+            else:
+                log_pass("Statement lists the release signing key first")
 
             if EXPECTED_UPLOAD_FINGERPRINT not in fps:
                 failures.append(f"Statement {idx} does not contain expected upload fingerprint {EXPECTED_UPLOAD_FINGERPRINT}")
