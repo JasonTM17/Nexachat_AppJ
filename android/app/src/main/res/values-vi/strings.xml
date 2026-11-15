@@ -63,6 +63,7 @@
     <string name="conversation_muted">Đã tắt thông báo</string>
     <string name="conversation_unmuted">Đã bật thông báo</string>
     <string name="conversation_archived">Đã lưu trữ</string>
+    <string name="conversation_archived_snackbar">Đã lưu trữ cuộc trò chuyện</string>
     <string name="conversation_unarchived">Đã bỏ lưu trữ</string>
     <string name="conversation_settings_title">Cài đặt trò chuyện</string>
     <string name="conversation_ai_opt_out_title">Không dùng tin nhắn của tôi cho AI</string>
@@ -345,6 +346,7 @@
     <string name="voice_slide_to_cancel">&lt; Trượt sang trái để hủy</string>
     <string name="voice_release_to_cancel">Thả tay để hủy</string>
     <string name="voice_too_short">Giữ để ghi âm, thả để gửi</string>
+    <string name="voice_hold_to_record">Giữ để ghi âm</string>
     <string name="voice_permission_required">Hãy cấp quyền micrô để ghi âm tin nhắn thoại.</string>
     <string name="voice_play">Phát tin nhắn thoại</string>
     <string name="voice_pause">Tạm dừng tin nhắn thoại</string>

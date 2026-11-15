@@ -3,6 +3,7 @@ package com.nexachat.feature.inbox;
 import com.nexachat.res.ContrastUnitTest;
 import java.io.File;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.Before;
 import org.junit.Test;
@@ -13,6 +14,7 @@ import org.w3c.dom.NodeList;
 import javax.xml.parsers.DocumentBuilderFactory;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -75,11 +77,11 @@ public final class InboxThemeContrastTest {
     }
 
     /**
-     * Checked inbox filter chips use the shared brand fill and on-fill roles in
-     * both themes; the night primary remains an accent for text, icons and strokes.
+     * Checked inbox filter chips use the tonal primary-container and on-container
+     * roles in both themes; the pressed checked fill stays a container step darker.
      */
     @Test
-    public void checkedFilterChipTextOnPrimaryMeetsContrast() throws Exception {
+    public void checkedFilterChipTextOnTonalContainerMeetsContrast() throws Exception {
         Document styles = DocumentBuilderFactory.newInstance()
                 .newDocumentBuilder()
                 .parse(new File(resDir, "values/styles_nexachat.xml"));
@@ -99,12 +101,44 @@ public final class InboxThemeContrastTest {
                 filterStyle, "chipBackgroundColor", true, true);
         Map<String, String> light = loadThemeColors(false);
         Map<String, String> dark = loadThemeColors(true);
-        assertPair(dark, textName, "brand_fill", 4.5);
-        assertPair(light, textName, "brand_fill", 4.5);
-        assertEquals("checked filter label must use the on-fill token",
-                "brand_on_fill", textName);
+        assertEquals("checked filter label must use the on-container token",
+                "colorOnPrimaryContainer", textName);
+        assertPair(light, textName, "colorPrimaryContainer", 4.5);
+        assertPair(dark, textName, "colorPrimaryContainer", 4.5);
         assertPair(light, textName, pressedFillName, 4.5);
         assertPair(dark, textName, pressedFillName, 4.5);
+    }
+
+    /**
+     * The pairs {@link InboxFilterChipColourRules#apply} paints at runtime must
+     * keep WCAG AA text contrast in both themes.
+     */
+    @Test
+    public void runtimeFilterChipTextPairsMeetContrast() throws Exception {
+        for (Map<String, String> colors :
+                List.of(loadThemeColors(false), loadThemeColors(true))) {
+            assertPair(colors, InboxFilterChipColourRules.CHECKED_ON_FILL,
+                    InboxFilterChipColourRules.CHECKED_FILL, 4.5);
+            assertPair(colors, InboxFilterChipColourRules.CHECKED_ON_FILL,
+                    InboxFilterChipColourRules.CHECKED_PRESSED_FILL, 4.5);
+            assertPair(colors, InboxFilterChipColourRules.IDLE_TEXT,
+                    InboxFilterChipColourRules.IDLE_FILL, 4.5);
+            assertPair(colors, InboxFilterChipColourRules.IDLE_TEXT,
+                    InboxFilterChipColourRules.IDLE_PRESSED_FILL, 4.5);
+            assertPair(colors, InboxFilterChipColourRules.DISABLED_ON,
+                    InboxFilterChipColourRules.DISABLED_FILL, 4.5);
+        }
+    }
+
+    /** The runtime checked fill must not collapse back to the legacy solid brand fill. */
+    @Test
+    public void runtimeCheckedFillNeverResolvesLegacyBrandFill() throws Exception {
+        for (Map<String, String> colors :
+                List.of(loadThemeColors(false), loadThemeColors(true))) {
+            assertNotEquals("checked chip fill must differ from legacy brand_fill",
+                    colors.get("brand_fill"),
+                    colors.get(InboxFilterChipColourRules.CHECKED_FILL));
+        }
     }
 
     private static Map<String, String> loadColors(File file) throws Exception {
