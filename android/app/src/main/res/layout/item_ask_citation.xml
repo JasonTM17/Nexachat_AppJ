@@ -2,7 +2,7 @@
 <com.google.android.material.button.MaterialButton xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/citationButton"
-    style="@style/Widget.Material3.Button.OutlinedButton"
+    style="@style/Widget.Material3.Button.TonalButton"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginBottom="@dimen/space_xs"
@@ -13,5 +13,5 @@
     android:textAlignment="viewStart"
     android:textColor="?attr/colorOnSurface"
     android:maxLines="2"
-    app:cornerRadius="14dp"
-    app:strokeColor="?attr/colorOutlineVariant" />
+    app:backgroundTint="?attr/colorSurfaceContainerLow"
+    app:cornerRadius="14dp" />
