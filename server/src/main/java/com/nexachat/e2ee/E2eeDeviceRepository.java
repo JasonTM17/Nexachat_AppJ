@@ -22,11 +22,9 @@ public interface E2eeDeviceRepository extends JpaRepository<E2eeDevice, UUID> {
     @Query("SELECT d FROM E2eeDevice d WHERE d.user.id = :userId AND d.revokedAt IS NULL")
     List<E2eeDevice> findActiveByUserId(@Param("userId") UUID userId);
 
-    /** Active devices of {@code userId} restricted to the given ids — envelope validation. */
-    @Query("SELECT d.id FROM E2eeDevice d WHERE d.user.id IN :userIds"
-            + " AND d.revokedAt IS NULL AND d.id IN :deviceIds")
-    List<UUID> findActiveIdsForUsers(@Param("userIds") Collection<UUID> userIds,
-                                     @Param("deviceIds") Collection<UUID> deviceIds);
+    /** Ids of every ACTIVE device owned by one of {@code userIds} — the send-side required set. */
+    @Query("SELECT d.id FROM E2eeDevice d WHERE d.user.id IN :userIds AND d.revokedAt IS NULL")
+    List<UUID> findActiveIdsForMembers(@Param("userIds") Collection<UUID> userIds);
 
     /** Marks every active device of the user revoked (logout-all, account deletion). */
     @Modifying

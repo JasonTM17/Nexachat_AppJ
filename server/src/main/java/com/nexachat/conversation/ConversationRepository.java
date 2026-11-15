@@ -29,6 +29,14 @@ public interface ConversationRepository extends JpaRepository<Conversation, UUID
                                   Pageable pageable);
 
     /**
+     * The immutable {@code type} discriminator, read without a row lock —
+     * the DDL CHECK ties it to {@code direct_key}, so a plain SELECT cannot
+     * disagree with the row {@link #findByIdForUpdate} locks right after.
+     */
+    @Query("SELECT c.type FROM Conversation c WHERE c.id = :id")
+    Optional<Conversation.Type> findTypeById(@Param("id") UUID id);
+
+    /**
      * {@code SELECT ... FOR UPDATE} on the conversation row. Writers retain
      * this lock through commit when they need per-conversation serialization.
      */

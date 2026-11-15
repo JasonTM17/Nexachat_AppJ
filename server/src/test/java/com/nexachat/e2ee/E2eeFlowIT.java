@@ -23,6 +23,10 @@ import org.springframework.test.web.servlet.ResultActions;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -80,6 +84,8 @@ class E2eeFlowIT {
     private AuthService authService;
     @Autowired
     private E2eeDeviceService e2eeDeviceService;
+    @Autowired
+    private org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     private record TestUser(UUID id, String displayName, String accessToken) {
     }
@@ -172,12 +178,18 @@ class E2eeFlowIT {
                 .content(objectMapper.writeValueAsString(body)));
     }
 
-    private Map<String, Object> encryptedSend(UUID clientMessageId, UUID deviceId) {
+    private Map<String, Object> encryptedSend(UUID clientMessageId, UUID... deviceIds) {
         return Map.of("clientMessageId", clientMessageId.toString(), "type", "TEXT",
                 "content", "e2ee1:dGVzdA==", "encryption", "E2EE_V1",
-                "e2eeEnvelopes", List.of(
-                        Map.of("deviceId", deviceId.toString(), "wrappedKey", "d3JhcHBlZA")),
+                "e2eeEnvelopes", envelopes(deviceIds),
                 "attachmentIds", List.of());
+    }
+
+    private static List<Map<String, String>> envelopes(UUID... deviceIds) {
+        return java.util.Arrays.stream(deviceIds)
+                .map(deviceId -> Map.of(
+                        "deviceId", deviceId.toString(), "wrappedKey", "d3JhcHBlZA"))
+                .toList();
     }
 
     // ---------- device API ----------
@@ -328,7 +340,8 @@ class E2eeFlowIT {
     @Test
     void plaintextConversationRejectsEncryptionFields() throws Exception {
         Pair pair = newPair("plain");
-        send(pair.conversationId(), pair.a(), encryptedSend(UUID.randomUUID(), pair.aDevice()))
+        send(pair.conversationId(), pair.a(),
+                        encryptedSend(UUID.randomUUID(), pair.aDevice(), pair.bDevice()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("E2EE_NOT_ENABLED"));
         send(pair.conversationId(), pair.a(), Map.of("clientMessageId", UUID.randomUUID().toString(),
@@ -393,19 +406,247 @@ class E2eeFlowIT {
     }
 
     @Test
+    void encryptedSendRequiresExactMemberDeviceSet() throws Exception {
+        Pair pair = newEncryptedPair("exact");
+        UUID conversationId = pair.conversationId();
+        // The complete set — both members' active devices — is accepted.
+        send(conversationId, pair.a(),
+                        encryptedSend(UUID.randomUUID(), pair.aDevice(), pair.bDevice()))
+                .andExpect(status().isCreated());
+        // A send missing the peer's device leaves it unable to decrypt.
+        send(conversationId, pair.a(), encryptedSend(UUID.randomUUID(), pair.aDevice()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("E2EE_STALE_DEVICES"));
+        // The sender's own current device is part of the required set: the
+        // client wraps a copy of the content key for itself.
+        send(conversationId, pair.a(), encryptedSend(UUID.randomUUID(), pair.bDevice()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("E2EE_STALE_DEVICES"));
+        // An active device that does not belong to a member is extra.
+        TestUser outsider = registerUser("foreign");
+        UUID foreignDevice = UUID.randomUUID();
+        putDevice(outsider, foreignDevice, publicKey(40)).andExpect(status().isOk());
+        send(conversationId, pair.a(),
+                        encryptedSend(UUID.randomUUID(),
+                                pair.aDevice(), pair.bDevice(), foreignDevice))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("E2EE_STALE_DEVICES"));
+    }
+
+    @Test
+    void envelopeSetTracksMemberDeviceChanges() throws Exception {
+        Pair pair = newEncryptedPair("grow");
+        UUID conversationId = pair.conversationId();
+        // The recipient enrolls a second device after the sender's snapshot:
+        // the old device set is now incomplete and must be rejected.
+        UUID bobSecond = UUID.randomUUID();
+        putDevice(pair.b(), bobSecond, publicKey(41)).andExpect(status().isOk());
+        send(conversationId, pair.a(),
+                        encryptedSend(UUID.randomUUID(), pair.aDevice(), pair.bDevice()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("E2EE_STALE_DEVICES"));
+        // Covering the new device satisfies the check.
+        send(conversationId, pair.a(),
+                        encryptedSend(UUID.randomUUID(),
+                                pair.aDevice(), pair.bDevice(), bobSecond))
+                .andExpect(status().isCreated());
+        // A second sender device joins the required set too.
+        UUID aliceSecond = UUID.randomUUID();
+        putDevice(pair.a(), aliceSecond, publicKey(42)).andExpect(status().isOk());
+        send(conversationId, pair.a(),
+                        encryptedSend(UUID.randomUUID(),
+                                pair.aDevice(), pair.bDevice(), bobSecond))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("E2EE_STALE_DEVICES"));
+        // Revocation shrinks the required set: the shrunken set is accepted
+        // and the revoked device id is rejected when still covered.
+        mockMvc.perform(delete("/api/v1/e2ee/devices/" + bobSecond)
+                        .header("Authorization", "Bearer " + pair.b().accessToken()))
+                .andExpect(status().isNoContent());
+        send(conversationId, pair.a(),
+                        encryptedSend(UUID.randomUUID(),
+                                pair.aDevice(), aliceSecond, pair.bDevice()))
+                .andExpect(status().isCreated());
+        send(conversationId, pair.a(),
+                        encryptedSend(UUID.randomUUID(),
+                                pair.aDevice(), aliceSecond, pair.bDevice(), bobSecond))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("E2EE_STALE_DEVICES"));
+    }
+
+    @Test
+    void sendRacingDeviceRegistrationCannotMissCommittedDevice() throws Exception {
+        Pair pair = newEncryptedPair("race");
+        UUID bobSecondDevice = UUID.randomUUID();
+        CountDownLatch registered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger registrationPid =
+                new java.util.concurrent.atomic.AtomicInteger();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            // A registration held open at commit time: it owns the recipient's
+            // user row lock (the one registration serializes on) while its
+            // device row stays invisible.
+            Future<?> registration = pool.submit(() -> {
+                new org.springframework.transaction.support.TransactionTemplate(
+                        transactionManager).executeWithoutResult(status -> {
+                            e2eeDeviceService.register(
+                                    pair.b().id(), bobSecondDevice, publicKey(43));
+                            registrationPid.set(jdbcTemplate.queryForObject(
+                                    "SELECT pg_backend_pid()", Integer.class));
+                            registered.countDown();
+                            try {
+                                release.await(30, TimeUnit.SECONDS);
+                            } catch (InterruptedException interrupted) {
+                                Thread.currentThread().interrupt();
+                            }
+                        });
+                return null;
+            });
+            assertThat(registered.await(10, TimeUnit.SECONDS)).isTrue();
+            Future<MvcResult> sendFuture = pool.submit(() ->
+                    send(pair.conversationId(), pair.a(),
+                                    encryptedSend(UUID.randomUUID(),
+                                            pair.aDevice(), pair.bDevice()))
+                            .andReturn());
+            // The send must be observed waiting on the registration's owner
+            // row lock: without that fact the test only measures timing luck.
+            com.nexachat.testutil.TestWaits.until(
+                    "send transaction waits on the in-flight registration",
+                    () -> backendsBlockedBy(registrationPid.get()) >= 1);
+            release.countDown();
+            registration.get(30, TimeUnit.SECONDS);
+            MvcResult result = sendFuture.get(30, TimeUnit.SECONDS);
+            // The device committed before the send's check ran, so the stale
+            // envelope set is rejected — never accepted while incomplete.
+            assertThat(result.getResponse().getStatus()).isEqualTo(409);
+            JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+            assertThat(body.path("error").path("code").asText())
+                    .isEqualTo("E2EE_STALE_DEVICES");
+            // Once the directory caught up, the exact set is accepted.
+            send(pair.conversationId(), pair.a(),
+                            encryptedSend(UUID.randomUUID(),
+                                    pair.aDevice(), pair.bDevice(), bobSecondDevice))
+                    .andExpect(status().isCreated());
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    private int backendsBlockedBy(int pid) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM pg_stat_activity"
+                        + " WHERE datname = current_database()"
+                        + " AND ? = ANY(pg_blocking_pids(pid))",
+                Integer.class, pid);
+        return count == null ? 0 : count;
+    }
+
+    @Test
+    void encryptedSendIntoGroupDoesNotLockOtherMemberRows() throws Exception {
+        TestUser memberB = registerUser("glock-b");
+        TestUser memberC = registerUser("glock-c");
+        MvcResult group = mockMvc.perform(post("/api/v1/conversations/group")
+                        .header("Authorization", "Bearer " + alice.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("title", "grp",
+                                "memberIds", List.of(
+                                        memberB.id().toString(), memberC.id().toString())))))
+                .andExpect(status().is2xxSuccessful())
+                .andReturn();
+        UUID groupId = UUID.fromString(objectMapper
+                .readTree(group.getResponse().getContentAsString()).get("id").asText());
+
+        ExecutorService pool = Executors.newFixedThreadPool(1);
+        try (Connection gate = lockConnection();
+             Connection probe = lockConnection()) {
+            // Park the send on the group conversation row: by the time it
+            // waits there, every users-row lock it took is already held and
+            // observable from a second session.
+            int gatePid = lockRowForUpdate(gate, groupId);
+            Future<MvcResult> sendFuture = pool.submit(() ->
+                    send(groupId, alice, encryptedSend(UUID.randomUUID(), aliceDevice))
+                            .andReturn());
+            com.nexachat.testutil.TestWaits.until(
+                    "send transaction waits on the group conversation row",
+                    () -> backendsBlockedBy(gatePid) >= 1);
+            // Other members' rows accept FOR NO KEY UPDATE instantly — the
+            // rejected send never fanned out to the member roster.
+            assertThat(tryRowLockNowait(probe, memberB.id(), "NO KEY UPDATE")).isTrue();
+            assertThat(tryRowLockNowait(probe, memberC.id(), "NO KEY UPDATE")).isTrue();
+            // The sender row IS locked: its FOR KEY SHARE blocks a FOR UPDATE
+            // probe, proving the send reached the lock section at all.
+            assertThat(tryRowLockNowait(probe, alice.id(), "UPDATE")).isFalse();
+
+            gate.rollback();
+            MvcResult result = sendFuture.get(30, TimeUnit.SECONDS);
+            assertThat(result.getResponse().getStatus()).isEqualTo(409);
+            JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+            assertThat(body.path("error").path("code").asText())
+                    .isEqualTo("E2EE_NOT_ENABLED");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private Connection lockConnection() throws SQLException {
+        Connection connection = DriverManager.getConnection(
+                env("IT_DB_URL", "jdbc:postgresql://localhost:5433/nexachat"),
+                env("IT_DB_USER", "nexachat"),
+                env("IT_DB_PASSWORD", "nexachat"));
+        connection.setAutoCommit(false);
+        return connection;
+    }
+
+    /** Holds {@code FOR UPDATE} on the conversation row; returns the backend pid. */
+    private int lockRowForUpdate(Connection connection, UUID conversationId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id FROM conversations WHERE id = ? FOR UPDATE")) {
+            statement.setObject(1, conversationId);
+            try (var rows = statement.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+            }
+        }
+        try (var statement = connection.createStatement();
+             var rows = statement.executeQuery("SELECT pg_backend_pid()")) {
+            rows.next();
+            return rows.getInt(1);
+        }
+    }
+
+    /** True when the row lock was granted, false on {@code lock_not_available} (55P03). */
+    private boolean tryRowLockNowait(Connection connection, UUID userId, String mode)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT id FROM users WHERE id = ? FOR " + mode + " NOWAIT")) {
+            statement.setObject(1, userId);
+            statement.executeQuery().close();
+            return true;
+        } catch (SQLException failure) {
+            if ("55P03".equals(failure.getSQLState())) {
+                return false;
+            }
+            throw failure;
+        }
+    }
+
+    @Test
     void encryptedSendPersistsAndReplaysIdempotently() throws Exception {
         Pair pair = newEncryptedPair("persist");
         UUID clientMessageId = UUID.randomUUID();
-        MvcResult first = send(pair.conversationId(), pair.a(), encryptedSend(clientMessageId, pair.bDevice()))
+        MvcResult first = send(pair.conversationId(), pair.a(),
+                        encryptedSend(clientMessageId, pair.aDevice(), pair.bDevice()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.encryption").value("E2EE_V1"))
-                .andExpect(jsonPath("$.e2eeEnvelopes[0].deviceId").value(pair.bDevice().toString()))
+                .andExpect(jsonPath("$.e2eeEnvelopes[0].deviceId").value(pair.aDevice().toString()))
                 .andExpect(jsonPath("$.e2eeEnvelopes[0].wrappedKey").value("d3JhcHBlZA"))
                 .andReturn();
         String messageId = objectMapper.readTree(first.getResponse().getContentAsString())
                 .get("id").asText();
         // Replay returns the stored row unchanged.
-        send(pair.conversationId(), pair.a(), encryptedSend(clientMessageId, pair.bDevice()))
+        send(pair.conversationId(), pair.a(),
+                        encryptedSend(clientMessageId, pair.aDevice(), pair.bDevice()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(messageId))
                 .andExpect(jsonPath("$.encryption").value("E2EE_V1"));
@@ -423,7 +664,10 @@ class E2eeFlowIT {
         }
         assertThat(stored).isNotNull();
         assertThat(stored.get("encryption").asText()).isEqualTo("E2EE_V1");
+        assertThat(stored.get("e2eeEnvelopes")).hasSize(2);
         assertThat(stored.get("e2eeEnvelopes").get(0).get("deviceId").asText())
+                .isEqualTo(pair.aDevice().toString());
+        assertThat(stored.get("e2eeEnvelopes").get(1).get("deviceId").asText())
                 .isEqualTo(pair.bDevice().toString());
     }
 
@@ -436,8 +680,7 @@ class E2eeFlowIT {
         send(conversationId, pair.a(), Map.of("clientMessageId", UUID.randomUUID().toString(),
                         "type", "TEXT", "content", "e2ee1:c2VjcmV0", "encryption", "E2EE_V1",
                         "attachmentIds", List.of(),
-                        "e2eeEnvelopes", List.of(
-                                Map.of("deviceId", pair.bDevice().toString(), "wrappedKey", "abc"))))
+                        "e2eeEnvelopes", envelopes(pair.aDevice(), pair.bDevice())))
                 .andExpect(status().isCreated());
         // Search never matches ciphertext.
         mockMvc.perform(get("/api/v1/conversations/" + conversationId + "/messages/search")
@@ -469,7 +712,8 @@ class E2eeFlowIT {
     void editOfEncryptedMessageIsRefused() throws Exception {
         Pair pair = newEncryptedPair("edit");
         UUID conversationId = pair.conversationId();
-        MvcResult sent = send(conversationId, pair.a(), encryptedSend(UUID.randomUUID(), pair.bDevice()))
+        MvcResult sent = send(conversationId, pair.a(),
+                        encryptedSend(UUID.randomUUID(), pair.aDevice(), pair.bDevice()))
                 .andExpect(status().isCreated())
                 .andReturn();
         String messageId = objectMapper.readTree(sent.getResponse().getContentAsString())
@@ -486,7 +730,8 @@ class E2eeFlowIT {
     void replyPreviewHidesCiphertext() throws Exception {
         Pair pair = newEncryptedPair("reply");
         UUID conversationId = pair.conversationId();
-        MvcResult original = send(conversationId, pair.a(), encryptedSend(UUID.randomUUID(), pair.bDevice()))
+        MvcResult original = send(conversationId, pair.a(),
+                        encryptedSend(UUID.randomUUID(), pair.aDevice(), pair.bDevice()))
                 .andExpect(status().isCreated())
                 .andReturn();
         String originalId = objectMapper.readTree(original.getResponse().getContentAsString())
@@ -494,8 +739,7 @@ class E2eeFlowIT {
         send(conversationId, pair.b(), Map.of("clientMessageId", UUID.randomUUID().toString(),
                         "type", "TEXT", "content", "e2ee1:cmVwbHk=", "encryption", "E2EE_V1",
                         "replyToId", originalId, "attachmentIds", List.of(),
-                        "e2eeEnvelopes", List.of(
-                                Map.of("deviceId", pair.aDevice().toString(), "wrappedKey", "abc"))))
+                        "e2eeEnvelopes", envelopes(pair.aDevice(), pair.bDevice())))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.replyTo.id").value(originalId))
                 .andExpect(jsonPath("$.replyTo.encrypted").value(true))
