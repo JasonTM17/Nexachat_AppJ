@@ -122,28 +122,44 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
     }
 
     /**
-     * A message frame reaches only members who were in the conversation when the message was
-     * created, so a rejoined member never receives an edit or recall of content from their absence.
+     * A per-message frame reaches only members who were in the conversation when the message was
+     * created, so a member admitted later never receives an edit, recall, pin or reaction naming
+     * content from their absence.
      */
     private boolean admittedToFrame(UUID conversationId, UUID userId, Object payload) {
         if (!(payload instanceof byte[] bytes)) {
             return true;
         }
-        String type;
         JsonNode created;
         try {
             JsonNode root = FRAME_READER.readTree(bytes);
-            type = root.path("eventType").asText("");
-            if (!"MESSAGE_CREATED".equals(type) && !"MESSAGE_UPDATED".equals(type)) {
+            created = messageCreatedAtNode(root);
+            if (created == null) {
                 return true;
             }
-            created = root.path("payload").path("createdAt");
         } catch (java.io.IOException e) {
             return true;
         }
         Instant createdAt = parseInstant(created);
         // A message frame without a readable creation time cannot be admitted: fail closed.
         return createdAt != null && memberRepository.existsAdmittedAt(conversationId, userId, createdAt);
+    }
+
+    /**
+     * The field that scopes a per-message frame to the recipient's admission: message frames carry
+     * the row's own {@code createdAt}; interaction and recall frames carry {@code messageCreatedAt}
+     * for the same check. {@code null} when the event type does not name one message; a missing
+     * field on a gated type fails closed in {@link #admittedToFrame}.
+     */
+    @Nullable
+    private static JsonNode messageCreatedAtNode(JsonNode root) {
+        JsonNode payload = root.path("payload");
+        return switch (root.path("eventType").asText("")) {
+            case "MESSAGE_CREATED", "MESSAGE_UPDATED" -> payload.path("createdAt");
+            case "MESSAGE_DELETED", "PIN_UPDATED", "REACTION_UPDATED" ->
+                    payload.path("messageCreatedAt");
+            default -> null;
+        };
     }
 
     @Nullable

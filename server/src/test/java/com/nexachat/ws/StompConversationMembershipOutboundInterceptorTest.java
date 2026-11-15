@@ -256,6 +256,46 @@ class StompConversationMembershipOutboundInterceptorTest {
     }
 
     @Test
+    void interactionFramesForAMessageFromBeforeTheRecipientJoinedAreDropped() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        bindSessionTo(userId);
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        Instant createdAt = Instant.parse("2026-01-01T10:00:00Z");
+        when(memberRepository.existsAdmittedAt(conversationId, userId, createdAt)).thenReturn(false);
+
+        assertThat(interceptor.preSend(
+                interactionFrame(conversationId, "PIN_UPDATED", "\"2026-01-01T10:00:00Z\""), channel))
+                .isNull();
+        assertThat(interceptor.preSend(
+                interactionFrame(conversationId, "REACTION_UPDATED", "\"2026-01-01T10:00:00Z\""), channel))
+                .isNull();
+        assertThat(interceptor.preSend(
+                interactionFrame(conversationId, "MESSAGE_DELETED", "\"2026-01-01T10:00:00Z\""), channel))
+                .isNull();
+    }
+
+    @Test
+    void interactionFramesFailClosedWithoutACreationTimeAndPassOnceAdmitted() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        bindSessionTo(userId);
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+
+        assertThat(interceptor.preSend(
+                interactionFrame(conversationId, "PIN_UPDATED", null), channel)).isNull();
+        assertThat(interceptor.preSend(
+                interactionFrame(conversationId, "REACTION_UPDATED", "\"not-a-time\""), channel))
+                .isNull();
+
+        when(memberRepository.existsAdmittedAt(
+                conversationId, userId, Instant.parse("2026-01-01T10:00:00Z"))).thenReturn(true);
+        Message<byte[]> admitted = interactionFrame(
+                conversationId, "MESSAGE_DELETED", "\"2026-01-01T10:00:00Z\"");
+        assertThat(interceptor.preSend(admitted, channel)).isSameAs(admitted);
+    }
+
+    @Test
     void quotePreviewOfAMessageFromBeforeTheRecipientJoinedIsRemovedFromTheFrame() throws Exception {
         UUID userId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
@@ -312,6 +352,19 @@ class StompConversationMembershipOutboundInterceptorTest {
         when(simpUser.getName()).thenReturn(userId.toString());
         when(simpUser.getSessions()).thenReturn(Set.of(simpSession));
         when(userRegistry.getUsers()).thenReturn(Set.of(simpUser));
+    }
+
+    private static Message<byte[]> interactionFrame(UUID conversationId, String eventType,
+                                                    String messageCreatedAtJson) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.MESSAGE);
+        accessor.setSessionId(SESSION_ID);
+        accessor.setDestination("/topic/conversations." + conversationId);
+        String json = "{\"eventType\":\"" + eventType + "\",\"conversationId\":\"" + conversationId
+                + "\",\"payload\":{\"messageId\":\"" + UUID.randomUUID()
+                + "\",\"messageCreatedAt\":" + (messageCreatedAtJson == null
+                        ? "null" : messageCreatedAtJson) + "}}";
+        return MessageBuilder.createMessage(
+                json.getBytes(java.nio.charset.StandardCharsets.UTF_8), accessor.getMessageHeaders());
     }
 
     private static Message<byte[]> frame(UUID conversationId, String eventType, String createdAtJson) {

@@ -309,7 +309,7 @@ class FcmPushServiceTest {
         UUID offlineMember = UUID.randomUUID();
         UUID senderId = UUID.randomUUID();
 
-        when(memberRepository.findMemberUserIds(conversationId))
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(senderId, onlineMember, offlineMember));
         when(presenceState.isOnline(onlineMember)).thenReturn(true);
         when(presenceState.isOnline(offlineMember)).thenReturn(false);
@@ -379,7 +379,7 @@ class FcmPushServiceTest {
         UUID memberA = UUID.randomUUID();
         UUID memberB = UUID.randomUUID();
         UUID senderId = UUID.randomUUID();
-        when(memberRepository.findMemberUserIds(conversationId))
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(senderId, memberA, memberB));
         when(presenceState.isOnline(memberA)).thenReturn(false);
         when(presenceState.isOnline(memberB)).thenReturn(false);
@@ -413,7 +413,7 @@ class FcmPushServiceTest {
     void notificationEventListenerSkipsNewMessagePushForMutedMember() {
         UUID mutedMember = UUID.randomUUID();
         UUID senderId = UUID.randomUUID();
-        when(memberRepository.findMemberUserIds(conversationId))
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(senderId, mutedMember));
         when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(mutedMember));
@@ -434,7 +434,7 @@ class FcmPushServiceTest {
     void notificationEventListenerStillPushesToUnmutedMember() {
         UUID unmutedMember = UUID.randomUUID();
         UUID senderId = UUID.randomUUID();
-        when(memberRepository.findMemberUserIds(conversationId))
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(senderId, unmutedMember));
         when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of());
@@ -462,7 +462,7 @@ class FcmPushServiceTest {
     void notificationEventListenerSkipsSystemMessagePushForMutedMember() {
         UUID mutedMember = UUID.randomUUID();
         UUID senderId = UUID.randomUUID();
-        when(memberRepository.findMemberUserIds(conversationId))
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(senderId, mutedMember));
         when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(mutedMember));
@@ -478,7 +478,7 @@ class FcmPushServiceTest {
     void notificationEventListenerPushesSystemMessageToUnmutedMember() {
         UUID unmutedMember = UUID.randomUUID();
         UUID senderId = UUID.randomUUID();
-        when(memberRepository.findMemberUserIds(conversationId))
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(senderId, unmutedMember));
         when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of());
@@ -502,7 +502,7 @@ class FcmPushServiceTest {
     void notificationEventListenerPushesSystemMessageToMutedSubject() {
         UUID mutedMember = UUID.randomUUID();
         UUID senderId = UUID.randomUUID();
-        when(memberRepository.findMemberUserIds(conversationId))
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(senderId, mutedMember));
         when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(mutedMember));
@@ -526,7 +526,7 @@ class FcmPushServiceTest {
         UUID mutedMember = UUID.randomUUID();
         UUID removedMember = UUID.randomUUID();
         UUID senderId = UUID.randomUUID();
-        when(memberRepository.findMemberUserIds(conversationId))
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(senderId, mutedMember));
         when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(mutedMember));
@@ -551,7 +551,7 @@ class FcmPushServiceTest {
         UUID mutedMember = UUID.randomUUID();
         UUID subjectMember = UUID.randomUUID();
         UUID senderId = UUID.randomUUID();
-        when(memberRepository.findMemberUserIds(conversationId))
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(senderId, mutedMember, subjectMember));
         when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(mutedMember));
@@ -575,7 +575,7 @@ class FcmPushServiceTest {
     void notificationEventListenerPushesMentionedMutedMemberForSystemMessage() {
         UUID mutedMember = UUID.randomUUID();
         UUID senderId = UUID.randomUUID();
-        when(memberRepository.findMemberUserIds(conversationId))
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(senderId, mutedMember));
         when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(mutedMember));
@@ -600,7 +600,7 @@ class FcmPushServiceTest {
     void notificationEventListenerPushesMentionAllMutedMemberForSystemMessage() {
         UUID mutedMember = UUID.randomUUID();
         UUID senderId = UUID.randomUUID();
-        when(memberRepository.findMemberUserIds(conversationId))
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(senderId, mutedMember));
         when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(mutedMember));
@@ -630,7 +630,7 @@ class FcmPushServiceTest {
     void notificationEventListenerPushesSystemMessageWhenMuteExpired() {
         UUID member = UUID.randomUUID();
         UUID senderId = UUID.randomUUID();
-        when(memberRepository.findMemberUserIds(conversationId))
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(senderId, member));
         when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of()); // an expired mute is not active
@@ -692,7 +692,8 @@ class FcmPushServiceTest {
     @Test
     void notificationEventListenerDoesNotPushToTheSender() {
         UUID senderId = UUID.randomUUID();
-        when(memberRepository.findMemberUserIds(conversationId)).thenReturn(List.of(senderId));
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
+                .thenReturn(List.of(senderId));
         when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of());
 

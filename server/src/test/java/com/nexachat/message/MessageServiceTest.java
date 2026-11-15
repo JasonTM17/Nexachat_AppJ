@@ -74,7 +74,7 @@ class MessageServiceTest {
                 pinnedMessageRepository, storageService, eventPublisher, new SyncProperties());
         lenient().when(attachmentRepository.findByMessage_IdIn(any())).thenReturn(List.of());
         lenient().when(reactionRepository.findRowsByMessageIdIn(any())).thenReturn(List.of());
-        lenient().when(messageRepository.findReplyRefsByIdIn(any())).thenReturn(List.of());
+        lenient().when(messageRepository.findAdmittedReplyRefsByIdIn(any(), any())).thenReturn(List.of());
         lenient().when(conversationRepository.findByIdForUpdate(any()))
                 .thenReturn(Optional.of(mock(Conversation.class)));
         lenient().when(conversationRepository.incrementChangeVersion(any())).thenReturn(1);

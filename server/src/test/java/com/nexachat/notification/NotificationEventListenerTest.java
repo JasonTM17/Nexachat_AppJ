@@ -83,7 +83,8 @@ class NotificationEventListenerTest {
     void createdSystemEventStillDispatchesPushToRemovedSubject() {
         MessageResponse message = message(Message.Type.SYSTEM, 9L);
         // The removed subject is no longer in the member list at fan-out time.
-        when(memberRepository.findMemberUserIds(conversationId)).thenReturn(List.of(senderId));
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
+                .thenReturn(List.of(senderId));
         when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of());
         when(presenceState.isOnline(recipientId)).thenReturn(false);
@@ -99,7 +100,7 @@ class NotificationEventListenerTest {
     }
 
     private void stubOfflineRecipient() {
-        when(memberRepository.findMemberUserIds(conversationId))
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(senderId, recipientId));
         when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of());
@@ -115,7 +116,7 @@ class NotificationEventListenerTest {
     void sharedDeviceTokenGetsOnePushForTheAccountSignedInLast() {
         UUID secondRecipientId = UUID.randomUUID();
         MessageResponse message = message(Message.Type.TEXT, 10L);
-        when(memberRepository.findMemberUserIds(conversationId))
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of(senderId, recipientId, secondRecipientId));
         when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
                 .thenReturn(List.of());
@@ -135,6 +136,16 @@ class NotificationEventListenerTest {
         assertThat(tokens.getValue()).containsExactly(newer);
         verify(fcmPushService, never()).sendNewMessageNotification(eq(recipientId), any(List.class),
                 any(UUID.class), any(UUID.class), anyLong(), any(), anyBoolean());
+    }
+
+    @Test
+    void recipientsAreFilteredByAdmissionAtTheMessageCreationTime() {
+        MessageResponse message = message(Message.Type.TEXT, 11L);
+        stubOfflineRecipient();
+
+        listener.onMessageCreated(new MessageCreatedEvent(conversationId, message));
+
+        verify(memberRepository).findAdmittedUserIds(conversationId, message.createdAt());
     }
 
     private static UserDeviceToken sharedRow(Instant updatedAt) {
