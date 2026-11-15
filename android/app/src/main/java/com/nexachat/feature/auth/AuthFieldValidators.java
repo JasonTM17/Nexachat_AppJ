@@ -8,10 +8,16 @@ import java.util.Locale;
 public final class AuthFieldValidators {
     private AuthFieldValidators() {}
 
-    /** Normalizes common phone punctuation and applies the server's E.164 shape. */
+    /**
+     * Normalizes common phone punctuation and applies the server's E.164 shape: {@code 00}
+     * becomes {@code +}, and a bare international digit string gains a {@code +} prefix.
+     * Numbers with a leading {@code 0} are national and stay untouched (and invalid):
+     * no default country is ever guessed.
+     */
     @NonNull public static String normalizeE164(@NonNull String input) {
         String value = input.trim().replaceAll("[\\s().-]", "");
         if (value.startsWith("00")) value = "+" + value.substring(2);
+        if (value.matches("[1-9][0-9]{7,14}")) value = "+" + value;
         return value;
     }
 

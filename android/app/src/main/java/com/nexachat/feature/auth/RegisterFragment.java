@@ -52,8 +52,10 @@ public final class RegisterFragment extends Fragment {
                     args,
                     AuthNav.authTabSwitchOptions());
         };
-        binding.secondaryAction.setOnClickListener(openLogin);
         binding.authModeLogin.setOnClickListener(openLogin);
+        // Report this screen's mode as checked to accessibility; clicks never
+        // toggle it back off (toggleCheckedStateOnClick is off in the layout).
+        binding.authModeRegister.setChecked(true);
         if (binding.loadingState.getContentDescription() == null) {
             binding.loadingState.setContentDescription(
                     getString(AuthLoadingOverlay.contentDescriptionResId()));
@@ -137,7 +139,6 @@ public final class RegisterFragment extends Fragment {
         binding.confirmPasswordInput.setEnabled(notLoading);
         binding.registerButton.setEnabled(notLoading);
         binding.googleSignIn.setEnabled(notLoading);
-        binding.secondaryAction.setEnabled(notLoading);
         binding.authModeLogin.setEnabled(notLoading);
         binding.loadingState.setVisibility(s.getLoading() ? View.VISIBLE : View.GONE);
         rendering = false;

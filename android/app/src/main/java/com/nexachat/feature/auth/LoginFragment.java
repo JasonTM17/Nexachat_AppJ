@@ -50,7 +50,6 @@ public final class LoginFragment extends Fragment {
         binding.googleSignIn.setVisibility(googleVisibility);
         binding.authOrDivider.getRoot().setVisibility(googleVisibility);
         binding.googleSignIn.setOnClickListener(v -> viewModel.googleSignIn(requireActivity()));
-        binding.secondaryAction.setText(R.string.action_create_account);
         View.OnClickListener openRegister = v -> {
             Bundle args = AuthNav.inviteReturnArgs(returnInviteToken);
             NavHostFragment.findNavController(this).navigate(
@@ -58,8 +57,10 @@ public final class LoginFragment extends Fragment {
                     args,
                     AuthNav.authTabSwitchOptions());
         };
-        binding.secondaryAction.setOnClickListener(openRegister);
         binding.authModeRegister.setOnClickListener(openRegister);
+        // Report this screen's mode as checked to accessibility; clicks never
+        // toggle it back off (toggleCheckedStateOnClick is off in the layout).
+        binding.authModeLogin.setChecked(true);
         if (binding.loadingState.getContentDescription() == null) {
             binding.loadingState.setContentDescription(
                     getString(AuthLoadingOverlay.contentDescriptionResId()));
@@ -159,7 +160,6 @@ public final class LoginFragment extends Fragment {
         binding.passwordInput.setEnabled(notLoading);
         binding.primaryAction.setEnabled(notLoading);
         binding.googleSignIn.setEnabled(notLoading);
-        binding.secondaryAction.setEnabled(notLoading);
         binding.forgotPasswordAction.setEnabled(notLoading);
         binding.authModeRegister.setEnabled(notLoading);
         binding.loadingState.setVisibility(state.getLoading() ? View.VISIBLE : View.GONE);
