@@ -2,8 +2,12 @@ package com.nexachat.feature.auth;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.List;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.junit.Before;
 import org.junit.Test;
@@ -11,15 +15,18 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
 /**
- * The sign-in/create-account mode switch must be a single-selection
- * {@code MaterialButtonToggleGroup} so screen readers announce which mode is checked.
+ * The sign-in/create-account mode switch keeps a plain {@code LinearLayout} track
+ * so the selected segment keeps all four rounded corners, while each
+ * {@code MaterialButton} is checkable so screen readers announce the active mode.
+ * Checked state is driven from the fragments ({@code toggleCheckedStateOnClick}
+ * is off) so tapping the active mode can never uncheck it.
  */
 public final class AuthModeSwitchLayoutContractTest {
 
     private static final String ANDROID = "http://schemas.android.com/apk/res/android";
     private static final String APP = "http://schemas.android.com/apk/res-auto";
-    private static final String TOGGLE_GROUP =
-            "com.google.android.material.button.MaterialButtonToggleGroup";
+    private static final String MODE_BUTTON =
+            "com.google.android.material.button.MaterialButton";
 
     private File resDir;
 
@@ -39,25 +46,33 @@ public final class AuthModeSwitchLayoutContractTest {
     }
 
     @Test
-    public void modeSwitchIsASingleSelectionToggleGroup() throws Exception {
-        assertToggleGroup("layout/fragment_login.xml", "authModeLogin", "authModeRegister");
-        assertToggleGroup("layout/fragment_register.xml", "authModeRegister", "authModeLogin");
+    public void modeSwitchStaysAPlainContainerWithCheckableButtons() throws Exception {
+        assertModeSwitch("layout/fragment_login.xml");
+        assertModeSwitch("layout/fragment_register.xml");
     }
 
-    private void assertToggleGroup(String layout, String checkedId, String uncheckedId)
-            throws Exception {
+    private void assertModeSwitch(String layout) throws Exception {
         Element group = findById(layout, "authModeSwitch");
-        assertEquals(layout, TOGGLE_GROUP, group.getTagName());
-        assertEquals(layout, "true", appAttr(group, "singleSelection"));
-        assertEquals(layout, "true", appAttr(group, "selectionRequired"));
-        assertEquals(layout, "@id/" + checkedId, appAttr(group, "checkedButton"));
+        assertEquals(layout, "LinearLayout", group.getTagName());
+        for (String id : List.of("authModeLogin", "authModeRegister")) {
+            Element button = findById(layout, id);
+            assertEquals(layout + "#" + id, MODE_BUTTON, button.getTagName());
+            assertEquals(layout + "#" + id, "true", androidAttr(button, "checkable"));
+            assertEquals(layout + "#" + id,
+                    "false", appAttr(button, "toggleCheckedStateOnClick"));
+            assertEquals(layout + "#" + id,
+                    "@dimen/corner_sm", appAttr(button, "cornerRadius"));
+        }
+    }
 
-        Element checked = findById(layout, checkedId);
-        Element unchecked = findById(layout, uncheckedId);
-        assertEquals(layout,
-                "com.google.android.material.button.MaterialButton", checked.getTagName());
-        assertEquals(layout,
-                "com.google.android.material.button.MaterialButton", unchecked.getTagName());
+    @Test
+    public void activeModeIsMarkedCheckedByItsFragment() throws Exception {
+        assertTrue("LoginFragment must mark authModeLogin checked",
+                source("feature/auth/LoginFragment.java")
+                        .contains("authModeLogin.setChecked(true)"));
+        assertTrue("RegisterFragment must mark authModeRegister checked",
+                source("feature/auth/RegisterFragment.java")
+                        .contains("authModeRegister.setChecked(true)"));
     }
 
     @Test
@@ -66,6 +81,20 @@ public final class AuthModeSwitchLayoutContractTest {
                 findByIdOrNull("layout/fragment_login.xml", "secondaryAction"));
         assertNull("fragment_register.xml still carries secondaryAction",
                 findByIdOrNull("layout/fragment_register.xml", "secondaryAction"));
+    }
+
+    private static String source(String relative) throws Exception {
+        List<File> candidates = List.of(
+                new File("src/main/java/com/nexachat/" + relative),
+                new File("app/src/main/java/com/nexachat/" + relative),
+                new File("android/app/src/main/java/com/nexachat/" + relative),
+                new File("../app/src/main/java/com/nexachat/" + relative));
+        File file = candidates.stream()
+                .filter(File::isFile)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "Could not locate source " + relative));
+        return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
     }
 
     private Element findById(String layout, String id) throws Exception {
@@ -92,6 +121,14 @@ public final class AuthModeSwitchLayoutContractTest {
             }
         }
         return null;
+    }
+
+    private static String androidAttr(Element node, String name) {
+        String value = node.getAttributeNS(ANDROID, name);
+        if (value == null || value.isEmpty()) {
+            value = node.getAttribute("android:" + name);
+        }
+        return value;
     }
 
     private static String appAttr(Element node, String name) {

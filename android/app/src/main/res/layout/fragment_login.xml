@@ -53,7 +53,7 @@
                     android:textFontWeight="700"
                     tools:targetApi="p" />
 
-                <com.google.android.material.button.MaterialButtonToggleGroup
+                <LinearLayout
                     android:id="@+id/authModeSwitch"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -62,16 +62,14 @@
                     android:gravity="center_vertical"
                     android:minHeight="48dp"
                     android:orientation="horizontal"
-                    android:padding="@dimen/space_xs"
-                    app:checkedButton="@id/authModeLogin"
-                    app:selectionRequired="true"
-                    app:singleSelection="true">
+                    android:padding="@dimen/space_xs">
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/authModeLogin"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
+                        android:checkable="true"
                         android:gravity="center"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
@@ -79,13 +77,15 @@
                         android:text="@string/action_sign_in"
                         android:textColor="@color/brand_on_fill"
                         app:backgroundTint="@color/brand_fill"
-                        app:cornerRadius="@dimen/corner_sm" />
+                        app:cornerRadius="@dimen/corner_sm"
+                        app:toggleCheckedStateOnClick="false" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/authModeRegister"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
+                        android:checkable="true"
                         android:gravity="center"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
@@ -93,8 +93,9 @@
                         android:text="@string/action_create_account"
                         android:textColor="?attr/colorOnSurfaceVariant"
                         app:backgroundTint="@android:color/transparent"
-                        app:cornerRadius="@dimen/corner_sm" />
-                </com.google.android.material.button.MaterialButtonToggleGroup>
+                        app:cornerRadius="@dimen/corner_sm"
+                        app:toggleCheckedStateOnClick="false" />
+                </LinearLayout>
 
                 <include
                     android:id="@+id/googleEmailInUseError"

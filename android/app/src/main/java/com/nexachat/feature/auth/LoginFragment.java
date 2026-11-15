@@ -58,6 +58,9 @@ public final class LoginFragment extends Fragment {
                     AuthNav.authTabSwitchOptions());
         };
         binding.authModeRegister.setOnClickListener(openRegister);
+        // Report this screen's mode as checked to accessibility; clicks never
+        // toggle it back off (toggleCheckedStateOnClick is off in the layout).
+        binding.authModeLogin.setChecked(true);
         if (binding.loadingState.getContentDescription() == null) {
             binding.loadingState.setContentDescription(
                     getString(AuthLoadingOverlay.contentDescriptionResId()));
