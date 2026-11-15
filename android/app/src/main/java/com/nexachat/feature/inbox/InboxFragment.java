@@ -74,6 +74,7 @@ public final class InboxFragment extends Fragment {
     private boolean labelFiltersInitialized;
     @Nullable private String boundUserId;
     @Nullable private UserDto boundInboxUser;
+    @Nullable private String identityLoadAttemptKey;
     @Nullable private ActiveNowStripBinder activeNowStripBinder;
     private int lastPaginationErrorMessageId;
 
@@ -203,7 +204,7 @@ public final class InboxFragment extends Fragment {
         if (binding == null) {
             return;
         }
-        boundInboxUser = state.getUser();
+        boundInboxUser = InboxIdentityRules.renderableUser(state.getUser(), signedInUserId());
         binding.inboxUserAvatar.setName(InboxIdentityRules.ownAvatarName(boundInboxUser));
         binding.inboxUserAvatar.setAvatarUrl(
                 boundInboxUser == null ? null : boundInboxUser.getAvatarUrl());
@@ -227,10 +228,20 @@ public final class InboxFragment extends Fragment {
         if (profileState != null && profileState.isLoading()) {
             return;
         }
-        String signedInUserId = lastState == null ? null : lastState.getCurrentUserId();
-        if (InboxIdentityRules.needsProfileLoad(profileState, signedInUserId)) {
+        String signedInUserId = signedInUserId();
+        // One automatic load per view entry and session id; a later entry or a
+        // different signed-in user re-arms the retry.
+        String attemptKey = signedInUserId == null ? "" : signedInUserId;
+        boolean alreadyAttempted = attemptKey.equals(identityLoadAttemptKey);
+        if (InboxIdentityRules.needsProfileLoad(profileState, signedInUserId, alreadyAttempted)) {
+            identityLoadAttemptKey = attemptKey;
             profileViewModel.load();
         }
+    }
+
+    @Nullable
+    private String signedInUserId() {
+        return lastState == null ? null : lastState.getCurrentUserId();
     }
 
     private void renderLabelFilters(@NonNull LabelUiState state) {
@@ -410,9 +421,18 @@ public final class InboxFragment extends Fragment {
         if (binding == null) {
             return;
         }
+        String previousUserId = lastState == null ? null : lastState.getCurrentUserId();
         lastState = state;
         ensureAdapter(state.getCurrentUserId());
         ensureSessionIdentity();
+        if (!Objects.equals(previousUserId, state.getCurrentUserId())) {
+            // The avatar binds only a session-verified user, so it must rebind once the
+            // session id resolves — otherwise a profile that landed early stays blank.
+            ProfileViewModel.UiState profileState = profileViewModel.getUiState().getValue();
+            if (profileState != null) {
+                renderInboxIdentity(profileState);
+            }
+        }
         if (lastLabelState != null) adapter.setLabelDefinitions(lastLabelState.getLabels());
         List<ConversationSummary> rows = state.getConversations();
         List<ConversationSummary> visibleRows = state.getVisibleConversations();
@@ -786,6 +806,7 @@ public final class InboxFragment extends Fragment {
         adapter = null;
         boundUserId = null;
         boundInboxUser = null;
+        identityLoadAttemptKey = null;
         lastState = null;
         lastLabelState = null;
         renderedLabels = List.of();
