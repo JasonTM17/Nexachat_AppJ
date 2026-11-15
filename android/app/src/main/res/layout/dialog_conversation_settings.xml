@@ -41,7 +41,14 @@
         android:id="@+id/aiOptOutStatus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_xs"
+        android:accessibilityLiveRegion="polite"
+        android:background="@drawable/bg_auth_inline_error"
+        android:drawableStart="@drawable/ic_error_outline"
+        android:drawableTint="?attr/colorError"
+        android:drawablePadding="@dimen/space_sm"
+        android:padding="@dimen/space_inset"
         android:textAppearance="?attr/textAppearanceBodySmall"
-        android:textColor="?attr/colorError"
+        android:textColor="?attr/colorOnErrorContainer"
         android:visibility="gone" />
 </LinearLayout>
