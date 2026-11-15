@@ -519,7 +519,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                     return true;
 
                 case MotionEvent.ACTION_MOVE:
-                    if (voiceRecorder == null || (!voiceRecorder.isRecording() && !voiceStartPending)) {
+                    // voiceStartPending first: isRecording() is synchronized
+                    // on the recorder and would block while start() runs.
+                    if (voiceRecorder == null || (!voiceStartPending && !voiceRecorder.isRecording())) {
                         return false;
                     }
                     float deltaX = recordStartX - event.getRawX();
@@ -572,8 +574,14 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             e2eeMediaUnsupported();
             return;
         }
-        if (voiceRecorder != null && voiceRecorder.isRecording()) {
-            finishVoiceRecording(false, true);
+        // voiceStartPending first: isRecording() is synchronized on the
+        // recorder and would block while start() runs off the main thread.
+        if (voiceRecorder != null && (voiceStartPending || voiceRecorder.isRecording())) {
+            if (voiceStartPending) {
+                voiceStopWhenStarted = true;
+            } else {
+                finishVoiceRecording(false, true);
+            }
             announceVoiceRecordingState(R.string.cd_send);
             return;
         }
