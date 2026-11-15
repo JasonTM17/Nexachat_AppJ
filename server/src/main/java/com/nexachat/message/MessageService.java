@@ -554,13 +554,13 @@ public class MessageService {
         reactionRepository.deleteByMessageId(messageId);
         if (pinnedMessageRepository.deleteOne(conversationId, messageId) > 0) {
             eventPublisher.publishEvent(new PinUpdatedEvent(
-                    conversationId, new PinUpdatedPayload(messageId, false)));
+                    conversationId, new PinUpdatedPayload(messageId, false, message.getCreatedAt())));
         }
         MessageRow row = messageRepository.findRowById(messageId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
         eventPublisher.publishEvent(new MessageDeletedEvent(conversationId,
                 new MessageDeletedPayload(messageId, row.deletedAt(),
-                        row.changeVersion(), row.generation())));
+                        row.changeVersion(), row.generation(), row.createdAt())));
         if (wasLastMessage) {
             publishLastMessageChanged(conversationId, "MESSAGE_DELETED");
         }

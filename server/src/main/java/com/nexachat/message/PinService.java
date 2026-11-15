@@ -146,7 +146,7 @@ public class PinService {
         Conversation conversation = lockConversation(conversationId);
         member = requireMember(conversationId, userId);
         requirePinRole(conversation, member);
-        requireConversationMessage(conversationId, messageId);
+        Message message = requireConversationMessage(conversationId, messageId);
 
         if (!pinRepository.existsByConversation_IdAndMessage_Id(conversationId, messageId)) {
             if (pinRepository.countByConversation_Id(conversationId) >= MAX_PINS_PER_CONVERSATION) {
@@ -156,8 +156,8 @@ public class PinService {
             pinRepository.insertIgnoringConflict(conversationId, messageId, userId);
             log.info("Message {} pinned in {} by {}", messageId, conversationId, userId);
         }
-        eventPublisher.publishEvent(
-                new PinUpdatedEvent(conversationId, new PinUpdatedPayload(messageId, true)));
+        eventPublisher.publishEvent(new PinUpdatedEvent(conversationId,
+                new PinUpdatedPayload(messageId, true, message.getCreatedAt())));
     }
 
     /**
@@ -176,14 +176,14 @@ public class PinService {
         requirePinRole(conversation, member);
         // Same-conversation check as pin() — without it a member could
         // inject a spurious PIN_UPDATED{pinned:false} for a foreign id.
-        requireConversationMessage(conversationId, messageId);
+        Message message = requireConversationMessage(conversationId, messageId);
 
         int removed = pinRepository.deleteOne(conversationId, messageId);
         if (removed > 0) {
             log.info("Message {} unpinned in {} by {}", messageId, conversationId, userId);
         }
-        eventPublisher.publishEvent(
-                new PinUpdatedEvent(conversationId, new PinUpdatedPayload(messageId, false)));
+        eventPublisher.publishEvent(new PinUpdatedEvent(conversationId,
+                new PinUpdatedPayload(messageId, false, message.getCreatedAt())));
     }
 
     // ------------------------------------------------------------- internals
@@ -214,7 +214,7 @@ public class PinService {
     }
 
     /** The pinned target must live in THIS conversation — same rule as reply targets. */
-    private void requireConversationMessage(UUID conversationId, UUID messageId) {
+    private Message requireConversationMessage(UUID conversationId, UUID messageId) {
         Message message = messageRepository.findById(messageId)
                 .orElseThrow(() -> ApiException.of(
                         ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
@@ -225,5 +225,6 @@ public class PinService {
         if (message.getDeletedAt() != null) {
             throw ApiException.of(ApiErrorCode.MESSAGE_DELETED, "Message was deleted");
         }
+        return message;
     }
 }

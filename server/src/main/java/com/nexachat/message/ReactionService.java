@@ -102,7 +102,8 @@ public class ReactionService {
                 added ? ReactionEvent.Action.ADD : ReactionEvent.Action.REMOVE);
 
         eventPublisher.publishEvent(new ReactionUpdatedEvent(
-                conversationId, new ReactionUpdatedPayload(messageId, aggregate(messageId))));
+                conversationId, new ReactionUpdatedPayload(messageId, aggregate(messageId),
+                        message.getCreatedAt())));
         log.info("Reaction {} {} on message {} by {}", emoji,
                 added ? "added" : "removed", messageId, userId);
     }
@@ -126,7 +127,8 @@ public class ReactionService {
             recordEvent(conversationId, messageId, userId, normalized, ReactionEvent.Action.ADD);
         }
         eventPublisher.publishEvent(new ReactionUpdatedEvent(
-                conversationId, new ReactionUpdatedPayload(messageId, aggregate(messageId))));
+                conversationId, new ReactionUpdatedPayload(messageId, aggregate(messageId),
+                        message.getCreatedAt())));
         log.info("Reaction {} added on message {} by {}", normalized, messageId, userId);
     }
 
@@ -148,7 +150,8 @@ public class ReactionService {
             recordEvent(conversationId, messageId, userId, normalized, ReactionEvent.Action.REMOVE);
         }
         eventPublisher.publishEvent(new ReactionUpdatedEvent(
-                conversationId, new ReactionUpdatedPayload(messageId, aggregate(messageId))));
+                conversationId, new ReactionUpdatedPayload(messageId, aggregate(messageId),
+                        message.getCreatedAt())));
         log.info("Reaction {} removed on message {} by {}", normalized, messageId, userId);
     }
 
