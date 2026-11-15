@@ -1105,9 +1105,11 @@ public final class MessageRepository {
     /**
      * Terminal pause for rows the local E2EE trust gate refused: the verified
      * keyset changed, a trusted conversation would go out as plaintext, or the
-     * roster cannot be parsed into a direct transcript. The row becomes FAILED
-     * with its content intact for a manual resend after re-verification — no
-     * automatic retry, no rate-limit reschedule, never a plaintext request.
+     * roster cannot be parsed into a direct transcript. The row becomes
+     * {@link OutboxState#FAILED_PAUSED} — a FAILED row stamped so the UI can
+     * tell pause-caused failures from ordinary rejections — with its content
+     * intact for a manual resend after re-verification — no automatic retry,
+     * no rate-limit reschedule, never a plaintext request.
      * Refusals notify once per conversation per episode rather than once per
      * row; every other error propagates untouched.
      */
@@ -1125,7 +1127,23 @@ public final class MessageRepository {
         return emitTerminalPauseOnce(ownerUserId, entry.getConversationId(), code)
                 .onErrorComplete()
                 .andThen(outboxDao.updateState(entry.getClientMessageId(),
-                        ownerUserId, OutboxState.FAILED));
+                        ownerUserId, OutboxState.FAILED_PAUSED));
+    }
+
+    /**
+     * The refusal code of the open terminal-pause episode for this owner and
+     * conversation — the same marker that dedupes its notice — or empty once
+     * a successful encrypted send cleared it. Of the terminal codes only
+     * {@link #ERROR_E2EE_KEYSET_INVALID} has no durable read-back (an unusable
+     * roster leaves no trust record), so this is the view model's window into
+     * that episode.
+     */
+    public Single<Optional<String>> keysetPauseCode(String ownerUserId, String conversationId) {
+        return Single.fromCallable(() -> {
+            String episode = keysetPauseNotified.get(ownerUserId + ':' + conversationId);
+            return episode == null ? Optional.empty()
+                    : Optional.of(episode.substring(0, episode.indexOf(':')));
+        });
     }
 
     /**
@@ -2014,12 +2032,14 @@ public final class MessageRepository {
     }
 
     private ChatMessage toChatMessage(OutboxEntity row) {
+        boolean pausedRefusal = OutboxState.FAILED_PAUSED.equals(row.getState());
         return new ChatMessage(row.getClientMessageId(), row.getConversationId(), null, "", null,
                 row.getType(), row.getContent(), row.getReplyToId(), null, null, row.getCreatedAt(),
-                row.getClientMessageId(), OutboxState.FAILED.equals(row.getState())
+                row.getClientMessageId(), pausedRefusal || OutboxState.FAILED.equals(row.getState())
                         ? DeliveryStatus.FAILED : DeliveryStatus.SENDING,
                 true, attachments(row.getAttachmentsJson()), Collections.emptyList(), null, null,
-                MessageMentionCodec.decode(row.getMentionsJson()), row.isMentionAll());
+                MessageMentionCodec.decode(row.getMentionsJson()), row.isMentionAll(),
+                false, false, false, pausedRefusal);
     }
 
     private ChatMessage pinStub(PinnedMessageEntity pin) {

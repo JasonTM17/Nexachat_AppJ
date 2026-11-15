@@ -68,6 +68,7 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.CountDownLatch;
@@ -733,7 +734,7 @@ public class MessageRepositoryTest {
             TestSubscriber<ApiError> errors = repo.getInteractionEvents().test();
             await(repo.send(CONVERSATION_ID, "paused plaintext"));
             OutboxEntity row = outbox.values().iterator().next();
-            assertEquals(OutboxState.FAILED, row.getState());
+            assertEquals(OutboxState.FAILED_PAUSED, row.getState());
             assertEquals("paused plaintext", row.getContent());
             verify(session, org.mockito.Mockito.never()).sendMessage(anyString(), any());
             verify(messageApi, org.mockito.Mockito.never()).sendMessage(anyString(), any());
@@ -763,7 +764,7 @@ public class MessageRepositoryTest {
             await(repo.send(CONVERSATION_ID, "second"));
             assertEquals(2, outbox.size());
             for (OutboxEntity row : outbox.values()) {
-                assertEquals(OutboxState.FAILED, row.getState());
+                assertEquals(OutboxState.FAILED_PAUSED, row.getState());
             }
             errors.assertValueCount(1);
         } finally {
@@ -835,7 +836,7 @@ public class MessageRepositoryTest {
             });
             await(repo.send(CONVERSATION_ID, "paused after refresh"));
             String clientId = outbox.keySet().iterator().next();
-            assertEquals(OutboxState.FAILED, outbox.get(clientId).getState());
+            assertEquals(OutboxState.FAILED_PAUSED, outbox.get(clientId).getState());
             assertEquals(1, restCalls.get());
             assertEquals(2, encryptCalls.get());
             verify(e2ee).invalidateDevices(CONVERSATION_ID);
@@ -877,7 +878,7 @@ public class MessageRepositoryTest {
             // The socket accepted the first send; the fresh roster behind the
             // stale rejection carries the phantom, so the retry stops early.
             events.onNext(new ChatEvent.SendRejected("E2EE_STALE_DEVICES", clientId));
-            assertEquals(OutboxState.FAILED, outbox.get(clientId).getState());
+            assertEquals(OutboxState.FAILED_PAUSED, outbox.get(clientId).getState());
             verify(session, times(1)).sendMessage(
                     org.mockito.ArgumentMatchers.eq(CONVERSATION_ID), any());
             verify(messageApi, org.mockito.Mockito.never()).sendMessage(anyString(), any());
@@ -908,7 +909,7 @@ public class MessageRepositoryTest {
             TestSubscriber<ApiError> errors = repo.getInteractionEvents().test();
             await(repo.send(CONVERSATION_ID, "must never leave as plaintext"));
             OutboxEntity row = outbox.values().iterator().next();
-            assertEquals(OutboxState.FAILED, row.getState());
+            assertEquals(OutboxState.FAILED_PAUSED, row.getState());
             assertEquals("must never leave as plaintext", row.getContent());
             verify(session, org.mockito.Mockito.never()).sendMessage(anyString(), any());
             verify(messageApi, org.mockito.Mockito.never()).sendMessage(anyString(), any());
@@ -975,7 +976,7 @@ public class MessageRepositoryTest {
             // The worker flush completing normally — not erroring — is what
             // lets WorkManager report success instead of rescheduling forever.
             await(repo.flushOutboxForWorker());
-            assertEquals(OutboxState.FAILED, outbox.get("cm-worker").getState());
+            assertEquals(OutboxState.FAILED_PAUSED, outbox.get("cm-worker").getState());
             verify(session, org.mockito.Mockito.never()).sendMessage(anyString(), any());
             verify(messageApi, org.mockito.Mockito.never()).sendMessage(anyString(), any());
             errors.assertValueCount(1);
@@ -1011,7 +1012,7 @@ public class MessageRepositoryTest {
             });
             await(repo.send(CONVERSATION_ID, "resend me"));
             String clientId = outbox.keySet().iterator().next();
-            assertEquals(OutboxState.FAILED, outbox.get(clientId).getState());
+            assertEquals(OutboxState.FAILED_PAUSED, outbox.get(clientId).getState());
             assertTrue(captured.isEmpty());
             await(trustStore.markVerified("me-1", CONVERSATION_ID, new byte[]{7}));
             await(repo.retry(clientId));
@@ -1046,7 +1047,7 @@ public class MessageRepositoryTest {
                 await(repo.send(CONVERSATION_ID, code + " second"));
                 assertEquals("rows for " + code, 2, outbox.size());
                 for (OutboxEntity row : outbox.values()) {
-                    assertEquals(code, OutboxState.FAILED, row.getState());
+                    assertEquals(code, OutboxState.FAILED_PAUSED, row.getState());
                 }
                 verify(session, org.mockito.Mockito.never()).sendMessage(anyString(), any());
                 verify(messageApi, org.mockito.Mockito.never()).sendMessage(anyString(), any());
@@ -1080,7 +1081,7 @@ public class MessageRepositoryTest {
             await(repo.send(CONVERSATION_ID, "second"));
             assertEquals(2, outbox.size());
             for (OutboxEntity row : outbox.values()) {
-                assertEquals(OutboxState.FAILED, row.getState());
+                assertEquals(OutboxState.FAILED_PAUSED, row.getState());
             }
             verify(session, org.mockito.Mockito.never()).sendMessage(anyString(), any());
             verify(messageApi, org.mockito.Mockito.never()).sendMessage(anyString(), any());
@@ -1129,7 +1130,7 @@ public class MessageRepositoryTest {
             await(repo.send(CONVERSATION_ID, "blocked again"));
             assertEquals(3, outbox.size());
             assertEquals(2, outbox.values().stream()
-                    .filter(row -> OutboxState.FAILED.equals(row.getState())).count());
+                    .filter(row -> OutboxState.FAILED_PAUSED.equals(row.getState())).count());
             errors.assertValueCount(2);
             errors.assertValueAt(1, error -> error instanceof ApiError.Unknown unknown
                     && MessageRepository.ERROR_E2EE_KEYSET_INVALID.equals(unknown.getCode()));
@@ -1155,13 +1156,87 @@ public class MessageRepositoryTest {
             await(repo.send(CONVERSATION_ID, "second"));
             assertEquals(2, outbox.size());
             for (OutboxEntity row : outbox.values()) {
-                assertEquals(OutboxState.FAILED, row.getState());
+                assertEquals(OutboxState.FAILED_PAUSED, row.getState());
             }
             verify(e2ee, org.mockito.Mockito.never()).encryptFor(
                     anyString(), anyString(), anyString(), anyString());
             errors.assertValueCount(1);
             errors.assertValueAt(0, error -> error instanceof ApiError.Unknown unknown
                     && MessageRepository.ERROR_E2EE_DOWNGRADE_BLOCKED.equals(unknown.getCode()));
+        } finally {
+            repo.dispose();
+        }
+    }
+
+    @Test public void pausedRowsCarryThePauseStampIntoTheMessageList() {
+        com.nexachat.core.crypto.E2eeSession e2ee =
+                mock(com.nexachat.core.crypto.E2eeSession.class);
+        ConversationEntity conv = mock(ConversationEntity.class);
+        when(conv.isE2eeEnabled()).thenReturn(true);
+        conversations.put(CONVERSATION_ID, conv);
+        com.nexachat.core.crypto.KeysetTrustStore trustStore =
+                new com.nexachat.core.crypto.KeysetTrustStore(new InMemoryKeysetTrustDao());
+        when(e2ee.encryptFor(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                        MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        MessageRepository repo = repositoryWithTrust(e2ee, trustStore);
+        try {
+            await(repo.send(CONVERSATION_ID, "paused"));
+            // An ordinary rejection stamps nothing: only rows the send pause
+            // itself failed carry the flag the bubble relabels.
+            await(outboxDao.insert(outbox("cm-ordinary", "ordinary failure",
+                    OutboxState.FAILED, 1L)));
+            TestSubscriber<List<ChatMessage>> subscriber =
+                    repo.messagesFlow(CONVERSATION_ID).test();
+            List<ChatMessage> emitted =
+                    subscriber.values().get(subscriber.values().size() - 1);
+            ChatMessage paused = emitted.stream()
+                    .filter(m -> "paused".equals(m.getContent()))
+                    .findFirst().orElseThrow();
+            ChatMessage ordinary = emitted.stream()
+                    .filter(m -> "ordinary failure".equals(m.getContent()))
+                    .findFirst().orElseThrow();
+            assertEquals(DeliveryStatus.FAILED, paused.getStatus());
+            assertTrue(paused.isPausedRefusal());
+            assertEquals(DeliveryStatus.FAILED, ordinary.getStatus());
+            assertFalse(ordinary.isPausedRefusal());
+            subscriber.cancel();
+        } finally {
+            repo.dispose();
+        }
+    }
+
+    @Test public void keysetPauseCodeReportsTheOpenInvalidEpisode() {
+        com.nexachat.core.crypto.E2eeSession e2ee =
+                mock(com.nexachat.core.crypto.E2eeSession.class);
+        ConversationEntity conv = mock(ConversationEntity.class);
+        when(conv.isE2eeEnabled()).thenReturn(true);
+        conversations.put(CONVERSATION_ID, conv);
+        com.nexachat.core.crypto.KeysetTrustStore trustStore =
+                new com.nexachat.core.crypto.KeysetTrustStore(new InMemoryKeysetTrustDao());
+        java.util.concurrent.atomic.AtomicInteger encryptCalls =
+                new java.util.concurrent.atomic.AtomicInteger();
+        // Broken, healed, broken again: the marker reports INVALID while an
+        // episode stands and clears on the successful encrypted send.
+        when(e2ee.encryptFor(anyString(), anyString(), anyString(), anyString()))
+                .thenAnswer(call -> encryptCalls.incrementAndGet() == 2
+                        ? Single.just(new com.nexachat.core.crypto.E2eeCrypto.EncryptedMessage(
+                                "e2ee1:ct", List.of(
+                                new com.nexachat.core.crypto.E2eeCrypto.Envelope("d1", "w1"))))
+                        : Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                                MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        MessageRepository repo = repositoryWithTrust(e2ee, trustStore);
+        try {
+            when(session.sendMessage(anyString(), any())).thenReturn(true);
+            await(repo.send(CONVERSATION_ID, "blocked"));
+            assertEquals(Optional.of(MessageRepository.ERROR_E2EE_KEYSET_INVALID),
+                    repo.keysetPauseCode("me-1", CONVERSATION_ID).blockingGet());
+            await(repo.send(CONVERSATION_ID, "healed"));
+            assertEquals(Optional.empty(),
+                    repo.keysetPauseCode("me-1", CONVERSATION_ID).blockingGet());
+            // An unrelated conversation never inherits the marker.
+            assertEquals(Optional.empty(),
+                    repo.keysetPauseCode("me-1", "conv-other").blockingGet());
         } finally {
             repo.dispose();
         }

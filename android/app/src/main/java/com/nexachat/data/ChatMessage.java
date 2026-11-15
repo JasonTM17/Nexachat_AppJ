@@ -43,6 +43,8 @@ public final class ChatMessage {
     private final boolean decryptFailed;
     /** The reply/quote target was encrypted; the UI shows a neutral tag. */
     private final boolean replyToEncrypted;
+    /** FAILED on the terminal e2ee send pause, not an ordinary rejection. */
+    private final boolean pausedRefusal;
 
     public ChatMessage(String id, String conversationId, @Nullable Long seq, String senderId,
             @Nullable String senderDisplayName, String type, @Nullable String content,
@@ -79,9 +81,26 @@ public final class ChatMessage {
             @Nullable Long editedAtEpochMs, @Nullable Long deletedAtEpochMs,
             List<MessageMention> mentions, boolean mentionAll,
             boolean encrypted, boolean decryptFailed, boolean replyToEncrypted) {
+        this(id, conversationId, seq, senderId, senderDisplayName, type, content, replyToId,
+                replyToSenderName, replyToSnippet, createdAtEpochMs, clientMessageId, status,
+                mine, attachments, reactions, editedAtEpochMs, deletedAtEpochMs, mentions,
+                mentionAll, encrypted, decryptFailed, replyToEncrypted, false);
+    }
+
+    public ChatMessage(String id, String conversationId, @Nullable Long seq, String senderId,
+            @Nullable String senderDisplayName, String type, @Nullable String content,
+            @Nullable String replyToId, @Nullable String replyToSenderName,
+            @Nullable String replyToSnippet, long createdAtEpochMs,
+            @Nullable String clientMessageId, DeliveryStatus status, boolean mine,
+            List<AttachmentDto> attachments, List<ReactionChip> reactions,
+            @Nullable Long editedAtEpochMs, @Nullable Long deletedAtEpochMs,
+            List<MessageMention> mentions, boolean mentionAll,
+            boolean encrypted, boolean decryptFailed, boolean replyToEncrypted,
+            boolean pausedRefusal) {
         this.encrypted = encrypted;
         this.decryptFailed = decryptFailed;
         this.replyToEncrypted = replyToEncrypted;
+        this.pausedRefusal = pausedRefusal;
         this.id = Objects.requireNonNull(id, "id");
         this.conversationId = Objects.requireNonNull(conversationId, "conversationId");
         this.seq = seq;
@@ -132,6 +151,8 @@ public final class ChatMessage {
     public boolean isDecryptFailed() { return decryptFailed; }
     /** The quoted message was encrypted; render the neutral snippet instead. */
     public boolean isReplyToEncrypted() { return replyToEncrypted; }
+    /** Row FAILED on the send pause specifically; only it wears the paused label. */
+    public boolean isPausedRefusal() { return pausedRefusal; }
 
     @Override public boolean equals(Object other) {
         if (!(other instanceof ChatMessage that)) return false;
@@ -149,12 +170,12 @@ public final class ChatMessage {
                 && Objects.equals(editedAtEpochMs, that.editedAtEpochMs)
                 && Objects.equals(deletedAtEpochMs, that.deletedAtEpochMs)
                 && Objects.equals(mentions, that.mentions)
-                && mentionAll == that.mentionAll;
+                && mentionAll == that.mentionAll && pausedRefusal == that.pausedRefusal;
     }
     @Override public int hashCode() {
         return Objects.hash(id, conversationId, seq, senderId, senderDisplayName, type, content,
                 replyToId, replyToSenderName, replyToSnippet, createdAtEpochMs, clientMessageId,
                 status, mine, attachments, reactions, editedAtEpochMs, deletedAtEpochMs,
-                mentions, mentionAll);
+                mentions, mentionAll, pausedRefusal);
     }
 }
