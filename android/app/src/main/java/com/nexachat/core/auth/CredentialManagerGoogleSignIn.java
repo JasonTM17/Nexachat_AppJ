@@ -13,6 +13,8 @@ import androidx.credentials.GetCredentialRequest;
 import androidx.credentials.GetCredentialResponse;
 import androidx.credentials.exceptions.GetCredentialCancellationException;
 import androidx.credentials.exceptions.GetCredentialException;
+import androidx.credentials.exceptions.GetCredentialProviderConfigurationException;
+import androidx.credentials.exceptions.GetCredentialUnsupportedException;
 import androidx.credentials.exceptions.NoCredentialException;
 
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption;
@@ -117,12 +119,30 @@ public final class CredentialManagerGoogleSignIn implements GoogleSignInClient {
         }
     }
 
-    private static GoogleSignInException map(@NonNull GetCredentialException error) {
+    // getType() is library-group restricted, yet the provider's type string is
+    // the only carrier of the NETWORK signal — Play services reports provider
+    // failures as GetCredentialCustomException with vendor type strings and no
+    // dedicated network exception class exists in androidx.credentials.
+    @android.annotation.SuppressLint("RestrictedApi")
+    static GoogleSignInException map(@NonNull GetCredentialException error) {
         if (error instanceof GetCredentialCancellationException) {
             return new GoogleSignInException(GoogleSignInException.Reason.CANCELLED, error);
         }
         if (error instanceof NoCredentialException) {
             return new GoogleSignInException(GoogleSignInException.Reason.NO_ACCOUNT, error);
+        }
+        if (error instanceof GetCredentialProviderConfigurationException) {
+            return new GoogleSignInException(GoogleSignInException.Reason.DEVELOPER_ERROR, error);
+        }
+        if (error instanceof GetCredentialUnsupportedException) {
+            return new GoogleSignInException(GoogleSignInException.Reason.UNAVAILABLE, error);
+        }
+        // Providers have no dedicated network exception type; a NETWORK marker
+        // in the provider's type string is the only honest signal to retry on.
+        String type = error.getType();
+        if (type != null
+                && type.toUpperCase(java.util.Locale.ROOT).contains("NETWORK")) {
+            return new GoogleSignInException(GoogleSignInException.Reason.NETWORK, error);
         }
         return new GoogleSignInException(GoogleSignInException.Reason.FAILED, error);
     }

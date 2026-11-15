@@ -22,6 +22,20 @@ public final class LoginErrorBannerState {
 
     public static LoginErrorBannerState resolve(
             boolean sessionExpired, @Nullable ApiError error, boolean serverStarting) {
+        return resolve(sessionExpired, error, serverStarting, false);
+    }
+
+    /**
+     * Error and loading are mutually exclusive: while the loading overlay owns
+     * the screen the banner stays hidden, and the wake message rides on the
+     * overlay label instead.
+     */
+    public static LoginErrorBannerState resolve(
+            boolean sessionExpired, @Nullable ApiError error,
+            boolean serverStarting, boolean loading) {
+        if (loading) {
+            return new LoginErrorBannerState(false, 0);
+        }
         if (serverStarting) {
             return new LoginErrorBannerState(true, R.string.server_starting);
         }

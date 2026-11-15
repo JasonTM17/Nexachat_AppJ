@@ -122,6 +122,93 @@ public final class GoogleSignInFlowTest {
     }
 
     @Test
+    public void aDeveloperErrorIsReportedWithItsOwnCode() {
+        when(repository.requestGoogleNonce()).thenReturn(
+                Single.just(new Result.Success<>(new GoogleNonceResponse("nonce-1", 300))));
+        FakeGoogleSignInClient client = new FakeGoogleSignInClient(true,
+                new GoogleSignInException(GoogleSignInException.Reason.DEVELOPER_ERROR));
+        GoogleSignInFlow flow = new GoogleSignInFlow(repository, client);
+
+        Result<AuthSessionResult> result = flow.signIn(null).blockingGet();
+
+        assertEquals(GoogleSignInFlow.CODE_DEVELOPER_ERROR,
+                ((ApiError.Unknown) ((Result.Failure<?>) result).getError()).getCode());
+    }
+
+    @Test
+    public void aProviderNetworkFailureReportsNetwork() {
+        when(repository.requestGoogleNonce()).thenReturn(
+                Single.just(new Result.Success<>(new GoogleNonceResponse("nonce-1", 300))));
+        FakeGoogleSignInClient client = new FakeGoogleSignInClient(true,
+                new GoogleSignInException(GoogleSignInException.Reason.NETWORK));
+        GoogleSignInFlow flow = new GoogleSignInFlow(repository, client);
+
+        Result<AuthSessionResult> result = flow.signIn(null).blockingGet();
+
+        assertTrue(((Result.Failure<?>) result).getError() instanceof ApiError.Network);
+    }
+
+    @Test
+    public void aDisabledServerFeatureOnTheNonceIsReportedAsNotAvailable() {
+        when(repository.requestGoogleNonce()).thenReturn(
+                Single.just(Result.failure(new ApiError.Unknown("NOT_FOUND", 404))));
+        FakeGoogleSignInClient client = new FakeGoogleSignInClient(true, "id-token");
+        GoogleSignInFlow flow = new GoogleSignInFlow(repository, client);
+
+        Result<AuthSessionResult> result = flow.signIn(null).blockingGet();
+
+        assertEquals(GoogleSignInFlow.CODE_NOT_AVAILABLE,
+                ((ApiError.Unknown) ((Result.Failure<?>) result).getError()).getCode());
+        assertEquals(0, client.calls);
+        verify(repository, never()).googleSignIn(anyString(), anyString());
+    }
+
+    @Test
+    public void aDisabledServerFeatureOnSignInIsReportedAsNotAvailable() {
+        when(repository.requestGoogleNonce()).thenReturn(
+                Single.just(new Result.Success<>(new GoogleNonceResponse("nonce-1", 300))));
+        when(repository.googleSignIn("id-token", "nonce-1")).thenReturn(
+                Single.just(Result.failure(new ApiError.Unknown("NOT_FOUND", 404))));
+        FakeGoogleSignInClient client = new FakeGoogleSignInClient(true, "id-token");
+        GoogleSignInFlow flow = new GoogleSignInFlow(repository, client);
+
+        Result<AuthSessionResult> result = flow.signIn(null).blockingGet();
+
+        assertEquals(GoogleSignInFlow.CODE_NOT_AVAILABLE,
+                ((ApiError.Unknown) ((Result.Failure<?>) result).getError()).getCode());
+    }
+
+    @Test
+    public void anUnlinkedAccount404KeepsItsServerCode() {
+        when(repository.requestGoogleNonce()).thenReturn(
+                Single.just(new Result.Success<>(new GoogleNonceResponse("nonce-1", 300))));
+        when(repository.googleSignIn("id-token", "nonce-1")).thenReturn(
+                Single.just(Result.failure(
+                        new ApiError.Unknown("GOOGLE_ACCOUNT_NOT_LINKED", 404))));
+        FakeGoogleSignInClient client = new FakeGoogleSignInClient(true, "id-token");
+        GoogleSignInFlow flow = new GoogleSignInFlow(repository, client);
+
+        Result<AuthSessionResult> result = flow.signIn(null).blockingGet();
+
+        assertEquals("GOOGLE_ACCOUNT_NOT_LINKED",
+                ((ApiError.Unknown) ((Result.Failure<?>) result).getError()).getCode());
+    }
+
+    @Test
+    public void aDisabledServerFeatureOnTheLinkNonceIsReportedAsNotAvailable() {
+        when(repository.requestGoogleLinkNonce()).thenReturn(
+                Single.just(Result.failure(new ApiError.Unknown("NOT_FOUND", 404))));
+        FakeGoogleSignInClient client = new FakeGoogleSignInClient(true, "id-token");
+        GoogleSignInFlow flow = new GoogleSignInFlow(repository, client);
+
+        Result<Unit> result = flow.link(null, "secret123").blockingGet();
+
+        assertEquals(GoogleSignInFlow.CODE_NOT_AVAILABLE,
+                ((ApiError.Unknown) ((Result.Failure<?>) result).getError()).getCode());
+        assertEquals(0, client.calls);
+    }
+
+    @Test
     public void linkSendsTokenNonceAndPassword() {
         when(repository.requestGoogleLinkNonce()).thenReturn(
                 Single.just(new Result.Success<>(new GoogleNonceResponse("nonce-2", 300))));
