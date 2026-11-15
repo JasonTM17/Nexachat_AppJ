@@ -128,6 +128,22 @@ public final class ChatActionSheetLayoutContractTest {
     }
 
     @Test
+    public void forwardActionIconIsAMirroredReplySwoosh() throws Exception {
+        Document forward = parse("src/main/res/drawable/ic_forward.xml");
+        Element path = (Element) forward.getElementsByTagName("path").item(0);
+        assertNotNull(path);
+        String data = path.getAttributeNS(ANDROID, "pathData");
+        assertTrue("forward glyph must keep a right-pointing arrow head",
+                data.contains("l7,7"));
+        assertTrue("forward glyph must sweep a swoosh tail up from the left",
+                data.contains("c-5,0"));
+        assertFalse("forward glyph must not read as a play triangle",
+                data.startsWith("M12,8V4"));
+        assertEquals("true",
+                forward.getDocumentElement().getAttributeNS(ANDROID, "autoMirrored"));
+    }
+
+    @Test
     public void mentionPickerSitsFlatOnTheSurfaceInBothOrientations() throws Exception {
         for (String directory : new String[]{"layout", "layout-land"}) {
             Document chat = parse("src/main/res/" + directory + "/fragment_chat.xml");

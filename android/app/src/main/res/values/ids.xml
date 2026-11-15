@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <item name="voice_binder_binding" type="id" />
+    <item name="password_dialog_error" type="id" />
 </resources>
