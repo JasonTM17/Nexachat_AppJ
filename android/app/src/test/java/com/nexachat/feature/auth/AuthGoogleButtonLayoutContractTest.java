@@ -43,7 +43,7 @@ public final class AuthGoogleButtonLayoutContractTest {
         assertEquals("@string/action_continue_with_google", attr(button, "text"));
         assertEquals("@string/cd_continue_with_google", attr(button, "contentDescription"));
         String minHeight = attr(button, "minHeight");
-        assertTrue(layout + " minHeight", "56dp".equals(minHeight) || "54dp".equals(minHeight));
+        assertTrue(layout + " minHeight", "48dp".equals(minHeight));
         int minHeightDp = Integer.parseInt(minHeight.replace("dp", ""));
         assertTrue(layout + " touch target", minHeightDp >= 48);
     }
