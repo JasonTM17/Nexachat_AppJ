@@ -24,6 +24,13 @@ import retrofit2.Response;
 public final class ServerWakeGate {
     /** Render Free measured 123 s from container start to healthy; this adds a margin. */
     public static final long MAX_WAIT_MS = 150_000L;
+    /**
+     * A successful probe keeps the gate open this long: sign-in issues one probe
+     * for the nonce and a second for the token exchange, and Render cannot idle
+     * an instance that answered a request seconds ago. A crash inside the window
+     * still surfaces as an ordinary network error on the POST itself.
+     */
+    public static final long READY_WINDOW_MS = 120_000L;
 
     private final HealthApi healthApi;
     private final Scheduler attemptScheduler;
@@ -32,6 +39,9 @@ public final class ServerWakeGate {
     private final FlowableProcessor<Boolean> starting =
             BehaviorProcessor.<Boolean>createDefault(false).toSerialized();
     private final AtomicInteger activeWakeWaits = new AtomicInteger();
+    /** Monotonic timestamp of the latest successful probe, or a value older than the window. */
+    private final java.util.concurrent.atomic.AtomicLong lastReadyAtMillis =
+            new java.util.concurrent.atomic.AtomicLong(-READY_WINDOW_MS - 1L);
 
     @Inject
     public ServerWakeGate(HealthApi healthApi) {
@@ -62,6 +72,9 @@ public final class ServerWakeGate {
      */
     public Single<Boolean> awaitReady() {
         return Single.defer(() -> {
+            if (elapsedMillis(lastReadyAtMillis.get()) < READY_WINDOW_MS) {
+                return Single.just(true);
+            }
             WakeCycle cycle = new WakeCycle(elapsedRealtimeMillis.getAsLong());
             return attempt(cycle, 0).doFinally(() -> leaveWakeState(cycle));
         });
@@ -80,6 +93,7 @@ public final class ServerWakeGate {
                 .onErrorReturn(ProbeResult::failed)
                 .flatMap(result -> {
                     if (result.ready) {
+                        lastReadyAtMillis.set(elapsedRealtimeMillis.getAsLong());
                         return Single.just(true);
                     }
                     if (!result.retryable) {

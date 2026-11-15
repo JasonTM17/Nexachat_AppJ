@@ -3,6 +3,7 @@ package com.nexachat.feature.inbox;
 import com.nexachat.res.ContrastUnitTest;
 import java.io.File;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.Before;
 import org.junit.Test;
@@ -13,6 +14,7 @@ import org.w3c.dom.NodeList;
 import javax.xml.parsers.DocumentBuilderFactory;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -105,6 +107,38 @@ public final class InboxThemeContrastTest {
         assertPair(dark, textName, "colorPrimaryContainer", 4.5);
         assertPair(light, textName, pressedFillName, 4.5);
         assertPair(dark, textName, pressedFillName, 4.5);
+    }
+
+    /**
+     * The pairs {@link InboxFilterChipColourRules#apply} paints at runtime must
+     * keep WCAG AA text contrast in both themes.
+     */
+    @Test
+    public void runtimeFilterChipTextPairsMeetContrast() throws Exception {
+        for (Map<String, String> colors :
+                List.of(loadThemeColors(false), loadThemeColors(true))) {
+            assertPair(colors, InboxFilterChipColourRules.CHECKED_ON_FILL,
+                    InboxFilterChipColourRules.CHECKED_FILL, 4.5);
+            assertPair(colors, InboxFilterChipColourRules.CHECKED_ON_FILL,
+                    InboxFilterChipColourRules.CHECKED_PRESSED_FILL, 4.5);
+            assertPair(colors, InboxFilterChipColourRules.IDLE_TEXT,
+                    InboxFilterChipColourRules.IDLE_FILL, 4.5);
+            assertPair(colors, InboxFilterChipColourRules.IDLE_TEXT,
+                    InboxFilterChipColourRules.IDLE_PRESSED_FILL, 4.5);
+            assertPair(colors, InboxFilterChipColourRules.DISABLED_ON,
+                    InboxFilterChipColourRules.DISABLED_FILL, 4.5);
+        }
+    }
+
+    /** The runtime checked fill must not collapse back to the legacy solid brand fill. */
+    @Test
+    public void runtimeCheckedFillNeverResolvesLegacyBrandFill() throws Exception {
+        for (Map<String, String> colors :
+                List.of(loadThemeColors(false), loadThemeColors(true))) {
+            assertNotEquals("checked chip fill must differ from legacy brand_fill",
+                    colors.get("brand_fill"),
+                    colors.get(InboxFilterChipColourRules.CHECKED_FILL));
+        }
     }
 
     private static Map<String, String> loadColors(File file) throws Exception {

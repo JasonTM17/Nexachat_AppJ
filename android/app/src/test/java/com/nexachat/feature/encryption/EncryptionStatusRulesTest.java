@@ -11,9 +11,10 @@ import org.junit.Test;
 public final class EncryptionStatusRulesTest {
 
     private static EncryptionViewModel.UiState state(
-            String errorCode, List<MemberDeviceDto> devices, String safetyCode) {
+            String errorCode, List<MemberDeviceDto> devices, String verificationCode) {
         return new EncryptionViewModel.UiState(
-                false, false, false, true, errorCode, devices, safetyCode);
+                false, true, false, true, errorCode, devices, verificationCode,
+                EncryptionViewModel.Trust.NOT_VERIFIED, false);
     }
 
     private static MemberDeviceDto device(String userId, String deviceId) {
