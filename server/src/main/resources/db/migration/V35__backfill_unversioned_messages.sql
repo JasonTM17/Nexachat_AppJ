@@ -7,7 +7,15 @@
 -- versioned revision already present in their conversation, ordered by
 -- (seq, id) to preserve the existing timeline. conversations.change_version
 -- is then raised to cover every message. Healthy databases are unaffected:
--- both UPDATEs are no-ops when no unversioned rows exist.
+-- with no unversioned rows the messages UPDATE matches nothing, and the
+-- conversations UPDATE only touches rows whose cursor needs a raise.
+--
+-- Known edge, kept deliberately: when a conversation's cursor is already
+-- ahead of every message revision (e.g. retention deleted the newest
+-- messages while unversioned rows remained), repaired rows receive revisions
+-- below that cursor. Clients already synced past it will not re-pull them
+-- until a resync — uniqueness and the cv <= cursor contract are still
+-- restored. Changing that would mean basing revisions on the cursor instead.
 
 -- Lock the affected conversation rows first. Writers allocate revisions via
 -- UPDATE conversations SET change_version = change_version + 1, which takes
@@ -46,4 +54,9 @@ SET change_version = GREATEST(c.change_version, COALESCE((
         SELECT MAX(m.change_version)
         FROM messages m
         WHERE m.conversation_id = c.id
-    ), 0));
+    ), 0))
+WHERE c.change_version < COALESCE((
+        SELECT MAX(m.change_version)
+        FROM messages m
+        WHERE m.conversation_id = c.id
+    ), 0);
