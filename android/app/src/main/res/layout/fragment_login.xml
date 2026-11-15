@@ -53,7 +53,7 @@
                     android:textFontWeight="700"
                     tools:targetApi="p" />
 
-                <LinearLayout
+                <com.google.android.material.button.MaterialButtonToggleGroup
                     android:id="@+id/authModeSwitch"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -62,7 +62,10 @@
                     android:gravity="center_vertical"
                     android:minHeight="48dp"
                     android:orientation="horizontal"
-                    android:padding="@dimen/space_xs">
+                    android:padding="@dimen/space_xs"
+                    app:checkedButton="@id/authModeLogin"
+                    app:selectionRequired="true"
+                    app:singleSelection="true">
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/authModeLogin"
@@ -72,7 +75,6 @@
                         android:gravity="center"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
-                        android:maxLines="2"
                         android:minHeight="@dimen/min_touch_target"
                         android:text="@string/action_sign_in"
                         android:textColor="@color/brand_on_fill"
@@ -87,13 +89,12 @@
                         android:gravity="center"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
-                        android:maxLines="2"
                         android:minHeight="@dimen/min_touch_target"
                         android:text="@string/action_create_account"
                         android:textColor="?attr/colorOnSurfaceVariant"
                         app:backgroundTint="@android:color/transparent"
                         app:cornerRadius="@dimen/corner_sm" />
-                </LinearLayout>
+                </com.google.android.material.button.MaterialButtonToggleGroup>
 
                 <include
                     android:id="@+id/googleEmailInUseError"
@@ -212,18 +213,6 @@
                     android:text="@string/action_sign_in"
                     android:textStyle="bold"
                     app:cornerRadius="@dimen/corner_md" />
-
-                <!-- Text link -->
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/secondaryAction"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_sm"
-                    android:minHeight="@dimen/min_touch_target"
-                    android:text="@string/action_create_account"
-                    android:textColor="?attr/colorPrimary"
-                    android:visibility="gone" />
             </LinearLayout>
         </LinearLayout>
     </ScrollView>

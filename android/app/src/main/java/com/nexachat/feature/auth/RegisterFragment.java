@@ -52,7 +52,6 @@ public final class RegisterFragment extends Fragment {
                     args,
                     AuthNav.authTabSwitchOptions());
         };
-        binding.secondaryAction.setOnClickListener(openLogin);
         binding.authModeLogin.setOnClickListener(openLogin);
         if (binding.loadingState.getContentDescription() == null) {
             binding.loadingState.setContentDescription(
@@ -137,7 +136,6 @@ public final class RegisterFragment extends Fragment {
         binding.confirmPasswordInput.setEnabled(notLoading);
         binding.registerButton.setEnabled(notLoading);
         binding.googleSignIn.setEnabled(notLoading);
-        binding.secondaryAction.setEnabled(notLoading);
         binding.authModeLogin.setEnabled(notLoading);
         binding.loadingState.setVisibility(s.getLoading() ? View.VISIBLE : View.GONE);
         rendering = false;
