@@ -188,6 +188,7 @@
     <string name="e2ee_verify_state_not_verified">Not verified</string>
     <string name="e2ee_verify_state_verified">Verified</string>
     <string name="e2ee_verify_state_changed">Changed — compare again</string>
+    <string name="e2ee_verify_state_unavailable">Can\'t read verification state</string>
     <string name="e2ee_action_mark_verified">Mark as verified</string>
     <string name="e2ee_verify_confirm_title">Mark keyset as verified?</string>
     <string name="e2ee_verify_confirm_body">Only verify after you compared the code with %1$s and both match.</string>

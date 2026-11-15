@@ -23,6 +23,8 @@ import com.nexachat.R;
  *   <li>{@code encryption_verify} — fragment_encryption with the NC1
  *       verification card in the not-yet-verified state.</li>
  *   <li>{@code encryption_verified} — same card after confirmation.</li>
+ *   <li>{@code encryption_unavailable} — same card with an unreadable trust
+ *       state and the verify action disabled.</li>
  * </ul>
  * Views are inflated standalone; no ViewModel, session or network is touched.
  */
@@ -52,8 +54,9 @@ public final class LayoutPreviewActivity extends Activity {
             scenario = "chat_keyset_changed";
         }
         View root = switch (scenario) {
-            case "encryption_verify" -> renderEncryption(false);
-            case "encryption_verified" -> renderEncryption(true);
+            case "encryption_verify" -> renderEncryption(TrustPreview.NOT_VERIFIED);
+            case "encryption_verified" -> renderEncryption(TrustPreview.VERIFIED);
+            case "encryption_unavailable" -> renderEncryption(TrustPreview.UNAVAILABLE);
             case "chat_downgrade" -> renderChat(false);
             default -> renderChat(true);
         };
@@ -78,7 +81,10 @@ public final class LayoutPreviewActivity extends Activity {
         return root;
     }
 
-    private View renderEncryption(boolean verified) {
+    /** The trust-row states the fragment can render on the verification card. */
+    private enum TrustPreview { NOT_VERIFIED, VERIFIED, UNAVAILABLE }
+
+    private View renderEncryption(TrustPreview trust) {
         View root = LayoutInflater.from(this)
                 .inflate(R.layout.fragment_encryption, new FrameLayout(this), false);
         View card = root.findViewById(R.id.verificationCard);
@@ -91,22 +97,33 @@ public final class LayoutPreviewActivity extends Activity {
             }
             ImageView icon = card.findViewById(R.id.trustIcon);
             TextView state = card.findViewById(R.id.trustStateText);
-            int label = verified
-                    ? R.string.e2ee_verify_state_verified
-                    : R.string.e2ee_verify_state_not_verified;
-            int iconRes = verified
-                    ? R.drawable.ic_check_circle
-                    : R.drawable.ic_help_outline;
+            int label = switch (trust) {
+                case VERIFIED -> R.string.e2ee_verify_state_verified;
+                case UNAVAILABLE -> R.string.e2ee_verify_state_unavailable;
+                default -> R.string.e2ee_verify_state_not_verified;
+            };
+            int iconRes = switch (trust) {
+                case VERIFIED -> R.drawable.ic_check_circle;
+                case UNAVAILABLE -> R.drawable.ic_error_outline;
+                default -> R.drawable.ic_help_outline;
+            };
+            int colorAttr = trust == TrustPreview.VERIFIED
+                    ? com.google.android.material.R.attr.colorPrimary
+                    : com.google.android.material.R.attr.colorOnSurfaceVariant;
             if (icon != null) {
                 icon.setImageResource(iconRes);
-                icon.setContentDescription(getString(label));
+                icon.setImageTintList(android.content.res.ColorStateList.valueOf(
+                        com.google.android.material.color.MaterialColors.getColor(
+                                icon, colorAttr)));
             }
             if (state != null) {
                 state.setText(label);
             }
             View verifyButton = card.findViewById(R.id.verifyButton);
             if (verifyButton != null) {
-                verifyButton.setVisibility(verified ? View.GONE : View.VISIBLE);
+                verifyButton.setVisibility(
+                        trust == TrustPreview.VERIFIED ? View.GONE : View.VISIBLE);
+                verifyButton.setEnabled(trust != TrustPreview.UNAVAILABLE);
             }
             card.setVisibility(View.VISIBLE);
         }

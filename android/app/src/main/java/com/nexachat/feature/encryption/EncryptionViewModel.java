@@ -43,8 +43,12 @@ public final class EncryptionViewModel extends ViewModel {
     /** Surfaced when the roster moved between display and confirm. */
     static final String KEYSET_RACE = "E2EE_KEYSET_CHANGED";
 
-    /** The durable verification verdict shown by the state row. */
-    public enum Trust { NOT_VERIFIED, VERIFIED, CHANGED }
+    /**
+     * The durable verification verdict shown by the state row. UNAVAILABLE is
+     * not a verdict: the trust store could not be read, so no claim either way
+     * is rendered.
+     */
+    public enum Trust { NOT_VERIFIED, VERIFIED, CHANGED, UNAVAILABLE }
 
     public static final class UiState {
         public final boolean loading;
@@ -201,16 +205,21 @@ public final class EncryptionViewModel extends ViewModel {
      * Loads the canonical transcript for the NC1 code together with the
      * durable trust record. Any roster that cannot produce a direct
      * transcript — groups, malformed rows, an off flag — is "nothing to
-     * verify" and simply hides the card rather than failing the screen.
+     * verify" and simply hides the card rather than failing the screen. A
+     * trust-store read failure is not an empty record: the card keeps its
+     * code but reports the unreadable state, and verification stays disabled
+     * rather than letting a missing read stand in for a real verdict.
      */
     private void loadVerification(@NonNull String conv, long gen) {
         String owner = session.currentUserId();
         Single<Optional<KeysetTrustStore.Record>> trust = owner == null
                 ? Single.just(Optional.empty())
-                : trustStore.state(owner, conv).onErrorReturnItem(Optional.empty());
+                : trustStore.state(owner, conv);
         disposables.add(session.currentTranscript(conv)
-                .flatMap(transcript -> trust.map(record ->
-                        new VerificationSnapshot(transcript, record)))
+                .flatMap(transcript -> trust
+                        .map(record -> new VerificationSnapshot(transcript, record, false))
+                        .onErrorReturn(readError -> new VerificationSnapshot(
+                                transcript, Optional.empty(), true)))
                 .observeOn(uiScheduler)
                 .subscribe(
                         snapshot -> {
@@ -221,7 +230,9 @@ public final class EncryptionViewModel extends ViewModel {
                             uiState.setValue(current().withVerification(
                                     KeysetCheck.displayCode(
                                             KeysetCheck.digest(snapshot.transcript)),
-                                    trustOf(snapshot.record)));
+                                    snapshot.trustUnreadable
+                                            ? Trust.UNAVAILABLE
+                                            : trustOf(snapshot.record)));
                         },
                         e -> {
                             if (!conv.equals(this.conversationId) || gen != policyGeneration) {
@@ -241,7 +252,10 @@ public final class EncryptionViewModel extends ViewModel {
      */
     public void confirmVerified() {
         byte[] displayed = displayedTranscript;
-        if (displayed == null || current().verifyBusy) {
+        if (displayed == null || current().verifyBusy
+                || current().trust == Trust.UNAVAILABLE) {
+            // An unreadable trust store cannot reflect a verdict, so it
+            // must not accept one either.
             return;
         }
         uiState.setValue(current().withVerifyBusy(true));
@@ -392,9 +406,14 @@ public final class EncryptionViewModel extends ViewModel {
         return valid;
     }
 
-    /** The transcript shown on screen plus the verdict read alongside it. */
+    /**
+     * The transcript shown on screen plus the verdict read alongside it;
+     * {@code trustUnreadable} marks a trust-store read failure, which is
+     * never folded into an empty record.
+     */
     private record VerificationSnapshot(@NonNull byte[] transcript,
-            @NonNull Optional<KeysetTrustStore.Record> record) { }
+            @NonNull Optional<KeysetTrustStore.Record> record,
+            boolean trustUnreadable) { }
 
     @Override
     protected void onCleared() {

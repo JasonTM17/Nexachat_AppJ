@@ -535,4 +535,42 @@ public final class EncryptionViewModelTest {
 
         verify(session, never()).markVerified(anyString(), any(byte[].class));
     }
+
+    @Test
+    public void unreadableTrustStoreRendersUnavailableNotAVerdict() {
+        // A DAO failure is not an empty record: the code still renders but the
+        // state row reports the unreadable state rather than "not verified".
+        when(session.currentTranscript("c1")).thenReturn(Single.just(TRANSCRIPT_A));
+        when(trustStore.state("me-1", "c1"))
+                .thenReturn(Single.error(new RuntimeException("dao down")));
+        EncryptionViewModel vm = viewModel(true);
+        stubLoad(state(true, true, List.of(device("u1", "dev-a"), device("u2", "dev-b"))));
+        vm.load("c1");
+
+        EncryptionViewModel.UiState ui = vm.getUiState().getValue();
+        assertNotNull(ui);
+        assertEquals(EncryptionViewModel.Trust.UNAVAILABLE, ui.trust);
+        assertEquals(KeysetCheck.displayCode(KeysetCheck.digest(TRANSCRIPT_A)),
+                ui.verificationCode);
+    }
+
+    @Test
+    public void confirmVerifiedIsRefusedWhileTrustStateUnreadable() {
+        // A DAO failure must not become "not verified" and accept a verdict.
+        when(session.currentTranscript("c1")).thenReturn(Single.just(TRANSCRIPT_A));
+        when(trustStore.state("me-1", "c1"))
+                .thenReturn(Single.error(new RuntimeException("dao down")));
+        EncryptionViewModel vm = viewModel(true);
+        stubLoad(state(true, true, List.of(device("u1", "dev-a"), device("u2", "dev-b"))));
+        vm.load("c1");
+        assertEquals(EncryptionViewModel.Trust.UNAVAILABLE,
+                vm.getUiState().getValue().trust);
+
+        vm.confirmVerified();
+
+        verify(session, never()).markVerified(anyString(), any(byte[].class));
+        EncryptionViewModel.UiState ui = vm.getUiState().getValue();
+        assertNotNull(ui);
+        assertFalse(ui.verifyBusy);
+    }
 }

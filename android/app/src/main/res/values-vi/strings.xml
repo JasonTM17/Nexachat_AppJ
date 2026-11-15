@@ -186,6 +186,7 @@
     <string name="e2ee_verify_state_not_verified">Chưa xác minh</string>
     <string name="e2ee_verify_state_verified">Đã xác minh</string>
     <string name="e2ee_verify_state_changed">Đã thay đổi — hãy đối chiếu lại</string>
+    <string name="e2ee_verify_state_unavailable">Không đọc được trạng thái xác minh</string>
     <string name="e2ee_action_mark_verified">Đánh dấu đã xác minh</string>
     <string name="e2ee_verify_confirm_title">Đánh dấu đã xác minh?</string>
     <string name="e2ee_verify_confirm_body">Chỉ xác minh sau khi bạn đã đối chiếu mã với %1$s và hai mã trùng nhau.</string>

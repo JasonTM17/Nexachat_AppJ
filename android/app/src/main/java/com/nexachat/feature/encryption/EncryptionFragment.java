@@ -182,7 +182,8 @@ public final class EncryptionFragment extends Fragment {
             renderTrustRow(state.trust);
             verifyButton.setVisibility(state.trust == EncryptionViewModel.Trust.VERIFIED
                     ? View.GONE : View.VISIBLE);
-            verifyButton.setEnabled(!state.verifyBusy && !state.busy && !state.loading);
+            verifyButton.setEnabled(!state.verifyBusy && !state.busy && !state.loading
+                    && state.trust != EncryptionViewModel.Trust.UNAVAILABLE);
         }
 
         devicesList.removeAllViews();
@@ -223,9 +224,9 @@ public final class EncryptionFragment extends Fragment {
     }
 
     /**
-     * The state row reports exactly one verdict — not verified, verified, or
-     * changed — pairing the label with an icon that carries the same content
-     * description so TalkBack announces the state once.
+     * The state row reports exactly one status — not verified, verified,
+     * changed, or unreadable — announced once by the text; the tinted icon is
+     * decorative and marked not important for accessibility.
      */
     private void renderTrustRow(@NonNull EncryptionViewModel.Trust trust) {
         int textRes;
@@ -242,6 +243,11 @@ public final class EncryptionFragment extends Fragment {
                 iconRes = R.drawable.ic_error_outline;
                 colorAttr = com.google.android.material.R.attr.colorError;
                 break;
+            case UNAVAILABLE:
+                textRes = R.string.e2ee_verify_state_unavailable;
+                iconRes = R.drawable.ic_error_outline;
+                colorAttr = com.google.android.material.R.attr.colorOnSurfaceVariant;
+                break;
             case NOT_VERIFIED:
             default:
                 textRes = R.string.e2ee_verify_state_not_verified;
@@ -249,13 +255,11 @@ public final class EncryptionFragment extends Fragment {
                 colorAttr = com.google.android.material.R.attr.colorOnSurfaceVariant;
                 break;
         }
-        String label = getString(textRes);
-        trustStateText.setText(label);
+        trustStateText.setText(textRes);
         trustStateText.setTextColor(MaterialColors.getColor(trustStateText, colorAttr));
         trustIcon.setImageResource(iconRes);
         trustIcon.setImageTintList(android.content.res.ColorStateList.valueOf(
                 MaterialColors.getColor(trustIcon, colorAttr)));
-        trustIcon.setContentDescription(label);
     }
 
     @NonNull

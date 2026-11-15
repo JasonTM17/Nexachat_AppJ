@@ -152,7 +152,7 @@
                         android:id="@+id/trustIcon"
                         android:layout_width="24dp"
                         android:layout_height="24dp"
-                        android:contentDescription="@string/e2ee_verify_state_not_verified"
+                        android:importantForAccessibility="no"
                         android:src="@drawable/ic_help_outline"
                         app:tint="?attr/colorOnSurfaceVariant" />
 
