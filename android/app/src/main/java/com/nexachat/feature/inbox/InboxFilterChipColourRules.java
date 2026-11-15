@@ -7,13 +7,14 @@ import androidx.core.content.ContextCompat;
 import com.google.android.material.chip.Chip;
 import com.nexachat.R;
 
-/** Colour roles for inbox filter chips (checked fill trio and idle surface outline). */
+/** Colour roles for inbox filter chips (checked tonal container and idle surface outline). */
 public final class InboxFilterChipColourRules {
 
-    public static final String CHECKED_FILL = "brand_fill";
-    public static final String CHECKED_ON_FILL = "brand_on_fill";
-    public static final String CHECKED_PRESSED_FILL = "brand_pressed";
-    public static final String IDLE_FILL = "colorSurface";
+    public static final String CHECKED_CONTAINER = "colorPrimaryContainer";
+    public static final String CHECKED_ON_CONTAINER = "colorOnPrimaryContainer";
+    public static final String CHECKED_PRESSED_CONTAINER = "nexa_pressed_container";
+    public static final String CHECKED_STROKE = "colorPrimary";
+    public static final String IDLE_CONTAINER = "colorSurfaceContainer";
     public static final String IDLE_STROKE = "colorOutlineVariant";
     public static final String IDLE_TEXT = "colorOnSurfaceVariant";
     public static final float IDLE_STROKE_DP = 1f;
@@ -30,15 +31,15 @@ public final class InboxFilterChipColourRules {
             {}
         };
         int[] fills = {
-            color(context, R.color.brand_pressed),
-            color(context, R.color.brand_fill),
+            color(context, R.color.nexa_pressed_container),
+            color(context, R.color.colorPrimaryContainer),
             color(context, R.color.nexa_pressed_surface),
-            color(context, R.color.colorSurface)
+            color(context, R.color.colorSurfaceContainer)
         };
         chip.setChipBackgroundColor(new ColorStateList(states, fills));
         int[] labelColors = {
-            color(context, R.color.brand_on_fill),
-            color(context, R.color.brand_on_fill),
+            color(context, R.color.colorOnPrimaryContainer),
+            color(context, R.color.colorOnPrimaryContainer),
             color(context, R.color.colorOnSurfaceVariant),
             color(context, R.color.colorOnSurfaceVariant)
         };
@@ -46,8 +47,8 @@ public final class InboxFilterChipColourRules {
         chip.setTextColor(label);
         chip.setCheckedIconTint(label);
         int[] strokeColors = {
-            color(context, R.color.brand_fill),
-            color(context, R.color.brand_fill),
+            color(context, R.color.colorPrimary),
+            color(context, R.color.colorPrimary),
             color(context, R.color.colorOutlineVariant),
             color(context, R.color.colorOutlineVariant)
         };
