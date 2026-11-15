@@ -703,7 +703,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         if (cancel) {
             voiceRecorder.cancel();
         } else if (VoiceTapFeedbackRules.finishWithoutRecordingIsQuiet(
-                cancel, voiceRecorder.isRecording())) {
+                voiceRecorder.isRecording())) {
             resetAccessibleVoiceRecordingUi();
             return;
         } else {

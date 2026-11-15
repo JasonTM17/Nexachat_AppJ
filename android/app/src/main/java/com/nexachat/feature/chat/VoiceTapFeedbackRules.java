@@ -20,7 +20,7 @@ final class VoiceTapFeedbackRules {
      * A consumed press that never started a recording finishes quietly; the hint
      * already surfaced when the press began, so no second message is needed.
      */
-    static boolean finishWithoutRecordingIsQuiet(boolean cancel, boolean recording) {
-        return !cancel && !recording;
+    static boolean finishWithoutRecordingIsQuiet(boolean recording) {
+        return !recording;
     }
 }

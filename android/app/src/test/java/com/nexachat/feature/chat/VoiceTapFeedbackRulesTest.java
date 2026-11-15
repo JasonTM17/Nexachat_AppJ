@@ -16,13 +16,11 @@ public final class VoiceTapFeedbackRulesTest {
 
     @Test
     public void finishWithoutAnActiveRecordingStaysQuiet() {
-        assertTrue(VoiceTapFeedbackRules.finishWithoutRecordingIsQuiet(false, false));
+        assertTrue(VoiceTapFeedbackRules.finishWithoutRecordingIsQuiet(false));
     }
 
     @Test
-    public void activeRecordingAndCancelsStillFinish() {
-        assertFalse(VoiceTapFeedbackRules.finishWithoutRecordingIsQuiet(false, true));
-        assertFalse(VoiceTapFeedbackRules.finishWithoutRecordingIsQuiet(true, false));
-        assertFalse(VoiceTapFeedbackRules.finishWithoutRecordingIsQuiet(true, true));
+    public void activeRecordingStillFinishes() {
+        assertFalse(VoiceTapFeedbackRules.finishWithoutRecordingIsQuiet(true));
     }
 }
