@@ -7,9 +7,11 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.os.Bundle;
+import android.text.Layout;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -122,6 +124,7 @@ public final class InboxFragment extends Fragment {
 
         binding.activeNowViewAll.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.contactsFragment));
+        updateActiveNowHeaderLayout();
         activeNowStripBinder = new ActiveNowStripBinder(
                 binding.activeNowStrip,
                 LayoutInflater.from(requireContext()),
@@ -629,6 +632,75 @@ public final class InboxFragment extends Fragment {
         ViewGroup.LayoutParams params = group.getLayoutParams();
         params.width = ViewGroup.LayoutParams.MATCH_PARENT;
         group.setLayoutParams(params);
+    }
+
+    /**
+     * "View all" sits beside the title only while both fit with a clear gap;
+     * crowded rows (Vietnamese at 2x text) stack the action under the title.
+     */
+    private void updateActiveNowHeaderLayout() {
+        LinearLayout row = binding.activeNowHeaderRow;
+        row.post(() -> {
+            if (binding == null || row.getWidth() == 0) {
+                return;
+            }
+            TextView title = binding.activeNowTitle;
+            TextView action = binding.activeNowViewAll;
+            float titleWidth = measuredTextWidth(title);
+            float actionWidth = Math.max(
+                    Layout.getDesiredWidth(action.getText(), action.getPaint()),
+                    action.getMinWidth());
+            ViewGroup.MarginLayoutParams actionParams =
+                    (ViewGroup.MarginLayoutParams) action.getLayoutParams();
+            float separation = actionParams.getMarginStart()
+                    + getResources().getDimension(R.dimen.space_md);
+            float available = row.getWidth() - row.getPaddingLeft() - row.getPaddingRight();
+            boolean wrapped = title.getLayout() != null && title.getLineCount() > 1;
+            applyActiveNowHeaderOrientation(
+                    wrapped || ActiveNowHeaderRules.actionStacksBelowTitle(
+                            titleWidth, actionWidth, separation, available));
+        });
+    }
+
+    private void applyActiveNowHeaderOrientation(boolean stack) {
+        LinearLayout row = binding.activeNowHeaderRow;
+        int target = stack ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL;
+        if (row.getOrientation() == target) {
+            return;
+        }
+        row.setOrientation(target);
+        LinearLayout.LayoutParams titleParams =
+                (LinearLayout.LayoutParams) binding.activeNowTitle.getLayoutParams();
+        LinearLayout.LayoutParams actionParams =
+                (LinearLayout.LayoutParams) binding.activeNowViewAll.getLayoutParams();
+        int gap = getResources().getDimensionPixelSize(R.dimen.space_sm);
+        if (stack) {
+            titleParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
+            titleParams.weight = 0;
+            actionParams.gravity = Gravity.END;
+            actionParams.setMarginStart(0);
+            actionParams.topMargin = gap;
+        } else {
+            titleParams.width = 0;
+            titleParams.weight = 1;
+            actionParams.gravity = Gravity.NO_GRAVITY;
+            actionParams.setMarginStart(gap);
+            actionParams.topMargin = 0;
+        }
+        row.requestLayout();
+    }
+
+    /** Widest laid-out line; falls back to the one-line desired width pre-layout. */
+    private static float measuredTextWidth(@NonNull TextView view) {
+        Layout layout = view.getLayout();
+        if (layout == null || layout.getLineCount() == 0) {
+            return Layout.getDesiredWidth(view.getText(), view.getPaint());
+        }
+        float width = 0;
+        for (int line = 0; line < layout.getLineCount(); line++) {
+            width = Math.max(width, layout.getLineWidth(line));
+        }
+        return width;
     }
 
     private void renderActiveNowStrip(@NonNull List<ConversationSummary> rows) {

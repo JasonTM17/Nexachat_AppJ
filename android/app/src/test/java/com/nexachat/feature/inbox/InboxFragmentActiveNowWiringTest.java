@@ -22,6 +22,18 @@ public final class InboxFragmentActiveNowWiringTest {
                 source.contains("activeNowStrip.removeAllViews()"));
     }
 
+    @Test
+    public void inboxFragment_stacksViewAllWhenTheHeaderRowOverflows() throws Exception {
+        String source = readUtf8(locateJavaFile(
+                "com/nexachat/feature/inbox/InboxFragment.java"));
+        assertTrue("header row must be addressed through view binding",
+                source.contains("binding.activeNowHeaderRow"));
+        assertTrue("overflow must consult ActiveNowHeaderRules",
+                source.contains("ActiveNowHeaderRules.actionStacksBelowTitle"));
+        assertTrue("stacked header must go vertical",
+                source.contains("LinearLayout.VERTICAL"));
+    }
+
     private static File locateJavaFile(String relativePath) {
         File[] candidates = {
                 new File("src/main/java/" + relativePath),
