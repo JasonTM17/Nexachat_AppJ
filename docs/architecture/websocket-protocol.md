@@ -155,6 +155,11 @@ uses a separate `CallEvent` payload on `/user/queue/calls`; see
 | `USER_ONLINE` | `{userId, online:true, lastSeenAt:null}`; `conversationId` is null |
 | `USER_OFFLINE` | `{userId, online:false, lastSeenAt}`; `conversationId` is null |
 
+Group polls emit no frame — the frozen vocabulary has no poll event. Clients
+track them through `GET /polls/changes`, which applies the member-admission
+scope of the poll REST surface, so a member admitted after a poll was
+created can never observe it.
+
 Presence is counted per authenticated STOMP session in memory. Only a user's
 DIRECT-conversation peers receive that user's state, and only while the subject
 has `show_presence=true`; group members do not receive presence. If an online
