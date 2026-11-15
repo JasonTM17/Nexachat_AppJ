@@ -7,14 +7,17 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.os.Bundle;
+import android.text.Layout;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.LinearLayout;
 import android.widget.PopupMenu;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
@@ -121,11 +124,13 @@ public final class InboxFragment extends Fragment {
 
         binding.activeNowViewAll.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.contactsFragment));
+        updateActiveNowHeaderLayout();
         activeNowStripBinder = new ActiveNowStripBinder(
                 binding.activeNowStrip,
                 LayoutInflater.from(requireContext()),
                 requireContext());
 
+        applyFilterChipRowLayout();
         binding.inboxFilterChips.check(R.id.filterAllChip);
         updateFilterChipsUi(0);
         binding.inboxFilterChips.setOnCheckedStateChangeListener(
@@ -597,6 +602,145 @@ public final class InboxFragment extends Fragment {
                 InboxFilterChipColourRules.apply(chip, requireContext());
             }
         }
+    }
+
+    /**
+     * Large text makes the horizontal carousel unreliable, so the filter and label
+     * chip groups wrap onto stacked rows that fill the screen width instead. Inside
+     * a HorizontalScrollView children measure with unbounded width, so each group
+     * gets the viewport's inner width explicitly before it can wrap. The rule is
+     * re-run on every width change because the first runnable can beat the first
+     * layout pass and measure a zero viewport.
+     */
+    private void applyFilterChipRowLayout() {
+        if (binding == null || !InboxFilterChipLayoutRules.chipsWrapOntoMultipleRows(
+                getResources().getConfiguration().fontScale)) {
+            return;
+        }
+        WidthDrivenLayoutAction action = new WidthDrivenLayoutAction(
+                () -> binding == null ? 0 : binding.inboxFilterScroll.getWidth(),
+                this::wrapFilterChipRows);
+        binding.inboxFilterScroll.post(action::run);
+        binding.inboxFilterScroll.addOnLayoutChangeListener(
+                (v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+                    if (right - left != oldRight - oldLeft) {
+                        action.run();
+                    }
+                });
+    }
+
+    private void wrapFilterChipRows(int scrollWidth) {
+        if (binding == null) {
+            return;
+        }
+        int width = scrollWidth
+                - binding.inboxFilterScroll.getPaddingLeft()
+                - binding.inboxFilterScroll.getPaddingRight();
+        binding.inboxFilterRow.setOrientation(LinearLayout.VERTICAL);
+        wrapChipGroup(binding.inboxFilterChips, width);
+        wrapChipGroup(binding.labelFilterChips, width);
+        ViewGroup.MarginLayoutParams labelParams =
+                (ViewGroup.MarginLayoutParams) binding.labelFilterChips.getLayoutParams();
+        if (labelParams.getMarginStart() != 0) {
+            labelParams.topMargin = labelParams.getMarginStart();
+            labelParams.setMarginStart(0);
+            binding.labelFilterChips.setLayoutParams(labelParams);
+        }
+    }
+
+    private static void wrapChipGroup(@NonNull ChipGroup group, int widthPx) {
+        if (group.isSingleLine()) {
+            group.setSingleLine(false);
+        }
+        ViewGroup.LayoutParams params = group.getLayoutParams();
+        if (params.width != widthPx) {
+            params.width = widthPx;
+            group.setLayoutParams(params);
+        }
+    }
+
+    /**
+     * "View all" sits beside the title only while both fit with a clear gap;
+     * crowded rows (Vietnamese at 2x text) stack the action under the title.
+     * The decision is re-run on every width change because the first runnable
+     * can beat the first layout pass and measure a zero-width row.
+     */
+    private void updateActiveNowHeaderLayout() {
+        final LinearLayout row = binding.activeNowHeaderRow;
+        WidthDrivenLayoutAction action = new WidthDrivenLayoutAction(
+                () -> binding == null ? 0 : row.getWidth(),
+                this::stackActiveNowHeaderIfNeeded);
+        row.post(action::run);
+        row.addOnLayoutChangeListener(
+                (v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+                    if (right - left != oldRight - oldLeft) {
+                        action.run();
+                    }
+                });
+    }
+
+    private void stackActiveNowHeaderIfNeeded(int rowWidth) {
+        if (binding == null) {
+            return;
+        }
+        LinearLayout row = binding.activeNowHeaderRow;
+        TextView title = binding.activeNowTitle;
+        TextView action = binding.activeNowViewAll;
+        float titleWidth = measuredTextWidth(title);
+        float actionWidth = Math.max(
+                Layout.getDesiredWidth(action.getText(), action.getPaint()),
+                action.getMinWidth());
+        // The whole horizontal gap between title and action is the action's
+        // margin; while stacked that margin reads zero, so the gap the row
+        // would restore is what the rule measures against.
+        float separation = getResources().getDimension(R.dimen.space_sm);
+        float available = rowWidth - row.getPaddingLeft() - row.getPaddingRight();
+        boolean wrapped = title.getLayout() != null && title.getLineCount() > 1;
+        applyActiveNowHeaderOrientation(
+                wrapped || ActiveNowHeaderRules.actionStacksBelowTitle(
+                        titleWidth, actionWidth, separation, available));
+    }
+
+    private void applyActiveNowHeaderOrientation(boolean stack) {
+        LinearLayout row = binding.activeNowHeaderRow;
+        int target = stack ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL;
+        if (row.getOrientation() == target) {
+            return;
+        }
+        row.setOrientation(target);
+        LinearLayout.LayoutParams titleParams =
+                (LinearLayout.LayoutParams) binding.activeNowTitle.getLayoutParams();
+        LinearLayout.LayoutParams actionParams =
+                (LinearLayout.LayoutParams) binding.activeNowViewAll.getLayoutParams();
+        int gap = getResources().getDimensionPixelSize(R.dimen.space_sm);
+        if (stack) {
+            titleParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
+            titleParams.weight = 0;
+            actionParams.gravity = Gravity.END;
+            actionParams.setMarginStart(0);
+            actionParams.topMargin = gap;
+        } else {
+            titleParams.width = 0;
+            titleParams.weight = 1;
+            actionParams.gravity = Gravity.NO_GRAVITY;
+            actionParams.setMarginStart(gap);
+            actionParams.topMargin = 0;
+        }
+        binding.activeNowTitle.setLayoutParams(titleParams);
+        binding.activeNowViewAll.setLayoutParams(actionParams);
+    }
+
+    /** Widest laid-out line; falls back to the one-line desired width pre-layout. */
+    private static float measuredTextWidth(@NonNull TextView view) {
+        Layout layout = view.getLayout();
+        if (layout == null || layout.getLineCount() == 0) {
+            return Layout.getDesiredWidth(view.getText(), view.getPaint());
+        }
+        float width = 0;
+        for (int line = 0; line < layout.getLineCount(); line++) {
+            width = Math.max(width, layout.getLineWidth(line));
+        }
+        return width;
     }
 
     private void renderActiveNowStrip(@NonNull List<ConversationSummary> rows) {
