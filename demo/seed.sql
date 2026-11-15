@@ -52,16 +52,20 @@ INSERT INTO contacts (owner_id, contact_user_id) VALUES
 ON CONFLICT DO NOTHING;
 
 -- 3) Conversations -----------------------------------------------------------
+-- change_version must cover every seeded message's per-conversation revision
+-- (sync-v2: clients ignore messages whose change_version exceeds the
+-- conversation revision, and drop messages with change_version <= 0).
 INSERT INTO conversations
-  (id, type, direct_key, title, created_by, last_message_id, last_message_seq, created_at)
+  (id, type, direct_key, title, created_by, last_message_id, last_message_seq,
+   change_version, sync_generation, created_at)
 VALUES
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'DIRECT',
    '11111111-1111-4111-8111-111111111111:22222222-2222-4222-8222-222222222222',
    NULL, '11111111-1111-4111-8111-111111111111',
-   '00000000-0000-4000-8000-000000000006', 6, now() - interval '1 hour'),
+   '00000000-0000-4000-8000-000000000006', 6, 6, 1, now() - interval '1 hour'),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'GROUP',
    NULL, 'NexaChat Team', '11111111-1111-4111-8111-111111111111',
-   '00000000-0000-4000-8000-000000000010', 10, now() - interval '40 minutes')
+   '00000000-0000-4000-8000-000000000010', 10, 4, 1, now() - interval '40 minutes')
 ON CONFLICT DO NOTHING;
 
 -- 4) Conversation members ----------------------------------------------------
@@ -80,41 +84,44 @@ ON CONFLICT DO NOTHING;
 
 -- 5) Messages ----------------------------------------------------------------
 -- Explicit seq values keep the demo reproducible: direct 1..6, group 7..10.
+-- change_version is a per-conversation revision (V32__message_change_cursors);
+-- every seeded message needs a positive one or sync-v2 clients drop it.
 INSERT INTO messages
-  (id, seq, conversation_id, sender_id, client_message_id, type, content, reply_to_id, created_at)
+  (id, seq, conversation_id, sender_id, client_message_id, type, content, reply_to_id,
+   change_version, created_at)
 VALUES
   -- DIRECT: An <-> Binh, alternating senders
   ('00000000-0000-4000-8000-000000000001', 1, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
    '11111111-1111-4111-8111-111111111111', 'f0000000-0000-4000-8000-000000000001',
-   'TEXT', 'Bình ơi, họp lúc 3 giờ chiều đúng không?', NULL, now() - interval '55 minutes'),
+   'TEXT', 'Bình ơi, họp lúc 3 giờ chiều đúng không?', NULL, 1, now() - interval '55 minutes'),
   ('00000000-0000-4000-8000-000000000002', 2, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
    '22222222-2222-4222-8222-222222222222', 'f0000000-0000-4000-8000-000000000002',
-   'TEXT', 'Đúng rồi, phòng 2A nhé.', NULL, now() - interval '45 minutes'),
+   'TEXT', 'Đúng rồi, phòng 2A nhé.', NULL, 2, now() - interval '45 minutes'),
   ('00000000-0000-4000-8000-000000000003', 3, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
    '11111111-1111-4111-8111-111111111111', 'f0000000-0000-4000-8000-000000000003',
-   'TEXT', 'Ok em. À Công ty vừa gửi lại spec mới, em forward sang đây.', NULL, now() - interval '35 minutes'),
+   'TEXT', 'Ok em. À Công ty vừa gửi lại spec mới, em forward sang đây.', NULL, 3, now() - interval '35 minutes'),
   ('00000000-0000-4000-8000-000000000004', 4, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
    '22222222-2222-4222-8222-222222222222', 'f0000000-0000-4000-8000-000000000004',
-   'TEXT', 'Nhận rồi, cảm ơn bạn.', NULL, now() - interval '25 minutes'),
+   'TEXT', 'Nhận rồi, cảm ơn bạn.', NULL, 4, now() - interval '25 minutes'),
   ('00000000-0000-4000-8000-000000000005', 5, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
    '11111111-1111-4111-8111-111111111111', 'f0000000-0000-4000-8000-000000000005',
-   'TEXT', 'Không có gì. Cuối tuần này đi cà phê không?', NULL, now() - interval '15 minutes'),
+   'TEXT', 'Không có gì. Cuối tuần này đi cà phê không?', NULL, 5, now() - interval '15 minutes'),
   ('00000000-0000-4000-8000-000000000006', 6, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
    '22222222-2222-4222-8222-222222222222', 'f0000000-0000-4000-8000-000000000006',
-   'TEXT', 'Được, bao mình.', NULL, now() - interval '5 minutes'),
+   'TEXT', 'Được, bao mình.', NULL, 6, now() - interval '5 minutes'),
   -- GROUP 'NexaChat Team': An -> Chi -> Dung -> Binh
   ('00000000-0000-4000-8000-000000000007', 7, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
    '11111111-1111-4111-8111-111111111111', 'f0000000-0000-4000-8000-000000000007',
-   'TEXT', 'Chào mọi người, bản phát hành cuối tuần này đã sẵn sàng nhé.', NULL, now() - interval '38 minutes'),
+   'TEXT', 'Chào mọi người, bản phát hành cuối tuần này đã sẵn sàng nhé.', NULL, 1, now() - interval '38 minutes'),
   ('00000000-0000-4000-8000-000000000008', 8, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
    '33333333-3333-4333-8333-333333333333', 'f0000000-0000-4000-8000-000000000008',
-   'TEXT', 'Em làm xong phần API rồi, đang viết slide.', NULL, now() - interval '30 minutes'),
+   'TEXT', 'Em làm xong phần API rồi, đang viết slide.', NULL, 2, now() - interval '30 minutes'),
   ('00000000-0000-4000-8000-000000000009', 9, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
    '44444444-4444-4444-8444-444444444444', 'f0000000-0000-4000-8000-000000000009',
-   'TEXT', 'Tui làm xong UI, còn 2 case test nữa.', NULL, now() - interval '20 minutes'),
+   'TEXT', 'Tui làm xong UI, còn 2 case test nữa.', NULL, 3, now() - interval '20 minutes'),
   ('00000000-0000-4000-8000-000000000010', 10, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
    '22222222-2222-4222-8222-222222222222', 'f0000000-0000-4000-8000-000000000010',
-   'TEXT', 'Ok, tối nay 8 giờ mình tổng hợp lại nhé.', NULL, now() - interval '8 minutes')
+   'TEXT', 'Ok, tối nay 8 giờ mình tổng hợp lại nhé.', NULL, 4, now() - interval '8 minutes')
 ON CONFLICT DO NOTHING;
 
 -- Keep the BIGSERIAL sequence ahead of the explicit seq values so later
