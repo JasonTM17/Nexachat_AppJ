@@ -45,27 +45,36 @@
             android:clipToPadding="false"
             android:paddingBottom="@dimen/space_sm" />
 
-        <TextView
-            android:id="@+id/addMemberEmpty"
+        <LinearLayout
+            android:id="@+id/addMemberEmptyState"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:accessibilityLiveRegion="polite"
+            android:layout_height="0dp"
+            android:layout_weight="1"
             android:gravity="center"
-            android:paddingHorizontal="@dimen/space_md"
-            android:paddingTop="@dimen/space_sm"
-            android:text="@string/group_add_member_empty"
-            android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:textColor="?attr/colorOnSurfaceVariant"
-            android:visibility="gone" />
+            android:orientation="vertical"
+            android:visibility="gone">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/addMemberInviteLink"
-            style="?attr/borderlessButtonStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:text="@string/invite_manage_action"
-            android:visibility="gone" />
+            <TextView
+                android:id="@+id/addMemberEmpty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:accessibilityLiveRegion="polite"
+                android:gravity="center"
+                android:paddingHorizontal="@dimen/space_md"
+                android:text="@string/group_add_member_empty"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/addMemberInviteLink"
+                style="?attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:text="@string/invite_manage_action"
+                android:visibility="gone" />
+        </LinearLayout>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/addMemberConfirm"

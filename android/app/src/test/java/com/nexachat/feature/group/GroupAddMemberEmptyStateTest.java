@@ -35,6 +35,18 @@ public final class GroupAddMemberEmptyStateTest {
     }
 
     @Test
+    public void emptyStateOccupiesTheListRegion() throws Exception {
+        Document sheet = loadSheet();
+        Element emptyState = findById(sheet, "addMemberEmptyState");
+        Element list = findById(sheet, "addMemberList");
+
+        assertEquals("0dp", emptyState.getAttributeNS(ANDROID_NS, "layout_height"));
+        assertEquals("1", emptyState.getAttributeNS(ANDROID_NS, "layout_weight"));
+        assertEquals("gone", emptyState.getAttributeNS(ANDROID_NS, "visibility"));
+        assertEquals(list.getParentNode(), emptyState.getParentNode());
+    }
+
+    @Test
     public void fragmentSwapsTheConfirmForTheEmptyState() throws Exception {
         String source = new String(Files.readAllBytes(locateSource()), StandardCharsets.UTF_8);
         assertTrue(source.contains("getAddableContacts().isEmpty()"));

@@ -378,6 +378,8 @@ public final class GroupDetailFragment extends Fragment {
             @NonNull GroupDetailUiState state) {
         boolean noAddable = GroupDetailListRules.showAddMemberEmptyState(
                 state.isAddableContactsLoaded(), state.getAddableContacts().isEmpty());
+        sheet.addMemberList.setVisibility(noAddable ? View.GONE : View.VISIBLE);
+        sheet.addMemberEmptyState.setVisibility(noAddable ? View.VISIBLE : View.GONE);
         sheet.addMemberEmpty.setVisibility(noAddable ? View.VISIBLE : View.GONE);
         sheet.addMemberInviteLink.setVisibility(noAddable ? View.VISIBLE : View.GONE);
         sheet.addMemberConfirm.setVisibility(noAddable ? View.GONE : View.VISIBLE);
