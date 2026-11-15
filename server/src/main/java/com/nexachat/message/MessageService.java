@@ -321,13 +321,13 @@ public class MessageService {
             log.info("Message {} (seq={}) stored in {} by {}", row.id(), row.seq(), conversationId, senderId);
         }
 
-        MessageResponse response = toResponse(row);
+        MessageResponse broadcast = toBroadcastResponse(row);
         // Broadcast on dedup too: the re-sent frame is how a retrying sender
         // gets its SENT signal; receivers deduplicate by message id. The replay
         // flag keeps push fan-out to the one dispatch the stored row already had.
         eventPublisher.publishEvent(new MessageCreatedEvent(
-                conversationId, response, null, !created));
-        return new SendResult(response, created);
+                conversationId, broadcast, null, !created));
+        return new SendResult(scopeReplyPreviewToViewer(broadcast, row.senderId()), created);
     }
 
     /**
@@ -405,9 +405,9 @@ public class MessageService {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "clientMessageId already used in a different conversation");
         }
-        MessageResponse response = toResponse(row);
-        eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, response, null, true));
-        return new SendResult(response, false);
+        MessageResponse broadcast = toBroadcastResponse(row);
+        eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, broadcast, null, true));
+        return new SendResult(scopeReplyPreviewToViewer(broadcast, row.senderId()), false);
     }
 
     /**
@@ -513,12 +513,12 @@ public class MessageService {
         }
         row = messageRepository.findRowById(messageId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
-        MessageResponse response = toResponse(row, userId);
-        eventPublisher.publishEvent(new MessageUpdatedEvent(conversationId, response));
+        MessageResponse broadcast = toBroadcastResponse(row);
+        eventPublisher.publishEvent(new MessageUpdatedEvent(conversationId, broadcast));
         if (isLastMessage(conversationId, messageId)) {
             publishLastMessageChanged(conversationId, "MESSAGE_EDITED");
         }
-        return response;
+        return scopeReplyPreviewToViewer(broadcast, userId);
     }
 
     @Transactional
@@ -650,9 +650,9 @@ public class MessageService {
         memberRepository.advanceReadWatermark(conversationId, actingUserId, row.seq());
         log.info("System message {} (seq={}) stored in {} by {}", row.id(), row.seq(), conversationId, actingUserId);
 
-        MessageResponse response = toResponse(row);
-        eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, response, subjectUserId));
-        return response;
+        MessageResponse broadcast = toBroadcastResponse(row);
+        eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, broadcast, subjectUserId));
+        return scopeReplyPreviewToViewer(broadcast, actingUserId);
     }
 
     /**
@@ -1399,13 +1399,36 @@ public class MessageService {
     }
 
     /**
-     * Single-row assembly for the send/system paths. The viewer for
-     * {@code byMe} is the message's own sender — the REST send response goes
-     * back to that user, and a fresh {@code MESSAGE_CREATED} broadcast carries
-     * no reactions yet anyway.
+     * Single-row assembly for the realtime fan-out ({@code MESSAGE_CREATED}
+     * and {@code MESSAGE_UPDATED} event payloads). The frame is shared by
+     * every member, so the quote preview is hydrated WITHOUT a viewer
+     * boundary: {@code StompConversationMembershipOutboundInterceptor} strips
+     * it per recipient against the quoted message's {@code createdAt}, and
+     * {@link MessageBroadcastListener} does the same for inbox pushes.
+     * Scoping it to the author here would drop the quote for admitted readers
+     * whenever the author re-entered the conversation. {@code byMe} still
+     * reflects the sender — reaction state is cosmetic on a fresh frame.
      */
-    MessageResponse toResponse(MessageRow row) {
-        return toResponse(row, row.senderId());
+    MessageResponse toBroadcastResponse(MessageRow row) {
+        return hydrateResponses(List.of(row), row.senderId(), false, false).get(0);
+    }
+
+    /**
+     * The REST-viewer form of a broadcast payload: {@code replyTo} is dropped
+     * when the quoted message predates the viewer's admission — the same
+     * boundary read models apply at hydration and the realtime fan-out applies
+     * per recipient. A ref whose creation time cannot be checked is stripped
+     * rather than leaked.
+     */
+    private MessageResponse scopeReplyPreviewToViewer(MessageResponse broadcast, UUID viewerId) {
+        ReplyRefResponse replyTo = broadcast.replyTo();
+        if (replyTo == null) {
+            return broadcast;
+        }
+        return replyTo.createdAt() != null
+                && memberRepository.existsAdmittedAt(
+                        broadcast.conversationId(), viewerId, replyTo.createdAt())
+                ? broadcast : broadcast.withoutReplyPreview();
     }
 
     /**
@@ -1427,6 +1450,11 @@ public class MessageService {
     }
 
     private List<MessageResponse> hydrateResponses(List<MessageRow> rows, UUID viewerId, boolean sync) {
+        return hydrateResponses(rows, viewerId, sync, true);
+    }
+
+    private List<MessageResponse> hydrateResponses(List<MessageRow> rows, UUID viewerId,
+                                                   boolean sync, boolean scopeReplyRefsToViewer) {
         if (rows.isEmpty()) {
             return List.of();
         }
@@ -1442,7 +1470,7 @@ public class MessageService {
         Map<UUID, ReplyRefResponse> replyRefsById = replyRefsById(rows.stream()
                 .map(MessageRow::replyToId)
                 .filter(Objects::nonNull)
-                .toList(), viewerId);
+                .toList(), viewerId, scopeReplyRefsToViewer);
         Map<UUID, MessageE2eeRow> e2eeById = new HashMap<>();
         for (MessageE2eeRow e2eeRow : messageRepository.findE2eeByIdIn(messageIds)) {
             e2eeById.put(e2eeRow.id(), e2eeRow);
@@ -1504,16 +1532,23 @@ public class MessageService {
     /**
      * One IN query → reply-target previews. A soft-deleted target keeps its
      * id and sender but loses its content ({@code deleted=true} renders the
-     * "Tin nhắn đã bị xóa" placeholder — plan §9.3.6). Every read model is
-     * admission-scoped: a target the viewer was not a member for is dropped,
-     * the same strip the realtime fan-out applies per recipient.
+     * "Tin nhắn đã bị xóa" placeholder — plan §9.3.6).
+     *
+     * <p>Every read model is admission-scoped: a target the viewer was not a
+     * member for is dropped, the same strip the realtime fan-out applies per
+     * recipient. Shared broadcast frames cannot encode one admission answer
+     * per recipient, so {@link #toBroadcastResponse} passes
+     * {@code scopeToViewer=false} and lets delivery filter instead.
      */
-    private Map<UUID, ReplyRefResponse> replyRefsById(Collection<UUID> replyToIds, UUID viewerId) {
+    private Map<UUID, ReplyRefResponse> replyRefsById(Collection<UUID> replyToIds, UUID viewerId,
+                                                    boolean scopeToViewer) {
         if (replyToIds.isEmpty()) {
             return Map.of();
         }
         Map<UUID, ReplyRefResponse> result = new LinkedHashMap<>();
-        List<ReplyRefRow> refs = messageRepository.findAdmittedReplyRefsByIdIn(viewerId, replyToIds);
+        List<ReplyRefRow> refs = scopeToViewer
+                ? messageRepository.findAdmittedReplyRefsByIdIn(viewerId, replyToIds)
+                : messageRepository.findReplyRefsByIdIn(replyToIds);
         for (ReplyRefRow row : refs) {
             boolean deleted = row.deletedAt() != null;
             boolean encrypted = row.encryption() != null;
