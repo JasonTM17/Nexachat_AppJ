@@ -439,7 +439,8 @@ public final class ChatViewModel extends ViewModel {
     private static boolean isKeysetPauseEvent(ApiError error) {
         return error instanceof ApiError.Unknown unknown
                 && (MessageRepository.ERROR_E2EE_KEYSET_CHANGED.equals(unknown.getCode())
-                || MessageRepository.ERROR_E2EE_DOWNGRADE_BLOCKED.equals(unknown.getCode()));
+                || MessageRepository.ERROR_E2EE_DOWNGRADE_BLOCKED.equals(unknown.getCode())
+                || MessageRepository.ERROR_E2EE_KEYSET_INVALID.equals(unknown.getCode()));
     }
 
     /**

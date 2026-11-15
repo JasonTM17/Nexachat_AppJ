@@ -1257,6 +1257,32 @@ public final class ChatViewModelTest {
     }
 
     @Test
+    public void terminalE2eeInteractionEventsRefreshTheVerdict() {
+        // Every terminal refusal the repository surfaces — a changed keyset,
+        // a downgrade block, an unusable roster — re-reads the durable verdict.
+        for (String code : List.of(
+                MessageRepository.ERROR_E2EE_KEYSET_CHANGED,
+                MessageRepository.ERROR_E2EE_DOWNGRADE_BLOCKED,
+                MessageRepository.ERROR_E2EE_KEYSET_INVALID)) {
+            KeysetTrustStore trustStore = Mockito.mock(KeysetTrustStore.class);
+            when(messageRepository.currentUserId()).thenReturn(Maybe.just("me-1"));
+            when(trustStore.state("me-1", CONVERSATION_ID))
+                    .thenReturn(Single.just(Optional.empty()))
+                    .thenReturn(Single.just(Optional.of(
+                            trustRecord(KeysetTrustStore.TrustState.CHANGED))));
+            ChatViewModel vm = newKeysetViewModel(trustStore);
+            conversationFlow.onNext(Optional.of(e2eeSummary(true)));
+            assertEquals(code, ChatViewModel.KeysetTrust.NONE,
+                    vm.getUiState().getValue().getKeysetTrust());
+
+            interactionFlow.onNext(new ApiError.Unknown(code));
+
+            assertEquals(code, ChatViewModel.KeysetTrust.CHANGED,
+                    vm.getUiState().getValue().getKeysetTrust());
+        }
+    }
+
+    @Test
     public void sendWhilePausedKeepsTheDraftAndSkipsTheRepository() {
         KeysetTrustStore trustStore = Mockito.mock(KeysetTrustStore.class);
         when(messageRepository.currentUserId()).thenReturn(Maybe.just("me-1"));

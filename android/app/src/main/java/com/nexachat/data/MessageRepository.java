@@ -119,6 +119,10 @@ public final class MessageRepository {
     public static final String ERROR_E2EE_KEYSET_CHANGED = "E2EE_KEYSET_CHANGED";
     /** Raised locally when a trusted conversation would send plaintext; a terminal pause. */
     public static final String ERROR_E2EE_DOWNGRADE_BLOCKED = "E2EE_DOWNGRADE_BLOCKED";
+    /** Raised locally when the roster cannot be parsed into a direct transcript; a terminal pause. */
+    public static final String ERROR_E2EE_KEYSET_INVALID = "E2EE_KEYSET_INVALID";
+    /** Episode stamp for a terminal refusal that left no trust record to stamp. */
+    private static final long NO_RECORD_EPISODE = -1L;
     public static final String ERROR_INTERNAL = "INTERNAL_ERROR";
     public static final long RATE_LIMIT_RETRY_DELAY_MS = 10_000L;
     /** Envelope keys that may wrap the id list returned by {@code GET /pins}. */
@@ -162,12 +166,15 @@ public final class MessageRepository {
     /** Coalesces RATE_LIMITED responses into one delayed outbox flush. */
     private final Object rateLimitRetryLock = new Object();
     /**
-     * Keyset-change episodes already surfaced on {@link #interactionEvents},
-     * keyed by owner:conversation with the trust record's update stamp. One
-     * roster change notifies once no matter how many queued rows pause on it;
-     * a change after re-verification carries a new stamp and notifies again.
+     * Terminal-pause episodes already surfaced on {@link #interactionEvents},
+     * keyed by owner:conversation. The value pairs the refusal code with its
+     * episode stamp — the trust record's update stamp, or {@link
+     * #NO_RECORD_EPISODE} for a refusal that left no record — so one episode
+     * notifies once no matter how many queued rows pause on it. A new stamp
+     * (re-verification then a fresh change) or a cleared marker (a successful
+     * encrypted send proved the roster usable again) notifies anew.
      */
-    private final ConcurrentHashMap<String, Long> keysetPauseNotified = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String> keysetPauseNotified = new ConcurrentHashMap<>();
     private final AtomicLong lastOutboxCreatedAt = new AtomicLong();
     private final FlowableProcessor<TypingEvent> typingEvents = PublishProcessor.<TypingEvent>create().toSerialized();
     private final FlowableProcessor<ReadEvent> readEvents = PublishProcessor.<ReadEvent>create().toSerialized();
@@ -1072,6 +1079,12 @@ public final class MessageRepository {
                     }
                     return e2eeSession.encryptFor(entry.getConversationId(), entry.getContent(),
                                     ownerUserId, entry.getClientMessageId())
+                            // A built encrypted request proves the roster parsed
+                            // and the trust verdict allowed it: every pause
+                            // episode recorded for this pair has ended, so its
+                            // notice re-arms for the next refusal.
+                            .doOnSuccess(ignored -> keysetPauseNotified.remove(
+                                    ownerUserId + ':' + entry.getConversationId()))
                             .map(encrypted -> base.withContent(encrypted.content())
                                     .withEncryption("E2EE_V1",
                                             toEnvelopeDtos(encrypted.envelopes())));
@@ -1091,12 +1104,12 @@ public final class MessageRepository {
 
     /**
      * Terminal pause for rows the local E2EE trust gate refused: the verified
-     * keyset changed, or a trusted conversation would go out as plaintext. The
-     * row becomes FAILED with its content intact for a manual resend after
-     * re-verification — no automatic retry, no rate-limit reschedule, never a
-     * plaintext request. Keyset changes notify once per conversation per
-     * change episode rather than once per row; every other error propagates
-     * untouched.
+     * keyset changed, a trusted conversation would go out as plaintext, or the
+     * roster cannot be parsed into a direct transcript. The row becomes FAILED
+     * with its content intact for a manual resend after re-verification — no
+     * automatic retry, no rate-limit reschedule, never a plaintext request.
+     * Refusals notify once per conversation per episode rather than once per
+     * row; every other error propagates untouched.
      */
     private Completable pauseOnTerminalE2eeRefusal(
             OutboxEntity entry, String ownerUserId, Throwable error) {
@@ -1104,48 +1117,46 @@ public final class MessageRepository {
             return Completable.error(error);
         }
         String code = error.getMessage();
-        Completable emit;
-        if (ERROR_E2EE_KEYSET_CHANGED.equals(code)) {
-            emit = emitKeysetChangedOnce(ownerUserId, entry.getConversationId());
-        } else if (ERROR_E2EE_DOWNGRADE_BLOCKED.equals(code)) {
-            emit = Completable.fromAction(() -> interactionEvents.onNext(
-                    new ApiError.Unknown(ERROR_E2EE_DOWNGRADE_BLOCKED)));
-        } else {
+        if (!ERROR_E2EE_KEYSET_CHANGED.equals(code)
+                && !ERROR_E2EE_DOWNGRADE_BLOCKED.equals(code)
+                && !ERROR_E2EE_KEYSET_INVALID.equals(code)) {
             return Completable.error(error);
         }
-        return emit.onErrorComplete().andThen(outboxDao.updateState(entry.getClientMessageId(),
-                ownerUserId, OutboxState.FAILED));
+        return emitTerminalPauseOnce(ownerUserId, entry.getConversationId(), code)
+                .onErrorComplete()
+                .andThen(outboxDao.updateState(entry.getClientMessageId(),
+                        ownerUserId, OutboxState.FAILED));
     }
 
     /**
-     * Emits {@code E2EE_KEYSET_CHANGED} once per conversation per change
-     * episode. The stored trust record's update stamp identifies the episode:
+     * Emits the terminal refusal {@code code} once per conversation per
+     * episode. A stored trust record identifies its episode by update stamp:
      * rows pausing on the same change share its stamp, while a change after
      * re-verification rewrites the record with a new stamp and notifies again.
-     * A missing record means the pause can no longer be attributed — notify
-     * rather than leave the failure silent.
+     * A refusal that left no record — an unusable roster that was never
+     * verified — shares one unattributed episode until a successful encrypted
+     * send clears the marker.
      */
-    private Completable emitKeysetChangedOnce(String ownerUserId, String conversationId) {
+    private Completable emitTerminalPauseOnce(String ownerUserId, String conversationId,
+            String code) {
         if (keysetTrustStore == null) {
             return Completable.fromAction(() -> interactionEvents.onNext(
-                    new ApiError.Unknown(ERROR_E2EE_KEYSET_CHANGED)));
+                    new ApiError.Unknown(code)));
         }
         return keysetTrustStore.state(ownerUserId, conversationId)
                 .flatMapCompletable(record -> Completable.fromAction(() -> {
-                    if (record.isEmpty()) {
-                        interactionEvents.onNext(new ApiError.Unknown(ERROR_E2EE_KEYSET_CHANGED));
-                        return;
-                    }
-                    long stamp = record.get().updatedAtMs();
+                    String episode = code + ':' + record
+                            .map(KeysetTrustStore.Record::updatedAtMs)
+                            .orElse(NO_RECORD_EPISODE);
                     AtomicBoolean emit = new AtomicBoolean();
                     keysetPauseNotified.compute(ownerUserId + ':' + conversationId,
                             (key, previous) -> {
-                                if (previous != null && previous == stamp) return previous;
+                                if (episode.equals(previous)) return previous;
                                 emit.set(true);
-                                return stamp;
+                                return episode;
                             });
                     if (emit.get()) {
-                        interactionEvents.onNext(new ApiError.Unknown(ERROR_E2EE_KEYSET_CHANGED));
+                        interactionEvents.onNext(new ApiError.Unknown(code));
                     }
                 }));
     }
@@ -1201,7 +1212,8 @@ public final class MessageRepository {
                 || ERROR_E2EE_MEDIA_UNSUPPORTED.equals(unknown.getCode())
                 || ERROR_E2EE_NOT_ENABLED.equals(unknown.getCode())
                 || ERROR_E2EE_KEYSET_CHANGED.equals(unknown.getCode())
-                || ERROR_E2EE_DOWNGRADE_BLOCKED.equals(unknown.getCode()))) {
+                || ERROR_E2EE_DOWNGRADE_BLOCKED.equals(unknown.getCode())
+                || ERROR_E2EE_KEYSET_INVALID.equals(unknown.getCode()))) {
             interactionEvents.onNext(unknown);
         }
         return outboxDao.updateState(entry.getClientMessageId(), ownerUserId,
@@ -1380,7 +1392,8 @@ public final class MessageRepository {
             } else if (ERROR_VALIDATION_FAILED.equals(rejected.getCode())
                     || ERROR_NOT_ADMIN.equals(rejected.getCode())
                     || ERROR_E2EE_KEYSET_CHANGED.equals(rejected.getCode())
-                    || ERROR_E2EE_DOWNGRADE_BLOCKED.equals(rejected.getCode())) {
+                    || ERROR_E2EE_DOWNGRADE_BLOCKED.equals(rejected.getCode())
+                    || ERROR_E2EE_KEYSET_INVALID.equals(rejected.getCode())) {
                 interactionEvents.onNext(new ApiError.Unknown(rejected.getCode()));
             }
             return currentUserId().flatMapCompletable(ownerUserId ->

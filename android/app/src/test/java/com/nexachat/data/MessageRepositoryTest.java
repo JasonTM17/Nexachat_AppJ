@@ -1024,6 +1024,149 @@ public class MessageRepositoryTest {
         }
     }
 
+    @Test public void terminalE2eeRefusalsPauseQueuedRowsWithOneNoticeEach() {
+        for (String code : List.of(
+                MessageRepository.ERROR_E2EE_KEYSET_CHANGED,
+                MessageRepository.ERROR_E2EE_DOWNGRADE_BLOCKED,
+                MessageRepository.ERROR_E2EE_KEYSET_INVALID)) {
+            outbox.clear();
+            com.nexachat.core.crypto.E2eeSession e2ee =
+                    mock(com.nexachat.core.crypto.E2eeSession.class);
+            ConversationEntity conv = mock(ConversationEntity.class);
+            when(conv.isE2eeEnabled()).thenReturn(true);
+            conversations.put(CONVERSATION_ID, conv);
+            com.nexachat.core.crypto.KeysetTrustStore trustStore =
+                    new com.nexachat.core.crypto.KeysetTrustStore(changedTrustDao(1_000L));
+            when(e2ee.encryptFor(anyString(), anyString(), anyString(), anyString()))
+                    .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(code)));
+            MessageRepository repo = repositoryWithTrust(e2ee, trustStore);
+            try {
+                TestSubscriber<ApiError> errors = repo.getInteractionEvents().test();
+                await(repo.send(CONVERSATION_ID, code + " first"));
+                await(repo.send(CONVERSATION_ID, code + " second"));
+                assertEquals("rows for " + code, 2, outbox.size());
+                for (OutboxEntity row : outbox.values()) {
+                    assertEquals(code, OutboxState.FAILED, row.getState());
+                }
+                verify(session, org.mockito.Mockito.never()).sendMessage(anyString(), any());
+                verify(messageApi, org.mockito.Mockito.never()).sendMessage(anyString(), any());
+                errors.assertValueCount(1);
+                errors.assertValueAt(0, error -> error instanceof ApiError.Unknown unknown
+                        && code.equals(unknown.getCode()));
+            } finally {
+                repo.dispose();
+            }
+            org.mockito.Mockito.clearInvocations(session, messageApi);
+        }
+    }
+
+    @Test public void unusableKeysetRosterPausesQueuedRowsWithOneNotice() {
+        com.nexachat.core.crypto.E2eeSession e2ee =
+                mock(com.nexachat.core.crypto.E2eeSession.class);
+        ConversationEntity conv = mock(ConversationEntity.class);
+        when(conv.isE2eeEnabled()).thenReturn(true);
+        conversations.put(CONVERSATION_ID, conv);
+        // No trust record: the unusable roster leaves nothing to stamp the
+        // episode with, yet every queued row still shares one notice.
+        com.nexachat.core.crypto.KeysetTrustStore trustStore =
+                new com.nexachat.core.crypto.KeysetTrustStore(new InMemoryKeysetTrustDao());
+        when(e2ee.encryptFor(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                        MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        MessageRepository repo = repositoryWithTrust(e2ee, trustStore);
+        try {
+            TestSubscriber<ApiError> errors = repo.getInteractionEvents().test();
+            await(repo.send(CONVERSATION_ID, "first"));
+            await(repo.send(CONVERSATION_ID, "second"));
+            assertEquals(2, outbox.size());
+            for (OutboxEntity row : outbox.values()) {
+                assertEquals(OutboxState.FAILED, row.getState());
+            }
+            verify(session, org.mockito.Mockito.never()).sendMessage(anyString(), any());
+            verify(messageApi, org.mockito.Mockito.never()).sendMessage(anyString(), any());
+            errors.assertValueCount(1);
+            errors.assertValueAt(0, error -> error instanceof ApiError.Unknown unknown
+                    && MessageRepository.ERROR_E2EE_KEYSET_INVALID.equals(unknown.getCode()));
+            // The rows stay FAILED: a later flush finds nothing to retry.
+            await(repo.flushOutbox());
+            verify(session, org.mockito.Mockito.never()).sendMessage(anyString(), any());
+        } finally {
+            repo.dispose();
+        }
+    }
+
+    @Test public void unusableKeysetNoticeReArmsAfterARosterHeals() {
+        com.nexachat.core.crypto.E2eeSession e2ee =
+                mock(com.nexachat.core.crypto.E2eeSession.class);
+        ConversationEntity conv = mock(ConversationEntity.class);
+        when(conv.isE2eeEnabled()).thenReturn(true);
+        conversations.put(CONVERSATION_ID, conv);
+        com.nexachat.core.crypto.KeysetTrustStore trustStore =
+                new com.nexachat.core.crypto.KeysetTrustStore(new InMemoryKeysetTrustDao());
+        java.util.concurrent.atomic.AtomicInteger encryptCalls =
+                new java.util.concurrent.atomic.AtomicInteger();
+        // Break, heal (one encrypted send goes out), break again: the second
+        // broken stretch is a new episode and must notify again.
+        when(e2ee.encryptFor(anyString(), anyString(), anyString(), anyString()))
+                .thenAnswer(call -> encryptCalls.incrementAndGet() == 2
+                        ? Single.just(new com.nexachat.core.crypto.E2eeCrypto.EncryptedMessage(
+                                "e2ee1:ct", List.of(
+                                new com.nexachat.core.crypto.E2eeCrypto.Envelope("d1", "w1"))))
+                        : Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                                MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        MessageRepository repo = repositoryWithTrust(e2ee, trustStore);
+        try {
+            TestSubscriber<ApiError> errors = repo.getInteractionEvents().test();
+            List<SendMessageRequest> captured = new ArrayList<>();
+            when(session.sendMessage(anyString(), any())).thenAnswer(call -> {
+                captured.add(call.getArgument(1));
+                return true;
+            });
+            await(repo.send(CONVERSATION_ID, "blocked once"));
+            await(repo.send(CONVERSATION_ID, "healed"));
+            assertEquals(1, captured.size());
+            assertEquals("e2ee1:ct", captured.get(0).getContent());
+            await(repo.send(CONVERSATION_ID, "blocked again"));
+            assertEquals(3, outbox.size());
+            assertEquals(2, outbox.values().stream()
+                    .filter(row -> OutboxState.FAILED.equals(row.getState())).count());
+            errors.assertValueCount(2);
+            errors.assertValueAt(1, error -> error instanceof ApiError.Unknown unknown
+                    && MessageRepository.ERROR_E2EE_KEYSET_INVALID.equals(unknown.getCode()));
+        } finally {
+            repo.dispose();
+        }
+    }
+
+    @Test public void downgradeBlockedRowsShareOneNoticePerEpisode() {
+        com.nexachat.core.crypto.E2eeSession e2ee =
+                mock(com.nexachat.core.crypto.E2eeSession.class);
+        ConversationEntity conv = mock(ConversationEntity.class);
+        // Flag flipped off remotely while the keyset is still verified.
+        when(conv.isE2eeEnabled()).thenReturn(false);
+        conversations.put(CONVERSATION_ID, conv);
+        com.nexachat.core.crypto.KeysetTrustStore trustStore =
+                new com.nexachat.core.crypto.KeysetTrustStore(new InMemoryKeysetTrustDao());
+        await(trustStore.markVerified("me-1", CONVERSATION_ID, new byte[]{7}));
+        MessageRepository repo = repositoryWithTrust(e2ee, trustStore);
+        try {
+            TestSubscriber<ApiError> errors = repo.getInteractionEvents().test();
+            await(repo.send(CONVERSATION_ID, "first"));
+            await(repo.send(CONVERSATION_ID, "second"));
+            assertEquals(2, outbox.size());
+            for (OutboxEntity row : outbox.values()) {
+                assertEquals(OutboxState.FAILED, row.getState());
+            }
+            verify(e2ee, org.mockito.Mockito.never()).encryptFor(
+                    anyString(), anyString(), anyString(), anyString());
+            errors.assertValueCount(1);
+            errors.assertValueAt(0, error -> error instanceof ApiError.Unknown unknown
+                    && MessageRepository.ERROR_E2EE_DOWNGRADE_BLOCKED.equals(unknown.getCode()));
+        } finally {
+            repo.dispose();
+        }
+    }
+
     private MessageRepository repositoryWithTrust(com.nexachat.core.crypto.E2eeSession e2ee,
             com.nexachat.core.crypto.KeysetTrustStore trustStore) {
         return new MessageRepository(messageApi, messageDao, conversationDao, outboxDao,
