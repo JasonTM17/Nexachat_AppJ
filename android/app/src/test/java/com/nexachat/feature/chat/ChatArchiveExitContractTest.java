@@ -29,6 +29,16 @@ public final class ChatArchiveExitContractTest {
     }
 
     @Test
+    public void archiveUndoConfirmsTheRowReturnedToChats() throws Exception {
+        String source = readUtf8(locateJavaFile(
+                "com/nexachat/feature/chat/ChatFragment.java"));
+        assertTrue("undo runs through the activity-scoped store, whose confirmation event "
+                        + "no screen observes; the snackbar must confirm the restore itself",
+                source.contains("DISMISS_EVENT_ACTION")
+                        && source.contains("R.string.conversation_unarchived"));
+    }
+
+    @Test
     public void archiveFeedbackAnchorsToTheHostSoItSurvivesNavigation() throws Exception {
         String source = readUtf8(locateJavaFile(
                 "com/nexachat/feature/chat/ChatFragment.java"));

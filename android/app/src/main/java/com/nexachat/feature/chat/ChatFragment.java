@@ -1436,10 +1436,22 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         if (!popped) {
             return false;
         }
-        Snackbar.make(hostView, R.string.conversation_archived_snackbar, Snackbar.LENGTH_LONG)
+        Snackbar snackbar = Snackbar.make(
+                hostView, R.string.conversation_archived_snackbar, Snackbar.LENGTH_LONG)
                 .setAction(R.string.action_undo,
-                        ignored -> sharedInboxViewModel.setConversationArchived(archivedId, false))
-                .show();
+                        ignored -> sharedInboxViewModel.setConversationArchived(archivedId, false));
+        // The undo runs through the activity-scoped inbox store, whose confirmation event no
+        // screen observes; confirm the restore on the same anchor when the action fires.
+        snackbar.addCallback(new Snackbar.Callback() {
+            @Override
+            public void onDismissed(Snackbar dismissed, int event) {
+                if (event == Snackbar.Callback.DISMISS_EVENT_ACTION) {
+                    Snackbar.make(hostView, R.string.conversation_unarchived,
+                            Snackbar.LENGTH_LONG).show();
+                }
+            }
+        });
+        snackbar.show();
         return true;
     }
 
