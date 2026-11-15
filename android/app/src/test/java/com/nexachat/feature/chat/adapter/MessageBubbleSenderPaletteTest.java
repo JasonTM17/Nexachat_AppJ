@@ -21,8 +21,8 @@ public final class MessageBubbleSenderPaletteTest {
             R.color.sender_cyan,
             R.color.sender_olive,
             R.color.sender_bronze,
-            R.color.colorPrimary,
-            R.color.sender_blue
+            R.color.sender_rose,
+            R.color.sender_green
     };
 
     private static final String[] ROLE_NAMES = {
@@ -32,8 +32,8 @@ public final class MessageBubbleSenderPaletteTest {
             "sender_cyan",
             "sender_olive",
             "sender_bronze",
-            "colorPrimary",
-            "sender_blue"
+            "sender_rose",
+            "sender_green"
     };
 
     @Test

@@ -73,8 +73,8 @@ public final class MessageBubbleBinder {
             R.color.sender_cyan,
             R.color.sender_olive,
             R.color.sender_bronze,
-            R.color.colorPrimary,
-            R.color.sender_blue
+            R.color.sender_rose,
+            R.color.sender_green
     };
 
     private final DateFormat timeFormat;
