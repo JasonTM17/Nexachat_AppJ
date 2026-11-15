@@ -2,6 +2,7 @@ package com.nexachat.feature.inbox;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -41,6 +42,13 @@ public final class InboxFilterChipColourRulesTest {
                 source.contains("R.color.brand_on_fill"));
         assertFalse("checked chips must not resolve brand_pressed",
                 source.contains("R.color.brand_pressed"));
+    }
+
+    @Test
+    public void checkedLabelRendersBold() throws Exception {
+        String source = new String(Files.readAllBytes(locateRules()));
+        assertTrue("the checked filter chip label must render bold",
+                source.contains("Typeface.BOLD"));
     }
 
     private static Path locateRules() {

@@ -2,9 +2,11 @@ package com.nexachat.feature.inbox;
 
 import android.content.Context;
 import android.content.res.ColorStateList;
+import android.graphics.Typeface;
 import android.util.TypedValue;
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.res.ResourcesCompat;
 import com.google.android.material.chip.Chip;
 import com.nexachat.R;
 
@@ -73,6 +75,19 @@ public final class InboxFilterChipColourRules {
         };
         chip.setChipStrokeColor(new ColorStateList(states, strokeColors));
         chip.setChipStrokeWidth(idleStrokePx);
+        applyLabelWeight(chip, chip.isChecked());
+        chip.setOnCheckedChangeListener(
+                (view, checked) -> applyLabelWeight((Chip) view, checked));
+    }
+
+    /** The spec renders the selected label bold; keep the family, toggle only the style. */
+    private static void applyLabelWeight(@NonNull Chip chip, boolean checked) {
+        Typeface resolved = chip.getTypeface();
+        if (resolved == null) {
+            resolved = ResourcesCompat.getFont(chip.getContext(), R.font.inter);
+        }
+        int style = checked ? Typeface.BOLD : Typeface.NORMAL;
+        chip.setTypeface(Typeface.create(resolved, style), style);
     }
 
     private static int themeColor(@NonNull Context context, int attr) {
