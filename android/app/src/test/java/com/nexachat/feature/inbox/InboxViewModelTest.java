@@ -393,6 +393,39 @@ public final class InboxViewModelTest {
     }
 
     @Test
+    public void unarchiveSuccessEmitsTheMovedBackMessage() {
+        when(repository.setConversationArchived(eq("c-1"), anyBoolean()))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+
+        viewModel.setConversationArchived("c-1", false);
+
+        InboxSingleLiveEvent.Event<InboxEvent> raw = viewModel.getEvents().getValue();
+        assertNotNull(raw);
+        InboxEvent event = raw.consume();
+        assertTrue(event instanceof InboxPreferenceSuccess);
+        InboxPreferenceSuccess success = (InboxPreferenceSuccess) event;
+        assertEquals(com.nexachat.R.string.conversation_unarchived, success.getMessageId());
+        assertNotNull(success.getUndo());
+        success.getUndo().run();
+        verify(repository).setConversationArchived("c-1", true);
+    }
+
+    @Test
+    public void unarchiveFailureEmitsAnErrorNotASuccessMessage() {
+        ApiError failure = new ApiError.Network("down");
+        when(repository.setConversationArchived(eq("c-1"), anyBoolean()))
+                .thenReturn(Single.just(Result.failure(failure)));
+
+        viewModel.setConversationArchived("c-1", false);
+
+        InboxSingleLiveEvent.Event<InboxEvent> raw = viewModel.getEvents().getValue();
+        assertNotNull(raw);
+        InboxEvent event = raw.consume();
+        assertTrue(event instanceof InboxErrorEvent);
+        assertEquals(failure, ((InboxErrorEvent) event).getError());
+    }
+
+    @Test
     public void archiveSuccessSurfacesUndoSnackbarEvent() {
         when(repository.setConversationArchived(eq("c-1"), anyBoolean()))
                 .thenReturn(Single.just(new Result.Success<Void>(null)));
