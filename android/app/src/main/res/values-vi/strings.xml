@@ -63,6 +63,7 @@
     <string name="conversation_muted">Đã tắt thông báo</string>
     <string name="conversation_unmuted">Đã bật thông báo</string>
     <string name="conversation_archived">Đã lưu trữ</string>
+    <string name="conversation_archived_snackbar">Đã lưu trữ cuộc trò chuyện</string>
     <string name="conversation_unarchived">Đã bỏ lưu trữ</string>
     <string name="conversation_settings_title">Cài đặt trò chuyện</string>
     <string name="conversation_ai_opt_out_title">Không dùng tin nhắn của tôi cho AI</string>

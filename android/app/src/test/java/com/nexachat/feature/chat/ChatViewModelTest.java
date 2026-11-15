@@ -1153,6 +1153,25 @@ public final class ChatViewModelTest {
     }
 
     @Test
+    public void archiveUndoRestoresTheConversation() {
+        when(conversationRepository.setConversationArchived(CONVERSATION_ID, true))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+        when(conversationRepository.setConversationArchived(CONVERSATION_ID, false))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+
+        viewModel.setConversationArchived(true);
+
+        ChatActionEvent.PreferenceChanged event = (ChatActionEvent.PreferenceChanged)
+                viewModel.getActionEvents().getValue().consume();
+        assertEquals(ChatActionEvent.PreferenceChanged.Kind.ARCHIVED, event.getKind());
+
+        event.getUndo().run();
+
+        verify(conversationRepository, times(1))
+                .setConversationArchived(CONVERSATION_ID, false);
+    }
+
+    @Test
     public void successfulMuteEmitsAOneShotConfirmation() {
         when(conversationRepository.muteConversationForever(CONVERSATION_ID))
                 .thenReturn(Single.just(new Result.Success<Void>(null)));

@@ -784,6 +784,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                         .show();
             }
             if (event instanceof ChatActionEvent.PreferenceChanged changed) {
+                if (changed.getKind() == ChatActionEvent.PreferenceChanged.Kind.ARCHIVED
+                        && leaveChatForArchivedConversation()) {
+                    return;
+                }
                 Snackbar snackbar = Snackbar.make(
                         binding.getRoot(), preferenceMessage(changed.getKind()), Snackbar.LENGTH_LONG);
                 if (changed.getUndo() != null) {
@@ -1398,6 +1402,36 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         } else if (action == MENU_GROUP_BOARD) {
             openGroupBoard();
         }
+    }
+
+    /**
+     * Archiving removes the conversation from the inbox, so staying in the chat would be a
+     * dead end. The confirmation is anchored to the activity view so it survives the pop,
+     * and its undo runs through the activity-scoped inbox store because this screen's view
+     * models are destroyed along with it.
+     */
+    private boolean leaveChatForArchivedConversation() {
+        if (!isAdded()) {
+            return false;
+        }
+        View hostView = requireActivity().findViewById(android.R.id.content);
+        InboxViewModel sharedInboxViewModel =
+                new ViewModelProvider(requireActivity()).get(InboxViewModel.class);
+        String archivedId = conversationId;
+        boolean popped;
+        try {
+            popped = NavHostFragment.findNavController(this).popBackStack();
+        } catch (IllegalStateException noNav) {
+            popped = false;
+        }
+        if (!popped) {
+            return false;
+        }
+        Snackbar.make(hostView, R.string.conversation_archived_snackbar, Snackbar.LENGTH_LONG)
+                .setAction(R.string.action_undo,
+                        ignored -> sharedInboxViewModel.setConversationArchived(archivedId, false))
+                .show();
+        return true;
     }
 
     private ConversationPreferenceMenu.Listener preferenceListener() {

@@ -63,6 +63,7 @@
     <string name="conversation_muted">Notifications muted</string>
     <string name="conversation_unmuted">Notifications on</string>
     <string name="conversation_archived">Archived</string>
+    <string name="conversation_archived_snackbar">Conversation archived</string>
     <string name="conversation_unarchived">Moved to Chats</string>
     <string name="conversation_settings_title">Conversation settings</string>
     <string name="conversation_ai_opt_out_title">Keep my messages out of AI</string>
