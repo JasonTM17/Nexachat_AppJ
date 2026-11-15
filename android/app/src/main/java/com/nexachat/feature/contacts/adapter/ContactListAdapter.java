@@ -73,6 +73,8 @@ public final class ContactListAdapter extends ListAdapter<Contact, ContactListAd
             name.setMaxLines(largeType ? 2 : 1);
             name.setEllipsize(largeType ? null : android.text.TextUtils.TruncateAt.END);
             if (phone != null) {
+                phone.setMaxLines(largeType ? 2 : 1);
+                phone.setEllipsize(largeType ? null : android.text.TextUtils.TruncateAt.END);
                 String subtitle = PersonContactSubtitle.subtitle(contact);
                 if (subtitle != null && !subtitle.isBlank()) {
                     phone.setText(subtitle);
