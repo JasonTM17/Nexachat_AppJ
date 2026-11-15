@@ -1,5 +1,6 @@
 package com.nexachat.migration;
 
+import com.nexachat.testutil.ItPhoneRanges;
 import com.nexachat.testutil.PostgresTestDatabase;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
@@ -180,8 +181,8 @@ class UnversionedMessageBackfillIT {
     }
 
     private static Fixtures seedFixtures(JdbcTemplate jdbc) {
-        insertUser(jdbc, USER_ONE, "+84991000001", "FixtureOne");
-        insertUser(jdbc, USER_TWO, "+84991000002", "FixtureTwo");
+        insertUser(jdbc, USER_ONE, phonePrefix() + "000001", "FixtureOne");
+        insertUser(jdbc, USER_TWO, phonePrefix() + "000002", "FixtureTwo");
 
         // (a) every message unversioned, cursor at 0
         insertConversation(jdbc, CONV_ALL_ZERO, "all-zero", 0);
@@ -211,6 +212,10 @@ class UnversionedMessageBackfillIT {
         List<UUID> cursorAhead = insertMessages(jdbc, CONV_CURSOR_AHEAD, 0, 0);
 
         return new Fixtures(allZero, healthy, mixed, tombstone, cursorAhead);
+    }
+
+    private static String phonePrefix() {
+        return ItPhoneRanges.prefixFor(UnversionedMessageBackfillIT.class);
     }
 
     private static void insertUser(JdbcTemplate jdbc, UUID id, String phone, String name) {
