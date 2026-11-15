@@ -1,6 +1,7 @@
 package com.nexachat.feature.inbox;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import com.nexachat.data.ConversationSummary;
@@ -68,6 +69,22 @@ public final class ActiveNowPeerRulesTest {
         assertEquals(1, ActiveNowPeerRules.captionMaxLines(1f));
         assertEquals(2, ActiveNowPeerRules.captionMaxLines(1.3f));
         assertEquals(2, ActiveNowPeerRules.captionMaxLines(1.6f));
+    }
+
+    @Test
+    public void captionWidthWidensAtFontScaleOnePointFive() {
+        assertEquals(72, ActiveNowPeerRules.captionWidthDp(1f));
+        assertEquals(72, ActiveNowPeerRules.captionWidthDp(1.4f));
+        assertEquals(96, ActiveNowPeerRules.captionWidthDp(1.5f));
+        assertEquals(96, ActiveNowPeerRules.captionWidthDp(2f));
+    }
+
+    @Test
+    public void yourStatusCaptionDropsEllipsisOnlyAtLargeType() {
+        assertTrue(ActiveNowPeerRules.yourStatusCaptionEllipsizes(1f));
+        assertTrue(ActiveNowPeerRules.yourStatusCaptionEllipsizes(1.4f));
+        assertFalse(ActiveNowPeerRules.yourStatusCaptionEllipsizes(1.5f));
+        assertFalse(ActiveNowPeerRules.yourStatusCaptionEllipsizes(2f));
     }
 
     private static ConversationSummary direct(

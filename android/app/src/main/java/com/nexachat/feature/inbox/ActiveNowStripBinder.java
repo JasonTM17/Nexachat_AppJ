@@ -4,6 +4,7 @@ import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.content.Context;
 import android.provider.Settings;
+import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -98,6 +99,9 @@ public final class ActiveNowStripBinder {
         yourAvatar.setShowStoryRing(false);
         yourName.setText(R.string.inbox_your_status);
         yourName.setMaxLines(ActiveNowPeerRules.captionMaxLines(fontScale));
+        yourName.setEllipsize(ActiveNowPeerRules.yourStatusCaptionEllipsizes(fontScale)
+                ? TextUtils.TruncateAt.END : null);
+        setCaptionWidth(yourName, fontScale);
         if (yourBadge != null) {
             yourBadge.setVisibility(View.VISIBLE);
         }
@@ -191,9 +195,18 @@ public final class ActiveNowStripBinder {
 
         peerName.setText(displayTitle);
         peerName.setMaxLines(ActiveNowPeerRules.captionMaxLines(fontScale));
+        peerName.setEllipsize(TextUtils.TruncateAt.END);
+        setCaptionWidth(peerName, fontScale);
         peerView.setContentDescription(
                 displayTitle + ", " + context.getString(R.string.presence_active_now));
         peerView.setOnClickListener(v -> peerClick.onPeerClick(row));
+    }
+
+    private void setCaptionWidth(@NonNull TextView caption, float fontScale) {
+        ViewGroup.LayoutParams params = caption.getLayoutParams();
+        params.width = Math.round(ActiveNowPeerRules.captionWidthDp(fontScale)
+                * context.getResources().getDisplayMetrics().density);
+        caption.setLayoutParams(params);
     }
 
     private void maybePlayEntranceAnimation() {
