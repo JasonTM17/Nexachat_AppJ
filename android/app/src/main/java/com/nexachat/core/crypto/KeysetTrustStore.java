@@ -129,21 +129,6 @@ public final class KeysetTrustStore {
                 .subscribeOn(Schedulers.io());
     }
 
-    /** Drops the record for one conversation; the next check falls back to UNVERIFIED. */
-    @NonNull
-    public Completable clearForConversation(@NonNull String ownerUserId,
-            @NonNull String conversationId) {
-        return Completable.fromAction(() -> dao.delete(ownerUserId, conversationId))
-                .subscribeOn(Schedulers.io());
-    }
-
-    /** Drops every record the account holds (account boundary). */
-    @NonNull
-    public Completable clearForOwner(@NonNull String ownerUserId) {
-        return Completable.fromAction(() -> dao.deleteForOwner(ownerUserId))
-                .subscribeOn(Schedulers.io());
-    }
-
     @NonNull
     private static Record toRecord(@NonNull KeysetTrustEntity row) {
         TrustState state = KeysetTrustDao.STATE_VERIFIED.equals(row.state)

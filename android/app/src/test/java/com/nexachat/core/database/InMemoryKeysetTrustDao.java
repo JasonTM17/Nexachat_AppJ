@@ -28,16 +28,6 @@ public final class InMemoryKeysetTrustDao extends KeysetTrustDao {
     }
 
     @Override
-    public synchronized void delete(String ownerUserId, String conversationId) {
-        rows.remove(new Key(ownerUserId, conversationId));
-    }
-
-    @Override
-    public synchronized void deleteForOwner(String ownerUserId) {
-        rows.keySet().removeIf(key -> key.ownerUserId().equals(ownerUserId));
-    }
-
-    @Override
     @Nullable
     public synchronized KeysetTrustEntity checkAndMarkChanged(String ownerUserId,
             String conversationId, String observedDigestHex, long nowMs) {

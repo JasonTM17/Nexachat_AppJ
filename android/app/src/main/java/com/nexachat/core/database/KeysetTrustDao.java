@@ -26,13 +26,6 @@ public abstract class KeysetTrustDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     public abstract void put(KeysetTrustEntity row);
 
-    @Query("DELETE FROM e2ee_keyset_trust WHERE owner_user_id = :ownerUserId"
-            + " AND conversation_id = :conversationId")
-    public abstract void delete(String ownerUserId, String conversationId);
-
-    @Query("DELETE FROM e2ee_keyset_trust WHERE owner_user_id = :ownerUserId")
-    public abstract void deleteForOwner(String ownerUserId);
-
     /**
      * Loads the row and flips VERIFIED to CHANGED when its stored digest
      * differs from {@code observedDigestHex}, recording that digest. Every

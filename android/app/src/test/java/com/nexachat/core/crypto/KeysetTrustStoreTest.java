@@ -167,26 +167,6 @@ public final class KeysetTrustStoreTest {
                         .orElseThrow(AssertionError::new).state());
     }
 
-    @Test
-    public void clearForConversationAndOwnerFallBackToUnverified() throws Exception {
-        byte[] transcript = baseTranscript();
-        String otherConversation = "99999999-9999-9999-9999-999999999999";
-        store.markVerified(OWNER_A, CONV, transcript).blockingAwait();
-        store.markVerified(OWNER_A, otherConversation, transcript).blockingAwait();
-        store.markVerified(OWNER_B, CONV, transcript).blockingAwait();
-
-        store.clearForConversation(OWNER_A, CONV).blockingAwait();
-
-        assertTrue(store.state(OWNER_A, CONV).blockingGet().isEmpty());
-        assertTrue(store.state(OWNER_A, otherConversation).blockingGet().isPresent());
-        assertTrue(store.state(OWNER_B, CONV).blockingGet().isPresent());
-
-        store.clearForOwner(OWNER_A).blockingAwait();
-
-        assertTrue(store.state(OWNER_A, otherConversation).blockingGet().isEmpty());
-        assertTrue(store.state(OWNER_B, CONV).blockingGet().isPresent());
-    }
-
     // ---- fixtures ----
 
     private static byte[] baseTranscript() throws KeysetCheck.InvalidKeysetException {
