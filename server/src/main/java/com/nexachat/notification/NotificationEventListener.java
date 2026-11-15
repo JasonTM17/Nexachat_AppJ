@@ -59,6 +59,10 @@ public class NotificationEventListener {
      * added back to the recipient set for that one event.
      * {@link #onCallRinging} is never gated — a call must ring.
      *
+     * <p>The push reaches only members admitted when the message was created:
+     * a member who joined or rejoined later never sees the content, so their
+     * devices must not ring for it either.
+     *
      * <p>A replay (an idempotent send retry) still broadcasts so the sender
      * reaches SENT, but it must not push again: the stored row's first send
      * already notified these devices.
@@ -71,7 +75,8 @@ public class NotificationEventListener {
         UUID conversationId = event.conversationId();
         UUID senderId = event.message().senderId();
         UUID subjectUserId = event.subjectUserId();
-        List<UUID> memberIds = memberRepository.findMemberUserIds(conversationId);
+        List<UUID> memberIds = memberRepository.findAdmittedUserIds(
+                conversationId, event.message().createdAt());
         // A removed subject is already gone from the member list at fan-out
         // time; keep them as a candidate so the removal notice still reaches
         // their devices.
