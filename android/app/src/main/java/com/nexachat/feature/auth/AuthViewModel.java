@@ -65,6 +65,15 @@ public final class AuthViewModel extends ViewModel {
     }
 
     /**
+     * Fetches the sign-in nonce while the screen is idle so the tap -> sheet
+     * path skips both the server-wait and the nonce round trip. Safe to call
+     * repeatedly; only one nonce is kept.
+     */
+    public void prefetchGoogleSignInNonce() {
+        googleSignInFlow.prefetchSignInNonce();
+    }
+
+    /**
      * Runs nonce -> Credential Manager -> server exchange. The Activity is used
      * only for the Credential Manager call and is never retained.
      */
