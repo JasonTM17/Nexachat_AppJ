@@ -195,6 +195,57 @@ public final class ProfileViewModelTest {
     }
 
     @Test
+    public void lateLoadResultAfterSignOutDoesNotRecacheThePreviousUser() {
+        SingleSubject<Result<UserDto>> pending = SingleSubject.create();
+        when(contactsRepository.getMe()).thenReturn(pending);
+        SessionEvents sessionEvents = new SessionEvents();
+        ProfileViewModel viewModel = new ProfileViewModel(
+                contactsRepository, authRepository, settingsRepository, sessionEvents);
+
+        sessionEvents.emitLoggedOut();
+        pending.onSuccess(new Result.Success<>(me));
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertNull(state.getUser());
+        assertFalse(state.isLoading());
+    }
+
+    @Test
+    public void lateDisplayNameSaveAfterSignOutDoesNotRecacheThePreviousUser() {
+        SessionEvents sessionEvents = new SessionEvents();
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me), sessionEvents);
+        SingleSubject<Result<UserDto>> pendingSave = SingleSubject.create();
+        when(contactsRepository.updateDisplayName(anyString())).thenReturn(pendingSave);
+        viewModel.startEditName();
+        viewModel.onNameInputChange("New name");
+        viewModel.saveDisplayName();
+
+        sessionEvents.emitLoggedOut();
+        pendingSave.onSuccess(new Result.Success<>(me.withDisplayName("New name")));
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertNull(state.getUser());
+        assertFalse(state.isSaving());
+    }
+
+    @Test
+    public void lateAvatarUploadAfterSignOutDoesNotRecacheThePreviousUser() {
+        Uri uri = mock(Uri.class);
+        SingleSubject<Result<UserDto>> pendingUpload = SingleSubject.create();
+        when(contactsRepository.uploadAvatar(uri)).thenReturn(pendingUpload);
+        SessionEvents sessionEvents = new SessionEvents();
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me), sessionEvents);
+        viewModel.uploadAvatar(uri);
+
+        sessionEvents.emitLoggedOut();
+        pendingUpload.onSuccess(new Result.Success<>(me.withAvatarUrl("/avatars/old.png")));
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertNull(state.getUser());
+        assertFalse(state.isAvatarUploading());
+    }
+
+    @Test
     public void accountSwitchShowsTheNewUserAndNeverThePreviousOne() {
         UserDto previous = new UserDto("user-a", "+84900000201", "Lan Anh", null);
         UserDto signedIn = new UserDto("user-b", "+84900000202", "Minh Khoa", null);
