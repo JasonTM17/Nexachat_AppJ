@@ -79,10 +79,18 @@ automatically rewritten when the flag flips. On Android, the compiled
   `E2EE_V1_ACTIVATION_DISABLED` while it is off; turning encryption off
   never consults the gate.
 - `POST /conversations/{id}/messages` with `encryption: "E2EE_V1"` and
-  `e2eeEnvelopes` (1–20 unique entries, every deviceId an ACTIVE device of a
-  current member else `E2EE_STALE_DEVICES`). Enabled conversations require
-  the field (`E2EE_REQUIRED`), accept TEXT only (`E2EE_MEDIA_UNSUPPORTED`),
-  and reject mentions. Idempotent replay returns the stored row unchanged.
+  `e2eeEnvelopes` (1–20 unique entries). The envelope device set must EQUAL
+  the active devices of all current members — including every device of the
+  sender, which wraps a content key for itself — else `E2EE_STALE_DEVICES`.
+  Before the conversation row lock, the send takes `FOR NO KEY UPDATE` on
+  every member's `users` row in UUID order — the same lock registration
+  holds for its whole transaction (`FOR KEY SHARE` cannot substitute:
+  PostgreSQL does not conflict it with `FOR NO KEY UPDATE`). A device
+  enrolled concurrently therefore either commits before the send's locks
+  (and must be covered) or waits for the send to finish; a client on a
+  stale snapshot refetches the directory and re-encrypts on this error. Enabled conversations require the field
+  (`E2EE_REQUIRED`), accept TEXT only (`E2EE_MEDIA_UNSUPPORTED`), and reject
+  mentions. Idempotent replay returns the stored row unchanged.
 - `MessageResponse` carries `encryption` and `e2eeEnvelopes` on every read
   surface (history, sync delta, realtime broadcast, send result).
 - `InboxEntry` carries `e2eeEnabled` and `lastMessageEncrypted` (snippet
