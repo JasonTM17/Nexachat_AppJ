@@ -44,4 +44,11 @@ public final class InMemoryKeysetTrustDao extends KeysetTrustDao {
         return super.checkAndMarkChanged(ownerUserId, conversationId,
                 observedDigestHex, nowMs);
     }
+
+    @Override
+    @Nullable
+    public synchronized KeysetTrustEntity checkAndMarkReshaped(String ownerUserId,
+            String conversationId, long nowMs) {
+        return super.checkAndMarkReshaped(ownerUserId, conversationId, nowMs);
+    }
 }

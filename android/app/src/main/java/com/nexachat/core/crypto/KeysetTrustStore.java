@@ -17,10 +17,11 @@ import javax.inject.Singleton;
  * <p>A missing row means UNVERIFIED: first contact is trust-on-first-use and
  * must be labelled, never silently trusted. A VERIFIED row pins the SHA-256
  * digest of the transcript the user compared out of band; when a later roster
- * digests differently the row flips to CHANGED inside one transaction and
- * stays CHANGED — even if the old roster comes back — until {@link
- * #markVerified} binds a new transcript. Rows are keyed by owner account so
- * one signed-in user can never read or satisfy another's verification.
+ * digests differently — or can no longer form a direct transcript at all —
+ * the row flips to CHANGED inside one transaction and stays CHANGED — even
+ * if the old roster comes back — until {@link #markVerified} binds a new
+ * transcript. Rows are keyed by owner account so one signed-in user can
+ * never read or satisfy another's verification.
  */
 @Singleton
 public final class KeysetTrustStore {
@@ -30,6 +31,13 @@ public final class KeysetTrustStore {
 
     /** The outcome of an encrypt-time roster comparison. */
     public enum CheckResult { VERIFIED_MATCH, UNVERIFIED, CHANGED }
+
+    /**
+     * The outcome of an encrypt-time check on a roster that produced no
+     * direct transcript: UNTRACKED means no trust record exists for the
+     * pair, CHANGED means a record exists and the shape change is one.
+     */
+    public enum ShapeResult { UNTRACKED, CHANGED }
 
     /** A snapshot of the stored record for one owner/conversation pair. */
     public record Record(@NonNull TrustState state, @NonNull String verifiedDigestHex,
@@ -98,6 +106,25 @@ public final class KeysetTrustStore {
                     }
                     return KeysetTrustDao.STATE_VERIFIED.equals(row.state)
                             ? CheckResult.VERIFIED_MATCH : CheckResult.CHANGED;
+                })
+                .subscribeOn(Schedulers.io());
+    }
+
+    /**
+     * Checks the pair when the roster about to receive envelopes is not a
+     * direct chat, so no transcript exists to compare: a stored record
+     * means the verified shape was reshaped — itself a keyset change — so
+     * the row flips to CHANGED atomically and the call reports CHANGED. A
+     * missing row reports UNTRACKED, leaving groups and never-verified
+     * conversations on their previous behavior.
+     */
+    @NonNull
+    public Single<ShapeResult> checkUntrackedShape(@NonNull String ownerUserId,
+            @NonNull String conversationId) {
+        return Single.fromCallable(() -> {
+                    KeysetTrustEntity row = dao.checkAndMarkReshaped(ownerUserId,
+                            conversationId, System.currentTimeMillis());
+                    return row == null ? ShapeResult.UNTRACKED : ShapeResult.CHANGED;
                 })
                 .subscribeOn(Schedulers.io());
     }

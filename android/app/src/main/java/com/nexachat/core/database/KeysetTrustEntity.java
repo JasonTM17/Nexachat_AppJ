@@ -11,8 +11,11 @@ import androidx.room.Entity;
  *
  * <p>A missing row means UNVERIFIED (trust on first use). A VERIFIED row pins
  * the digest of the transcript the user compared out of band; a CHANGED row
- * records that the roster observed afterwards no longer matches it. Only a
- * fresh verification clears CHANGED.
+ * records that the roster observed afterwards no longer matches it. On a
+ * CHANGED row, {@code changed_digest_hex} holds the observed digest that
+ * differed, or stays null when the detected change was a roster reshape
+ * that produced no comparable transcript. Only a fresh verification clears
+ * CHANGED.
  */
 @Entity(tableName = "e2ee_keyset_trust",
         primaryKeys = {"owner_user_id", "conversation_id"})

@@ -2,6 +2,8 @@ package com.nexachat.core.crypto;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -10,6 +12,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -28,7 +31,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.junit.Before;
 import org.junit.Test;
@@ -39,7 +41,8 @@ import retrofit2.Response;
  * Verified-keyset enforcement on the send path: an unverified direct roster
  * still encrypts (labelled trust on first use), a verified roster that grows
  * an attacker device fails {@code E2EE_KEYSET_CHANGED} before any crypto work,
- * and non-direct rosters keep their previous behavior.
+ * a verified direct roster reshaped into a non-direct one fails the same way,
+ * and untracked non-direct rosters keep their previous behavior.
  */
 public final class E2eeSessionTrustTest {
 
@@ -230,34 +233,135 @@ public final class E2eeSessionTrustTest {
                 anyString(), anyList());
     }
 
+    /**
+     * The roster-shape falsifier: both users verified the genuine direct
+     * roster, then the server reshapes the member list into three users.
+     * No transcript exists to compare, yet the send must still fail before
+     * the reshaped keyset ever reaches the crypto layer.
+     */
     @Test
-    public void groupRosterBypassesTrustCheck() throws Exception {
+    public void verifiedRosterReshapedToGroupFailsBeforeCrypto() throws Exception {
         KeyPair mine = E2eeCrypto.generateDeviceKeyPair();
         KeyPair peer = E2eeCrypto.generateDeviceKeyPair();
         KeyPair third = E2eeCrypto.generateDeviceKeyPair();
-        // A verified record exists for the conversation, but a non-direct
-        // roster never consults it.
-        trustStore.markVerified(USER_A, CONV, KeysetCheck.transcript(
-                UUID.fromString(CONV), List.of(
-                        new KeysetCheck.UserRoster(UUID.fromString(USER_A),
-                                List.of(new KeysetCheck.Device(
-                                        UUID.fromString(DEV_ME),
-                                        KeysetCheck.ALGORITHM_X25519,
-                                        mine.publicKey()))),
-                        new KeysetCheck.UserRoster(UUID.fromString(USER_B),
-                                List.of(new KeysetCheck.Device(
-                                        UUID.fromString(DEV_PEER),
-                                        KeysetCheck.ALGORITHM_X25519,
-                                        peer.publicKey())))))).blockingAwait();
-        stubEncryptSession(mine, new ConversationE2eeDto(true, List.of(
-                new MemberDeviceDto(USER_A, DEV_ME, E2eeCrypto.b64url(mine.publicKey())),
-                new MemberDeviceDto(USER_B, DEV_PEER, E2eeCrypto.b64url(peer.publicKey())),
-                new MemberDeviceDto(USER_C, DEV_EXTRA, E2eeCrypto.b64url(third.publicKey())))));
+        stubEncryptSession(mine, twoMemberState(mine, peer));
+
+        byte[] shown = session.currentTranscript(CONV).blockingGet();
+        session.markVerified(CONV, shown).blockingAwait();
+
+        Call<ConversationE2eeDto> reshaped = stateCall(
+                threeUserState(mine, peer, third));
+        when(api.getE2ee(CONV)).thenReturn(reshaped);
+        session.invalidateDevices(CONV);
+
+        session.encryptFor(CONV, "hi", USER_A, "m1").test()
+                .awaitDone(5, TimeUnit.SECONDS)
+                .assertError(error -> error instanceof E2eeSession.E2eeException
+                        && "E2EE_KEYSET_CHANGED".equals(error.getMessage()));
+        verify(crypto, never()).encrypt(anyString(), anyString(), anyString(),
+                anyString(), anyList());
+        KeysetTrustStore.Record record = trustStore.state(USER_A, CONV).blockingGet()
+                .orElseThrow(AssertionError::new);
+        assertEquals(KeysetTrustStore.TrustState.CHANGED, record.state());
+        // A reshape has no comparable transcript, so no digest is recorded.
+        assertNull(record.changedDigestHex());
+    }
+
+    /**
+     * The mirror falsifier: the verified direct roster collapses to a single
+     * user. The bad snapshot survives the refetch that heals transient
+     * omissions, then the send fails as a keyset change before any crypto.
+     */
+    @Test
+    public void verifiedRosterCollapsedToOneUserFailsBeforeCrypto() throws Exception {
+        KeyPair mine = E2eeCrypto.generateDeviceKeyPair();
+        KeyPair peer = E2eeCrypto.generateDeviceKeyPair();
+        stubEncryptSession(mine, twoMemberState(mine, peer));
+
+        byte[] shown = session.currentTranscript(CONV).blockingGet();
+        session.markVerified(CONV, shown).blockingAwait();
+
+        Call<ConversationE2eeDto> collapsed = stateCall(singleUserState(mine));
+        when(api.getE2ee(CONV)).thenReturn(collapsed);
+        session.invalidateDevices(CONV);
+
+        session.encryptFor(CONV, "hi", USER_A, "m1").test()
+                .awaitDone(5, TimeUnit.SECONDS)
+                .assertError(error -> error instanceof E2eeSession.E2eeException
+                        && "E2EE_KEYSET_CHANGED".equals(error.getMessage()));
+        // The verdict landed only after the one healing refetch: the first
+        // fetch backs currentTranscript, the next two are the send's fetch
+        // and refetch.
+        verify(api, times(3)).getE2ee(CONV);
+        verify(crypto, never()).encrypt(anyString(), anyString(), anyString(),
+                anyString(), anyList());
+        KeysetTrustStore.Record record = trustStore.state(USER_A, CONV).blockingGet()
+                .orElseThrow(AssertionError::new);
+        assertEquals(KeysetTrustStore.TrustState.CHANGED, record.state());
+        assertNull(record.changedDigestHex());
+    }
+
+    @Test
+    public void reshapedRosterStaysChangedUntilReverified() throws Exception {
+        KeyPair mine = E2eeCrypto.generateDeviceKeyPair();
+        KeyPair peer = E2eeCrypto.generateDeviceKeyPair();
+        KeyPair third = E2eeCrypto.generateDeviceKeyPair();
+        stubEncryptSession(mine, twoMemberState(mine, peer));
+        byte[] shown = session.currentTranscript(CONV).blockingGet();
+        session.markVerified(CONV, shown).blockingAwait();
+        Call<ConversationE2eeDto> reshaped = stateCall(
+                threeUserState(mine, peer, third));
+        when(api.getE2ee(CONV)).thenReturn(reshaped);
+        session.invalidateDevices(CONV);
+        session.encryptFor(CONV, "hi", USER_A, "m1").test()
+                .awaitDone(5, TimeUnit.SECONDS).assertError(
+                        error -> error instanceof E2eeSession.E2eeException);
+
+        // The verified roster returning does not clear the verdict.
+        Call<ConversationE2eeDto> restored = stateCall(twoMemberState(mine, peer));
+        when(api.getE2ee(CONV)).thenReturn(restored);
+        session.invalidateDevices(CONV);
+        session.encryptFor(CONV, "hi", USER_A, "m2").test()
+                .awaitDone(5, TimeUnit.SECONDS)
+                .assertError(error -> error instanceof E2eeSession.E2eeException
+                        && "E2EE_KEYSET_CHANGED".equals(error.getMessage()));
+        verify(crypto, never()).encrypt(anyString(), anyString(), anyString(),
+                anyString(), anyList());
+
+        // Only a fresh comparison and approval lifts the pause.
+        session.markVerified(CONV, shown).blockingAwait();
+        session.encryptFor(CONV, "hi", USER_A, "m3").test()
+                .awaitDone(5, TimeUnit.SECONDS).assertValueCount(1);
+    }
+
+    @Test
+    public void unverifiedCollapsedRosterKeepsStaleDevices() throws Exception {
+        KeyPair mine = E2eeCrypto.generateDeviceKeyPair();
+        // No trust record: a collapsed roster is a stale snapshot, not a
+        // keyset change, and still fails closed.
+        stubEncryptSession(mine, singleUserState(mine));
+
+        session.encryptFor(CONV, "hi", USER_A, "m1").test()
+                .awaitDone(5, TimeUnit.SECONDS)
+                .assertError(error -> error instanceof E2eeSession.E2eeException
+                        && "E2EE_STALE_DEVICES".equals(error.getMessage()));
+        assertTrue(trustStore.state(USER_A, CONV).blockingGet().isEmpty());
+    }
+
+    @Test
+    public void untrackedGroupRosterEncrypts() throws Exception {
+        KeyPair mine = E2eeCrypto.generateDeviceKeyPair();
+        KeyPair peer = E2eeCrypto.generateDeviceKeyPair();
+        KeyPair third = E2eeCrypto.generateDeviceKeyPair();
+        // No trust record exists for the conversation: the lookup still runs
+        // but writes nothing, and the group roster encrypts as before.
+        stubEncryptSession(mine, threeUserState(mine, peer, third));
 
         session.encryptFor(CONV, "hi", USER_A, "m1").test()
                 .awaitDone(5, TimeUnit.SECONDS).assertValueCount(1);
-        verify(trustDao, never()).checkAndMarkChanged(anyString(), anyString(),
-                anyString(), anyLong());
+        verify(trustDao).checkAndMarkReshaped(eq(USER_A), eq(CONV), anyLong());
+        verify(trustDao, never()).put(any());
+        assertTrue(trustStore.state(USER_A, CONV).blockingGet().isEmpty());
     }
 
     @Test
@@ -330,6 +434,19 @@ public final class E2eeSessionTrustTest {
                 new MemberDeviceDto(USER_B, DEV_PEER, E2eeCrypto.b64url(peer.publicKey())),
                 new MemberDeviceDto(USER_B, DEV_EXTRA,
                         E2eeCrypto.b64url(attacker.publicKey()))));
+    }
+
+    private static ConversationE2eeDto threeUserState(KeyPair mine, KeyPair peer,
+            KeyPair third) {
+        return new ConversationE2eeDto(true, List.of(
+                new MemberDeviceDto(USER_A, DEV_ME, E2eeCrypto.b64url(mine.publicKey())),
+                new MemberDeviceDto(USER_B, DEV_PEER, E2eeCrypto.b64url(peer.publicKey())),
+                new MemberDeviceDto(USER_C, DEV_EXTRA, E2eeCrypto.b64url(third.publicKey()))));
+    }
+
+    private static ConversationE2eeDto singleUserState(KeyPair mine) {
+        return new ConversationE2eeDto(true, List.of(
+                new MemberDeviceDto(USER_A, DEV_ME, E2eeCrypto.b64url(mine.publicKey()))));
     }
 
     private static Call<ConversationE2eeDto> stateCall(ConversationE2eeDto state)

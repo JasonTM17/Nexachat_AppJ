@@ -16,8 +16,9 @@ import org.junit.Test;
 /**
  * Trust-record state machine over the durable DAO: first contact is
  * UNVERIFIED, verification pins the compared transcript's digest, a later
- * mismatch flips the record to CHANGED inside one transaction, and CHANGED
- * stays sticky until a fresh verification clears it.
+ * mismatch — or a roster reshape that yields no transcript at all — flips
+ * the record to CHANGED inside one transaction, and CHANGED stays sticky
+ * until a fresh verification clears it.
  */
 public final class KeysetTrustStoreTest {
 
@@ -107,6 +108,47 @@ public final class KeysetTrustStoreTest {
                 .orElseThrow(AssertionError::new);
         assertEquals(KeysetTrustStore.TrustState.VERIFIED, record.state());
         assertNull(record.changedDigestHex());
+    }
+
+    @Test
+    public void untrackedShapeFlipsVerifiedToChanged() throws Exception {
+        byte[] verified = baseTranscript();
+        store.markVerified(OWNER_A, CONV, verified).blockingAwait();
+
+        store.checkUntrackedShape(OWNER_A, CONV).test()
+                .awaitDone(5, TimeUnit.SECONDS)
+                .assertValue(KeysetTrustStore.ShapeResult.CHANGED);
+
+        KeysetTrustStore.Record record = store.state(OWNER_A, CONV).blockingGet()
+                .orElseThrow(AssertionError::new);
+        assertEquals(KeysetTrustStore.TrustState.CHANGED, record.state());
+        assertEquals(hex(KeysetCheck.digest(verified)), record.verifiedDigestHex());
+        assertArrayEquals(verified, record.verifiedTranscript());
+        // A reshape has no comparable transcript, so no digest is recorded.
+        assertNull(record.changedDigestHex());
+
+        // The verdict is sticky across repeated reshaped sightings and
+        // still blocks the matching direct transcript.
+        store.checkUntrackedShape(OWNER_A, CONV).test()
+                .awaitDone(5, TimeUnit.SECONDS)
+                .assertValue(KeysetTrustStore.ShapeResult.CHANGED);
+        store.checkBeforeEncrypt(OWNER_A, CONV, verified).test()
+                .awaitDone(5, TimeUnit.SECONDS)
+                .assertValue(KeysetTrustStore.CheckResult.CHANGED);
+    }
+
+    @Test
+    public void untrackedShapeWithoutRecordStaysUntracked() throws Exception {
+        store.checkUntrackedShape(OWNER_A, CONV).test()
+                .awaitDone(5, TimeUnit.SECONDS)
+                .assertValue(KeysetTrustStore.ShapeResult.UNTRACKED);
+        assertTrue(store.state(OWNER_A, CONV).blockingGet().isEmpty());
+
+        // A record under another owner is invisible to this pair's lookup.
+        store.markVerified(OWNER_B, CONV, baseTranscript()).blockingAwait();
+        store.checkUntrackedShape(OWNER_A, CONV).test()
+                .awaitDone(5, TimeUnit.SECONDS)
+                .assertValue(KeysetTrustStore.ShapeResult.UNTRACKED);
     }
 
     @Test
