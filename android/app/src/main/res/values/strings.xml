@@ -185,6 +185,23 @@
     <string name="e2ee_peer_fallback">your contact</string>
     <string name="e2ee_action_turn_on">Turn on</string>
     <string name="e2ee_action_turn_off">Turn off</string>
+    <string name="e2ee_verify_state_not_verified">Not verified</string>
+    <string name="e2ee_verify_state_verified">Verified</string>
+    <string name="e2ee_verify_state_changed">Changed — compare again</string>
+    <string name="e2ee_verify_state_unavailable">Can\'t read verification state</string>
+    <string name="e2ee_action_mark_verified">Mark as verified</string>
+    <string name="e2ee_verify_confirm_title">Mark keyset as verified?</string>
+    <string name="e2ee_verify_confirm_body">Only verify after you compared the code with %1$s and both match.</string>
+    <string name="e2ee_code_changed_refresh">The code changed. Compare again.</string>
+    <string name="e2ee_keyset_changed_notice">Security code changed. Sending is paused until you compare again.</string>
+    <string name="e2ee_keyset_notice_action">Compare</string>
+    <string name="e2ee_downgrade_notice">Encryption is off for this chat. Sending is paused.</string>
+    <string name="e2ee_downgrade_notice_action">Review</string>
+    <string name="e2ee_send_blocked_downgrade">Encryption is off for this chat. Turn it back on to send.</string>
+    <string name="e2ee_send_keyset_invalid">This chat\'s member list can\'t be read. Not sent.</string>
+    <string name="e2ee_failed_keyset_changed">Not sent — code changed</string>
+    <string name="e2ee_failed_downgrade_blocked">Not sent — encryption off</string>
+
     <string name="chat_typing">typing…</string>
     <string name="msg_seen">Seen</string>
     <string name="chat_offline">Disconnected</string>

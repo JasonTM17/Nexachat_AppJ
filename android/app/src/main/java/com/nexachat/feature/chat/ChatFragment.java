@@ -835,6 +835,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         binding.chatErrorRetry.setVisibility(state.canRetryError()
                 ? View.VISIBLE : View.GONE);
         binding.chatErrorRetry.setOnClickListener(ignored -> viewModel.retryChatError());
+        renderKeysetNotice();
         renderPinned();
         renderReplyEditBanner();
         renderAttachments();
@@ -964,6 +965,37 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                     com.nexachat.res.QuantityStrings.memberCount(getResources(), groupMembers.size()));
         } else {
             binding.chatToolbar.setSubtitle("");
+        }
+    }
+
+    /**
+     * The persistent local notice for a paused send path — driven only by the
+     * durable keyset verdict carried in render state, never a server SYSTEM
+     * message. While it holds, FAILED rows also swap their retry label for
+     * the pause reason.
+     */
+    private void renderKeysetNotice() {
+        ChatViewModel.KeysetPause pause = state.getKeysetPause();
+        View root = binding.keysetNotice.getRoot();
+        if (pause == ChatViewModel.KeysetPause.NONE) {
+            root.setVisibility(View.GONE);
+        } else {
+            boolean changed = pause == ChatViewModel.KeysetPause.CHANGED;
+            binding.keysetNotice.keysetNoticeText.setText(changed
+                    ? R.string.e2ee_keyset_changed_notice : R.string.e2ee_downgrade_notice);
+            binding.keysetNotice.keysetNoticeAction.setText(changed
+                    ? R.string.e2ee_keyset_notice_action
+                    : R.string.e2ee_downgrade_notice_action);
+            binding.keysetNotice.keysetNoticeAction.setOnClickListener(
+                    v -> openEncryption());
+            root.setVisibility(View.VISIBLE);
+        }
+        if (adapter != null) {
+            adapter.setPausedFailReason(switch (pause) {
+                case CHANGED -> R.string.e2ee_failed_keyset_changed;
+                case DOWNGRADE_BLOCKED -> R.string.e2ee_failed_downgrade_blocked;
+                default -> 0;
+            });
         }
     }
 
@@ -1672,6 +1704,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         if (!conversationId.isBlank()) {
             foregroundConversationTracker.onConversationResumed(conversationId);
         }
+        viewModel.refreshKeysetNotice();
     }
 
     @Override public void onPause() {

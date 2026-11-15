@@ -127,6 +127,13 @@ public final class ChatBubbleRulesTest {
     }
 
     @Test
+    public void pausedConversationDisablesTheRetryAffordance() {
+        assertFalse(ChatBubbleRules.isRetryAffordanceVisible(DeliveryStatus.FAILED, true));
+        assertTrue(ChatBubbleRules.isRetryAffordanceVisible(DeliveryStatus.FAILED, false));
+        assertFalse(ChatBubbleRules.isRetryAffordanceVisible(DeliveryStatus.SENT, false));
+    }
+
+    @Test
     public void findMessageReversedIndexReturnsCorrectOffset() {
         ChatMessage m1 = new ChatMessage("msg-1", "c1", 1L, "u1", "User", "TEXT", "1",
                 null, null, null, 100L, null, DeliveryStatus.SENT, true,
