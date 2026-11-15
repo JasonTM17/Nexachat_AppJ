@@ -183,6 +183,7 @@
             app:layout_scrollFlags="scroll|enterAlways">
 
             <LinearLayout
+                android:id="@+id/inboxFilterRow"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal">

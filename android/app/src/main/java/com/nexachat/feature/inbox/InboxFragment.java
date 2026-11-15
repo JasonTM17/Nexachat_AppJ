@@ -15,6 +15,7 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.LinearLayout;
 import android.widget.PopupMenu;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
@@ -126,6 +127,7 @@ public final class InboxFragment extends Fragment {
                 LayoutInflater.from(requireContext()),
                 requireContext());
 
+        applyFilterChipRowLayout();
         binding.inboxFilterChips.check(R.id.filterAllChip);
         updateFilterChipsUi(0);
         binding.inboxFilterChips.setOnCheckedStateChangeListener(
@@ -597,6 +599,36 @@ public final class InboxFragment extends Fragment {
                 InboxFilterChipColourRules.apply(chip, requireContext());
             }
         }
+    }
+
+    /**
+     * Large text makes the horizontal carousel unreliable, so the filter and label
+     * chip groups wrap onto stacked rows that fill the screen width instead.
+     */
+    private void applyFilterChipRowLayout() {
+        if (binding == null || !InboxFilterChipLayoutRules.chipsWrapOntoMultipleRows(
+                getResources().getConfiguration().fontScale)) {
+            return;
+        }
+        LinearLayout row = binding.inboxFilterRow;
+        row.setOrientation(LinearLayout.VERTICAL);
+        ViewGroup.LayoutParams rowParams = row.getLayoutParams();
+        rowParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
+        row.setLayoutParams(rowParams);
+        widenChipGroup(binding.inboxFilterChips);
+        widenChipGroup(binding.labelFilterChips);
+        ViewGroup.MarginLayoutParams labelParams =
+                (ViewGroup.MarginLayoutParams) binding.labelFilterChips.getLayoutParams();
+        labelParams.topMargin = labelParams.getMarginStart();
+        labelParams.setMarginStart(0);
+        binding.labelFilterChips.setLayoutParams(labelParams);
+    }
+
+    private static void widenChipGroup(@NonNull ChipGroup group) {
+        group.setSingleLine(false);
+        ViewGroup.LayoutParams params = group.getLayoutParams();
+        params.width = ViewGroup.LayoutParams.MATCH_PARENT;
+        group.setLayoutParams(params);
     }
 
     private void renderActiveNowStrip(@NonNull List<ConversationSummary> rows) {
