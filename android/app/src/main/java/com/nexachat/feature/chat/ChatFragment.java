@@ -198,7 +198,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         super.onViewCreated(view, savedInstanceState);
         conversationId = getArguments() == null ? "" : getArguments().getString(ARG_CONVERSATION_ID, "");
         viewModel = new ViewModelProvider(this).get(ChatViewModel.class);
-        inboxViewModel = new ViewModelProvider(requireActivity()).get(InboxViewModel.class);
+        // Fragment scope, not the activity store: a retained instance would keep the
+        // previous account's user id and inbox rows across an account switch.
+        inboxViewModel = new ViewModelProvider(this).get(InboxViewModel.class);
         summaryViewModel = new ViewModelProvider(this).get(SummaryViewModel.class);
         configureList();
         configureMentionPicker();
@@ -502,7 +504,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                     accessibleVoiceRecordingActive = false;
                     resetAccessibleVoiceRecordingUi();
                     if (!beginVoiceRecording(v)) {
-                        return false;
+                        // Consume the tap so it cannot fall through to the accessible
+                        // click path and retry silently; the hint explains the gesture.
+                        Toast.makeText(requireContext(),
+                                VoiceTapFeedbackRules.quickTapHintMessageId(),
+                                Toast.LENGTH_SHORT).show();
+                        return true;
                     }
                     return true;
 
@@ -695,6 +702,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         }
         if (cancel) {
             voiceRecorder.cancel();
+        } else if (VoiceTapFeedbackRules.finishWithoutRecordingIsQuiet(
+                voiceRecorder.isRecording())) {
+            resetAccessibleVoiceRecordingUi();
+            return;
         } else {
             long durationMs = voiceRecorder.getDurationMs();
             File audioFile = voiceRecorder.stop();
@@ -782,6 +793,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                         .show();
             }
             if (event instanceof ChatActionEvent.PreferenceChanged changed) {
+                if (changed.getKind() == ChatActionEvent.PreferenceChanged.Kind.ARCHIVED
+                        && leaveChatForArchivedConversation()) {
+                    return;
+                }
                 Snackbar snackbar = Snackbar.make(
                         binding.getRoot(), preferenceMessage(changed.getKind()), Snackbar.LENGTH_LONG);
                 if (changed.getUndo() != null) {
@@ -1428,6 +1443,48 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         } else if (action == MENU_GROUP_BOARD) {
             openGroupBoard();
         }
+    }
+
+    /**
+     * Archiving removes the conversation from the inbox, so staying in the chat would be a
+     * dead end. The confirmation is anchored to the activity view so it survives the pop,
+     * and its undo runs through the activity-scoped inbox store because this screen's view
+     * models are destroyed along with it.
+     */
+    private boolean leaveChatForArchivedConversation() {
+        if (!isAdded()) {
+            return false;
+        }
+        View hostView = requireActivity().findViewById(android.R.id.content);
+        InboxViewModel sharedInboxViewModel =
+                new ViewModelProvider(requireActivity()).get(InboxViewModel.class);
+        String archivedId = conversationId;
+        boolean popped;
+        try {
+            popped = NavHostFragment.findNavController(this).popBackStack();
+        } catch (IllegalStateException noNav) {
+            popped = false;
+        }
+        if (!popped) {
+            return false;
+        }
+        Snackbar snackbar = Snackbar.make(
+                hostView, R.string.conversation_archived_snackbar, Snackbar.LENGTH_LONG)
+                .setAction(R.string.action_undo,
+                        ignored -> sharedInboxViewModel.setConversationArchived(archivedId, false));
+        // The undo runs through the activity-scoped inbox store, whose confirmation event no
+        // screen observes; confirm the restore on the same anchor when the action fires.
+        snackbar.addCallback(new Snackbar.Callback() {
+            @Override
+            public void onDismissed(Snackbar dismissed, int event) {
+                if (event == Snackbar.Callback.DISMISS_EVENT_ACTION) {
+                    Snackbar.make(hostView, R.string.conversation_unarchived,
+                            Snackbar.LENGTH_LONG).show();
+                }
+            }
+        });
+        snackbar.show();
+        return true;
     }
 
     private ConversationPreferenceMenu.Listener preferenceListener() {
