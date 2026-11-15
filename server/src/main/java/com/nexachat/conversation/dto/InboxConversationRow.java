@@ -15,6 +15,11 @@ import java.util.UUID;
  * applies the lazy expiry before publishing them. {@code pinned} sorts ahead
  * of the activity order and {@code pinnedAt} is {@code null} exactly when the
  * row is not pinned.
+ *
+ * <p>{@code joinedAt} is the caller's admission time: the {@code lastMessage*}
+ * pointers are conversation-wide, so the read model compares the resolved
+ * message's {@code createdAt} against it and withholds a preview the caller
+ * was not admitted for.
  */
 public record InboxConversationRow(
         UUID id,
@@ -30,15 +35,16 @@ public record InboxConversationRow(
         boolean archived,
         boolean pinned,
         Instant pinnedAt,
-        boolean e2eeEnabled
+        boolean e2eeEnabled,
+        Instant joinedAt
 ) {
 
-    /** Pre-E2EE shape: non-encrypted conversation. */
+    /** Pre-E2EE shape: non-encrypted conversation, member admitted before any message. */
     public InboxConversationRow(UUID id, Conversation.Type type, String title, String avatarUrl,
                                 UUID lastMessageId, Long lastMessageSeq, Instant createdAt,
                                 long lastReadSeq, boolean muted, Instant mutedUntil,
                                 boolean archived, boolean pinned, Instant pinnedAt) {
         this(id, type, title, avatarUrl, lastMessageId, lastMessageSeq, createdAt, lastReadSeq,
-                muted, mutedUntil, archived, pinned, pinnedAt, false);
+                muted, mutedUntil, archived, pinned, pinnedAt, false, Instant.EPOCH);
     }
 }

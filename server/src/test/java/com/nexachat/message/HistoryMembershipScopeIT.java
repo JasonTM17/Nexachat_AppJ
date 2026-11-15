@@ -135,6 +135,32 @@ class HistoryMembershipScopeIT extends ConcurrentDatabaseITSupport {
     }
 
     @Test
+    void editResponseOmitsTheQuoteOfAMessageOutsideAdmission() {
+        var owner = user("Owner");
+        var reader = user("Reader");
+        UUID conversation = group(owner, reader);
+        MessageResponse target = send(owner.getId(), conversation, "needle quoted target");
+        MessageResponse quoting = messages.send(reader.getId(), conversation, new SendMessageRequest(
+                UUID.randomUUID(), "TEXT", "needle quoting line", target.id(), List.of())).message();
+        groups.removeMember(owner.getId(), conversation, reader.getId());
+        groups.addMembers(owner.getId(), conversation,
+                new AddMemberRequest(List.of(reader.getId())));
+        Instant joined = Instant.now();
+        jdbc.update("UPDATE messages SET created_at=? WHERE conversation_id=?",
+                Timestamp.from(joined.minusSeconds(1)), conversation);
+        jdbc.update("UPDATE conversation_members SET joined_at=? WHERE conversation_id=? AND user_id=?",
+                Timestamp.from(joined), conversation, reader.getId());
+        jdbc.update("UPDATE conversation_members SET joined_at=? WHERE conversation_id=? AND user_id=?",
+                Timestamp.from(joined.minusSeconds(60)), conversation, owner.getId());
+
+        MessageResponse edited = messages.edit(reader.getId(), conversation, quoting.id(),
+                new com.nexachat.message.dto.EditMessageRequest("needle edited line"));
+        assertThat(edited.content()).isEqualTo("needle edited line");
+        assertThat(edited.replyTo()).isNull();
+        assertThat(edited.replyToId()).isEqualTo(target.id());
+    }
+
+    @Test
     void aRejoinedMemberCannotReplyToAMessageFromTheirAbsence() {
         Scenario s = rejoined();
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> messages.send(s.reader(), s.conversation(),

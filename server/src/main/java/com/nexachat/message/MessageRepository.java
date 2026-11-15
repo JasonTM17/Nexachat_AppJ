@@ -368,14 +368,23 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
      * Batch reply-target fetch for the {@code replyTo} preview (phase-10):
      * one IN query hydrates every {@code replyToId} on a message page — same
      * projection discipline as the {@link MessageRow} queries.
+     *
+     * <p>Admission invariant: a target the viewer was not a member for when it
+     * was sent does not exist for them, exactly as the realtime fan-out strips
+     * the quote for recipients outside the quoted message's window — every
+     * read model scopes refs the same way history scopes messages.
      */
     @Query("""
             SELECT new com.nexachat.message.dto.ReplyRefRow(
                        m.id, u.id, u.displayName, m.type, m.content, m.deletedAt, m.createdAt, m.encryption)
             FROM Message m JOIN m.sender u
             WHERE m.id IN :ids
+              AND EXISTS (SELECT 1 FROM ConversationMember member
+                          WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
+                            AND m.createdAt >= member.joinedAt)
             """)
-    List<ReplyRefRow> findReplyRefsByIdIn(@Param("ids") Collection<UUID> ids);
+    List<ReplyRefRow> findAdmittedReplyRefsByIdIn(@Param("userId") UUID userId,
+                                                @Param("ids") Collection<UUID> ids);
 
     /** Rows by id, limited to messages the viewer was a member for (pins, previews). */
     @Query("""
@@ -390,15 +399,4 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
                             AND m.createdAt >= member.joinedAt)
             """)
     List<MessageRow> findAdmittedRowsByIdIn(@Param("userId") UUID userId, @Param("ids") Collection<UUID> ids);
-
-    @Query("""
-            SELECT new com.nexachat.message.dto.ReplyRefRow(
-                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt, m.createdAt, m.encryption)
-            FROM Message m JOIN m.sender u
-            WHERE m.id IN :ids
-              AND EXISTS (SELECT 1 FROM ConversationMember member
-                          WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
-                            AND m.createdAt >= member.joinedAt)
-            """)
-    List<ReplyRefRow> findSyncReplyRefsByIdIn(@Param("userId") UUID userId, @Param("ids") Collection<UUID> ids);
 }

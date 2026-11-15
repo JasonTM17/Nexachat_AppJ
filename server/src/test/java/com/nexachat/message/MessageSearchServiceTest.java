@@ -54,7 +54,7 @@ class MessageSearchServiceTest {
                 .thenReturn(true);
         lenient().when(attachmentRepository.findByMessage_IdIn(any())).thenReturn(List.of());
         lenient().when(reactionRepository.findRowsByMessageIdIn(any())).thenReturn(List.of());
-        lenient().when(messageRepository.findReplyRefsByIdIn(any())).thenReturn(List.of());
+        lenient().when(messageRepository.findAdmittedReplyRefsByIdIn(any(), any())).thenReturn(List.of());
     }
 
     @Test

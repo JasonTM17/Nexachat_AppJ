@@ -261,7 +261,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
                        m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
-                       c.e2eeEnabled)
+                       c.e2eeEnabled, m.joinedAt)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId AND m.archived = :archived
             ORDER BY m.pinned DESC, COALESCE(c.lastMessageSeq, 0) DESC,
@@ -276,7 +276,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
                        m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
-                       c.e2eeEnabled)
+                       c.e2eeEnabled, m.joinedAt)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId AND m.archived = :archived
               AND EXISTS (SELECT a.id FROM ConversationLabelAssignment a
@@ -301,7 +301,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
                        m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
-                       c.e2eeEnabled)
+                       c.e2eeEnabled, m.joinedAt)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId
               AND m.archived = :archived
@@ -332,7 +332,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
                        m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
-                       c.e2eeEnabled)
+                       c.e2eeEnabled, m.joinedAt)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId
               AND m.archived = :archived
@@ -367,7 +367,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
                        m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
-                       c.e2eeEnabled)
+                       c.e2eeEnabled, m.joinedAt)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId
               AND m.archived = :archived
@@ -397,7 +397,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
                        m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
-                       c.e2eeEnabled)
+                       c.e2eeEnabled, m.joinedAt)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId
               AND m.archived = :archived
@@ -440,6 +440,12 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
      * query: {@code COUNT(messages.seq > lastReadSeq AND NOT deleted)} per
      * conversation (watermark model, plan §9.3.4). Conversations with zero
      * unread simply return no row.
+     *
+     * <p>The {@code msg.createdAt >= m.joinedAt} predicate is the admission
+     * invariant: a member admitted late never gets an unread badge for
+     * messages sent before their admission — the same scope history and sync
+     * apply. For original members (direct chats and group creators) the
+     * predicate is a no-op because {@code joined_at} predates every message.
      */
     @Query("""
             SELECT new com.nexachat.conversation.dto.UnreadCountRow(
@@ -450,6 +456,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
               AND msg.conversation.id = m.conversation.id
               AND msg.seq > m.lastReadSeq
               AND msg.deletedAt IS NULL
+              AND msg.createdAt >= m.joinedAt
             GROUP BY m.conversation.id
             """)
     List<UnreadCountRow> countUnreadByConversation(@Param("userId") UUID userId,

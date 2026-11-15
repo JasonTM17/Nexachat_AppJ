@@ -1442,7 +1442,7 @@ public class MessageService {
         Map<UUID, ReplyRefResponse> replyRefsById = replyRefsById(rows.stream()
                 .map(MessageRow::replyToId)
                 .filter(Objects::nonNull)
-                .toList(), viewerId, sync);
+                .toList(), viewerId);
         Map<UUID, MessageE2eeRow> e2eeById = new HashMap<>();
         for (MessageE2eeRow e2eeRow : messageRepository.findE2eeByIdIn(messageIds)) {
             e2eeById.put(e2eeRow.id(), e2eeRow);
@@ -1504,15 +1504,16 @@ public class MessageService {
     /**
      * One IN query → reply-target previews. A soft-deleted target keeps its
      * id and sender but loses its content ({@code deleted=true} renders the
-     * "Tin nhắn đã bị xóa" placeholder — plan §9.3.6).
+     * "Tin nhắn đã bị xóa" placeholder — plan §9.3.6). Every read model is
+     * admission-scoped: a target the viewer was not a member for is dropped,
+     * the same strip the realtime fan-out applies per recipient.
      */
-    private Map<UUID, ReplyRefResponse> replyRefsById(Collection<UUID> replyToIds, UUID viewerId, boolean sync) {
+    private Map<UUID, ReplyRefResponse> replyRefsById(Collection<UUID> replyToIds, UUID viewerId) {
         if (replyToIds.isEmpty()) {
             return Map.of();
         }
         Map<UUID, ReplyRefResponse> result = new LinkedHashMap<>();
-        List<ReplyRefRow> refs = sync ? messageRepository.findSyncReplyRefsByIdIn(viewerId, replyToIds)
-                : messageRepository.findReplyRefsByIdIn(replyToIds);
+        List<ReplyRefRow> refs = messageRepository.findAdmittedReplyRefsByIdIn(viewerId, replyToIds);
         for (ReplyRefRow row : refs) {
             boolean deleted = row.deletedAt() != null;
             boolean encrypted = row.encryption() != null;

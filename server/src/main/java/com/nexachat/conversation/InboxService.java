@@ -214,17 +214,25 @@ public class InboxService {
                     // expiry is lazy so no sweep job has to clear the flag.
                     boolean muted = row.muted()
                             && (row.mutedUntil() == null || row.mutedUntil().isAfter(now));
-                    boolean lastEncrypted = row.lastMessageId() != null
-                            && encryptedLastMessageIds.contains(row.lastMessageId());
+                    MessageRow last = row.lastMessageId() == null
+                            ? null
+                            : lastMessageById.get(row.lastMessageId());
+                    // Admission invariant: the denormalized last-message pointer is
+                    // conversation-wide, so a member admitted after it was sent gets
+                    // an empty preview — the newest message then predates their
+                    // joinedAt and no message can be admitted at all.
+                    if (last != null && last.createdAt().isBefore(row.joinedAt())) {
+                        last = null;
+                    }
+                    boolean lastEncrypted = last != null
+                            && encryptedLastMessageIds.contains(last.id());
                     return new InboxEntry(
                             row.id(),
                             row.type().name(),
                             row.title(),
                             row.avatarUrl(),
                             membersByConversation.getOrDefault(row.id(), List.of()),
-                            toLastMessage(row.lastMessageId() == null
-                                    ? null
-                                    : lastMessageById.get(row.lastMessageId()), lastEncrypted),
+                            toLastMessage(last, lastEncrypted),
                             unreadByConversation.getOrDefault(row.id(), 0L),
                             row.lastReadSeq(),
                             row.type() == com.nexachat.conversation.Conversation.Type.DIRECT
