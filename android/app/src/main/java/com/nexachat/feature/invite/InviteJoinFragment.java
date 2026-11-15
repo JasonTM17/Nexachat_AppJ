@@ -9,6 +9,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
+import com.google.android.material.color.MaterialColors;
 import com.nexachat.R;
 import com.nexachat.databinding.FragmentInviteJoinBinding;
 import dagger.hilt.android.AndroidEntryPoint;
@@ -99,9 +100,13 @@ public final class InviteJoinFragment extends Fragment {
         InviteFailure failure = state.getFailure();
         if (failure != null) {
             binding.statusText.setText(InviteFailureText.resource(failure));
+            binding.statusText.setTextColor(MaterialColors.getColor(
+                    binding.statusText, statusTextColorAttr(failure)));
             binding.statusText.setVisibility(View.VISIBLE);
         } else if (statusResource != 0) {
             binding.statusText.setText(statusResource);
+            binding.statusText.setTextColor(MaterialColors.getColor(
+                    binding.statusText, statusTextColorAttr(null)));
             binding.statusText.setVisibility(View.VISIBLE);
         } else {
             binding.statusText.setVisibility(View.GONE);
@@ -111,6 +116,13 @@ public final class InviteJoinFragment extends Fragment {
                 && failure != InviteFailure.NOT_ALLOWED ? View.VISIBLE : View.GONE);
         binding.signInButton.setVisibility(failure == InviteFailure.SIGN_IN_REQUIRED
                 ? View.VISIBLE : View.GONE);
+    }
+
+    /** Failures read as errors; plain status copy keeps the muted variant color. */
+    static int statusTextColorAttr(@Nullable InviteFailure failure) {
+        return failure != null
+                ? com.google.android.material.R.attr.colorError
+                : com.google.android.material.R.attr.colorOnSurfaceVariant;
     }
 
     private void openChat() {
