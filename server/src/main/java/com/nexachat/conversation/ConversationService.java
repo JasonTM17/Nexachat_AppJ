@@ -2,6 +2,7 @@ package com.nexachat.conversation;
 
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.common.error.ConstraintNames;
 import com.nexachat.conversation.dto.ConversationMemberView;
 import com.nexachat.conversation.dto.ConversationResponse;
 import com.nexachat.conversation.dto.OpenDirectRequest;
@@ -124,6 +125,9 @@ public class ConversationService {
                         conversation.getId(), callerId, other.getId());
             } catch (DataIntegrityViolationException e) {
                 // Lost the direct_key race — the winner's row is committed; re-read it.
+                // Only the constraint name is logged; the violation message can
+                // embed the offending column values.
+                log.info("Direct conversation insert hit unique constraint {}", ConstraintNames.of(e));
                 conversation = conversationRepository.findByDirectKey(directKey)
                         .orElseThrow(() -> ApiException.of(
                                 ApiErrorCode.INTERNAL_ERROR,

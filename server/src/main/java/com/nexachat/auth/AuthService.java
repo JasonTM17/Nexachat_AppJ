@@ -7,6 +7,7 @@ import com.nexachat.auth.dto.RefreshRequest;
 import com.nexachat.auth.dto.RegisterRequest;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.common.error.ConstraintNames;
 import com.nexachat.recovery.EmailOtpService;
 import com.nexachat.user.PhoneService;
 import com.nexachat.user.User;
@@ -120,6 +121,9 @@ public class AuthService {
         } catch (DataIntegrityViolationException e) {
             // Two concurrent registers can both pass the existence check — the
             // UNIQUE constraint is the final arbiter, mapped back to the same contract.
+            // Only the constraint name is logged; the violation message can embed
+            // the offending column values.
+            log.info("Register hit unique constraint {}", ConstraintNames.of(e));
             throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");
         }
         eventPublisher.publishEvent(new UserAccountCreatedEvent(user.getId()));
