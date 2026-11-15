@@ -109,6 +109,40 @@ public final class ServerWakeGateTest {
         assertEquals(List.of(false, true, false), states.values());
     }
 
+    @Test
+    public void aWaitInsideTheReadyWindowSkipsTheProbe() throws Exception {
+        server.enqueue(response(200));
+        TestScheduler clock = new TestScheduler();
+        ServerWakeGate gate = gate(clock, 15_000L);
+
+        gate.awaitReady().test().assertValue(true);
+        assertHealthRequest(server.takeRequest(1, TimeUnit.SECONDS));
+        assertEquals(1, server.getRequestCount());
+
+        // The nonce prefetch and the token exchange both gate on this; the
+        // second wait within the window must not cost another health round trip.
+        clock.advanceTimeBy(119, TimeUnit.SECONDS);
+        gate.awaitReady().test().assertValue(true);
+
+        assertEquals(1, server.getRequestCount());
+    }
+
+    @Test
+    public void theReadyWindowExpiresAndProbesAgain() throws Exception {
+        server.enqueue(response(200));
+        server.enqueue(response(200));
+        TestScheduler clock = new TestScheduler();
+        ServerWakeGate gate = gate(clock, 15_000L);
+
+        gate.awaitReady().test().assertValue(true);
+        assertHealthRequest(server.takeRequest(1, TimeUnit.SECONDS));
+
+        clock.advanceTimeBy(121, TimeUnit.SECONDS);
+        gate.awaitReady().test().assertValue(true);
+
+        assertEquals(2, server.getRequestCount());
+    }
+
     private ServerWakeGate gate(TestScheduler clock, long readTimeoutMs) {
         OkHttpClient client = new OkHttpClient.Builder()
                 .connectTimeout(1, TimeUnit.SECONDS)
