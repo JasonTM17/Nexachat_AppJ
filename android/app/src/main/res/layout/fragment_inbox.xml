@@ -155,8 +155,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:clipToPadding="false"
+                android:fadingEdgeLength="24dp"
                 android:paddingHorizontal="16dp"
                 android:paddingBottom="8dp"
+                android:requiresFadingEdge="horizontal"
                 android:scrollbars="none">
 
                 <LinearLayout
@@ -172,8 +174,10 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:clipToPadding="false"
+            android:fadingEdgeLength="24dp"
             android:paddingHorizontal="16dp"
             android:paddingBottom="8dp"
+            android:requiresFadingEdge="horizontal"
             android:scrollbars="none"
             app:layout_scrollFlags="scroll|enterAlways">
 
