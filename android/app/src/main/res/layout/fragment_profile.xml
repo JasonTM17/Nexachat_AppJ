@@ -75,13 +75,15 @@
                         android:layout_height="96dp"
                         android:layout_gravity="top|start" />
 
-                    <ImageView
+                    <ImageButton
                         android:id="@+id/cameraBadge"
                         android:layout_width="@dimen/min_touch_target"
                         android:layout_height="@dimen/min_touch_target"
                         android:layout_gravity="bottom|end"
                         android:background="@drawable/bg_camera_badge"
                         android:contentDescription="@string/profile_change_avatar"
+                        android:focusable="true"
+                        android:foreground="?attr/selectableItemBackgroundBorderless"
                         android:padding="@dimen/space_md"
                         android:src="@drawable/ic_camera_alt"
                         app:tint="@color/brand_on_fill" />
