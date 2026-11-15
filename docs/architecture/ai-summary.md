@@ -121,6 +121,13 @@ excluded, the LLM is not called and the local engine answers with
 | `nexachat.summary.llm.local-api-key` | `NEXACHAT_SUMMARY_LOCAL_LLM_API_KEY` | `local-ollama` |
 | `nexachat.summary.llm.local-timeout-ms` | `NEXACHAT_SUMMARY_LOCAL_LLM_TIMEOUT_MS` | `60000` |
 
+The tier timeouts are spent sequentially within one request, so
+`llm.timeout-ms` + `llm-fallback.timeout-ms` + `llm.local-timeout-ms` must sum
+below the Android AI read timeout of 130 s (`AiRequestTimeoutInterceptor`); the
+defaults (30 + 30 + 60 s) leave headroom. The `deepseek-flash` fallback model
+may default to a reasoning mode that consumes the 4000-token output budget
+(live behavior unverified).
+
 `provider` is `auto` (LLM only with a usable cloud key or local-server model, and user consent), `local`, or `llm`. The base
 URL is an OpenAI-compatible root; `/chat/completions` is appended. Plain `http://`
 endpoints are rejected unless the host is loopback; the local-server tier allows

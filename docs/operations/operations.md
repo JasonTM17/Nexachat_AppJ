@@ -89,6 +89,14 @@ Boolean feature flags and `*.enabled` settings (for example `FCM_ENABLED`,
 | `NEXACHAT_RAG_ENABLED` | No (optional conversation RAG) | `true` | `true` |
 | `NEXACHAT_RAG_EMBEDDING_PROVIDER` | No | `lexical` | `lexical` (or `openai-compatible`) |
 
+Summary and ask requests spend the configured LLM tier timeouts sequentially
+within one client call, so `NEXACHAT_SUMMARY_LLM_TIMEOUT_MS` +
+`NEXACHAT_SUMMARY_LLM_FALLBACK_TIMEOUT_MS` + `NEXACHAT_SUMMARY_LOCAL_LLM_TIMEOUT_MS`
+must sum below the Android AI read timeout of 130 s
+(`AiRequestTimeoutInterceptor`); the defaults (30 + 30 + 60 s) leave headroom.
+The `deepseek-flash` fallback model may default to a reasoning mode that
+consumes the 4000-token output budget (live behavior unverified).
+
 ### Recovery email delivery
 
 Recovery-email delivery is disabled when `NEXACHAT_MAIL_PROVIDER` is empty.
