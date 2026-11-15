@@ -608,63 +608,97 @@ public final class InboxFragment extends Fragment {
      * Large text makes the horizontal carousel unreliable, so the filter and label
      * chip groups wrap onto stacked rows that fill the screen width instead. Inside
      * a HorizontalScrollView children measure with unbounded width, so each group
-     * gets the viewport's inner width explicitly before it can wrap.
+     * gets the viewport's inner width explicitly before it can wrap. The rule is
+     * re-run on every width change because the first runnable can beat the first
+     * layout pass and measure a zero viewport.
      */
     private void applyFilterChipRowLayout() {
         if (binding == null || !InboxFilterChipLayoutRules.chipsWrapOntoMultipleRows(
                 getResources().getConfiguration().fontScale)) {
             return;
         }
-        binding.inboxFilterScroll.post(() -> {
-            if (binding == null || binding.inboxFilterScroll.getWidth() == 0) {
-                return;
-            }
-            int width = binding.inboxFilterScroll.getWidth()
-                    - binding.inboxFilterScroll.getPaddingLeft()
-                    - binding.inboxFilterScroll.getPaddingRight();
-            binding.inboxFilterRow.setOrientation(LinearLayout.VERTICAL);
-            wrapChipGroup(binding.inboxFilterChips, width);
-            wrapChipGroup(binding.labelFilterChips, width);
-            ViewGroup.MarginLayoutParams labelParams =
-                    (ViewGroup.MarginLayoutParams) binding.labelFilterChips.getLayoutParams();
+        WidthDrivenLayoutAction action = new WidthDrivenLayoutAction(
+                () -> binding == null ? 0 : binding.inboxFilterScroll.getWidth(),
+                this::wrapFilterChipRows);
+        binding.inboxFilterScroll.post(action::run);
+        binding.inboxFilterScroll.addOnLayoutChangeListener(
+                (v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+                    if (right - left != oldRight - oldLeft) {
+                        action.run();
+                    }
+                });
+    }
+
+    private void wrapFilterChipRows(int scrollWidth) {
+        if (binding == null) {
+            return;
+        }
+        int width = scrollWidth
+                - binding.inboxFilterScroll.getPaddingLeft()
+                - binding.inboxFilterScroll.getPaddingRight();
+        binding.inboxFilterRow.setOrientation(LinearLayout.VERTICAL);
+        wrapChipGroup(binding.inboxFilterChips, width);
+        wrapChipGroup(binding.labelFilterChips, width);
+        ViewGroup.MarginLayoutParams labelParams =
+                (ViewGroup.MarginLayoutParams) binding.labelFilterChips.getLayoutParams();
+        if (labelParams.getMarginStart() != 0) {
             labelParams.topMargin = labelParams.getMarginStart();
             labelParams.setMarginStart(0);
             binding.labelFilterChips.setLayoutParams(labelParams);
-        });
+        }
     }
 
     private static void wrapChipGroup(@NonNull ChipGroup group, int widthPx) {
-        group.setSingleLine(false);
+        if (group.isSingleLine()) {
+            group.setSingleLine(false);
+        }
         ViewGroup.LayoutParams params = group.getLayoutParams();
-        params.width = widthPx;
-        group.setLayoutParams(params);
+        if (params.width != widthPx) {
+            params.width = widthPx;
+            group.setLayoutParams(params);
+        }
     }
 
     /**
      * "View all" sits beside the title only while both fit with a clear gap;
      * crowded rows (Vietnamese at 2x text) stack the action under the title.
+     * The decision is re-run on every width change because the first runnable
+     * can beat the first layout pass and measure a zero-width row.
      */
     private void updateActiveNowHeaderLayout() {
+        final LinearLayout row = binding.activeNowHeaderRow;
+        WidthDrivenLayoutAction action = new WidthDrivenLayoutAction(
+                () -> binding == null ? 0 : row.getWidth(),
+                this::stackActiveNowHeaderIfNeeded);
+        row.post(action::run);
+        row.addOnLayoutChangeListener(
+                (v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+                    if (right - left != oldRight - oldLeft) {
+                        action.run();
+                    }
+                });
+    }
+
+    private void stackActiveNowHeaderIfNeeded(int rowWidth) {
+        if (binding == null) {
+            return;
+        }
         LinearLayout row = binding.activeNowHeaderRow;
-        row.post(() -> {
-            if (binding == null || row.getWidth() == 0) {
-                return;
-            }
-            TextView title = binding.activeNowTitle;
-            TextView action = binding.activeNowViewAll;
-            float titleWidth = measuredTextWidth(title);
-            float actionWidth = Math.max(
-                    Layout.getDesiredWidth(action.getText(), action.getPaint()),
-                    action.getMinWidth());
-            ViewGroup.MarginLayoutParams actionParams =
-                    (ViewGroup.MarginLayoutParams) action.getLayoutParams();
-            float separation = actionParams.getMarginStart();
-            float available = row.getWidth() - row.getPaddingLeft() - row.getPaddingRight();
-            boolean wrapped = title.getLayout() != null && title.getLineCount() > 1;
-            applyActiveNowHeaderOrientation(
-                    wrapped || ActiveNowHeaderRules.actionStacksBelowTitle(
-                            titleWidth, actionWidth, separation, available));
-        });
+        TextView title = binding.activeNowTitle;
+        TextView action = binding.activeNowViewAll;
+        float titleWidth = measuredTextWidth(title);
+        float actionWidth = Math.max(
+                Layout.getDesiredWidth(action.getText(), action.getPaint()),
+                action.getMinWidth());
+        // The whole horizontal gap between title and action is the action's
+        // margin; while stacked that margin reads zero, so the gap the row
+        // would restore is what the rule measures against.
+        float separation = getResources().getDimension(R.dimen.space_sm);
+        float available = rowWidth - row.getPaddingLeft() - row.getPaddingRight();
+        boolean wrapped = title.getLayout() != null && title.getLineCount() > 1;
+        applyActiveNowHeaderOrientation(
+                wrapped || ActiveNowHeaderRules.actionStacksBelowTitle(
+                        titleWidth, actionWidth, separation, available));
     }
 
     private void applyActiveNowHeaderOrientation(boolean stack) {
