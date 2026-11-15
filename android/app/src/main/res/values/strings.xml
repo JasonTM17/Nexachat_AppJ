@@ -204,6 +204,7 @@
     <string name="e2ee_failed_keyset_changed">Not sent — code changed</string>
     <string name="e2ee_failed_keyset_invalid">Not sent — member list unreadable</string>
     <string name="e2ee_failed_downgrade_blocked">Not sent — encryption off</string>
+    <string name="message_not_sent">Not sent</string>
 
     <string name="chat_typing">typing…</string>
     <string name="msg_seen">Seen</string>

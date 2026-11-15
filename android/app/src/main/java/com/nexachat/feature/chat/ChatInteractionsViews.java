@@ -217,8 +217,8 @@ public final class ChatInteractionsViews {
         int gap = context.getResources().getDimensionPixelSize(R.dimen.space_xs);
         for (int i = 0; i < REACTIONS.length; i++) {
             String emoji = REACTIONS[i];
-            // Circular tiles: a borderless ripple masks to a circle inside the
-            // pill strip, matching the per-emoji hover tiles in the reference.
+            // Circular tiles: the ripple is masked to the tile's circle so it
+            // never paints past the pill strip's rounded ends.
             TextView tile = new TextView(context);
             tile.setText(emoji);
             TextViewCompat.setTextAppearance(tile, R.style.TextAppearance_NexaChat_TitleLarge);
@@ -226,7 +226,7 @@ public final class ChatInteractionsViews {
             tile.setGravity(Gravity.CENTER);
             tile.setMinWidth(target);
             tile.setMinHeight(target);
-            tile.setBackgroundResource(resolveCircularTileBackground(context));
+            tile.setBackgroundResource(R.drawable.bg_reaction_tile);
             tile.setFocusable(true);
             tile.setOnClickListener(v -> onPick.accept(emoji));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, -2);
@@ -235,13 +235,6 @@ public final class ChatInteractionsViews {
             }
             row.addView(tile, params);
         }
-    }
-
-    private static int resolveCircularTileBackground(@NonNull Context context) {
-        android.util.TypedValue value = new android.util.TypedValue();
-        context.getTheme().resolveAttribute(
-                android.R.attr.selectableItemBackgroundBorderless, value, true);
-        return value.resourceId;
     }
 
     private static void confirmDelete(

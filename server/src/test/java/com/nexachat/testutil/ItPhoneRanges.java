@@ -101,6 +101,7 @@ public final class ItPhoneRanges {
             Map.entry("com.nexachat.message.SyncLockOrderIT", "+84838"),
             Map.entry("com.nexachat.message.SyncMutationPagingIT", "+84839"),
             Map.entry("com.nexachat.message.SyncV2ChangePageClampIT", "+84889"),
+            Map.entry("com.nexachat.migration.UnversionedMessageBackfillIT", "+84890"),
             Map.entry("com.nexachat.poll.PollAdmissionScopeIT", "+84765"),
             Map.entry("com.nexachat.e2ee.E2eeFlowIT", "+84899"),
             Map.entry("com.nexachat.e2ee.E2eeActivationPolicyIT", "+84700"),

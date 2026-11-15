@@ -135,7 +135,7 @@
         <item name="iconTint">@null</item>
         <item name="iconSize">@dimen/icon_size</item>
         <item name="iconPadding">@dimen/space_inset</item>
-        <item name="backgroundTint">@color/colorSurface</item>
+        <item name="backgroundTint">@color/colorSurfaceContainerLowest</item>
         <item name="strokeColor">@color/colorOutlineVariant</item>
         <item name="strokeWidth">@dimen/control_stroke_width</item>
         <item name="android:textColor">@color/colorOnSurface</item>
@@ -143,7 +143,7 @@
         <item name="cornerRadius">@dimen/corner_md</item>
         <item name="android:insetTop">0dp</item>
         <item name="android:insetBottom">0dp</item>
-        <item name="android:minHeight">56dp</item>
+        <item name="android:minHeight">@dimen/min_touch_target</item>
         <item name="rippleColor">@color/nexa_button_ripple</item>
     </style>
 
