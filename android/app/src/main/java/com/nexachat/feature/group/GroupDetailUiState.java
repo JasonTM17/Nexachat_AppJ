@@ -24,6 +24,7 @@ public final class GroupDetailUiState {
     private final String renameInput;
     private final boolean showAddPicker;
     private final List<Contact> addableContacts;
+    private final boolean addableContactsLoaded;
     private final Set<String> selectedAddIds;
     private final boolean busy;
     @Nullable private final ApiError error;
@@ -42,6 +43,7 @@ public final class GroupDetailUiState {
                 "",
                 false,
                 Collections.emptyList(),
+                false,
                 Collections.emptySet(),
                 false,
                 null,
@@ -60,6 +62,7 @@ public final class GroupDetailUiState {
             String renameInput,
             boolean showAddPicker,
             List<Contact> addableContacts,
+            boolean addableContactsLoaded,
             Set<String> selectedAddIds,
             boolean busy,
             @Nullable ApiError error,
@@ -75,6 +78,7 @@ public final class GroupDetailUiState {
         this.renameInput = Objects.requireNonNull(renameInput, "renameInput");
         this.showAddPicker = showAddPicker;
         this.addableContacts = List.copyOf(Objects.requireNonNull(addableContacts, "addableContacts"));
+        this.addableContactsLoaded = addableContactsLoaded;
         this.selectedAddIds = Collections.unmodifiableSet(
                 new LinkedHashSet<>(Objects.requireNonNull(selectedAddIds, "selectedAddIds")));
         this.busy = busy;
@@ -98,6 +102,8 @@ public final class GroupDetailUiState {
     public boolean isShowAddPicker() { return showAddPicker; }
     public boolean getShowAddPicker() { return showAddPicker; }
     public List<Contact> getAddableContacts() { return addableContacts; }
+    public boolean isAddableContactsLoaded() { return addableContactsLoaded; }
+    public boolean getAddableContactsLoaded() { return addableContactsLoaded; }
     public Set<String> getSelectedAddIds() { return selectedAddIds; }
     public boolean isBusy() { return busy; }
     public boolean getBusy() { return busy; }
@@ -106,17 +112,17 @@ public final class GroupDetailUiState {
 
     public GroupDetailUiState withGroupAvatar(@Nullable String avatar) {
         return copy(loading, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                showRename, renameInput, showAddPicker, addableContacts, selectedAddIds, busy, error, avatar);
+                showRename, renameInput, showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds, busy, error, avatar);
     }
 
     public GroupDetailUiState withTitle(String nextTitle) {
         return copy(loading, nextTitle, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                showRename, renameInput, showAddPicker, addableContacts, selectedAddIds, busy, error, groupAvatar);
+                showRename, renameInput, showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds, busy, error, groupAvatar);
     }
 
     public GroupDetailUiState withLoading(boolean nextLoading) {
         return copy(nextLoading, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                showRename, renameInput, showAddPicker, addableContacts, selectedAddIds, busy, error, groupAvatar);
+                showRename, renameInput, showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds, busy, error, groupAvatar);
     }
 
     public GroupDetailUiState withMembers(
@@ -125,37 +131,37 @@ public final class GroupDetailUiState {
             @Nullable String nextMyUserId,
             boolean nextAdmin) {
         return copy(false, nextTitle, nextMembers, nextMyUserId, nextAdmin, pendingRemove, confirmLeave,
-                showRename, renameInput, showAddPicker, addableContacts, selectedAddIds, busy, error, groupAvatar);
+                showRename, renameInput, showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds, busy, error, groupAvatar);
     }
 
     public GroupDetailUiState withLoadFailure(ApiError nextError) {
         return copy(false, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                showRename, renameInput, showAddPicker, addableContacts, selectedAddIds, busy, nextError, groupAvatar);
+                showRename, renameInput, showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds, busy, nextError, groupAvatar);
     }
 
     public GroupDetailUiState withError(@Nullable ApiError nextError) {
         return copy(loading, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                showRename, renameInput, showAddPicker, addableContacts, selectedAddIds, busy, nextError, groupAvatar);
+                showRename, renameInput, showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds, busy, nextError, groupAvatar);
     }
 
     public GroupDetailUiState withAddPickerOpen() {
         return copy(loading, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                showRename, renameInput, true, Collections.emptyList(), Collections.emptySet(), busy, error, groupAvatar);
+                showRename, renameInput, true, Collections.emptyList(), false, Collections.emptySet(), busy, error, groupAvatar);
     }
 
     public GroupDetailUiState withAddableContacts(List<Contact> contacts) {
         return copy(loading, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                showRename, renameInput, showAddPicker, contacts, selectedAddIds, busy, error, groupAvatar);
+                showRename, renameInput, showAddPicker, contacts, true, selectedAddIds, busy, error, groupAvatar);
     }
 
     public GroupDetailUiState withAddPickerClosedOnError(ApiError nextError) {
         return copy(loading, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                showRename, renameInput, false, addableContacts, selectedAddIds, busy, nextError, groupAvatar);
+                showRename, renameInput, false, addableContacts, addableContactsLoaded, selectedAddIds, busy, nextError, groupAvatar);
     }
 
     public GroupDetailUiState withAddPickerDismissed() {
         return copy(loading, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                showRename, renameInput, false, Collections.emptyList(), Collections.emptySet(), busy, error, groupAvatar);
+                showRename, renameInput, false, Collections.emptyList(), false, Collections.emptySet(), busy, error, groupAvatar);
     }
 
     public GroupDetailUiState toggleAddCandidate(String userId) {
@@ -164,67 +170,67 @@ public final class GroupDetailUiState {
             next.remove(userId);
         }
         return copy(loading, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                showRename, renameInput, showAddPicker, addableContacts, next, busy, error, groupAvatar);
+                showRename, renameInput, showAddPicker, addableContacts, addableContactsLoaded, next, busy, error, groupAvatar);
     }
 
     public GroupDetailUiState withBusy(boolean nextBusy) {
         return copy(loading, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                showRename, renameInput, showAddPicker, addableContacts, selectedAddIds, nextBusy, error, groupAvatar);
+                showRename, renameInput, showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds, nextBusy, error, groupAvatar);
     }
 
     public GroupDetailUiState withMembersAdded() {
         return copy(loading, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                showRename, renameInput, false, Collections.emptyList(), Collections.emptySet(), false, error, groupAvatar);
+                showRename, renameInput, false, Collections.emptyList(), false, Collections.emptySet(), false, error, groupAvatar);
     }
 
     public GroupDetailUiState withBusyAndError(boolean nextBusy, ApiError nextError) {
         return copy(loading, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                showRename, renameInput, showAddPicker, addableContacts, selectedAddIds, nextBusy, nextError, groupAvatar);
+                showRename, renameInput, showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds, nextBusy, nextError, groupAvatar);
     }
 
     public GroupDetailUiState withPendingRemove(@Nullable GroupMember member) {
         return copy(loading, title, members, myUserId, iAmAdmin, member, confirmLeave,
-                showRename, renameInput, showAddPicker, addableContacts, selectedAddIds, busy, error, groupAvatar);
+                showRename, renameInput, showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds, busy, error, groupAvatar);
     }
 
     public GroupDetailUiState withRemoveInFlight() {
         return copy(loading, title, members, myUserId, iAmAdmin, null, confirmLeave,
-                showRename, renameInput, showAddPicker, addableContacts, selectedAddIds, true, error, groupAvatar);
+                showRename, renameInput, showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds, true, error, groupAvatar);
     }
 
     public GroupDetailUiState withRenameOpen() {
         return copy(loading, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                true, title, showAddPicker, addableContacts, selectedAddIds, busy, error, groupAvatar);
+                true, title, showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds, busy, error, groupAvatar);
     }
 
     public GroupDetailUiState withRenameDismissed() {
         return copy(loading, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                false, "", showAddPicker, addableContacts, selectedAddIds, busy, error, groupAvatar);
+                false, "", showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds, busy, error, groupAvatar);
     }
 
     public GroupDetailUiState withRenameInput(String value) {
         return copy(loading, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                showRename, value, showAddPicker, addableContacts, selectedAddIds, busy, error, groupAvatar);
+                showRename, value, showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds, busy, error, groupAvatar);
     }
 
     public GroupDetailUiState withRenameSucceeded() {
         return copy(loading, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                false, "", showAddPicker, addableContacts, selectedAddIds, false, error, groupAvatar);
+                false, "", showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds, false, error, groupAvatar);
     }
 
     public GroupDetailUiState withRenameFailed(ApiError nextError) {
         return copy(loading, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                true, renameInput, showAddPicker, addableContacts, selectedAddIds, false, nextError, groupAvatar);
+                true, renameInput, showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds, false, nextError, groupAvatar);
     }
 
     public GroupDetailUiState withLeaveInFlight() {
         return copy(loading, title, members, myUserId, iAmAdmin, pendingRemove, false,
-                showRename, renameInput, showAddPicker, addableContacts, selectedAddIds, true, error, groupAvatar);
+                showRename, renameInput, showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds, true, error, groupAvatar);
     }
 
     public GroupDetailUiState withConfirmLeave(boolean next) {
         return copy(loading, title, members, myUserId, iAmAdmin, pendingRemove, next,
-                showRename, renameInput, showAddPicker, addableContacts, selectedAddIds, busy, error, groupAvatar);
+                showRename, renameInput, showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds, busy, error, groupAvatar);
     }
 
     private static GroupDetailUiState copy(
@@ -239,13 +245,14 @@ public final class GroupDetailUiState {
             String renameInput,
             boolean showAddPicker,
             List<Contact> addableContacts,
+            boolean addableContactsLoaded,
             Set<String> selectedAddIds,
             boolean busy,
             @Nullable ApiError error,
             @Nullable String groupAvatar) {
         return new GroupDetailUiState(
                 loading, title, members, myUserId, iAmAdmin, pendingRemove, confirmLeave,
-                showRename, renameInput, showAddPicker, addableContacts, selectedAddIds,
+                showRename, renameInput, showAddPicker, addableContacts, addableContactsLoaded, selectedAddIds,
                 busy, error, groupAvatar);
     }
 }

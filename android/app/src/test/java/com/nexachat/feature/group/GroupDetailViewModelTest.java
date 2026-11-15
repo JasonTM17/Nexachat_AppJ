@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelStore;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.ui.GroupDetailListRules;
 import com.nexachat.data.Contact;
 import com.nexachat.data.ContactsRepository;
 import com.nexachat.data.ConversationRepository;
@@ -19,6 +20,7 @@ import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.processors.PublishProcessor;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import io.reactivex.rxjava3.schedulers.TestScheduler;
+import io.reactivex.rxjava3.subjects.SingleSubject;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -254,6 +256,59 @@ public final class GroupDetailViewModelTest {
         assertTrue(state.isShowAddPicker());
         assertEquals(List.of("u-new"), state.getAddableContacts().stream()
                 .map(Contact::getUserId).toList());
+    }
+
+    @Test
+    public void addMemberPickerDoesNotShowEmptyStateWhileContactsLoad() {
+        SingleSubject<Result<List<Contact>>> pending = SingleSubject.create();
+        when(contactsRepository.contacts()).thenReturn(pending);
+
+        viewModel.openAddMember();
+        assertTrue(state().isShowAddPicker());
+        assertFalse(state().isAddableContactsLoaded());
+        assertFalse(GroupDetailListRules.showAddMemberEmptyState(
+                state().isAddableContactsLoaded(), state().getAddableContacts().isEmpty()));
+
+        // Routine updates during the fetch must not turn the still-empty
+        // picker list into the "all contacts are members" empty state.
+        conversationFlow.onNext(Optional.of(new ConversationSummary(
+                CONVERSATION_ID, "GROUP", "Room title", null, null, null,
+                0L, 0, null, null, null, 0L, null, null, false, null)));
+        groupUpdateFlow.onNext(Boolean.TRUE);
+        assertFalse(state().isAddableContactsLoaded());
+        assertFalse(GroupDetailListRules.showAddMemberEmptyState(
+                state().isAddableContactsLoaded(), state().getAddableContacts().isEmpty()));
+
+        pending.onSuccess(new Result.Success<>(List.of()));
+        assertTrue(state().isAddableContactsLoaded());
+        assertTrue(GroupDetailListRules.showAddMemberEmptyState(
+                state().isAddableContactsLoaded(), state().getAddableContacts().isEmpty()));
+    }
+
+    @Test
+    public void addMemberPickerLoadedWithContactsDoesNotShowEmptyState() {
+        when(contactsRepository.contacts()).thenReturn(Single.just(new Result.Success<>(List.of(
+                contact("u-new", "+84933333333", "Hoa")))));
+
+        viewModel.openAddMember();
+
+        assertTrue(state().isAddableContactsLoaded());
+        assertFalse(GroupDetailListRules.showAddMemberEmptyState(
+                state().isAddableContactsLoaded(), state().getAddableContacts().isEmpty()));
+    }
+
+    @Test
+    public void addMemberPickerContactsFailureClosesSheetWithoutAnEmptyState() {
+        when(contactsRepository.contacts()).thenReturn(
+                Single.just(Result.failure(new ApiError.Network())));
+
+        viewModel.openAddMember();
+
+        assertFalse(state().isShowAddPicker());
+        assertFalse(state().isAddableContactsLoaded());
+        assertFalse(GroupDetailListRules.showAddMemberEmptyState(
+                state().isAddableContactsLoaded(), state().getAddableContacts().isEmpty()));
+        assertEquals(new ApiError.Network(), state().getError());
     }
 
     @Test

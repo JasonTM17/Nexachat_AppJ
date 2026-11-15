@@ -369,13 +369,15 @@ public final class GroupDetailFragment extends Fragment {
     /**
      * An empty addable list means every contact is already a member: the
      * disabled confirm is swapped for an explanation and an invite-link
-     * shortcut. Only applied once the contacts result has arrived; the sheet
-     * opens with an empty list while contacts load.
+     * shortcut. Only applied once the contacts result has arrived; while the
+     * fetch is in flight the sheet shows an empty list with a disabled
+     * confirm instead of a false empty state.
      */
     private void renderAddMemberPickerState(
             @NonNull BottomSheetGroupAddMemberBinding sheet,
             @NonNull GroupDetailUiState state) {
-        boolean noAddable = state.getAddableContacts().isEmpty();
+        boolean noAddable = GroupDetailListRules.showAddMemberEmptyState(
+                state.isAddableContactsLoaded(), state.getAddableContacts().isEmpty());
         sheet.addMemberEmpty.setVisibility(noAddable ? View.VISIBLE : View.GONE);
         sheet.addMemberInviteLink.setVisibility(noAddable ? View.VISIBLE : View.GONE);
         sheet.addMemberConfirm.setVisibility(noAddable ? View.GONE : View.VISIBLE);
