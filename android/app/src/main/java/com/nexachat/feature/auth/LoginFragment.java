@@ -50,6 +50,9 @@ public final class LoginFragment extends Fragment {
         binding.googleSignIn.setVisibility(googleVisibility);
         binding.authOrDivider.getRoot().setVisibility(googleVisibility);
         binding.googleSignIn.setOnClickListener(v -> viewModel.googleSignIn(requireActivity()));
+        if (googleVisibility == View.VISIBLE) {
+            viewModel.prefetchGoogleSignInNonce();
+        }
         View.OnClickListener openRegister = v -> {
             Bundle args = AuthNav.inviteReturnArgs(returnInviteToken);
             NavHostFragment.findNavController(this).navigate(

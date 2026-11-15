@@ -20,6 +20,7 @@ import static org.mockito.Mockito.when;
 import com.nexachat.core.crypto.DeviceKeyStore.Identity;
 import com.nexachat.core.crypto.E2eeCrypto.EncryptedMessage;
 import com.nexachat.core.crypto.E2eeCrypto.KeyPair;
+import com.nexachat.core.database.InMemoryKeysetTrustDao;
 import com.nexachat.core.network.E2eeApi;
 import com.nexachat.core.network.dto.E2eeDeviceDtos.ConversationE2eeDto;
 import com.nexachat.core.network.dto.E2eeDeviceDtos.DeviceDto;
@@ -30,8 +31,11 @@ import com.nexachat.core.storage.TokenStore;
 import com.nexachat.core.storage.Tokens;
 import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Maybe;
+import io.reactivex.rxjava3.core.Scheduler;
+import io.reactivex.rxjava3.core.Scheduler.Worker;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.core.SingleObserver;
+import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.subjects.MaybeSubject;
 import io.reactivex.rxjava3.observers.TestObserver;
@@ -64,9 +68,17 @@ import retrofit2.Response;
  */
 public final class E2eeSessionTest {
 
+    private static final String USER_A = "11111111-1111-1111-1111-111111111111";
+    private static final String USER_B = "22222222-2222-2222-2222-222222222222";
+    private static final String CONV = "33333333-3333-3333-3333-333333333333";
+    private static final String DEV_ME = "44444444-4444-4444-4444-444444444444";
+    private static final String DEV_PEER = "55555555-5555-5555-5555-555555555555";
+    private static final String DEV_NEW = "66666666-6666-6666-6666-666666666666";
+
     private E2eeApi api;
     private DeviceKeyStore keyStore;
     private TokenStore tokenStore;
+    private InMemoryKeysetTrustDao trustDao;
     private E2eeSession session;
 
     @Before
@@ -74,7 +86,9 @@ public final class E2eeSessionTest {
         api = mock(E2eeApi.class);
         keyStore = mock(DeviceKeyStore.class);
         tokenStore = mock(TokenStore.class);
-        session = new E2eeSession(api, keyStore, tokenStore, new Moshi.Builder().build());
+        trustDao = new InMemoryKeysetTrustDao();
+        session = new E2eeSession(api, keyStore, tokenStore, new Moshi.Builder().build(),
+                new KeysetTrustStore(trustDao));
     }
 
     @Test
@@ -314,38 +328,38 @@ public final class E2eeSessionTest {
     public void encryptRegistersDeviceThenCoversAllMembers() throws Exception {
         KeyPair mine = E2eeCrypto.generateDeviceKeyPair();
         KeyPair peer = E2eeCrypto.generateDeviceKeyPair();
-        stubEncryptSession(new Identity("dev-me", mine.publicKey(), mine.privateKey()),
+        stubEncryptSession(new Identity(DEV_ME, mine.publicKey(), mine.privateKey()),
                 twoMemberState(mine.publicKey(), peer.publicKey()));
 
-        EncryptedMessage encrypted = session.encryptFor("c1", "xin chào", "u1", "msg-1")
+        EncryptedMessage encrypted = session.encryptFor(CONV, "xin chào", USER_A, "msg-1")
                 .test().awaitDone(5, TimeUnit.SECONDS).assertValueCount(1)
                 .values().get(0);
 
         assertEquals(2, encrypted.envelopes().size());
         E2eeCrypto crypto = new E2eeCrypto();
         assertEquals("xin chào", crypto.decrypt(encrypted.content(),
-                encrypted.envelopes(), "dev-me", mine.privateKey(), "c1", "u1", "msg-1")
+                encrypted.envelopes(), DEV_ME, mine.privateKey(), CONV, USER_A, "msg-1")
                 .orElseThrow(AssertionError::new));
         assertEquals("xin chào", crypto.decrypt(encrypted.content(),
-                encrypted.envelopes(), "dev-peer", peer.privateKey(), "c1", "u1", "msg-1")
+                encrypted.envelopes(), DEV_PEER, peer.privateKey(), CONV, USER_A, "msg-1")
                 .orElseThrow(AssertionError::new));
-        verify(api, times(1)).registerDevice(eq("dev-me"), any());
+        verify(api, times(1)).registerDevice(eq(DEV_ME), any());
     }
 
     @Test
     public void subsequentEncryptReusesConfirmedRegistration() throws Exception {
         KeyPair mine = E2eeCrypto.generateDeviceKeyPair();
         KeyPair peer = E2eeCrypto.generateDeviceKeyPair();
-        stubEncryptSession(new Identity("dev-me", mine.publicKey(), mine.privateKey()),
+        stubEncryptSession(new Identity(DEV_ME, mine.publicKey(), mine.privateKey()),
                 twoMemberState(mine.publicKey(), peer.publicKey()));
 
-        session.encryptFor("c1", "one", "u1", "m1").test()
+        session.encryptFor(CONV, "one", USER_A, "m1").test()
                 .awaitDone(5, TimeUnit.SECONDS).assertValueCount(1);
-        session.encryptFor("c1", "two", "u1", "m2").test()
+        session.encryptFor(CONV, "two", USER_A, "m2").test()
                 .awaitDone(5, TimeUnit.SECONDS).assertValueCount(1);
 
-        verify(api, times(1)).registerDevice(eq("dev-me"), any());
-        verify(api, times(1)).getE2ee("c1");
+        verify(api, times(1)).registerDevice(eq(DEV_ME), any());
+        verify(api, times(1)).getE2ee(CONV);
     }
 
     @Test
@@ -354,30 +368,30 @@ public final class E2eeSessionTest {
         KeyPair peer = E2eeCrypto.generateDeviceKeyPair();
         ConversationE2eeDto state = twoMemberState(mine.publicKey(), peer.publicKey());
         Call<ConversationE2eeDto> e2eeCall = stateCall(state);
-        when(api.getE2ee("c1")).thenReturn(e2eeCall);
-        session.e2eeState("c1").test().awaitDone(5, TimeUnit.SECONDS)
+        when(api.getE2ee(CONV)).thenReturn(e2eeCall);
+        session.e2eeState(CONV).test().awaitDone(5, TimeUnit.SECONDS)
                 .assertValueCount(1);
-        verify(api, times(1)).getE2ee("c1");
+        verify(api, times(1)).getE2ee(CONV);
 
-        stubEncryptSession(new Identity("dev-me", mine.publicKey(), mine.privateKey()),
+        stubEncryptSession(new Identity(DEV_ME, mine.publicKey(), mine.privateKey()),
                 state);
-        session.encryptFor("c1", "hi", "u1", "m1").test()
+        session.encryptFor(CONV, "hi", USER_A, "m1").test()
                 .awaitDone(5, TimeUnit.SECONDS).assertValueCount(1);
         // A fresh registration drops the pre-registration cache, so the member
         // list was fetched again before encrypting.
-        verify(api, times(2)).getE2ee("c1");
+        verify(api, times(2)).getE2ee(CONV);
     }
 
     @Test
     public void encryptFailsWhenConversationIsDisabled() throws Exception {
         KeyPair mine = E2eeCrypto.generateDeviceKeyPair();
         KeyPair peer = E2eeCrypto.generateDeviceKeyPair();
-        stubEncryptSession(new Identity("dev-me", mine.publicKey(), mine.privateKey()),
+        stubEncryptSession(new Identity(DEV_ME, mine.publicKey(), mine.privateKey()),
                 new ConversationE2eeDto(false, List.of(
-                        new MemberDeviceDto("u2", "dev-peer",
+                        new MemberDeviceDto(USER_B, DEV_PEER,
                                 E2eeCrypto.b64url(peer.publicKey())))));
 
-        session.encryptFor("c1", "hi", "u1", "m1").test()
+        session.encryptFor(CONV, "hi", USER_A, "m1").test()
                 .awaitDone(5, TimeUnit.SECONDS)
                 .assertError(error -> error instanceof E2eeSession.E2eeException
                         && "E2EE_NOT_ENABLED".equals(error.getMessage()));
@@ -387,28 +401,28 @@ public final class E2eeSessionTest {
     public void encryptFailsWhenOwnDeviceMissingFromMemberList() throws Exception {
         KeyPair mine = E2eeCrypto.generateDeviceKeyPair();
         KeyPair peer = E2eeCrypto.generateDeviceKeyPair();
-        stubEncryptSession(new Identity("dev-me", mine.publicKey(), mine.privateKey()),
+        stubEncryptSession(new Identity(DEV_ME, mine.publicKey(), mine.privateKey()),
                 new ConversationE2eeDto(true, List.of(
-                        new MemberDeviceDto("u2", "dev-peer",
+                        new MemberDeviceDto(USER_B, DEV_PEER,
                                 E2eeCrypto.b64url(peer.publicKey())))));
 
-        session.encryptFor("c1", "hi", "u1", "m1").test()
+        session.encryptFor(CONV, "hi", USER_A, "m1").test()
                 .awaitDone(5, TimeUnit.SECONDS)
                 .assertError(error -> error instanceof E2eeSession.E2eeException
                         && "E2EE_STALE_DEVICES".equals(error.getMessage()));
         // A missing own device triggers exactly one cache-invalidating refetch.
-        verify(api, times(2)).getE2ee("c1");
+        verify(api, times(2)).getE2ee(CONV);
     }
 
     @Test
     public void encryptFailsWhenOnlyOwnDeviceIsListed() throws Exception {
         KeyPair mine = E2eeCrypto.generateDeviceKeyPair();
-        stubEncryptSession(new Identity("dev-me", mine.publicKey(), mine.privateKey()),
+        stubEncryptSession(new Identity(DEV_ME, mine.publicKey(), mine.privateKey()),
                 new ConversationE2eeDto(true, List.of(
-                        new MemberDeviceDto("u1", "dev-me",
+                        new MemberDeviceDto(USER_A, DEV_ME,
                                 E2eeCrypto.b64url(mine.publicKey())))));
 
-        session.encryptFor("c1", "hi", "u1", "m1").test()
+        session.encryptFor(CONV, "hi", USER_A, "m1").test()
                 .awaitDone(5, TimeUnit.SECONDS)
                 .assertError(error -> error instanceof E2eeSession.E2eeException
                         && "E2EE_STALE_DEVICES".equals(error.getMessage()));
@@ -574,15 +588,34 @@ public final class E2eeSessionTest {
         Call<DeviceDto> dead = failingCall(new IOException("offline"));
         when(api.registerDevice(eq("dev-1"), any())).thenReturn(dead);
         TestScheduler scheduler = new TestScheduler();
-        E2eeSession timed = timedSession(scheduler);
+        // Counts down once the first attempt's failure has been processed and
+        // the backoff timer is queued, so the wipe lands inside the armed
+        // retry window instead of racing the io worker that schedules it.
+        CountDownLatch retryArmed = new CountDownLatch(1);
+        E2eeSession timed = timedSession(new Scheduler() {
+            @Override
+            public Worker createWorker() {
+                return scheduler.createWorker();
+            }
+
+            @Override
+            public Disposable scheduleDirect(Runnable run, long delay,
+                    TimeUnit unit) {
+                Disposable disposable = scheduler.scheduleDirect(run, delay, unit);
+                retryArmed.countDown();
+                return disposable;
+            }
+        });
 
         TestObserver<Void> observer = timed.onSessionAvailable().test();
         verify(api, timeout(3_000).times(1)).registerDevice(eq("dev-1"), any());
+        assertTrue(retryArmed.await(5, TimeUnit.SECONDS));
         timed.wipeLocal("u1");
         scheduler.advanceTimeBy(10, TimeUnit.SECONDS);
         // The delayed retry was armed before the wipe; it must not fire.
         verify(api, times(1)).registerDevice(eq("dev-1"), any());
-        observer.assertError(error -> error instanceof E2eeSession.E2eeException);
+        observer.awaitDone(5, TimeUnit.SECONDS)
+                .assertError(error -> error instanceof E2eeSession.E2eeException);
     }
 
     @Test
@@ -710,14 +743,14 @@ public final class E2eeSessionTest {
         KeyPair peer = E2eeCrypto.generateDeviceKeyPair();
         List<MemberDeviceDto> devices = new ArrayList<>();
         devices.add(null);
-        devices.add(new MemberDeviceDto("u2", "dev-peer",
+        devices.add(new MemberDeviceDto(USER_B, DEV_PEER,
                 E2eeCrypto.b64url(peer.publicKey())));
-        devices.add(new MemberDeviceDto("u1", "dev-me",
+        devices.add(new MemberDeviceDto(USER_A, DEV_ME,
                 E2eeCrypto.b64url(mine.publicKey())));
-        stubEncryptSession(new Identity("dev-me", mine.publicKey(), mine.privateKey()),
+        stubEncryptSession(new Identity(DEV_ME, mine.publicKey(), mine.privateKey()),
                 new ConversationE2eeDto(true, devices));
 
-        session.encryptFor("c1", "hi", "u1", "m1").test()
+        session.encryptFor(CONV, "hi", USER_A, "m1").test()
                 .awaitDone(5, TimeUnit.SECONDS)
                 .assertError(error -> error instanceof E2eeSession.E2eeException
                         && "E2EE_STALE_DEVICES".equals(error.getMessage()));
@@ -853,22 +886,22 @@ public final class E2eeSessionTest {
     public void concurrentRegistrationsShareOneFlightAndPair() throws Exception {
         E2eeCrypto.KeyPair oldPair = E2eeCrypto.generateDeviceKeyPair();
         E2eeCrypto.KeyPair peerPair = E2eeCrypto.generateDeviceKeyPair();
-        when(tokenStore.readTokens()).thenReturn(Maybe.just(tokensFor("u1")));
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(tokensFor(USER_A)));
         // Stateful keystore fake so regeneration clears and re-mints for real.
         AtomicReference<Identity> stored = new AtomicReference<>(
                 new Identity("dev-1", oldPair.publicKey(), oldPair.privateKey()));
-        when(keyStore.identity("u1")).thenAnswer(inv -> stored.get());
+        when(keyStore.identity(USER_A)).thenAnswer(inv -> stored.get());
         doAnswer(inv -> {
             stored.set(null);
             return null;
-        }).when(keyStore).clear("u1");
+        }).when(keyStore).clear(USER_A);
         doAnswer(inv -> {
             String deviceId = inv.getArgument(1);
             E2eeCrypto.KeyPair pair = inv.getArgument(2);
             stored.set(new Identity(deviceId, pair.publicKey(), pair.privateKey()));
             return null;
-        }).when(keyStore).put(eq("u1"), anyString(), any());
-        when(keyStore.deviceId("u1")).thenReturn("dev-new");
+        }).when(keyStore).put(eq(USER_A), anyString(), any());
+        when(keyStore.deviceId(USER_A)).thenReturn(DEV_NEW);
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         Call<DeviceDto> conflict = mock(Call.class);
@@ -881,38 +914,38 @@ public final class E2eeSessionTest {
         });
         Call<DeviceDto> freshOk = okCall();
         when(api.registerDevice(eq("dev-1"), any())).thenReturn(conflict);
-        when(api.registerDevice(eq("dev-new"), any())).thenReturn(freshOk);
+        when(api.registerDevice(eq(DEV_NEW), any())).thenReturn(freshOk);
         Call<ConversationE2eeDto> stateCall = mock(Call.class);
         when(stateCall.execute()).thenAnswer(inv -> Response.success(
                 new ConversationE2eeDto(true, List.of(
-                        new MemberDeviceDto("u1", "dev-new",
+                        new MemberDeviceDto(USER_A, DEV_NEW,
                                 E2eeCrypto.b64url(stored.get().getPublicKey())),
-                        new MemberDeviceDto("u2", "dev-peer",
+                        new MemberDeviceDto(USER_B, DEV_PEER,
                                 E2eeCrypto.b64url(peerPair.publicKey()))))));
-        when(api.getE2ee("c1")).thenReturn(stateCall);
+        when(api.getE2ee(CONV)).thenReturn(stateCall);
 
         TestObserver<EncryptedMessage> first =
-                session.encryptFor("c1", "m1", "u1", "id-1").test();
+                session.encryptFor(CONV, "m1", USER_A, "id-1").test();
         TestObserver<EncryptedMessage> second =
-                session.encryptFor("c1", "m2", "u1", "id-2").test();
+                session.encryptFor(CONV, "m2", USER_A, "id-2").test();
         assertTrue(entered.await(5, TimeUnit.SECONDS));
         release.countDown();
         first.awaitDone(5, TimeUnit.SECONDS).assertValueCount(1);
         second.awaitDone(5, TimeUnit.SECONDS).assertValueCount(1);
         // One logical registration: one original call, one rotation, one fresh call.
         verify(api, times(1)).registerDevice(eq("dev-1"), any());
-        verify(keyStore, times(1)).deviceId("u1");
-        verify(api, times(1)).registerDevice(eq("dev-new"), any());
+        verify(keyStore, times(1)).deviceId(USER_A);
+        verify(api, times(1)).registerDevice(eq(DEV_NEW), any());
         // Both ciphertexts unwrap with the single stored-down pair.
         E2eeCrypto crypto = new E2eeCrypto();
         EncryptedMessage m1 = first.values().get(0);
         EncryptedMessage m2 = second.values().get(0);
         assertEquals("m1", crypto.decrypt(m1.content(), m1.envelopes(),
                 stored.get().getDeviceId(), stored.get().getPrivateKey(),
-                "c1", "u1", "id-1").orElseThrow(AssertionError::new));
+                CONV, USER_A, "id-1").orElseThrow(AssertionError::new));
         assertEquals("m2", crypto.decrypt(m2.content(), m2.envelopes(),
                 stored.get().getDeviceId(), stored.get().getPrivateKey(),
-                "c1", "u1", "id-2").orElseThrow(AssertionError::new));
+                CONV, USER_A, "id-2").orElseThrow(AssertionError::new));
     }
 
     @Test
@@ -1091,9 +1124,9 @@ public final class E2eeSessionTest {
         verify(api, atLeast(minimum)).registerDevice(anyString(), any());
     }
 
-    private E2eeSession timedSession(TestScheduler scheduler) {
+    private E2eeSession timedSession(Scheduler scheduler) {
         return new E2eeSession(api, keyStore, tokenStore, new Moshi.Builder().build(),
-                new E2eeCrypto(), scheduler);
+                new E2eeCrypto(), scheduler, new KeysetTrustStore(trustDao));
     }
 
     private void stubIdentityAndTokens() {
@@ -1104,19 +1137,19 @@ public final class E2eeSessionTest {
 
     private void stubEncryptSession(Identity identity, ConversationE2eeDto e2eeState)
             throws Exception {
-        when(tokenStore.readTokens()).thenReturn(Maybe.just(tokensFor("u1")));
-        when(keyStore.identity("u1")).thenReturn(identity);
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(tokensFor(USER_A)));
+        when(keyStore.identity(USER_A)).thenReturn(identity);
         Call<DeviceDto> ok = okCall();
         Call<ConversationE2eeDto> state = stateCall(e2eeState);
         when(api.registerDevice(eq(identity.getDeviceId()), any())).thenReturn(ok);
-        when(api.getE2ee("c1")).thenReturn(state);
+        when(api.getE2ee(CONV)).thenReturn(state);
     }
 
     private static ConversationE2eeDto twoMemberState(byte[] minePublic,
             byte[] peerPublic) {
         return new ConversationE2eeDto(true, List.of(
-                new MemberDeviceDto("u1", "dev-me", E2eeCrypto.b64url(minePublic)),
-                new MemberDeviceDto("u2", "dev-peer", E2eeCrypto.b64url(peerPublic))));
+                new MemberDeviceDto(USER_A, DEV_ME, E2eeCrypto.b64url(minePublic)),
+                new MemberDeviceDto(USER_B, DEV_PEER, E2eeCrypto.b64url(peerPublic))));
     }
 
     private static Call<DeviceDto> okCall() throws IOException {

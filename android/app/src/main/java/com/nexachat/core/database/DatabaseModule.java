@@ -37,7 +37,8 @@ public final class DatabaseModule {
                         AppDatabase.MIGRATION_12_13,
                         AppDatabase.MIGRATION_13_14,
                         AppDatabase.MIGRATION_14_15,
-                        AppDatabase.MIGRATION_15_16)
+                        AppDatabase.MIGRATION_15_16,
+                        AppDatabase.MIGRATION_16_17)
                 .addCallback(AppDatabase.SYNC_CACHE_CALLBACK)
                 .build();
     }
@@ -88,5 +89,11 @@ public final class DatabaseModule {
     @Singleton
     public static OfflineOutboxDao provideOfflineOutboxDao(AppDatabase database) {
         return database.offlineOutboxDao();
+    }
+
+    @Provides
+    @Singleton
+    public static KeysetTrustDao provideKeysetTrustDao(AppDatabase database) {
+        return database.keysetTrustDao();
     }
 }

@@ -34,8 +34,11 @@ public final class ChatInlineErrorLayoutContractTest {
             assertEquals("@id/pendingAttachments",
                     mentionPicker.getAttributeNS(APP, "layout_constraintBottom_toTopOf"));
             Element pendingAttachments = findById(layout, "pendingAttachments");
-            assertEquals("@id/chatError",
+            assertEquals("@id/keysetNotice",
                     pendingAttachments.getAttributeNS(APP, "layout_constraintBottom_toTopOf"));
+            Element keysetNotice = findById(layout, "keysetNotice");
+            assertEquals("@id/chatError",
+                    keysetNotice.getAttributeNS(APP, "layout_constraintBottom_toTopOf"));
         }
     }
 
