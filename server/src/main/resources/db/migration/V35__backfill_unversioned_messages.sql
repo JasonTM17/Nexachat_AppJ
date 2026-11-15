@@ -9,6 +9,16 @@
 -- is then raised to cover every message. Healthy databases are unaffected:
 -- both UPDATEs are no-ops when no unversioned rows exist.
 
+-- Lock the affected conversation rows first. Writers allocate revisions via
+-- UPDATE conversations SET change_version = change_version + 1, which takes
+-- the same row lock, so a send concurrent with this backfill serializes
+-- behind it instead of taking a revision the backfill is about to assign.
+SELECT id
+FROM conversations
+WHERE id IN (SELECT DISTINCT conversation_id FROM messages WHERE change_version <= 0)
+ORDER BY id
+FOR UPDATE;
+
 WITH ranked_unversioned AS (
     SELECT m.id,
            m.conversation_id,
