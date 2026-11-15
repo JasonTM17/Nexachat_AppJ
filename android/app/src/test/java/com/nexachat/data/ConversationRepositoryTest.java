@@ -732,6 +732,22 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
+    public void groupDetailMissesEachEmptyVariantWithASingleRequest() throws Exception {
+        buildRepository();
+        when(messageApi.getConversations(eq(100), isNull())).thenReturn(asCall(Response.success(
+                ResponseBody.create(okhttp3.MediaType.parse("application/json"), "[]"))));
+        when(messageApi.getArchivedConversations(eq(100), isNull())).thenReturn(
+                asCall(Response.success(ResponseBody.create(
+                        okhttp3.MediaType.parse("application/json"), "[]"))));
+
+        Result<GroupDetail> result = repository.groupDetail("conv-gone").blockingGet();
+
+        assertTrue(result instanceof Result.Failure<?>);
+        verify(messageApi, times(1)).getConversations(eq(100), isNull());
+        verify(messageApi, times(1)).getArchivedConversations(eq(100), isNull());
+    }
+
+    @Test
     public void groupAvatarReadStopsAfterConfiguredByteCap() throws Exception {
         buildRepository();
         Uri uri = org.mockito.Mockito.mock(Uri.class);

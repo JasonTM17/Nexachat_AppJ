@@ -535,7 +535,9 @@ public final class ConversationRepository implements AutoCloseable {
      * it finds the row and writes it through to Room. The Room row's archive
      * flag picks the matching inbox variant first; when that flag is stale or
      * the row is absent the other variant is walked once before the lookup is
-     * declared missing.
+     * declared missing. A walk that completes with zero items and no cursor is
+     * a single empty page — the variant answered in one request, so a genuine
+     * miss costs one request per empty variant rather than a second page walk.
      */
     @NonNull
     public Single<Result<GroupDetail>> groupDetail(@NonNull String conversationId) {
@@ -815,6 +817,9 @@ public final class ConversationRepository implements AutoCloseable {
                         .andThen(Single.fromCallable(() -> new Result.Success<>(detail)));
             }
             if (fetch.nextCursor == null) {
+                // A page with no successor ends this variant's walk; one that
+                // completed with zero items and no cursor means the variant
+                // is empty, so no second page is ever fetched.
                 return Single.just(Result.<GroupDetail>failure(
                         new ApiError.Unknown("CONVERSATION_NOT_FOUND")));
             }
