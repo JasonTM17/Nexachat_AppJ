@@ -606,31 +606,37 @@ public final class InboxFragment extends Fragment {
 
     /**
      * Large text makes the horizontal carousel unreliable, so the filter and label
-     * chip groups wrap onto stacked rows that fill the screen width instead.
+     * chip groups wrap onto stacked rows that fill the screen width instead. Inside
+     * a HorizontalScrollView children measure with unbounded width, so each group
+     * gets the viewport's inner width explicitly before it can wrap.
      */
     private void applyFilterChipRowLayout() {
         if (binding == null || !InboxFilterChipLayoutRules.chipsWrapOntoMultipleRows(
                 getResources().getConfiguration().fontScale)) {
             return;
         }
-        LinearLayout row = binding.inboxFilterRow;
-        row.setOrientation(LinearLayout.VERTICAL);
-        ViewGroup.LayoutParams rowParams = row.getLayoutParams();
-        rowParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
-        row.setLayoutParams(rowParams);
-        widenChipGroup(binding.inboxFilterChips);
-        widenChipGroup(binding.labelFilterChips);
-        ViewGroup.MarginLayoutParams labelParams =
-                (ViewGroup.MarginLayoutParams) binding.labelFilterChips.getLayoutParams();
-        labelParams.topMargin = labelParams.getMarginStart();
-        labelParams.setMarginStart(0);
-        binding.labelFilterChips.setLayoutParams(labelParams);
+        binding.inboxFilterScroll.post(() -> {
+            if (binding == null || binding.inboxFilterScroll.getWidth() == 0) {
+                return;
+            }
+            int width = binding.inboxFilterScroll.getWidth()
+                    - binding.inboxFilterScroll.getPaddingLeft()
+                    - binding.inboxFilterScroll.getPaddingRight();
+            binding.inboxFilterRow.setOrientation(LinearLayout.VERTICAL);
+            wrapChipGroup(binding.inboxFilterChips, width);
+            wrapChipGroup(binding.labelFilterChips, width);
+            ViewGroup.MarginLayoutParams labelParams =
+                    (ViewGroup.MarginLayoutParams) binding.labelFilterChips.getLayoutParams();
+            labelParams.topMargin = labelParams.getMarginStart();
+            labelParams.setMarginStart(0);
+            binding.labelFilterChips.setLayoutParams(labelParams);
+        });
     }
 
-    private static void widenChipGroup(@NonNull ChipGroup group) {
+    private static void wrapChipGroup(@NonNull ChipGroup group, int widthPx) {
         group.setSingleLine(false);
         ViewGroup.LayoutParams params = group.getLayoutParams();
-        params.width = ViewGroup.LayoutParams.MATCH_PARENT;
+        params.width = widthPx;
         group.setLayoutParams(params);
     }
 
