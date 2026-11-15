@@ -47,6 +47,7 @@ public final class SheetChromeLayoutContractTest {
                 "layout/bottom_sheet_summary.xml",
                 "layout/bottom_sheet_ask_chat.xml",
                 "layout/bottom_sheet_attachment_picker.xml",
+                "layout/bottom_sheet_group_add_member.xml",
                 "layout/sheet_attachment_picker.xml",
                 "layout/sheet_create_poll.xml",
                 "layout/sheet_reminder_editor.xml",
@@ -67,6 +68,7 @@ public final class SheetChromeLayoutContractTest {
     @Test
     public void sheetSurfacesAndCardsStayTonalAndStrokeless() throws Exception {
         assertTonalStrokelessCard("layout/bottom_sheet_attachment_picker.xml", "attachmentSheetRoot", true);
+        assertTonalStrokelessCard("layout/bottom_sheet_group_add_member.xml", "addMemberSheetRoot", true);
         assertTonalStrokelessCard("layout/sheet_attachment_picker.xml", null, true);
         assertTonalStrokelessCard("layout/dialog_forward.xml", "forwardDialogRoot", true);
         assertTonalStrokelessCard("layout/bottom_sheet_ask_chat.xml", "askAnswerCard", false);
@@ -85,6 +87,8 @@ public final class SheetChromeLayoutContractTest {
 
         assertEquals("?attr/colorSurfaceContainerLowest",
                 app(card("layout/bottom_sheet_attachment_picker.xml", "attachmentSheetRoot"), "cardBackgroundColor"));
+        assertEquals("?attr/colorSurfaceContainerLowest",
+                app(card("layout/bottom_sheet_group_add_member.xml", "addMemberSheetRoot"), "cardBackgroundColor"));
         assertEquals("?attr/colorSurfaceContainerLowest",
                 app(card("layout/sheet_attachment_picker.xml", null), "cardBackgroundColor"));
         assertEquals("?attr/colorSurfaceContainerLowest",
