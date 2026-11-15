@@ -4,6 +4,7 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
@@ -20,9 +21,9 @@ import dagger.hilt.android.AndroidEntryPoint;
 
 /**
  * Per-conversation encryption screen: e2ee toggle with enable/disable
- * confirmation, the fingerprint safety code, and the member-device list.
- * Server error codes map to localized strings; unknown codes fall back to a
- * generic error.
+ * confirmation, the NC1 keyset-verification code for direct chats, and the
+ * member-device list. Server error codes map to localized strings; unknown
+ * codes fall back to a generic error.
  */
 @AndroidEntryPoint
 public final class EncryptionFragment extends Fragment {
@@ -31,9 +32,12 @@ public final class EncryptionFragment extends Fragment {
     private MaterialSwitch toggle;
     private View loadingIndicator;
     private TextView status;
-    private TextView safetyCode;
-    private TextView safetyHint;
-    private View safetyCard;
+    private TextView verificationCode;
+    private TextView verifyHint;
+    private ImageView trustIcon;
+    private TextView trustStateText;
+    private View verifyButton;
+    private View verificationCard;
     private View devicesCard;
     private LinearLayout devicesList;
     private TextView directoryHint;
@@ -61,9 +65,12 @@ public final class EncryptionFragment extends Fragment {
         toggle = view.findViewById(R.id.e2eeToggle);
         loadingIndicator = view.findViewById(R.id.e2eeLoading);
         status = view.findViewById(R.id.e2eeStatus);
-        safetyCard = view.findViewById(R.id.safetyCard);
-        safetyCode = view.findViewById(R.id.safetyCode);
-        safetyHint = view.findViewById(R.id.safetyHint);
+        verificationCard = view.findViewById(R.id.verificationCard);
+        verificationCode = view.findViewById(R.id.verificationCode);
+        verifyHint = view.findViewById(R.id.verifyHint);
+        trustIcon = view.findViewById(R.id.trustIcon);
+        trustStateText = view.findViewById(R.id.trustStateText);
+        verifyButton = view.findViewById(R.id.verifyButton);
         devicesCard = view.findViewById(R.id.devicesCard);
         devicesList = view.findViewById(R.id.devicesList);
         directoryHint = view.findViewById(R.id.e2eeDirectoryHint);
@@ -71,19 +78,20 @@ public final class EncryptionFragment extends Fragment {
                 .setNavigationOnClickListener(ignored ->
                         NavHostFragment.findNavController(this).navigateUp());
         view.findViewById(R.id.copyCodeButton).setOnClickListener(v -> {
-            CharSequence code = safetyCode.getText();
-            if (code == null || code.length() == 0) {
+            EncryptionViewModel.UiState state = viewModel.getUiState().getValue();
+            if (state == null || state.verificationCode == null) {
                 return;
             }
             android.content.ClipboardManager clipboard =
                     (android.content.ClipboardManager) requireContext()
                             .getSystemService(android.content.Context.CLIPBOARD_SERVICE);
             clipboard.setPrimaryClip(android.content.ClipData.newPlainText(
-                    getString(R.string.e2ee_safety_code_title), code));
+                    getString(R.string.e2ee_safety_code_title), state.verificationCode));
             com.google.android.material.snackbar.Snackbar.make(
                     view, R.string.copied_to_clipboard,
                     com.google.android.material.snackbar.Snackbar.LENGTH_SHORT).show();
         });
+        verifyButton.setOnClickListener(v -> showVerifyConfirmation());
 
         toggleListener = (button, checked) -> {
             if (!button.isPressed()) {
@@ -126,6 +134,18 @@ public final class EncryptionFragment extends Fragment {
                 .show();
     }
 
+    private void showVerifyConfirmation() {
+        String name = peerName == null || peerName.isBlank()
+                ? getString(R.string.e2ee_peer_fallback) : peerName;
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.e2ee_verify_confirm_title)
+                .setMessage(getString(R.string.e2ee_verify_confirm_body, name))
+                .setPositiveButton(R.string.e2ee_action_mark_verified,
+                        (d, w) -> viewModel.confirmVerified())
+                .setNegativeButton(R.string.action_cancel, null)
+                .show();
+    }
+
     private void render(@NonNull EncryptionViewModel.UiState state) {
         toggle.setEnabled(!state.busy && !state.loading
                 && (state.enabled || state.activationAllowed));
@@ -151,14 +171,18 @@ public final class EncryptionFragment extends Fragment {
             status.setVisibility(View.GONE);
         }
 
-        if (state.safetyCode == null) {
-            safetyCard.setVisibility(View.GONE);
+        if (state.verificationCode == null) {
+            verificationCard.setVisibility(View.GONE);
         } else {
-            safetyCard.setVisibility(View.VISIBLE);
-            safetyCode.setText(state.safetyCode);
+            verificationCard.setVisibility(View.VISIBLE);
+            verificationCode.setText(VerificationCodeText.lines(state.verificationCode));
             String name = peerName == null || peerName.isBlank()
                     ? getString(R.string.e2ee_peer_fallback) : peerName;
-            safetyHint.setText(getString(R.string.e2ee_safety_code_body, name));
+            verifyHint.setText(getString(R.string.e2ee_safety_code_body, name));
+            renderTrustRow(state.trust);
+            verifyButton.setVisibility(state.trust == EncryptionViewModel.Trust.VERIFIED
+                    ? View.GONE : View.VISIBLE);
+            verifyButton.setEnabled(!state.verifyBusy && !state.busy && !state.loading);
         }
 
         devicesList.removeAllViews();
@@ -198,6 +222,42 @@ public final class EncryptionFragment extends Fragment {
                 StatusRules.showDirectoryHint(state) ? View.VISIBLE : View.GONE);
     }
 
+    /**
+     * The state row reports exactly one verdict — not verified, verified, or
+     * changed — pairing the label with an icon that carries the same content
+     * description so TalkBack announces the state once.
+     */
+    private void renderTrustRow(@NonNull EncryptionViewModel.Trust trust) {
+        int textRes;
+        int iconRes;
+        int colorAttr;
+        switch (trust) {
+            case VERIFIED:
+                textRes = R.string.e2ee_verify_state_verified;
+                iconRes = R.drawable.ic_check_circle;
+                colorAttr = com.google.android.material.R.attr.colorPrimary;
+                break;
+            case CHANGED:
+                textRes = R.string.e2ee_verify_state_changed;
+                iconRes = R.drawable.ic_error_outline;
+                colorAttr = com.google.android.material.R.attr.colorError;
+                break;
+            case NOT_VERIFIED:
+            default:
+                textRes = R.string.e2ee_verify_state_not_verified;
+                iconRes = R.drawable.ic_help_outline;
+                colorAttr = com.google.android.material.R.attr.colorOnSurfaceVariant;
+                break;
+        }
+        String label = getString(textRes);
+        trustStateText.setText(label);
+        trustStateText.setTextColor(MaterialColors.getColor(trustStateText, colorAttr));
+        trustIcon.setImageResource(iconRes);
+        trustIcon.setImageTintList(android.content.res.ColorStateList.valueOf(
+                MaterialColors.getColor(trustIcon, colorAttr)));
+        trustIcon.setContentDescription(label);
+    }
+
     @NonNull
     private String errorText(@NonNull String code) {
         switch (code) {
@@ -211,6 +271,8 @@ public final class EncryptionFragment extends Fragment {
                 return getString(R.string.e2ee_error_limit);
             case "E2EE_DEVICE_CONFLICT":
                 return getString(R.string.e2ee_error_conflict);
+            case "E2EE_KEYSET_CHANGED":
+                return getString(R.string.e2ee_code_changed_refresh);
             case "E2EE_V1_ACTIVATION_DISABLED":
                 return getString(R.string.e2ee_activation_unavailable);
             default:
@@ -229,11 +291,12 @@ public final class EncryptionFragment extends Fragment {
                     : com.google.android.material.R.attr.colorOnSurfaceVariant;
         }
 
-        /** Two or more listed devices without a comparison code can only mean
-         *  the upstream directory dropped rows: a complete directory with that
-         *  many complete devices always produces a code. */
+        /** Two or more listed devices in an enabled chat without a verification
+         *  code can only mean the roster produced no direct transcript: a
+         *  complete direct directory always yields a code. */
         static boolean showDirectoryHint(@NonNull EncryptionViewModel.UiState state) {
-            return state.safetyCode == null && state.devices.size() >= 2;
+            return state.enabled && state.verificationCode == null
+                    && state.devices.size() >= 2;
         }
     }
 }

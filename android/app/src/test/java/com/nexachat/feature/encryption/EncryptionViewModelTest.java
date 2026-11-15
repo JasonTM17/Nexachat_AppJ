@@ -5,23 +5,31 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.AdditionalMatchers.aryEq;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 import com.nexachat.core.crypto.E2eeSession;
+import com.nexachat.core.crypto.KeysetCheck;
+import com.nexachat.core.crypto.KeysetTrustStore;
 import com.nexachat.core.network.dto.E2eeDeviceDtos.ConversationE2eeDto;
 import com.nexachat.core.network.dto.E2eeDeviceDtos.MemberDeviceDto;
+import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import io.reactivex.rxjava3.schedulers.TestScheduler;
 import io.reactivex.rxjava3.subjects.SingleSubject;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -31,21 +39,39 @@ import org.junit.Test;
  * the compiled client flag and the server capability, blocked activation never
  * reaches the API, explicit disable never requires the allowance, and a policy
  * denial retires the capability without touching the enabled flag.
+ *
+ * <p>Also the verification contract: the NC1 code renders the transcript the
+ * session produces, the trust row mirrors the durable record, and "mark as
+ * verified" pins exactly the displayed bytes — a roster that changed between
+ * display and confirm refreshes the code instead of verifying unseen bytes.
  */
 public final class EncryptionViewModelTest {
 
     @Rule public final InstantTaskExecutorRule instantTaskExecutorRule =
             new InstantTaskExecutorRule();
 
+    private static final byte[] TRANSCRIPT_A = new byte[] {1, 2, 3, 4, 5};
+    private static final byte[] TRANSCRIPT_B = new byte[] {9, 8, 7};
+
     private E2eeSession session;
+    private KeysetTrustStore trustStore;
 
     @Before
     public void setUp() {
         session = mock(E2eeSession.class);
+        trustStore = mock(KeysetTrustStore.class);
+        when(session.currentUserId()).thenReturn("me-1");
+        when(session.currentDeviceId()).thenReturn("dev-a");
+        // Default: the roster yields no direct transcript, so no code shows.
+        when(session.currentTranscript(anyString())).thenReturn(Single.error(
+                new E2eeSession.E2eeException("E2EE_UNSUPPORTED_CONVERSATION")));
+        when(trustStore.state(anyString(), anyString()))
+                .thenReturn(Single.just(Optional.empty()));
     }
 
     private EncryptionViewModel viewModel(boolean clientAllowed) {
-        return new EncryptionViewModel(session, clientAllowed, Schedulers.trampoline());
+        return new EncryptionViewModel(
+                session, trustStore, clientAllowed, Schedulers.trampoline());
     }
 
     private static MemberDeviceDto device(String userId, String deviceId) {
@@ -55,6 +81,12 @@ public final class EncryptionViewModelTest {
     private static ConversationE2eeDto state(boolean enabled, boolean serverAllowed,
             List<MemberDeviceDto> devices) {
         return new ConversationE2eeDto(enabled, devices, serverAllowed);
+    }
+
+    private static KeysetTrustStore.Record record(
+            KeysetTrustStore.TrustState state, byte[] transcript) {
+        return new KeysetTrustStore.Record(
+                state, "00", transcript, null, 1L);
     }
 
     private void stubLoad(ConversationE2eeDto dto) {
@@ -186,7 +218,8 @@ public final class EncryptionViewModelTest {
 
         vm.setEnabled(true);
 
-        verify(session).invalidateDevices("c1");
+        // load() invalidates once; the policy denial invalidates again.
+        verify(session, times(2)).invalidateDevices("c1");
         EncryptionViewModel.UiState ui = vm.getUiState().getValue();
         assertNotNull(ui);
         assertEquals("E2EE_V1_ACTIVATION_DISABLED", ui.errorCode);
@@ -236,7 +269,8 @@ public final class EncryptionViewModelTest {
         when(session.setE2ee("c1", true)).thenReturn(Single.error(
                 new E2eeSession.E2eeException("E2EE_NETWORK")));
         vm.setEnabled(true);
-        verify(session, never()).invalidateDevices(anyString());
+        // Only the load() invalidation; a non-policy failure adds none.
+        verify(session, times(1)).invalidateDevices(anyString());
         EncryptionViewModel.UiState failed = vm.getUiState().getValue();
         assertNotNull(failed);
         assertEquals("E2EE_NETWORK", failed.errorCode);
@@ -245,7 +279,7 @@ public final class EncryptionViewModelTest {
     }
 
     @Test
-    public void malformedDirectoryRowsAreExcludedAndSuppressTheCode() {
+    public void malformedDirectoryRowsAreExcluded() {
         List<MemberDeviceDto> devices = new ArrayList<>();
         devices.add(null);
         devices.add(device("u1", "dev-a"));
@@ -258,8 +292,6 @@ public final class EncryptionViewModelTest {
         EncryptionViewModel.UiState ui = vm.getUiState().getValue();
         assertNotNull(ui);
         assertEquals(2, ui.devices.size());
-        // A partial directory yields no reassuring comparison code.
-        assertNull(ui.safetyCode);
     }
 
     @Test
@@ -277,7 +309,8 @@ public final class EncryptionViewModelTest {
         vm.load("c1");                       // still in flight when the denial lands
         vm.setEnabled(true);
 
-        verify(session).invalidateDevices("c1");
+        // Two loads + the policy denial each invalidate the device cache.
+        verify(session, times(3)).invalidateDevices("c1");
         staleLoad.onSuccess(off);            // stale completion arrives afterwards
 
         EncryptionViewModel.UiState ui = vm.getUiState().getValue();
@@ -295,7 +328,7 @@ public final class EncryptionViewModelTest {
         // The fence lives at state publication on the UI scheduler, not at the
         // upstream emission: a stale success queued behind the denial is dropped.
         TestScheduler ui = new TestScheduler();
-        EncryptionViewModel vm = new EncryptionViewModel(session, true, ui);
+        EncryptionViewModel vm = new EncryptionViewModel(session, trustStore, true, ui);
         ConversationE2eeDto off = state(false, true, List.of());
         SingleSubject<ConversationE2eeDto> staleLoad = SingleSubject.create();
         SingleSubject<ConversationE2eeDto> toggle = SingleSubject.create();
@@ -311,7 +344,8 @@ public final class EncryptionViewModelTest {
         staleLoad.onSuccess(off);            // queued behind the denial
         ui.triggerActions();                 // flush UI queue
 
-        verify(session).invalidateDevices("c1");
+        // Two loads + the policy denial each invalidate the device cache.
+        verify(session, times(3)).invalidateDevices("c1");
         EncryptionViewModel.UiState state = vm.getUiState().getValue();
         assertNotNull(state);
         assertFalse(state.activationAllowed);
@@ -373,7 +407,7 @@ public final class EncryptionViewModelTest {
     }
 
     @Test
-    public void blankDirectoryFieldsAreMalformedAndSuppressTheCode() {
+    public void blankDirectoryFieldsAreMalformedAndExcluded() {
         List<MemberDeviceDto> devices = new ArrayList<>();
         devices.add(new MemberDeviceDto(" ", "dev-x", "a2V5"));
         devices.add(new MemberDeviceDto("u1", "\t", "a2V5"));
@@ -387,17 +421,118 @@ public final class EncryptionViewModelTest {
         EncryptionViewModel.UiState ui = vm.getUiState().getValue();
         assertNotNull(ui);
         assertEquals(2, ui.devices.size());
-        assertNull(ui.safetyCode);
     }
 
     @Test
-    public void completeDirectoryStillComputesTheCode() {
+    public void noTranscriptMeansNoVerificationCard() {
         EncryptionViewModel vm = viewModel(true);
         stubLoad(state(true, true, List.of(device("u1", "dev-a"), device("u2", "dev-b"))));
         vm.load("c1");
 
         EncryptionViewModel.UiState ui = vm.getUiState().getValue();
         assertNotNull(ui);
-        assertNotNull(ui.safetyCode);
+        assertNull(ui.verificationCode);
+        assertEquals(EncryptionViewModel.Trust.NOT_VERIFIED, ui.trust);
+    }
+
+    @Test
+    public void displayedCodeIsTheNc1CodeOverTheTranscript() {
+        when(session.currentTranscript("c1")).thenReturn(Single.just(TRANSCRIPT_A));
+        EncryptionViewModel vm = viewModel(true);
+        stubLoad(state(true, true, List.of(device("u1", "dev-a"), device("u2", "dev-b"))));
+        vm.load("c1");
+
+        EncryptionViewModel.UiState ui = vm.getUiState().getValue();
+        assertNotNull(ui);
+        assertEquals(KeysetCheck.displayCode(KeysetCheck.digest(TRANSCRIPT_A)),
+                ui.verificationCode);
+        assertEquals(EncryptionViewModel.Trust.NOT_VERIFIED, ui.trust);
+    }
+
+    @Test
+    public void verifiedRecordMapsToVerifiedState() {
+        when(session.currentTranscript("c1")).thenReturn(Single.just(TRANSCRIPT_A));
+        when(trustStore.state("me-1", "c1")).thenReturn(Single.just(
+                Optional.of(record(KeysetTrustStore.TrustState.VERIFIED, TRANSCRIPT_A))));
+        EncryptionViewModel vm = viewModel(true);
+        stubLoad(state(true, true, List.of(device("u1", "dev-a"), device("u2", "dev-b"))));
+        vm.load("c1");
+
+        EncryptionViewModel.UiState ui = vm.getUiState().getValue();
+        assertNotNull(ui);
+        assertEquals(EncryptionViewModel.Trust.VERIFIED, ui.trust);
+    }
+
+    @Test
+    public void changedRecordMapsToChangedStateEvenWithoutChangedDigest() {
+        // A roster-shape change records CHANGED with a null changed digest;
+        // the state row must still say "compare again".
+        when(session.currentTranscript("c1")).thenReturn(Single.just(TRANSCRIPT_A));
+        when(trustStore.state("me-1", "c1")).thenReturn(Single.just(
+                Optional.of(record(KeysetTrustStore.TrustState.CHANGED, TRANSCRIPT_B))));
+        EncryptionViewModel vm = viewModel(true);
+        stubLoad(state(true, true, List.of(device("u1", "dev-a"), device("u2", "dev-b"))));
+        vm.load("c1");
+
+        EncryptionViewModel.UiState ui = vm.getUiState().getValue();
+        assertNotNull(ui);
+        assertEquals(EncryptionViewModel.Trust.CHANGED, ui.trust);
+    }
+
+    @Test
+    public void markVerifiedPinsExactlyTheDisplayedTranscript() {
+        when(session.currentTranscript("c1")).thenReturn(Single.just(TRANSCRIPT_A));
+        when(session.markVerified(eq("c1"), aryEq(TRANSCRIPT_A)))
+                .thenReturn(Completable.complete());
+        EncryptionViewModel vm = viewModel(true);
+        stubLoad(state(true, true, List.of(device("u1", "dev-a"), device("u2", "dev-b"))));
+        vm.load("c1");
+        assertNotNull(vm.getUiState().getValue().verificationCode);
+
+        vm.confirmVerified();
+
+        // The bytes pinned are the displayed ones — the re-read only guards
+        // that the roster has not moved; it is never the verified value.
+        verify(session).markVerified(eq("c1"), aryEq(TRANSCRIPT_A));
+        EncryptionViewModel.UiState ui = vm.getUiState().getValue();
+        assertNotNull(ui);
+        assertEquals(EncryptionViewModel.Trust.VERIFIED, ui.trust);
+        assertFalse(ui.verifyBusy);
+    }
+
+    @Test
+    public void rosterChangeBeforeConfirmRefreshesAndNeverVerifies() {
+        // Display commits to TRANSCRIPT_A; the roster produces B at confirm.
+        when(session.currentTranscript("c1"))
+                .thenReturn(Single.just(TRANSCRIPT_A))
+                .thenReturn(Single.just(TRANSCRIPT_B));
+        EncryptionViewModel vm = viewModel(true);
+        stubLoad(state(true, true, List.of(device("u1", "dev-a"), device("u2", "dev-b"))));
+        vm.load("c1");
+        String shown = vm.getUiState().getValue().verificationCode;
+        assertEquals(KeysetCheck.displayCode(KeysetCheck.digest(TRANSCRIPT_A)), shown);
+
+        vm.confirmVerified();
+
+        verify(session, never()).markVerified(anyString(), any(byte[].class));
+        EncryptionViewModel.UiState ui = vm.getUiState().getValue();
+        assertNotNull(ui);
+        assertEquals("E2EE_KEYSET_CHANGED", ui.errorCode);
+        assertFalse(ui.verifyBusy);
+        // The refreshed code commits to the roster now in force, not to A.
+        assertEquals(KeysetCheck.displayCode(KeysetCheck.digest(TRANSCRIPT_B)),
+                ui.verificationCode);
+    }
+
+    @Test
+    public void confirmWithoutADisplayedCodeIsANoOp() {
+        EncryptionViewModel vm = viewModel(true);
+        stubLoad(state(true, true, List.of(device("u1", "dev-a"), device("u2", "dev-b"))));
+        vm.load("c1");
+        assertNull(vm.getUiState().getValue().verificationCode);
+
+        vm.confirmVerified();
+
+        verify(session, never()).markVerified(anyString(), any(byte[].class));
     }
 }

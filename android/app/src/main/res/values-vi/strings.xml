@@ -183,6 +183,14 @@
     <string name="e2ee_peer_fallback">người liên hệ</string>
     <string name="e2ee_action_turn_on">Bật</string>
     <string name="e2ee_action_turn_off">Tắt</string>
+    <string name="e2ee_verify_state_not_verified">Chưa xác minh</string>
+    <string name="e2ee_verify_state_verified">Đã xác minh</string>
+    <string name="e2ee_verify_state_changed">Đã thay đổi — hãy đối chiếu lại</string>
+    <string name="e2ee_action_mark_verified">Đánh dấu đã xác minh</string>
+    <string name="e2ee_verify_confirm_title">Đánh dấu đã xác minh?</string>
+    <string name="e2ee_verify_confirm_body">Chỉ xác minh sau khi bạn đã đối chiếu mã với %1$s và hai mã trùng nhau.</string>
+    <string name="e2ee_code_changed_refresh">Mã đã thay đổi. Hãy đối chiếu lại.</string>
+
     <string name="chat_typing">đang nhập…</string>
     <string name="msg_seen">Đã xem</string>
     <string name="chat_offline">Mất kết nối</string>
