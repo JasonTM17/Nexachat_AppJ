@@ -247,6 +247,19 @@
     <!-- Media / attachments -->
     <string name="media_pick_visual">Photo or video</string>
     <string name="media_pick_document">File or audio</string>
+    <string name="media_pick_location">Location</string>
+    <string name="media_pick_contact">Contact</string>
+    <string name="share_location_title">Share location</string>
+    <string name="share_contact_title">Share contact</string>
+    <string name="shared_location_title">Shared location</string>
+    <string name="share_location_label_hint">Label (optional)</string>
+    <string name="action_send">Send</string>
+    <string name="location_permission_required">Location permission is required to share your location</string>
+    <string name="location_permission_rationale">Location access is needed to share your current position.</string>
+    <string name="location_unavailable">Couldn\'t determine your location</string>
+    <string name="location_disabled">Turn on location to share it</string>
+    <string name="contact_pick_error">Couldn\'t read that contact</string>
+    <string name="contact_invalid_phone">This contact has no valid phone number</string>
     <string name="media_attachment">Attachment</string>
     <string name="error_attachment_open">No app can open this file</string>
     <string name="error_attachment_too_large">File exceeds the 25 MB limit</string>

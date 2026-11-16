@@ -245,6 +245,19 @@
     <!-- Media / attachments -->
     <string name="media_pick_visual">Ảnh hoặc video</string>
     <string name="media_pick_document">Tệp hoặc âm thanh</string>
+    <string name="media_pick_location">Vị trí</string>
+    <string name="media_pick_contact">Liên hệ</string>
+    <string name="share_location_title">Chia sẻ vị trí</string>
+    <string name="share_contact_title">Chia sẻ liên hệ</string>
+    <string name="shared_location_title">Vị trí đã chia sẻ</string>
+    <string name="share_location_label_hint">Nhãn (không bắt buộc)</string>
+    <string name="action_send">Gửi</string>
+    <string name="location_permission_required">Cần quyền vị trí để chia sẻ vị trí của bạn</string>
+    <string name="location_permission_rationale">Cần quyền vị trí để chia sẻ vị trí hiện tại của bạn.</string>
+    <string name="location_unavailable">Không xác định được vị trí của bạn</string>
+    <string name="location_disabled">Hãy bật định vị để chia sẻ vị trí</string>
+    <string name="contact_pick_error">Không đọc được liên hệ đó</string>
+    <string name="contact_invalid_phone">Liên hệ này không có số điện thoại hợp lệ</string>
     <string name="media_attachment">Đính kèm</string>
     <string name="error_attachment_open">Không có ứng dụng mở được tệp này</string>
     <string name="error_attachment_too_large">Tệp vượt quá giới hạn 25 MB</string>

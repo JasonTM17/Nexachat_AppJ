@@ -2,13 +2,16 @@ package com.nexachat.feature.chat;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.net.Uri;
 import android.content.ActivityNotFoundException;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.ContactsContract;
 import android.provider.Settings;
 import android.graphics.Typeface;
 import android.text.Editable;
@@ -47,6 +50,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.call.CallLauncher;
+import com.nexachat.core.common.PhoneNormalizer;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.MessageMention;
 import com.nexachat.core.storage.RecallWindowConfig;
@@ -98,10 +102,13 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         MessageActionSheetFragment.Actions,
         ForwardPickerSheet.Host,
         AttachmentPickerSheet.Host,
+        SharedContentSheet.Host,
         ReportSheetFragment.Host {
     @Inject ForegroundConversationTracker foregroundConversationTracker;
     private static final String PREFS_VOICE_PERMISSION = "chat_voice_permission";
     private static final String KEY_RECORD_AUDIO_REQUESTED = "record_audio_requested";
+    private static final String PREFS_LOCATION_PERMISSION = "chat_location_permission";
+    private static final String KEY_LOCATION_REQUESTED = "location_requested";
     private static final String ARG_CONVERSATION_ID = "conversationId";
     private static final String ARG_ARCHIVE_JUMP_MESSAGE_ID = "archiveJumpMessageId";
     private static final int MENU_ASK = 1;
@@ -163,6 +170,33 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                     uris -> {
                         if (uris != null && !uris.isEmpty() && viewModel != null) {
                             viewModel.sendAttachments(uris);
+                        }
+                    });
+    private final ActivityResultLauncher<String[]> locationPermissionLauncher =
+            registerForActivityResult(
+                    new ActivityResultContracts.RequestMultiplePermissions(),
+                    grants -> {
+                        if (binding == null) return;
+                        boolean granted = grants != null && grants.containsValue(Boolean.TRUE);
+                        ShareLocationPermissionHelper.ResultAction action =
+                                ShareLocationPermissionHelper.resultAction(
+                                        granted, locationRationaleShown(),
+                                        locationPermissionRequested());
+                        if (action == ShareLocationPermissionHelper.ResultAction.PROCEED) {
+                            beginLocationFetch();
+                            return;
+                        }
+                        showLocationPermissionSnackbar(
+                                action == ShareLocationPermissionHelper.ResultAction.PERMANENT_DENIAL);
+                    });
+    private final ActivityResultLauncher<Intent> contactPicker =
+            registerForActivityResult(
+                    new ActivityResultContracts.StartActivityForResult(),
+                    result -> {
+                        if (result.getResultCode() == Activity.RESULT_OK
+                                && result.getData() != null
+                                && result.getData().getData() != null) {
+                            handleContactPicked(result.getData().getData());
                         }
                     });
     private final ActivityResultLauncher<String> recordAudioPermissionLauncher =
@@ -328,13 +362,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     @SuppressLint("ClickableViewAccessibility")
     private void configureComposer() {
         binding.composerBar.attachButton.setOnClickListener(v -> {
-            if (state.isE2eeEnabled()) {
-                e2eeMediaUnsupported();
-                return;
-            }
+            // Location/contact share through the TEXT path, so the sheet stays
+            // reachable in E2EE chats; the sheet hides the media rows there.
             if (!getChildFragmentManager().isStateSaved()
                     && getChildFragmentManager().findFragmentByTag(AttachmentPickerSheet.TAG) == null) {
-                new AttachmentPickerSheet()
+                AttachmentPickerSheet.newInstance(!state.isE2eeEnabled())
                         .show(getChildFragmentManager(), AttachmentPickerSheet.TAG);
             }
         });
@@ -771,6 +803,155 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     private void markRecordAudioRequested() {
         requireContext().getSharedPreferences(PREFS_VOICE_PERMISSION, android.content.Context.MODE_PRIVATE)
                 .edit().putBoolean(KEY_RECORD_AUDIO_REQUESTED, true).apply();
+    }
+
+    private boolean ensureLocationPermission() {
+        boolean granted = ContextCompat.checkSelfPermission(
+                requireContext(), Manifest.permission.ACCESS_COARSE_LOCATION)
+                        == PackageManager.PERMISSION_GRANTED
+                || ContextCompat.checkSelfPermission(
+                        requireContext(), Manifest.permission.ACCESS_FINE_LOCATION)
+                        == PackageManager.PERMISSION_GRANTED;
+        ShareLocationPermissionHelper.TapAction action =
+                ShareLocationPermissionHelper.tapAction(
+                        granted, locationRationaleShown(), locationPermissionRequested());
+        if (action == ShareLocationPermissionHelper.TapAction.PROCEED) {
+            return true;
+        }
+        if (action == ShareLocationPermissionHelper.TapAction.SHOW_RATIONALE) {
+            showLocationRationaleThenRequest();
+        } else if (action == ShareLocationPermissionHelper.TapAction.REQUEST_PERMISSION) {
+            launchLocationRequest();
+        } else if (action == ShareLocationPermissionHelper.TapAction.OPEN_SETTINGS) {
+            showLocationPermissionSnackbar(true);
+        }
+        return false;
+    }
+
+    private boolean locationRationaleShown() {
+        return ActivityCompat.shouldShowRequestPermissionRationale(
+                requireActivity(), Manifest.permission.ACCESS_FINE_LOCATION)
+                || ActivityCompat.shouldShowRequestPermissionRationale(
+                        requireActivity(), Manifest.permission.ACCESS_COARSE_LOCATION);
+    }
+
+    private void launchLocationRequest() {
+        markLocationRequested();
+        locationPermissionLauncher.launch(new String[] {
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.ACCESS_FINE_LOCATION});
+    }
+
+    private void showLocationRationaleThenRequest() {
+        new MaterialAlertDialogBuilder(requireContext())
+                .setMessage(R.string.location_permission_rationale)
+                .setPositiveButton(R.string.call_permission_continue,
+                        (dialog, which) -> launchLocationRequest())
+                .setNegativeButton(R.string.call_permission_cancel, null)
+                .show();
+    }
+
+    private void showLocationPermissionSnackbar(boolean offerSettings) {
+        if (binding == null || !isAdded()) return;
+        if (offerSettings) {
+            // Permanent denial, same treatment as the mic flow: a dialog
+            // routes to app settings instead of a fading snackbar.
+            new MaterialAlertDialogBuilder(requireContext())
+                    .setMessage(R.string.location_permission_required)
+                    .setPositiveButton(R.string.action_open_app_settings,
+                            (dialog, which) -> openAppSettings())
+                    .setNegativeButton(R.string.action_cancel, null)
+                    .show();
+            return;
+        }
+        Snackbar.make(binding.getRoot(), R.string.location_permission_required,
+                Snackbar.LENGTH_LONG).show();
+    }
+
+    private void beginLocationFetch() {
+        if (!isAdded()) return;
+        CurrentLocationFetcher.fetch(requireContext(), (location, status) -> {
+            if (!isAdded() || binding == null || getChildFragmentManager().isStateSaved()) {
+                return;
+            }
+            switch (status) {
+                case OK -> {
+                    if (location != null && getChildFragmentManager()
+                            .findFragmentByTag(SharedContentSheet.TAG) == null) {
+                        SharedContentSheet.forLocation(
+                                        location.getLatitude(), location.getLongitude())
+                                .show(getChildFragmentManager(), SharedContentSheet.TAG);
+                    }
+                }
+                case DISABLED -> Snackbar.make(binding.getRoot(),
+                                R.string.location_disabled, Snackbar.LENGTH_LONG)
+                        .setAction(R.string.action_open_app_settings,
+                                v -> openLocationSettings())
+                        .show();
+                default -> Snackbar.make(binding.getRoot(),
+                                R.string.location_unavailable, Snackbar.LENGTH_LONG)
+                        .show();
+            }
+        });
+    }
+
+    private void openLocationSettings() {
+        try {
+            startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+        } catch (ActivityNotFoundException ignored) {
+            openAppSettings();
+        }
+    }
+
+    private void handleContactPicked(@NonNull Uri contactUri) {
+        String name = null;
+        String number = null;
+        String[] projection = {
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.NUMBER};
+        try (Cursor cursor = requireContext().getContentResolver()
+                .query(contactUri, projection, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                name = cursor.getString(0);
+                number = cursor.getString(1);
+            }
+        } catch (RuntimeException ignored) {
+            // Provider revoked the one-row grant or returned a broken row.
+        }
+        if (binding == null || !isAdded()) {
+            return;
+        }
+        if (number == null || number.isBlank()) {
+            Snackbar.make(binding.getRoot(), R.string.contact_pick_error,
+                    Snackbar.LENGTH_LONG).show();
+            return;
+        }
+        String phone = PhoneNormalizer.toE164(number);
+        if (!SharedContent.isE164(phone)) {
+            Snackbar.make(binding.getRoot(), R.string.contact_invalid_phone,
+                    Snackbar.LENGTH_LONG).show();
+            return;
+        }
+        String displayName = SharedContent.sanitizeText(name);
+        if (displayName.isEmpty()) {
+            displayName = phone;
+        }
+        if (getChildFragmentManager().isStateSaved()
+                || getChildFragmentManager().findFragmentByTag(SharedContentSheet.TAG) != null) {
+            return;
+        }
+        SharedContentSheet.forContact(displayName, phone)
+                .show(getChildFragmentManager(), SharedContentSheet.TAG);
+    }
+
+    private boolean locationPermissionRequested() {
+        return requireContext().getSharedPreferences(PREFS_LOCATION_PERMISSION, android.content.Context.MODE_PRIVATE)
+                .getBoolean(KEY_LOCATION_REQUESTED, false);
+    }
+
+    private void markLocationRequested() {
+        requireContext().getSharedPreferences(PREFS_LOCATION_PERMISSION, android.content.Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_LOCATION_REQUESTED, true).apply();
     }
 
     private boolean beginVoiceRecording(@NonNull View source) {
@@ -2263,6 +2444,25 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     }
     @Override public void onPickDocument() {
         documentPicker.launch(com.nexachat.data.AttachmentRepository.UPLOAD_ALLOWED_MIMES);
+    }
+    @Override public void onPickLocation() {
+        if (ensureLocationPermission()) {
+            beginLocationFetch();
+        }
+    }
+    @Override public void onPickContact() {
+        // ACTION_PICK on the phone row needs no contacts permission; the
+        // returned grant covers only the row the user selected.
+        contactPicker.launch(new Intent(
+                Intent.ACTION_PICK,
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI));
+    }
+    @Override public void onShareLocationConfirmed(
+            double latitude, double longitude, @Nullable String label) {
+        viewModel.sendSharedContent(new SharedContent.Location(latitude, longitude, label));
+    }
+    @Override public void onShareContactConfirmed(@NonNull String name, @NonNull String phone) {
+        viewModel.sendSharedContent(new SharedContent.Contact(name, phone));
     }
 
     @Override public void onResume() {
