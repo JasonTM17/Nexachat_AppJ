@@ -78,7 +78,7 @@
           android:layout_height="wrap_content"
           android:layout_marginTop="@dimen/space_md"
           app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
-          app:cardCornerRadius="@dimen/corner_md"
+          app:cardCornerRadius="@dimen/corner_xl"
           app:cardElevation="0dp"
           app:strokeColor="?attr/colorOutlineVariant"
           app:strokeWidth="1dp">

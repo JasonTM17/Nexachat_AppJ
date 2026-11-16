@@ -144,7 +144,7 @@ public final class GroupDetailFragment extends Fragment {
         String title = state.getTitle().isBlank()
                 ? getString(R.string.group_detail_title)
                 : state.getTitle();
-        binding.toolbar.setTitle(title);
+        binding.toolbar.setTitle(R.string.group_detail_title);
         binding.groupTitle.setText(title);
         binding.groupAvatar.setName(title);
         binding.groupAvatar.setAvatarUrl(state.getGroupAvatar());

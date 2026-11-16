@@ -119,7 +119,7 @@
                 android:layout_marginTop="@dimen/space_sm"
                 android:visibility="gone"
                 app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
-                app:cardCornerRadius="@dimen/corner_md"
+                app:cardCornerRadius="@dimen/corner_xl"
                 app:cardElevation="0dp"
                 app:strokeWidth="0dp">
 
