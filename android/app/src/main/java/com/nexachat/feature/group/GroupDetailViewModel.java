@@ -94,7 +94,9 @@ public final class GroupDetailViewModel extends ViewModel {
         if (summary == null) {
             return;
         }
-        GroupDetailUiState state = currentState().withGroupAvatar(summary.getAvatarUrl());
+        GroupDetailUiState state = currentState()
+                .withGroupAvatar(summary.getAvatarUrl())
+                .withMute(summary.isMuted(), summary.getMutedUntilEpochMs());
         String title = summary.getDisplayName();
         if (title != null && !title.isBlank()) {
             state = state.withTitle(title);
@@ -285,6 +287,39 @@ public final class GroupDetailViewModel extends ViewModel {
 
     public void dismissLeave() {
         mutableUiState.setValue(currentState().withConfirmLeave(false));
+    }
+
+    /** Mutes this conversation for the caller until {@code until}, or forever when null. */
+    public void muteConversation(@Nullable java.time.Instant until) {
+        runPreference(
+                until == null
+                        ? conversationRepository.muteConversationForever(conversationId)
+                        : conversationRepository.muteConversation(conversationId, until),
+                true,
+                this::unmuteConversation);
+    }
+
+    /** Clears the caller's mute in one tap; idempotent when already unmuted. */
+    public void unmuteConversation() {
+        runPreference(conversationRepository.unmuteConversation(conversationId), false, null);
+    }
+
+    private void runPreference(
+            Single<Result<Void>> request, boolean muted, @Nullable Runnable undo) {
+        if (conversationId.isBlank()) {
+            return;
+        }
+        disposables.add(request
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(result -> {
+                    if (result instanceof Result.Success<?>) {
+                        events.emit(new GroupDetailEvent.PreferenceFeedback(muted, undo));
+                    } else if (result instanceof Result.Failure<?> failure) {
+                        mutableUiState.setValue(currentState()
+                                .withBusyAndError(false, failure.getError()));
+                    }
+                }, this::surfaceError));
     }
 
     public void confirmLeave() {

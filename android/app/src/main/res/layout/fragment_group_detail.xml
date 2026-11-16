@@ -52,6 +52,116 @@
                 android:textColor="?attr/colorOnSurface"
                 android:textStyle="bold" />
 
+            <LinearLayout
+                android:id="@+id/quickActions"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:baselineAligned="false"
+                android:orientation="horizontal">
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/addMemberButton"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="@dimen/space_sm"
+                    android:clickable="true"
+                    android:contentDescription="@string/action_add_member"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
+                    android:minHeight="@dimen/min_touch_target"
+                    android:visibility="gone"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+                    app:cardCornerRadius="@dimen/corner_md"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center_horizontal"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="@dimen/space_xs"
+                        android:paddingVertical="@dimen/space_sm">
+
+                        <FrameLayout
+                            android:layout_width="32dp"
+                            android:layout_height="32dp"
+                            android:background="@drawable/bg_quick_action_icon_accent">
+
+                            <ImageView
+                                android:layout_width="@dimen/icon_size_sm"
+                                android:layout_height="@dimen/icon_size_sm"
+                                android:layout_gravity="center"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_add"
+                                app:tint="?attr/colorOnPrimaryContainer" />
+                        </FrameLayout>
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_xs"
+                            android:gravity="center"
+                            android:text="@string/action_add_member"
+                            android:textAppearance="?attr/textAppearanceLabelMedium"
+                            android:textColor="?attr/colorOnSurface" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/muteTile"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
+                    android:minHeight="@dimen/min_touch_target"
+                    app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+                    app:cardCornerRadius="@dimen/corner_md"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:gravity="center_horizontal"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="@dimen/space_xs"
+                        android:paddingVertical="@dimen/space_sm">
+
+                        <FrameLayout
+                            android:layout_width="32dp"
+                            android:layout_height="32dp"
+                            android:background="@drawable/bg_settings_tile_tint">
+
+                            <ImageView
+                                android:id="@+id/muteIcon"
+                                android:layout_width="@dimen/icon_size_sm"
+                                android:layout_height="@dimen/icon_size_sm"
+                                android:layout_gravity="center"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_notification"
+                                app:tint="?attr/colorOnSurfaceVariant" />
+                        </FrameLayout>
+
+                        <TextView
+                            android:id="@+id/muteText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_xs"
+                            android:gravity="center"
+                            android:text="@string/mute_menu_title"
+                            android:textAppearance="?attr/textAppearanceLabelMedium"
+                            android:textColor="?attr/colorOnSurface" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -78,29 +188,12 @@
                         android:nestedScrollingEnabled="false" />
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/addMemberButton"
-                        style="@style/Widget.Material3.Button.TonalButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginHorizontal="@dimen/space_md"
-                        android:layout_marginTop="@dimen/space_xs"
-                        android:layout_marginBottom="@dimen/space_sm"
-                        android:minHeight="@dimen/min_touch_target"
-                        android:text="@string/action_add_member"
-                        android:textColor="?attr/colorOnPrimaryContainer"
-                        android:visibility="gone"
-                        app:backgroundTint="?attr/colorPrimaryContainer"
-                        app:cornerRadius="@dimen/corner_md"
-                        app:icon="@drawable/ic_add"
-                        app:iconGravity="textStart"
-                        app:iconTint="?attr/colorOnPrimaryContainer" />
-
-                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/inviteLinkButton"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginHorizontal="@dimen/space_md"
+                        android:layout_marginTop="@dimen/space_xs"
                         android:layout_marginBottom="@dimen/space_sm"
                         android:minHeight="@dimen/min_touch_target"
                         android:text="@string/invite_manage_action"
