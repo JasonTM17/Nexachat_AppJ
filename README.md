@@ -9,12 +9,15 @@ optional Firebase and AI-provider integrations, both off by default.
 
 [![CI](https://github.com/JasonTM17/Nexachat_AppJ/actions/workflows/ci.yml/badge.svg)](https://github.com/JasonTM17/Nexachat_AppJ/actions/workflows/ci.yml)
 
-<!-- Screenshots: the previous gallery was removed because every committed frame
-     predates the Tonal Plum palette refresh (seed #733F68). A later capture
-     pass will add docs/media/screens/01-inbox-dark.png, 02-chat-dark.png,
-     03-contacts-dark.png, 04-profile-light.png, 05-call-dark.png and
-     06-summary-dark.png. Restore a gallery section here only after those
-     files exist; the pre-refresh frames remain indexed in docs/media/README.md. -->
+## Screenshots
+
+| Inbox (dark) | Chat (dark) | Contacts (dark) |
+| --- | --- | --- |
+| ![Inbox in dark mode](docs/media/screens/01-inbox-dark.png) | ![Chat in dark mode](docs/media/screens/02-chat-dark.png) | ![Contacts in dark mode](docs/media/screens/03-contacts-dark.png) |
+
+| Profile (light) | Outgoing call | AI summary (dark) |
+| --- | --- | --- |
+| ![Profile in light mode](docs/media/screens/04-profile-light.png) | ![Outgoing call screen](docs/media/screens/05-call-dark.png) | ![Summary sheet in dark mode](docs/media/screens/06-summary-dark.png) |
 
 ## Features
 
