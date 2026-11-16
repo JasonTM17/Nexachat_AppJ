@@ -102,6 +102,30 @@
         android:paddingBottom="@dimen/space_lg"
         app:layout_behavior="@string/appbar_scrolling_view_behavior" />
 
+    <com.nexachat.feature.contacts.ContactLetterRailView
+        android:id="@+id/letterRail"
+        android:layout_width="@dimen/min_touch_target"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:orientation="vertical"
+        android:paddingVertical="@dimen/space_sm"
+        android:visibility="gone"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior" />
+
+    <TextView
+        android:id="@+id/letterBubble"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="top|end"
+        android:layout_marginEnd="52dp"
+        android:background="@drawable/bg_letter_bubble"
+        android:gravity="center"
+        android:importantForAccessibility="no"
+        android:minHeight="56dp"
+        android:textAppearance="?attr/textAppearanceTitleLarge"
+        android:textColor="?attr/colorOnPrimary"
+        android:visibility="gone" />
+
     <com.nexachat.core.ui.components.LoadingStateView
         android:id="@+id/loadingState"
         android:layout_width="match_parent"

@@ -109,6 +109,8 @@
     <!-- Contacts & user search -->
     <string name="contacts_title">Contacts</string>
     <string name="contacts_empty">No contacts yet</string>
+    <string name="a11y_contacts_section_jump">Jump to %1$s contacts</string>
+    <string name="a11y_contacts_section_other">Jump to other contacts</string>
     <string name="search_title">Search</string>
     <string name="search_label">Phone or name</string>
     <string name="search_no_results">No users found</string>
