@@ -63,7 +63,9 @@ class RenderProfileConfigurationTest {
             "FirebaseAuthorizationLeaseSweepJob#scheduledSweep",
             "Firebase bridge is disabled on Render (FIREBASE_REALTIME_ENABLED=false), so the bean is absent",
             "FirebaseProjectionRetryQueue#retryDue",
-            "Firebase bridge is disabled on Render (FIREBASE_REALTIME_ENABLED=false), so the bean is absent");
+            "Firebase bridge is disabled on Render (FIREBASE_REALTIME_ENABLED=false), so the bean is absent",
+            "AlertScanQueue#drain",
+            "Drains an in-memory queue only — an empty poll issues no SQL, so it cannot keep Neon awake");
 
     private static final String SCHEDULED_PREFIX = "@Scheduled";
 

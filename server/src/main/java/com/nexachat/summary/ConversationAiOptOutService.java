@@ -4,6 +4,7 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,14 +22,17 @@ public class ConversationAiOptOutService {
     private final ConversationRepository conversationRepository;
     private final ConversationMemberRepository memberRepository;
     private final JdbcConversationAiOptOutRepository repository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ConversationAiOptOutService(
             ConversationRepository conversationRepository,
             ConversationMemberRepository memberRepository,
-            JdbcConversationAiOptOutRepository repository) {
+            JdbcConversationAiOptOutRepository repository,
+            ApplicationEventPublisher eventPublisher) {
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.repository = repository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -42,6 +46,7 @@ public class ConversationAiOptOutService {
     public ConversationAiOptOutResponse optOut(UUID conversationId, UUID userId) {
         requireMember(conversationId, userId);
         repository.optOut(conversationId, userId);
+        eventPublisher.publishEvent(new ConversationAiOptOutEvent(conversationId, userId));
         return new ConversationAiOptOutResponse(conversationId, true);
     }
 

@@ -34,11 +34,22 @@ import java.util.UUID;
 @Component
 public class AccessTokenValidityCache {
 
-    /** Cached answer for one user. {@code present=false} means the account is gone. */
-    public record Validity(boolean present, Instant tokensValidAfter) {
+    /**
+     * Cached answer for one user. {@code present=false} means the account is
+     * gone. {@code role} feeds the security context's authority list and
+     * {@code suspended} is checked before the cutoff so a suspended account's
+     * tokens fail even if issued after the last revocation stamp.
+     */
+    public record Validity(boolean present, Instant tokensValidAfter, String role,
+                           boolean suspended) {
+
+        /** Pre-role call shape: an ordinary, non-suspended account. */
+        public Validity(boolean present, Instant tokensValidAfter) {
+            this(present, tokensValidAfter, "USER", false);
+        }
 
         public static Validity missing() {
-            return new Validity(false, null);
+            return new Validity(false, null, null, false);
         }
     }
 

@@ -24,6 +24,9 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+    # Parallel worktrees add migrations independently; whichever lands second
+    # arrives out of order on the shared IT database.
+    out-of-order: true
 
 # Integration tests keep actuator on the main server port (management port =
 # server.port) so the security ITs can reach /actuator/health there. The
