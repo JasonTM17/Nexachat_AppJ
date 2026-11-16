@@ -158,7 +158,10 @@
           android:minHeight="@dimen/min_touch_target"
           android:text="@string/action_continue"
           android:textStyle="bold"
-          app:cornerRadius="@dimen/corner_md" />
+          app:cornerRadius="@dimen/corner_md"
+          app:icon="@drawable/ic_arrow_forward"
+          app:iconGravity="textEnd"
+          app:iconTint="?attr/colorOnPrimary" />
       </LinearLayout>
     </LinearLayout>
   </ScrollView>
