@@ -70,6 +70,9 @@ public final class SyncEngineV2Test {
         OutboxDao outbox = mock(OutboxDao.class);
         when(db.pinDao()).thenReturn(pins);
         when(db.outboxDao()).thenReturn(outbox);
+        MessageTranslationDao translations = mock(MessageTranslationDao.class);
+        when(db.messageTranslationDao()).thenReturn(translations);
+        when(translations.deleteForConversation(anyString())).thenReturn(Completable.complete());
         when(pins.deleteForConversation(anyString())).thenReturn(Completable.complete());
         when(pins.delete(anyString(), anyString())).thenReturn(Completable.complete());
         when(outbox.deleteForConversation(anyString(), anyString())).thenReturn(Completable.complete());

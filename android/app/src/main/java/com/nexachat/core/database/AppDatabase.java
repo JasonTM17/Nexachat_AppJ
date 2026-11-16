@@ -55,6 +55,7 @@ public abstract class AppDatabase extends RoomDatabase {
             db.execSQL("DELETE FROM `offline_outbox`");
             db.execSQL("DELETE FROM `sync_cursors`");
             db.execSQL("DELETE FROM `e2ee_keyset_trust`");
+            db.execSQL("DELETE FROM `message_translations`");
         });
     }
 
