@@ -6,6 +6,55 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.10] - 2026-11-16
+
+Android APK release with bug fixes and interface refinements; no server
+changes, so the APK works with the deployed server. `v1.2.9` crashed when
+rotating to landscape with a chat open — fixed here. See
+[docs/release-notes/v1.2.10.md](docs/release-notes/v1.2.10.md).
+
+### Added
+- Android contacts: a rounded search pill opens the existing search, tonal
+  Add contact and Create group cards replace the floating button, contacts
+  group under initial-letter headers (Vietnamese diacritics fold to the base
+  letter) and rows show the phone number when present; user search gets the
+  same pill with a clear button and a tonal results band.
+- Android group detail: tonal quick-action tiles for Add member (admins
+  only, replacing the in-card button) and Mute/Unmute with the existing
+  presets and an Undo snackbar.
+- Android message action sheet: two-line rows with a one-line description
+  for Reply, Copy, Forward, Pin/Unpin, Edit and the delete variants; a
+  trailing arrow on the sign-in, register and complete-profile primary
+  buttons.
+- Android: tonal reaction chips inside message bubbles — no outline, and
+  the reacted state uses the secondary container.
+
+### Fixed
+- Android chat: the `v1.2.9` landscape-rotation crash is fixed; voice
+  recording starts off the main thread so mic taps no longer ANR, an early
+  release or failed take shows the hold-to-record hint, TalkBack gets a send
+  action for the pending voice message and voice-message permission copy;
+  outbound realtime frames wait for CONNECTED and superseded sockets are
+  retired; eight distinct sender-name colors in group chats; in-chat search
+  results anchor to the top; profile dialogs rise above the keyboard.
+- Android attachments and labels: the picker accepts only server-allowed
+  types and shows the real upload error; label save, edit and delete
+  failures are reported instead of silent, and a delete before the first
+  list load no longer fails every retry; the Google link/unlink password
+  dialog resizes above the keyboard.
+- Android inbox: removal from a group now shows a snackbar naming the
+  group — held until the inbox subscribes, delivered for removals confirmed
+  while offline, and silent for a voluntary leave.
+- Android E2EE: an invalid-keyset send pause re-checks against a fresh
+  member list — a definite verdict clears it while unusable or inconclusive
+  rosters stay paused (fail closed); healed non-direct rosters release the
+  marker the same way the send path decides; the encryption screen shows
+  "Changed" when a member rotates keys after verification.
+
+### Tools
+- The demo seed now makes all four demo accounts mutual contacts, so the
+  add-member picker and Contacts work between any pair; demo data only.
+
 ## [1.2.9] - 2026-11-16
 
 Android APK release with a new look. `v1.2.8` shipped server-only — its APK
@@ -855,7 +904,8 @@ First tagged release (`v1.0.0`).
 - Architecture diagrams, REST/STOMP contracts, security notes, operations
   guide and UI design documentation.
 
-[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.9...HEAD
+[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.10...HEAD
+[1.2.10]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.9...v1.2.10
 [1.2.9]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.8...v1.2.9
 [1.2.8]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.7...v1.2.8
 [1.1.1]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.1.0...v1.1.1
