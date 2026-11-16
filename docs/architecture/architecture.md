@@ -1,9 +1,9 @@
 # NexaChat Architecture
 
 > Current implementation view: Android app (Java 21 LTS, XML Views + Fragments +
-> ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v16) → REST
+> ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v17) → REST
 > `/api/v1` + STOMP over WebSocket → Spring Boot 3.5.16 modular monolith → PostgreSQL 16
-> (Flyway V1–V20 + V22 + V24–V34; V21/V23 reserved) + local or S3-compatible file storage. Conversation RAG is available through the
+> (Flyway V1–V20 + V22 + V24–V35; V21/V23 reserved) + local or S3-compatible file storage. Conversation RAG is available through the
 > server API (`POST /api/v1/conversations/{id}/ask`) and Android Ask screen
 > ([docs/architecture/rag.md](rag.md)).
 > Call signaling shares STOMP (`server/call`,
@@ -25,7 +25,7 @@ flowchart LR
             REST["Retrofit/OkHttp<br/>+ AuthInterceptor/Authenticator"]
             STOMP["StompClient<br/>(OkHttp WebSocket + STOMP frames)"]
             ROUTER["EphemeralStateRouter<br/>(STOMP default, opt-in Firebase)"]
-            ROOM[("Room DB v16 (RxJava 3)<br/>cache · caller-owned labels · owner-scoped outbox · offline_outbox · users · call_logs")]
+            ROOM[("Room DB v17 (RxJava 3)<br/>cache · caller-owned labels · owner-scoped outbox · offline_outbox · users · call_logs · sync cursors")]
             STORE["RxDataStore + TokenStore<br/>(Android Keystore AES)"]
             SETTINGS["Local theme + locale settings"]
         end
@@ -56,6 +56,9 @@ flowchart LR
             LABEL["label"]
             INVITE["invite"]
             ARCHIVE["archive"]
+            E2EE["e2ee"]
+            RETENTION["retention"]
+            MAIL["mail"]
             COMMON["common: errors, logging,<br/>config, E.164 util"]
         end
         WS["WebSocket/STOMP layer<br/>@MessageMapping +<br/>ChannelInterceptor authZ"]
@@ -63,7 +66,7 @@ flowchart LR
         PRESENCE["PresenceSessionRegistry<br/>(in-memory, per node)"]
     end
 
-    PG[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V34 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin · sync cursors · google_signup")]
+    PG[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V35 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin · sync cursors · google_signup · e2ee")]
     STORAGE["File storage<br/>(StorageService: local or S3-compatible)"]
     FCM[["FCM (HTTP v1 OAuth2, GoogleHttpFcmGateway)"]]
 
@@ -109,6 +112,9 @@ flowchart TB
         LABEL["label"]
         INVITE["invite"]
         ARCHIVE["archive"]
+        E2EE["e2ee"]
+        RETENTION["retention"]
+        MAIL["mail"]
         COMMON["common: errors, logging,<br/>config, E.164 util"]
     end
 ```
@@ -155,10 +161,15 @@ sequenceDiagram
   keys are not referenced elsewhere. The deleted message's attachments cannot
   be downloaded through the message binding.
 - **Delta Sync:** client `SyncEngine` aggregates all conversation watermark sequences
-  from Room v16, requests `POST /api/v1/sync`, and atomically applies new messages,
+  from Room, requests `POST /api/v1/sync`, and atomically applies new messages,
   edits, tombstones, and reaction updates in a single Room transaction, backed by
   server covering index `idx_messages_delta_sync` on `(conversation_id, seq)` and the
   append-only `reaction_events` audit table (Flyway V10) with additive reaction cursors.
+  Sync v2 (Flyway V32 change cursors) is shipped and negotiated per request:
+  `syncVersion=2` plus a `changeCursor` per watermark returns versioned `changes`
+  pages when `nexachat.sync.change-cursors-enabled` (default `true`) is on;
+  the legacy `since`/`lastSeq` response remains the fallback. Client checkpoints:
+  [docs/architecture/android-sync.md](android-sync.md).
 - **Offline Outbox & WorkManager:** pending optimistic messages (`outbox`) and
   the `offline_outbox` action table (RFC 4122 UUIDv5 idempotency keys) are drained by
   `OutboxSyncWorker` via WorkManager with `NetworkType.CONNECTED` constraints and atomic
@@ -204,7 +215,7 @@ sequenceDiagram
   not hide the peers from that user. Last-disconnect offline notification is
   coalesced for five seconds.
 
-## 5. V12–V33 feature modules & realtime extensions
+## 5. V12–V35 feature modules & realtime extensions
 
 - **Per-member conversation preferences (V12, V16):** `conversation_members`
   carries `muted` / `muted_until` / `archived` and `pinned` / `pinned_at`.
@@ -272,13 +283,31 @@ sequenceDiagram
   Linking requires re-authenticating with the account's password. When the operator enables
   signup (`NEXACHAT_GOOGLE_SIGNUP_ENABLED=true`), an unlinked Google `sub` can register a
   Google-only account (`V33` relaxes `password_hash` and requires a verified email anchor).
+- **AI consent epoch (V29):** `users.ai_summary_consent_epoch` is a per-user
+  consent generation counter read alongside `ai_summary_consent`; consent changes
+  bump the epoch so cached AI artifacts (summary results, RAG ask answers) cannot
+  be replayed across a consent boundary.
+- **Refresh-token user index (V30):** a full `(user_id, id)` index serves the
+  password-change token listing and the logout-all/account-deletion replay-payload
+  invalidation, which must also see revoked rows and cannot use the partial
+  `idx_refresh_user` index.
 - **Reminder claim lease index (V31):** partial index on `conversation_reminders`
   (`claimed_at`, `id`) where the row is claimed and not yet fired, for the event-driven
   scheduler's earliest wakeup lookup.
 - **Message change cursors (V32):** per-conversation `change_version` and
   `sync_generation` on `conversations` and `messages`, with a one-time backfill;
   apply only while message writers and sync-v2 requests are quiesced (Flyway runs
-  the backfill in one transactional baseline).
+  the backfill in one transactional baseline). These columns power the negotiated
+  sync-v2 contract described in Delta Sync above and
+  [docs/architecture/api-contract.md](api-contract.md#delta-sync--apiv1sync).
+- **Direct-chat E2EE (V34):** `e2ee_devices` (per-installation X25519 public keys),
+  the `e2ee_enabled` flag on DIRECT conversations, and opaque ciphertext/envelope
+  metadata on `messages`. The server stores keys and ciphertext only; the trust
+  model, wire scheme and v1 limits are in [docs/architecture/e2ee.md](e2ee.md).
+- **Unversioned-message backfill (V35):** repairs rows inserted outside the
+  sync-v2 contract (`change_version = 0`, e.g. an old `demo/seed.sql`), assigning
+  revisions after the highest versioned one in each conversation and raising the
+  conversation cursor; healthy databases are untouched.
 - **Ephemeral state router (STOMP default, opt-in Firebase):** Android `EphemeralStateRouter`
   manages presence and typing subscriptions. While STOMP is always active and the default,
   an optional Firebase RTDB bridge and projection writer (`server/firebase/**`,

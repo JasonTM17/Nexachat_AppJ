@@ -51,6 +51,8 @@ Android client can consume the API but no dedicated screen is merged into
 | Account deletion (tombstone) | V26 | Shipped — profile delete-account and the web deletion page | `AccountDeletionFlowIT`, `AccountDeletionD4RegressionIT`, `AccountDeletionFirebaseProjectionIT`, Android `DeleteAccountViewModelTest` |
 | Recovery email + OTP | V27 | Shipped — forgot-password, recovery-email and deletion OTP screens | `AccountRecoveryFlowTest`, `AccountRecoverySecurityTest`, `AccountRecoverySchedulingTest`, Android `RecoveryEmailFormViewModelTest`, `ForgotPasswordViewModelTest` |
 | Google sign-in and linked identities | V28 | Shipped — Credential Manager sign-in and Settings → linked accounts (hidden without `-PgoogleWebClientId=`) | `GoogleSignInIT`, `GoogleSignInDisabledIT`, `GoogleIdTokenVerifierTest`, `GoogleSignInConfigurationTest`, Android `GoogleSignInFlowTest`, `LinkedAccountsViewModelTest` |
+| Delta sync v2 (change cursors) | V32 | Shipped — Android negotiates `syncVersion=2` per conversation watermark | `SyncCursorCompatibilityIT`, `SyncCursorMigrationIT`, `SyncCursorRollbackIT`, `SyncMembershipCursorIT`, `SyncMutationPagingIT`, `SyncDeltaMessageGapIT`, Android `SyncEngineV2Test`, `SyncAndOutboxRegressionTest` |
+| Direct-chat E2EE (v1, rollout-gated) | V34 | Shipped — `feature/encryption` device/safety screens; activation needs server flag + Android `-Pe2eeV1ActivationEnabled=true` (debug/localSmoke only) | `E2eeFlowIT`, `E2eeConversationServiceTest`, `E2eeActivationPolicyIT`, `E2eePropertiesTest`, Android `E2eeCryptoTest`, `E2eeSessionTest`, `EncryptionViewModelTest`, `EncryptionReleasePolicyTest` |
 | Author message recall window | No migration (V21 reserved, unused) | Shipped — chat overflow recall with `RECALL_WINDOW_EXPIRED` handling | `MessageRecallPropertiesTest`, `MessageFeatureFlowIT`, Android `ChatInteractionsViews` / `ChatViewModel` recall flow |
 | Muted-conversation push policy | No migration | n/a | `FcmPushServiceTest`, `SystemMessageTest` |
 
@@ -86,7 +88,13 @@ Android client can consume the API but no dedicated screen is merged into
 | V26 | `V26__user_account_deletion.sql` | Adds account tombstoning and phone reuse after deletion. |
 | V27 | `V27__account_recovery_email_otp.sql` | Adds owner-only recovery email fields, verified-email uniqueness, and purpose-bound OTP storage. |
 | V28 | `V28__google_signin.sql` | `user_identities` (one external identity per provider per user, `ON DELETE CASCADE`) and hashed single-use `google_signin_nonces`. |
+| V29 | `V29__user_ai_summary_consent_epoch.sql` | `users.ai_summary_consent_epoch` consent generation counter read with `ai_summary_consent` to scope cached AI artifacts. |
+| V30 | `V30__refresh_token_user_index.sql` | Full `(user_id, id)` refresh-token index for user-scoped reads that must include revoked rows. |
+| V31 | `V31__reminder_claim_lease_wakeup_index.sql` | Partial index on claimed, unfired reminders for the scheduler's earliest wakeup lookup. |
+| V32 | `V32__message_change_cursors.sql` | Per-conversation `change_version` / `sync_generation` columns powering negotiated sync v2 (`syncVersion=2` + `changeCursor`). |
 | V33 | `V33__google_signup.sql` | Nullable `password_hash`; active users must have phone, password, or verified email. |
+| V34 | `V34__e2ee_direct_chats.sql` | `e2ee_devices` public-key registry, `conversations.e2ee_enabled` (DIRECT only) and message ciphertext/envelope columns. |
+| V35 | `V35__backfill_unversioned_messages.sql` | Backfills `change_version` on rows inserted outside the sync-v2 contract and raises each conversation's cursor. |
 
 ## Operational notes
 

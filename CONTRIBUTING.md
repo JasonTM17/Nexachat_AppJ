@@ -79,15 +79,15 @@ cd android
 
 ```text
 server/src/main/java/com/nexachat/
-  auth/ user/ contact/ conversation/ message/ attachment/ presence/ call/ summary/ notification/ observability/ rag/ reminder/ poll/ label/ invite/ archive/ ws/ common/ config/
+  auth/ user/ contact/ conversation/ message/ attachment/ presence/ call/ summary/ notification/ observability/ ops/ rag/ reminder/ poll/ label/ invite/ archive/ e2ee/ firebase/ google/ mail/ recovery/ retention/ ws/ common/ config/
 android/app/src/main/java/com/nexachat/
   call/                        Java call core/media/service/UI
-  core/{common,database,network,storage,ui}/
+  core/{auth,common,crypto,database,media,network,realtime,storage,ui}/
   data/                       repositories (Room write-through, outbox, resync)
   di/                         Hilt modules (`annotationProcessor`)
-  feature/{auth,chat,contacts,group,inbox,archive,ask,invite,label,poll,reminder,groupboard,media,profile,splash,summary}/
+  feature/{auth,chat,contacts,group,inbox,archive,ask,invite,label,poll,reminder,groupboard,media,profile,splash,summary,encryption,ui}/
   summary/                    Java summary ViewModel + repository layer
-server/src/main/resources/db/migration/   Flyway V1–V20, V22, V24–V33 (no V21/V23)
+server/src/main/resources/db/migration/   Flyway V1–V20, V22, V24–V35 (no V21/V23)
 android/gradle/libs.versions.toml         dependency version catalog
 docs/                                     architecture · operations · release · quality · archive (see docs/README.md)
 demo/                                     seed.sql + LAN bootstrap scripts
@@ -96,8 +96,11 @@ tools/                                    release signing, link checks, E2E and 
 
 ## Branching and commits
 
-- Branch from `main` as `feature/<scope>` (never `codex/`). The default branch is
-  `main` (`origin/HEAD`); CI also accepts pushes to `develop` when that branch exists.
+- Branch from `main` as `<type>/<slug>` — type is `feat`/`feature`, `fix`,
+  `perf`, `refactor`, `docs`, `test`, `chore` or `release`, and the slug is a
+  kebab-case description of the work (for example `fix/android-reconnect-delta-sync`
+  or `feat/paired-backup-restore`). The default branch is `main` (`origin/HEAD`);
+  CI also accepts pushes to `develop` when that branch exists.
 - Use [Conventional Commits](https://www.conventionalcommits.org): `feat`,
   `fix`, `docs`, `chore`, `ci`, optionally with a scope — e.g.
   `feat(server/auth): …`, `fix(app/chat): …`.
