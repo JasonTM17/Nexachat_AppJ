@@ -773,6 +773,12 @@ class MembershipGuardMatrixIT extends SecurityITBase {
         ops.put("rest-149", messageReaction("rest-149", "PUT",
                 "/api/v1/messages/{messageId}/star"));
 
+        // Disappearing timer: DIRECT any member, GROUP admin only — the same
+        // split pins use, so a non-admin group member gets NOT_ADMIN.
+        ops.put("rest-152", member("rest-152", "PUT",
+                "/api/v1/conversations/{conversationId}/disappearing",
+                Map.of("seconds", 0)).withNonAdmin(NOT_ADMIN));
+
         // Attachment and file reads resolve the stored object first, then the
         // owner-or-member rule of the bound message.
         ops.put("rest-019", attachmentContent("rest-019"));
