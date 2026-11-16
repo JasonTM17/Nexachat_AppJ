@@ -14,4 +14,4 @@
     android:textColor="?attr/colorOnSurface"
     android:maxLines="2"
     app:backgroundTint="?attr/colorSurfaceContainerLow"
-    app:cornerRadius="14dp" />
+    app:cornerRadius="@dimen/corner_lg" />
