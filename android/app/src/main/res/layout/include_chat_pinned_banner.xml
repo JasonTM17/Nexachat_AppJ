@@ -31,15 +31,38 @@
                 app:tint="?attr/colorPrimary" />
         </FrameLayout>
 
-        <TextView
-            android:id="@+id/pinnedText"
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginStart="@dimen/space_sm"
             android:layout_weight="1"
-            android:ellipsize="end"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/pinnedTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:importantForAccessibility="no"
+                android:text="@string/pinned_title"
+                android:textAppearance="?attr/textAppearanceLabelSmall"
+                android:textColor="?attr/colorPrimary" />
+
+            <TextView
+                android:id="@+id/pinnedText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:importantForAccessibility="no"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurface" />
+        </LinearLayout>
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginStart="@dimen/space_sm"
             android:importantForAccessibility="no"
-            android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:textColor="?attr/colorOnSurface" />
+            android:src="@drawable/ic_keyboard_arrow_down"
+            app:tint="?attr/colorOnSurfaceVariant" />
     </LinearLayout>
 </LinearLayout>

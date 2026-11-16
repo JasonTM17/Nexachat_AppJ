@@ -13,7 +13,6 @@ import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 import android.text.TextUtils;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
@@ -248,27 +247,16 @@ public final class MessageBubbleBinder {
     private void applyBubbleShape(View bubble, MessageGroupPosition position, boolean mine) {
         float radius = bubble.getResources().getDimension(R.dimen.corner_lg);
         float tailRadius = bubble.getResources().getDimension(R.dimen.corner_xs);
-        float bottomLeft = radius;
-        float bottomRight = radius;
-        boolean isTail = position == MessageGroupPosition.SINGLE || position == MessageGroupPosition.LAST;
         boolean tailOnRight = mine != (bubble.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL);
-        if (isTail && tailOnRight) {
-            bottomRight = tailRadius;
-        } else if (isTail) {
-            bottomLeft = tailRadius;
+        boolean[] merged = ChatBubbleRules.bubbleMergedCorners(position, tailOnRight);
+        float[] radii = new float[8];
+        for (int corner = 0; corner < merged.length; corner++) {
+            radii[corner * 2] = merged[corner] ? tailRadius : radius;
+            radii[corner * 2 + 1] = merged[corner] ? tailRadius : radius;
         }
         GradientDrawable drawable = new GradientDrawable();
         drawable.setShape(GradientDrawable.RECTANGLE);
-        drawable.setCornerRadii(new float[]{
-                radius,
-                radius,
-                radius,
-                radius,
-                bottomRight,
-                bottomRight,
-                bottomLeft,
-                bottomLeft,
-        });
+        drawable.setCornerRadii(radii);
         ColorStateList tint = bubble.getBackgroundTintList();
         if (tint != null) {
             drawable.setColor(tint.getDefaultColor());
@@ -917,8 +905,6 @@ public final class MessageBubbleBinder {
             return;
         }
         reactionsInclude.setVisibility(View.VISIBLE);
-        int gapPx = root.getResources().getDimensionPixelSize(R.dimen.space_xs);
-        int index = 0;
         for (ReactionChip chip : reactions) {
             Chip view = new Chip(root.getContext());
             boolean mineReaction = chip.getReactedByMe();
@@ -950,12 +936,7 @@ public final class MessageBubbleBinder {
                     actionListener.onReactionTap(message.getId(), chip.getEmoji());
                 }
             });
-            ViewGroup.MarginLayoutParams params = new ViewGroup.MarginLayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT);
-            params.setMarginStart(index == 0 ? 0 : gapPx);
-            group.addView(view, params);
-            index++;
+            group.addView(view);
         }
     }
 
