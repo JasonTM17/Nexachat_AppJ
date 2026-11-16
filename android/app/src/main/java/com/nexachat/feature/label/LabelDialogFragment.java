@@ -34,7 +34,6 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
 import com.nexachat.R;
-import com.nexachat.feature.ui.ImeInsets;
 
 /** Label manager and conversation assignment dialog. */
 public final class LabelDialogFragment extends DialogFragment {
@@ -384,15 +383,22 @@ public final class LabelDialogFragment extends DialogFragment {
         }
         form.addView(colorGroup, matchWrap());
 
+        ScrollView formScroll = new ScrollView(requireContext());
+        formScroll.addView(form);
+
         MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(existing == null ? R.string.label_create_title : R.string.label_edit_title)
-                .setView(form)
+                .setView(formScroll)
                 .setPositiveButton(R.string.label_save, null)
                 .setNegativeButton(R.string.action_cancel, null);
         androidx.appcompat.app.AlertDialog editor = builder.create();
         editor.setOnShowListener(ignored -> {
             if (editor.getWindow() != null) {
-                ImeInsets.applyToDecor(editor.getWindow());
+                // Resize the dialog above the IME instead of padding its decor:
+                // padding by the full IME height pushed the title and buttons
+                // out of the visible band and left the fields floating.
+                editor.getWindow().setSoftInputMode(
+                        android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
             }
             editor.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE)
                 .setOnClickListener(v -> {
