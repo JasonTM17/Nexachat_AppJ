@@ -5,6 +5,7 @@ import com.nexachat.auth.dto.ChangePasswordRequest;
 import com.nexachat.auth.dto.LoginRequest;
 import com.nexachat.auth.dto.RefreshRequest;
 import com.nexachat.auth.dto.RegisterRequest;
+import com.nexachat.admin.AdminRoleBootstrap;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.common.error.ConstraintNames;
@@ -65,6 +66,7 @@ public class AuthService {
     private final ObjectProvider<PlatformTransactionManager> transactionManagerProvider;
     private final StompRevocationFence revocationFence;
     private final ObjectProvider<com.nexachat.e2ee.E2eeDeviceService> e2eeDeviceService;
+    private final AdminRoleBootstrap adminRoleBootstrap;
 
     /** Well-formed bcrypt used to equalize login timing for unknown accounts and malformed phones. */
     private final String dummyHash;
@@ -85,7 +87,8 @@ public class AuthService {
                        ApplicationEventPublisher eventPublisher,
                        ObjectProvider<PlatformTransactionManager> transactionManagerProvider,
                        StompRevocationFence revocationFence,
-                       ObjectProvider<com.nexachat.e2ee.E2eeDeviceService> e2eeDeviceService) {
+                       ObjectProvider<com.nexachat.e2ee.E2eeDeviceService> e2eeDeviceService,
+                       AdminRoleBootstrap adminRoleBootstrap) {
         this.userRepository = userRepository;
         this.entityManager = entityManager;
         this.phoneService = phoneService;
@@ -99,6 +102,7 @@ public class AuthService {
         this.transactionManagerProvider = transactionManagerProvider;
         this.revocationFence = revocationFence;
         this.e2eeDeviceService = e2eeDeviceService;
+        this.adminRoleBootstrap = adminRoleBootstrap;
         // Computed once at startup (~one bcrypt round), guaranteed to be a valid hash.
         this.dummyHash = passwordEncoder.encode("nexachat-timing-equalization");
     }
@@ -190,6 +194,9 @@ public class AuthService {
         if (!stillOwned || !hasPassword || !passwordMatches) {
             throw invalidCredentials();
         }
+        if (user.isSuspended()) {
+            throw ApiException.of(ApiErrorCode.ACCOUNT_SUSPENDED, "Account is suspended");
+        }
         return issueSession(user, deviceLabel);
     }
 
@@ -223,16 +230,24 @@ public class AuthService {
         boundaryHook.reached(RefreshReplayConfiguration.Boundary.AFTER_REFRESH_TRANSACTION_COMMIT,
                 RefreshReplayConfiguration.Operation.ROTATE, rotation.userId(), rotation.predecessorId());
 
-        boolean ownerUnavailable = Boolean.TRUE.equals(new TransactionTemplate(
+        var ownerState = new TransactionTemplate(
                 transactionManagerProvider.getObject()).execute(status ->
                 userRepository.findByIdForUpdate(rotation.userId())
-                        .map(user -> user.getDeletedAt() != null)
-                        .orElse(true)));
-        if (ownerUnavailable) {
+                        .map(user -> user.getDeletedAt() != null
+                                ? OwnerState.DELETED
+                                : user.isSuspended() ? OwnerState.SUSPENDED : OwnerState.ACTIVE)
+                        .orElse(OwnerState.DELETED));
+        if (ownerState != null && ownerState != OwnerState.ACTIVE) {
             tokenService.revokeIfOwned(rotation.response().refreshToken(), rotation.userId());
-            throw ApiException.of(ApiErrorCode.TOKEN_INVALID, "Refresh token is not valid");
+            throw ownerState == OwnerState.SUSPENDED
+                    ? ApiException.of(ApiErrorCode.ACCOUNT_SUSPENDED, "Account is suspended")
+                    : ApiException.of(ApiErrorCode.TOKEN_INVALID, "Refresh token is not valid");
         }
         return rotation.response();
+    }
+
+    private enum OwnerState {
+        ACTIVE, SUSPENDED, DELETED
     }
 
     /**
@@ -308,6 +323,10 @@ public class AuthService {
     }
 
     private AuthResponse issueSession(User user, String deviceLabel) {
+        // Configured admin phones promote here (idempotent, inside the caller's
+        // transaction) so admin-web works without a restart after the phone is
+        // added to the allow-list.
+        adminRoleBootstrap.promoteIfConfigured(user);
         String refreshToken = tokenService.issue(user, deviceLabel);
         return responseFactory.create(user, refreshToken);
     }

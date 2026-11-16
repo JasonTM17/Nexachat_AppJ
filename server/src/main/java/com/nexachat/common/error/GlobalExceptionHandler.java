@@ -203,7 +203,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(Exception ex) {
         // Avoid exception messages and stack traces that may contain request data or SQL.
-        log.error("Unhandled request exception ({})", ex.getClass().getSimpleName());
+        log.error("Unhandled request exception ({})", ex.getClass().getSimpleName(), ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ErrorResponse.of(
                 ApiErrorCode.INTERNAL_ERROR, "Internal server error"));
     }

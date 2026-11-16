@@ -132,6 +132,9 @@ public class GoogleSignInService {
         if (user.getDeletedAt() != null) {
             throw notLinked();
         }
+        if (user.isSuspended()) {
+            throw ApiException.of(ApiErrorCode.ACCOUNT_SUSPENDED, "Account is suspended");
+        }
         String refreshToken = tokenService.issue(user, deviceLabel);
         return new GoogleSignInResult(responseFactory.create(user, refreshToken), false);
     }

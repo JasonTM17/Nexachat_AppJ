@@ -36,13 +36,18 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     boolean existsVerifiedEmailForOtherUser(@Param("email") String email, @Param("userId") UUID userId);
 
     /**
-     * Access-token cutoff for the JWT filter's hot path, plus proof that the
-     * account still exists. A projection, not the entity: the filter only
-     * needs these two values and must not load (or lock) the whole user row.
+     * Access-token cutoff, role and suspension flag for the JWT filter's hot
+     * path, plus proof that the account still exists. A projection, not the
+     * entity: the filter only needs these values and must not load (or lock)
+     * the whole user row.
      */
-    @Query("SELECT new com.nexachat.user.UserAuthValidity(u.id, u.tokensValidAfter)"
+    @Query("SELECT new com.nexachat.user.UserAuthValidity(u.id, u.tokensValidAfter, u.role,"
+            + " u.suspendedAt IS NOT NULL)"
             + " FROM User u WHERE u.id = :id AND u.deletedAt IS NULL")
     Optional<UserAuthValidity> findAuthValidityById(@Param("id") UUID id);
+
+    /** Accounts holding the ADMIN role — guards the last-admin invariant. */
+    long countByRoleAndDeletedAtIsNull(User.Role role);
 
     /**
      * The read-receipt privacy flag for the outbound receipt filter and the
