@@ -64,6 +64,9 @@ public class MessageBroadcastListener {
                 ? java.util.Set.of()
                 : java.util.Set.copyOf(memberRepository.findAdmittedUserIds(
                         event.conversationId(), replyTo.createdAt()));
+        java.util.Optional<UUID> quoteSuppressedSender = replyTo == null
+                ? java.util.Optional.empty()
+                : messageRepository.findPeerSuppressedSenderId(replyTo.id());
         EventEnvelope withoutQuote = replyTo == null ? envelope : EventEnvelope.of(
                 WsEventType.MESSAGE_CREATED, event.conversationId(), event.message().withoutReplyPreview());
         // V38: inbox pushes go per-user around the topic gate, so the durable
@@ -77,7 +80,9 @@ public class MessageBroadcastListener {
                 continue;
             }
             messaging.convertAndSendToUser(memberId.toString(), "/queue/inbox",
-                    replyTo == null || admittedToQuote.contains(memberId) ? envelope : withoutQuote);
+                    replyTo == null || (admittedToQuote.contains(memberId)
+                            && quoteSuppressedSender.map(memberId::equals).orElse(true))
+                            ? envelope : withoutQuote);
         }
     }
 
