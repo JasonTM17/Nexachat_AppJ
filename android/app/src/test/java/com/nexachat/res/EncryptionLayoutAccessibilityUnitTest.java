@@ -55,6 +55,9 @@ public final class EncryptionLayoutAccessibilityUnitTest {
                 parseLayout("fragment_encryption.xml").getDocumentElement(), "e2eeLoading");
         assertNotNull("fragment_encryption.xml must contain @e2eeLoading", el);
         assertEquals("@string/voice_status_loading", getAttr(el, "contentDescription"));
+        assertEquals("e2eeLoading must use the Material indicator",
+                "com.google.android.material.progressindicator.CircularProgressIndicator",
+                el.getTagName());
     }
 
     private Document parseLayout(String name) throws Exception {

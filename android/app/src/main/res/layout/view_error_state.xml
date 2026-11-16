@@ -3,12 +3,12 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <ImageView
         android:id="@+id/errorIcon"
-        android:layout_width="@dimen/min_touch_target"
-        android:layout_height="@dimen/min_touch_target"
+        android:layout_width="@dimen/state_icon_size"
+        android:layout_height="@dimen/state_icon_size"
         android:layout_gravity="center_horizontal"
         android:layout_marginBottom="@dimen/space_md"
         android:importantForAccessibility="no"
-        android:src="@drawable/ic_warning"
+        android:src="@drawable/ic_error_outline"
         app:tint="?attr/colorError" />
     <TextView
         android:id="@+id/errorMessage"
