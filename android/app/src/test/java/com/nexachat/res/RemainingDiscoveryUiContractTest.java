@@ -54,7 +54,9 @@ public final class RemainingDiscoveryUiContractTest {
         String contacts = readMainJava("com/nexachat/feature/contacts/ContactsFragment.java");
         String detail = readMainJava("com/nexachat/feature/contacts/ContactDetailBinder.java");
 
-        assertContains(contacts, "R.style.TextAppearance_NexaChat_TitleLarge");
+        // The add-contact dialog carries a real title so its typography comes
+        // from the dialog theme rather than a hand-built text view.
+        assertContains(contacts, ".setTitle(R.string.add_contact_title)");
         assertContains(contacts, "R.style.TextAppearance_NexaChat_BodyLarge");
         assertContains(contacts, "R.style.TextAppearance_NexaChat_BodyMedium");
         assertFalse(contacts.contains("TextAppearance_Material3_"));

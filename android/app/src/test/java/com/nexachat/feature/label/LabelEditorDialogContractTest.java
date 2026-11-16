@@ -15,36 +15,47 @@ import org.junit.Test;
  * past the dialog edges, and no fixed-width row can push the content wider
  * than the dialog. The clipping report showed the name field and both chip
  * rows overflowing the left/right edges and the action buttons cut off below.
+ * The editor lives in {@link LabelEditorDialogFragment} so rotation cannot
+ * destroy the form mid-edit.
  */
 public final class LabelEditorDialogContractTest {
 
     @Test
+    public void editorIsARealDialogFragmentSoRotationKeepsIt() throws Exception {
+        String source = read("com/nexachat/feature/label/LabelEditorDialogFragment.java");
+        assertTrue(source.contains("extends DialogFragment"));
+        assertTrue(source.contains("onSaveInstanceState"));
+        String parent = read("com/nexachat/feature/label/LabelDialogFragment.java");
+        assertTrue(parent.contains("LabelEditorDialogFragment.show("));
+    }
+
+    @Test
     public void editorFormScrollsVertically() throws Exception {
-        String openEditor = methodBody("private void openEditor");
-        assertTrue(openEditor.contains("new ScrollView"));
-        assertTrue(openEditor.contains("formScroll.addView(form, new ScrollView.LayoutParams("));
-        assertTrue(openEditor.contains("ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT"));
-        assertTrue(openEditor.contains("setView(formScroll)"));
+        String onCreateDialog = methodBody("public Dialog onCreateDialog");
+        assertTrue(onCreateDialog.contains("FormDialogs.scrollableBody(form)"));
+        String helper = read("com/nexachat/feature/ui/FormDialogs.java");
+        assertTrue(helper.contains("new ScrollView"));
+        assertTrue(helper.contains("ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT"));
     }
 
     @Test
     public void colourChipsWrapInsideAChipGroup() throws Exception {
-        String openEditor = methodBody("private void openEditor");
-        assertTrue(openEditor.contains("new ChipGroup"));
-        assertTrue(openEditor.contains("colorGroup.setSingleLine(false)"));
-        assertFalse(openEditor.contains("colorGroup.setSingleLine(true)"));
-        assertFalse(openEditor.contains("HorizontalScrollView"));
+        String onCreateDialog = methodBody("public Dialog onCreateDialog");
+        assertTrue(onCreateDialog.contains("new ChipGroup"));
+        assertTrue(onCreateDialog.contains("colorGroup.setSingleLine(false)"));
+        assertFalse(onCreateDialog.contains("colorGroup.setSingleLine(true)"));
+        assertFalse(onCreateDialog.contains("HorizontalScrollView"));
     }
 
     @Test
     public void editorRowsHaveNoFixedWidths() throws Exception {
-        String openEditor = methodBody("private void openEditor");
-        assertFalse(Pattern.compile("LayoutParams\\(\\s*\\d").matcher(openEditor).find());
-        assertFalse(Pattern.compile("setMinimumWidth|setWidth\\(").matcher(openEditor).find());
+        String onCreateDialog = methodBody("public Dialog onCreateDialog");
+        assertFalse(Pattern.compile("LayoutParams\\(\\s*\\d").matcher(onCreateDialog).find());
+        assertFalse(Pattern.compile("setMinimumWidth|setWidth\\(").matcher(onCreateDialog).find());
     }
 
     private static String methodBody(String signature) throws Exception {
-        String source = read("com/nexachat/feature/label/LabelDialogFragment.java");
+        String source = read("com/nexachat/feature/label/LabelEditorDialogFragment.java");
         int start = source.indexOf(signature);
         assertTrue("missing " + signature, start >= 0);
         int end = source.indexOf("\n    private ", start + signature.length());

@@ -525,6 +525,7 @@
     <string name="label_chip_description">Nhãn: %1$s</string>
     <string name="label_assign_checkbox">Gán nhãn %1$s</string>
     <string name="label_delete_description">Xóa nhãn %1$s</string>
+    <string name="label_edit_description">Sửa nhãn %1$s</string>
     <string name="label_delete_title">Xóa nhãn?</string>
     <string name="label_delete_message">Nhãn “%1$s” sẽ được gỡ khỏi mọi cuộc trò chuyện.</string>
     <string name="label_error_validation">Tên nhãn dài 1–30 ký tự và không được trùng.</string>

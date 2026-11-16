@@ -3,18 +3,14 @@ package com.nexachat.feature.label;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
-import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.content.DialogInterface;
 import android.os.Bundle;
-import android.text.InputType;
-import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.CheckBox;
-import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -28,12 +24,9 @@ import androidx.lifecycle.Observer;
 import androidx.fragment.app.FragmentActivity;
 import androidx.lifecycle.ViewModelProvider;
 import com.google.android.material.button.MaterialButton;
-import com.google.android.material.chip.Chip;
-import com.google.android.material.chip.ChipGroup;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
-import com.google.android.material.textfield.TextInputEditText;
-import com.google.android.material.textfield.TextInputLayout;
 import com.nexachat.R;
+import com.nexachat.feature.ui.FormDialogs;
 
 /** Label manager and conversation assignment dialog. */
 public final class LabelDialogFragment extends DialogFragment {
@@ -266,40 +259,59 @@ public final class LabelDialogFragment extends DialogFragment {
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setMinimumHeight(dimenPx(R.dimen.row_min_height_dialog));
 
+            View dot = new View(requireContext());
+            int dotSize = dimenPx(R.dimen.metadata_icon_size);
+            LinearLayout.LayoutParams dotLp = new LinearLayout.LayoutParams(dotSize, dotSize);
+            dotLp.setMarginStart(dimenPx(R.dimen.space_xs));
+            dotLp.setMarginEnd(dimenPx(R.dimen.space_inset));
+            dot.setBackground(roundColor(label.getColor().getBackgroundColor()));
+            row.addView(dot, dotLp);
+
             TextView labelName = new TextView(requireContext());
             labelName.setText(label.getName());
-            labelName.setTextColor(Color.WHITE);
-            labelName.setTypeface(null, Typeface.BOLD);
+            labelName.setTextAppearance(R.style.TextAppearance_NexaChat_BodyLarge);
+            labelName.setTextColor(resolveThemeColor(requireContext(),
+                    com.google.android.material.R.attr.colorOnSurface));
             labelName.setGravity(Gravity.CENTER_VERTICAL);
-            labelName.setPadding(dimenPx(R.dimen.space_inset), 0, dimenPx(R.dimen.space_inset), 0);
-            labelName.setMinHeight(dimenPx(R.dimen.min_touch_target));
-            labelName.setClickable(true);
-            labelName.setFocusable(true);
-            labelName.setBackground(roundColor(label.getColor().getBackgroundColor()));
             labelName.setContentDescription(getString(R.string.label_chip_description, label.getName()));
-            labelName.setEnabled(!label.isPending() && !state.isLabelsMutating()
-                    && !state.isAssignmentSaving());
-            labelName.setOnClickListener(v -> openEditor(label));
-            LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-            nameLp.setMarginEnd(dimenPx(R.dimen.space_sm));
-            row.addView(labelName, nameLp);
+            row.addView(labelName, new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-            MaterialButton delete = new MaterialButton(
-                    requireContext(),
-                    null,
-                    com.google.android.material.R.attr.borderlessButtonStyle);
-            delete.setText(R.string.action_delete);
-            delete.setContentDescription(getString(R.string.label_delete_description, label.getName()));
-            delete.setMinHeight(dimenPx(R.dimen.row_min_height_dialog));
-            delete.setEnabled(!label.isPending() && !state.isLabelsMutating()
-                    && !state.isAssignmentSaving());
+            boolean enabled = !label.isPending() && !state.isLabelsMutating()
+                    && !state.isAssignmentSaving();
+            MaterialButton edit = iconButton(
+                    R.drawable.ic_edit,
+                    getString(R.string.label_edit_description, label.getName()));
+            edit.setEnabled(enabled);
+            edit.setOnClickListener(v -> openEditor(label));
+            row.addView(edit, wrapWrap());
+
+            MaterialButton delete = iconButton(
+                    R.drawable.ic_delete,
+                    getString(R.string.label_delete_description, label.getName()));
+            delete.setEnabled(enabled);
             delete.setOnClickListener(v -> confirmDelete(label));
             row.addView(delete, wrapWrap());
             LinearLayout.LayoutParams rowLp = matchWrap();
             rowLp.bottomMargin = dimenPx(R.dimen.label_row_gap);
             rows.addView(row, rowLp);
         }
+    }
+
+    private MaterialButton iconButton(int iconRes, @NonNull CharSequence contentDescription) {
+        MaterialButton button = new MaterialButton(
+                requireContext(),
+                null,
+                com.google.android.material.R.attr.materialIconButtonStyle);
+        button.setIconResource(iconRes);
+        button.setIconTint(ColorStateList.valueOf(resolveThemeColor(requireContext(),
+                com.google.android.material.R.attr.colorOnSurfaceVariant)));
+        button.setMinWidth(dimenPx(R.dimen.min_touch_target));
+        button.setMinimumWidth(dimenPx(R.dimen.min_touch_target));
+        button.setMinHeight(dimenPx(R.dimen.min_touch_target));
+        button.setMinimumHeight(dimenPx(R.dimen.min_touch_target));
+        button.setContentDescription(contentDescription);
+        return button;
     }
 
     private void renderAssignmentRows(@NonNull LabelUiState state) {
@@ -337,107 +349,19 @@ public final class LabelDialogFragment extends DialogFragment {
             status.announceForAccessibility(status.getText());
             return;
         }
-
-        LinearLayout form = new LinearLayout(requireContext());
-        form.setOrientation(LinearLayout.VERTICAL);
-        form.setPadding(dimenPx(R.dimen.dialog_padding), dimenPx(R.dimen.space_inset), dimenPx(R.dimen.dialog_padding), dimenPx(R.dimen.space_sm));
-
-        TextInputLayout nameLayout = new TextInputLayout(
-                requireContext(),
-                null,
-                com.google.android.material.R.attr.textInputOutlinedStyle);
-        float radius = getResources().getDimension(R.dimen.corner_md);
-        nameLayout.setBoxCornerRadii(radius, radius, radius, radius);
-        nameLayout.setHint(getString(R.string.label_name_hint));
-        nameLayout.setCounterEnabled(true);
-        nameLayout.setCounterMaxLength(LabelRules.MAX_NAME_CODE_POINTS);
-
-        TextInputEditText name = new TextInputEditText(nameLayout.getContext());
-        name.setSingleLine(true);
-        name.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-        name.setContentDescription(getString(R.string.label_name_hint));
-        if (existing != null) name.setText(existing.getName());
-        nameLayout.addView(name);
-        LinearLayout.LayoutParams nameLp = matchWrap();
-        nameLp.bottomMargin = dimenPx(R.dimen.space_inset);
-        form.addView(nameLayout, nameLp);
-
-        ChipGroup colorGroup = new ChipGroup(requireContext());
-        colorGroup.setSingleSelection(true);
-        colorGroup.setSelectionRequired(true);
-        colorGroup.setSingleLine(false);
-        for (LabelColor color : LabelColor.values()) {
-            Chip chip = new Chip(requireContext());
-            chip.setId(View.generateViewId());
-            chip.setCheckable(true);
-            chip.setCheckedIconVisible(true);
-            chip.setCheckedIconTint(ColorStateList.valueOf(Color.WHITE));
-            chip.setText(LabelText.colorName(color));
-            chip.setTextColor(Color.WHITE);
-            chip.setChipBackgroundColor(ColorStateList.valueOf(color.getBackgroundColor()));
-            chip.setMinHeight(dimenPx(R.dimen.row_min_height_dialog));
-            chip.setTag(color);
-            colorGroup.addView(chip, wrapWrap());
-            if (existing != null && existing.getColor() == color) chip.setChecked(true);
-            if (existing == null && color == LabelColor.INDIGO) chip.setChecked(true);
-        }
-        form.addView(colorGroup, matchWrap());
-
-        ScrollView formScroll = new ScrollView(requireContext());
-        formScroll.addView(form, new ScrollView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(requireContext())
-                .setTitle(existing == null ? R.string.label_create_title : R.string.label_edit_title)
-                .setView(formScroll)
-                .setPositiveButton(R.string.label_save, null)
-                .setNegativeButton(R.string.action_cancel, null);
-        androidx.appcompat.app.AlertDialog editor = builder.create();
-        editor.setOnShowListener(ignored -> {
-            if (editor.getWindow() != null) {
-                // Resize the dialog above the IME instead of padding its decor:
-                // padding by the full IME height pushed the title and buttons
-                // out of the visible band and left the fields floating.
-                editor.getWindow().setSoftInputMode(
-                        android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-            }
-            editor.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE)
-                .setOnClickListener(v -> {
-                    int checkedId = colorGroup.getCheckedChipId();
-                    View checked = checkedId == View.NO_ID ? null : colorGroup.findViewById(checkedId);
-                    LabelColor color = checked != null && checked.getTag() instanceof LabelColor value
-                            ? value : LabelColor.INDIGO;
-                    String value = LabelRules.normalizeName(
-                            name.getText() == null ? "" : name.getText().toString());
-                    if (!LabelRules.isValidName(value)) {
-                        nameLayout.setError(getString(R.string.label_error_validation));
-                        return;
-                    }
-                    nameLayout.setError(null);
-                    LabelUiState.Error rejection = existing == null
-                            ? viewModel.createLabel(value, color)
-                            : viewModel.updateLabel(existing.getId(), value, color);
-                    if (rejection == LabelUiState.Error.NONE) {
-                        editor.dismiss();
-                    } else {
-                        // Keep the editor open so the typed name isn't lost and
-                        // mirror the rejection on the name field — the published
-                        // error lands asynchronously via postValue.
-                        nameLayout.setError(getString(LabelText.errorMessage(rejection)));
-                    }
-                });
-        });
-        editor.show();
+        // A real DialogFragment so the editor and its typed input survive
+        // configuration changes — a raw AlertDialog died with the Activity.
+        LabelEditorDialogFragment.show(this, existing);
     }
 
     private void confirmDelete(@NonNull ConversationLabel label) {
-        new MaterialAlertDialogBuilder(requireContext())
+        FormDialogs.markDestructive(new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.label_delete_title)
                 .setMessage(getString(R.string.label_delete_message, label.getName()))
                 .setNegativeButton(R.string.action_cancel, null)
                 .setPositiveButton(R.string.action_delete,
                         (dialog, which) -> viewModel.deleteLabel(label.getId()))
-                .show();
+                .show());
     }
 
     private int dimenPx(@DimenRes int dimenRes) {
