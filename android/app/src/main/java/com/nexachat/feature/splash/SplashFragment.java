@@ -48,23 +48,21 @@ public final class SplashFragment extends Fragment {
     }
 
     private void handleNav(SplashNavEvent event) {
-        {
-            if (event instanceof SplashNavEvent.ToInbox) {
-                NavHostFragment.findNavController(this).navigate(R.id.inboxFragment, null,
-                        new androidx.navigation.NavOptions.Builder().setPopUpTo(R.id.splashFragment, true).build());
-            } else if (event instanceof SplashNavEvent.ToLogin login) {
-                Bundle args = null;
-                if (login.showSessionExpiredMessage()) {
-                    args = new Bundle();
-                    args.putBoolean("showSessionExpired", true);
-                }
-                NavHostFragment.findNavController(this).navigate(
-                        R.id.loginFragment,
-                        args,
-                        new androidx.navigation.NavOptions.Builder()
-                                .setPopUpTo(R.id.splashFragment, true)
-                                .build());
+        if (event instanceof SplashNavEvent.ToInbox) {
+            NavHostFragment.findNavController(this).navigate(R.id.inboxFragment, null,
+                    new androidx.navigation.NavOptions.Builder().setPopUpTo(R.id.splashFragment, true).build());
+        } else if (event instanceof SplashNavEvent.ToLogin login) {
+            Bundle args = null;
+            if (login.showSessionExpiredMessage()) {
+                args = new Bundle();
+                args.putBoolean("showSessionExpired", true);
             }
+            NavHostFragment.findNavController(this).navigate(
+                    R.id.loginFragment,
+                    args,
+                    new androidx.navigation.NavOptions.Builder()
+                            .setPopUpTo(R.id.splashFragment, true)
+                            .build());
         }
     }
 

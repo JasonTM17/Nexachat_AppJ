@@ -28,7 +28,7 @@ public final class ButtonShapeContractTest {
     private static final String APP = "http://schemas.android.com/apk/res-auto";
     private static final String MATERIAL_BUTTON =
             "com.google.android.material.button.MaterialButton";
-    private static final String SQUARE_SHAPE = "@style/ShapeAppearance.NexaChat.Button";
+    private static final String BUTTON_SHAPE = "@style/ShapeAppearance.NexaChat.Button";
     private static final Set<String> BUTTON_FACTORY_ATTRS = Set.of(
             "materialButtonStyle", "materialButtonOutlinedStyle",
             "borderlessButtonStyle", "materialIconButtonStyle",
@@ -80,7 +80,7 @@ public final class ButtonShapeContractTest {
             }
             buttonStyles++;
             assertEquals(name + " must pin the pill shape",
-                    SQUARE_SHAPE, item(style, "shapeAppearance"));
+                    BUTTON_SHAPE, item(style, "shapeAppearance"));
             assertEquals(name + " must not override the pill corners",
                     "", item(style, "cornerRadius"));
         }
@@ -211,7 +211,7 @@ public final class ButtonShapeContractTest {
                 "Widget.NexaChat.MaterialTimePicker.Button",
                 "Widget.NexaChat.MaterialTimePicker.ImageButton"}) {
             assertEquals(name + " must pin the pill shape",
-                    SQUARE_SHAPE, item(style(styles, name), "shapeAppearance"));
+                    BUTTON_SHAPE, item(style(styles, name), "shapeAppearance"));
         }
     }
 
