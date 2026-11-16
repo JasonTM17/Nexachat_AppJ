@@ -37,6 +37,11 @@ public final class TranslationLanguages {
         return 0;
     }
 
+    /** True when the server accepts {@code code} as a translation target. */
+    public static boolean isSupported(@androidx.annotation.Nullable String code) {
+        return code != null && nameRes(code) != 0;
+    }
+
     private TranslationLanguages() {
     }
 }

@@ -691,7 +691,7 @@ public final class ChatViewModel extends ViewModel {
             return accountTargetLang;
         }
         String app = java.util.Locale.getDefault().getLanguage();
-        return app == null || app.isBlank() ? "en" : app;
+        return TranslationLanguages.isSupported(app) ? app : "en";
     }
 
     /** Manual translate action from the message sheet. */
@@ -921,7 +921,7 @@ public final class ChatViewModel extends ViewModel {
                             putTranslation(id, TranslationUiState.error(target, item.getError()));
                         }
                     }
-                }, ignored -> { }));
+                }, ignored -> pendingIds.forEach(autoTranslateRequested::remove)));
     }
 
     /**
