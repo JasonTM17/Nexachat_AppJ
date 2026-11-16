@@ -1,6 +1,7 @@
 package com.nexachat.feature.contacts;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -60,9 +61,14 @@ public final class ContactsListLayoutContractTest {
         assertEquals("@string/inbox_search_hint", attr(pill, "contentDescription"));
         assertEquals("?attr/selectableItemBackground", attr(pill, "foreground"));
         assertEquals("true", attr(pill, "clipToOutline"));
-        // The toolbar icon keeps its id/label and the pill reuses the same destination.
-        Element icon = findById(pill.getOwnerDocument(), "searchButton");
-        assertEquals("@string/search_title", attr(icon, "contentDescription"));
+        // The pill is the only search entry; a toolbar icon would duplicate it.
+        boolean toolbarSearchPresent = true;
+        try {
+            findById(pill.getOwnerDocument(), "searchButton");
+        } catch (AssertionError missing) {
+            toolbarSearchPresent = false;
+        }
+        assertFalse("contacts toolbar must not duplicate the search pill", toolbarSearchPresent);
     }
 
     @Test

@@ -112,8 +112,6 @@ public final class ContactsFragment extends Fragment {
             }
         });
         binding.toolbar.setNavigationOnClickListener(v -> NavHostFragment.findNavController(this).navigateUp());
-        binding.searchButton.setOnClickListener(
-                v -> NavHostFragment.findNavController(this).navigate(R.id.searchFragment));
         binding.searchPill.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.searchFragment));
         binding.addContactEntry.setTitle(getString(R.string.add_contact_title));

@@ -135,6 +135,11 @@
         <item name="iconTint">@color/colorOnPrimaryContainer</item>
     </style>
 
+    <!-- Lets code-built MaterialButtons inherit the destructive look via a wrapped context. -->
+    <style name="ThemeOverlay.NexaChat.Button.Destructive" parent="">
+        <item name="materialButtonStyle">@style/Widget.NexaChat.Button.Destructive</item>
+    </style>
+
     <!-- Lets code-built MaterialButtons inherit the tonal look via a wrapped context. -->
     <style name="ThemeOverlay.NexaChat.Button.Tonal" parent="">
         <item name="materialButtonStyle">@style/Widget.NexaChat.Button.Tonal</item>

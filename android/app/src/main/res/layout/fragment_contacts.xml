@@ -19,16 +19,7 @@
             android:layout_height="?attr/actionBarSize"
             android:background="?attr/colorSurface"
             app:navigationIcon="@drawable/ic_arrow_back"
-            app:navigationContentDescription="@string/cd_back">
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/searchButton"
-                style="@style/Widget.NexaChat.Button.Icon"
-                android:layout_width="@dimen/min_touch_target"
-                android:layout_height="@dimen/min_touch_target"
-                android:layout_gravity="end|center_vertical"
-                android:contentDescription="@string/search_title"
-                app:icon="@drawable/ic_search" />
-        </com.google.android.material.appbar.MaterialToolbar>
+            app:navigationContentDescription="@string/cd_back" />
 
         <LinearLayout
             android:id="@+id/contactsHeader"

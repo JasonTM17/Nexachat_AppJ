@@ -160,15 +160,13 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/revokeButton"
-                        style="@style/Widget.NexaChat.Button.Tonal"
+                        style="@style/Widget.NexaChat.Button.Destructive"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xs"
                         android:minHeight="@dimen/min_touch_target"
                         android:text="@string/invite_revoke"
-                        android:textColor="?attr/colorOnErrorContainer"
-                        android:visibility="gone"
-                        app:backgroundTint="?attr/colorErrorContainer" />
+                        android:visibility="gone" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
