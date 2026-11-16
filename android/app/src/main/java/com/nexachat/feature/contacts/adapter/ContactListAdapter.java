@@ -38,7 +38,17 @@ public final class ContactListAdapter extends ListAdapter<ContactSections.Row, R
 
     /** Convenience: expands contacts into letter-sectioned rows ordered by the displayed label. */
     public void submitContacts(@NonNull List<Contact> contacts) {
-        submitList(ContactSections.group(contacts));
+        submitContacts(contacts, null);
+    }
+
+    /**
+     * Same as {@link #submitContacts(List)} plus a callback fired on the main
+     * thread once the diff has been committed — the only point where
+     * {@link #getCurrentList()} is guaranteed to reflect {@code contacts}.
+     */
+    public void submitContacts(
+            @NonNull List<Contact> contacts, @Nullable Runnable commitCallback) {
+        submitList(ContactSections.group(contacts), commitCallback);
     }
 
     /** Section letter governing {@code position}; null when out of range. */

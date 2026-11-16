@@ -174,7 +174,20 @@
 }
 
 # ------------------------------------------------------------------------------
-# 12. Credential Manager and Google ID token (no app-level keep required)
+# 12. CoordinatorLayout Behaviors
+# app:layout_behavior names a Behavior subclass inside an attribute string.
+# AAPT keeps classes named by layout element tags and nav destinations but not
+# class names carried in attribute values; the class only survives today via
+# the implicit default constructor keep. CoordinatorLayout.LayoutParams.
+# parseBehavior inflates it reflectively through (Context, AttributeSet), so
+# keep every Behavior with that constructor or release inflation crashes.
+# ------------------------------------------------------------------------------
+-keep class * extends androidx.coordinatorlayout.widget.CoordinatorLayout$Behavior {
+    public <init>(android.content.Context, android.util.AttributeSet);
+}
+
+# ------------------------------------------------------------------------------
+# 13. Credential Manager and Google ID token (no app-level keep required)
 # credentials-1.6.0 ships an intentionally empty consumer rule (shrink-safe),
 # credentials-play-services-auth keeps CredentialProviderPlayServicesImpl, and
 # AGP keeps every class named by the merged manifest: the credential provider

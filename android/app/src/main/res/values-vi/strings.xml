@@ -109,6 +109,8 @@
     <!-- Contacts & user search -->
     <string name="contacts_title">Danh bạ</string>
     <string name="contacts_empty">Chưa có liên hệ nào</string>
+    <string name="a11y_contacts_section_jump">Chuyển đến liên hệ %1$s</string>
+    <string name="a11y_contacts_section_other">Chuyển đến liên hệ khác</string>
     <string name="search_title">Tìm người</string>
     <string name="search_label">SĐT hoặc tên</string>
     <string name="search_no_results">Không tìm thấy người dùng</string>

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -79,6 +80,128 @@ class RoomAnonymousClassCountTests(unittest.TestCase):
         )
 
         self.assertEqual(CHECKER.count_room_anonymous_classes(migrations), (5, 0))
+
+
+class LayoutBehaviorLookupsTests(unittest.TestCase):
+    def _res_dir(self, files: dict[str, str]) -> Path:
+        root = Path(self._tmp.name)
+        for relative, content in files.items():
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        return root
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_qualified_class_name_in_attribute_is_reported(self) -> None:
+        res = self._res_dir(
+            {
+                "layout/screen.xml": """<?xml version="1.0"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <View android:id="@+id/rail"
+        app:layout_behavior="com.example.feature.RailBehavior" />
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
+"""
+            }
+        )
+
+        lookups = CHECKER.layout_behavior_lookups(res)
+
+        self.assertEqual(
+            lookups,
+            {"com.example.feature.RailBehavior": "screen.xml app:layout_behavior"},
+        )
+
+    def test_string_indirection_resolves_through_app_values(self) -> None:
+        res = self._res_dir(
+            {
+                "values/strings.xml": """<?xml version="1.0"?>
+<resources>
+    <string name="rail_behavior">com.example.feature.RailBehavior</string>
+</resources>
+""",
+                "layout-land/screen.xml": """<?xml version="1.0"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <View app:layout_behavior="@string/rail_behavior" />
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
+""",
+            }
+        )
+
+        lookups = CHECKER.layout_behavior_lookups(res)
+
+        self.assertIn("com.example.feature.RailBehavior", lookups)
+
+    def test_unresolvable_and_non_class_values_are_skipped(self) -> None:
+        res = self._res_dir(
+            {
+                "layout/screen.xml": """<?xml version="1.0"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <View app:layout_behavior="@string/library_owned_behavior" />
+    <View app:layout_behavior="anchor" />
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
+"""
+            }
+        )
+
+        self.assertEqual(CHECKER.layout_behavior_lookups(res), {})
+
+
+class KeepCoversBehaviorTests(unittest.TestCase):
+    CLASS = "com.nexachat.feature.contacts.ContactLetterRailBehavior"
+
+    def test_explicit_class_keep_covers_the_behavior(self) -> None:
+        rules = (
+            "-keep class com.nexachat.feature.contacts.ContactLetterRailBehavior "
+            "{ <init>(...); }"
+        )
+
+        self.assertTrue(CHECKER.keep_covers_behavior(rules, self.CLASS))
+
+    def test_generic_behavior_keep_covers_the_behavior(self) -> None:
+        rules = (
+            "-keep class * extends "
+            "androidx.coordinatorlayout.widget.CoordinatorLayout$Behavior {\n"
+            "    public <init>(android.content.Context, android.util.AttributeSet);\n"
+            "}"
+        )
+
+        self.assertTrue(CHECKER.keep_covers_behavior(rules, self.CLASS))
+
+    def test_keep_on_another_base_type_does_not_cover(self) -> None:
+        rules = "-keep class * extends androidx.room.migration.Migration { *; }"
+
+        self.assertFalse(CHECKER.keep_covers_behavior(rules, self.CLASS))
+
+    def test_member_and_annotation_conditioned_keeps_do_not_cover(self) -> None:
+        rules = (
+            "-keepclassmembers class * { @com.squareup.moshi.Json <fields>; }\n"
+            "-keep @androidx.annotation.Keep class * { *; }\n"
+            "-keepnames class com.nexachat.feature.contacts.ContactLetterRailBehavior"
+        )
+
+        self.assertFalse(CHECKER.keep_covers_behavior(rules, self.CLASS))
+
+    def test_allow_modifiers_do_not_cover(self) -> None:
+        rules = (
+            "-keep,allowobfuscation class "
+            "com.nexachat.feature.contacts.ContactLetterRailBehavior { *; }"
+        )
+
+        self.assertFalse(CHECKER.keep_covers_behavior(rules, self.CLASS))
+
+    def test_unrelated_package_keep_does_not_cover(self) -> None:
+        rules = "-keep class com.nexachat.core.network.dto.** { *; }"
+
+        self.assertFalse(CHECKER.keep_covers_behavior(rules, self.CLASS))
 
 
 if __name__ == "__main__":

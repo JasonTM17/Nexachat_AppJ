@@ -8,6 +8,9 @@
     <dimen name="space_xl">32dp</dimen>
     <dimen name="max_content_width">640dp</dimen>
     <dimen name="min_touch_target">48dp</dimen>
+    <dimen name="letter_rail_cell_min_height">24dp</dimen>
+    <dimen name="letter_bubble_size">56dp</dimen>
+    <dimen name="letter_bubble_margin_end">52dp</dimen>
     <dimen name="corner_xs">4dp</dimen>
     <dimen name="corner_sm">8dp</dimen>
     <dimen name="corner_md">12dp</dimen>

@@ -39,6 +39,7 @@ import java.util.List;
 public final class ContactsFragment extends Fragment {
 
     private static final long ADD_DONE_DISMISS_MS = 900L;
+    private static final long BUBBLE_HIDE_MS = 400L;
 
     private FragmentContactsBinding binding;
     private ContactsViewModel viewModel;
@@ -52,6 +53,11 @@ public final class ContactsFragment extends Fragment {
     @Nullable private ContactDetailBinder detailBinder;
     private int lastCachedRefreshErrorId;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable hideBubble = () -> {
+        if (binding != null) {
+            binding.letterBubble.setVisibility(View.GONE);
+        }
+    };
 
     @Nullable
     @Override
@@ -80,6 +86,26 @@ public final class ContactsFragment extends Fragment {
         binding.contactList.setLayoutManager(new LinearLayoutManager(requireContext()));
         binding.contactList.addItemDecoration(new ContactLetterHeaderDecoration(adapter));
         binding.contactList.setAdapter(adapter);
+        binding.letterRail.setListener(new ContactLetterRailView.Listener() {
+            @Override
+            public void onLetterActivated(@NonNull String letter, float anchorY) {
+                if (binding == null || adapter == null) {
+                    return;
+                }
+                int position = ContactLetterIndex.adapterPosition(
+                        adapter.getCurrentList(), letter);
+                if (position >= 0) {
+                    ((LinearLayoutManager) binding.contactList.getLayoutManager())
+                            .scrollToPositionWithOffset(position, 0);
+                }
+                showLetterBubble(letter, anchorY);
+            }
+
+            @Override
+            public void onScrubEnd() {
+                handler.postDelayed(hideBubble, BUBBLE_HIDE_MS);
+            }
+        });
         binding.toolbar.setNavigationOnClickListener(v -> NavHostFragment.findNavController(this).navigateUp());
         binding.searchButton.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.searchFragment));
@@ -112,7 +138,9 @@ public final class ContactsFragment extends Fragment {
             return;
         }
         List<Contact> contacts = state.getContacts();
-        adapter.submitContacts(contacts);
+        // submitList diffs asynchronously, so the rail reads the committed list
+        // from the commit callback rather than the still-stale current list.
+        adapter.submitContacts(contacts, () -> updateLetterRail(!contacts.isEmpty()));
         boolean showLoading = state.isLoading() && !state.isContactsLoaded();
         ApiError error = state.getError();
         boolean showError = error != null && contacts.isEmpty();
@@ -159,6 +187,51 @@ public final class ContactsFragment extends Fragment {
                 viewModel.resetAddFlow();
             }, ADD_DONE_DISMISS_MS);
         }
+    }
+
+    /**
+     * The rail mirrors the section letters the adapter currently shows. While
+     * it is visible the list reserves the rail's width as end padding so rows
+     * never sit under it; at large font scale the rail steps aside entirely.
+     */
+    private void updateLetterRail(boolean showList) {
+        if (binding == null) {
+            return;
+        }
+        List<String> letters = ContactLetterIndex.letters(adapter.getCurrentList());
+        boolean show = showList
+                && ContactLetterIndex.isRailVisible(
+                        letters.size(),
+                        getResources().getConfiguration().fontScale);
+        binding.letterRail.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (show) {
+            binding.letterRail.setLetters(letters);
+        }
+        int endPadding = show
+                ? getResources().getDimensionPixelSize(R.dimen.min_touch_target)
+                : 0;
+        if (binding.contactList.getPaddingEnd() != endPadding) {
+            binding.contactList.setPaddingRelative(
+                    binding.contactList.getPaddingStart(),
+                    binding.contactList.getPaddingTop(),
+                    endPadding,
+                    binding.contactList.getPaddingBottom());
+        }
+    }
+
+    /** Transient drag preview anchored to the letter under the finger. */
+    private void showLetterBubble(@NonNull String letter, float anchorY) {
+        handler.removeCallbacks(hideBubble);
+        binding.letterBubble.setText(letter);
+        binding.letterBubble.setVisibility(View.VISIBLE);
+        // getHeight() is still 0 on the first activation because the bubble has
+        // not been laid out yet; the layout fixes its size via the dimen.
+        float bubbleHeight =
+                getResources().getDimensionPixelSize(R.dimen.letter_bubble_size);
+        float min = binding.letterRail.getTop();
+        float max = Math.max(min, binding.letterRail.getBottom() - bubbleHeight);
+        float top = binding.letterRail.getTop() + anchorY - bubbleHeight / 2f;
+        binding.letterBubble.setTranslationY(Math.max(min, Math.min(top, max)));
     }
 
     private void showAddByPhoneDialog() {
