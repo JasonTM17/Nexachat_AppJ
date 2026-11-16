@@ -172,7 +172,8 @@ public final class MessageRepository {
      * #NO_RECORD_EPISODE} for a refusal that left no record — so one episode
      * notifies once no matter how many queued rows pause on it. A new stamp
      * (re-verification then a fresh change) or a cleared marker (a successful
-     * encrypted send proved the roster usable again) notifies anew.
+     * encrypted send — or a fresh keyset check — proved the roster usable
+     * again) notifies anew.
      */
     private final ConcurrentHashMap<String, String> keysetPauseNotified = new ConcurrentHashMap<>();
     private final AtomicLong lastOutboxCreatedAt = new AtomicLong();
@@ -1132,18 +1133,61 @@ public final class MessageRepository {
 
     /**
      * The refusal code of the open terminal-pause episode for this owner and
-     * conversation — the same marker that dedupes its notice — or empty once
-     * a successful encrypted send cleared it. Of the terminal codes only
+     * conversation — the same marker that dedupes its notice — or empty when
+     * no episode stands. Of the terminal codes only
      * {@link #ERROR_E2EE_KEYSET_INVALID} has no durable read-back (an unusable
-     * roster leaves no trust record), so this is the view model's window into
-     * that episode.
+     * roster leaves no trust record), so before it is reported the episode is
+     * re-proved against a fresh roster check: a roster that now yields a
+     * keyset verdict ends the episode, while an unusable roster or an
+     * inconclusive check keeps the marker and the pause stays closed.
      */
     public Single<Optional<String>> keysetPauseCode(String ownerUserId, String conversationId) {
-        return Single.fromCallable(() -> {
-            String episode = keysetPauseNotified.get(ownerUserId + ':' + conversationId);
-            return episode == null ? Optional.empty()
-                    : Optional.of(episode.substring(0, episode.indexOf(':')));
-        });
+        String key = ownerUserId + ':' + conversationId;
+        return Single.fromCallable(() -> Optional.ofNullable(keysetPauseNotified.get(key)))
+                .flatMap(episode -> {
+                    if (episode.isEmpty()) {
+                        return Single.just(Optional.empty());
+                    }
+                    String code = episode.get().substring(0, episode.get().indexOf(':'));
+                    if (!ERROR_E2EE_KEYSET_INVALID.equals(code)) {
+                        return Single.just(Optional.of(code));
+                    }
+                    return revalidateInvalidKeysetEpisode(ownerUserId, conversationId,
+                                    episode.get())
+                            .andThen(Single.fromCallable(() ->
+                                    Optional.ofNullable(keysetPauseNotified.get(key))
+                                            .map(e -> e.substring(0, e.indexOf(':')))));
+                });
+    }
+
+    /**
+     * Re-proves an open INVALID episode against a fresh roster snapshot: the
+     * member list is refetched bypassing the device cache and put through the
+     * same transcript and trust verdict an encrypted send would face. Any
+     * verdict — match, first-use, or a fresh keyset change — retires the
+     * episode marker; a newly detected change keeps sends paused through the
+     * durable CHANGED record the verdict itself just wrote. Only the probed
+     * episode value is removed, so a newer refusal racing the check still
+     * stands. Every failure keeps the marker: an unreadable roster or an
+     * inconclusive check never unpauses.
+     */
+    private Completable revalidateInvalidKeysetEpisode(String ownerUserId,
+            String conversationId, String episode) {
+        if (e2eeSession == null) {
+            return Completable.complete();
+        }
+        String key = ownerUserId + ':' + conversationId;
+        return Single.<byte[]>defer(() -> {
+                    e2eeSession.invalidateDevices(conversationId);
+                    return e2eeSession.currentTranscript(conversationId);
+                })
+                .flatMapCompletable(transcript -> keysetTrustStore == null
+                        ? Completable.fromAction(() -> keysetPauseNotified.remove(key, episode))
+                        : keysetTrustStore
+                                .checkBeforeEncrypt(ownerUserId, conversationId, transcript)
+                                .doOnSuccess(ignored -> keysetPauseNotified.remove(key, episode))
+                                .ignoreElement())
+                .onErrorComplete();
     }
 
     /**

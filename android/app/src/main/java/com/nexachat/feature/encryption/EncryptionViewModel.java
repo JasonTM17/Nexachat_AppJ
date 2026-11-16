@@ -19,7 +19,6 @@ import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 import javax.inject.Inject;
 
 /**
@@ -202,24 +201,21 @@ public final class EncryptionViewModel extends ViewModel {
     }
 
     /**
-     * Loads the canonical transcript for the NC1 code together with the
-     * durable trust record. Any roster that cannot produce a direct
-     * transcript — groups, malformed rows, an off flag — is "nothing to
-     * verify" and simply hides the card rather than failing the screen. A
-     * trust-store read failure is not an empty record: the card keeps its
-     * code but reports the unreadable state, and verification stays disabled
-     * rather than letting a missing read stand in for a real verdict.
+     * Loads the canonical transcript for the NC1 code together with its trust
+     * verdict. Any roster that cannot produce a direct transcript — groups,
+     * malformed rows, an off flag — is "nothing to verify" and simply hides
+     * the card rather than failing the screen. A trust-store read failure is
+     * not an empty record: the card keeps its code but reports the unreadable
+     * state, and verification stays disabled rather than letting a missing
+     * read stand in for a real verdict.
      */
     private void loadVerification(@NonNull String conv, long gen) {
         String owner = session.currentUserId();
-        Single<Optional<KeysetTrustStore.Record>> trust = owner == null
-                ? Single.just(Optional.empty())
-                : trustStore.state(owner, conv);
         disposables.add(session.currentTranscript(conv)
-                .flatMap(transcript -> trust
-                        .map(record -> new VerificationSnapshot(transcript, record, false))
+                .flatMap(transcript -> trustForDisplayedKeyset(owner, conv, transcript)
+                        .map(trust -> new VerificationSnapshot(transcript, trust))
                         .onErrorReturn(readError -> new VerificationSnapshot(
-                                transcript, Optional.empty(), true)))
+                                transcript, Trust.UNAVAILABLE)))
                 .observeOn(uiScheduler)
                 .subscribe(
                         snapshot -> {
@@ -230,9 +226,7 @@ public final class EncryptionViewModel extends ViewModel {
                             uiState.setValue(current().withVerification(
                                     KeysetCheck.displayCode(
                                             KeysetCheck.digest(snapshot.transcript)),
-                                    snapshot.trustUnreadable
-                                            ? Trust.UNAVAILABLE
-                                            : trustOf(snapshot.record)));
+                                    snapshot.trust));
                         },
                         e -> {
                             if (!conv.equals(this.conversationId) || gen != policyGeneration) {
@@ -241,6 +235,27 @@ public final class EncryptionViewModel extends ViewModel {
                             displayedTranscript = null;
                             uiState.setValue(current().withVerification(null, Trust.NOT_VERIFIED));
                         }));
+    }
+
+    /**
+     * The verdict for the roster about to be displayed, computed by the same
+     * comparison the encrypt path runs: a participant's key rotation since
+     * the last verification flips the durable record to CHANGED, so the state
+     * row — and the chat notice that follows the same record — reports the
+     * change instead of standing "verified" next to keys never compared.
+     */
+    @NonNull
+    private Single<Trust> trustForDisplayedKeyset(@Nullable String owner,
+            @NonNull String conv, @NonNull byte[] transcript) {
+        if (owner == null) {
+            return Single.just(Trust.NOT_VERIFIED);
+        }
+        return trustStore.checkBeforeEncrypt(owner, conv, transcript)
+                .map(result -> switch (result) {
+                    case VERIFIED_MATCH -> Trust.VERIFIED;
+                    case UNVERIFIED -> Trust.NOT_VERIFIED;
+                    case CHANGED -> Trust.CHANGED;
+                });
     }
 
     /**
@@ -372,15 +387,6 @@ public final class EncryptionViewModel extends ViewModel {
     }
 
     @NonNull
-    private static Trust trustOf(@NonNull Optional<KeysetTrustStore.Record> record) {
-        if (record.isEmpty()) {
-            return Trust.NOT_VERIFIED;
-        }
-        return record.get().state() == KeysetTrustStore.TrustState.VERIFIED
-                ? Trust.VERIFIED : Trust.CHANGED;
-    }
-
-    @NonNull
     private static String code(@NonNull Throwable e) {
         return e instanceof E2eeSession.E2eeException && e.getMessage() != null
                 ? e.getMessage() : "E2EE_NETWORK";
@@ -406,14 +412,9 @@ public final class EncryptionViewModel extends ViewModel {
         return valid;
     }
 
-    /**
-     * The transcript shown on screen plus the verdict read alongside it;
-     * {@code trustUnreadable} marks a trust-store read failure, which is
-     * never folded into an empty record.
-     */
+    /** The transcript shown on screen plus the verdict computed alongside it. */
     private record VerificationSnapshot(@NonNull byte[] transcript,
-            @NonNull Optional<KeysetTrustStore.Record> record,
-            boolean trustUnreadable) { }
+            @NonNull Trust trust) { }
 
     @Override
     protected void onCleared() {

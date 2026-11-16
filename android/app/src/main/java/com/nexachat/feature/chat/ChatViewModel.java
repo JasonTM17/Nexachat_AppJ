@@ -455,15 +455,18 @@ public final class ChatViewModel extends ViewModel {
         }
         disposables.add(messageRepository.currentUserId()
                 .subscribeOn(Schedulers.io())
-                .flatMapSingle(owner -> Single.zip(
-                        keysetTrustStore.state(owner, conversationId),
-                        messageRepository.keysetPauseCode(owner, conversationId),
-                        (record, pauseCode) -> new KeysetVerdict(record
-                                .map(r -> r.state() == KeysetTrustStore.TrustState.VERIFIED
-                                        ? KeysetTrust.VERIFIED : KeysetTrust.CHANGED)
-                                .orElse(KeysetTrust.NONE),
-                                pauseCode.map(MessageRepository.ERROR_E2EE_KEYSET_INVALID::equals)
-                                        .orElse(false))))
+                .flatMapSingle(owner -> messageRepository.keysetPauseCode(owner, conversationId)
+                        // The episode marker resolves first: an INVALID probe
+                        // can itself flip the durable record to CHANGED, so
+                        // the trust read must see the post-probe verdict,
+                        // never a pre-flip snapshot.
+                        .flatMap(pauseCode -> keysetTrustStore.state(owner, conversationId)
+                                .map(record -> new KeysetVerdict(record
+                                        .map(r -> r.state() == KeysetTrustStore.TrustState.VERIFIED
+                                                ? KeysetTrust.VERIFIED : KeysetTrust.CHANGED)
+                                        .orElse(KeysetTrust.NONE),
+                                        pauseCode.map(MessageRepository.ERROR_E2EE_KEYSET_INVALID::equals)
+                                                .orElse(false)))))
                 .defaultIfEmpty(new KeysetVerdict(KeysetTrust.NONE, false))
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(verdict -> updateUiState(state -> state.withKeysetVerdict(
