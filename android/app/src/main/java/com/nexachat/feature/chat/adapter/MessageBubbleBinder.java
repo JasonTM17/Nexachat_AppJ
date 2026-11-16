@@ -131,6 +131,114 @@ public final class MessageBubbleBinder {
         pausedFailReasonRes = reasonRes;
     }
 
+    /** Replaces the per-message translation states bound on the next pass. */
+    public void setTranslations(
+            @NonNull java.util.Map<String, com.nexachat.feature.chat.TranslationUiState> next) {
+        translations = next;
+    }
+
+    /** Retry callback for failed translations, keyed by message id. */
+    public void setTranslationRetry(
+            @Nullable Function<String, Boolean> onRetry) {
+        translationRetry = onRetry;
+    }
+
+    @NonNull private java.util.Map<String, com.nexachat.feature.chat.TranslationUiState>
+            translations = java.util.Map.of();
+    @Nullable private Function<String, Boolean> translationRetry;
+
+    /**
+     * Renders the translation block under the message body. LOADING shows the
+     * spinner, READY shows the secondary-styled translation with a
+     * "Translated from X" caption, and ERROR shows a retryable error row.
+     * The block hides entirely when no state is present.
+     */
+    private void bindTranslation(@NonNull View root, @NonNull ChatMessage message) {
+        View block = root.findViewById(R.id.translationBlock);
+        if (block == null) {
+            return;
+        }
+        com.nexachat.feature.chat.TranslationUiState state = translations.get(message.getId());
+        if (state == null || message.isDeleted() || message.isEncrypted()) {
+            block.setVisibility(View.GONE);
+            return;
+        }
+        block.setVisibility(View.VISIBLE);
+        TextView caption = block.findViewById(R.id.translationCaption);
+        View progress = block.findViewById(R.id.translationProgress);
+        TextView text = block.findViewById(R.id.translationText);
+        View errorRow = block.findViewById(R.id.translationErrorRow);
+        TextView errorText = block.findViewById(R.id.translationErrorText);
+
+        switch (state.getStatus()) {
+            case LOADING -> {
+                caption.setText(R.string.translation_loading);
+                progress.setVisibility(View.VISIBLE);
+                text.setVisibility(View.GONE);
+                errorRow.setVisibility(View.GONE);
+                progress.setContentDescription(
+                        root.getContext().getString(R.string.translation_loading));
+            }
+            case READY -> {
+                caption.setText(root.getContext().getString(
+                        R.string.translation_caption,
+                        languageName(root.getContext(), state.getSourceLang())));
+                progress.setVisibility(View.GONE);
+                text.setVisibility(View.VISIBLE);
+                text.setText(state.getText());
+                errorRow.setVisibility(View.GONE);
+                block.announceForAccessibility(root.getContext().getString(
+                        R.string.translation_caption,
+                        languageName(root.getContext(), state.getSourceLang())));
+            }
+            case ERROR -> {
+                caption.setText(R.string.translation_failed);
+                progress.setVisibility(View.GONE);
+                text.setVisibility(View.GONE);
+                errorRow.setVisibility(View.VISIBLE);
+                errorText.setText(errorLabel(root.getContext(), state.getErrorCode()));
+                errorRow.setContentDescription(root.getContext().getString(
+                        R.string.translation_failed_retry_cd));
+                errorRow.setOnClickListener(v -> {
+                    if (translationRetry != null) {
+                        translationRetry.apply(message.getId());
+                    }
+                });
+            }
+        }
+    }
+
+    private static int errorLabel(@NonNull android.content.Context context,
+            @Nullable String code) {
+        if ("RATE_LIMITED".equals(code)) return R.string.translation_error_rate_limited;
+        if ("NETWORK".equals(code) || "NETWORK_ERROR".equals(code))
+            return R.string.translation_error_offline;
+        return R.string.translation_error_generic;
+    }
+
+    /** Human-readable language name for the caption, with a code fallback. */
+    private static String languageName(@NonNull android.content.Context context,
+            @Nullable String code) {
+        if (code == null) return "";
+        return switch (code) {
+            case "vi" -> context.getString(R.string.lang_vi);
+            case "en" -> context.getString(R.string.lang_en);
+            case "zh" -> context.getString(R.string.lang_zh);
+            case "ja" -> context.getString(R.string.lang_ja);
+            case "ko" -> context.getString(R.string.lang_ko);
+            case "fr" -> context.getString(R.string.lang_fr);
+            case "de" -> context.getString(R.string.lang_de);
+            case "es" -> context.getString(R.string.lang_es);
+            case "th" -> context.getString(R.string.lang_th);
+            case "id" -> context.getString(R.string.lang_id);
+            case "ru" -> context.getString(R.string.lang_ru);
+            case "ar" -> context.getString(R.string.lang_ar);
+            case "pt" -> context.getString(R.string.lang_pt);
+            case "hi" -> context.getString(R.string.lang_hi);
+            default -> code;
+        };
+    }
+
     public void bindMessageRow(@NonNull View root, @NonNull MessageListItem item) {
         ChatMessage message = item.getMessage();
         if (message == null || item.getGroupPosition() == null) {
@@ -194,6 +302,7 @@ public final class MessageBubbleBinder {
 
         bindReplyQuote(root, message);
         bindPrimaryContent(root, message);
+        bindTranslation(root, message);
         applyMessageTextColors(root, message, item.isPulsing());
         applyMentionHighlights(root, message, mentionedMe);
         bindMetaRow(root, message, item.isSeenReceipt(), item.isDeliveredReceipt(), item.isPulsing());

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingVertical="@dimen/space_xs">
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/glossaryTermField"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:hint="@string/translate_glossary_term_hint">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/glossaryTermInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text"
+            android:maxLength="100" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/glossaryReplacementField"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/space_sm"
+        android:layout_weight="1"
+        android:hint="@string/translate_glossary_replacement_hint">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/glossaryReplacementInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text"
+            android:maxLength="100" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <ImageButton
+        android:id="@+id/glossaryRemoveButton"
+        android:layout_width="@dimen/min_touch_target"
+        android:layout_height="@dimen/min_touch_target"
+        android:background="?attr/selectableItemBackground"
+        android:contentDescription="@string/translate_glossary_remove"
+        android:src="@drawable/ic_close" />
+</LinearLayout>

@@ -816,6 +816,13 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
         if (route.policy().equals("REMINDER_CREATOR_OR_ADMIN")) {
             return route.method().equals("PATCH") ? 200 : 204;
         }
+        // Translation routes return a body; a member without external-AI consent passes
+        // the membership policy and is refused by the consent rule (403), unlike a
+        // non-member, who is refused earlier with NOT_MEMBER.
+        if (route.method().equals("POST") && route.path().endsWith("/translate")) return 403;
+        if (route.path().endsWith("/translate-batch")
+                || route.path().endsWith("/translate-prefs")
+                || route.path().endsWith("/translation-glossary")) return 200;
         if (route.policy().equals("CONVERSATION_MEMBER")) {
             if ((route.path().endsWith("/vote") && route.method().equals("DELETE"))
                     || (route.path().endsWith("/vote") && route.method().equals("PUT"))) return 200;
@@ -894,6 +901,18 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
 
     private Object roleBody(Route route, RoleFixtures fixtures, Registered actor) {
         String path = route.path();
+        if (route.method().equals("POST") && path.endsWith("/translate")) {
+            return Map.of("targetLang", "en");
+        }
+        if (route.method().equals("POST") && path.endsWith("/translate-batch")) {
+            return Map.of("messageIds", List.of(fixtures.messageId().toString()), "targetLang", "en");
+        }
+        if (route.method().equals("PUT") && path.endsWith("/translate-prefs")) {
+            return Map.of("autoTranslate", false);
+        }
+        if (route.method().equals("PUT") && path.endsWith("/translation-glossary")) {
+            return Map.of("terms", List.of());
+        }
         if (route.method().equals("POST") && path.endsWith("/messages")) {
             return Map.of("clientMessageId", UUID.randomUUID().toString(), "type", "TEXT",
                     "content", "per-route authorization probe");

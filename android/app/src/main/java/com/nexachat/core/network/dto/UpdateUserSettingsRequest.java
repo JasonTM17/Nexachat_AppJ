@@ -10,14 +10,26 @@ import java.util.Objects;
 public final class UpdateUserSettingsRequest {
     @Nullable private final Boolean showPresence;
     @Nullable private final Boolean showSeen;
+    @Nullable private final String translateTargetLang;
 
     public UpdateUserSettingsRequest(boolean showPresence) {
-        this(showPresence, null);
+        this(showPresence, null, null);
     }
 
     public UpdateUserSettingsRequest(@Nullable Boolean showPresence, @Nullable Boolean showSeen) {
+        this(showPresence, showSeen, null);
+    }
+
+    public UpdateUserSettingsRequest(@Nullable Boolean showPresence, @Nullable Boolean showSeen,
+            @Nullable String translateTargetLang) {
         this.showPresence = showPresence;
         this.showSeen = showSeen;
+        this.translateTargetLang = translateTargetLang;
+    }
+
+    @Nullable
+    public String getTranslateTargetLang() {
+        return translateTargetLang;
     }
 
     @Nullable
@@ -44,11 +56,12 @@ public final class UpdateUserSettingsRequest {
             return false;
         }
         return Objects.equals(showPresence, request.showPresence)
-                && Objects.equals(showSeen, request.showSeen);
+                && Objects.equals(showSeen, request.showSeen)
+                && Objects.equals(translateTargetLang, request.translateTargetLang);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(showPresence, showSeen);
+        return Objects.hash(showPresence, showSeen, translateTargetLang);
     }
 }

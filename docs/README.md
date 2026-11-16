@@ -16,6 +16,7 @@ quick start remain in [README.md](../README.md).
 | [architecture/firebase-realtime.md](architecture/firebase-realtime.md) | Optional Firebase RTDB presence/typing bridge (STOMP default). |
 | [architecture/ai-summary.md](architecture/ai-summary.md) | Conversation catch-up summary engines, consent, and citations. |
 | [architecture/rag.md](architecture/rag.md) | “Ask this chat” retrieval, hybrid search, and eval harness. |
+| [architecture/ai-translation.md](architecture/ai-translation.md) | RAG-grounded message translation: consent, glossary, cache, and limits. |
 | [quality/testing.md](quality/testing.md) | Server/Android test setup, CI gates, E2E scripts, and site checks. |
 | [quality/known-limitations.md](quality/known-limitations.md) | Documented trade-offs, free-tier limits, and audit caveats. |
 | [design/design-notes.md](design/design-notes.md) | Material 3 tokens and XML layout mapping. |

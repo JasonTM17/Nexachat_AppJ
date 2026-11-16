@@ -30,6 +30,9 @@ public interface MessageDao {
     @Query("SELECT * FROM messages WHERE id = :messageId")
     Maybe<MessageEntity> byId(String messageId);
 
+    @Query("SELECT * FROM messages WHERE id IN (:messageIds)")
+    Single<List<MessageEntity>> byIds(List<String> messageIds);
+
     /** Clears embedded previews for replies that reference a tombstoned message. */
     @Query("UPDATE messages SET replyToSnippet = NULL WHERE replyToId = :messageId")
     Completable clearReplySnippets(String messageId);

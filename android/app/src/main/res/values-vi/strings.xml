@@ -695,4 +695,43 @@
     <string name="group_leave_only_admin">Bạn là quản trị viên duy nhất. Chưa thể rời nhóm khi vẫn còn thành viên khác.</string>
     <!-- Account and session notices -->
     <string name="logout_all_unconfirmed">Đã đăng xuất trên thiết bị này. Chưa thể xác nhận đăng xuất trên các thiết bị khác. Hãy đăng nhập và thử lại.</string>
+
+    <!-- message translation -->
+    <string name="action_translate">Dịch</string>
+    <string name="action_translate_desc">Dịch tin nhắn này</string>
+    <string name="action_show_original">Xem bản gốc</string>
+    <string name="action_show_original_desc">Ẩn bản dịch</string>
+    <string name="translation_loading">Đang dịch…</string>
+    <string name="translation_caption">Đã dịch từ %1$s</string>
+    <string name="translation_failed">Dịch thất bại</string>
+    <string name="translation_failed_retry_cd">Dịch thất bại. Chạm để thử lại.</string>
+    <string name="translation_error_generic">Không thể dịch. Thử lại.</string>
+    <string name="translation_error_offline">Bạn đang ngoại tuyến. Kiểm tra kết nối.</string>
+    <string name="translation_error_rate_limited">Quá nhiều lượt dịch. Thử lại sau.</string>
+    <string name="translate_auto_title">Tự động dịch</string>
+    <string name="translate_target_language_title">Dịch sang</string>
+    <string name="translate_target_default_plain">Mặc định</string>
+    <string name="translate_target_default">Mặc định · %1$s</string>
+    <string name="translate_language_search_hint">Tìm ngôn ngữ</string>
+    <string name="translate_glossary_title">Bảng thuật ngữ</string>
+    <string name="translate_glossary_empty">Chưa có thuật ngữ. Giữ tên riêng và tiếng lóng nhất quán khi dịch.</string>
+    <string name="translate_glossary_add">Thêm thuật ngữ</string>
+    <string name="translate_glossary_term_hint">Thuật ngữ</string>
+    <string name="translate_glossary_replacement_hint">Dịch là (tùy chọn)</string>
+    <string name="translate_glossary_remove">Xóa thuật ngữ</string>
+    <!-- language names -->
+    <string name="lang_vi">Tiếng Việt</string>
+    <string name="lang_en">Tiếng Anh</string>
+    <string name="lang_zh">Tiếng Trung</string>
+    <string name="lang_ja">Tiếng Nhật</string>
+    <string name="lang_ko">Tiếng Hàn</string>
+    <string name="lang_fr">Tiếng Pháp</string>
+    <string name="lang_de">Tiếng Đức</string>
+    <string name="lang_es">Tiếng Tây Ban Nha</string>
+    <string name="lang_th">Tiếng Thái</string>
+    <string name="lang_id">Tiếng Indonesia</string>
+    <string name="lang_ru">Tiếng Nga</string>
+    <string name="lang_ar">Tiếng Ả Rập</string>
+    <string name="lang_pt">Tiếng Bồ Đào Nha</string>
+    <string name="lang_hi">Tiếng Hindi</string>
 </resources>
