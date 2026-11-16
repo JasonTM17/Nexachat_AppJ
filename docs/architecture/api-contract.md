@@ -753,6 +753,43 @@ single backend node.
 `SendMessageRequest.type` accepts `TEXT`, `IMAGE`, `VIDEO`, `AUDIO`, `FILE`; `SYSTEM` is server-only. `TEXT` requires non-blank `content` and must not carry `attachmentIds`; each media type requires 1–10 attachment IDs whose sniffed MIME matches the declared family (`IMAGE` = `image/*`, `VIDEO` = `video/*`, `AUDIO` = `audio/*`, `FILE` = any allowed type). Re-sending the same `clientMessageId` in the same conversation returns and re-broadcasts the stored row without inserting a second message; receivers deduplicate by message id. Reusing it in a different conversation is `VALIDATION_FAILED`.
 Inbox pagination uses query parameters `limit` and `cursor`. With no parameters, the complete list and byte-compatible response body are unchanged. A `limit` page is clamped to 1–100 items; `X-Next-Cursor` contains the next opaque keyset cursor only when another page exists. A cursor without a limit returns all remaining entries. Ordering and cursors are conversation-wide activity order (`pinned` first, then `lastMessageSeq DESC`), not admission-scoped: a member admitted at T still pages past rows whose newest activity they cannot read — the admission scope applies to content (preview, unread count), not to ordering.
 
+### Shared location and contact tokens
+
+Location and contact sharing are client-side conventions layered on ordinary
+`TEXT` messages — no server, schema or E2EE envelope changes. The message
+`content` carries a versioned token; receivers parse it and render a card,
+senders confirm the payload before it is sent, and malformed payloads degrade
+to raw text. Tokens are single-occurrence: a payload must match the grammar
+exactly to be treated as structured content.
+
+**Location** — one line:
+
+```
+nexachat:loc:v1 <lat>,<lon>[ <label>]
+```
+
+- `lat`/`lon` are decimal degrees with up to 6 fractional digits; `lat` is in
+  `[-90, 90]`, `lon` in `[-180, 180]`; `NaN`/infinity are rejected.
+- `label` is optional free text: trimmed, at most 80 characters, with control
+  characters, bidi controls, BOM and line/paragraph separators stripped.
+
+**Contact** — exactly three lines:
+
+```
+nexachat:contact:v1
+<display name>
+<phone>
+```
+
+- `display name` is sanitized like the location label, at most 80 characters.
+- `phone` is E.164: a `+` followed by 1–15 digits.
+
+Behavior: tokens flow through the normal send, sync, offline-outbox, search
+and notification paths as plain text. E2EE conversations encrypt the token
+like any other text. Receivers that cannot parse a token (truncated, extra
+lines, out-of-range, bad characters) render the raw text instead of a card.
+Senders sanitize labels/names on encode and re-validate on render.
+
 ## Conversation archive — `/api/v1/conversations/{id}/archive`
 
 The conversation storage browser ("Kho lưu trữ"): media, documents and shared
