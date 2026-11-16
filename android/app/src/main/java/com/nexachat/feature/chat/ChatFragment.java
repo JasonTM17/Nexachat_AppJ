@@ -27,7 +27,6 @@ import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.PickVisualMediaRequest;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -824,6 +823,14 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     }
 
     /** Anchored feedback for composer-scoped events (voice, attachment open). */
+    /** The glossary editor is a dialog, so its error is anchored to the dialog's own content. */
+    private void showGlossaryError(@NonNull AlertDialog editor) {
+        View content = editor.findViewById(android.R.id.content);
+        if (content != null) {
+            Snackbar.make(content, R.string.translation_error_generic, Snackbar.LENGTH_SHORT).show();
+        }
+    }
+
     private void showComposerSnackbar(int messageId) {
         if (binding == null || !isAdded()) {
             return;
@@ -1803,6 +1810,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         android.widget.EditText search = content.findViewById(R.id.languageSearchInput);
         android.widget.ListView list = content.findViewById(R.id.languageList);
         java.util.List<String> names = new java.util.ArrayList<>();
+        String defaultRow = getString(R.string.translate_target_default_plain);
+        names.add(defaultRow);
         for (TranslationLanguages.Entry entry : TranslationLanguages.SUPPORTED) {
             names.add(getString(entry.nameRes()));
         }
@@ -1816,6 +1825,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                 .create();
         list.setOnItemClickListener((parent, view, position, id) -> {
             String name = items.getItem(position);
+            if (defaultRow.equals(name)) {
+                viewModel.setTranslateTargetLang(null);
+                picker.dismiss();
+                return;
+            }
             for (TranslationLanguages.Entry entry : TranslationLanguages.SUPPORTED) {
                 if (getString(entry.nameRes()).equals(name)) {
                     viewModel.setTranslateTargetLang(entry.code());
@@ -1890,11 +1904,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                                 if (result instanceof com.nexachat.core.common.Result.Success<?>) {
                                     editor.dismiss();
                                 } else {
-                                    Toast.makeText(requireContext(),
-                                            R.string.translation_error_generic, Toast.LENGTH_SHORT).show();
+                                    showGlossaryError(editor);
                                 }
-                            }, error -> Toast.makeText(requireContext(),
-                                    R.string.translation_error_generic, Toast.LENGTH_SHORT).show()));
+                            }, error -> showGlossaryError(editor)));
                 }));
         editor.show();
         subscriptions.add(viewModel.loadGlossary()

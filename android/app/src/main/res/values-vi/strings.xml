@@ -710,6 +710,7 @@
     <string name="translation_error_rate_limited">Quá nhiều lượt dịch. Thử lại sau.</string>
     <string name="translate_auto_title">Tự động dịch</string>
     <string name="translate_target_language_title">Dịch sang</string>
+    <string name="translate_target_default_plain">Mặc định</string>
     <string name="translate_target_default">Mặc định · %1$s</string>
     <string name="translate_language_search_hint">Tìm ngôn ngữ</string>
     <string name="translate_glossary_title">Bảng thuật ngữ</string>
