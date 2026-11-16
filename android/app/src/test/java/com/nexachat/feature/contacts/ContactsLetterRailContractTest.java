@@ -1,6 +1,7 @@
 package com.nexachat.feature.contacts;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
@@ -28,8 +29,28 @@ public final class ContactsLetterRailContractTest {
         assertEquals("@dimen/min_touch_target", attr(rail, "layout_width"));
         assertEquals("end", attr(rail, "layout_gravity"));
         assertEquals("gone", attr(rail, "visibility"));
-        assertEquals("@string/appbar_scrolling_view_behavior",
-                rail.getAttributeNS(APP, "layout_behavior"));
+    }
+
+    @Test
+    public void letterRail_staysInsideTheVisibleListViewport() throws Exception {
+        Element rail = findById(parse("layout/fragment_contacts.xml"), "letterRail");
+        String behavior = rail.getAttributeNS(APP, "layout_behavior");
+        // The scrolling-view behavior measures a match_parent child taller
+        // than the screen and pins its top to the app bar's bottom edge, so
+        // the lowest letters ('#' included) render off-screen while the
+        // header is expanded.
+        assertNotEquals(
+                "the rail is an overlay, not a scrolling child: it must not "
+                        + "reuse the scrolling-view behavior",
+                "@string/appbar_scrolling_view_behavior",
+                behavior);
+        assertEquals("com.nexachat.feature.contacts.ContactLetterRailBehavior", behavior);
+        String source =
+                source("java/com/nexachat/feature/contacts/ContactLetterRailBehavior.java");
+        assertTrue("the rail's top must track the app bar's bottom edge",
+                source.contains("appBar.getBottom()") || source.contains("dependency.getBottom()"));
+        assertTrue("the rail's bottom must stay at the parent's bottom edge",
+                source.contains("parent.getHeight()"));
     }
 
     @Test
