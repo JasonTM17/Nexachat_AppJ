@@ -13,9 +13,11 @@ import com.nexachat.invite.GroupJoinRequestRepository;
 import com.nexachat.message.MessageAttachmentRepository;
 import com.nexachat.message.MessageReactionRepository;
 import com.nexachat.message.MessageRepository;
+import com.nexachat.message.MessageStarRepository;
 import com.nexachat.message.PinnedMessageRepository;
 import com.nexachat.message.ReactionEventRepository;
 import com.nexachat.message.RequestIdempotencyRepository;
+import com.nexachat.report.ReportRepository;
 import com.nexachat.notification.UserDeviceTokenRepository;
 import com.nexachat.reminder.ConversationReminderRepository;
 import com.nexachat.poll.PollOptionRepository;
@@ -23,6 +25,7 @@ import com.nexachat.poll.PollRepository;
 import com.nexachat.poll.PollVoteRepository;
 import com.nexachat.user.User;
 import com.nexachat.user.UserAuthValidity;
+import com.nexachat.user.UserBlockRepository;
 import com.nexachat.user.UserRepository;
 import jakarta.persistence.EntityManager;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -54,6 +57,8 @@ abstract class ObservabilityHealthTestBase {
     @MockitoBean
     protected UserRepository userRepository;
     @MockitoBean
+    protected UserBlockRepository userBlockRepository;
+    @MockitoBean
     protected com.nexachat.auth.RefreshTokenRepository refreshTokenRepository;
     @MockitoBean
     protected UserIdentityRepository userIdentityRepository;
@@ -75,6 +80,10 @@ abstract class ObservabilityHealthTestBase {
     protected RequestIdempotencyRepository requestIdempotencyRepository;
     @MockitoBean
     protected PinnedMessageRepository pinnedMessageRepository;
+    @MockitoBean
+    protected MessageStarRepository messageStarRepository;
+    @MockitoBean
+    protected ReportRepository reportRepository;
     @MockitoBean
     protected UserDeviceTokenRepository userDeviceTokenRepository;
     @MockitoBean

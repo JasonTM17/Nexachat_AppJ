@@ -8,6 +8,7 @@ import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.message.CallSystemMessageWriter;
 import com.nexachat.user.User;
+import com.nexachat.user.UserBlockRepository;
 import com.nexachat.user.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
@@ -46,6 +47,7 @@ public class CallService {
     private final RateLimitService rateLimitService;
     private final CallSystemMessageWriter systemMessageWriter;
     private final UserRepository userRepository;
+    private final UserBlockRepository blockRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final CallIceConfig iceConfig;
     private final ReentrantReadWriteLock registryAccessLock = new ReentrantReadWriteLock(true);
@@ -59,7 +61,8 @@ public class CallService {
                        CallSystemMessageWriter systemMessageWriter,
                        UserRepository userRepository,
                        ApplicationEventPublisher eventPublisher,
-                       @Value("${nexachat.calls.ice-servers:stun:stun.l.google.com:19302}") String iceServers) {
+                       @Value("${nexachat.calls.ice-servers:stun:stun.l.google.com:19302}") String iceServers,
+                       UserBlockRepository blockRepository) {
         this.registry = registry;
         this.recordRepository = recordRepository;
         this.conversationRepository = conversationRepository;
@@ -68,6 +71,7 @@ public class CallService {
         this.systemMessageWriter = systemMessageWriter;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
+        this.blockRepository = blockRepository;
         List<String> urls = List.of(iceServers.split(",")).stream()
                 .map(String::trim).filter(url -> !url.isEmpty()).toList();
         if (urls.isEmpty()) {
@@ -101,6 +105,16 @@ public class CallService {
     private void invite(UUID conversationId, UUID callerId, CallSignal signal) {
         UUID calleeId = directPeer(conversationId, callerId);
         requireActiveParticipants(callerId, calleeId);
+        // V38 block policy: a blocked pair cannot ring each other. The caller's
+        // own block is a typed BLOCKED (they created it); the callee's block
+        // refuses with the same NOT_MEMBER a non-member gets — the callee's
+        // block stays indistinguishable from any other unavailable target.
+        if (blockRepository.existsByBlocker_IdAndBlocked_Id(callerId, calleeId)) {
+            throw CallException.blocked();
+        }
+        if (blockRepository.existsByBlocker_IdAndBlocked_Id(calleeId, callerId)) {
+            throw CallException.notMember();
+        }
         consume(callerId, "invite", 20);
         CallRegistry.Invitation invitation = registry.invite(signal.callId(), conversationId,
                 callerId, calleeId, registry.now());
@@ -151,6 +165,12 @@ public class CallService {
     private void relay(UUID conversationId, UUID actorId, CallSignal signal) {
         CallSession call = registry.requireParticipant(signal.callId(), conversationId, actorId);
         UUID peerId = registry.mediaPeer(signal.callId(), conversationId, actorId);
+        // A block landing mid-call makes the pair unreachable: signalling
+        // stops in both directions (the media session cannot be kept alive
+        // by either side), refused with the neutral member error.
+        if (blockRepository.existsBetweenEitherDirection(actorId, peerId)) {
+            throw CallException.notMember();
+        }
         if (signal.type() == CallSignal.Type.SDP) {
             consume(actorId, "media", 300);
             if (signal.sdp() == null || signal.sdp().type() == null

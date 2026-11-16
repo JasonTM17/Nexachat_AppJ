@@ -107,9 +107,11 @@ class UnversionedMessageBackfillIT {
 
             assertThat(dumpRows(jdbc, "SELECT * FROM conversations WHERE id = ?", CONV_HEALTHY))
                     .isEqualTo(healthyBefore);
-            assertThat(dumpRows(jdbc,
-                    "SELECT * FROM messages WHERE conversation_id = ? ORDER BY seq, id", CONV_HEALTHY))
-                    .isEqualTo(healthyMessagesBefore);
+            List<Map<String, String>> healthyMessagesAfter = dumpRows(jdbc,
+                    "SELECT * FROM messages WHERE conversation_id = ? ORDER BY seq, id", CONV_HEALTHY);
+            // peer_suppressed arrives with V38; the V34 snapshot predates the column.
+            healthyMessagesAfter.forEach(row -> row.remove("peer_suppressed"));
+            assertThat(healthyMessagesAfter).isEqualTo(healthyMessagesBefore);
             assertThat(dumpRows(jdbc, "SELECT * FROM conversations WHERE id = ?", CONV_EMPTY))
                     .isEqualTo(emptyBefore);
         }

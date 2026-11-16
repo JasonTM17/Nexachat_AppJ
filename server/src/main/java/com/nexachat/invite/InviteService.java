@@ -15,6 +15,7 @@ import com.nexachat.invite.dto.JoinRequestResponse;
 import com.nexachat.invite.dto.JoinResponse;
 import com.nexachat.invite.dto.PatchInviteLinkRequest;
 import com.nexachat.user.User;
+import com.nexachat.user.UserBlockRepository;
 import com.nexachat.user.UserRepository;
 import jakarta.persistence.EntityManager;
 import org.slf4j.Logger;
@@ -53,6 +54,7 @@ public class InviteService {
     private final ConversationRepository conversationRepository;
     private final ConversationMemberRepository memberRepository;
     private final UserRepository userRepository;
+    private final UserBlockRepository blockRepository;
     private final GroupService groupService;
     private final InviteTokenGenerator tokenGenerator;
     private final InviteRateLimiter rateLimiter;
@@ -66,6 +68,7 @@ public class InviteService {
             ConversationRepository conversationRepository,
             ConversationMemberRepository memberRepository,
             UserRepository userRepository,
+            UserBlockRepository blockRepository,
             GroupService groupService,
             InviteTokenGenerator tokenGenerator,
             InviteRateLimiter rateLimiter,
@@ -77,6 +80,7 @@ public class InviteService {
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
+        this.blockRepository = blockRepository;
         this.groupService = groupService;
         this.tokenGenerator = tokenGenerator;
         this.rateLimiter = rateLimiter;
@@ -290,6 +294,9 @@ public class InviteService {
 
         UUID linkId = link.getId();
         UUID conversationId = link.getConversation().getId();
+        // The ManyToOne id survives detach — capture the link owner so a block
+        // check below never re-initializes a detached proxy.
+        UUID linkCreatorId = link.getCreatedBy().getId();
         if (link.getConversation().getType() != Conversation.Type.GROUP) {
             throw ApiException.of(ApiErrorCode.NOT_A_GROUP, "Not a group conversation");
         }
@@ -309,6 +316,14 @@ public class InviteService {
         if (banRepository.isBannedFromLink(conversationId, callerId, linkId)) {
             throw ApiException.of(ApiErrorCode.FORBIDDEN,
                     "User was removed from this group by admin and cannot rejoin via this link");
+        }
+
+        // V38: a block edge in EITHER direction between the joiner and the
+        // link's creator makes the invite a dead link — the same NOT_FOUND a
+        // revoked or exhausted link gives, so the refusal reveals nothing
+        // about which side blocked, or that anyone did.
+        if (blockRepository.existsBetweenEitherDirection(callerId, linkCreatorId)) {
+            throw ApiException.of(ApiErrorCode.NOT_FOUND, "Invite link not found or inactive");
         }
 
         // Lock conversation row to serialize member cap check across concurrent joiners
@@ -415,6 +430,18 @@ public class InviteService {
         }
         if (request.getStatus() == GroupJoinRequest.Status.REJECTED) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Cannot approve a rejected request");
+        }
+
+        // V38: an approval is contact between the approver and the requester.
+        // The approver's own block is the typed BLOCKED refusal; the
+        // requester's block is the same FORBIDDEN any refused review gives.
+        // Either refusal runs BEFORE the invite use is consumed.
+        UUID requesterId = request.getUser().getId();
+        if (blockRepository.existsByBlocker_IdAndBlocked_Id(callerId, requesterId)) {
+            throw ApiException.of(ApiErrorCode.BLOCKED, "You blocked this user");
+        }
+        if (blockRepository.existsByBlocker_IdAndBlocked_Id(requesterId, callerId)) {
+            throw ApiException.of(ApiErrorCode.FORBIDDEN, "Cannot approve this request");
         }
 
         long memberCount = memberRepository.countByConversation_Id(conversationId);

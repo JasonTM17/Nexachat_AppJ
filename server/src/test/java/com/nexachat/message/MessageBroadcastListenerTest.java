@@ -50,7 +50,9 @@ class MessageBroadcastListenerTest {
 
     @BeforeEach
     void setUp() {
-        listener = new MessageBroadcastListener(messaging, memberRepository, userRepository);
+        listener = new MessageBroadcastListener(messaging, memberRepository,
+                org.mockito.Mockito.mock(com.nexachat.message.MessageRepository.class),
+                userRepository);
     }
 
     @Test

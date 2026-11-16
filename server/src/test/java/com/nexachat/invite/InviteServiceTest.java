@@ -92,6 +92,7 @@ class InviteServiceTest {
         inviteService = new InviteService(
                 linkRepository, joinRequestRepository, banRepository,
                 conversationRepository, memberRepository, userRepository,
+                org.mockito.Mockito.mock(com.nexachat.user.UserBlockRepository.class),
                 groupService, tokenGenerator, rateLimiter, entityManager, 5);
 
         lenient().when(joinRequestRepository.findByIdForUpdate(any()))

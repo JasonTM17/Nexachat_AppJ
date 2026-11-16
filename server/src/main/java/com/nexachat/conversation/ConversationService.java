@@ -9,6 +9,7 @@ import com.nexachat.conversation.dto.OpenDirectRequest;
 import com.nexachat.summary.ConversationAiOptOuts;
 import com.nexachat.user.PhoneService;
 import com.nexachat.user.User;
+import com.nexachat.user.UserBlockRepository;
 import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,6 +44,7 @@ public class ConversationService {
     private final PhoneService phoneService;
     private final DirectConversationCreator directConversationCreator;
     private final ConversationAiOptOuts aiOptOuts;
+    private final UserBlockRepository blockRepository;
 
     public ConversationService(ConversationRepository conversationRepository,
                                ConversationMemberRepository memberRepository,
@@ -50,7 +52,7 @@ public class ConversationService {
                                PhoneService phoneService,
                                DirectConversationCreator directConversationCreator) {
         this(conversationRepository, memberRepository, userRepository, phoneService,
-                directConversationCreator, ConversationAiOptOuts.none());
+                directConversationCreator, ConversationAiOptOuts.none(), null);
     }
 
     @Autowired
@@ -59,13 +61,15 @@ public class ConversationService {
                                UserRepository userRepository,
                                PhoneService phoneService,
                                DirectConversationCreator directConversationCreator,
-                               ConversationAiOptOuts aiOptOuts) {
+                               ConversationAiOptOuts aiOptOuts,
+                               UserBlockRepository blockRepository) {
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
         this.phoneService = phoneService;
         this.directConversationCreator = directConversationCreator;
         this.aiOptOuts = aiOptOuts;
+        this.blockRepository = blockRepository;
     }
 
     /** Service-internal result: response body plus whether this call created the row. */
@@ -117,6 +121,23 @@ public class ConversationService {
         boolean created = false;
 
         if (conversation == null) {
+            // V38 block policy on CHANNEL CREATION (an existing conversation
+            // is returned for both directions — the blocked-chat composer and
+            // the suppressed-send policy live at the message layer instead):
+            //  - caller blocked target ⇒ typed BLOCKED: the caller created
+            //    the block, telling them leaks nothing.
+            //  - target blocked caller ⇒ USER_NOT_FOUND — the same answer a
+            //    deleted account gives. Creating the chat anyway would
+            //    surface a ghost row in the blocker's inbox and leak the
+            //    contact attempt.
+            if (blockRepository != null) {
+                if (blockRepository.existsByBlocker_IdAndBlocked_Id(callerId, other.getId())) {
+                    throw ApiException.of(ApiErrorCode.BLOCKED, "You blocked this user");
+                }
+                if (blockRepository.existsByBlocker_IdAndBlocked_Id(other.getId(), callerId)) {
+                    throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
+                }
+            }
             try {
                 conversation = directConversationCreator.createDirect(
                         callerId, other.getId(), directKey);

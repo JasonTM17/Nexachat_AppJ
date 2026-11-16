@@ -24,6 +24,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.lenient;
@@ -80,7 +81,7 @@ class SystemMessageTest {
     void postSystemMessage_happy_writesSystemRowAndBroadcasts() {
         when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, actorId))
                 .thenReturn(true);
-        when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
+        when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(1);
         MessageRow stored = new MessageRow(
                 UUID.randomUUID(), conversationId, 77L, actorId, "Admin",
@@ -100,7 +101,7 @@ class SystemMessageTest {
         ArgumentCaptor<String> type = ArgumentCaptor.forClass(String.class);
         verify(messageRepository).insertIgnoringDuplicateKey(
                 eq(conversationId), eq(actorId), any(UUID.class),
-                type.capture(), eq("Admin added Bob"), isNull());
+                type.capture(), eq("Admin added Bob"), isNull(), eq(false));
         assertThat(type.getValue()).isEqualTo("SYSTEM");
 
         verify(conversationRepository).advanceLastMessage(conversationId, stored.id(), 77L);
@@ -119,7 +120,7 @@ class SystemMessageTest {
     void postSystemMessage_withSubject_carriesSubjectInEvent() {
         when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, actorId))
                 .thenReturn(true);
-        when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
+        when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(1);
         UUID subjectId = UUID.randomUUID();
         MessageRow stored = new MessageRow(
@@ -144,7 +145,7 @@ class SystemMessageTest {
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
         verify(messageRepository, never()).insertIgnoringDuplicateKey(
-                any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), anyBoolean());
     }
 
     @Test
@@ -159,6 +160,6 @@ class SystemMessageTest {
         assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
         verify(conversationRepository, never()).incrementChangeVersion(any());
         verify(messageRepository, never()).insertIgnoringDuplicateKey(
-                any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), anyBoolean());
     }
 }

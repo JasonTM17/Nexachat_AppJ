@@ -7,6 +7,7 @@ import com.nexachat.contact.dto.ContactResponse;
 import com.nexachat.recovery.EmailOtpService;
 import com.nexachat.user.PhoneService;
 import com.nexachat.user.User;
+import com.nexachat.user.UserBlockRepository;
 import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,14 +46,17 @@ public class ContactService {
 
     private final ContactRepository contactRepository;
     private final UserRepository userRepository;
+    private final UserBlockRepository blockRepository;
     private final PhoneService phoneService;
 
     public ContactService(ContactRepository contactRepository,
                           UserRepository userRepository,
-                          PhoneService phoneService) {
+                          PhoneService phoneService,
+                          UserBlockRepository blockRepository) {
         this.contactRepository = contactRepository;
         this.userRepository = userRepository;
         this.phoneService = phoneService;
+        this.blockRepository = blockRepository;
     }
 
     @Transactional
@@ -73,7 +77,21 @@ public class ContactService {
 
     @Transactional(readOnly = true)
     public List<ContactResponse> list(UUID ownerId) {
-        return contactRepository.findAllByOwnerId(ownerId, PageRequest.of(0, LIST_LIMIT));
+        List<ContactResponse> contacts =
+                contactRepository.findAllByOwnerId(ownerId, PageRequest.of(0, LIST_LIMIT));
+        // V38: a block edge hides the avatar in both directions.
+        java.util.Set<UUID> hidden = blockRepository == null ? java.util.Set.of()
+                : new java.util.HashSet<>(blockRepository.findRelatedIdsEitherDirection(
+                        ownerId, contacts.stream().map(ContactResponse::contactUserId).toList()));
+        if (hidden.isEmpty()) {
+            return contacts;
+        }
+        return contacts.stream()
+                .map(c -> hidden.contains(c.contactUserId())
+                        ? new ContactResponse(c.contactUserId(), c.phone(), c.displayName(),
+                                c.aliasName(), null, c.createdAt())
+                        : c)
+                .toList();
     }
 
     /**
@@ -96,7 +114,7 @@ public class ContactService {
         User target = contact.getContactUser();
         return new ContactResponse(
                 target.getId(), target.getPhone(), target.getDisplayName(),
-                contact.getAliasName(), target.getAvatarUrl(), contact.getCreatedAt());
+                contact.getAliasName(), avatarVisibleTo(ownerId, target), contact.getCreatedAt());
     }
 
     /** Idempotent by contract: deleting a non-contact is still 204. */
@@ -125,7 +143,16 @@ public class ContactService {
         log.info("Contact added owner={} contact={}", ownerId, target.getId());
         return new ContactResponse(
                 target.getId(), target.getPhone(), target.getDisplayName(),
-                contact.getAliasName(), target.getAvatarUrl(), contact.getCreatedAt());
+                contact.getAliasName(), avatarVisibleTo(ownerId, target), contact.getCreatedAt());
+    }
+
+    /** V38: a block edge hides the avatar in both directions — {@code null} when hidden. */
+    private String avatarVisibleTo(UUID viewerId, User target) {
+        if (blockRepository != null
+                && blockRepository.existsBetweenEitherDirection(viewerId, target.getId())) {
+            return null;
+        }
+        return target.getAvatarUrl();
     }
 
     private static ApiException lookupNotFound() {

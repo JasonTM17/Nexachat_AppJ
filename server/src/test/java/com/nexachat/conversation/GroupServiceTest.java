@@ -95,7 +95,8 @@ class GroupServiceTest {
                 messageService, eventPublisher, storageService,
                 avatarReferenceCoordinator,
                 new UploadAdmission(16, 1000),
-                simpUserRegistry, simpleBrokerMessageHandler, transactionManagerProvider());
+                simpUserRegistry, simpleBrokerMessageHandler, transactionManagerProvider(),
+                mock(com.nexachat.user.UserBlockRepository.class));
         lenient().when(userRepository.findByIdForUpdate(adminId)).thenReturn(Optional.of(admin()));
         lenient().when(storageService.exists(anyString())).thenReturn(true);
         // Group writers now take the conversation row at entry; the unit
@@ -908,7 +909,8 @@ class GroupServiceTest {
         GroupService limited = new GroupService(
                 conversationRepository, memberRepository, userRepository, attachmentRepository,
                 messageService, eventPublisher, storageService, avatarReferenceCoordinator,
-                admission, simpUserRegistry, simpleBrokerMessageHandler, transactionManagerProvider());
+                admission, simpUserRegistry, simpleBrokerMessageHandler, transactionManagerProvider(),
+                mock(com.nexachat.user.UserBlockRepository.class));
 
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);

@@ -179,6 +179,7 @@ class UserSettingsServiceTest {
                                                ConversationMemberRepository memberRepository,
                                                PresenceSessionState sessionState,
                                                ApplicationEventPublisher eventPublisher) {
-        return new UserSettingsService(repository, memberRepository, sessionState, eventPublisher);
+        return new UserSettingsService(repository, memberRepository,
+                mock(com.nexachat.user.UserBlockRepository.class), sessionState, eventPublisher);
     }
 }

@@ -19,6 +19,7 @@ import com.nexachat.conversation.dto.PatchGroupRequest;
 import com.nexachat.message.MessageAttachmentRepository;
 import com.nexachat.message.MessageService;
 import com.nexachat.user.User;
+import com.nexachat.user.UserBlockRepository;
 import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -98,6 +99,7 @@ public class GroupService {
     private final ConversationRepository conversationRepository;
     private final ConversationMemberRepository memberRepository;
     private final UserRepository userRepository;
+    private final UserBlockRepository blockRepository;
     private final MessageAttachmentRepository attachmentRepository;
     private final MessageService messageService;
     private final ApplicationEventPublisher eventPublisher;
@@ -119,11 +121,13 @@ public class GroupService {
                         UploadAdmission uploadAdmission,
                         SimpUserRegistry simpUserRegistry,
                         AbstractBrokerMessageHandler simpleBrokerMessageHandler,
-                        ObjectProvider<PlatformTransactionManager> transactionManagerProvider) {
+                        ObjectProvider<PlatformTransactionManager> transactionManagerProvider,
+                        UserBlockRepository blockRepository) {
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
         this.attachmentRepository = attachmentRepository;
+        this.blockRepository = blockRepository;
         this.messageService = messageService;
         this.eventPublisher = eventPublisher;
         this.storageService = storageService;
@@ -155,6 +159,14 @@ public class GroupService {
         String title = normalizeTitle(request == null ? null : request.title());
         List<UUID> memberIds = dedupeExcluding(
                 request == null ? null : request.memberIds(), creatorId);
+        // V38: a user the creator blocked — or who blocked the creator —
+        // cannot be pulled into a new group. Filtering (not an error) keeps
+        // the blocked direction indistinguishable from an ordinary skip.
+        Set<UUID> blockRelated = new HashSet<>(
+                blockRepository.findRelatedIdsEitherDirection(creatorId, memberIds));
+        memberIds = memberIds.stream()
+                .filter(id -> !blockRelated.contains(id))
+                .toList();
         if (memberIds.isEmpty()) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "Group needs at least one other member");
@@ -226,8 +238,15 @@ public class GroupService {
         List<User> candidates = userIds.stream().map(lockedUsers::get).toList();
 
         Set<UUID> existing = new HashSet<>(memberRepository.findMemberUserIds(conversationId));
+        // V38: candidates with a block edge to the adder (either direction)
+        // are skipped like already-members — the add never starts, and the
+        // block stays indistinguishable from an ordinary no-op.
+        Set<UUID> blockRelated = new HashSet<>(
+                blockRepository.findRelatedIdsEitherDirection(callerId,
+                        candidates.stream().map(User::getId).toList()));
         List<User> toAdd = candidates.stream()
-                .filter(user -> !existing.contains(user.getId()))
+                .filter(user -> !existing.contains(user.getId())
+                        && !blockRelated.contains(user.getId()))
                 .toList();
         if (toAdd.isEmpty()) {
             return; // idempotent no-op: nothing changed → no message, no broadcast
