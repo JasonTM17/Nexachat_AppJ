@@ -116,6 +116,10 @@ final class CallFrameCodec {
             candidate.put("candidate", signal.getCandidate().getCandidate());
             frame.put("candidate", candidate);
         }
+        // mediaType only appears on offers; other frames stay byte-identical.
+        if (signal.getMediaType() != null) {
+            frame.put("mediaType", signal.getMediaType().name());
+        }
         return frame;
     }
 
@@ -138,7 +142,9 @@ final class CallFrameCodec {
                     && !blank(candidate)
                     && candidate.getBytes(StandardCharsets.UTF_8).length <= MAX_CANDIDATE_BYTES;
         }
-        return signal.getSdp() == null && signal.getCandidate() == null;
+        // The media type belongs to the offer; the server rejects it elsewhere.
+        return signal.getSdp() == null && signal.getCandidate() == null
+                && (signal.getType() == CallSignal.Type.INVITE || signal.getMediaType() == null);
     }
 
     private static CallSignal parseSignal(String wireType, String callId, Map<?, ?> payload) {
@@ -153,7 +159,9 @@ final class CallFrameCodec {
                 string(candidateMap.get("sdpMid")),
                 integer(candidateMap.get("sdpMLineIndex")),
                 string(candidateMap.get("candidate")));
-        return new CallSignal(type, callId, sdp, candidate);
+        String mediaType = string(payload.get("mediaType"));
+        return new CallSignal(type, callId, sdp, candidate,
+                mediaType == null ? null : CallMediaType.parse(mediaType));
     }
 
     private static CallEvent.Type eventType(String value) {

@@ -67,11 +67,34 @@ public final class CallLogFormatterTest {
                 "CALL|COMPLETED|0|", CallSession.Direction.OUTGOING).getResourceKey());
         assertEquals(CallLogFormatter.FAILED_KEY, CallLogFormatter.fromSystemMessage(
                 "CALL|COMPLETED|0|   ", CallSession.Direction.OUTGOING).getResourceKey());
-        assertEquals(CallLogFormatter.FAILED_KEY, CallLogFormatter.fromSystemMessage(
+        // Five-part tokens are valid since the media-type marker shipped; an
+        // unknown marker degrades to audio wording instead of failing.
+        assertEquals(CallLogFormatter.OUTGOING_COMPLETED_KEY, CallLogFormatter.fromSystemMessage(
                 "CALL|COMPLETED|0|caller-id|extra", CallSession.Direction.OUTGOING).getResourceKey());
         assertEquals(CallLogFormatter.FAILED_KEY, CallLogFormatter.fromSystemMessage(
                 null, CallSession.Direction.OUTGOING).getResourceKey());
         assertEquals(CallLogFormatter.FAILED_KEY, CallLogFormatter.fromSystemMessage(
                 "CALL|COMPLETED|not-a-number", CallSession.Direction.OUTGOING).getResourceKey());
+    }
+
+    @Test
+    public void videoTokensUseVideoKeys() {
+        assertEquals(CallLogFormatter.VIDEO_MISSED_KEY, CallLogFormatter.fromSystemMessage(
+                "CALL|MISSED|0|caller-id|VIDEO", CallSession.Direction.INCOMING).getResourceKey());
+        CallLogFormatter.FormattedCallLog completed = CallLogFormatter.fromSystemMessage(
+                "CALL|COMPLETED|90|caller-id|VIDEO", CallSession.Direction.OUTGOING);
+        assertEquals(CallLogFormatter.VIDEO_OUTGOING_COMPLETED_KEY, completed.getResourceKey());
+        assertEquals("1:30", completed.getArgs()[0]);
+        assertEquals("caller-id", completed.getCallerUserId());
+    }
+
+    @Test
+    public void unknownMediaValueAndVideoMediaTypesBehave() {
+        // Unknown values still parse to AUDIO; the existing empty-caller rule
+        // rejects malformed five-part tokens unchanged.
+        assertEquals(CallLogFormatter.MISSED_KEY, CallLogFormatter.fromSystemMessage(
+                "CALL|MISSED|0|caller-id|3D", CallSession.Direction.INCOMING).getResourceKey());
+        assertEquals(CallLogFormatter.FAILED_KEY, CallLogFormatter.fromSystemMessage(
+                "CALL|MISSED|0||VIDEO", CallSession.Direction.INCOMING).getResourceKey());
     }
 }

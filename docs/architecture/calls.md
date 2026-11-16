@@ -1,4 +1,4 @@
-# Voice calls
+# Voice and video calls
 
 ## Design note
 
@@ -11,10 +11,20 @@ The broker's 10 s STOMP heartbeat keeps an idle ringing caller's socket alive,
 and the ring timer re-arms itself if it fires a moment before the deadline.
 Registry changes roll back with failed persistence transactions; terminal registry entries are evicted on the next access after five minutes.
 
+Calls are voice or video: the `INVITE` frame's optional `mediaType` field
+(`AUDIO`/`VIDEO`) selects the kind and is carried through the registry, the
+`CALL_INVITE` event, FCM `callType` push data, `call_records.media_type`
+(Flyway V40), and the terminal system message. Clients that omit `mediaType`
+are placed in audio calls exactly as before; any other value fails
+`VALIDATION_FAILED`. Video media is negotiated client-side: the Android engine
+adds a camera video track and surfaces local preview plus remote video, while
+the signaling contract is unchanged apart from the media marker.
+
 Each terminal call writes one `SYSTEM` conversation message through the server's
 existing system-message path. Its `content` is the stable, non-localized value
 `CALL|<END_REASON>|<durationSeconds>|<callerUserId>` (for example,
-`CALL|COMPLETED|18|<callerUserId>` or `CALL|MISSED|0|<callerUserId>`). The
+`CALL|COMPLETED|18|<callerUserId>` or `CALL|MISSED|0|<callerUserId>`); video
+calls append `|VIDEO` as a fifth part, which audio-era clients ignore. The
 caller remains the system message sender. Android renders the token as a
 localized call-log line and compares the caller ID with the signed-in user to
 choose outgoing or incoming wording. Older three-part rows have no caller ID:
@@ -73,13 +83,15 @@ Client frames are JSON sent to
   "type": "INVITE|ACCEPT|REJECT|CANCEL|END|SDP|ICE",
   "callId": "<uuid>",
   "sdp": {"type": "offer|answer", "description": "..."},
-  "candidate": {"sdpMid": "audio", "sdpMLineIndex": 0, "candidate": "..."}
+  "candidate": {"sdpMid": "audio", "sdpMLineIndex": 0, "candidate": "..."},
+  "mediaType": "AUDIO|VIDEO"
 }
 ```
 
-Control frames carry only `type` and `callId`. `SDP` carries `sdp` only;
-`ICE` carries `candidate` only. The caller generates the UUID on `INVITE` and
-reuses it for the rest of the call.
+Control frames carry only `type` and `callId`, plus `mediaType` on `INVITE`
+when the caller requests a video call (absent = audio). `SDP` carries `sdp`
+only; `ICE` carries `candidate` only. The caller generates the UUID on
+`INVITE` and reuses it for the rest of the call.
 
 Server events are delivered to the authenticated participant's own
 `/user/queue/calls` subscription:
@@ -167,7 +179,10 @@ negotiated by the Android client; signaling does not carry audio bytes.
 - The default ICE configuration has public STUN only and no TURN. Strict NAT
   or mobile networks may not establish media; a shared LAN/Wi-Fi path is the
   expected demo environment.
-- Calls are audio-only. Group calls are out of scope.
+- Video media (camera capture, local preview, remote rendering, camera
+  toggle/switch) is implemented in the Android engine and UI; it has not been
+  verified between two real devices. Answering a video offer without camera
+  permission falls back to a voice-only accept. Group calls are out of scope.
 - Call delivery while offline: token registration and server high-priority
   `CALL_INVITE` FCM dispatch exist with OAuth2 service-account authentication
   (`DefaultFcmPushService.java:82-99`, `NotificationEventListener.java:138-146`),

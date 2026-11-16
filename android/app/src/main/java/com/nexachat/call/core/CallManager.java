@@ -41,6 +41,12 @@ public final class CallManager implements AutoCloseable {
         void onCallError(CallError error);
     }
 
+    /** Receives engine video tracks on the main thread so the call UI can attach sinks. */
+    public interface CallVideoListener {
+        void onLocalVideoTrack(@Nullable Object videoTrack);
+        void onRemoteVideoTrack(@Nullable Object videoTrack);
+    }
+
     interface Cancellable {
         void cancel();
     }
@@ -77,6 +83,7 @@ public final class CallManager implements AutoCloseable {
     private long ringDeadlineMs;
     private long rejectNewPushUntilMs;
     private CallMediaEngine mediaEngine;
+    private CallVideoListener videoListener;
     private Cancellable ringTimeout;
     private Cancellable reconnectGraceTimer;
     private boolean mediaStarted;
@@ -162,8 +169,18 @@ public final class CallManager implements AutoCloseable {
         }
     }
 
-    /** Starts an outgoing direct call. A second call is ignored while one is active. */
+    /** Starts an outgoing direct voice call. A second call is ignored while one is active. */
     public void startOutgoing(String conversationId, String peerUserId, String peerName) {
+        startOutgoing(conversationId, peerUserId, peerName, CallMediaType.AUDIO);
+    }
+
+    /** Starts an outgoing direct call of the given media kind. */
+    public void startOutgoing(
+            String conversationId,
+            String peerUserId,
+            String peerName,
+            CallMediaType mediaType) {
+        CallMediaType resolvedMediaType = CallMediaType.orAudio(mediaType);
         scheduler.execute(() -> {
             if (closed || isCallInProgress(currentSession.getState())) return;
             if (blank(conversationId) || blank(peerUserId)) {
@@ -175,6 +192,7 @@ public final class CallManager implements AutoCloseable {
                 notifyError(new CallError(CallError.Code.UNKNOWN));
                 return;
             }
+            boolean video = resolvedMediaType == CallMediaType.VIDEO;
             pushAdmission = null;
             ringDeadlineMs = safeDeadline(clock.getAsLong(), ringTimeoutMs);
             setSession(new CallSession(
@@ -188,9 +206,12 @@ public final class CallManager implements AutoCloseable {
                     clock.getAsLong(),
                     null,
                     false,
-                    false));
+                    video,
+                    resolvedMediaType,
+                    video));
             scheduleRingTimeout(callId);
-            if (!send(conversationId, CallSignal.Type.INVITE, callId)) {
+            if (!signaling.send(conversationId,
+                    CallSignal.control(CallSignal.Type.INVITE, callId, resolvedMediaType))) {
                 finish(CallEndReason.FAILED, null, new CallError(CallError.Code.NETWORK));
             }
         });
@@ -204,11 +225,24 @@ public final class CallManager implements AutoCloseable {
             String callerId,
             String callerName,
             long serverTs) {
+        hydrateIncomingCall(callId, conversationId, callerId, callerName, serverTs,
+                CallMediaType.AUDIO);
+    }
+
+    /** Compatibility helper retained for the call-state tests. */
+    @VisibleForTesting
+    void hydrateIncomingCall(
+            String callId,
+            String conversationId,
+            String callerId,
+            String callerName,
+            long serverTs,
+            CallMediaType mediaType) {
         long startedAtMs = serverTs > 0L ? serverTs : clock.getAsLong();
         long deadlineMs = safeDeadline(startedAtMs, ringTimeoutMs);
         pendingSubscriptions.add(admitIncomingPush(
                         callId, conversationId, callerId, callerName, startedAtMs,
-                        "test-recipient", 0L, deadlineMs, () -> true)
+                        "test-recipient", 0L, deadlineMs, mediaType, () -> true)
                 .subscribe(ignored -> { }, ignored -> { }));
     }
 
@@ -226,6 +260,21 @@ public final class CallManager implements AutoCloseable {
             String recipientId,
             long sessionEpoch,
             long ringExpiresAtMs,
+            BooleanSupplier sessionIsCurrent) {
+        return admitIncomingPush(callId, conversationId, callerId, callerName, startedAtMs,
+                recipientId, sessionEpoch, ringExpiresAtMs, CallMediaType.AUDIO, sessionIsCurrent);
+    }
+
+    public Maybe<CallSession> admitIncomingPush(
+            String callId,
+            String conversationId,
+            String callerId,
+            String callerName,
+            long startedAtMs,
+            String recipientId,
+            long sessionEpoch,
+            long ringExpiresAtMs,
+            CallMediaType mediaType,
             BooleanSupplier sessionIsCurrent) {
         return Maybe.create(emitter -> scheduler.execute(() -> {
             long now = clock.getAsLong();
@@ -284,6 +333,8 @@ public final class CallManager implements AutoCloseable {
             String name = callerName != null && !callerName.isBlank()
                     ? callerName
                     : unknownCallerDisplayName(callerId);
+            CallMediaType resolvedMediaType = CallMediaType.orAudio(mediaType);
+            boolean video = resolvedMediaType == CallMediaType.VIDEO;
             pushAdmission = new PushAdmission(
                     callId, recipientId, sessionEpoch, ringExpiresAtMs, sessionIsCurrent);
             ringDeadlineMs = ringExpiresAtMs;
@@ -298,7 +349,9 @@ public final class CallManager implements AutoCloseable {
                     startedAtMs,
                     null,
                     false,
-                    false));
+                    video,
+                    resolvedMediaType,
+                    video));
             cancelRingTimeout();
             ringTimeout = scheduler.schedule(
                     () -> {
@@ -363,7 +416,8 @@ public final class CallManager implements AutoCloseable {
                 active.getStartedAtMs(),
                 admission.recipientId,
                 admission.ringExpiresAtMs,
-                admission.sessionEpoch);
+                admission.sessionEpoch,
+                active.getMediaType());
     }
 
     /** Rechecks the active push session after a TokenRefresher epoch/admission signal. */
@@ -378,6 +432,15 @@ public final class CallManager implements AutoCloseable {
 
     /** Accepts the matching incoming call and starts the callee media setup. */
     public void accept(String callId) {
+        acceptInternal(callId, false);
+    }
+
+    /** Answers a video offer as a voice call; the peer only receives an audio track. */
+    public void acceptAsVoice(String callId) {
+        acceptInternal(callId, true);
+    }
+
+    private void acceptInternal(String callId, boolean voiceOnly) {
         scheduler.execute(() -> {
             if (isCurrentPushSession() && !isIncomingPushAdmissionCurrent(callId)) {
                 discardStalePushCall(pushAdmission);
@@ -385,6 +448,10 @@ public final class CallManager implements AutoCloseable {
             }
             if (!matches(callId) || (currentSession.getState() != CallState.INCOMING_RINGING
                     && currentSession.getState() != CallState.PENDING_INCOMING)) return;
+            if (voiceOnly && currentSession.getMediaType() == CallMediaType.VIDEO) {
+                currentSession = currentSession.withMedia(CallMediaType.AUDIO, false);
+                publishSession();
+            }
             cancelRingTimeout();
             cancelReconnectGraceTimer();
             if (!send(currentSession.getConversationId(), CallSignal.Type.ACCEPT, callId)) {
@@ -460,6 +527,37 @@ public final class CallManager implements AutoCloseable {
         });
     }
 
+    /** Enables or disables the local camera during a video call. */
+    public void setCameraEnabled(boolean enabled) {
+        scheduler.execute(() -> {
+            if (!isCallInProgress(currentSession.getState())
+                    || currentSession.getMediaType() != CallMediaType.VIDEO) return;
+            currentSession = currentSession.withMedia(CallMediaType.VIDEO, enabled);
+            publishSession();
+            if (mediaEngine != null) mediaEngine.setCameraEnabled(enabled);
+        });
+    }
+
+    /** Toggles between the front and back camera during a video call. */
+    public void switchCamera() {
+        scheduler.execute(() -> {
+            if (!isCallInProgress(currentSession.getState())
+                    || currentSession.getMediaType() != CallMediaType.VIDEO) return;
+            if (mediaEngine != null) mediaEngine.switchCamera();
+        });
+    }
+
+    /** Registers the UI video-sink listener; the engine replays current tracks on bind. */
+    public void setCallVideoListener(@Nullable CallVideoListener listener) {
+        scheduler.execute(() -> {
+            videoListener = listener;
+            if (listener != null && mediaEngine != null
+                    && currentSession.getMediaType() == CallMediaType.VIDEO) {
+                mediaEngine.replayVideoTracks();
+            }
+        });
+    }
+
     /** Returns the observable session; every value is posted on the main thread. */
     public LiveData<CallSession> session() {
         return session;
@@ -484,6 +582,7 @@ public final class CallManager implements AutoCloseable {
             if (mediaEngine != null) {
                 mediaEngine.setMuted(currentSession.isMuted());
                 mediaEngine.setSpeaker(currentSession.isSpeakerOn());
+                mediaEngine.setCameraEnabled(currentSession.isCameraOn());
             }
         });
     }
@@ -595,6 +694,14 @@ public final class CallManager implements AutoCloseable {
             if (currentSession.getState() == CallState.PENDING_INCOMING) {
                 cancelRingTimeout();
                 transition(CallState.INCOMING_RINGING, null, null);
+                CallMediaType inviteMedia = mediaTypeOf(event);
+                if (inviteMedia != currentSession.getMediaType()) {
+                    // The signaling INVITE is authoritative when the push data
+                    // predates or lacks the call's media kind.
+                    currentSession = currentSession.withMedia(
+                            inviteMedia, inviteMedia == CallMediaType.VIDEO);
+                    publishSession();
+                }
                 scheduleRingTimeout(callId);
                 String fallbackName = currentSession.getPeerDisplayName() != null
                         ? currentSession.getPeerDisplayName()
@@ -617,6 +724,8 @@ public final class CallManager implements AutoCloseable {
         pushAdmission = null;
         ringDeadlineMs = safeDeadline(clock.getAsLong(), ringTimeoutMs);
         String fallbackName = unknownCallerDisplayName(event.getFromUserId());
+        CallMediaType mediaType = mediaTypeOf(event);
+        boolean video = mediaType == CallMediaType.VIDEO;
         setSession(new CallSession(
                 callId,
                 event.getConversationId(),
@@ -628,9 +737,16 @@ public final class CallManager implements AutoCloseable {
                 parseTimestamp(event.getServerTs(), clock.getAsLong()),
                 null,
                 false,
-                false));
+                video,
+                mediaType,
+                video));
         scheduleRingTimeout(callId);
         resolveIncomingPeerName(callId, event.getConversationId(), event.getFromUserId(), fallbackName);
+    }
+
+    private static CallMediaType mediaTypeOf(CallEvent event) {
+        CallSignal signal = event.getSignal();
+        return signal == null ? CallMediaType.AUDIO : CallMediaType.orAudio(signal.getMediaType());
     }
 
     private void resolveIncomingPeerName(
@@ -787,8 +903,9 @@ public final class CallManager implements AutoCloseable {
             return;
         }
         String startedCallId = currentSession.getCallId();
+        CallMediaType mediaType = currentSession.getMediaType();
         try {
-            mediaEngine.start(isCaller, result.getValue(), new CallMediaEngine.Listener() {
+            mediaEngine.start(isCaller, mediaType, result.getValue(), new CallMediaEngine.Listener() {
                 @Override
                 public void onLocalSdp(CallSignal.Sdp sdp) {
                     scheduler.execute(() -> sendLocalSignal(startedCallId, CallSignal.Type.SDP, sdp, null));
@@ -813,10 +930,27 @@ public final class CallManager implements AutoCloseable {
                         }
                     });
                 }
+
+                @Override
+                public void onLocalVideoTrack(Object videoTrack) {
+                    postToMain(() -> {
+                        CallVideoListener listener = videoListener;
+                        if (listener != null) listener.onLocalVideoTrack(videoTrack);
+                    });
+                }
+
+                @Override
+                public void onRemoteVideoTrack(Object videoTrack) {
+                    postToMain(() -> {
+                        CallVideoListener listener = videoListener;
+                        if (listener != null) listener.onRemoteVideoTrack(videoTrack);
+                    });
+                }
             });
             mediaStarted = true;
             mediaEngine.setMuted(currentSession.isMuted());
             mediaEngine.setSpeaker(currentSession.isSpeakerOn());
+            mediaEngine.setCameraEnabled(currentSession.isCameraOn());
             List<CallSignal> queued = new ArrayList<>(pendingRemoteSignals);
             pendingRemoteSignals.clear();
             for (CallSignal pending : queued) deliverRemoteSignal(pending);
@@ -939,13 +1073,19 @@ public final class CallManager implements AutoCloseable {
                 old.getStartedAtMs(),
                 answeredAtMs,
                 old.isMuted(),
-                old.isSpeakerOn());
+                old.isSpeakerOn(),
+                old.getMediaType(),
+                old.isCameraOn());
         publishSession();
     }
 
     private void setSession(CallSession next) {
         currentSession = next;
         publishSession();
+    }
+
+    private void postToMain(Runnable task) {
+        if (publishToAndroid && mainHandler != null) mainHandler.post(task);
     }
 
     private void publishSession() {

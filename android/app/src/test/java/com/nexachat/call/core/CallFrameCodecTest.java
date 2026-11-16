@@ -103,6 +103,53 @@ public final class CallFrameCodecTest {
         assertEquals("CALL_STATE_INVALID", error.getErrorCode());
     }
 
+
+    @Test
+    public void videoInviteCarriesMediaTypeAndRoundTrips() {
+        CallSignal invite = CallSignal.control(
+                CallSignal.Type.INVITE, "call-9", CallMediaType.VIDEO);
+
+        String encoded = codec.encodeSignal(invite);
+        assertEquals(
+                "{\"type\":\"INVITE\",\"callId\":\"call-9\",\"sdp\":null,"
+                        + "\"candidate\":null,\"mediaType\":\"VIDEO\"}",
+                encoded);
+
+        CallEvent event = codec.decodeEvent(
+                "{\"eventType\":\"CALL_INVITE\",\"callId\":\"call-9\","
+                        + "\"conversationId\":\"conversation-1\",\"fromUserId\":\"peer-1\","
+                        + "\"serverTs\":\"2026-11-15T00:00:00Z\","
+                        + "\"payload\":{\"type\":\"INVITE\",\"callId\":\"call-9\","
+                        + "\"sdp\":null,\"candidate\":null,\"mediaType\":\"VIDEO\"}}");
+        assertNotNull(event);
+        assertEquals(CallMediaType.VIDEO, event.getSignal().getMediaType());
+    }
+
+    @Test
+    public void absentOrUnknownMediaTypeLeavesSignalAudioCompatible() {
+        CallEvent absent = codec.decodeEvent(
+                "{\"eventType\":\"CALL_INVITE\",\"callId\":\"call-10\","
+                        + "\"payload\":{\"type\":\"INVITE\",\"callId\":\"call-10\","
+                        + "\"sdp\":null,\"candidate\":null}}");
+        assertNotNull(absent);
+        assertNull(absent.getSignal().getMediaType());
+
+        CallEvent unknown = codec.decodeEvent(
+                "{\"eventType\":\"CALL_INVITE\",\"callId\":\"call-11\","
+                        + "\"payload\":{\"type\":\"INVITE\",\"callId\":\"call-11\","
+                        + "\"sdp\":null,\"candidate\":null,\"mediaType\":\"HOLOGRAM\"}}");
+        assertNotNull(unknown);
+        assertEquals(CallMediaType.AUDIO, unknown.getSignal().getMediaType());
+    }
+
+    @Test
+    public void mediaTypeIsRejectedOnNonInviteFrames() {
+        assertNull(codec.encodeSignal(new CallSignal(
+                CallSignal.Type.END, "call-1", null, null, CallMediaType.VIDEO)));
+        assertNull(codec.encodeSignal(new CallSignal(
+                CallSignal.Type.ACCEPT, "call-1", null, null, CallMediaType.VIDEO)));
+    }
+
     private static String repeat(char value, int count) {
         StringBuilder result = new StringBuilder(count);
         for (int index = 0; index < count; index++) result.append(value);

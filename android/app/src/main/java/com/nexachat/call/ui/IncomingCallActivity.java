@@ -25,6 +25,7 @@ import com.nexachat.R;
 import com.nexachat.call.CallLauncher;
 import com.nexachat.call.core.CallError;
 import com.nexachat.call.core.CallManager;
+import com.nexachat.call.core.CallMediaType;
 import com.nexachat.call.core.IncomingCallPushAdmission;
 import com.nexachat.call.core.IncomingCallPushData;
 import com.nexachat.call.core.CallSession;
@@ -52,6 +53,9 @@ public class IncomingCallActivity extends ComponentActivity {
 
     private static final int REQUEST_MICROPHONE = 7220;
     private static final int REQUEST_NOTIFICATIONS = 7221;
+    private static final int REQUEST_CAMERA = 7222;
+    private static final String PREFS = "call_permissions";
+    private static final String PREF_CAMERA_REQUESTED = "call.cameraRequested";
     private static final String STATE_PENDING_ACCEPT = "call.pendingAccept";
     private static final long ENDED_SCREEN_MS = 1600L;
 
@@ -69,6 +73,7 @@ public class IncomingCallActivity extends ComponentActivity {
     private CallManager.CallListener listener;
     private CallRingtonePlayer ringtonePlayer;
     private boolean pendingAccept;
+    private boolean acceptAsVoiceOnly;
     private boolean resolving;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable finishEndedScreen = this::finish;
@@ -261,8 +266,16 @@ public class IncomingCallActivity extends ComponentActivity {
             int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_MICROPHONE) {
-            if (granted(grantResults)) requestNotificationPermissionThenContinue();
+            if (granted(grantResults)) requestCameraThenNotifications();
             else denyAccept();
+        } else if (requestCode == REQUEST_CAMERA) {
+            if (granted(grantResults)) {
+                requestNotificationPermissionThenContinue();
+            } else {
+                boolean rationale = ActivityCompat.shouldShowRequestPermissionRationale(
+                        this, Manifest.permission.CAMERA);
+                showCameraFallbackDialog(!rationale);
+            }
         } else if (requestCode == REQUEST_NOTIFICATIONS) {
             if (!granted(grantResults)) {
                 Toast.makeText(this, R.string.call_notifications_permission_needed,
@@ -281,6 +294,11 @@ public class IncomingCallActivity extends ComponentActivity {
         CallAvatarColorResolver.apply(this, initials, name);
         status.setText(CallUiModelMapper.map(session).getTitleRes());
         status.setContentDescription(status.getText());
+        if (acceptButton instanceof com.google.android.material.button.MaterialButton) {
+            ((com.google.android.material.button.MaterialButton) acceptButton)
+                    .setIconResource(session.getMediaType() == CallMediaType.VIDEO
+                            ? R.drawable.ic_video_call : R.drawable.ic_call);
+        }
         boolean ringing = session.getState() == CallState.INCOMING_RINGING
                 || session.getState() == CallState.PENDING_INCOMING;
         updatePulseAnimation(ringing);
@@ -347,7 +365,7 @@ public class IncomingCallActivity extends ComponentActivity {
         CallPermissionHelper.Decision decision = CallPermissionHelper.microphoneDecision(
                 granted, rationale);
         if (decision == CallPermissionHelper.Decision.GRANTED) {
-            requestNotificationPermissionThenContinue();
+            requestCameraThenNotifications();
         } else if (decision == CallPermissionHelper.Decision.SHOW_RATIONALE) {
             new MaterialAlertDialogBuilder(this)
                     .setMessage(R.string.call_mic_rationale)
@@ -364,6 +382,80 @@ public class IncomingCallActivity extends ComponentActivity {
     private void requestMicrophonePermission() {
         ActivityCompat.requestPermissions(
                 this, new String[] {Manifest.permission.RECORD_AUDIO}, REQUEST_MICROPHONE);
+    }
+
+    /** Video offers also need the camera; a denied camera answers as a voice call. */
+    private void requestCameraThenNotifications() {
+        boolean videoOffer = currentSession != null
+                && currentSession.getMediaType() == CallMediaType.VIDEO;
+        boolean hasCamera = getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY);
+        if (!videoOffer || !hasCamera) {
+            requestNotificationPermissionThenContinue();
+            return;
+        }
+        boolean granted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+                == PackageManager.PERMISSION_GRANTED;
+        boolean rationale = ActivityCompat.shouldShowRequestPermissionRationale(
+                this, Manifest.permission.CAMERA);
+        CallPermissionHelper.Decision decision = CallPermissionHelper.cameraDecision(
+                granted, rationale, cameraRequestedBefore());
+        if (decision == CallPermissionHelper.Decision.GRANTED) {
+            requestNotificationPermissionThenContinue();
+        } else if (decision == CallPermissionHelper.Decision.SHOW_RATIONALE) {
+            new MaterialAlertDialogBuilder(this)
+                    .setMessage(R.string.call_camera_rationale)
+                    .setPositiveButton(R.string.call_permission_continue,
+                            (dialog, which) -> requestCameraPermission())
+                    .setNegativeButton(R.string.call_permission_cancel,
+                            (dialog, which) -> denyAccept())
+                    .show();
+        } else if (decision == CallPermissionHelper.Decision.OPEN_SETTINGS) {
+            showCameraFallbackDialog(true);
+        } else {
+            requestCameraPermission();
+        }
+    }
+
+    private void requestCameraPermission() {
+        markCameraRequested();
+        ActivityCompat.requestPermissions(
+                this, new String[] {Manifest.permission.CAMERA}, REQUEST_CAMERA);
+    }
+
+    private void showCameraFallbackDialog(boolean permanentDeny) {
+        if (isFinishing()) return;
+        MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(this)
+                .setMessage(R.string.call_camera_permission_needed)
+                .setPositiveButton(R.string.call_answer_as_voice, (dialog, which) -> {
+                    acceptAsVoiceOnly = true;
+                    requestNotificationPermissionThenContinue();
+                })
+                .setNegativeButton(R.string.call_permission_cancel,
+                        (dialog, which) -> denyAccept());
+        if (permanentDeny) {
+            builder.setNeutralButton(R.string.call_open_settings,
+                    (dialog, which) -> openAppSettings());
+        }
+        builder.show();
+    }
+
+    private boolean cameraRequestedBefore() {
+        return getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean(PREF_CAMERA_REQUESTED, false);
+    }
+
+    private void markCameraRequested() {
+        getSharedPreferences(PREFS, MODE_PRIVATE)
+                .edit().putBoolean(PREF_CAMERA_REQUESTED, true).apply();
+    }
+
+    private void openAppSettings() {
+        Intent settings = new Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", getPackageName(), null));
+        try {
+            startActivity(settings);
+        } catch (ActivityNotFoundException ignored) { }
     }
 
     @SuppressLint("InlinedApi")
@@ -407,12 +499,17 @@ public class IncomingCallActivity extends ComponentActivity {
         ringtonePlayer.stop();
         CallNotifications.clearIncoming(this);
         CallForegroundService.startForCall(this);
-        callManager.accept(currentSession.getCallId());
+        if (acceptAsVoiceOnly && currentSession.getMediaType() == CallMediaType.VIDEO) {
+            callManager.acceptAsVoice(currentSession.getCallId());
+        } else {
+            callManager.accept(currentSession.getCallId());
+        }
         CallLauncher.start(this,
                 currentSession.getConversationId(),
                 currentSession.getPeerUserId(),
                 currentSession.getPeerDisplayName(),
-                getIntent().getStringExtra(CallLauncher.EXTRA_PEER_PHONE));
+                getIntent().getStringExtra(CallLauncher.EXTRA_PEER_PHONE),
+                currentSession.getMediaType());
         finish();
     }
 

@@ -10,6 +10,7 @@ import android.os.IBinder;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import com.nexachat.call.core.CallManager;
+import com.nexachat.call.core.CallMediaType;
 import com.nexachat.call.core.CallSession;
 import com.nexachat.call.core.CallState;
 import com.nexachat.call.core.IncomingCallPushAdmission;
@@ -136,8 +137,19 @@ public class CallForegroundService extends Service {
         CallSession session = callManager.session().getValue();
         android.app.Notification notification = CallNotifications.buildOngoing(this, session);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            int foregroundType = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+            // API 34 throws when the camera type is declared without CAMERA granted;
+            // a voice fallback still keeps the microphone type.
+            boolean videoWithCamera = session != null
+                    && session.getMediaType() == CallMediaType.VIDEO
+                    && ContextCompat.checkSelfPermission(
+                            this, android.Manifest.permission.CAMERA)
+                            == android.content.pm.PackageManager.PERMISSION_GRANTED;
+            if (videoWithCamera) {
+                foregroundType |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
+            }
             startForeground(CallNotifications.ONGOING_NOTIFICATION_ID, notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+                    foregroundType);
         } else {
             startForeground(CallNotifications.ONGOING_NOTIFICATION_ID, notification);
         }

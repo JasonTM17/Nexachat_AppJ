@@ -18,6 +18,8 @@ public final class CallSession {
     private final Long answeredAtMs;
     private final boolean muted;
     private final boolean speakerOn;
+    private final CallMediaType mediaType;
+    private final boolean cameraOn;
 
     public CallSession(
             String callId,
@@ -31,6 +33,25 @@ public final class CallSession {
             Long answeredAtMs,
             boolean muted,
             boolean speakerOn) {
+        this(callId, conversationId, peerUserId, peerDisplayName, direction, state,
+                endReason, startedAtMs, answeredAtMs, muted, speakerOn,
+                CallMediaType.AUDIO, false);
+    }
+
+    public CallSession(
+            String callId,
+            String conversationId,
+            String peerUserId,
+            String peerDisplayName,
+            Direction direction,
+            CallState state,
+            CallEndReason endReason,
+            long startedAtMs,
+            Long answeredAtMs,
+            boolean muted,
+            boolean speakerOn,
+            CallMediaType mediaType,
+            boolean cameraOn) {
         this.callId = callId;
         this.conversationId = conversationId;
         this.peerUserId = peerUserId;
@@ -42,6 +63,8 @@ public final class CallSession {
         this.answeredAtMs = answeredAtMs;
         this.muted = muted;
         this.speakerOn = speakerOn;
+        this.mediaType = CallMediaType.orAudio(mediaType);
+        this.cameraOn = cameraOn && this.mediaType == CallMediaType.VIDEO;
     }
 
     public static CallSession idle() {
@@ -60,6 +83,8 @@ public final class CallSession {
     public Long getAnsweredAtMs() { return answeredAtMs; }
     public boolean isMuted() { return muted; }
     public boolean isSpeakerOn() { return speakerOn; }
+    public CallMediaType getMediaType() { return mediaType; }
+    public boolean isCameraOn() { return cameraOn; }
 
     CallSession withState(CallState newState, CallEndReason reason, Long answerTimeMs) {
         return new CallSession(
@@ -73,7 +98,9 @@ public final class CallSession {
                 startedAtMs,
                 answerTimeMs,
                 muted,
-                speakerOn);
+                speakerOn,
+                mediaType,
+                cameraOn);
     }
 
     CallSession withAudio(boolean newMuted, boolean newSpeakerOn) {
@@ -88,7 +115,9 @@ public final class CallSession {
                 startedAtMs,
                 answeredAtMs,
                 newMuted,
-                newSpeakerOn);
+                newSpeakerOn,
+                mediaType,
+                cameraOn);
     }
 
     CallSession withPeerDisplayName(String displayName) {
@@ -103,6 +132,25 @@ public final class CallSession {
                 startedAtMs,
                 answeredAtMs,
                 muted,
-                speakerOn);
+                speakerOn,
+                mediaType,
+                cameraOn);
+    }
+
+    CallSession withMedia(CallMediaType newMediaType, boolean newCameraOn) {
+        return new CallSession(
+                callId,
+                conversationId,
+                peerUserId,
+                peerDisplayName,
+                direction,
+                state,
+                endReason,
+                startedAtMs,
+                answeredAtMs,
+                muted,
+                speakerOn,
+                newMediaType,
+                newCameraOn);
     }
 }

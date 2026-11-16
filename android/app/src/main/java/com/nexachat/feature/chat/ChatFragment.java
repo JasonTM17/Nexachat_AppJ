@@ -50,6 +50,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.call.CallLauncher;
+import com.nexachat.call.core.CallMediaType;
 import com.nexachat.core.common.PhoneNormalizer;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.network.dto.AttachmentDto;
@@ -330,6 +331,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             String peerId = state.getOtherUserId();
             if (peerId == null) peerId = state.getMessages().stream().filter(m -> !m.getMine()).map(ChatMessage::getSenderId).findFirst().orElse("");
             CallLauncher.start(requireContext(), conversationId, peerId, state.getPeerName() == null ? "" : state.getPeerName());
+        });
+        binding.videoCallButton.setOnClickListener(v -> {
+            String peerId = state.getOtherUserId();
+            if (peerId == null) peerId = state.getMessages().stream().filter(m -> !m.getMine()).map(ChatMessage::getSenderId).findFirst().orElse("");
+            CallLauncher.start(requireContext(), conversationId, peerId, state.getPeerName() == null ? "" : state.getPeerName(),
+                    null, CallMediaType.VIDEO);
         });
         binding.moreButton.setOnClickListener(v -> showMoreOptions());
         binding.unblockPeerButton.setOnClickListener(v -> viewModel.unblockPeer());
@@ -1245,6 +1252,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         bindGroupInfoShortcut(state.isGroup());
         renderSubtitle();
         binding.callButton.setVisibility(ChatToolbarPolicy.callAvailable(state.isGroup()) ? View.VISIBLE : View.GONE);
+        binding.videoCallButton.setVisibility(ChatToolbarPolicy.callAvailable(state.isGroup()) ? View.VISIBLE : View.GONE);
         applyLargeTypeToolbar();
         renderConversationState();
         binding.chatError.setVisibility(state.getError() == null ? View.GONE : View.VISIBLE);

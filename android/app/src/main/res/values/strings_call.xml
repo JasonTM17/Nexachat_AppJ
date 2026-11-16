@@ -47,4 +47,24 @@
     <string name="call_log_neutral_completed">Voice call · %1$s</string>
     <string name="call_log_outgoing_completed">Outgoing voice call · %1$s</string>
     <string name="call_log_incoming_completed">Incoming voice call · %1$s</string>
+    <string name="call_state_incoming_video">Incoming video call</string>
+    <string name="call_state_connected_video">Video call</string>
+    <string name="call_camera_off">Camera off</string>
+    <string name="call_camera_on">Camera on</string>
+    <string name="call_switch_camera">Switch camera</string>
+    <string name="call_camera_rationale">Camera access is needed for a video call. You can also answer as voice only.</string>
+    <string name="call_camera_permission_needed">Allow camera access for video, or continue with voice only.</string>
+    <string name="call_answer_as_voice">Answer as voice</string>
+    <string name="call_start_as_voice">Start as voice call</string>
+    <string name="call_open_settings">Settings</string>
+    <string name="call_notification_incoming_video">Incoming video call</string>
+    <string name="call_notification_ongoing_video">Video call in progress</string>
+    <string name="call_log_video_missed">Missed video call</string>
+    <string name="call_log_video_declined">Declined video call</string>
+    <string name="call_log_video_cancelled">Cancelled video call</string>
+    <string name="call_log_video_busy">Recipient was busy</string>
+    <string name="call_log_video_failed">Video call failed</string>
+    <string name="call_log_video_neutral_completed">Video call · %1$s</string>
+    <string name="call_log_video_outgoing_completed">Outgoing video call · %1$s</string>
+    <string name="call_log_video_incoming_completed">Incoming video call · %1$s</string>
 </resources>

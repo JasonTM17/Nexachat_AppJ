@@ -70,6 +70,7 @@ public final class IncomingCallPushAdmission {
                             data.getRecipientId(),
                             data.getSessionEpoch(),
                             data.getRingExpiresAtMs(),
+                            data.getMediaType(),
                             () -> tokenRefresher.isSessionCurrent(data.getSessionEpoch()));
                 });
     }

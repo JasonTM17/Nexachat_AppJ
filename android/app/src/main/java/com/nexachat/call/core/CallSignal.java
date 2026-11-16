@@ -45,12 +45,19 @@ public final class CallSignal {
     private final String callId;
     private final Sdp sdp;
     private final IceCandidate candidate;
+    private final CallMediaType mediaType;
 
     public CallSignal(Type type, String callId, Sdp sdp, IceCandidate candidate) {
+        this(type, callId, sdp, candidate, null);
+    }
+
+    public CallSignal(Type type, String callId, Sdp sdp, IceCandidate candidate,
+                      CallMediaType mediaType) {
         this.type = type;
         this.callId = callId;
         this.sdp = sdp;
         this.candidate = candidate;
+        this.mediaType = mediaType;
     }
 
     public Type getType() { return type; }
@@ -58,7 +65,14 @@ public final class CallSignal {
     public Sdp getSdp() { return sdp; }
     public IceCandidate getCandidate() { return candidate; }
 
+    /** The media kind offered by an INVITE; null when the frame does not carry one. */
+    public CallMediaType getMediaType() { return mediaType; }
+
     public static CallSignal control(Type type, String callId) {
         return new CallSignal(type, callId, null, null);
+    }
+
+    public static CallSignal control(Type type, String callId, CallMediaType mediaType) {
+        return new CallSignal(type, callId, null, null, mediaType);
     }
 }

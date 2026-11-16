@@ -341,6 +341,7 @@
     <string name="cd_search_in_chat">Tìm trong trò chuyện</string>
     <string name="cd_clear_search">Xóa tìm kiếm</string>
     <string name="cd_call">Gọi thoại</string>
+    <string name="cd_video_call">Gọi video</string>
 
     <!-- Forward Picker -->
     <string name="forward_title">Chuyển tiếp tin nhắn</string>

@@ -9,6 +9,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import com.nexachat.call.core.CallMediaEngine;
+import com.nexachat.call.core.CallMediaType;
 import com.nexachat.call.core.CallSignal;
 import com.nexachat.call.core.IceConfig;
 import java.util.ArrayList;
@@ -21,20 +22,35 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.webrtc.AudioSource;
 import org.webrtc.AudioTrack;
+import org.webrtc.Camera1Enumerator;
+import org.webrtc.Camera2Enumerator;
+import org.webrtc.CameraEnumerator;
+import org.webrtc.CameraVideoCapturer;
+import org.webrtc.EglBase;
 import org.webrtc.IceCandidate;
 import org.webrtc.MediaConstraints;
+import org.webrtc.MediaStreamTrack;
 import org.webrtc.PeerConnection;
 import org.webrtc.PeerConnectionFactory;
 import org.webrtc.RtpTransceiver;
 import org.webrtc.SdpObserver;
 import org.webrtc.SessionDescription;
+import org.webrtc.SurfaceTextureHelper;
+import org.webrtc.VideoCapturer;
+import org.webrtc.VideoSource;
+import org.webrtc.VideoTrack;
 import org.webrtc.audio.AudioDeviceModule;
 import org.webrtc.audio.JavaAudioDeviceModule;
 
-/** Audio-only WebRTC engine. Native peer resources and callbacks use one serialized executor. */
+/** WebRTC call engine. Native peer resources and callbacks use one serialized executor. */
 public final class WebRtcMediaEngine implements CallMediaEngine {
     private static final String AUDIO_STREAM_ID = "nexachat-audio";
     private static final String AUDIO_TRACK_ID = "nexachat-audio-track";
+    private static final String VIDEO_STREAM_ID = "nexachat-video";
+    private static final String VIDEO_TRACK_ID = "nexachat-video-track";
+    private static final int VIDEO_CAPTURE_WIDTH = 640;
+    private static final int VIDEO_CAPTURE_HEIGHT = 480;
+    private static final int VIDEO_CAPTURE_FPS = 24;
     private static final Object FACTORY_LOCK = new Object();
     private static PeerConnectionFactory sharedFactory;
     @SuppressWarnings("unused")
@@ -52,10 +68,18 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
 
     private volatile boolean muted;
     private volatile boolean speakerOn;
+    private volatile boolean cameraOn;
     private volatile Listener listener;
     private PeerConnection peerConnection;
     private AudioSource localAudioSource;
     private AudioTrack localAudioTrack;
+    private CallMediaType activeMediaType = CallMediaType.AUDIO;
+    private EglBase eglBase;
+    private SurfaceTextureHelper surfaceTextureHelper;
+    private VideoCapturer videoCapturer;
+    private VideoSource localVideoSource;
+    private VideoTrack localVideoTrack;
+    private VideoTrack remoteVideoTrack;
     private long activeGeneration;
     private long failedGeneration = -1L;
     private boolean remoteDescriptionSet;
@@ -79,11 +103,20 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
 
     @Override
     public void start(boolean isCaller, IceConfig iceConfig, Listener callListener) {
+        start(isCaller, CallMediaType.AUDIO, iceConfig, callListener);
+    }
+
+    @Override
+    public void start(boolean isCaller, CallMediaType mediaType,
+                      IceConfig iceConfig, Listener callListener) {
         long callGeneration = generation.incrementAndGet();
+        CallMediaType requestedMediaType = CallMediaType.orAudio(mediaType);
         mediaExecutor.execute(() -> {
             if (!isCurrent(callGeneration)) return;
             releasePeerResources();
             activeGeneration = callGeneration;
+            activeMediaType = requestedMediaType;
+            cameraOn = requestedMediaType == CallMediaType.VIDEO;
             listener = callListener;
             failedGeneration = -1L;
             connectedReported = false;
@@ -110,6 +143,9 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
                 localAudioTrack = factory.createAudioTrack(AUDIO_TRACK_ID, localAudioSource);
                 localAudioTrack.setEnabled(!muted);
                 peerConnection.addTrack(localAudioTrack, Collections.singletonList(AUDIO_STREAM_ID));
+                if (activeMediaType == CallMediaType.VIDEO) {
+                    setupLocalVideo(factory, callGeneration);
+                }
                 applySpeakerRoute();
                 connectTimeout = mediaExecutor.schedule(() -> {
                     if (isActive(callGeneration) && !connectedReported) reportFailure(callGeneration);
@@ -199,6 +235,54 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
     }
 
     @Override
+    public void setCameraEnabled(boolean enabled) {
+        this.cameraOn = enabled;
+        long callGeneration = generation.get();
+        mediaExecutor.execute(() -> {
+            if (!isActive(callGeneration)) return;
+            if (localVideoTrack != null) localVideoTrack.setEnabled(enabled);
+            if (videoCapturer == null) return;
+            if (enabled) {
+                startCapture();
+            } else {
+                stopCapture();
+            }
+        });
+    }
+
+    @Override
+    public void switchCamera() {
+        long callGeneration = generation.get();
+        mediaExecutor.execute(() -> {
+            if (isActive(callGeneration) && videoCapturer instanceof CameraVideoCapturer) {
+                ((CameraVideoCapturer) videoCapturer).switchCamera(null);
+            }
+        });
+    }
+
+    @Override
+    public Object videoEglContext() {
+        EglBase base = eglBase;
+        return base == null ? null : base.getEglBaseContext();
+    }
+
+    @Override
+    public void replayVideoTracks() {
+        long callGeneration = generation.get();
+        mediaExecutor.execute(() -> {
+            if (!isActive(callGeneration)) return;
+            Listener current = listener;
+            if (current == null) return;
+            VideoTrack local = localVideoTrack;
+            VideoTrack remote = remoteVideoTrack;
+            postToMain(callGeneration, current, () -> {
+                current.onLocalVideoTrack(local);
+                current.onRemoteVideoTrack(remote);
+            });
+        });
+    }
+
+    @Override
     public void restartIce() {
         long callGeneration = generation.get();
         mediaExecutor.execute(() -> {
@@ -259,6 +343,108 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
             });
         } catch (RuntimeException ignored) {
             // The process is shutting down; all native resources are owned by this process.
+        }
+    }
+
+    /** Runs on mediaExecutor. Camera absence never fails the call: remote video still renders. */
+    private void setupLocalVideo(PeerConnectionFactory factory, long callGeneration) {
+        eglBase = EglBase.create();
+        videoCapturer = createCameraCapturer(callGeneration);
+        if (videoCapturer == null) {
+            peerConnection.addTransceiver(
+                    MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO,
+                    new RtpTransceiver.RtpTransceiverInit(
+                            RtpTransceiver.RtpTransceiverDirection.RECV_ONLY));
+            cameraOn = false;
+            return;
+        }
+        surfaceTextureHelper = SurfaceTextureHelper.create(
+                "nexachat-capture", eglBase.getEglBaseContext());
+        localVideoSource = factory.createVideoSource(videoCapturer.isScreencast());
+        videoCapturer.initialize(
+                surfaceTextureHelper, appContext, localVideoSource.getCapturerObserver());
+        localVideoTrack = factory.createVideoTrack(VIDEO_TRACK_ID, localVideoSource);
+        localVideoTrack.setEnabled(cameraOn);
+        peerConnection.addTrack(localVideoTrack, Collections.singletonList(VIDEO_STREAM_ID));
+        if (cameraOn) startCapture();
+        Listener current = listener;
+        if (current != null) {
+            VideoTrack track = localVideoTrack;
+            postToMain(callGeneration, current, () -> current.onLocalVideoTrack(track));
+        }
+    }
+
+    /** Runs on mediaExecutor. Prefers Camera2, then the front camera. */
+    private VideoCapturer createCameraCapturer(long callGeneration) {
+        CameraEnumerator enumerator;
+        try {
+            enumerator = new Camera2Enumerator(appContext);
+        } catch (RuntimeException | LinkageError unsupported) {
+            enumerator = new Camera1Enumerator(false);
+        }
+        CameraEnumerator devices = enumerator;
+        CameraVideoCapturer.CameraEventsHandler eventsHandler =
+                new CameraVideoCapturer.CameraEventsHandler() {
+                    @Override public void onCameraError(String errorDescription) {
+                        mediaExecutor.execute(() -> {
+                            if (!isActive(callGeneration)) return;
+                            cameraOn = false;
+                            if (localVideoTrack != null) localVideoTrack.setEnabled(false);
+                        });
+                    }
+
+                    @Override public void onCameraDisconnected() {
+                        mediaExecutor.execute(() -> {
+                            if (!isActive(callGeneration)) return;
+                            cameraOn = false;
+                            if (localVideoTrack != null) localVideoTrack.setEnabled(false);
+                        });
+                    }
+
+                    @Override public void onCameraFreezed(String errorDescription) { }
+                    @Override public void onCameraOpening(String cameraName) { }
+                    @Override public void onFirstFrameAvailable() { }
+                    @Override public void onCameraClosed() { }
+                };
+        try {
+            String[] names = devices.getDeviceNames();
+            for (String name : names) {
+                if (devices.isFrontFacing(name)) {
+                    VideoCapturer capturer = devices.createCapturer(name, eventsHandler);
+                    if (capturer != null) return capturer;
+                }
+            }
+            for (String name : names) {
+                VideoCapturer capturer = devices.createCapturer(name, eventsHandler);
+                if (capturer != null) return capturer;
+            }
+        } catch (RuntimeException | LinkageError ignored) {
+            // A broken camera HAL leaves the call voice-only.
+        }
+        return null;
+    }
+
+    /** Runs on mediaExecutor. */
+    private void startCapture() {
+        if (videoCapturer == null) return;
+        try {
+            videoCapturer.startCapture(
+                    VIDEO_CAPTURE_WIDTH, VIDEO_CAPTURE_HEIGHT, VIDEO_CAPTURE_FPS);
+        } catch (RuntimeException captureFailure) {
+            cameraOn = false;
+            if (localVideoTrack != null) localVideoTrack.setEnabled(false);
+        }
+    }
+
+    /** Runs on mediaExecutor. */
+    private void stopCapture() {
+        if (videoCapturer == null) return;
+        try {
+            videoCapturer.stopCapture();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        } catch (RuntimeException ignored) {
+            // The capture session may already be gone.
         }
     }
 
@@ -457,6 +643,40 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
             localAudioSource.dispose();
             localAudioSource = null;
         }
+        if (localVideoTrack != null) {
+            localVideoTrack.dispose();
+            localVideoTrack = null;
+        }
+        remoteVideoTrack = null;
+        if (videoCapturer != null) {
+            try {
+                videoCapturer.stopCapture();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } catch (RuntimeException ignored) {
+                // Capture may already have been released with the camera.
+            }
+            try {
+                videoCapturer.dispose();
+            } catch (RuntimeException ignored) {
+                // Keep releasing the remaining video resources.
+            }
+            videoCapturer = null;
+        }
+        if (localVideoSource != null) {
+            localVideoSource.dispose();
+            localVideoSource = null;
+        }
+        if (surfaceTextureHelper != null) {
+            surfaceTextureHelper.dispose();
+            surfaceTextureHelper = null;
+        }
+        if (eglBase != null) {
+            eglBase.release();
+            eglBase = null;
+        }
+        activeMediaType = CallMediaType.AUDIO;
+        cameraOn = false;
         pendingRemoteIce.clear();
         remoteDescriptionSet = false;
         restoreAudioMode();
@@ -567,8 +787,24 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
 
         @Override public void onTrack(RtpTransceiver transceiver) {
             if (transceiver == null || transceiver.getReceiver() == null) return;
-            if (transceiver.getReceiver().track() instanceof AudioTrack) {
-                transceiver.getReceiver().track().setEnabled(true);
+            MediaStreamTrack track = transceiver.getReceiver().track();
+            if (track instanceof AudioTrack) {
+                track.setEnabled(true);
+            } else if (track instanceof VideoTrack) {
+                track.setEnabled(true);
+                try {
+                    mediaExecutor.execute(() -> {
+                        if (!isActive(callGeneration)) return;
+                        remoteVideoTrack = (VideoTrack) track;
+                        Listener current = listener;
+                        if (current != null) {
+                            postToMain(callGeneration, current,
+                                    () -> current.onRemoteVideoTrack(track));
+                        }
+                    });
+                } catch (RuntimeException ignored) {
+                    // Executor is shutting down with the application process.
+                }
             }
         }
 

@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 
 import android.content.Context;
 import com.nexachat.call.core.CallManager;
+import com.nexachat.call.core.CallMediaType;
 import com.nexachat.call.core.CallSession;
 import com.nexachat.call.core.CallState;
 import com.nexachat.call.core.IncomingCallPushData;
@@ -82,7 +83,7 @@ public final class DebugPushInjectionTest {
                         invocation.getArgument(0), SESSION_EPOCH)));
         when(callManager.admitIncomingPush(
                         anyString(), anyString(), anyString(), anyString(), anyLong(),
-                        anyString(), anyLong(), anyLong(), any(BooleanSupplier.class)))
+                        anyString(), anyLong(), anyLong(), any(CallMediaType.class), any(BooleanSupplier.class)))
                 .thenAnswer(invocation -> {
                     lastAdmittedPush.set(new IncomingCallPushData(
                             invocation.getArgument(0),
@@ -194,10 +195,10 @@ public final class DebugPushInjectionTest {
         verify(notificationWorkScheduler, never()).enqueue(any());
         verify(callManager, never()).admitIncomingPush(
                 anyString(), anyString(), anyString(), anyString(), anyLong(),
-                anyString(), anyLong(), anyLong(), any(BooleanSupplier.class));
+                anyString(), anyLong(), anyLong(), any(CallMediaType.class), any(BooleanSupplier.class));
         verify(launcher, never()).launch(
                 anyString(), anyString(), anyString(), anyString(), anyLong(),
-                anyString(), anyLong(), anyLong());
+                anyString(), anyLong(), anyLong(), any(CallMediaType.class));
     }
 
     @Test
@@ -210,11 +211,10 @@ public final class DebugPushInjectionTest {
         long startedAt = clock.get();
         verify(callManager, org.mockito.Mockito.times(2)).admitIncomingPush(
                 eq("call-100"), eq("conv-200"), eq("user-alice"), eq("Alice"),
-                eq(startedAt), eq(RECIPIENT_ID), eq(SESSION_EPOCH), eq(startedAt + 45_000L),
-                any(BooleanSupplier.class));
+                eq(startedAt), eq(RECIPIENT_ID), eq(SESSION_EPOCH), eq(startedAt + 45_000L), any(CallMediaType.class), any(BooleanSupplier.class));
         verify(launcher, org.mockito.Mockito.times(2)).launch(
                 "call-100", "conv-200", "user-alice", "Alice", startedAt,
-                RECIPIENT_ID, startedAt + 45_000L, SESSION_EPOCH);
+                RECIPIENT_ID, startedAt + 45_000L, SESSION_EPOCH, CallMediaType.AUDIO);
     }
 
     private NotificationWorkRequest enqueueOnce(Map<String, String> payload) {
