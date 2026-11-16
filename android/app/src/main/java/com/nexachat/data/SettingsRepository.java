@@ -23,10 +23,11 @@ import javax.inject.Singleton;
 import com.nexachat.core.common.Unit;
 
 /**
- * Local preferences (theme) plus the server-backed privacy flag.
+ * Local preferences (theme, chat colour) plus the server-backed privacy flag.
  *
- * <p>Theme is device-level and never cleared on logout. Presence visibility is
- * account-level and resets to the permissive default when the session ends.
+ * <p>Theme and chat colour are device-level and never cleared on logout.
+ * Presence visibility is account-level and resets to the permissive default
+ * when the session ends.
  * Public state is exposed as read-only RxJava streams; API work uses the network
  * wrapper's IO scheduler.
  */
@@ -35,11 +36,14 @@ public final class SettingsRepository implements AutoCloseable {
 
     private static final String PREFS = "nexachat_settings";
     private static final String KEY_THEME = "theme_mode";
+    private static final String KEY_CHAT_COLOR = "chat_color";
 
     private final UserApi userApi;
     private final SharedPreferences prefs;
     private final BehaviorProcessor<ThemeMode> mutableThemeMode;
     private final Flowable<ThemeMode> themeMode;
+    private final BehaviorProcessor<ChatColor> mutableChatColor;
+    private final Flowable<ChatColor> chatColor;
     private final BehaviorProcessor<Boolean> mutableShowPresence =
             BehaviorProcessor.createDefault(Boolean.TRUE);
     private final Flowable<Boolean> showPresence = mutableShowPresence.hide().distinctUntilChanged();
@@ -61,6 +65,9 @@ public final class SettingsRepository implements AutoCloseable {
         this.mutableThemeMode = BehaviorProcessor.createDefault(
                 ThemeMode.fromName(prefs.getString(KEY_THEME, null)));
         this.themeMode = mutableThemeMode.hide().distinctUntilChanged();
+        this.mutableChatColor = BehaviorProcessor.createDefault(
+                ChatColor.fromName(prefs.getString(KEY_CHAT_COLOR, null)));
+        this.chatColor = mutableChatColor.hide().distinctUntilChanged();
 
         Disposable sessionState = tokenStore.getHasValidRefresh()
                 .distinctUntilChanged()
@@ -93,6 +100,11 @@ public final class SettingsRepository implements AutoCloseable {
     }
 
     @NonNull
+    public Flowable<ChatColor> getChatColor() {
+        return chatColor;
+    }
+
+    @NonNull
     public Flowable<Boolean> getShowPresence() {
         return showPresence;
     }
@@ -105,6 +117,11 @@ public final class SettingsRepository implements AutoCloseable {
     public void setThemeMode(@NonNull ThemeMode mode) {
         prefs.edit().putString(KEY_THEME, mode.name()).apply();
         mutableThemeMode.onNext(mode);
+    }
+
+    public void setChatColor(@NonNull ChatColor color) {
+        prefs.edit().putString(KEY_CHAT_COLOR, color.name()).apply();
+        mutableChatColor.onNext(color);
     }
 
     @NonNull
