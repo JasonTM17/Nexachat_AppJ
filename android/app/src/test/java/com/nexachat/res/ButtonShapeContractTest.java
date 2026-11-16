@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.junit.Before;
 import org.junit.Test;
@@ -28,6 +29,17 @@ public final class ButtonShapeContractTest {
     private static final String MATERIAL_BUTTON =
             "com.google.android.material.button.MaterialButton";
     private static final String SQUARE_SHAPE = "@style/ShapeAppearance.NexaChat.Button";
+    private static final Set<String> BUTTON_FACTORY_ATTRS = Set.of(
+            "materialButtonStyle", "materialButtonOutlinedStyle",
+            "borderlessButtonStyle", "materialIconButtonStyle",
+            "buttonBarButtonStyle", "buttonBarPositiveButtonStyle",
+            "buttonBarNegativeButtonStyle", "buttonBarNeutralButtonStyle",
+            "snackbarButtonStyle", "imageButtonStyle",
+            "materialCalendarHeaderCancelButton",
+            "materialCalendarHeaderConfirmButton",
+            "materialCalendarHeaderToggleButton",
+            "materialCalendarYearNavigationButton",
+            "materialCalendarMonthNavigationButton");
 
     private File resDir;
 
@@ -101,7 +113,118 @@ public final class ButtonShapeContractTest {
             Element theme = style(parse(dir + "/styles_call.xml"), "Theme.NexaChat.Call");
             assertEquals(dir + " materialButtonStyle",
                     "@style/Widget.NexaChat.Button", item(theme, "materialButtonStyle"));
+            assertEquals(dir + " materialAlertDialogTheme",
+                    "@style/ThemeOverlay.NexaChat.MaterialAlertDialog",
+                    item(theme, "materialAlertDialogTheme"));
+            assertEquals(dir + " snackbarButtonStyle",
+                    "@style/Widget.NexaChat.Button.Text.Snackbar",
+                    item(theme, "snackbarButtonStyle"));
         }
+    }
+
+    /**
+     * MaterialAlertDialogBuilder and the date/time pickers wrap the context in
+     * the overlays named by these theme attrs; without them the Material
+     * defaults silently re-pin rounded button styles.
+     */
+    @Test
+    public void dialogThemesRouteThroughNexaChatOverlays() throws Exception {
+        Element theme = style(parse("values/styles_nexachat.xml"), "Theme.NexaChat.Views");
+        assertEquals("@style/ThemeOverlay.NexaChat.MaterialAlertDialog",
+                item(theme, "materialAlertDialogTheme"));
+        assertEquals("@style/ThemeOverlay.NexaChat.MaterialCalendar",
+                item(theme, "materialCalendarTheme"));
+        assertEquals("@style/ThemeOverlay.NexaChat.MaterialCalendar.Fullscreen",
+                item(theme, "materialCalendarFullscreenTheme"));
+        assertEquals("@style/ThemeOverlay.NexaChat.MaterialTimePicker",
+                item(theme, "materialTimePickerTheme"));
+    }
+
+    /**
+     * Any style item that supplies a button factory must resolve to a
+     * Widget.NexaChat style. A raw Widget.Material3.* inside a dialog or
+     * picker overlay re-rounds the buttons the app theme already squared.
+     */
+    @Test
+    public void noStyleHandsButtonsBackToMaterialDefaults() throws Exception {
+        List<String> failures = new ArrayList<>();
+        for (File file : valueFiles()) {
+            Document doc = parse(file);
+            NodeList styles = doc.getElementsByTagName("style");
+            for (int i = 0; i < styles.getLength(); i++) {
+                Element style = (Element) styles.item(i);
+                NodeList items = style.getElementsByTagName("item");
+                for (int j = 0; j < items.getLength(); j++) {
+                    Element item = (Element) items.item(j);
+                    if (!BUTTON_FACTORY_ATTRS.contains(item.getAttribute("name"))) {
+                        continue;
+                    }
+                    String value = item.getTextContent().trim();
+                    if (!value.startsWith("@style/Widget.NexaChat.")) {
+                        failures.add(relativePath(file) + " " + style.getAttribute("name")
+                                + " routes " + item.getAttribute("name") + " to " + value);
+                    }
+                }
+            }
+        }
+        assertTrue(String.join("\n", failures), failures.isEmpty());
+    }
+
+    @Test
+    public void dialogOverlaysPinNexaChatButtonStyles() throws Exception {
+        Document styles = parse("values/styles_nexachat.xml");
+        for (String overlay : new String[] {
+                "ThemeOverlay.NexaChat.MaterialAlertDialog",
+                "ThemeOverlay.NexaChat.MaterialCalendar",
+                "ThemeOverlay.NexaChat.MaterialCalendar.Fullscreen",
+                "ThemeOverlay.NexaChat.MaterialTimePicker"}) {
+            Element style = style(styles, overlay);
+            assertEquals(overlay + " buttonBarPositiveButtonStyle",
+                    "@style/Widget.NexaChat.Button.Text.Dialog",
+                    item(style, "buttonBarPositiveButtonStyle"));
+            assertEquals(overlay + " buttonBarNegativeButtonStyle",
+                    "@style/Widget.NexaChat.Button.Text.Dialog.Flush",
+                    item(style, "buttonBarNegativeButtonStyle"));
+            assertEquals(overlay + " buttonBarNeutralButtonStyle",
+                    "@style/Widget.NexaChat.Button.Text.Dialog",
+                    item(style, "buttonBarNeutralButtonStyle"));
+        }
+        Element calendar = style(styles, "ThemeOverlay.NexaChat.MaterialCalendar");
+        assertEquals("@style/Widget.NexaChat.MaterialCalendar",
+                item(calendar, "materialCalendarStyle"));
+        Element timePicker = style(styles, "ThemeOverlay.NexaChat.MaterialTimePicker");
+        assertEquals("@style/Widget.NexaChat.MaterialTimePicker",
+                item(timePicker, "materialTimePickerStyle"));
+        assertEquals("@style/Widget.NexaChat.MaterialTimePicker.Button",
+                item(timePicker, "materialButtonOutlinedStyle"));
+        assertEquals("@style/Widget.NexaChat.MaterialTimePicker.ImageButton",
+                item(timePicker, "imageButtonStyle"));
+    }
+
+    @Test
+    public void pickerButtonsPinTheSquareShape() throws Exception {
+        Document styles = parse("values/styles_nexachat.xml");
+        for (String name : new String[] {
+                "Widget.NexaChat.MaterialCalendar.HeaderButton",
+                "Widget.NexaChat.MaterialCalendar.MonthNavigationButton",
+                "Widget.NexaChat.MaterialCalendar.YearNavigationButton",
+                "Widget.NexaChat.MaterialTimePicker.Button",
+                "Widget.NexaChat.MaterialTimePicker.ImageButton"}) {
+            assertEquals(name + " must pin the square shape",
+                    SQUARE_SHAPE, item(style(styles, name), "shapeAppearance"));
+        }
+    }
+
+    @Test
+    public void dialogContainersUseTheDesignRadius() throws Exception {
+        Document shapes = parse("values/shapes.xml");
+        assertEquals("ShapeAppearance.NexaChat.ExtraLarge",
+                style(shapes, "ShapeAppearance.NexaChat.Dialog").getAttribute("parent"));
+        assertEquals("@dimen/corner_xl",
+                item(style(shapes, "ShapeAppearance.NexaChat.ExtraLarge"), "cornerSize"));
+        Document styles = parse("values/styles_nexachat.xml");
+        assertEquals("@style/ShapeAppearance.NexaChat.Dialog",
+                item(style(styles, "MaterialAlertDialog.NexaChat"), "shapeAppearance"));
     }
 
     @Test
@@ -169,6 +292,25 @@ public final class ButtonShapeContractTest {
             File[] layouts = dir.listFiles((d, name) -> name.endsWith(".xml"));
             if (layouts != null) {
                 files.addAll(List.of(layouts));
+            }
+        }
+        return files.toArray(new File[0]);
+    }
+
+    private File[] valueFiles() {
+        List<File> files = new ArrayList<>();
+        File[] dirs = resDir.listFiles();
+        if (dirs == null) {
+            throw new IllegalStateException("Could not list " + resDir);
+        }
+        for (File dir : dirs) {
+            if (!dir.isDirectory()
+                    || !(dir.getName().equals("values") || dir.getName().startsWith("values-"))) {
+                continue;
+            }
+            File[] xml = dir.listFiles((d, name) -> name.endsWith(".xml"));
+            if (xml != null) {
+                files.addAll(List.of(xml));
             }
         }
         return files.toArray(new File[0]);

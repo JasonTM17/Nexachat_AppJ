@@ -3,7 +3,7 @@ package com.nexachat.call.ui;
 import android.annotation.SuppressLint;
 import android.Manifest;
 import androidx.activity.ComponentActivity;
-import android.app.AlertDialog;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
@@ -466,7 +466,7 @@ public class CallActivity extends ComponentActivity {
         if (decision == Decision.GRANTED) {
             requestNotificationPermissionThenContinue();
         } else if (decision == Decision.SHOW_RATIONALE) {
-            new AlertDialog.Builder(this)
+            new MaterialAlertDialogBuilder(this)
                     .setMessage(R.string.call_mic_rationale)
                     .setPositiveButton(R.string.call_permission_continue,
                             (dialog, which) -> requestMicrophonePermission())
@@ -497,7 +497,7 @@ public class CallActivity extends ComponentActivity {
             ActivityCompat.requestPermissions(
                     this, new String[] {Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
         } else if (decision == Decision.SHOW_RATIONALE) {
-            new AlertDialog.Builder(this)
+            new MaterialAlertDialogBuilder(this)
                     .setMessage(R.string.call_notifications_rationale)
                     .setPositiveButton(R.string.call_permission_continue,
                             (dialog, which) -> ActivityCompat.requestPermissions(
@@ -550,7 +550,7 @@ public class CallActivity extends ComponentActivity {
         callErrorDialogShown = true;
         mainHandler.removeCallbacks(finishEndedScreen);
         String phone = getIntent().getStringExtra(CallLauncher.EXTRA_PEER_PHONE);
-        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(this)
                 .setTitle(copy.getTitleResource())
                 .setMessage(copy.getReasonResource())
                 .setNegativeButton(android.R.string.cancel, (dialog, which) -> finish());

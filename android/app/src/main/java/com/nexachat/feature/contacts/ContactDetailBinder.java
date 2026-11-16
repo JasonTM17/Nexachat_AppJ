@@ -25,6 +25,7 @@ import com.nexachat.core.common.PersonContactSubtitle;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.data.Contact;
+import com.nexachat.feature.ui.FormDialogs;
 import java.util.Objects;
 
 /**
@@ -245,15 +246,14 @@ final class ContactDetailBinder {
                             secondary, com.google.android.material.R.attr.colorErrorContainer)));
             secondary.setTextColor(MaterialColors.getColor(
                     secondary, com.google.android.material.R.attr.colorOnErrorContainer));
-        }
-        if (content.isContact()) {
-            secondary.setOnClickListener(v -> new MaterialAlertDialogBuilder(fragment.requireContext())
-                    .setMessage(R.string.confirm_remove_contact)
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .setPositiveButton(
-                            R.string.action_remove_contact,
-                            (d, w) -> viewModel.removeSelectedContact())
-                    .show());
+            secondary.setOnClickListener(v -> FormDialogs.markDestructive(
+                    new MaterialAlertDialogBuilder(fragment.requireContext())
+                            .setMessage(R.string.confirm_remove_contact)
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .setPositiveButton(
+                                    R.string.action_remove_contact,
+                                    (d, w) -> viewModel.removeSelectedContact())
+                            .show()));
         } else {
             secondary.setOnClickListener(v -> viewModel.addDetailContact());
         }

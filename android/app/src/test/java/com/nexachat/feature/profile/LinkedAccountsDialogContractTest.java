@@ -21,7 +21,7 @@ public final class LinkedAccountsDialogContractTest {
         assertFalse("decor insets hide the dialog title and buttons",
                 body.contains("ImeInsets.applyToDecor"));
         assertTrue("the dialog must resize above the IME",
-                body.contains("SOFT_INPUT_ADJUST_RESIZE"));
+                body.contains("FormDialogs.resizeAboveIme"));
     }
 
     private static String methodBody(String signature) throws Exception {

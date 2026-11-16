@@ -26,6 +26,7 @@ import com.nexachat.core.ui.ForwardFilter;
 import com.nexachat.core.ui.RecallWindowRules;
 import com.nexachat.data.ChatMessage;
 import com.nexachat.databinding.SheetMessageActionsBinding;
+import com.nexachat.feature.ui.FormDialogs;
 import com.nexachat.feature.ui.NexaBottomSheetFragment;
 import java.util.ArrayList;
 import java.util.List;
@@ -330,7 +331,7 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
             }
             default -> throw new IllegalArgumentException("A delete action is required");
         }
-        new MaterialAlertDialogBuilder(requireContext())
+        FormDialogs.markDestructive(new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(title)
                 .setMessage(body)
                 .setNegativeButton(R.string.action_cancel, null)
@@ -340,7 +341,7 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
                         callbacks.delete(message, action);
                     }
                 })
-                .show();
+                .show());
     }
 
     private static void copy(@NonNull Context context, @NonNull String text) {

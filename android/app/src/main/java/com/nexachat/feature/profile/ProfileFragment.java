@@ -12,9 +12,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.CompoundButton;
-import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Toast;
@@ -37,12 +35,16 @@ import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.data.ThemeMode;
 import com.nexachat.databinding.FragmentProfileBinding;
 import com.nexachat.feature.auth.ApiErrorText;
+import com.nexachat.feature.ui.FormDialogs;
 import com.nexachat.summary.AiConsentRepository;
 import dagger.hilt.android.AndroidEntryPoint;
 import javax.inject.Inject;
 
 @AndroidEntryPoint
 public final class ProfileFragment extends Fragment {
+
+    private static final String STATE_GOOGLE_PASSWORD_DIALOG = "googlePasswordDialogShowing";
+
     @Inject
     AiConsentRepository consentRepository;
 
@@ -52,11 +54,14 @@ public final class ProfileFragment extends Fragment {
     private AppSettingsViewModel settingsViewModel;
     private ActivityResultLauncher<String> avatarPicker;
     private ActivityResultLauncher<String> notificationPermissionRequest;
+
     private boolean syncingAiConsent;
     /** True while a switch shows a stored value, so the change is not saved back as a user edit. */
     private boolean syncingPrivacy;
     @Nullable private AlertDialog passwordDialog;
     @Nullable private TextView passwordDialogError;
+    @Nullable private AlertDialog googleDialog;
+    private boolean googlePasswordDialogShowing;
 
     public ProfileFragment() {
         avatarPicker = registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> { if (uri != null && viewModel != null) viewModel.uploadAvatar(uri); });
@@ -159,10 +164,10 @@ public final class ProfileFragment extends Fragment {
         binding.aiSummaryConsent.setOnCheckedChangeListener(this::onAiConsentToggled);
         binding.logoutRow.setTitle(getString(R.string.action_logout));
         binding.logoutRow.setLeadingIcon(R.drawable.ic_logout);
-        binding.logoutRow.setOnClickListener(v -> new MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.action_logout).setMessage(R.string.action_logout_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout, (d, w) -> viewModel.logout()).show());
+        binding.logoutRow.setOnClickListener(v -> FormDialogs.markDestructive(new MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.action_logout).setMessage(R.string.action_logout_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout, (d, w) -> viewModel.logout()).show()));
         binding.logoutAllRow.setTitle(getString(R.string.action_logout_all));
         binding.logoutAllRow.setLeadingIcon(R.drawable.ic_logout);
-        binding.logoutAllRow.setOnClickListener(v -> new MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.action_logout_all).setMessage(R.string.profile_logout_all_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout_all, (d, w) -> viewModel.logoutAll()).show());
+        binding.logoutAllRow.setOnClickListener(v -> FormDialogs.markDestructive(new MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.action_logout_all).setMessage(R.string.profile_logout_all_confirm).setNegativeButton(R.string.action_cancel, null).setPositiveButton(R.string.action_logout_all, (d, w) -> viewModel.logoutAll()).show()));
         binding.deleteAccountRow.setTitle(getString(R.string.action_delete_account));
         binding.deleteAccountRow.setLeadingIcon(R.drawable.ic_delete);
         binding.deleteAccountRow.setDestructive(true);
@@ -202,6 +207,17 @@ public final class ProfileFragment extends Fragment {
             binding.themeChipLight.setChecked(active == ThemeMode.LIGHT);
             binding.themeChipDark.setChecked(active == ThemeMode.DARK);
         });
+        if (state != null && state.getBoolean(STATE_GOOGLE_PASSWORD_DIALOG, false)) {
+            // The Google password prompt is stateless (its secret never leaves
+            // the field); the click path re-derives link vs unlink from the
+            // ViewModel and reopens it.
+            onGoogleAccountClicked();
+        }
+    }
+
+    @Override public void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putBoolean(STATE_GOOGLE_PASSWORD_DIALOG, googlePasswordDialogShowing);
     }
 
     private void openNotificationSettings() {
@@ -287,7 +303,9 @@ public final class ProfileFragment extends Fragment {
         ApiError error = state.getSaveError() != null ? state.getSaveError() : state.getPasswordError() != null ? state.getPasswordError() : state.getAvatarError();
         binding.profileError.setVisibility(error == null ? View.GONE : View.VISIBLE);
         if (error != null) binding.profileError.setText(ApiErrorText.text(requireContext(), error));
-        if (passwordDialog != null && !state.isShowPasswordDialog()) {
+        if (state.isShowPasswordDialog() && passwordDialog == null) {
+            showPasswordDialog();
+        } else if (passwordDialog != null && !state.isShowPasswordDialog()) {
             passwordDialog.dismiss();
         }
         if (passwordDialogError != null) {
@@ -399,14 +417,14 @@ public final class ProfileFragment extends Fragment {
                 .setNegativeButton(R.string.action_cancel, null)
                 .setPositiveButton(titleRes, null)
                 .create();
+        googleDialog = dialog;
+        googlePasswordDialogShowing = true;
+        dialog.setOnDismissListener(d -> {
+            googleDialog = null;
+            googlePasswordDialogShowing = false;
+        });
         dialog.setOnShowListener(ignored -> {
-            if (dialog.getWindow() != null) {
-                // Resize the dialog above the IME instead of padding its decor:
-                // padding by the full IME height pushed the title and buttons
-                // out of the visible band and left the fields floating.
-                dialog.getWindow().setSoftInputMode(
-                        android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-            }
+            FormDialogs.resizeAboveIme(dialog);
             android.widget.Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
             positive.setOnClickListener(v -> {
                 String value = input == null || input.getText() == null
@@ -440,6 +458,9 @@ public final class ProfileFragment extends Fragment {
     }
 
     private void showPasswordDialog() {
+        if (passwordDialog != null) {
+            return;
+        }
         LinearLayout form = new LinearLayout(requireContext());
         form.setOrientation(LinearLayout.VERTICAL);
         int pad = getResources().getDimensionPixelSize(R.dimen.space_md);
@@ -489,12 +510,9 @@ public final class ProfileFragment extends Fragment {
         errorLp.topMargin = spaceSm;
         form.addView(errorLine, errorLp);
 
-        ScrollView scroll = new ScrollView(requireContext());
-        scroll.addView(form);
-
         AlertDialog dialog = new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.profile_change_password)
-                .setView(scroll)
+                .setView(FormDialogs.scrollableBody(form))
                 .setNegativeButton(R.string.action_cancel, (d, w) -> viewModel.dismissPasswordDialog())
                 .setPositiveButton(R.string.action_save, null)
                 .setOnCancelListener(d -> viewModel.dismissPasswordDialog())
@@ -505,14 +523,19 @@ public final class ProfileFragment extends Fragment {
             passwordDialog = null;
             passwordDialogError = null;
         });
+        // Typed values live in the ViewModel (the fields opt out of view-state
+        // saving) so an in-progress password change survives rotation.
+        ProfileViewModel.UiState current = viewModel.getUiState().getValue();
+        if (current != null) {
+            if (old != null) old.setText(current.getOldPassword());
+            if (next != null) next.setText(current.getNewPassword());
+            if (confirm != null) confirm.setText(current.getConfirmPassword());
+        }
+        if (old != null) old.addTextChangedListener(new SimpleTextWatcher(viewModel::onOldPasswordChange));
+        if (next != null) next.addTextChangedListener(new SimpleTextWatcher(viewModel::onNewPasswordChange));
+        if (confirm != null) confirm.addTextChangedListener(new SimpleTextWatcher(viewModel::onConfirmPasswordChange));
         dialog.setOnShowListener(ignored -> {
-            if (dialog.getWindow() != null) {
-                // Resize the dialog above the IME instead of padding its decor:
-                // padding by the full IME height pushed the title and buttons
-                // out of the visible band and left the fields floating.
-                dialog.getWindow().setSoftInputMode(
-                        android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-            }
+            FormDialogs.resizeAboveIme(dialog);
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             String oldValue = old == null || old.getText() == null ? "" : old.getText().toString();
             String newValue = next == null || next.getText() == null ? "" : next.getText().toString();
@@ -597,6 +620,9 @@ public final class ProfileFragment extends Fragment {
     @Override public void onDestroyView() {
         if (passwordDialog != null) {
             passwordDialog.dismiss();
+        }
+        if (googleDialog != null) {
+            googleDialog.dismiss();
         }
         binding = null;
         super.onDestroyView();

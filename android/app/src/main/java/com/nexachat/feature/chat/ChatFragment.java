@@ -45,6 +45,7 @@ import androidx.navigation.fragment.NavHostFragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.call.CallLauncher;
@@ -648,7 +649,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     }
 
     private void showMicRationaleThenRequest() {
-        new AlertDialog.Builder(requireContext())
+        new MaterialAlertDialogBuilder(requireContext())
                 .setMessage(R.string.voice_mic_rationale)
                 .setPositiveButton(R.string.call_permission_continue,
                         (dialog, which) -> launchRecordAudioRequest())
@@ -661,7 +662,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         if (offerSettings) {
             // Permanent denial: a fading snackbar reads as a dead mic button, so
             // show a persistent dialog that routes to app settings instead.
-            new AlertDialog.Builder(requireContext())
+            new MaterialAlertDialogBuilder(requireContext())
                     .setMessage(R.string.voice_permission_required)
                     .setPositiveButton(R.string.action_open_app_settings,
                             (dialog, which) -> openAppSettings())
@@ -1527,7 +1528,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             actions.add(MENU_GROUP_BOARD);
         }
 
-        new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+        new MaterialAlertDialogBuilder(requireContext())
                 .setItems(labels.toArray(new CharSequence[0]), (dialog, which) ->
                         onChatMenuItemSelected(actions.get(which), flags))
                 .show();
@@ -1645,8 +1646,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         TextView status = content.findViewById(R.id.aiOptOutStatus);
         View row = content.findViewById(R.id.aiOptOutRow);
 
-        androidx.appcompat.app.AlertDialog dialog =
-                new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+        AlertDialog dialog =
+                new MaterialAlertDialogBuilder(requireContext())
                         .setTitle(R.string.conversation_settings_title)
                         .setView(content)
                         .setNegativeButton(R.string.action_close, null)

@@ -20,6 +20,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.nexachat.R;
 import com.nexachat.databinding.FragmentInviteManageBinding;
+import com.nexachat.feature.ui.FormDialogs;
 import dagger.hilt.android.AndroidEntryPoint;
 import java.time.Duration;
 import java.time.Instant;
@@ -276,12 +277,12 @@ public final class InviteManageFragment extends Fragment {
     }
 
     private void confirmRevoke() {
-        new MaterialAlertDialogBuilder(requireContext())
+        FormDialogs.markDestructive(new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.invite_revoke_title)
                 .setMessage(R.string.invite_revoke_message)
                 .setNegativeButton(R.string.action_cancel, null)
                 .setPositiveButton(R.string.invite_revoke, (dialog, which) -> viewModel.revoke())
-                .show();
+                .show());
     }
 
     private String expiryText(@Nullable String value) {

@@ -31,6 +31,7 @@ import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.data.Contact;
 import com.nexachat.databinding.FragmentContactsBinding;
 import com.nexachat.feature.contacts.adapter.ContactListAdapter;
+import com.nexachat.feature.ui.FormDialogs;
 import dagger.hilt.android.AndroidEntryPoint;
 import java.util.List;
 
@@ -40,6 +41,7 @@ public final class ContactsFragment extends Fragment {
 
     private static final long ADD_DONE_DISMISS_MS = 900L;
     private static final long BUBBLE_HIDE_MS = 400L;
+    private static final String STATE_ADD_DIALOG = "addContactDialogShowing";
 
     private FragmentContactsBinding binding;
     private ContactsViewModel viewModel;
@@ -51,6 +53,9 @@ public final class ContactsFragment extends Fragment {
     @Nullable private TextView addDoneText;
     @Nullable private MaterialButton addActionButton;
     @Nullable private ContactDetailBinder detailBinder;
+    private boolean addDialogShowing;
+    /** Set while tearing the view down so a rotation dismiss doesn't wipe the typed phone. */
+    private boolean suppressAddFlowReset;
     private int lastCachedRefreshErrorId;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable hideBubble = () -> {
@@ -131,6 +136,17 @@ public final class ContactsFragment extends Fragment {
                         NavHostFragment.findNavController(this).navigate(R.id.chatFragment, args);
                     }
                 });
+        if (state != null && state.getBoolean(STATE_ADD_DIALOG, false)) {
+            // Reopen the add-by-phone dialog without resetting the flow: the
+            // ViewModel still holds the typed phone and in-flight result.
+            showAddByPhoneDialog(false);
+        }
+    }
+
+    @Override
+    public void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putBoolean(STATE_ADD_DIALOG, addDialogShowing);
     }
 
     private void render(@NonNull ContactsViewModel.UiState state) {
@@ -235,7 +251,13 @@ public final class ContactsFragment extends Fragment {
     }
 
     private void showAddByPhoneDialog() {
-        viewModel.resetAddFlow();
+        showAddByPhoneDialog(true);
+    }
+
+    private void showAddByPhoneDialog(boolean resetFlow) {
+        if (resetFlow) {
+            viewModel.resetAddFlow();
+        }
         LinearLayout root = new LinearLayout(requireContext());
         ScrollView scroll = new ScrollView(requireContext());
         scroll.setFillViewport(true);
@@ -243,17 +265,7 @@ public final class ContactsFragment extends Fragment {
         root.setOrientation(LinearLayout.VERTICAL);
         int pad = getResources().getDimensionPixelSize(R.dimen.space_lg);
         int spaceSm = getResources().getDimensionPixelSize(R.dimen.space_sm);
-        int spaceMd = getResources().getDimensionPixelSize(R.dimen.space_md);
         root.setPadding(pad, pad, pad, pad);
-
-        TextView title = new TextView(requireContext());
-        title.setText(R.string.add_contact_title);
-        title.setTextAppearance(R.style.TextAppearance_NexaChat_TitleLarge);
-        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        titleLp.bottomMargin = spaceMd;
-        root.addView(title, titleLp);
 
         TextInputLayout phoneLayout = new TextInputLayout(
                 requireContext(),
@@ -344,16 +356,22 @@ public final class ContactsFragment extends Fragment {
         });
 
         addDialog = new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.add_contact_title)
                 .setView(scroll)
                 .setNegativeButton(android.R.string.cancel, (d, w) -> {
                     viewModel.resetAddFlow();
                     addDialog = null;
                 })
                 .setOnDismissListener(d -> {
-                    viewModel.resetAddFlow();
+                    if (!suppressAddFlowReset) {
+                        viewModel.resetAddFlow();
+                    }
+                    addDialogShowing = false;
                     clearAddDialogRefs();
                 })
                 .show();
+        addDialogShowing = true;
+        FormDialogs.resizeAboveIme(addDialog);
         updateAddDialog(viewModel.getUiState().getValue());
     }
 
@@ -410,6 +428,7 @@ public final class ContactsFragment extends Fragment {
     public void onDestroyView() {
         handler.removeCallbacksAndMessages(null);
         if (addDialog != null) {
+            suppressAddFlowReset = true;
             addDialog.dismiss();
             clearAddDialogRefs();
         }
