@@ -15,6 +15,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -58,13 +59,15 @@ class TranslateRateLimiterTest {
     void tryConsumeReportsExhaustionWithoutThrowing() {
         TranslateRequestLimitRepository repository = mock(TranslateRequestLimitRepository.class);
         UUID userId = UUID.randomUUID();
-        when(repository.tryConsume(eq(userId), eq("DAY"), any(), anyInt(), eq(1))).thenReturn(false);
+        when(repository.tryConsume(eq(userId), eq("MINUTE"), any(), anyInt(), eq(1))).thenReturn(false);
 
         boolean allowed = new TranslateRateLimiter(repository, properties,
                 Clock.fixed(Instant.parse("2026-11-16T12:00:00Z"), ZoneOffset.UTC))
                 .tryConsume(userId, 1);
 
         assertThat(allowed).isFalse();
+        // A minute-window refusal must not spend any of the daily allowance.
+        verify(repository, never()).tryConsume(eq(userId), eq("DAY"), any(), anyInt(), anyInt());
     }
 
     @Test

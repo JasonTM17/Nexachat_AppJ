@@ -59,13 +59,14 @@ public class TranslateRateLimiter {
         Instant dayStart = LocalDate.ofInstant(now, ZoneOffset.UTC)
                 .atStartOfDay(ZoneOffset.UTC)
                 .toInstant();
-        if (!repository.tryConsume(userId, "DAY", dayStart, properties.getRateLimitPerDay(), count)) {
+        // The short window goes first: when it refuses, nothing is spent, so a
+        // burst cannot burn the daily allowance without producing a translation.
+        Instant minuteStart = now.truncatedTo(ChronoUnit.MINUTES);
+        if (!repository.tryConsume(userId, "MINUTE", minuteStart,
+                properties.getRateLimitPerMinute(), count)) {
             return false;
         }
-
-        Instant minuteStart = now.truncatedTo(ChronoUnit.MINUTES);
-        return repository.tryConsume(userId, "MINUTE", minuteStart,
-                properties.getRateLimitPerMinute(), count);
+        return repository.tryConsume(userId, "DAY", dayStart, properties.getRateLimitPerDay(), count);
     }
 
     /** Single-token convenience overload for the per-item batch path. */
