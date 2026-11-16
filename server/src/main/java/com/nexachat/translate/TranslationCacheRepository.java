@@ -22,6 +22,8 @@ import java.util.UUID;
 @Profile("!test")
 public class TranslationCacheRepository {
 
+    private static final int EXPIRED_SWEEP_BATCH = 50;
+
     private static final String HIT_SQL = """
             SELECT translated_text, source_lang, model, provider
             FROM message_translations
@@ -86,6 +88,7 @@ public class TranslationCacheRepository {
                        ))
                 """,
                 messageId, changeVersion, messageId, changeVersion, maxLangsPerMessage);
+        purgeExpiredBatch();
     }
 
     /** Drops every cached translation of one message (edit, recall, opt-out). */
@@ -93,20 +96,20 @@ public class TranslationCacheRepository {
         jdbcTemplate.update("DELETE FROM message_translations WHERE message_id = ?", messageId);
     }
 
-    /** Drops cached translations of every message authored by {@code senderId} in the conversation. */
-    public void deleteByConversationAndSender(UUID conversationId, UUID senderId) {
+    /**
+     * Bounded sweep of expired rows, run on each cache write so the TTL is
+     * enforced without a dedicated scheduler (which would wake a scaled-to-zero
+     * database on its own).
+     */
+    private void purgeExpiredBatch() {
         jdbcTemplate.update("""
-                DELETE FROM message_translations t
-                USING messages m
-                WHERE t.message_id = m.id
-                  AND m.conversation_id = ?
-                  AND m.sender_id = ?
-                """, conversationId, senderId);
-    }
-
-    /** Best-effort expired-row sweep; the retention job does the periodic bulk delete. */
-    public int deleteExpired() {
-        return jdbcTemplate.update("DELETE FROM message_translations WHERE expires_at <= now()");
+                DELETE FROM message_translations
+                WHERE ctid IN (
+                    SELECT ctid FROM message_translations
+                    WHERE expires_at <= now()
+                    LIMIT ?
+                )
+                """, EXPIRED_SWEEP_BATCH);
     }
 
     public record CacheEntry(String translatedText, String sourceLang,
