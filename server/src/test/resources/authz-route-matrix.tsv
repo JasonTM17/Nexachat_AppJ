@@ -150,3 +150,4 @@ GET	/api/v1/conversations/{conversationId}/translation-glossary	CONVERSATION_MEM
 PUT	/api/v1/conversations/{conversationId}/translation-glossary	CONVERSATION_MEMBER	conversation_member	rest-140
 GET	/api/v1/conversations/{conversationId}/translate-prefs	CONVERSATION_MEMBER	conversation_member	rest-141
 PUT	/api/v1/conversations/{conversationId}/translate-prefs	CONVERSATION_MEMBER	conversation_member	rest-142
+PUT	/api/v1/conversations/{conversationId}/disappearing	DIRECT_MEMBER_OR_GROUP_ADMIN	direct_member_or_group_admin	rest-152

@@ -17,5 +17,6 @@ public record ReplyRefRow(UUID id,
                           String content,
                           Instant deletedAt,
                           Instant createdAt,
-                          String encryption) {
+                          String encryption,
+                          Instant expiresAt) {
 }

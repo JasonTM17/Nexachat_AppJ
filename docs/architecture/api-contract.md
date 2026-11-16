@@ -619,6 +619,14 @@ and BCP-47 forms are normalized).
 | `GET /conversations/{conversationId}/translate-prefs` | Bearer member | — | `200` `{conversationId, autoTranslate, targetLang}` | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `PUT /conversations/{conversationId}/translate-prefs` | Bearer member | `{autoTranslate, targetLang}` — full replace; null/blank `targetLang` clears the conversation override | `200` stored prefs | `VALIDATION_FAILED` 400 · `TRANSLATION_UNSUPPORTED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 
+## Disappearing messages — `/api/v1/conversations`
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `PUT /conversations/{conversationId}/disappearing` | Bearer member (direct) or group admin | `{seconds}` — one of `0` (off), `3600`, `86400`, `604800`, `2592000`, `7776000` | `200` `ConversationUpdatePayload` carrying `disappearingSeconds`; setting the current value is a no-op | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_ADMIN` 403 (group, non-admin) · `CONVERSATION_NOT_FOUND` 404 |
+
+New messages in a conversation with a timer carry `expiresAt`; changing the timer writes a system message and never affects messages already sent. Sync deltas and inbox entries expose the timer as `disappearingSeconds` (`0` = off).
+
 ## Conversation labels — `/api/v1/labels`
 
 Labels are private per-user preferences. Names are trimmed, 1–30 Unicode

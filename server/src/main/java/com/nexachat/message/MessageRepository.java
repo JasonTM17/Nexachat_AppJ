@@ -64,11 +64,14 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query(value = """
             INSERT INTO messages
                 (conversation_id, sender_id, client_message_id, type, content, reply_to_id, peer_suppressed,
-                 change_version, created_at)
+                 change_version, created_at, expires_at)
             SELECT :conversationId, :senderId, :clientMessageId, :type,
                    CAST(:content AS text), CAST(:replyToId AS uuid), :peerSuppressed,
-                   c.change_version, clock_timestamp()
-            FROM conversations c WHERE c.id = :conversationId
+                   c.change_version, s.stamp,
+                   CASE WHEN c.disappearing_seconds > 0 AND :type <> 'SYSTEM'
+                        THEN s.stamp + c.disappearing_seconds * INTERVAL '1 second' END
+            FROM conversations c CROSS JOIN (SELECT clock_timestamp() AS stamp) s
+            WHERE c.id = :conversationId
             ON CONFLICT (sender_id, client_message_id) DO NOTHING
             """, nativeQuery = true)
     int insertIgnoringDuplicateKey(@Param("conversationId") UUID conversationId,
@@ -83,11 +86,14 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query(value = """
             INSERT INTO messages
                 (conversation_id, sender_id, client_message_id, type, content, reply_to_id, mention_all,
-                 peer_suppressed, change_version, created_at)
+                 peer_suppressed, change_version, created_at, expires_at)
             SELECT :conversationId, :senderId, :clientMessageId, :type,
                    CAST(:content AS text), CAST(:replyToId AS uuid), :mentionAll, :peerSuppressed,
-                   c.change_version, clock_timestamp()
-            FROM conversations c WHERE c.id = :conversationId
+                   c.change_version, s.stamp,
+                   CASE WHEN c.disappearing_seconds > 0 AND :type <> 'SYSTEM'
+                        THEN s.stamp + c.disappearing_seconds * INTERVAL '1 second' END
+            FROM conversations c CROSS JOIN (SELECT clock_timestamp() AS stamp) s
+            WHERE c.id = :conversationId
             ON CONFLICT (sender_id, client_message_id) DO NOTHING
             """, nativeQuery = true)
     int insertIgnoringDuplicateKeyWithMentionAll(@Param("conversationId") UUID conversationId,
@@ -104,12 +110,15 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query(value = """
             INSERT INTO messages
                 (conversation_id, sender_id, client_message_id, type, content, reply_to_id,
-                 peer_suppressed, encryption, e2ee_envelopes, change_version, created_at)
+                 peer_suppressed, encryption, e2ee_envelopes, change_version, created_at, expires_at)
             SELECT :conversationId, :senderId, :clientMessageId, :type,
                    CAST(:content AS text), CAST(:replyToId AS uuid), :peerSuppressed,
                    CAST(:encryption AS varchar), CAST(:envelopes AS jsonb),
-                   c.change_version, clock_timestamp()
-            FROM conversations c WHERE c.id = :conversationId
+                   c.change_version, s.stamp,
+                   CASE WHEN c.disappearing_seconds > 0 AND :type <> 'SYSTEM'
+                        THEN s.stamp + c.disappearing_seconds * INTERVAL '1 second' END
+            FROM conversations c CROSS JOIN (SELECT clock_timestamp() AS stamp) s
+            WHERE c.id = :conversationId
             ON CONFLICT (sender_id, client_message_id) DO NOTHING
             """, nativeQuery = true)
     int insertEncryptedIgnoringDuplicateKey(@Param("conversationId") UUID conversationId,
@@ -138,7 +147,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration, m.expiresAt)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.sender.id = :senderId AND m.clientMessageId = :clientMessageId
             """)
@@ -149,7 +158,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration, m.expiresAt)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.id = :messageId
             """)
@@ -165,10 +174,11 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration, m.expiresAt)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.conversation.id = :conversationId
               AND (:beforeSeq IS NULL OR m.seq < :beforeSeq)
+              AND (m.deletedAt IS NOT NULL OR m.expiresAt IS NULL OR m.expiresAt > CURRENT_TIMESTAMP)
               AND (m.peerSuppressed = false OR m.sender.id = :userId)
               AND EXISTS (SELECT 1 FROM ConversationMember member
                           WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
@@ -185,9 +195,10 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration, m.expiresAt)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.conversation.id = :conversationId AND m.seq > :afterSeq
+              AND (m.deletedAt IS NOT NULL OR m.expiresAt IS NULL OR m.expiresAt > CURRENT_TIMESTAMP)
               AND (m.peerSuppressed = false OR m.sender.id = :userId)
               AND EXISTS (SELECT 1 FROM ConversationMember member
                           WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
@@ -202,10 +213,11 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration, m.expiresAt)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.conversation.id = :conversationId
               AND m.changeVersion > :changeCursor AND m.changeVersion <= :changeUpperBound
+              AND (m.deletedAt IS NOT NULL OR m.expiresAt IS NULL OR m.expiresAt > CURRENT_TIMESTAMP)
               AND (m.peerSuppressed = false OR m.sender.id = :userId)
               AND EXISTS (SELECT 1 FROM ConversationMember member
                           WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
@@ -221,10 +233,11 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration, m.expiresAt)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.conversation.id = :conversationId AND m.seq <= :lastSeq
               AND m.editedAt > :since AND m.deletedAt IS NULL
+              AND (m.expiresAt IS NULL OR m.expiresAt > CURRENT_TIMESTAMP)
               AND (m.peerSuppressed = false OR m.sender.id = :userId)
               AND EXISTS (SELECT 1 FROM ConversationMember member
                           WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
@@ -263,11 +276,12 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration, m.expiresAt)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.conversation.id = :conversationId
               AND m.changeVersion > :changeCursor
               AND m.changeVersion <= :changeUpperBound
+              AND (m.deletedAt IS NOT NULL OR m.expiresAt IS NULL OR m.expiresAt > CURRENT_TIMESTAMP)
             ORDER BY m.changeVersion ASC, m.id ASC
             """)
     List<MessageRow> findChangesBetween(@Param("conversationId") UUID conversationId,
@@ -279,12 +293,13 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration, m.expiresAt)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.conversation.id = :conversationId
               AND m.seq <= :lastSeq
               AND m.editedAt > :since
               AND m.deletedAt IS NULL
+              AND (m.expiresAt IS NULL OR m.expiresAt > CURRENT_TIMESTAMP)
             ORDER BY m.editedAt ASC
             """)
     List<MessageRow> findEditedRowsSince(@Param("conversationId") UUID conversationId,
@@ -342,7 +357,8 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
                    m.client_message_id AS "clientMessageId", reply.id AS "replyToId",
                    m.created_at AS "createdAt", m.edited_at AS "editedAt",
                    m.deleted_at AS "deletedAt", m.mention_all AS "mentionAll",
-                   m.change_version AS "changeVersion", c.sync_generation AS generation
+                   m.change_version AS "changeVersion", c.sync_generation AS generation,
+                   m.expires_at AS "expiresAt"
             FROM messages m
             JOIN conversations c ON c.id = m.conversation_id
             JOIN users u ON u.id = m.sender_id
@@ -351,6 +367,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
               AND m.type = 'TEXT'
               AND m.deleted_at IS NULL
               AND m.encryption IS NULL
+              AND (m.expires_at IS NULL OR m.expires_at > now())
               AND (m.peer_suppressed = false OR m.sender_id = :userId)
               AND (:beforeSeq IS NULL OR m.seq < :beforeSeq)
               AND EXISTS (SELECT 1 FROM conversation_members cm
@@ -370,7 +387,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration, m.expiresAt)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.id IN :ids
             """)
@@ -379,16 +396,18 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     /**
      * Starred-list hydration (V38): one IN query over the viewer's starred
      * ids, filtered by the same read boundary as history — peer-suppressed
-     * rows only reach their sender, and a conversation the viewer left stops
+     * rows only reach their sender, expired rows hide until the purge turns
+     * them into tombstones, and a conversation the viewer left stops
      * surfacing its starred rows.
      */
     @Query("""
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration, m.expiresAt)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.id IN :ids
+              AND (m.deletedAt IS NOT NULL OR m.expiresAt IS NULL OR m.expiresAt > CURRENT_TIMESTAMP)
               AND (m.peerSuppressed = false OR m.sender.id = :userId)
               AND EXISTS (SELECT 1 FROM ConversationMember member
                           WHERE member.conversation.id = m.conversation.id
@@ -416,7 +435,8 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
      */
     @Query("""
             SELECT new com.nexachat.message.dto.ReplyRefRow(
-                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt, m.createdAt, m.encryption)
+                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt, m.createdAt,
+                       m.encryption, m.expiresAt)
             FROM Message m JOIN m.sender u
             WHERE m.id IN :ids
             """)
@@ -434,7 +454,8 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
      */
     @Query("""
             SELECT new com.nexachat.message.dto.ReplyRefRow(
-                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt, m.createdAt, m.encryption)
+                       m.id, u.id, u.displayName, m.type, m.content, m.deletedAt, m.createdAt,
+                       m.encryption, m.expiresAt)
             FROM Message m JOIN m.sender u
             WHERE m.id IN :ids
               AND (m.peerSuppressed = false OR m.sender.id = :userId)
@@ -450,13 +471,26 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration, m.expiresAt)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.id IN :ids
+              AND (m.deletedAt IS NOT NULL OR m.expiresAt IS NULL OR m.expiresAt > CURRENT_TIMESTAMP)
               AND (m.peerSuppressed = false OR m.sender.id = :userId)
               AND EXISTS (SELECT 1 FROM ConversationMember member
                           WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
                             AND m.createdAt >= member.joinedAt)
             """)
     List<MessageRow> findAdmittedRowsByIdIn(@Param("userId") UUID userId, @Param("ids") Collection<UUID> ids);
+
+    /**
+     * Disappearing-message purge scan: live rows past their expiry instant,
+     * oldest first, bounded by the caller's page size. The purge job re-locks
+     * each row inside its own transaction, so this read needs no lock clause.
+     */
+    @Query("""
+            SELECT m.id FROM Message m
+            WHERE m.expiresAt IS NOT NULL AND m.expiresAt <= :now AND m.deletedAt IS NULL
+            ORDER BY m.expiresAt ASC, m.id ASC
+            """)
+    List<UUID> findExpiredIds(@Param("now") Instant now, Pageable pageable);
 }

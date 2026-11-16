@@ -823,6 +823,8 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
         if (route.path().endsWith("/translate-batch")
                 || route.path().endsWith("/translate-prefs")
                 || route.path().endsWith("/translation-glossary")) return 200;
+        // The disappearing-timer PUT returns the conversation update payload.
+        if (route.path().endsWith("/disappearing")) return 200;
         if (route.policy().equals("CONVERSATION_MEMBER")) {
             if ((route.path().endsWith("/vote") && route.method().equals("DELETE"))
                     || (route.path().endsWith("/vote") && route.method().equals("PUT"))) return 200;
@@ -927,6 +929,11 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
         // Disabled-state write is a no-op so the member probe succeeds without
         // registering devices or emitting a system line into shared fixtures.
         if (path.endsWith("/e2ee") && route.method().equals("PUT")) return Map.of("enabled", false);
+        // Disabled-state write is a no-op: the timer is already off, so the
+        // member probe succeeds without posting a SYSTEM line into fixtures.
+        if (path.endsWith("/disappearing") && route.method().equals("PUT")) {
+            return Map.of("seconds", 0);
+        }
         if (route.policy().equals("GROUP_ADMIN") && path.endsWith("/invite-link")
                 && route.method().equals("PATCH")) return Map.of("requiresApproval", true);
         if (route.policy().equals("GROUP_ADMIN") && path.equals("/api/v1/conversations/{conversationId}")

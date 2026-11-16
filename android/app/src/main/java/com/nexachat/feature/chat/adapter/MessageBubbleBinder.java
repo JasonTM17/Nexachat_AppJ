@@ -1048,6 +1048,10 @@ public final class MessageBubbleBinder {
             CircularProgressIndicator sending = metaInclude.findViewById(R.id.sendingProgress);
             ImageView deliveredIcon = metaInclude.findViewById(R.id.deliveryIcon);
             TextView deliveryText = metaInclude.findViewById(R.id.deliveryStatusText);
+            ImageView timer = metaInclude.findViewById(R.id.timerIcon);
+            if (timer != null) {
+                timer.setVisibility(View.GONE);
+            }
             int metaColor = resolveThemeColor(
                     root.getContext(), com.google.android.material.R.attr.colorOnSurfaceVariant);
             metaInclude.setBackground(null);
@@ -1093,6 +1097,7 @@ public final class MessageBubbleBinder {
         CircularProgressIndicator sending = metaInclude.findViewById(R.id.sendingProgress);
         ImageView deliveredIcon = metaInclude.findViewById(R.id.deliveryIcon);
         TextView deliveryText = metaInclude.findViewById(R.id.deliveryStatusText);
+        ImageView timer = metaInclude.findViewById(R.id.timerIcon);
 
         boolean isMine = message.getMine();
         int metaColor;
@@ -1133,6 +1138,16 @@ public final class MessageBubbleBinder {
             time.setText(timeFormat.format(new Date(message.getCreatedAtEpochMs())));
             time.setTextColor(metaColor);
             time.setAlpha(metaLabelAlpha);
+        }
+        if (timer != null) {
+            boolean expiring = message.isExpiring();
+            timer.setVisibility(expiring ? View.VISIBLE : View.GONE);
+            if (expiring) {
+                timer.setImageTintList(ColorStateList.valueOf(metaColor));
+                timer.setAlpha(metaLabelAlpha);
+                timer.setContentDescription(
+                        root.getContext().getString(R.string.cd_disappearing_bubble));
+            }
         }
         if (sending != null) {
             boolean sendingNow = isMine && message.getStatus() == DeliveryStatus.SENDING;

@@ -55,6 +55,8 @@ public final class ConversationEntity {
     @ColumnInfo(defaultValue = "0") private final boolean lastMessageEncrypted;
     /** Server message type of the last row, so previews can localize SYSTEM lines. */
     @Nullable private final String lastMessageType;
+    /** Disappearing-message timer in seconds; 0 = off. */
+    @ColumnInfo(defaultValue = "0") private final int disappearingSeconds;
 
     @androidx.room.Ignore
     public ConversationEntity(
@@ -118,6 +120,7 @@ public final class ConversationEntity {
                 false, false, null);
     }
 
+    @androidx.room.Ignore
     public ConversationEntity(
             @NonNull String id,
             @NonNull String type,
@@ -145,6 +148,42 @@ public final class ConversationEntity {
             boolean e2eeEnabled,
             boolean lastMessageEncrypted,
             @Nullable String lastMessageType) {
+        this(id, type, title, lastMessageSeq, lastMessageContent, lastMessageSenderName,
+                lastMessageAt, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
+                peerReadSeq, myRole, otherUserId, lastMessageDeleted, peerDeliveredSeq,
+                muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt, labelIdsCsv,
+                e2eeEnabled, lastMessageEncrypted, lastMessageType, 0);
+    }
+
+    public ConversationEntity(
+            @NonNull String id,
+            @NonNull String type,
+            @Nullable String title,
+            long lastMessageSeq,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable Long lastMessageAt,
+            int unreadCount,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            long peerReadSeq,
+            @Nullable String myRole,
+            @Nullable String otherUserId,
+            boolean lastMessageDeleted,
+            long peerDeliveredSeq,
+            boolean muted,
+            @Nullable Long mutedUntilEpochMs,
+            boolean archived,
+            boolean aiOptOut,
+            boolean pinned,
+            @Nullable Long pinnedAt,
+            @NonNull String labelIdsCsv,
+            boolean e2eeEnabled,
+            boolean lastMessageEncrypted,
+            @Nullable String lastMessageType,
+            int disappearingSeconds) {
+        this.disappearingSeconds = disappearingSeconds;
         this.e2eeEnabled = e2eeEnabled;
         this.lastMessageEncrypted = lastMessageEncrypted;
         this.lastMessageType = lastMessageType;
@@ -325,6 +364,8 @@ public final class ConversationEntity {
     public boolean isE2eeEnabled() { return e2eeEnabled; }
     public boolean isLastMessageEncrypted() { return lastMessageEncrypted; }
     @Nullable public String getLastMessageType() { return lastMessageType; }
+    /** Disappearing-message timer in seconds; 0 = off. */
+    public int getDisappearingSeconds() { return disappearingSeconds; }
     @NonNull public List<String> getLabelIds() {
         if (labelIdsCsv.isBlank()) return List.of();
         return Arrays.stream(labelIdsCsv.split(","))
@@ -339,7 +380,7 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId, lastMessageDeleted,
                 peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt,
-                labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType);
+                labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds);
     }
 
     /** Returns this row with its group avatar URL replaced. */
@@ -348,7 +389,7 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, newAvatarUrl, peerReadSeq, myRole, otherUserId,
                 lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
-                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType);
+                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds);
     }
 
     /** Returns this row with client-only values merged from local state. */
@@ -358,7 +399,7 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, newPeerReadSeq, newMyRole, newOtherUserId,
                 lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
-                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType);
+                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds);
     }
 
     /** Returns this row with updated peerDeliveredSeq. */
@@ -367,7 +408,7 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
                 lastMessageDeleted, newPeerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
-                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType);
+                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds);
     }
 
     /** Returns this row with updated pinned state. */
@@ -376,7 +417,17 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
                 lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
-                newPinned, newPinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType);
+                newPinned, newPinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds);
+    }
+
+    /** Returns this row with the disappearing-message timer replaced. */
+    @NonNull public ConversationEntity withDisappearingSeconds(int newDisappearingSeconds) {
+        return new ConversationEntity(id, type, title, lastMessageSeq, lastMessageContent,
+                lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
+                otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
+                lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
+                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType,
+                newDisappearingSeconds);
     }
 
     /** Returns this row with a replaced caller-owned label assignment cache. */
@@ -385,7 +436,7 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId, lastMessageDeleted,
                 peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt,
-                newLabelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType);
+                newLabelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds);
     }
 
     @Override public boolean equals(Object other) {
@@ -409,7 +460,8 @@ public final class ConversationEntity {
                 && Objects.equals(otherUserId, that.otherUserId)
                 && Objects.equals(mutedUntilEpochMs, that.mutedUntilEpochMs)
                 && Objects.equals(labelIdsCsv, that.labelIdsCsv)
-                && Objects.equals(lastMessageType, that.lastMessageType);
+                && Objects.equals(lastMessageType, that.lastMessageType)
+                && disappearingSeconds == that.disappearingSeconds;
     }
 
     @Override public int hashCode() {
@@ -417,7 +469,7 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
                 lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
-                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType);
+                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds);
     }
 
     @NonNull @Override public String toString() {
@@ -432,6 +484,7 @@ public final class ConversationEntity {
                 + ", muted=" + muted + ", mutedUntilEpochMs=" + mutedUntilEpochMs
                 + ", archived=" + archived + ", aiOptOut=" + aiOptOut
                 + ", pinned=" + pinned + ", pinnedAt=" + pinnedAt
-                + ", labelIdsCsv=" + labelIdsCsv + ')';
+                + ", labelIdsCsv=" + labelIdsCsv
+                + ", disappearingSeconds=" + disappearingSeconds + ')';
     }
 }

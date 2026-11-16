@@ -19,4 +19,5 @@ public interface MessageSearchProjection {
     Boolean getMentionAll();
     Long getChangeVersion();
     Long getGeneration();
+    Instant getExpiresAt();
 }

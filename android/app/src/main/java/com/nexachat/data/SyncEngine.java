@@ -768,7 +768,12 @@ public final class SyncEngine {
                             }
                         }
 
-                        // 5. Apply caller-only member flags (pinned, pinnedAt).
+                        // 5. Apply caller-only member flags (pinned, pinnedAt) and the
+                        //    conversation-scoped disappearing timer.
+                        if (delta.getDisappearingSeconds() != null) {
+                            conversationDao.updateDisappearingSeconds(
+                                    conversationId, delta.getDisappearingSeconds()).blockingAwait();
+                        }
                         if (delta.getPinned() != null) {
                             boolean pinned = Boolean.TRUE.equals(delta.getPinned());
                             Long pinnedAt = delta.getPinnedAt() != null
@@ -826,7 +831,8 @@ public final class SyncEngine {
                   !deleted && dto.isMentionAll(),
                   dto.getChangeVersion() == null ? 0L : dto.getChangeVersion(),
                   dto.getGeneration() == null ? 0L : dto.getGeneration(),
-                  resolved.encrypted(), resolved.decryptFailed(), replyToEncrypted
+                  resolved.encrypted(), resolved.decryptFailed(), replyToEncrypted,
+                  TimeAndJwt.isoToEpochMsOrNull(dto.getExpiresAt())
         );
     }
 

@@ -229,6 +229,7 @@ public class AlertService {
                         FROM messages
                         WHERE conversation_id = ? AND seq BETWEEN ? AND ?
                           AND deleted_at IS NULL AND type = 'TEXT'
+                          AND (expires_at IS NULL OR expires_at > now())
                           AND encryption IS NULL AND content IS NOT NULL
                           AND sender_id NOT IN (
                               SELECT user_id FROM conversation_ai_opt_outs

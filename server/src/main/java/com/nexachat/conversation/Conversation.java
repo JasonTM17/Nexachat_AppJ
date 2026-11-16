@@ -86,6 +86,13 @@ public class Conversation {
     @Column(name = "e2ee_enabled", nullable = false)
     private boolean e2eeEnabled;
 
+    /**
+     * Per-conversation disappearing-message timer in seconds; {@code null}
+     * means off. Only the allow-listed durations are stored (DDL CHECK).
+     */
+    @Column(name = "disappearing_seconds")
+    private Integer disappearingSeconds;
+
     protected Conversation() {
         // JPA only
     }
@@ -168,6 +175,14 @@ public class Conversation {
 
     public void setE2eeEnabled(boolean e2eeEnabled) {
         this.e2eeEnabled = e2eeEnabled;
+    }
+
+    public Integer getDisappearingSeconds() {
+        return disappearingSeconds;
+    }
+
+    public void setDisappearingSeconds(Integer disappearingSeconds) {
+        this.disappearingSeconds = disappearingSeconds;
     }
 
     /** Admin-only rename (GROUP) — same mutator convention as {@link User#changeDisplayName}. */

@@ -53,6 +53,8 @@ public final class SyncResponse {
         @Nullable private final Boolean archived;
         @Nullable private final Boolean pinned;
         @Nullable private final String pinnedAt;
+        /** Conversation disappearing timer in seconds (0 = off); null when omitted. */
+        @Nullable private Integer disappearingSeconds;
 
         @Nullable private List<MessageDto> changes;
         @Nullable private Long changeCursor;
@@ -197,5 +199,7 @@ public final class SyncResponse {
         @Nullable public Boolean getPinned() { return pinned; }
         public boolean isPinned() { return Boolean.TRUE.equals(pinned); }
         @Nullable public String getPinnedAt() { return pinnedAt; }
+        @Nullable public Integer getDisappearingSeconds() { return disappearingSeconds; }
+        public void setDisappearingSeconds(@Nullable Integer seconds) { this.disappearingSeconds = seconds; }
     }
 }

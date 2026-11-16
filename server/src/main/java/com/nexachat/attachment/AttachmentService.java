@@ -232,6 +232,12 @@ public class AttachmentService {
         if (bound != null && bound.getDeletedAt() != null) {
             throw ApiException.of(ApiErrorCode.ATTACHMENT_NOT_FOUND, "Attachment not found");
         }
+        // A disappearing message stops serving its bytes the moment it expires, not when the
+        // purge sweep gets to it.
+        if (bound != null && bound.getExpiresAt() != null
+                && !bound.getExpiresAt().isAfter(java.time.Instant.now())) {
+            throw ApiException.of(ApiErrorCode.ATTACHMENT_NOT_FOUND, "Attachment not found");
+        }
         if (attachment.getOwner().getId().equals(requesterId)) {
             return;
         }

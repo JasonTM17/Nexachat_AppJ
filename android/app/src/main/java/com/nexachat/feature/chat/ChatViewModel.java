@@ -1112,6 +1112,20 @@ public final class ChatViewModel extends ViewModel {
                 null);
     }
 
+    /** Sets or clears the disappearing-message timer; {@code seconds} 0 turns it off. */
+    public void setDisappearing(int seconds) {
+        if (conversationId.isBlank()) return;
+        disposables.add(conversationRepository.setDisappearing(conversationId, seconds)
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        result -> {
+                            if (result instanceof Result.Failure<?> failure) {
+                                updateUiState(state -> state.withError(failure.getError()));
+                            }
+                        },
+                        error -> updateUiState(state -> state.withError(toApiError(error)))));
+    }
+
     /** Archives or restores this conversation for the caller. */
     public void setConversationArchived(boolean archived) {
         runPreference(
@@ -2282,6 +2296,8 @@ public final class ChatViewModel extends ViewModel {
          * so the open episode marker is the only durable-observable signal.
          */
         private final boolean keysetInvalidMarked;
+        /** Disappearing-message timer in seconds; 0 = off. */
+        private final int disappearingSeconds;
 
         public UiState() {
             this("");
@@ -2290,7 +2306,7 @@ public final class ChatViewModel extends ViewModel {
         private UiState(String input) {
             this(true, List.of(), List.of(), input, false, null, false, true, true,
                     false, null, List.of(), null, List.of(), 0L, 0L, null, null, true, false,
-                    false, false, KeysetTrust.NONE, false);
+                    false, false, KeysetTrust.NONE, false, 0);
         }
 
         private UiState(
@@ -2317,7 +2333,9 @@ public final class ChatViewModel extends ViewModel {
                 boolean e2eeEnabled,
                 boolean lastMessageEncrypted,
                 @NonNull KeysetTrust keysetTrust,
-                boolean keysetInvalidMarked) {
+                boolean keysetInvalidMarked,
+                int disappearingSeconds) {
+            this.disappearingSeconds = disappearingSeconds;
             this.e2eeEnabled = e2eeEnabled;
             this.lastMessageEncrypted = lastMessageEncrypted;
             this.keysetTrust = keysetTrust;
@@ -2390,6 +2408,9 @@ public final class ChatViewModel extends ViewModel {
         @Nullable public String getOtherUserId() { return otherUserId; }
         public boolean isShowSeen() { return showSeen; }
         public boolean isConversationPinned() { return conversationPinned; }
+        /** Disappearing-message timer in seconds; 0 = off. */
+        public int getDisappearingSeconds() { return disappearingSeconds; }
+        public boolean isDisappearingEnabled() { return disappearingSeconds > 0; }
         public boolean isE2eeEnabled() { return e2eeEnabled; }
         public boolean isLastMessageEncrypted() { return lastMessageEncrypted; }
         @NonNull public KeysetTrust getKeysetTrust() { return keysetTrust; }
@@ -2436,7 +2457,7 @@ public final class ChatViewModel extends ViewModel {
             return copy(loading, nextMessages, pending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked, disappearingSeconds);
         }
 
         private UiState withConversation(ConversationSummary conversation) {
@@ -2453,42 +2474,43 @@ public final class ChatViewModel extends ViewModel {
                     conversation.isPinned(),
                     conversation.isE2eeEnabled(),
                     conversation.isLastMessageEncrypted(),
-                    keysetTrust, keysetInvalidMarked));
+                    keysetTrust, keysetInvalidMarked,
+                    conversation.getDisappearingSeconds()));
         }
 
         private UiState withInput(String nextInput) {
             return copy(loading, messages, sending, nextInput, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked, disappearingSeconds);
         }
 
         private UiState withPeerTyping(boolean nextPeerTyping) {
             return copy(loading, messages, sending, input, nextPeerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked, disappearingSeconds);
         }
 
         private UiState withConnected(boolean nextConnected) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, nextConnected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked, disappearingSeconds);
         }
 
         private UiState withHasMore(boolean nextHasMore) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, nextHasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked, disappearingSeconds);
         }
 
         private UiState withLoading(boolean nextLoading) {
             return copy(nextLoading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked, disappearingSeconds);
         }
 
         private UiState withError(@Nullable ApiError nextError) {
@@ -2509,7 +2531,7 @@ public final class ChatViewModel extends ViewModel {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, nextChatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked, disappearingSeconds);
         }
 
         private UiState withoutErrorIf(
@@ -2528,28 +2550,28 @@ public final class ChatViewModel extends ViewModel {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pending, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked, disappearingSeconds);
         }
 
         private UiState withReplyTarget(@Nullable ReplyTarget target) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, target, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked, disappearingSeconds);
         }
 
         private UiState withPins(List<ChatMessage> nextPins) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, nextPins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked, disappearingSeconds);
         }
 
         private UiState withShowSeen(boolean nextShowSeen) {
             return copy(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    nextShowSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked);
+                    nextShowSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked, disappearingSeconds);
         }
 
         private UiState withKeysetVerdict(@NonNull KeysetTrust next,
@@ -2559,7 +2581,7 @@ public final class ChatViewModel extends ViewModel {
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
                     showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, next,
-                    nextInvalidMarked));
+                    nextInvalidMarked, disappearingSeconds));
         }
 
         /**
@@ -2601,11 +2623,13 @@ public final class ChatViewModel extends ViewModel {
                 boolean e2eeEnabled,
                 boolean lastMessageEncrypted,
                 @NonNull KeysetTrust keysetTrust,
-                boolean keysetInvalidMarked) {
+                boolean keysetInvalidMarked,
+                int disappearingSeconds) {
             return new UiState(loading, messages, sending, input, peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
-                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust, keysetInvalidMarked);
+                    showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, keysetTrust,
+                    keysetInvalidMarked, disappearingSeconds);
         }
 
         @Nullable

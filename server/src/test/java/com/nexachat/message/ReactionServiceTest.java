@@ -177,6 +177,26 @@ class ReactionServiceTest {
     }
 
     @Test
+    void toggle_expiredMessage_isRejectedBeforeThePurgeSweepRuns() {
+        Message expired = messageInConversation();
+        expired.setExpiresAt(java.time.Instant.now().minusSeconds(60));
+        when(messageRepository.findConversationIdById(messageId))
+                .thenReturn(Optional.of(conversationId));
+        when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.of(expired));
+        when(conversationRepository.findByIdForUpdate(conversationId))
+                .thenReturn(Optional.of(expired.getConversation()));
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(true);
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> reactionService.toggle(userId, messageId, new ReactRequest("👍")));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.MESSAGE_DELETED);
+        verify(reactionRepository, never()).deleteOne(any(), any(), any());
+        verify(reactionRepository, never()).insertIgnoringConflict(any(), any(), any());
+    }
+
+    @Test
     void toggle_notMember_throwsNotMember() {
         when(messageRepository.findConversationIdById(messageId))
                 .thenReturn(Optional.of(conversationId));

@@ -41,6 +41,19 @@
         android:src="@drawable/ic_lock"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="@id/chatToolbar"
+        app:layout_constraintEnd_toStartOf="@id/disappearingChip"
+        app:layout_constraintTop_toTopOf="@id/chatToolbar"
+        app:tint="?attr/colorPrimary" />
+
+    <ImageView
+        android:id="@+id/disappearingChip"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:layout_marginEnd="@dimen/space_xs"
+        android:contentDescription="@string/cd_disappearing_bubble"
+        android:src="@drawable/ic_hourglass_top"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@id/chatToolbar"
         app:layout_constraintEnd_toStartOf="@id/chatToolbarActions"
         app:layout_constraintTop_toTopOf="@id/chatToolbar"
         app:tint="?attr/colorPrimary" />

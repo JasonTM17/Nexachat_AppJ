@@ -187,7 +187,9 @@ public class ReactionService {
         if (message.isPeerSuppressed() && !message.getSender().getId().equals(userId)) {
             throw ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found");
         }
-        if (message.getDeletedAt() != null) {
+        if (message.getDeletedAt() != null
+                || (message.getExpiresAt() != null
+                        && !message.getExpiresAt().isAfter(java.time.Instant.now()))) {
             throw ApiException.of(ApiErrorCode.MESSAGE_DELETED, "Message was deleted");
         }
         return message;

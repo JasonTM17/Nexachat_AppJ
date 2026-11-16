@@ -216,6 +216,12 @@ nexachat:
     change-cursors-enabled: ${NEXACHAT_SYNC_CHANGE_CURSORS_ENABLED:true}
     # Delta clients that fall behind this window receive a full reaction refresh.
     reaction-retention-days: ${NEXACHAT_SYNC_REACTION_RETENTION_DAYS:30}
+  disappearing:
+    # Scheduled expiry sweep — enabled by default; the sweep is single-flight
+    # across instances via a session advisory lock.
+    enabled: ${NEXACHAT_DISAPPEARING_ENABLED:true}
+    batch-size: ${NEXACHAT_DISAPPEARING_BATCH_SIZE:200}
+    purge-interval-ms: ${NEXACHAT_DISAPPEARING_PURGE_INTERVAL_MS:60000}
   retention:
     # Cleanup is globally opt-in; dry-run counts candidates until explicitly disabled.
     enabled: ${NEXACHAT_RETENTION_ENABLED:false}

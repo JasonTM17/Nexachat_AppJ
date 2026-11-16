@@ -96,7 +96,9 @@ public class E2eeConversationService {
         ConversationUpdatePayload payload = new ConversationUpdatePayload(
                 conversationId, conversation.getTitle(), conversation.getAvatarUrl(),
                 "UPDATED", memberRepository.findMembers(conversationId),
-                conversation.isE2eeEnabled());
+                conversation.isE2eeEnabled(),
+                conversation.getDisappearingSeconds() == null
+                        ? 0 : conversation.getDisappearingSeconds());
         eventPublisher.publishEvent(new ConversationUpdatedEvent(conversationId, payload, List.of()));
         return state(conversation);
     }

@@ -34,6 +34,7 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
             WHERE m.conversation_id = ?
               AND m.type = 'TEXT'
               AND m.deleted_at IS NULL
+              AND (m.expires_at IS NULL OR m.expires_at > now())
               AND m.content IS NOT NULL
               AND btrim(m.content) <> ''
               AND m.encryption IS NULL
@@ -185,6 +186,7 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
                 LEFT JOIN message_embeddings e ON e.message_id = m.id AND e.model = ?
                 WHERE m.type = 'TEXT'
                   AND m.deleted_at IS NULL
+                  AND (m.expires_at IS NULL OR m.expires_at > now())
                   AND m.content IS NOT NULL
                   AND btrim(m.content) <> ''
                   AND m.encryption IS NULL
@@ -208,6 +210,7 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
         String sql = """
                 SELECT m.id, m.content, m.edited_at FROM messages m
                 WHERE m.deleted_at IS NULL AND m.content IS NOT NULL
+                  AND (m.expires_at IS NULL OR m.expires_at > now())
                   AND m.encryption IS NULL AND m.id = ANY(?)
                   AND NOT EXISTS (
                       SELECT 1 FROM conversation_ai_opt_outs o
