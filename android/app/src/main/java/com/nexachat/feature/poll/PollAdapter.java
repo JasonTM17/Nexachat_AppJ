@@ -5,12 +5,12 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.CompoundButton;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
+import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.nexachat.R;
 import com.nexachat.databinding.ItemPollBinding;
 import com.nexachat.databinding.ItemPollOptionMultipleBinding;
@@ -186,7 +186,7 @@ public final class PollAdapter extends ListAdapter<PollAdapter.Row, PollAdapter.
 
         private void bindControl(
                 CompoundButton control,
-                ProgressBar progress,
+                LinearProgressIndicator progress,
                 TextView countView,
                 PollOption option,
                 boolean checked,

@@ -10,6 +10,7 @@ import java.io.File;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 public final class ChatInlineErrorLayoutContractTest {
     private static final String ANDROID = "http://schemas.android.com/apk/res/android";
@@ -75,8 +76,8 @@ public final class ChatInlineErrorLayoutContractTest {
         for (String directory : new String[]{"layout", "layout-land"}) {
             Document layout = parse("src/main/res/" + directory + "/fragment_chat.xml");
             Element search = findById(layout, "chatSearchInput");
-            assertEquals(directory + " chat search must expose the Search keyboard action",
-                    "actionSearch", search.getAttributeNS(ANDROID, "imeOptions"));
+            assertTrue(directory + " chat search must expose the Search keyboard action",
+                    search.getAttributeNS(ANDROID, "imeOptions").contains("actionSearch"));
         }
     }
 

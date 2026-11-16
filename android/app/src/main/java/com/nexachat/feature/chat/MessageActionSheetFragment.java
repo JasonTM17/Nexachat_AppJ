@@ -40,6 +40,7 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
     private static final String ARG_CAN_PIN = "canPin";
     private static final String ARG_PINNED = "pinned";
     private static final String ARG_DELETE_ACTION = "deleteAction";
+    private static final String ARG_TRANSLATED = "translated";
 
     private static final String[] REACTIONS = {"👍", "❤️", "😂", "😮", "😢", "🙏"};
     private static final int[] REACTION_NAMES = {R.string.reaction_like, R.string.reaction_love,
@@ -58,10 +59,12 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
         void react(@NonNull ChatMessage message, @NonNull String emoji);
         void pin(@NonNull ChatMessage message);
         void forward(@NonNull ChatMessage message);
+        void translate(@NonNull ChatMessage message);
+        void showOriginal(@NonNull ChatMessage message);
     }
 
     private enum MessageActionKind {
-        REPLY, COPY, FORWARD, PIN, EDIT, DELETE
+        REPLY, COPY, FORWARD, PIN, EDIT, DELETE, TRANSLATE, SHOW_ORIGINAL
     }
 
     private static final class MessageActionEntry {
@@ -86,12 +89,27 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
             boolean canPin,
             boolean pinned,
             @NonNull RecallWindowRules.DeleteAction deleteAction) {
+        return newInstance(messageId, canPin, pinned, deleteAction, false);
+    }
+
+    /**
+     * @param translated whether a translation is currently visible for the
+     *                   message — the sheet offers "Show original" then.
+     */
+    @NonNull
+    public static MessageActionSheetFragment newInstance(
+            @NonNull String messageId,
+            boolean canPin,
+            boolean pinned,
+            @NonNull RecallWindowRules.DeleteAction deleteAction,
+            boolean translated) {
         MessageActionSheetFragment sheet = new MessageActionSheetFragment();
         Bundle args = new Bundle();
         args.putString(ARG_MESSAGE_ID, messageId);
         args.putBoolean(ARG_CAN_PIN, canPin);
         args.putBoolean(ARG_PINNED, pinned);
         args.putString(ARG_DELETE_ACTION, deleteAction.name());
+        args.putBoolean(ARG_TRANSLATED, translated);
         sheet.setArguments(args);
         return sheet;
     }
@@ -164,6 +182,23 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
             entries.add(new MessageActionEntry(getString(R.string.action_forward),
                     getString(R.string.action_forward_desc),
                     () -> callbacks.forward(message), MessageActionKind.FORWARD));
+        }
+        // Translate is offered on plain text only: encrypted and tombstone
+        // content never reaches server-side AI, matching the server gate.
+        boolean translatable = sent && "TEXT".equals(message.getType())
+                && message.getContent() != null && !message.getContent().isBlank()
+                && !message.isEncrypted() && !undecryptable;
+        if (translatable) {
+            boolean translated = args.getBoolean(ARG_TRANSLATED, false);
+            if (translated) {
+                entries.add(new MessageActionEntry(getString(R.string.action_show_original),
+                        getString(R.string.action_show_original_desc),
+                        () -> callbacks.showOriginal(message), MessageActionKind.SHOW_ORIGINAL));
+            } else {
+                entries.add(new MessageActionEntry(getString(R.string.action_translate),
+                        getString(R.string.action_translate_desc),
+                        () -> callbacks.translate(message), MessageActionKind.TRANSLATE));
+            }
         }
         if (canPin && sent) {
             entries.add(new MessageActionEntry(getString(pinned ? R.string.action_unpin : R.string.action_pin),

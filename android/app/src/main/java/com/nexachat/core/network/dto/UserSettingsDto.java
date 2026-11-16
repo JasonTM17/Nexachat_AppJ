@@ -12,18 +12,25 @@ import androidx.annotation.Nullable;
 public final class UserSettingsDto {
     @Nullable private final Boolean showPresence;
     @Nullable private final Boolean showSeen;
+    @Nullable private final String translateTargetLang;
 
     public UserSettingsDto() {
-        this(null, null);
+        this(null, null, null);
     }
 
     public UserSettingsDto(@Nullable Boolean showPresence) {
-        this(showPresence, null);
+        this(showPresence, null, null);
     }
 
     public UserSettingsDto(@Nullable Boolean showPresence, @Nullable Boolean showSeen) {
+        this(showPresence, showSeen, null);
+    }
+
+    public UserSettingsDto(@Nullable Boolean showPresence, @Nullable Boolean showSeen,
+            @Nullable String translateTargetLang) {
         this.showPresence = showPresence;
         this.showSeen = showSeen;
+        this.translateTargetLang = translateTargetLang;
     }
 
     @Nullable
@@ -34,5 +41,10 @@ public final class UserSettingsDto {
     @Nullable
     public Boolean getShowSeen() {
         return showSeen;
+    }
+
+    @Nullable
+    public String getTranslateTargetLang() {
+        return translateTargetLang;
     }
 }

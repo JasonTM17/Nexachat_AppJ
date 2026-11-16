@@ -1,5 +1,6 @@
 package com.nexachat.feature.chat;
 
+import android.content.Context;
 import android.net.Uri;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -33,7 +34,9 @@ import com.nexachat.data.MessageMentionCodec;
 import com.nexachat.data.MessageSearchResult;
 import com.nexachat.data.PeerPresence;
 import com.nexachat.data.SettingsRepository;
+import com.nexachat.data.TranslationRepository;
 import com.nexachat.data.TypingEvent;
+import com.nexachat.feature.chat.voice.VoiceRecorder;
 import com.nexachat.feature.media.PendingAttachment;
 import dagger.hilt.android.lifecycle.HiltViewModel;
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
@@ -55,6 +58,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.UnaryOperator;
@@ -111,12 +116,29 @@ public final class ChatViewModel extends ViewModel {
     private boolean editSubmitInFlight;
     private final MutableLiveData<AiOptOutState> aiOptOutState =
             new MutableLiveData<>(new AiOptOutState());
+    @Nullable private final TranslationRepository translationRepository;
+    private final MutableLiveData<Map<String, TranslationUiState>> translationStates =
+            new MutableLiveData<>(java.util.Map.of());
+    private final MutableLiveData<TranslatePrefsState> translatePrefsState =
+            new MutableLiveData<>(new TranslatePrefsState());
+    /** Account-level default resolved from user settings; null until loaded. */
+    @Nullable private String accountTargetLang;
+    /** Messages already submitted to auto-translate this session. */
+    private final java.util.Set<String> autoTranslateRequested = new java.util.HashSet<>();
+    private static final long TRANSLATION_CACHE_MAX_AGE_MILLIS = 30L * 24 * 60 * 60 * 1000;
+    private boolean translationSweepDone;
     private final MutableLiveData<ChatSearchState> mutableSearchState =
             new MutableLiveData<>(new ChatSearchState());
     private final MutableLiveData<List<GroupMember>> mutableGroupMembers =
             new MutableLiveData<>(List.of());
     private final ChatSingleLiveEvent<ChatActionEvent> actionEvents =
             new ChatSingleLiveEvent<>();
+
+    // Voice capture lives here so a configuration change (rotation, theme,
+    // font) recreates the view without killing an in-progress recording.
+    @Nullable private VoiceRecorder voiceRecorder;
+    @Nullable private ExecutorService voiceStartExecutor;
+    private boolean voiceRetainedForConfigChange;
     private final ChatSingleLiveEvent<String> jumpTargets = new ChatSingleLiveEvent<>();
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final SerialDisposable searchDisposable = new SerialDisposable();
@@ -150,9 +172,11 @@ public final class ChatViewModel extends ViewModel {
             TokenStore tokenStore,
             EphemeralStateRouter ephemeralRouter,
             @Nullable SettingsRepository settingsRepository,
-            KeysetTrustStore keysetTrustStore) {
+            KeysetTrustStore keysetTrustStore,
+            TranslationRepository translationRepository) {
         this(savedStateHandle, messageRepository, conversationRepository, attachmentRepository,
-                session, tokenStore, settingsRepository, ephemeralRouter, keysetTrustStore);
+                session, tokenStore, settingsRepository, ephemeralRouter, keysetTrustStore,
+                translationRepository);
     }
 
     /** Compatibility constructor for existing focused ViewModel tests. */
@@ -178,6 +202,21 @@ public final class ChatViewModel extends ViewModel {
             @Nullable SettingsRepository settingsRepository,
             @Nullable EphemeralStateRouter ephemeralRouter,
             @Nullable KeysetTrustStore keysetTrustStore) {
+        this(savedStateHandle, messageRepository, conversationRepository, attachmentRepository,
+                session, tokenStore, settingsRepository, ephemeralRouter, keysetTrustStore, null);
+    }
+
+    private ChatViewModel(
+            SavedStateHandle savedStateHandle,
+            MessageRepository messageRepository,
+            ConversationRepository conversationRepository,
+            AttachmentRepository attachmentRepository,
+            RealtimeSession session,
+            TokenStore tokenStore,
+            @Nullable SettingsRepository settingsRepository,
+            @Nullable EphemeralStateRouter ephemeralRouter,
+            @Nullable KeysetTrustStore keysetTrustStore,
+            @Nullable TranslationRepository translationRepository) {
         this.savedStateHandle = Objects.requireNonNull(savedStateHandle, "savedStateHandle");
         this.messageRepository = Objects.requireNonNull(messageRepository, "messageRepository");
         this.conversationRepository = Objects.requireNonNull(
@@ -186,6 +225,7 @@ public final class ChatViewModel extends ViewModel {
                 attachmentRepository, "attachmentRepository");
         this.session = Objects.requireNonNull(session, "session");
         this.ephemeralRouter = ephemeralRouter;
+        this.translationRepository = translationRepository;
         if (tokenStore != null) {
             disposables.add(tokenStore.observeRecallWindowConfig()
                     .subscribeOn(Schedulers.io())
@@ -368,8 +408,10 @@ public final class ChatViewModel extends ViewModel {
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(messages -> {
+                    reconcileTranslations(currentUiState().getMessages(), messages);
                     applyMessages(messages);
                     markNewestIncomingRead(messages);
+                    maybeAutoTranslate(messages);
                 }, this::surfaceStreamFailure));
         disposables.add(conversationRepository.conversationFlow(conversationId)
                 .subscribeOn(Schedulers.io())
@@ -597,6 +639,377 @@ public final class ChatViewModel extends ViewModel {
                                 .withSaving(false)
                                 .withOptOut(before.getOptOut())
                                 .withError(toApiError(error)))));
+    }
+
+    // ------------------------------------------------------------------
+    // Message translation
+    // ------------------------------------------------------------------
+
+    /** Per-message translation UI states keyed by message id. */
+    public LiveData<Map<String, TranslationUiState>> getTranslations() {
+        return translationStates;
+    }
+
+    /** Auto-translate + target-language state used by the settings dialog. */
+    public LiveData<TranslatePrefsState> getTranslatePrefsState() {
+        return translatePrefsState;
+    }
+
+    /** Loads the per-conversation translate prefs and seeds the cache pass. */
+    public void loadTranslatePrefs() {
+        if (conversationId.isBlank() || translationRepository == null) return;
+        translatePrefsState.setValue(currentTranslatePrefsState().withLoading(true));
+        disposables.add(translationRepository.getPrefs(conversationId)
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        result -> {
+                            TranslatePrefsState state = currentTranslatePrefsState()
+                                    .withLoading(false);
+                            if (result instanceof Result.Success<?> success) {
+                                com.nexachat.core.network.dto.TranslatePrefsDto dto =
+                                        (com.nexachat.core.network.dto.TranslatePrefsDto)
+                                                success.getValue();
+                                translatePrefsState.setValue(state
+                                        .withAutoTranslate(dto.isAutoTranslate())
+                                        .withTargetLang(dto.getTargetLang())
+                                        .withError(null));
+                                seedCachedTranslations();
+                            } else if (result instanceof Result.Failure<?> failure) {
+                                translatePrefsState.setValue(state.withError(failure.getError()));
+                            }
+                        },
+                        error -> translatePrefsState.setValue(currentTranslatePrefsState()
+                                .withLoading(false).withError(toApiError(error)))));
+        if (settingsRepository != null) {
+            disposables.add(settingsRepository.getTranslateTargetLang()
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(lang -> {
+                        accountTargetLang = lang == null || lang.isBlank() ? null : lang;
+                    }, ignored -> { }));
+        }
+    }
+
+    /** Effective target language: conversation pref → account pref → app locale. */
+    @NonNull
+    public String effectiveTargetLang() {
+        TranslatePrefsState state = currentTranslatePrefsState();
+        if (state.getTargetLang() != null && !state.getTargetLang().isBlank()) {
+            return state.getTargetLang();
+        }
+        if (accountTargetLang != null && !accountTargetLang.isBlank()) {
+            return accountTargetLang;
+        }
+        String app = java.util.Locale.getDefault().getLanguage();
+        return TranslationLanguages.isSupported(app) ? app : "en";
+    }
+
+    /** Manual translate action from the message sheet. */
+    public void translateMessage(@NonNull ChatMessage message) {
+        if (translationRepository == null || conversationId.isBlank()) return;
+        if (!"TEXT".equals(message.getType()) || message.isDeleted() || message.isEncrypted()
+                || message.isDecryptFailed() || message.getContent() == null
+                || message.getContent().isBlank()) {
+            return;
+        }
+        String target = effectiveTargetLang();
+        putTranslation(message.getId(), TranslationUiState.loading(target));
+        disposables.add(translationRepository.translate(message.getId(), target)
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        result -> applyTranslationResult(message.getId(), target, result),
+                        error -> putTranslation(message.getId(),
+                                TranslationUiState.error(target, "NETWORK"))));
+    }
+
+    /** Show-original toggles the translation block back off for one message. */
+    public void showOriginal(@NonNull ChatMessage message) {
+        putTranslation(message.getId(), null);
+    }
+
+    /** Retry hook used by the bubble error row. */
+    public void retryTranslation(@NonNull ChatMessage message) {
+        translateMessage(message);
+    }
+
+    /** Whether a translation block is currently visible for the message. */
+    public boolean isTranslated(@NonNull String messageId) {
+        TranslationUiState state = translationStates.getValue() == null
+                ? null : translationStates.getValue().get(messageId);
+        return state != null;
+    }
+
+    private void applyTranslationResult(
+            @NonNull String messageId, @NonNull String target,
+            @NonNull Result<com.nexachat.core.network.dto.TranslateResponseDto> result) {
+        if (result instanceof Result.Success<?> success) {
+            com.nexachat.core.network.dto.TranslateResponseDto dto =
+                    (com.nexachat.core.network.dto.TranslateResponseDto) success.getValue();
+            if (dto.getText() == null) {
+                putTranslation(messageId, TranslationUiState.error(target, "UNAVAILABLE"));
+            } else {
+                putTranslation(messageId, TranslationUiState.ready(
+                        dto.getText(), dto.getSourceLang(), target));
+            }
+        } else if (result instanceof Result.Failure<?> failure) {
+            putTranslation(messageId, TranslationUiState.error(
+                    target, errorCodeOf(failure.getError())));
+        }
+    }
+
+    private void putTranslation(@NonNull String messageId, @Nullable TranslationUiState state) {
+        Map<String, TranslationUiState> current = translationStates.getValue();
+        Map<String, TranslationUiState> next = new java.util.LinkedHashMap<>(
+                current == null ? java.util.Map.of() : current);
+        if (state == null) {
+            next.remove(messageId);
+        } else {
+            next.put(messageId, state);
+        }
+        translationStates.setValue(next);
+    }
+
+    /** Toggle for the settings dialog; persists through the server. */
+    public void setAutoTranslate(boolean enabled) {
+        if (translationRepository == null || conversationId.isBlank()) return;
+        TranslatePrefsState before = currentTranslatePrefsState();
+        translatePrefsState.setValue(before.withSaving(true)
+                .withAutoTranslate(enabled).withError(null));
+        disposables.add(translationRepository
+                .setPrefs(conversationId, enabled, before.getTargetLang())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        result -> {
+                            TranslatePrefsState state = currentTranslatePrefsState()
+                                    .withSaving(false);
+                            if (result instanceof Result.Success<?>) {
+                                translatePrefsState.setValue(state.withError(null));
+                                if (enabled) seedCachedTranslations();
+                            } else if (result instanceof Result.Failure<?> failure) {
+                                translatePrefsState.setValue(state
+                                        .withAutoTranslate(before.getAutoTranslate())
+                                        .withError(failure.getError()));
+                            }
+                        },
+                        error -> translatePrefsState.setValue(currentTranslatePrefsState()
+                                .withSaving(false)
+                                .withAutoTranslate(before.getAutoTranslate())
+                                .withError(toApiError(error)))));
+    }
+
+    /** Persists the conversation target language override (null clears it). */
+    public void setTranslateTargetLang(@Nullable String targetLang) {
+        if (translationRepository == null || conversationId.isBlank()) return;
+        TranslatePrefsState before = currentTranslatePrefsState();
+        translatePrefsState.setValue(before.withSaving(true)
+                .withTargetLang(targetLang).withError(null));
+        disposables.add(translationRepository
+                .setPrefs(conversationId, before.getAutoTranslate(), targetLang)
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        result -> {
+                            TranslatePrefsState state = currentTranslatePrefsState()
+                                    .withSaving(false);
+                            if (result instanceof Result.Success<?>) {
+                                translatePrefsState.setValue(state.withError(null));
+                                // Shown translations are in the old language: drop them and
+                                // load (or auto-translate) the new target.
+                                translationStates.setValue(java.util.Map.of());
+                                autoTranslateRequested.clear();
+                                seedCachedTranslations();
+                            } else if (result instanceof Result.Failure<?> failure) {
+                                translatePrefsState.setValue(state
+                                        .withTargetLang(before.getTargetLang())
+                                        .withError(failure.getError()));
+                            }
+                        },
+                        error -> translatePrefsState.setValue(currentTranslatePrefsState()
+                                .withSaving(false)
+                                .withTargetLang(before.getTargetLang())
+                                .withError(toApiError(error)))));
+    }
+
+    /** Glossary read for the editor dialog. */
+    @NonNull
+    public Single<Result<com.nexachat.core.network.dto.TranslationGlossaryDto>> loadGlossary() {
+        if (translationRepository == null) {
+            return Single.just(Result.failure(new ApiError.Unknown("UNAVAILABLE")));
+        }
+        return translationRepository.getGlossary(conversationId);
+    }
+
+    /** Glossary write-through for the editor dialog. */
+    @NonNull
+    public Single<Result<com.nexachat.core.network.dto.TranslationGlossaryDto>> saveGlossary(
+            @NonNull java.util.List<com.nexachat.core.network.dto.TranslationGlossaryDto.Term> terms) {
+        if (translationRepository == null) {
+            return Single.just(Result.failure(new ApiError.Unknown("UNAVAILABLE")));
+        }
+        return translationRepository.putGlossary(conversationId, terms)
+                .observeOn(AndroidSchedulers.mainThread())
+                .doOnSuccess(result -> {
+                    if (result instanceof Result.Success<?>) {
+                        // The server keys translations by glossary, so local copies made
+                        // under the old glossary would keep serving stale wording.
+                        translationStates.setValue(java.util.Map.of());
+                        autoTranslateRequested.clear();
+                        disposables.add(translationRepository.invalidateConversation(conversationId)
+                                .subscribe(() -> { }, ignored -> { }));
+                    }
+                });
+    }
+
+    /**
+     * Seeds visible translations from Room for the current target, then
+     * auto-translates missing incoming messages when the pref is on.
+     */
+    private void seedCachedTranslations() {
+        if (translationRepository == null) return;
+        if (!translationSweepDone) {
+            translationSweepDone = true;
+            disposables.add(translationRepository.sweepExpired(TRANSLATION_CACHE_MAX_AGE_MILLIS)
+                    .subscribe(() -> { }, ignored -> { }));
+        }
+        String target = effectiveTargetLang();
+        UiState state = currentUiState();
+        java.util.List<ChatMessage> messages = state.getMessages();
+        java.util.List<String> ids = new java.util.ArrayList<>(messages.size());
+        for (ChatMessage message : messages) {
+            if ("TEXT".equals(message.getType()) && !message.isDeleted()
+                    && !message.isEncrypted() && !message.isDecryptFailed()) {
+                ids.add(message.getId());
+            }
+        }
+        disposables.add(translationRepository.cachedTranslations(ids, target)
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(cached -> {
+                    for (com.nexachat.core.database.MessageTranslationEntity row : cached) {
+                        TranslationUiState existing = translationStates.getValue() == null
+                                ? null : translationStates.getValue().get(row.getMessageId());
+                        if (existing == null || existing.getStatus() != TranslationUiState.Status.READY) {
+                            putTranslation(row.getMessageId(), TranslationUiState.ready(
+                                    row.getTranslatedText(), row.getSourceLang(), target));
+                        }
+                    }
+                    maybeAutoTranslate(messages);
+                }, ignored -> { }));
+    }
+
+    /**
+     * Auto-translate pass over the latest page: incoming text messages not
+     * yet translated/loading get batched (cap 20 per call, matching the API).
+     */
+    private void maybeAutoTranslate(@NonNull java.util.List<ChatMessage> messages) {
+        if (translationRepository == null || conversationId.isBlank()) return;
+        if (!currentTranslatePrefsState().getAutoTranslate()) return;
+        String target = effectiveTargetLang();
+        java.util.List<String> pendingIds = new java.util.ArrayList<>();
+        Map<String, TranslationUiState> states = translationStates.getValue() == null
+                ? java.util.Map.of() : translationStates.getValue();
+        for (int i = messages.size() - 1; i >= 0 && pendingIds.size() < 20; i--) {
+            ChatMessage message = messages.get(i);
+            if (message.getMine() || !"TEXT".equals(message.getType()) || message.isDeleted()
+                    || message.isEncrypted() || message.isDecryptFailed()
+                    || message.getContent() == null || message.getContent().isBlank()
+                    || states.containsKey(message.getId())
+                    || autoTranslateRequested.contains(message.getId())) {
+                continue;
+            }
+            pendingIds.add(message.getId());
+        }
+        if (pendingIds.isEmpty()) return;
+        autoTranslateRequested.addAll(pendingIds);
+        disposables.add(translationRepository
+                .translateBatch(conversationId, pendingIds, target)
+                .map(result -> {
+                    java.util.Map<String, com.nexachat.core.network.dto
+                            .TranslateBatchResponse.Item> byId = new java.util.HashMap<>();
+                    if (result instanceof Result.Success<?>) {
+                        com.nexachat.core.network.dto.TranslateBatchResponse body =
+                                (com.nexachat.core.network.dto.TranslateBatchResponse)
+                                        successValue(result);
+                        if (body != null && body.getResults() != null) {
+                            for (com.nexachat.core.network.dto.TranslateBatchResponse.Item
+                                    item : body.getResults()) {
+                                if (item.getMessageId() != null) {
+                                    byId.put(item.getMessageId(), item);
+                                }
+                            }
+                        }
+                    }
+                    return byId;
+                })
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(byId -> {
+                    for (String id : pendingIds) {
+                        com.nexachat.core.network.dto.TranslateBatchResponse.Item item =
+                                byId.get(id);
+                        if (item != null && item.getText() != null) {
+                            putTranslation(id, TranslationUiState.ready(
+                                    item.getText(), item.getSourceLang(), target));
+                        } else if (item != null && item.getError() != null) {
+                            autoTranslateRequested.remove(id);
+                            putTranslation(id, TranslationUiState.error(target, item.getError()));
+                        } else {
+                            // Request-level failure or an omitted id: allow a later retry.
+                            autoTranslateRequested.remove(id);
+                        }
+                    }
+                }, ignored -> pendingIds.forEach(autoTranslateRequested::remove)));
+    }
+
+    /**
+     * Drops translation state whose source text changed (edit), vanished
+     * (recall/delete), or became non-translatable. Room rows keyed by the old
+     * changeVersion are unreachable anyway; this keeps the in-memory map and
+     * retry dedupe consistent and sweeps the orphan rows.
+     */
+    private void reconcileTranslations(
+            @Nullable java.util.List<ChatMessage> previous,
+            @NonNull java.util.List<ChatMessage> next) {
+        Map<String, TranslationUiState> states = translationStates.getValue();
+        if (states == null || states.isEmpty()) return;
+        Map<String, ChatMessage> prevById = new java.util.HashMap<>();
+        if (previous != null) {
+            for (ChatMessage message : previous) {
+                prevById.put(message.getId(), message);
+            }
+        }
+        Map<String, ChatMessage> nextById = new java.util.HashMap<>();
+        for (ChatMessage message : next) {
+            nextById.put(message.getId(), message);
+        }
+        for (String id : new java.util.ArrayList<>(states.keySet())) {
+            ChatMessage current = nextById.get(id);
+            ChatMessage before = prevById.get(id);
+            boolean stale = current == null
+                    || current.isDeleted() || !"TEXT".equals(current.getType())
+                    || (before != null
+                            && !java.util.Objects.equals(before.getContent(), current.getContent()));
+            if (stale) {
+                putTranslation(id, null);
+                autoTranslateRequested.remove(id);
+                if (translationRepository != null) {
+                    disposables.add(translationRepository.invalidate(id)
+                            .subscribe(() -> { }, ignored -> { }));
+                }
+            }
+        }
+    }
+
+    private Object successValue(Result<?> result) {
+        return result instanceof Result.Success<?> s ? s.getValue() : null;
+    }
+
+    private String errorCodeOf(@NonNull ApiError error) {
+        if (error instanceof ApiError.RateLimited) return "RATE_LIMITED";
+        if (error instanceof ApiError.Network) return "NETWORK";
+        return "UNAVAILABLE";
+    }
+
+    private TranslatePrefsState currentTranslatePrefsState() {
+        TranslatePrefsState state = translatePrefsState.getValue();
+        return state == null ? new TranslatePrefsState() : state;
     }
 
     /** Mutes this conversation until {@code until}, or forever when null. */
@@ -1498,6 +1911,65 @@ public final class ChatViewModel extends ViewModel {
         return new ApiError.Network(error.getMessage());
     }
 
+    /**
+     * Recorder owned by this ViewModel so a view recreation during a
+     * configuration change does not cancel an active capture.
+     */
+    @NonNull
+    public VoiceRecorder getOrCreateVoiceRecorder(@NonNull Context context) {
+        if (voiceRecorder == null) {
+            voiceRecorder = new VoiceRecorder(context);
+        }
+        return voiceRecorder;
+    }
+
+    @Nullable
+    public VoiceRecorder getVoiceRecorder() {
+        return voiceRecorder;
+    }
+
+    @NonNull
+    public ExecutorService voiceStartExecutor() {
+        if (voiceStartExecutor == null || voiceStartExecutor.isShutdown()) {
+            voiceStartExecutor = Executors.newSingleThreadExecutor();
+        }
+        return voiceStartExecutor;
+    }
+
+    public boolean isVoiceRecordingActive() {
+        VoiceRecorder recorder = voiceRecorder;
+        return recorder != null && recorder.isRecording();
+    }
+
+    public boolean isVoiceRetainedForConfigChange() {
+        return voiceRetainedForConfigChange;
+    }
+
+    public void setVoiceRetainedForConfigChange(boolean retained) {
+        voiceRetainedForConfigChange = retained;
+    }
+
+    /** Cancels any active recording and stops the start executor for good. */
+    public void releaseVoiceRecorder() {
+        voiceRetainedForConfigChange = false;
+        final VoiceRecorder recorder = voiceRecorder;
+        voiceRecorder = null;
+        if (recorder != null) {
+            if (voiceStartExecutor != null && !voiceStartExecutor.isShutdown()) {
+                // start() holds the recorder monitor through prepare()+start(),
+                // so a synchronous cancel() could block behind an in-flight
+                // start; queue the cancel after it instead.
+                voiceStartExecutor.execute(recorder::cancel);
+            } else {
+                recorder.cancel();
+            }
+        }
+        if (voiceStartExecutor != null) {
+            voiceStartExecutor.shutdown();
+            voiceStartExecutor = null;
+        }
+    }
+
     @Override
     protected void onCleared() {
         disposables.clear();
@@ -1508,6 +1980,7 @@ public final class ChatViewModel extends ViewModel {
             clearOwnTypingSignal();
             ephemeralRouter.clearTypingScope(conversationId);
         }
+        releaseVoiceRecorder();
         messageRepository.closeConversation(conversationId);
         super.onCleared();
     }
@@ -1579,6 +2052,56 @@ public final class ChatViewModel extends ViewModel {
 
         private AiOptOutState withError(@Nullable ApiError next) {
             return new AiOptOutState(optOut, loading, saving, next);
+        }
+    }
+
+    /** Per-conversation auto-translate + target-language presentation state. */
+    public static final class TranslatePrefsState {
+        private final boolean autoTranslate;
+        @Nullable private final String targetLang;
+        private final boolean loading;
+        private final boolean saving;
+        @Nullable private final ApiError error;
+
+        public TranslatePrefsState() {
+            this(false, null, false, false, null);
+        }
+
+        private TranslatePrefsState(
+                boolean autoTranslate, @Nullable String targetLang,
+                boolean loading, boolean saving, @Nullable ApiError error) {
+            this.autoTranslate = autoTranslate;
+            this.targetLang = targetLang;
+            this.loading = loading;
+            this.saving = saving;
+            this.error = error;
+        }
+
+        public boolean getAutoTranslate() { return autoTranslate; }
+        @Nullable public String getTargetLang() { return targetLang; }
+        public boolean isLoading() { return loading; }
+        public boolean isSaving() { return saving; }
+        public boolean isBusy() { return loading || saving; }
+        @Nullable public ApiError getError() { return error; }
+
+        private TranslatePrefsState withAutoTranslate(boolean next) {
+            return new TranslatePrefsState(next, targetLang, loading, saving, error);
+        }
+
+        private TranslatePrefsState withTargetLang(@Nullable String next) {
+            return new TranslatePrefsState(autoTranslate, next, loading, saving, error);
+        }
+
+        private TranslatePrefsState withLoading(boolean next) {
+            return new TranslatePrefsState(autoTranslate, targetLang, next, saving, error);
+        }
+
+        private TranslatePrefsState withSaving(boolean next) {
+            return new TranslatePrefsState(autoTranslate, targetLang, loading, next, error);
+        }
+
+        private TranslatePrefsState withError(@Nullable ApiError next) {
+            return new TranslatePrefsState(autoTranslate, targetLang, loading, saving, next);
         }
     }
 

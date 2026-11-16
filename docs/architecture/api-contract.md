@@ -249,7 +249,11 @@ These keys are Spring properties; override them with the matching
 | `E2EE_STALE_DEVICES` | 409 | An envelope targets a revoked, unknown, or non-member device — client refetches `GET /conversations/{id}/e2ee` and retries |
 | `E2EE_MEDIA_UNSUPPORTED` | 409 | Non-TEXT message in an `e2ee_enabled` conversation |
 | `E2EE_EDIT_UNSUPPORTED` | 409 | Edit attempted on an encrypted message |
-| `E2EE_AI_UNAVAILABLE` | 409 | Summary/ask invoked on an `e2ee_enabled` conversation |
+| `E2EE_AI_UNAVAILABLE` | 409 | Summary/ask/translate invoked on an `e2ee_enabled` conversation |
+| `AI_CONSENT_REQUIRED` | 403 | AI feature invoked without the caller's external-AI consent |
+| `AI_OPTED_OUT` | 403 | The target message's sender opted out of AI in that conversation |
+| `TRANSLATION_UNSUPPORTED` | 400 | Unsupported target language or non-translatable message shape |
+| `TRANSLATION_UNAVAILABLE` | 503 | No translation provider available or provider output rejected |
 | `NOT_FOUND` | 404 | Unknown path |
 | `METHOD_NOT_ALLOWED` | 405 | Wrong HTTP method for the path |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | Request `Content-Type` not accepted |
@@ -591,6 +595,26 @@ uses the server-authorized message DELETE.
 | `PUT /conversations/{conversationId}/ai-opt-out` | Bearer member | — | `200` `{conversationId, aiOptOut: true}` (idempotent; sets the caller's own opt-out for this conversation) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `DELETE /conversations/{conversationId}/ai-opt-out` | Bearer member | — | `200` `{conversationId, aiOptOut: false}` (idempotent) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `GET /conversations/{conversationId}/ai-opt-out` | Bearer member | — | `200` `{conversationId, aiOptOut: <bool>}` — the caller's own state only | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+
+## Message translation — `/api/v1`
+
+RAG-grounded translation of conversation text; see
+[`ai-translation.md`](ai-translation.md) for the full pipeline. Every route
+requires conversation membership, refuses E2EE conversations/messages and
+senders who opted out of AI, and only charges the per-user minute/day
+budget when a provider call actually happens (cache hits and same-language
+short-circuits are free). Supported `targetLang` values: `vi`, `en`, `zh`,
+`ja`, `ko`, `fr`, `de`, `es`, `th`, `id`, `ru`, `ar`, `pt`, `hi` (aliases
+and BCP-47 forms are normalized).
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `POST /messages/{messageId}/translate` | Bearer member | `{targetLang}` | `200` `{text, sourceLang, targetLang, cached, model}`; `cached: true` on cache hits | `VALIDATION_FAILED` 400 · `TRANSLATION_UNSUPPORTED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `AI_OPTED_OUT` 403 · `AI_CONSENT_REQUIRED` 403 · `CONVERSATION_NOT_FOUND` 404 · `MESSAGE_NOT_FOUND` 404 · `MESSAGE_DELETED` 409 · `E2EE_AI_UNAVAILABLE` 409 · `RATE_LIMITED` 429 · `TRANSLATION_UNAVAILABLE` 503 |
+| `POST /conversations/{conversationId}/translate-batch` | Bearer member | `{messageIds, targetLang}` — ≤20 ids | `200` `{results: [{messageId, text?, sourceLang?, targetLang, cached?, model?, error?}]}` — one item per requested id; per-item refusals carry a stable error code in `error` instead of failing the batch | `VALIDATION_FAILED` 400 · `TRANSLATION_UNSUPPORTED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `E2EE_AI_UNAVAILABLE` 409 |
+| `GET /conversations/{conversationId}/translation-glossary` | Bearer member | — | `200` `{conversationId, terms: [{term, replacement?}]}` | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `PUT /conversations/{conversationId}/translation-glossary` | Bearer member | `{terms: [{term, replacement?}]}` — ≤50 terms, each ≤100 chars; `replacement` absent means "keep verbatim"; case-insensitive dedupe, last wins | `200` stored glossary | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `GET /conversations/{conversationId}/translate-prefs` | Bearer member | — | `200` `{conversationId, autoTranslate, targetLang}` | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `PUT /conversations/{conversationId}/translate-prefs` | Bearer member | `{autoTranslate, targetLang}` — full replace; null/blank `targetLang` clears the conversation override | `200` stored prefs | `VALIDATION_FAILED` 400 · `TRANSLATION_UNSUPPORTED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 
 ## Conversation labels — `/api/v1/labels`
 
@@ -1290,6 +1314,55 @@ indexedMessages}`. No message text, questions or vectors are exposed.
 phone numbers configured in `NEXACHAT_ADMIN_PHONES`. Non-admin authenticated
 callers receive `403 FORBIDDEN` (`code: FORBIDDEN`). When `NEXACHAT_ADMIN_PHONES`
 is empty or unset, the endpoint is denied to all users.
+
+## Admin console — `/api/v1/admin`
+
+The staff console surface (`admin-web/`). Every route requires a Bearer access
+token whose principal holds the `ADMIN` or `MODERATOR` role; role-mutating
+routes (`/users/{}/role`, `/rules` writes) additionally require `ADMIN`.
+Suspended accounts are rejected by the JWT filter before routing. Sensitive
+mutations take a `reason` (min length enforced) and are written to
+`admin_audit_log`; alert reveals are rate-limited per staff account. E2EE
+messages and AI-opted-out conversations are never scanned or shown.
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `GET /api/v1/admin/me` | staff | — | `200` `{userId, role, displayName}` | 401/403 |
+| `GET /api/v1/admin/overview` | staff | `?days=` | `200` KPIs + daily series | 401/403 |
+| `GET /api/v1/admin/system/health` | staff | — | `200` service status map | 401/403 |
+| `GET /api/v1/admin/users` | staff | `?search=&role=&status=&createdFrom=&createdTo=&page=&size=` | `200` page of user summaries | 401/403 |
+| `GET /api/v1/admin/users/deleted` | staff | `?limit=` | `200` list of deleted accounts | 401/403 |
+| `GET /api/v1/admin/users/{userId}` | staff | — | `200` user detail + counters | 401/403 · `USER_NOT_FOUND` 404 |
+| `POST /api/v1/admin/users/{userId}/suspend` | staff | `{reason}` | `204` empty; revokes sessions | 401/403 · 404 · `FORBIDDEN` 403 (self or higher role) · `LAST_ADMIN` 409 |
+| `POST /api/v1/admin/users/{userId}/unsuspend` | staff | `{reason}` | `204` empty | 401/403 · 404 |
+| `POST /api/v1/admin/users/{userId}/revoke-sessions` | staff | `{reason}` | `204` empty; stamps token cutoff | 401/403 · 404 |
+| `POST /api/v1/admin/users/{userId}/actions` | staff | `{reason, alertId?}` (a warning notice) | `200` `{id, kind, body, createdAt}` | 401/403 · 404 |
+| `PATCH /api/v1/admin/users/{userId}/role` | ADMIN | `{role, reason}` | `200` user detail | 401/403 · `LAST_ADMIN` 409 · `FORBIDDEN` 403 (self) |
+| `GET /api/v1/admin/alerts` | staff | `?status=&category=&severity=&from=&to=&page=&size=` | `200` alert page (redacted snippets) | 401/403 |
+| `GET /api/v1/admin/alerts/{alertId}` | staff | — | `200` alert detail + notes | 401/403 · `ALERT_NOT_FOUND` 404 |
+| `PATCH /api/v1/admin/alerts/{alertId}` | staff | `{status?, assigneeId?, reason?}` | `200` updated alert | 401/403 · 404 |
+| `POST /api/v1/admin/alerts/{alertId}/notes` | staff | `{body}` | `200` appended note | 401/403 · 404 |
+| `POST /api/v1/admin/alerts/{alertId}/actions` | staff | `{action, reason}` | `200` workflow action | 401/403 · 404 |
+| `POST /api/v1/admin/alerts/{alertId}/reveal` | staff | `{reason}` | `200` message content + context | 401/403 · 404 · `RATE_LIMITED` 429 |
+| `POST /api/v1/admin/alerts/bulk-dismiss` | staff | `{ids[], reason}` | `200` `{dismissed}` | 401/403 |
+| `GET /api/v1/admin/rules` | staff | — | `200` rule list | 401/403 |
+| `POST /api/v1/admin/rules` | ADMIN | `{name, category, severity, patternType, pattern, locale?, description?, enabled?}` | `201` rule | 401/403 · `VALIDATION_FAILED` 400 |
+| `PATCH /api/v1/admin/rules/{ruleId}` | ADMIN | partial update; built-in rules accept only `severity` and `enabled` | `200` rule | 401/403 · 404 |
+| `DELETE /api/v1/admin/rules/{ruleId}` | ADMIN | — | `204`; built-ins disable instead | 401/403 · 404 |
+| `POST /api/v1/admin/rules/test` | staff | `{patternType, pattern, sampleText}` | `200` `{matched, matches[]}` | 401/403 · 400 |
+| `GET /api/v1/admin/audit` | staff | `?actor=&action=&target=&from=&to=&page=` | `200` audit page | 401/403 |
+
+Alert detection runs asynchronously: a bounded in-memory queue drains matched
+text messages into `alerts` rows storing a redacted snippet and matched rule
+names; duplicates within the dedupe window update the existing row. `reveal`
+fetches the full message on demand (rate-limited, audited) — content is never
+stored in the alert tables. In `admin_audit_log`, `target_id` carries the
+audited subject — a single id for row-scoped actions, the comma-joined alert
+id list for `ALERT_BULK_DISMISS`.
+
+Users see moderation notices at `GET /api/v1/users/me/notices` (Bearer, `200`
+page) and acknowledge with `POST /api/v1/users/me/notices/{noticeId}/read`
+(Bearer, `204`).
 
 ## Firebase realtime bridge (opt-in)
 

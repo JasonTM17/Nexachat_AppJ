@@ -24,9 +24,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             CallLogEntity.class,
             OfflineOutboxEntity.class,
             SyncCursorEntity.class,
-            KeysetTrustEntity.class
+            KeysetTrustEntity.class,
+            MessageTranslationEntity.class
         },
-        version = 18,
+        version = 20,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -39,6 +40,7 @@ public abstract class AppDatabase extends RoomDatabase {
     public abstract OfflineOutboxDao offlineOutboxDao();
     public abstract SyncCursorDao syncCursorDao();
     public abstract KeysetTrustDao keysetTrustDao();
+    public abstract MessageTranslationDao messageTranslationDao();
 
     /** Clears cached account data and other offline actions while retaining message sends. */
     public void clearAccountDataPreservingOutbox() {
@@ -53,6 +55,7 @@ public abstract class AppDatabase extends RoomDatabase {
             db.execSQL("DELETE FROM `offline_outbox`");
             db.execSQL("DELETE FROM `sync_cursors`");
             db.execSQL("DELETE FROM `e2ee_keyset_trust`");
+            db.execSQL("DELETE FROM `message_translations`");
         });
     }
 
@@ -294,8 +297,20 @@ public abstract class AppDatabase extends RoomDatabase {
         }
     };
 
-    /** Disappearing messages: per-row deadline and the conversation timer in seconds. */
+    /** Local message-translation cache keyed by message revision (Room v18). */
     public static final Migration MIGRATION_17_18 = new Migration(17, 18) {
+        @Override public void migrate(SupportSQLiteDatabase db) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS `message_translations` ("
+                    + "`messageId` TEXT NOT NULL, `conversationId` TEXT NOT NULL, "
+                    + "`changeVersion` INTEGER NOT NULL, `targetLang` TEXT NOT NULL, "
+                    + "`sourceLang` TEXT NOT NULL, `translatedText` TEXT NOT NULL, "
+                    + "`fetchedAt` INTEGER NOT NULL, "
+                    + "PRIMARY KEY(`messageId`, `changeVersion`, `targetLang`))");
+        }
+    };
+
+    /** Disappearing messages: per-row deadline and the conversation timer in seconds. */
+    public static final Migration MIGRATION_19_20 = new Migration(19, 20) {
         @Override public void migrate(SupportSQLiteDatabase db) {
             db.execSQL("ALTER TABLE `messages` ADD COLUMN `expiresAtEpochMs` INTEGER");
             db.execSQL("ALTER TABLE `conversations` ADD COLUMN `disappearingSeconds` "

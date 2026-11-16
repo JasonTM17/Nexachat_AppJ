@@ -2,6 +2,8 @@ package com.nexachat.user;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -67,6 +69,14 @@ public class User {
     @Column(name = "ai_summary_consent_epoch", nullable = false)
     private long aiSummaryConsentEpoch;
 
+    /**
+     * Member-wide default target language for message translation (V37).
+     * {@code null} leaves the default to the client's app language; a
+     * conversation-level preference overrides it.
+     */
+    @Column(name = "translate_target_lang", length = 8)
+    private String translateTargetLang;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -80,6 +90,32 @@ public class User {
     /** Non-null once the owner has deleted the account through DELETE /users/me. */
     @Column(name = "deleted_at")
     private Instant deletedAt;
+
+    /**
+     * Global account role (V36). {@code USER} is the default and carries no
+     * extra privileges; {@code MODERATOR} and {@code ADMIN} reach
+     * {@code /api/v1/admin/**}. Stored per account — never read from the JWT,
+     * so a demotion or suspension takes effect on the next request.
+     */
+    public enum Role {
+        USER,
+        MODERATOR,
+        ADMIN
+    }
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", nullable = false, length = 16)
+    private Role role = Role.USER;
+
+    /** Non-null while an administrator has suspended the account (V36). */
+    @Column(name = "suspended_at")
+    private Instant suspendedAt;
+
+    @Column(name = "suspended_reason")
+    private String suspendedReason;
+
+    @Column(name = "suspended_by")
+    private UUID suspendedBy;
 
     @Column(name = "email", length = 254)
     private String email;
@@ -167,6 +203,10 @@ public class User {
         return aiSummaryConsent;
     }
 
+    public String getTranslateTargetLang() {
+        return translateTargetLang;
+    }
+
     public long getAiSummaryConsentEpoch() {
         return aiSummaryConsentEpoch;
     }
@@ -196,6 +236,10 @@ public class User {
             aiSummaryConsentEpoch++;
         }
         this.aiSummaryConsent = aiSummaryConsent;
+    }
+
+    public void changeTranslateTargetLang(String translateTargetLang) {
+        this.translateTargetLang = translateTargetLang;
     }
 
     public void recordLastSeen(Instant lastSeenAt) {
@@ -235,6 +279,47 @@ public class User {
     public void removeEmail() {
         this.email = null;
         this.emailVerifiedAt = null;
+    }
+
+    public Role getRole() {
+        return role;
+    }
+
+    public void changeRole(Role role) {
+        this.role = role;
+    }
+
+    public Instant getSuspendedAt() {
+        return suspendedAt;
+    }
+
+    public String getSuspendedReason() {
+        return suspendedReason;
+    }
+
+    public UUID getSuspendedBy() {
+        return suspendedBy;
+    }
+
+    public boolean isSuspended() {
+        return suspendedAt != null;
+    }
+
+    /**
+     * Marks the account suspended (V36). Callers are responsible for revoking
+     * refresh and access tokens; this only records the flag the auth filters
+     * then enforce.
+     */
+    public void suspend(Instant at, String reason, UUID actorId) {
+        this.suspendedAt = at;
+        this.suspendedReason = reason;
+        this.suspendedBy = actorId;
+    }
+
+    public void unsuspend() {
+        this.suspendedAt = null;
+        this.suspendedReason = null;
+        this.suspendedBy = null;
     }
 
     /**

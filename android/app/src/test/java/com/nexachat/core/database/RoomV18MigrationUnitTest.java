@@ -2,36 +2,46 @@ package com.nexachat.core.database;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import androidx.sqlite.db.SupportSQLiteDatabase;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.Test;
-import org.mockito.InOrder;
 
-/** Room 18 adds the message expiry column and the conversation timer; both are additive. */
+/** Room 18 adds the local translation cache keyed by message revision. */
 public final class RoomV18MigrationUnitTest {
 
-    @Test public void migrationAddsExpiryAndTimerColumns() {
+    @Test public void migrationCreatesTranslationTable() {
         SupportSQLiteDatabase db = mock(SupportSQLiteDatabase.class);
         AppDatabase.MIGRATION_17_18.migrate(db);
         assertEquals(17, AppDatabase.MIGRATION_17_18.startVersion);
         assertEquals(18, AppDatabase.MIGRATION_17_18.endVersion);
-        InOrder order = inOrder(db);
-        order.verify(db).execSQL(
-                "ALTER TABLE `messages` ADD COLUMN `expiresAtEpochMs` INTEGER");
-        order.verify(db).execSQL(
-                "ALTER TABLE `conversations` ADD COLUMN `disappearingSeconds` "
-                        + "INTEGER NOT NULL DEFAULT 0");
+        verify(db).execSQL("CREATE TABLE IF NOT EXISTS `message_translations` ("
+                + "`messageId` TEXT NOT NULL, `conversationId` TEXT NOT NULL, "
+                + "`changeVersion` INTEGER NOT NULL, `targetLang` TEXT NOT NULL, "
+                + "`sourceLang` TEXT NOT NULL, `translatedText` TEXT NOT NULL, "
+                + "`fetchedAt` INTEGER NOT NULL, "
+                + "PRIMARY KEY(`messageId`, `changeVersion`, `targetLang`))");
+        // The entity declares no index, so an upgraded database must not carry one either:
+        // Room compares the real table info with the exported schema on first open.
+        verifyNoMoreInteractions(db);
     }
 
-    @Test public void exportedSchemaContainsExpiryColumns() throws Exception {
+    @Test public void exportedSchemaContainsTranslationTable() throws Exception {
         Path schema = Path.of("schemas/com.nexachat.core.database.AppDatabase/18.json");
         if (!Files.exists(schema)) schema = Path.of("android/app").resolve(schema);
         String json = new String(Files.readAllBytes(schema), java.nio.charset.StandardCharsets.UTF_8);
-        assertTrue("missing message expiry column", json.contains("expiresAtEpochMs"));
-        assertTrue("missing conversation timer column", json.contains("disappearingSeconds"));
+        assertTrue("missing message_translations table", json.contains("message_translations"));
+        assertTrue("missing revision key", json.contains("changeVersion"));
+        assertTrue("missing language key", json.contains("targetLang"));
+        assertTrue("missing translated text", json.contains("translatedText"));
+        int table = json.indexOf("\"tableName\": \"message_translations\"");
+        int indices = json.indexOf("\"indices\"", table);
+        assertTrue("message_translations must declare no index (the migration creates none)",
+                json.substring(indices, json.indexOf(']', indices) + 1).replaceAll("\\s+", "")
+                        .equals("\"indices\":[]"));
     }
 }

@@ -74,6 +74,8 @@ class AuthServiceTest {
     private StompRevocationFence revocationFence;
     @Mock
     private ObjectProvider<E2eeDeviceService> e2eeDeviceService;
+    @Mock
+    private com.nexachat.admin.AdminRoleBootstrap adminRoleBootstrap;
 
     private AuthService authService;
 
@@ -105,7 +107,7 @@ class AuthServiceTest {
                 tokenService, accessTokenRevocationService, rateLimitService,
                 new AuthResponseFactory(jwtService, new MessageRecallProperties()),
                 (boundary, operation, userId, tokenId) -> { }, eventPublisher, transactionManagerProvider,
-                revocationFence, e2eeDeviceService);
+                revocationFence, e2eeDeviceService, adminRoleBootstrap);
     }
 
     private static User userWithId(String phone, String passwordHash, String displayName) {

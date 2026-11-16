@@ -36,13 +36,15 @@
         android:visibility="gone"
         app:tint="?attr/colorOnSurfaceVariant" />
 
-    <ProgressBar
+    <com.google.android.material.progressindicator.CircularProgressIndicator
         android:id="@+id/sendingProgress"
-        style="?android:attr/progressBarStyleSmall"
-        android:layout_width="@dimen/metadata_icon_size"
-        android:layout_height="@dimen/metadata_icon_size"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:layout_marginStart="@dimen/space_xs"
-        android:visibility="gone" />
+        android:indeterminate="true"
+        android:visibility="gone"
+        app:indicatorSize="@dimen/metadata_icon_size"
+        app:trackThickness="2dp" />
 
     <ImageView
         android:id="@+id/deliveryIcon"

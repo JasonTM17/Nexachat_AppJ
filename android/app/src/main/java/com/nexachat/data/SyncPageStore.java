@@ -129,6 +129,7 @@ final class SyncPageStore {
                 if (delta.getReset()) {
                     // Reset never deletes queued sends or another account's outbox.
                     db.messageDao().deleteForConversation(conversation).blockingAwait();
+                    db.messageTranslationDao().deleteForConversation(conversation).blockingAwait();
                     db.reactionDao().deleteForConversation(conversation).blockingAwait();
                     db.pinDao().deleteForConversation(conversation).blockingAwait();
                     db.syncCursorDao().delete(owner, conversation);

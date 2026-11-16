@@ -43,7 +43,7 @@
             android:id="@+id/forwardSearch"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:imeOptions="actionSearch"
+            android:imeOptions="actionSearch|flagNoExtractUi"
             android:inputType="text"
             android:textColor="?attr/colorOnSurface"
             android:textColorHint="?attr/colorOnSurfaceVariant" />

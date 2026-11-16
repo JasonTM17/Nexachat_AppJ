@@ -87,8 +87,9 @@ public class StompRevocationFence {
             return false;
         }
         return userRepository.findAuthValidityById(userId)
-                .map(validity -> validity.tokensValidAfter() == null
-                        || issuedAt.isAfter(validity.tokensValidAfter()))
+                .map(validity -> !validity.suspended()
+                        && (validity.tokensValidAfter() == null
+                                || issuedAt.isAfter(validity.tokensValidAfter())))
                 .orElse(false);
     }
 

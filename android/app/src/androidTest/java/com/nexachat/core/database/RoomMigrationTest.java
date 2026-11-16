@@ -236,7 +236,7 @@ public final class RoomMigrationTest {
     }
 
     @Test
-    public void v17ToV18MigrationAddsExpiryAndTimerColumns() throws Exception {
+    public void v19ToV20MigrationAddsExpiryAndTimerColumns() throws Exception {
         SupportSQLiteDatabase oldDb = helper.createDatabase(EXPORTED_DB, 17);
         try {
             oldDb.execSQL(
@@ -255,7 +255,7 @@ public final class RoomMigrationTest {
         }
 
         SupportSQLiteDatabase db = helper.runMigrationsAndValidate(
-                EXPORTED_DB, 18, true, AppDatabase.MIGRATION_17_18);
+                EXPORTED_DB, 20, true, AppDatabase.MIGRATION_17_18, AppDatabase.MIGRATION_19_20);
         try {
             try (Cursor cursor = db.query("SELECT expiresAtEpochMs FROM messages WHERE id = 'm-1'")) {
                 assertTrue(cursor.moveToFirst());

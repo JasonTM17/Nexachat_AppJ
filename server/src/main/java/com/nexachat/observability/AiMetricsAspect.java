@@ -78,6 +78,20 @@ public class AiMetricsAspect {
         }
     }
 
+    @Around("execution(* com.nexachat.translate.LlmTranslationProvider.translate(..))")
+    public Object recordTranslateLlmLatency(ProceedingJoinPoint joinPoint) throws Throwable {
+        long start = System.nanoTime();
+        try {
+            Object result = joinPoint.proceed();
+            metrics.recordLlmCall("translate", "llm",
+                    result == null ? "FAILURE" : "SUCCESS", "NONE", elapsedMillis(start));
+            return result;
+        } catch (Throwable failure) {
+            metrics.recordLlmCall("translate", "llm", "FAILURE", "NONE", elapsedMillis(start));
+            throw failure;
+        }
+    }
+
     private static long elapsedMillis(long startNanos) {
         return (System.nanoTime() - startNanos) / 1_000_000L;
     }

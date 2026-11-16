@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 18,
-    "identityHash": "fc543a688a55fc67af293886df05df33",
+    "identityHash": "9c59f69f60cdf871c12101540ebe3a43",
     "entities": [
       {
         "tableName": "messages",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `conversationId` TEXT NOT NULL, `seq` INTEGER NOT NULL, `senderId` TEXT NOT NULL, `senderDisplayName` TEXT, `type` TEXT NOT NULL, `content` TEXT, `clientMessageId` TEXT, `replyToId` TEXT, `replyToSenderName` TEXT, `replyToSnippet` TEXT, `createdAt` INTEGER NOT NULL, `attachmentsJson` TEXT, `editedAtEpochMs` INTEGER, `deletedAtEpochMs` INTEGER, `mentionsJson` TEXT NOT NULL DEFAULT '[]', `mentionAll` INTEGER NOT NULL DEFAULT 0, `changeVersion` INTEGER NOT NULL DEFAULT 0, `generation` INTEGER NOT NULL DEFAULT 0, `encrypted` INTEGER NOT NULL DEFAULT 0, `decryptFailed` INTEGER NOT NULL DEFAULT 0, `replyToEncrypted` INTEGER NOT NULL DEFAULT 0, `expiresAtEpochMs` INTEGER, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `conversationId` TEXT NOT NULL, `seq` INTEGER NOT NULL, `senderId` TEXT NOT NULL, `senderDisplayName` TEXT, `type` TEXT NOT NULL, `content` TEXT, `clientMessageId` TEXT, `replyToId` TEXT, `replyToSenderName` TEXT, `replyToSnippet` TEXT, `createdAt` INTEGER NOT NULL, `attachmentsJson` TEXT, `editedAtEpochMs` INTEGER, `deletedAtEpochMs` INTEGER, `mentionsJson` TEXT NOT NULL DEFAULT '[]', `mentionAll` INTEGER NOT NULL DEFAULT 0, `changeVersion` INTEGER NOT NULL DEFAULT 0, `generation` INTEGER NOT NULL DEFAULT 0, `encrypted` INTEGER NOT NULL DEFAULT 0, `decryptFailed` INTEGER NOT NULL DEFAULT 0, `replyToEncrypted` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -146,12 +146,6 @@
             "affinity": "INTEGER",
             "notNull": true,
             "defaultValue": "0"
-          },
-          {
-            "fieldPath": "expiresAtEpochMs",
-            "columnName": "expiresAtEpochMs",
-            "affinity": "INTEGER",
-            "notNull": false
           }
         ],
         "primaryKey": {
@@ -176,7 +170,7 @@
       },
       {
         "tableName": "conversations",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `type` TEXT NOT NULL, `title` TEXT, `lastMessageSeq` INTEGER NOT NULL, `lastMessageContent` TEXT, `lastMessageSenderName` TEXT, `lastMessageAt` INTEGER, `unreadCount` INTEGER NOT NULL, `otherUserName` TEXT, `otherUserAvatar` TEXT, `avatarUrl` TEXT, `peerReadSeq` INTEGER NOT NULL, `myRole` TEXT, `otherUserId` TEXT, `lastMessageDeleted` INTEGER NOT NULL, `peerDeliveredSeq` INTEGER NOT NULL, `muted` INTEGER NOT NULL, `mutedUntilEpochMs` INTEGER, `archived` INTEGER NOT NULL, `aiOptOut` INTEGER NOT NULL, `pinned` INTEGER NOT NULL, `pinnedAt` INTEGER, `labelIdsCsv` TEXT NOT NULL DEFAULT '', `e2eeEnabled` INTEGER NOT NULL DEFAULT 0, `lastMessageEncrypted` INTEGER NOT NULL DEFAULT 0, `lastMessageType` TEXT, `disappearingSeconds` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `type` TEXT NOT NULL, `title` TEXT, `lastMessageSeq` INTEGER NOT NULL, `lastMessageContent` TEXT, `lastMessageSenderName` TEXT, `lastMessageAt` INTEGER, `unreadCount` INTEGER NOT NULL, `otherUserName` TEXT, `otherUserAvatar` TEXT, `avatarUrl` TEXT, `peerReadSeq` INTEGER NOT NULL, `myRole` TEXT, `otherUserId` TEXT, `lastMessageDeleted` INTEGER NOT NULL, `peerDeliveredSeq` INTEGER NOT NULL, `muted` INTEGER NOT NULL, `mutedUntilEpochMs` INTEGER, `archived` INTEGER NOT NULL, `aiOptOut` INTEGER NOT NULL, `pinned` INTEGER NOT NULL, `pinnedAt` INTEGER, `labelIdsCsv` TEXT NOT NULL DEFAULT '', `e2eeEnabled` INTEGER NOT NULL DEFAULT 0, `lastMessageEncrypted` INTEGER NOT NULL DEFAULT 0, `lastMessageType` TEXT, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -336,13 +330,6 @@
             "columnName": "lastMessageType",
             "affinity": "TEXT",
             "notNull": false
-          },
-          {
-            "fieldPath": "disappearingSeconds",
-            "columnName": "disappearingSeconds",
-            "affinity": "INTEGER",
-            "notNull": true,
-            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -903,12 +890,70 @@
         },
         "indices": [],
         "foreignKeys": []
+      },
+      {
+        "tableName": "message_translations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`messageId` TEXT NOT NULL, `conversationId` TEXT NOT NULL, `changeVersion` INTEGER NOT NULL, `targetLang` TEXT NOT NULL, `sourceLang` TEXT NOT NULL, `translatedText` TEXT NOT NULL, `fetchedAt` INTEGER NOT NULL, PRIMARY KEY(`messageId`, `changeVersion`, `targetLang`))",
+        "fields": [
+          {
+            "fieldPath": "messageId",
+            "columnName": "messageId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "conversationId",
+            "columnName": "conversationId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "changeVersion",
+            "columnName": "changeVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetLang",
+            "columnName": "targetLang",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceLang",
+            "columnName": "sourceLang",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "translatedText",
+            "columnName": "translatedText",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fetchedAt",
+            "columnName": "fetchedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "messageId",
+            "changeVersion",
+            "targetLang"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
       }
     ],
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'fc543a688a55fc67af293886df05df33')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '9c59f69f60cdf871c12101540ebe3a43')"
     ]
   }
 }

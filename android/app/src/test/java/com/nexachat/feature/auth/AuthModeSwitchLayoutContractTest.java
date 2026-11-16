@@ -16,7 +16,7 @@ import org.w3c.dom.NodeList;
 
 /**
  * The sign-in/create-account mode switch keeps a plain {@code LinearLayout} track
- * so the selected segment keeps all four square corners, while each
+ * (a pill background) so the selected segment keeps its own corner shape, while each
  * {@code MaterialButton} is checkable so screen readers announce the active mode.
  * Checked state is driven from the fragments ({@code toggleCheckedStateOnClick}
  * is off) so tapping the active mode can never uncheck it.
@@ -60,9 +60,11 @@ public final class AuthModeSwitchLayoutContractTest {
             assertEquals(layout + "#" + id, "true", androidAttr(button, "checkable"));
             assertEquals(layout + "#" + id,
                     "false", appAttr(button, "toggleCheckedStateOnClick"));
-            assertEquals(layout + "#" + id + " must inherit the square theme shape",
+            assertEquals(layout + "#" + id + " must inherit the pill theme shape",
                     "", appAttr(button, "cornerRadius"));
         }
+        assertEquals(layout + " switch track is a pill",
+                "@drawable/bg_auth_mode_switch", androidAttr(group, "background"));
     }
 
     @Test

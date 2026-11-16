@@ -20,6 +20,7 @@ final class LocalConversationCleaner {
         database.outboxDao().deleteForConversation(conversationId, ownerUserId).blockingAwait();
         database.reactionDao().deleteForConversation(conversationId).blockingAwait();
         database.messageDao().deleteForConversation(conversationId).blockingAwait();
+        database.messageTranslationDao().deleteForConversation(conversationId).blockingAwait();
         database.conversationDao().deleteById(conversationId).blockingAwait();
     }
 }

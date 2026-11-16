@@ -1,5 +1,6 @@
 package com.nexachat.config;
 
+import com.nexachat.admin.AdminProperties;
 import com.nexachat.auth.AuthSecurityErrorHandler;
 import com.nexachat.auth.BcryptBoundedPasswordEncoder;
 import com.nexachat.auth.JwtAuthFilter;
@@ -41,7 +42,7 @@ import java.util.List;
  */
 @Configuration
 @EnableWebSecurity
-@EnableConfigurationProperties({JwtProperties.class, SecurityProperties.class})
+@EnableConfigurationProperties({JwtProperties.class, SecurityProperties.class, AdminProperties.class})
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
@@ -49,17 +50,20 @@ public class SecurityConfig {
     private final SecurityHeadersFilter securityHeadersFilter;
     private final RagStatsAuthorizationManager ragStatsAuthorizationManager;
     private final SecurityProperties securityProperties;
+    private final AdminProperties adminProperties;
 
     public SecurityConfig(JwtAuthFilter jwtAuthFilter,
                           AuthSecurityErrorHandler securityErrorHandler,
                           SecurityHeadersFilter securityHeadersFilter,
                           RagStatsAuthorizationManager ragStatsAuthorizationManager,
-                          SecurityProperties securityProperties) {
+                          SecurityProperties securityProperties,
+                          AdminProperties adminProperties) {
         this.jwtAuthFilter = jwtAuthFilter;
         this.securityErrorHandler = securityErrorHandler;
         this.securityHeadersFilter = securityHeadersFilter;
         this.ragStatsAuthorizationManager = ragStatsAuthorizationManager;
         this.securityProperties = securityProperties;
+        this.adminProperties = adminProperties;
     }
 
     @Bean
@@ -90,6 +94,13 @@ public class SecurityConfig {
                         // by StompAuthChannelInterceptor, never by this filter
                         // chain (plan §11.1/§13 — no token-in-URL).
                         .requestMatchers("/ws", "/ws/**").permitAll()
+                        // The admin console requires a staff ROLE_* authority;
+                        // the JwtAuthFilter carries it from the users.role
+                        // column so a demotion applies on the next request.
+                        // Finer ADMIN-vs-MODERATOR splits are enforced inside
+                        // the admin services; anything reaching here without a
+                        // staff role fails closed.
+                        .requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "MODERATOR")
                         // Aggregate RAG counters are operator telemetry, not
                         // user data: only the configured admin phones may read.
                         .requestMatchers("/api/v1/rag/stats").access(ragStatsAuthorizationManager)
@@ -133,6 +144,28 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/api/v1/account-deletion/request", config);
         source.registerCorsConfiguration("/api/v1/account-deletion/confirm", config);
+
+        // The admin web console lives on its own origin (dev :5173, deployed
+        // domain configured per environment). Its allow-list is deliberately
+        // separate from the public web origins, and it additionally needs the
+        // session-issue routes so the login form can cross origins.
+        List<String> adminOrigins = adminProperties.allowedOrigins();
+        if (adminOrigins.contains("*")) {
+            throw new IllegalStateException(
+                    "nexachat.admin.allowed-origins must list exact origins; '*' is not allowed");
+        }
+        if (!adminOrigins.isEmpty()) {
+            CorsConfiguration adminConfig = new CorsConfiguration();
+            adminConfig.setAllowedOrigins(adminOrigins);
+            adminConfig.setAllowedMethods(List.of("GET", "POST", "PATCH", "DELETE", "OPTIONS"));
+            adminConfig.setAllowedHeaders(List.of("*"));
+            adminConfig.setExposedHeaders(List.of("Authorization"));
+            adminConfig.setAllowCredentials(false);
+            adminConfig.setMaxAge(3600L);
+            source.registerCorsConfiguration("/api/v1/admin/**", adminConfig);
+            source.registerCorsConfiguration("/api/v1/auth/login", adminConfig);
+            source.registerCorsConfiguration("/api/v1/auth/refresh", adminConfig);
+        }
         return source;
     }
 }

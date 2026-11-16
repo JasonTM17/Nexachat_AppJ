@@ -26,9 +26,7 @@ import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.TextView;
-import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.PickVisualMediaRequest;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -87,7 +85,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import javax.inject.Inject;
 
@@ -187,7 +184,6 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     private float recordStartX;
     private boolean recordingCancelled;
     private boolean accessibleVoiceRecordingActive;
-    private ExecutorService voiceStartExecutor;
     private boolean voiceStartPending;
     private boolean voiceStopWhenStarted;
     private boolean voiceSendWhenStarted;
@@ -252,6 +248,13 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         DateFormat timeFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
         adapter = new MessageListAdapter(
                 timeFormat, this::resolveOriginal, this, getViewLifecycleOwner(), this);
+        adapter.setTranslationRetry(id -> {
+            ChatMessage m = resolveOriginal(id);
+            if (m != null) {
+                viewModel.retryTranslation(m);
+            }
+            return true;
+        });
         RecyclerView list = binding.messageList;
         LinearLayoutManager layout = new LinearLayoutManager(requireContext());
         layout.setStackFromEnd(true);
@@ -509,7 +512,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
 
     @SuppressLint("ClickableViewAccessibility")
     private void configureVoiceRecording() {
-        voiceRecorder = new VoiceRecorder(requireContext());
+        voiceRecorder = viewModel.getOrCreateVoiceRecorder(requireContext());
         ChatActionImageButton micButton = binding.composerBar.micButton;
         micButton.setOnClickListener(v -> handleAccessibleMicClick());
         micButton.setOnTouchListener((v, event) -> {
@@ -561,8 +564,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                         if (!recordingCancelled) {
                             // A plain release inside the start window matches the
                             // old too-short path: still cancelled, hint intact.
-                            Toast.makeText(requireContext(), R.string.voice_too_short,
-                                    Toast.LENGTH_SHORT).show();
+                            showComposerSnackbar(R.string.voice_too_short);
                         }
                         recordingCancelled = true;
                         return true;
@@ -571,6 +573,15 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                     return true;
 
                 case MotionEvent.ACTION_CANCEL:
+                    if (!v.isAttachedToWindow()
+                            || (getActivity() != null
+                                    && getActivity().isChangingConfigurations())) {
+                        // Teardown cancels the held touch before the view dies;
+                        // keep the ViewModel-owned capture running so the new
+                        // view reattaches the HUD in tap-controlled mode.
+                        viewModel.setVoiceRetainedForConfigChange(true);
+                        return true;
+                    }
                     if (voiceStartPending) {
                         voiceStopWhenStarted = true;
                         return true;
@@ -580,6 +591,58 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             }
             return false;
         });
+        if (viewModel.isVoiceRetainedForConfigChange()) {
+            // The retained flag only releases once an active capture is
+            // confirmed; a start still in-flight on the executor must keep it
+            // so the completion runnable does not cancel the recording.
+            maybeResumeVoiceRecording(micButton, 0);
+        }
+    }
+
+    @Nullable private Runnable voiceResumePoll;
+
+    private void maybeResumeVoiceRecording(@NonNull ChatActionImageButton micButton, int attempt) {
+        voiceResumePoll = null;
+        if (binding == null || !isAdded() || !viewModel.isVoiceRetainedForConfigChange()) {
+            return;
+        }
+        if (viewModel.isVoiceRecordingActive()) {
+            viewModel.setVoiceRetainedForConfigChange(false);
+            resumeVoiceRecordingAfterConfigChange(micButton);
+            return;
+        }
+        if (attempt < 10) {
+            // start() can still be mid-prepare on the start executor.
+            voiceResumePoll = () -> maybeResumeVoiceRecording(micButton, attempt + 1);
+            recordingHandler.postDelayed(voiceResumePoll, 250);
+        } else {
+            // The recorder never came up; drop it instead of holding the mic.
+            viewModel.setVoiceRetainedForConfigChange(false);
+            viewModel.releaseVoiceRecorder();
+            voiceRecorder = null;
+        }
+    }
+
+    /**
+     * The recorder survived view recreation; the held touch was cancelled by
+     * the config change, so the HUD comes back in the tap-controlled
+     * (accessible) mode: tap the mic to send, accessibility action cancels.
+     */
+    private void resumeVoiceRecordingAfterConfigChange(@NonNull ChatActionImageButton micButton) {
+        voiceRecorder = viewModel.getVoiceRecorder();
+        recordingCancelled = false;
+        voiceStartPending = false;
+        voiceStopWhenStarted = false;
+        voiceSendWhenStarted = false;
+        accessibleVoiceRecordingActive = true;
+        showVoiceRecordingOverlay();
+        binding.composerBar.recordingCancelLabel.setText(R.string.voice_recording_active_hint);
+        binding.composerBar.recordingCancelLabel.setTextColor(
+                ContextCompat.getColor(requireContext(), R.color.text_secondary_light));
+        micButton.setAccessibleVoiceRecording(true,
+                () -> finishVoiceRecording(true, true));
+        scheduleRecordingTimer();
+        announceVoiceRecordingState(R.string.cd_record_voice);
     }
 
     private void e2eeMediaUnsupported() {
@@ -702,7 +765,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
 
     private boolean beginVoiceRecording(@NonNull View source) {
         if (voiceRecorder == null) {
-            voiceRecorder = new VoiceRecorder(requireContext());
+            voiceRecorder = viewModel.getOrCreateVoiceRecorder(requireContext());
         }
         // MediaRecorder prepare()/start() can block for seconds on slow
         // devices; run it off the main thread so ACTION_DOWN cannot ANR.
@@ -729,7 +792,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                 }
                 voiceStartPending = false;
                 if (binding == null) {
-                    if (started) {
+                    // View gone mid-start: cancel unless the recorder was
+                    // retained for a configuration change; the next view
+                    // re-attaches the HUD to the live capture.
+                    if (started && !viewModel.isVoiceRetainedForConfigChange()) {
                         recorder.cancel();
                     }
                     return;
@@ -754,19 +820,29 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     }
 
     private void showQuickTapHint() {
-        android.content.Context context = getContext();
-        if (context == null) {
+        showComposerSnackbar(VoiceTapFeedbackRules.quickTapHintMessageId());
+    }
+
+    /** Anchored feedback for composer-scoped events (voice, attachment open). */
+    /** The glossary editor is a dialog, so its error is anchored to the dialog's own content. */
+    private void showGlossaryError(@NonNull AlertDialog editor) {
+        View content = editor.findViewById(android.R.id.content);
+        if (content != null) {
+            Snackbar.make(content, R.string.translation_error_generic, Snackbar.LENGTH_SHORT).show();
+        }
+    }
+
+    private void showComposerSnackbar(int messageId) {
+        if (binding == null || !isAdded()) {
             return;
         }
-        Toast.makeText(context, VoiceTapFeedbackRules.quickTapHintMessageId(),
-                Toast.LENGTH_SHORT).show();
+        Snackbar.make(binding.getRoot(), messageId, Snackbar.LENGTH_SHORT)
+                .setAnchorView(binding.composerBar.getRoot())
+                .show();
     }
 
     private ExecutorService voiceStartExecutor() {
-        if (voiceStartExecutor == null || voiceStartExecutor.isShutdown()) {
-            voiceStartExecutor = Executors.newSingleThreadExecutor();
-        }
-        return voiceStartExecutor;
+        return viewModel.voiceStartExecutor();
     }
 
     private void showVoiceRecordingOverlay() {
@@ -824,7 +900,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                     //noinspection ResultOfMethodCallIgnored
                     audioFile.delete();
                 }
-                Toast.makeText(requireContext(), R.string.voice_too_short, Toast.LENGTH_SHORT).show();
+                showComposerSnackbar(R.string.voice_too_short);
             } else {
                 Uri voiceUri = FileProvider.getUriForFile(
                         requireContext(),
@@ -929,6 +1005,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         settingsViewModel.getChatColor().observe(getViewLifecycleOwner(), next -> {
             if (next != null && adapter != null) adapter.setChatColor(next);
         });
+        viewModel.getTranslations().observe(getViewLifecycleOwner(), next -> {
+            if (next != null && adapter != null) adapter.setTranslations(next);
+        });
+        viewModel.loadTranslatePrefs();
     }
 
     private void render() {
@@ -1727,8 +1807,171 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         row.setOnClickListener(v -> {
             if (toggle.isEnabled()) viewModel.setAiOptOut(!toggle.isChecked());
         });
+        bindTranslateSettings(content);
         dialog.show();
         viewModel.loadAiOptOut();
+    }
+
+    private void bindTranslateSettings(@NonNull View content) {
+        com.google.android.material.materialswitch.MaterialSwitch autoSwitch =
+                content.findViewById(R.id.autoTranslateSwitch);
+        TextView translateStatus = content.findViewById(R.id.translateStatus);
+        TextView langValue = content.findViewById(R.id.translateLangValue);
+        View autoRow = content.findViewById(R.id.autoTranslateRow);
+        View langRow = content.findViewById(R.id.translateLangRow);
+        View glossaryRow = content.findViewById(R.id.glossaryRow);
+
+        androidx.lifecycle.Observer<ChatViewModel.TranslatePrefsState> observer = state -> {
+            autoSwitch.setOnCheckedChangeListener(null);
+            autoSwitch.setChecked(state.getAutoTranslate());
+            autoSwitch.setEnabled(!state.isBusy());
+            langRow.setEnabled(!state.isBusy());
+            String langName;
+            if (state.getTargetLang() != null) {
+                int res = TranslationLanguages.nameRes(state.getTargetLang());
+                langName = res == 0 ? state.getTargetLang() : getString(res);
+            } else {
+                int res = TranslationLanguages.nameRes(viewModel.effectiveTargetLang());
+                langName = getString(R.string.translate_target_default,
+                        res == 0 ? viewModel.effectiveTargetLang() : getString(res));
+            }
+            langValue.setText(langName);
+            translateStatus.setVisibility(state.getError() == null ? View.GONE : View.VISIBLE);
+            if (state.getError() != null) {
+                translateStatus.setText(ChatErrorText.messageId(state.getError()));
+            }
+            autoSwitch.setOnCheckedChangeListener((button, checked) -> {
+                viewModel.setAutoTranslate(checked);
+            });
+        };
+        viewModel.getTranslatePrefsState().observe(getViewLifecycleOwner(), observer);
+        autoRow.setOnClickListener(v -> {
+            if (autoSwitch.isEnabled()) viewModel.setAutoTranslate(!autoSwitch.isChecked());
+        });
+        langRow.setOnClickListener(v -> showTranslateLanguagePicker());
+        glossaryRow.setOnClickListener(v -> showGlossaryEditor());
+    }
+
+    /** Searchable target-language picker backed by the supported catalog. */
+    private void showTranslateLanguagePicker() {
+        View content = getLayoutInflater().inflate(R.layout.dialog_language_picker, null);
+        android.widget.EditText search = content.findViewById(R.id.languageSearchInput);
+        android.widget.ListView list = content.findViewById(R.id.languageList);
+        java.util.List<String> names = new java.util.ArrayList<>();
+        String defaultRow = getString(R.string.translate_target_default_plain);
+        names.add(defaultRow);
+        for (TranslationLanguages.Entry entry : TranslationLanguages.SUPPORTED) {
+            names.add(getString(entry.nameRes()));
+        }
+        android.widget.ArrayAdapter<String> items = new android.widget.ArrayAdapter<>(
+                requireContext(), android.R.layout.simple_list_item_1, names);
+        list.setAdapter(items);
+        AlertDialog picker = new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.translate_target_language_title)
+                .setView(content)
+                .setNegativeButton(R.string.action_close, null)
+                .create();
+        list.setOnItemClickListener((parent, view, position, id) -> {
+            String name = items.getItem(position);
+            if (defaultRow.equals(name)) {
+                viewModel.setTranslateTargetLang(null);
+                picker.dismiss();
+                return;
+            }
+            for (TranslationLanguages.Entry entry : TranslationLanguages.SUPPORTED) {
+                if (getString(entry.nameRes()).equals(name)) {
+                    viewModel.setTranslateTargetLang(entry.code());
+                    break;
+                }
+            }
+            picker.dismiss();
+        });
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) { }
+            @Override public void onTextChanged(CharSequence s, int st, int b, int c) {
+                items.getFilter().filter(s);
+            }
+            @Override public void afterTextChanged(android.text.Editable s) { }
+        });
+        picker.show();
+    }
+
+    /** Glossary editor: add/remove term rows with client-side validation. */
+    private void showGlossaryEditor() {
+        View content = getLayoutInflater().inflate(R.layout.dialog_translation_glossary, null);
+        android.widget.LinearLayout termList = content.findViewById(R.id.glossaryTermList);
+        View empty = content.findViewById(R.id.glossaryEmpty);
+        View addButton = content.findViewById(R.id.glossaryAddButton);
+        java.util.List<View> rows = new java.util.ArrayList<>();
+
+        Runnable refreshEmpty = () -> empty.setVisibility(rows.isEmpty() ? View.VISIBLE : View.GONE);
+        java.util.function.Consumer<com.nexachat.core.network.dto.TranslationGlossaryDto.Term>
+                addRow = term -> {
+            View rowView = getLayoutInflater().inflate(R.layout.item_glossary_term, termList, false);
+            android.widget.EditText termInput = rowView.findViewById(R.id.glossaryTermInput);
+            android.widget.EditText replacementInput = rowView.findViewById(R.id.glossaryReplacementInput);
+            if (term != null) {
+                if (term.getTerm() != null) termInput.setText(term.getTerm());
+                if (term.getReplacement() != null) replacementInput.setText(term.getReplacement());
+            }
+            rowView.findViewById(R.id.glossaryRemoveButton).setOnClickListener(v -> {
+                termList.removeView(rowView);
+                rows.remove(rowView);
+                refreshEmpty.run();
+            });
+            termList.addView(rowView);
+            rows.add(rowView);
+            refreshEmpty.run();
+        };
+        addButton.setOnClickListener(v -> addRow.accept(null));
+
+        AlertDialog editor = new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.translate_glossary_title)
+                .setView(content)
+                .setPositiveButton(R.string.action_save, null)
+                .setNegativeButton(R.string.action_close, null)
+                .create();
+        editor.setOnShowListener(ignored -> editor.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(v -> {
+                    java.util.List<com.nexachat.core.network.dto.TranslationGlossaryDto.Term> terms =
+                            new java.util.ArrayList<>();
+                    for (View rowView : rows) {
+                        String term = ((android.widget.EditText)
+                                rowView.findViewById(R.id.glossaryTermInput)).getText().toString().trim();
+                        String replacement = ((android.widget.EditText)
+                                rowView.findViewById(R.id.glossaryReplacementInput)).getText().toString().trim();
+                        if (term.isEmpty()) continue;
+                        terms.add(new com.nexachat.core.network.dto.TranslationGlossaryDto.Term(
+                                term, replacement.isEmpty() ? null : replacement));
+                    }
+                    com.nexachat.core.network.dto.TranslationGlossaryDto.Term[] array =
+                            terms.toArray(new com.nexachat.core.network.dto.TranslationGlossaryDto.Term[0]);
+                    subscriptions.add(viewModel.saveGlossary(java.util.Arrays.asList(array))
+                            .observeOn(io.reactivex.rxjava3.android.schedulers.AndroidSchedulers.mainThread())
+                            .subscribe(result -> {
+                                if (result instanceof com.nexachat.core.common.Result.Success<?>) {
+                                    editor.dismiss();
+                                } else {
+                                    showGlossaryError(editor);
+                                }
+                            }, error -> showGlossaryError(editor)));
+                }));
+        editor.show();
+        subscriptions.add(viewModel.loadGlossary()
+                .observeOn(io.reactivex.rxjava3.android.schedulers.AndroidSchedulers.mainThread())
+                .subscribe(result -> {
+                    if (result instanceof com.nexachat.core.common.Result.Success<?> success) {
+                        com.nexachat.core.network.dto.TranslationGlossaryDto dto =
+                                (com.nexachat.core.network.dto.TranslationGlossaryDto) success.getValue();
+                        if (dto.getTerms() != null) {
+                            for (com.nexachat.core.network.dto.TranslationGlossaryDto.Term term
+                                    : dto.getTerms()) {
+                                addRow.accept(term);
+                            }
+                        }
+                    }
+                    refreshEmpty.run();
+                }, ignored -> refreshEmpty.run()));
     }
 
     private static int preferenceMessage(@NonNull ChatActionEvent.PreferenceChanged.Kind kind) {
@@ -1864,7 +2107,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             return;
         }
         MessageActionSheetFragment.newInstance(messageId, state.getCanPin(),
-                        state.isPinned(messageId), deleteAction)
+                        state.isPinned(messageId), deleteAction,
+                        viewModel.isTranslated(messageId))
                 .show(getChildFragmentManager(), MessageActionSheetFragment.TAG);
     }
     @Override public ChatMessage findActionMessage(@NonNull String messageId) { return resolveOriginal(messageId); }
@@ -1881,6 +2125,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     @Override public void react(@NonNull ChatMessage value, @NonNull String emoji) { viewModel.toggleReaction(value, emoji); }
     @Override public void pin(@NonNull ChatMessage value) { viewModel.togglePin(value); }
     @Override public void forward(@NonNull ChatMessage value) { showForward(value); }
+    @Override public void translate(@NonNull ChatMessage value) { viewModel.translateMessage(value); }
+    @Override public void showOriginal(@NonNull ChatMessage value) { viewModel.showOriginal(value); }
     @Override public void onRetryTap(@NonNull String messageId) { viewModel.retryFailed(messageId); }
     @Override public void onReplyQuoteTap(@NonNull String replyToId) { viewModel.jumpToMessage(replyToId); }
     @Override public void onOpenMedia(@NonNull String messageId, @NonNull AttachmentDto attachment) {
@@ -1908,13 +2154,13 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                                             binding.getRoot(), file, mime);
                                 },
                                 error -> {
-                                    if (isAdded() && binding != null) {
-                                        Snackbar.make(binding.getRoot(), R.string.error_attachment_open, Snackbar.LENGTH_SHORT).show();
+                                    if (isAdded()) {
+                                        showComposerSnackbar(R.string.error_attachment_open);
                                     }
                                 },
                                 () -> {
-                                    if (isAdded() && binding != null) {
-                                        Snackbar.make(binding.getRoot(), R.string.error_attachment_open, Snackbar.LENGTH_SHORT).show();
+                                    if (isAdded()) {
+                                        showComposerSnackbar(R.string.error_attachment_open);
                                     }
                                 }));
     }
@@ -1972,25 +2218,30 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         if (recordingTimerRunnable != null) {
             recordingHandler.removeCallbacks(recordingTimerRunnable);
         }
-        if (voiceRecorder != null) {
-            final VoiceRecorder recorder = voiceRecorder;
-            voiceRecorder = null;
-            if (voiceStartExecutor != null && !voiceStartExecutor.isShutdown()) {
-                // start() holds the recorder monitor through prepare()+start(),
-                // so a synchronous cancel() could block main for the rest of an
-                // in-flight start; queue it behind the start instead.
-                voiceStartExecutor.execute(recorder::cancel);
+        if (voiceResumePoll != null) {
+            recordingHandler.removeCallbacks(voiceResumePoll);
+            voiceResumePoll = null;
+        }
+        boolean configChange = requireActivity().isChangingConfigurations();
+        if (voiceRecorder != null || viewModel.getVoiceRecorder() != null) {
+            if (configChange) {
+                // View is being recreated (rotation, font, theme); the recorder
+                // and start executor live on the ViewModel and keep running.
+                // Only a capture that is running or starting needs its HUD back;
+                // an idle recorder just stays parked on the ViewModel.
+                if (voiceStartPending || viewModel.isVoiceRecordingActive()) {
+                    viewModel.setVoiceRetainedForConfigChange(true);
+                }
             } else {
-                recorder.cancel();
+                viewModel.releaseVoiceRecorder();
             }
+            voiceRecorder = null;
         }
-        if (voiceStartExecutor != null) {
-            // Graceful shutdown: a queued cancel() must still run after the
-            // in-flight start() finishes rather than being dropped.
-            voiceStartExecutor.shutdown();
-            voiceStartExecutor = null;
+        if (!configChange) {
+            // Mark in-flight start completions stale so they cannot reattach
+            // UI or leak state into a future view of this fragment.
+            voiceStartGeneration++;
         }
-        voiceStartGeneration++;
         voiceStartPending = false;
         voiceStopWhenStarted = false;
         voiceSendWhenStarted = false;

@@ -33,6 +33,7 @@ public class ObservabilityMetrics {
     public static final String CALL_TRANSITIONS = "nexachat.call.transitions";
     public static final String RAG_REQUESTS = "nexachat.rag.requests";
     public static final String SUMMARY_REQUESTS = "nexachat.summary.requests";
+    public static final String TRANSLATE_REQUESTS = "nexachat.translate.requests";
     public static final String LLM_DURATION = "nexachat.llm.duration";
     public static final String RATE_LIMIT_REJECTIONS = "nexachat.ratelimit.rejections";
     public static final String AUTH_FAILURES = "nexachat.auth.failures";
@@ -112,6 +113,10 @@ public class ObservabilityMetrics {
         Counter.builder(SUMMARY_REQUESTS)
                 .description("Summary requests by provider, mode and fallback reason")
                 .tags("provider", UNRECORDED, "mode", UNRECORDED, "fallback", UNRECORDED)
+                .register(registry);
+        Counter.builder(TRANSLATE_REQUESTS)
+                .description("Translate requests by outcome mode and provider")
+                .tags("mode", UNRECORDED, "provider", UNRECORDED)
                 .register(registry);
         Timer.builder(LLM_DURATION)
                 .description("LLM completion latency by source and provider")
@@ -199,6 +204,11 @@ public class ObservabilityMetrics {
     public void recordSummaryRequest(String provider, String mode, String fallback) {
         registry.counter(SUMMARY_REQUESTS, "provider", safe(provider, "UNKNOWN"),
                 "mode", safe(mode, "UNKNOWN"), "fallback", safe(fallback, "NONE")).increment();
+    }
+
+    public void recordTranslateRequest(String mode, String provider) {
+        registry.counter(TRANSLATE_REQUESTS, "mode", safe(mode, "UNKNOWN"),
+                "provider", safe(provider, "UNKNOWN")).increment();
     }
 
     public void recordLlmCall(String source, String provider, String outcome,

@@ -16,8 +16,8 @@ import android.text.TextUtils;
 import android.view.View;
 import android.widget.ImageButton;
 import android.widget.ImageView;
-import android.widget.ProgressBar;
 import android.widget.TextView;
+import androidx.annotation.IdRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
@@ -35,6 +35,7 @@ import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.target.Target;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
+import com.google.android.material.progressindicator.CircularProgressIndicator;
 import com.nexachat.R;
 import com.nexachat.feature.chat.system.SystemEventFormatter;
 import com.nexachat.core.common.AppConfig;
@@ -42,6 +43,7 @@ import com.nexachat.core.media.AttachmentBlurHashRegistry;
 import com.nexachat.core.media.BlurHashDecoder;
 import com.nexachat.core.media.BlurHashPlaceholderCache;
 import com.nexachat.core.media.ImageAttachmentBinding;
+import com.nexachat.core.media.VideoThumbnailLoader;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.MessageMention;
 import com.nexachat.core.ui.MessageUiRules;
@@ -129,6 +131,114 @@ public final class MessageBubbleBinder {
         pausedFailReasonRes = reasonRes;
     }
 
+    /** Replaces the per-message translation states bound on the next pass. */
+    public void setTranslations(
+            @NonNull java.util.Map<String, com.nexachat.feature.chat.TranslationUiState> next) {
+        translations = next;
+    }
+
+    /** Retry callback for failed translations, keyed by message id. */
+    public void setTranslationRetry(
+            @Nullable Function<String, Boolean> onRetry) {
+        translationRetry = onRetry;
+    }
+
+    @NonNull private java.util.Map<String, com.nexachat.feature.chat.TranslationUiState>
+            translations = java.util.Map.of();
+    @Nullable private Function<String, Boolean> translationRetry;
+
+    /**
+     * Renders the translation block under the message body. LOADING shows the
+     * spinner, READY shows the secondary-styled translation with a
+     * "Translated from X" caption, and ERROR shows a retryable error row.
+     * The block hides entirely when no state is present.
+     */
+    private void bindTranslation(@NonNull View root, @NonNull ChatMessage message) {
+        View block = root.findViewById(R.id.translationBlock);
+        if (block == null) {
+            return;
+        }
+        com.nexachat.feature.chat.TranslationUiState state = translations.get(message.getId());
+        if (state == null || message.isDeleted() || message.isEncrypted()) {
+            block.setVisibility(View.GONE);
+            return;
+        }
+        block.setVisibility(View.VISIBLE);
+        TextView caption = block.findViewById(R.id.translationCaption);
+        View progress = block.findViewById(R.id.translationProgress);
+        TextView text = block.findViewById(R.id.translationText);
+        View errorRow = block.findViewById(R.id.translationErrorRow);
+        TextView errorText = block.findViewById(R.id.translationErrorText);
+
+        switch (state.getStatus()) {
+            case LOADING -> {
+                caption.setText(R.string.translation_loading);
+                progress.setVisibility(View.VISIBLE);
+                text.setVisibility(View.GONE);
+                errorRow.setVisibility(View.GONE);
+                progress.setContentDescription(
+                        root.getContext().getString(R.string.translation_loading));
+            }
+            case READY -> {
+                caption.setText(root.getContext().getString(
+                        R.string.translation_caption,
+                        languageName(root.getContext(), state.getSourceLang())));
+                progress.setVisibility(View.GONE);
+                text.setVisibility(View.VISIBLE);
+                text.setText(state.getText());
+                errorRow.setVisibility(View.GONE);
+                block.announceForAccessibility(root.getContext().getString(
+                        R.string.translation_caption,
+                        languageName(root.getContext(), state.getSourceLang())));
+            }
+            case ERROR -> {
+                caption.setText(R.string.translation_failed);
+                progress.setVisibility(View.GONE);
+                text.setVisibility(View.GONE);
+                errorRow.setVisibility(View.VISIBLE);
+                errorText.setText(errorLabel(root.getContext(), state.getErrorCode()));
+                errorRow.setContentDescription(root.getContext().getString(
+                        R.string.translation_failed_retry_cd));
+                errorRow.setOnClickListener(v -> {
+                    if (translationRetry != null) {
+                        translationRetry.apply(message.getId());
+                    }
+                });
+            }
+        }
+    }
+
+    private static int errorLabel(@NonNull android.content.Context context,
+            @Nullable String code) {
+        if ("RATE_LIMITED".equals(code)) return R.string.translation_error_rate_limited;
+        if ("NETWORK".equals(code) || "NETWORK_ERROR".equals(code))
+            return R.string.translation_error_offline;
+        return R.string.translation_error_generic;
+    }
+
+    /** Human-readable language name for the caption, with a code fallback. */
+    private static String languageName(@NonNull android.content.Context context,
+            @Nullable String code) {
+        if (code == null) return "";
+        return switch (code) {
+            case "vi" -> context.getString(R.string.lang_vi);
+            case "en" -> context.getString(R.string.lang_en);
+            case "zh" -> context.getString(R.string.lang_zh);
+            case "ja" -> context.getString(R.string.lang_ja);
+            case "ko" -> context.getString(R.string.lang_ko);
+            case "fr" -> context.getString(R.string.lang_fr);
+            case "de" -> context.getString(R.string.lang_de);
+            case "es" -> context.getString(R.string.lang_es);
+            case "th" -> context.getString(R.string.lang_th);
+            case "id" -> context.getString(R.string.lang_id);
+            case "ru" -> context.getString(R.string.lang_ru);
+            case "ar" -> context.getString(R.string.lang_ar);
+            case "pt" -> context.getString(R.string.lang_pt);
+            case "hi" -> context.getString(R.string.lang_hi);
+            default -> code;
+        };
+    }
+
     public void bindMessageRow(@NonNull View root, @NonNull MessageListItem item) {
         ChatMessage message = item.getMessage();
         if (message == null || item.getGroupPosition() == null) {
@@ -192,10 +302,44 @@ public final class MessageBubbleBinder {
 
         bindReplyQuote(root, message);
         bindPrimaryContent(root, message);
+        bindTranslation(root, message);
         applyMessageTextColors(root, message, item.isPulsing());
         applyMentionHighlights(root, message, mentionedMe);
         bindMetaRow(root, message, item.isSeenReceipt(), item.isDeliveredReceipt(), item.isPulsing());
         bindReactions(root, message);
+        applyMediaOnlyFrame(root, bubble, message, mentionedMe);
+    }
+
+    /**
+     * A photo or video with no caption, quote or sender label is shown as the
+     * rounded media itself: the coloured bubble frame and its padding would
+     * only leave a plum border around the picture.
+     */
+    private void applyMediaOnlyFrame(
+            View root, View bubble, ChatMessage message, boolean mentionedMe) {
+        if (mentionedMe) {
+            return; // keep the highlighted frame so the mention stays visible
+        }
+        if (MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs())
+                || message.getAttachments().isEmpty()) {
+            return;
+        }
+        MessageContentKind kind = MessageViewTypeMapper.resolveContentKind(message);
+        if (kind != MessageContentKind.IMAGE && kind != MessageContentKind.VIDEO) {
+            return;
+        }
+        if (isShown(root, R.id.replyQuote) || isShown(root, R.id.senderName)
+                || isShown(root, R.id.messageBody)) {
+            return;
+        }
+        bubble.setBackground(null);
+        bubble.setBackgroundTintList(null);
+        bubble.setPadding(0, 0, 0, 0);
+    }
+
+    private static boolean isShown(View root, @IdRes int id) {
+        View view = root.findViewById(id);
+        return view != null && view.getVisibility() == View.VISIBLE;
     }
 
     public void bindDateSeparator(@NonNull View root, @NonNull String label) {
@@ -354,6 +498,7 @@ public final class MessageBubbleBinder {
         String replyId = message.getReplyToId();
         if (tombstone || replyId == null) {
             replyInclude.setVisibility(View.GONE);
+            ((View) replyInclude.getParent()).setMinimumWidth(0);
             return;
         }
         ChatMessage original = resolveOriginal != null ? resolveOriginal.apply(replyId) : null;
@@ -371,9 +516,18 @@ public final class MessageBubbleBinder {
         boolean resolved = original != null || snippet != null || sender != null;
         if (!resolved) {
             replyInclude.setVisibility(View.GONE);
+            ((View) replyInclude.getParent()).setMinimumWidth(0);
             return;
         }
         replyInclude.setVisibility(View.VISIBLE);
+        // match_parent links are re-measured EXACTLY to the bubble's width, so
+        // a layout minWidth inside the quote can never widen a narrow bubble;
+        // set it on the bubble itself while the quote is visible.
+        View bubble = (View) replyInclude.getParent();
+        int quoteMin = root.getResources().getDimensionPixelSize(R.dimen.bubble_quote_min_width);
+        if (bubble.getMinimumWidth() != quoteMin) {
+            bubble.setMinimumWidth(quoteMin);
+        }
         tintReplyQuote(root, replyInclude, message.getMine());
         TextView author = replyInclude.findViewById(R.id.replyAuthor);
         TextView snippetView = replyInclude.findViewById(R.id.replySnippet);
@@ -503,11 +657,14 @@ public final class MessageBubbleBinder {
             });
             if (image != null && kind == MessageContentKind.VIDEO) {
                 image.setVisibility(View.VISIBLE);
-                if (attachment != null && attachment.contentUrl() != null) {
-                    Glide.with(image)
-                            .load(attachment.contentUrl())
-                            .centerCrop()
-                            .into(image);
+                image.setImageResource(R.drawable.bg_media_video_placeholder);
+                String videoUrl = attachment == null ? null : attachment.contentUrl();
+                if (videoUrl != null) {
+                    String absolute = videoUrl.startsWith("content:") || videoUrl.startsWith("file:")
+                            ? videoUrl
+                            : AppConfig.absoluteMediaUrl(videoUrl);
+                    image.setTag(absolute);
+                    VideoThumbnailLoader.load(image, absolute);
                 }
             }
             return;
@@ -774,7 +931,7 @@ public final class MessageBubbleBinder {
         if (systemMessage) {
             TextView time = metaInclude.findViewById(R.id.timeLabel);
             TextView edited = metaInclude.findViewById(R.id.editedLabel);
-            ProgressBar sending = metaInclude.findViewById(R.id.sendingProgress);
+            CircularProgressIndicator sending = metaInclude.findViewById(R.id.sendingProgress);
             ImageView deliveredIcon = metaInclude.findViewById(R.id.deliveryIcon);
             TextView deliveryText = metaInclude.findViewById(R.id.deliveryStatusText);
             ImageView timer = metaInclude.findViewById(R.id.timerIcon);
@@ -823,7 +980,7 @@ public final class MessageBubbleBinder {
         }
         TextView edited = metaInclude.findViewById(R.id.editedLabel);
         TextView time = metaInclude.findViewById(R.id.timeLabel);
-        ProgressBar sending = metaInclude.findViewById(R.id.sendingProgress);
+        CircularProgressIndicator sending = metaInclude.findViewById(R.id.sendingProgress);
         ImageView deliveredIcon = metaInclude.findViewById(R.id.deliveryIcon);
         TextView deliveryText = metaInclude.findViewById(R.id.deliveryStatusText);
         ImageView timer = metaInclude.findViewById(R.id.timerIcon);
@@ -885,7 +1042,7 @@ public final class MessageBubbleBinder {
                     ? root.getContext().getString(R.string.cd_sending)
                     : null);
             if (isMine) {
-                sending.setIndeterminateTintList(ColorStateList.valueOf(metaColor));
+                sending.setIndicatorColor(metaColor);
             }
         }
         if (deliveredIcon != null) {

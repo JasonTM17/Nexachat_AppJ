@@ -13,6 +13,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpHeaders;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
@@ -22,6 +23,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Parses {@code Authorization: Bearer <jwt>} once per request.
@@ -70,14 +72,23 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             try {
                 JwtService.AccessTokenClaims claims =
                         jwtService.parseAccessTokenClaims(header.substring(BEARER_PREFIX.length()));
-                if (isRevoked(claims)) {
+                Validity validity = loadValidity(claims.userId());
+                if (!validity.present()) {
+                    request.setAttribute(AUTH_ERROR_ATTRIBUTE, ApiErrorCode.TOKEN_INVALID);
+                } else if (validity.suspended()) {
+                    // A suspended account's tokens die regardless of issue time:
+                    // suspend also stamps the cutoff, but a token minted in the
+                    // same second must still fail closed.
+                    request.setAttribute(AUTH_ERROR_ATTRIBUTE, ApiErrorCode.ACCOUNT_SUSPENDED);
+                } else if (isRevoked(claims, validity)) {
                     request.setAttribute(AUTH_ERROR_ATTRIBUTE, ApiErrorCode.TOKEN_INVALID);
                 } else {
                     if (claims.tokenId() != null && !claims.tokenId().isBlank()) {
                         request.setAttribute(ACCESS_TOKEN_ID_ATTRIBUTE, claims.tokenId());
                     }
                     var authentication = new UsernamePasswordAuthenticationToken(
-                            new JwtPrincipal(claims.userId(), claims.issuedAt(), claims.expiresAt()), null, List.of());
+                            new JwtPrincipal(claims.userId(), claims.issuedAt(), claims.expiresAt()),
+                            null, authoritiesFor(validity.role()));
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                 }
@@ -91,28 +102,45 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     /**
-     * True when the account is gone or the token was issued at or before the
-     * cutoff. A token without an {@code iat} is treated as issued at the epoch,
-     * so any cutoff rejects it. Inclusive comparison fails closed for the
-     * cutoff second because JWT {@code iat} has one-second resolution.
+     * Resolves the account's revocation facts, served from the bounded cache
+     * first and falling back to the database on a miss so the hot path does no
+     * per-request SQL in the steady state.
      */
-    private boolean isRevoked(JwtService.AccessTokenClaims claims) {
-        Optional<Validity> cached = validityCache.get(claims.userId());
-        Validity validity;
+    private Validity loadValidity(UUID userId) {
+        Optional<Validity> cached = validityCache.get(userId);
         if (cached.isPresent()) {
-            validity = cached.get();
-        } else {
-            long generation = validityCache.generation();
-            Validity loaded = userRepository.findAuthValidityById(claims.userId())
-                    .map(found -> new Validity(true, found.tokensValidAfter()))
-                    .orElseGet(Validity::missing);
-            validityCache.putIfGeneration(claims.userId(), loaded, generation);
-            validity = loaded;
+            return cached.get();
         }
-        if (!validity.present()) {
-            return true;
-        }
+        long generation = validityCache.generation();
+        Validity loaded = userRepository.findAuthValidityById(userId)
+                .map(found -> new Validity(true, found.tokensValidAfter(),
+                        found.role() == null ? null : found.role().name(), found.suspended()))
+                .orElseGet(Validity::missing);
+        validityCache.putIfGeneration(userId, loaded, generation);
+        return loaded;
+    }
+
+    /**
+     * True when the token was issued at or before the cutoff. A token without
+     * an {@code iat} is treated as issued at the epoch, so any cutoff rejects
+     * it. Inclusive comparison fails closed for the cutoff second because JWT
+     * {@code iat} has one-second resolution.
+     */
+    private boolean isRevoked(JwtService.AccessTokenClaims claims, Validity validity) {
         Instant cutoff = validity.tokensValidAfter();
         return cutoff != null && !claims.issuedAt().isAfter(cutoff);
+    }
+
+    /**
+     * Maps the stored role to Spring authorities. {@code ROLE_} prefix is the
+     * framework convention consumed by {@code hasRole} matchers; a missing or
+     * unknown role yields the empty list, which fails closed on every
+     * role-gated route.
+     */
+    private static List<SimpleGrantedAuthority> authoritiesFor(String role) {
+        if (role == null) {
+            return List.of();
+        }
+        return List.of(new SimpleGrantedAuthority("ROLE_" + role));
     }
 }

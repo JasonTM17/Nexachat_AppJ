@@ -119,6 +119,10 @@ public final class SyncEngineTest {
         pinDao = mock(PinDao.class);
         outboxDao = mock(OutboxDao.class);
         when(pinDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
+        com.nexachat.core.database.MessageTranslationDao translationDao =
+                mock(com.nexachat.core.database.MessageTranslationDao.class);
+        when(appDatabase.messageTranslationDao()).thenReturn(translationDao);
+        when(translationDao.deleteForConversation(anyString())).thenReturn(Completable.complete());
         when(outboxDao.deleteForConversation(anyString(), anyString())).thenReturn(Completable.complete());
         when(outboxDao.delete(anyString(), anyString())).thenReturn(Completable.complete());
         when(appDatabase.pinDao()).thenReturn(pinDao);
