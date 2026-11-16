@@ -18,6 +18,7 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import androidx.annotation.IdRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
@@ -42,6 +43,7 @@ import com.nexachat.core.media.AttachmentBlurHashRegistry;
 import com.nexachat.core.media.BlurHashDecoder;
 import com.nexachat.core.media.BlurHashPlaceholderCache;
 import com.nexachat.core.media.ImageAttachmentBinding;
+import com.nexachat.core.media.VideoThumbnailLoader;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.MessageMention;
 import com.nexachat.core.ui.MessageUiRules;
@@ -196,6 +198,35 @@ public final class MessageBubbleBinder {
         applyMentionHighlights(root, message, mentionedMe);
         bindMetaRow(root, message, item.isSeenReceipt(), item.isDeliveredReceipt(), item.isPulsing());
         bindReactions(root, message);
+        applyMediaOnlyFrame(root, bubble, message);
+    }
+
+    /**
+     * A photo or video with no caption, quote or sender label is shown as the
+     * rounded media itself: the coloured bubble frame and its padding would
+     * only leave a plum border around the picture.
+     */
+    private void applyMediaOnlyFrame(View root, View bubble, ChatMessage message) {
+        if (MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs())
+                || message.getAttachments().isEmpty()) {
+            return;
+        }
+        MessageContentKind kind = MessageViewTypeMapper.resolveContentKind(message);
+        if (kind != MessageContentKind.IMAGE && kind != MessageContentKind.VIDEO) {
+            return;
+        }
+        if (isShown(root, R.id.replyQuote) || isShown(root, R.id.senderName)
+                || isShown(root, R.id.messageBody)) {
+            return;
+        }
+        bubble.setBackground(null);
+        bubble.setBackgroundTintList(null);
+        bubble.setPadding(0, 0, 0, 0);
+    }
+
+    private static boolean isShown(View root, @IdRes int id) {
+        View view = root.findViewById(id);
+        return view != null && view.getVisibility() == View.VISIBLE;
     }
 
     public void bindDateSeparator(@NonNull View root, @NonNull String label) {
@@ -503,11 +534,14 @@ public final class MessageBubbleBinder {
             });
             if (image != null && kind == MessageContentKind.VIDEO) {
                 image.setVisibility(View.VISIBLE);
-                if (attachment != null && attachment.contentUrl() != null) {
-                    Glide.with(image)
-                            .load(attachment.contentUrl())
-                            .centerCrop()
-                            .into(image);
+                image.setImageResource(R.drawable.bg_media_video_placeholder);
+                String videoUrl = attachment == null ? null : attachment.contentUrl();
+                if (videoUrl != null) {
+                    String absolute = videoUrl.startsWith("content:") || videoUrl.startsWith("file:")
+                            ? videoUrl
+                            : AppConfig.absoluteMediaUrl(videoUrl);
+                    image.setTag(absolute);
+                    VideoThumbnailLoader.load(image, absolute);
                 }
             }
             return;
