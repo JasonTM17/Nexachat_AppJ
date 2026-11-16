@@ -180,20 +180,16 @@ public class AlertService {
     }
 
     /**
-     * Authorized plaintext reveal. Guards, in order: per-actor rate limit →
-     * alert exists → conversation is not E2EE → sender has not opted out of
-     * AI analysis → the neighboring plaintext window. Every outcome — success
-     * and refusal — lands in the audit log.
+     * Authorized plaintext reveal. Guards, in order: alert exists → reason →
+     * conversation is not E2EE → sender has not opted out of AI analysis →
+     * the per-actor rate budget → the neighboring plaintext window. Refusals
+     * run before the token is spent so probing never drains the budget, and
+     * the context query is last so a denied request never touches plaintext.
+     * Every outcome — success and refusal — lands in the audit log.
      */
     @Transactional(readOnly = true)
     public RevealResult reveal(UUID alertId, String reason, UUID actorId,
                                User.Role actorRole, String ip) {
-        if (!consumeRevealToken(actorId)) {
-            auditService.recordAttempt(actorId, actorRole, "ALERT_REVEAL", "alert",
-                    alertId.toString(), reason, Map.of("denied", "rate-limited"), ip);
-            throw ApiException.of(ApiErrorCode.RATE_LIMITED,
-                    "Too many reveal requests — try again later");
-        }
         AlertRepository.AlertRow row = requireAlert(alertId);
         if (reason == null || reason.isBlank() || reason.trim().length() > 500) {
             denyReveal(actorId, actorRole, alertId, reason, ip, "reason-required");
@@ -207,6 +203,25 @@ public class AlertService {
             denyReveal(actorId, actorRole, alertId, reason, ip, "e2ee-conversation");
             throw ApiException.of(ApiErrorCode.FORBIDDEN,
                     "This conversation is end-to-end encrypted — there is nothing to reveal");
+        }
+        // Opt-out gate re-checked here, not only at scan time: an opt-out taken
+        // after the alert was filed still suppresses this sender's content.
+        boolean optedOut = jdbcTemplate.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1 FROM conversation_ai_opt_outs
+                    WHERE conversation_id = ? AND user_id = ?
+                )
+                """, Boolean.class, row.conversationId(), row.senderId());
+        if (Boolean.TRUE.equals(optedOut)) {
+            denyReveal(actorId, actorRole, alertId, reason, ip, "sender-opted-out");
+            throw ApiException.of(ApiErrorCode.FORBIDDEN,
+                    "The sender opted this conversation out of analysis");
+        }
+        if (!consumeRevealToken(actorId)) {
+            auditService.recordAttempt(actorId, actorRole, "ALERT_REVEAL", "alert",
+                    alertId.toString(), reason, Map.of("denied", "rate-limited"), ip);
+            throw ApiException.of(ApiErrorCode.RATE_LIMITED,
+                    "Too many reveal requests — try again later");
         }
         List<RevealedMessage> messages = jdbcTemplate.query("""
                         SELECT id, seq, sender_id, content, created_at
@@ -228,19 +243,6 @@ public class AlertService {
                 row.messageSeq() + properties.alerts().revealContextRadius(),
                 row.conversationId(),
                 properties.alerts().revealContextRadius() * 2 + 1);
-        // Opt-out gate re-checked here, not only at scan time: an opt-out taken
-        // after the alert was filed still suppresses this sender's content.
-        boolean optedOut = jdbcTemplate.queryForObject("""
-                SELECT EXISTS (
-                    SELECT 1 FROM conversation_ai_opt_outs
-                    WHERE conversation_id = ? AND user_id = ?
-                )
-                """, Boolean.class, row.conversationId(), row.senderId());
-        if (Boolean.TRUE.equals(optedOut)) {
-            denyReveal(actorId, actorRole, alertId, reason, ip, "sender-opted-out");
-            throw ApiException.of(ApiErrorCode.FORBIDDEN,
-                    "The sender opted this conversation out of analysis");
-        }
         // REQUIRES_NEW: this method runs in a read-only transaction, and the
         // evidence of a successful reveal must survive regardless.
         auditService.recordAttempt(actorId, actorRole, "ALERT_REVEAL", "alert",

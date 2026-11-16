@@ -421,6 +421,28 @@ class AlertPipelineIT {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void probingUnknownAlertIdsDoesNotSpendTheRevealBudget() throws Exception {
+        send(sender, "send me the code 482913 please");
+        UUID alertId = (UUID) awaitAlerts(1).get(0).get("id");
+        String token = token(admin);
+
+        // The configured per-minute budget is 3: unknown ids must not touch
+        // it, or probing alone would lock the actor out of real reveals.
+        for (int i = 0; i < 4; i++) {
+            mockMvc.perform(post("/api/v1/admin/alerts/" + UUID.randomUUID() + "/reveal")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of("reason", "probe"))))
+                    .andExpect(status().isNotFound());
+        }
+        mockMvc.perform(post("/api/v1/admin/alerts/" + alertId + "/reveal")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("reason", "real case"))))
+                .andExpect(status().isOk());
+    }
+
     // ---------------------------------------------------------------- rules
 
     @Test
