@@ -36,6 +36,7 @@ import org.mockito.Mockito;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -449,6 +450,98 @@ public final class GroupDetailViewModelTest {
         assertEquals(0, admins.onlyAdminLeaveExplanation());
         admins.confirmLeave();
         verify(conversationRepository).leaveGroup(CONVERSATION_ID);
+    }
+
+    @Test
+    public void conversationMuteStateFlowsIntoUiState() {
+        Long until = System.currentTimeMillis() + TimeUnit.HOURS.toMillis(1);
+        conversationFlow.onNext(Optional.of(mutedSummary(until)));
+
+        assertTrue(state().isMuted());
+        assertEquals(until, state().getMutedUntilEpochMs());
+    }
+
+    @Test
+    public void timedMuteExpiryIsEvaluatedAgainstTheClock() {
+        Long past = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(5);
+        conversationFlow.onNext(Optional.of(mutedSummary(past)));
+
+        GroupDetailUiState state = state();
+        assertTrue(state.isMuted());
+        assertFalse(GroupDetailViewModelSupport.isMutedAt(
+                state.isMuted(), state.getMutedUntilEpochMs(), System.currentTimeMillis()));
+    }
+
+    @Test
+    public void muteForwardsUntilAndEmitsMutedFeedbackWithUndo() {
+        java.time.Instant until = java.time.Instant.now().plusSeconds(3600);
+        when(conversationRepository.muteConversation(anyString(), any()))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+        AtomicReference<GroupSingleLiveEvent.Event<GroupDetailEvent>> event = new AtomicReference<>();
+        androidx.lifecycle.Observer<GroupSingleLiveEvent.Event<GroupDetailEvent>> observer = event::set;
+        viewModel.getEvents().observeForever(observer);
+
+        viewModel.muteConversation(until);
+
+        verify(conversationRepository).muteConversation(CONVERSATION_ID, until);
+        GroupDetailEvent consumed = event.get().consume();
+        assertTrue(consumed instanceof GroupDetailEvent.PreferenceFeedback);
+        GroupDetailEvent.PreferenceFeedback feedback = (GroupDetailEvent.PreferenceFeedback) consumed;
+        assertTrue(feedback.isMuted());
+        assertNotNull(feedback.getUndo());
+        viewModel.getEvents().removeObserver(observer);
+    }
+
+    @Test
+    public void muteWithoutUntilCallsForeverVariant() {
+        when(conversationRepository.muteConversationForever(anyString()))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+
+        viewModel.muteConversation(null);
+
+        verify(conversationRepository).muteConversationForever(CONVERSATION_ID);
+        verify(conversationRepository, never()).muteConversation(anyString(), any());
+    }
+
+    @Test
+    public void unmuteCallsRepositoryAndEmitsUnmutedFeedback() {
+        when(conversationRepository.unmuteConversation(anyString()))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+        AtomicReference<GroupSingleLiveEvent.Event<GroupDetailEvent>> event = new AtomicReference<>();
+        androidx.lifecycle.Observer<GroupSingleLiveEvent.Event<GroupDetailEvent>> observer = event::set;
+        viewModel.getEvents().observeForever(observer);
+
+        viewModel.unmuteConversation();
+
+        verify(conversationRepository).unmuteConversation(CONVERSATION_ID);
+        GroupDetailEvent consumed = event.get().consume();
+        assertTrue(consumed instanceof GroupDetailEvent.PreferenceFeedback);
+        GroupDetailEvent.PreferenceFeedback feedback = (GroupDetailEvent.PreferenceFeedback) consumed;
+        assertFalse(feedback.isMuted());
+        assertNull(feedback.getUndo());
+        viewModel.getEvents().removeObserver(observer);
+    }
+
+    @Test
+    public void muteFailureSurfacesErrorAndEmitsNoEvent() {
+        when(conversationRepository.muteConversationForever(anyString()))
+                .thenReturn(Single.just(Result.failure(new ApiError.Network())));
+        AtomicReference<GroupSingleLiveEvent.Event<GroupDetailEvent>> event = new AtomicReference<>();
+        androidx.lifecycle.Observer<GroupSingleLiveEvent.Event<GroupDetailEvent>> observer = event::set;
+        viewModel.getEvents().observeForever(observer);
+
+        viewModel.muteConversation(null);
+
+        assertNull(event.get());
+        assertEquals(new ApiError.Network(), state().getError());
+        viewModel.getEvents().removeObserver(observer);
+    }
+
+    private static ConversationSummary mutedSummary(Long mutedUntilEpochMs) {
+        return new ConversationSummary(
+                CONVERSATION_ID, "GROUP", "Room title", null, null, null,
+                0L, 0, null, null, null, 0L, 0L, null, null, false, null,
+                true, mutedUntilEpochMs, false, false);
     }
 
     private GroupDetailViewModel openGroup(List<GroupMember> members) {

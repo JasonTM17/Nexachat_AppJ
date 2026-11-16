@@ -33,6 +33,11 @@ final class GroupDetailViewModelSupport {
         return fetchedTitle == null || fetchedTitle.isBlank() ? currentTitle : fetchedTitle;
     }
 
+    /** A timed mute expires lazily; reads combine the flag with the clock, like the inbox. */
+    static boolean isMutedAt(boolean muted, @Nullable Long mutedUntilEpochMs, long nowEpochMs) {
+        return muted && (mutedUntilEpochMs == null || mutedUntilEpochMs > nowEpochMs);
+    }
+
     static List<Contact> addableContacts(List<Contact> contacts, List<GroupMember> members) {
         Set<String> existingIds = new HashSet<>();
         for (GroupMember member : members) {

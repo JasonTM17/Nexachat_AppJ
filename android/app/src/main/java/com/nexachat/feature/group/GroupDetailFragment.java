@@ -35,6 +35,7 @@ import com.nexachat.databinding.BottomSheetGroupAddMemberBinding;
 import com.nexachat.databinding.FragmentGroupDetailBinding;
 import com.nexachat.feature.group.adapter.GroupMemberAdapter;
 import com.nexachat.feature.group.adapter.SelectableContactAdapter;
+import com.nexachat.feature.inbox.ConversationPreferenceMenu;
 import dagger.hilt.android.AndroidEntryPoint;
 import java.util.Objects;
 
@@ -109,6 +110,7 @@ public final class GroupDetailFragment extends Fragment {
         binding.addMemberButton.setOnClickListener(v -> viewModel.openAddMember());
         binding.inviteLinkButton.setOnClickListener(v -> openInviteManager());
         binding.leaveGroupButton.setOnClickListener(v -> onLeaveClicked());
+        binding.muteTile.setOnClickListener(v -> onMuteClicked());
         binding.errorState.setOnRetry(viewModel::loadMembers);
         binding.emptyState.setMessage(getString(R.string.group_members_empty));
         binding.emptyState.setIcon(R.drawable.ic_person_outline);
@@ -119,6 +121,8 @@ public final class GroupDetailFragment extends Fragment {
                     GroupDetailEvent event = raw == null ? null : raw.consume();
                     if (event instanceof GroupDetailEvent.ExitToInbox) {
                         GroupEntryExitNavigation.leave(NavHostFragment.findNavController(this));
+                    } else if (event instanceof GroupDetailEvent.PreferenceFeedback feedback) {
+                        showPreferenceFeedback(feedback);
                     }
                 });
     }
@@ -175,6 +179,13 @@ public final class GroupDetailFragment extends Fragment {
         binding.inviteLinkButton.setVisibility(state.isIAmAdmin() ? View.VISIBLE : View.GONE);
         binding.toolbar.getMenu().findItem(MENU_RENAME).setVisible(state.isIAmAdmin());
         binding.leaveGroupButton.setEnabled(!state.isBusy());
+
+        boolean muted = mutedNow(state);
+        binding.muteIcon.setImageResource(
+                muted ? R.drawable.ic_notifications_off : R.drawable.ic_notification);
+        binding.muteText.setText(muted ? R.string.unmute : R.string.mute_menu_title);
+        binding.muteTile.setContentDescription(
+                getString(muted ? R.string.unmute : R.string.mute_menu_title));
 
         boolean showLoadError = GroupDetailListRules.showLoadError(
                 state.isLoading(), state.getMembers().isEmpty(), state.getError() != null);
@@ -235,6 +246,53 @@ public final class GroupDetailFragment extends Fragment {
         }
 
         binding.loadingState.setVisibility(state.isLoading() || state.isBusy() ? View.VISIBLE : View.GONE);
+    }
+
+    private static boolean mutedNow(@NonNull GroupDetailUiState state) {
+        return GroupDetailViewModelSupport.isMutedAt(
+                state.isMuted(), state.getMutedUntilEpochMs(), System.currentTimeMillis());
+    }
+
+    private void onMuteClicked() {
+        GroupDetailUiState state = viewModel.getUiState().getValue();
+        if (state != null && mutedNow(state)) {
+            viewModel.unmuteConversation();
+            return;
+        }
+        ConversationPreferenceMenu.showMutePresets(
+                requireContext(), false, preferenceListener());
+    }
+
+    private ConversationPreferenceMenu.Listener preferenceListener() {
+        return new ConversationPreferenceMenu.Listener() {
+            @Override
+            public void onMute(@Nullable java.time.Instant until) {
+                viewModel.muteConversation(until);
+            }
+
+            @Override
+            public void onUnmute() {
+                viewModel.unmuteConversation();
+            }
+
+            @Override
+            public void onArchive(boolean archive) {}
+        };
+    }
+
+    private void showPreferenceFeedback(@NonNull GroupDetailEvent.PreferenceFeedback feedback) {
+        if (binding == null) {
+            return;
+        }
+        Snackbar snackbar = Snackbar.make(
+                binding.getRoot(),
+                feedback.isMuted() ? R.string.conversation_muted : R.string.conversation_unmuted,
+                Snackbar.LENGTH_LONG);
+        Runnable undo = feedback.getUndo();
+        if (undo != null) {
+            snackbar.setAction(R.string.action_undo, ignored -> undo.run());
+        }
+        snackbar.show();
     }
 
     private void showRemoveDialog(@NonNull GroupMember member) {
