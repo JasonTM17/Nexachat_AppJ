@@ -1435,7 +1435,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         ChatMessage pin = pins.get(pinIndex % pins.size());
         String pinText = pin.isDecryptFailed() || (pin.isEncrypted() && pin.getContent() == null)
                 ? getString(R.string.e2ee_message_placeholder)
-                : (pin.getContent() == null ? pin.getType() : pin.getContent());
+                : (pin.getContent() == null
+                        ? pin.getType()
+                        : SharedContentUi.previewText(requireContext(), pin.getContent()));
         ChatInteractionsViews.bindPinnedBanner(root, pinText, () -> { viewModel.jumpToMessage(pin.getId()); pinIndex++; renderPinned(); });
     }
 

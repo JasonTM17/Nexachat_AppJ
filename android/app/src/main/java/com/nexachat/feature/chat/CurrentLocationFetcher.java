@@ -64,7 +64,7 @@ public final class CurrentLocationFetcher {
                 // Provider vanished or permission revoked mid-scan; keep looking.
             }
         }
-        if (best != null) {
+        if (best != null && isFresh(best)) {
             callback.onResult(best, Status.OK);
             return;
         }
@@ -72,6 +72,17 @@ public final class CurrentLocationFetcher {
                 ? LocationManager.GPS_PROVIDER
                 : providers.get(0);
         requestSingleFix(context, manager, provider, callback);
+    }
+
+    /** A cached fix older than this may belong to another place; ask for a new one instead. */
+    private static final long MAX_LAST_KNOWN_AGE_MS = 60_000L;
+
+    private static boolean isFresh(@NonNull Location location) {
+        long nanos = location.getElapsedRealtimeNanos();
+        long ageMs = nanos != 0L
+                ? (android.os.SystemClock.elapsedRealtimeNanos() - nanos) / 1_000_000L
+                : System.currentTimeMillis() - location.getTime();
+        return ageMs >= 0L && ageMs <= MAX_LAST_KNOWN_AGE_MS;
     }
 
     private static boolean isNewer(@NonNull Location candidate, @NonNull Location current) {
