@@ -29,7 +29,6 @@ import io.reactivex.rxjava3.schedulers.TestScheduler;
 import io.reactivex.rxjava3.subjects.SingleSubject;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -65,8 +64,8 @@ public final class EncryptionViewModelTest {
         // Default: the roster yields no direct transcript, so no code shows.
         when(session.currentTranscript(anyString())).thenReturn(Single.error(
                 new E2eeSession.E2eeException("E2EE_UNSUPPORTED_CONVERSATION")));
-        when(trustStore.state(anyString(), anyString()))
-                .thenReturn(Single.just(Optional.empty()));
+        when(trustStore.checkBeforeEncrypt(anyString(), anyString(), any(byte[].class)))
+                .thenReturn(Single.just(KeysetTrustStore.CheckResult.UNVERIFIED));
     }
 
     private EncryptionViewModel viewModel(boolean clientAllowed) {
@@ -81,12 +80,6 @@ public final class EncryptionViewModelTest {
     private static ConversationE2eeDto state(boolean enabled, boolean serverAllowed,
             List<MemberDeviceDto> devices) {
         return new ConversationE2eeDto(enabled, devices, serverAllowed);
-    }
-
-    private static KeysetTrustStore.Record record(
-            KeysetTrustStore.TrustState state, byte[] transcript) {
-        return new KeysetTrustStore.Record(
-                state, "00", transcript, null, 1L);
     }
 
     private void stubLoad(ConversationE2eeDto dto) {
@@ -452,8 +445,8 @@ public final class EncryptionViewModelTest {
     @Test
     public void verifiedRecordMapsToVerifiedState() {
         when(session.currentTranscript("c1")).thenReturn(Single.just(TRANSCRIPT_A));
-        when(trustStore.state("me-1", "c1")).thenReturn(Single.just(
-                Optional.of(record(KeysetTrustStore.TrustState.VERIFIED, TRANSCRIPT_A))));
+        when(trustStore.checkBeforeEncrypt(eq("me-1"), eq("c1"), aryEq(TRANSCRIPT_A)))
+                .thenReturn(Single.just(KeysetTrustStore.CheckResult.VERIFIED_MATCH));
         EncryptionViewModel vm = viewModel(true);
         stubLoad(state(true, true, List.of(device("u1", "dev-a"), device("u2", "dev-b"))));
         vm.load("c1");
@@ -464,12 +457,12 @@ public final class EncryptionViewModelTest {
     }
 
     @Test
-    public void changedRecordMapsToChangedStateEvenWithoutChangedDigest() {
-        // A roster-shape change records CHANGED with a null changed digest;
-        // the state row must still say "compare again".
+    public void changedRecordMapsToChangedState() {
+        // A roster changed since verification reports CHANGED; the state row
+        // must say "compare again".
         when(session.currentTranscript("c1")).thenReturn(Single.just(TRANSCRIPT_A));
-        when(trustStore.state("me-1", "c1")).thenReturn(Single.just(
-                Optional.of(record(KeysetTrustStore.TrustState.CHANGED, TRANSCRIPT_B))));
+        when(trustStore.checkBeforeEncrypt(eq("me-1"), eq("c1"), aryEq(TRANSCRIPT_A)))
+                .thenReturn(Single.just(KeysetTrustStore.CheckResult.CHANGED));
         EncryptionViewModel vm = viewModel(true);
         stubLoad(state(true, true, List.of(device("u1", "dev-a"), device("u2", "dev-b"))));
         vm.load("c1");
@@ -537,11 +530,31 @@ public final class EncryptionViewModelTest {
     }
 
     @Test
+    public void rotatedKeysetRendersChangedInsteadOfVerified() {
+        // The roster producing the code differs from the verified keyset:
+        // the encrypt-time comparison flips the record and the row reports
+        // CHANGED rather than "verified" beside keys never compared.
+        when(session.currentTranscript("c1")).thenReturn(Single.just(TRANSCRIPT_B));
+        when(trustStore.checkBeforeEncrypt(eq("me-1"), eq("c1"), aryEq(TRANSCRIPT_B)))
+                .thenReturn(Single.just(KeysetTrustStore.CheckResult.CHANGED));
+        EncryptionViewModel vm = viewModel(true);
+        stubLoad(state(true, true, List.of(device("u1", "dev-a"), device("u2", "dev-b"))));
+        vm.load("c1");
+
+        EncryptionViewModel.UiState ui = vm.getUiState().getValue();
+        assertNotNull(ui);
+        assertEquals(EncryptionViewModel.Trust.CHANGED, ui.trust);
+        assertEquals(KeysetCheck.displayCode(KeysetCheck.digest(TRANSCRIPT_B)),
+                ui.verificationCode);
+        verify(trustStore).checkBeforeEncrypt(eq("me-1"), eq("c1"), aryEq(TRANSCRIPT_B));
+    }
+
+    @Test
     public void unreadableTrustStoreRendersUnavailableNotAVerdict() {
         // A DAO failure is not an empty record: the code still renders but the
         // state row reports the unreadable state rather than "not verified".
         when(session.currentTranscript("c1")).thenReturn(Single.just(TRANSCRIPT_A));
-        when(trustStore.state("me-1", "c1"))
+        when(trustStore.checkBeforeEncrypt(eq("me-1"), eq("c1"), aryEq(TRANSCRIPT_A)))
                 .thenReturn(Single.error(new RuntimeException("dao down")));
         EncryptionViewModel vm = viewModel(true);
         stubLoad(state(true, true, List.of(device("u1", "dev-a"), device("u2", "dev-b"))));
@@ -558,7 +571,7 @@ public final class EncryptionViewModelTest {
     public void confirmVerifiedIsRefusedWhileTrustStateUnreadable() {
         // A DAO failure must not become "not verified" and accept a verdict.
         when(session.currentTranscript("c1")).thenReturn(Single.just(TRANSCRIPT_A));
-        when(trustStore.state("me-1", "c1"))
+        when(trustStore.checkBeforeEncrypt(eq("me-1"), eq("c1"), aryEq(TRANSCRIPT_A)))
                 .thenReturn(Single.error(new RuntimeException("dao down")));
         EncryptionViewModel vm = viewModel(true);
         stubLoad(state(true, true, List.of(device("u1", "dev-a"), device("u2", "dev-b"))));
