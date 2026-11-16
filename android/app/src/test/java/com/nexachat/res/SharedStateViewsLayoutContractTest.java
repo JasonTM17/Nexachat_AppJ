@@ -112,6 +112,25 @@ public final class SharedStateViewsLayoutContractTest {
     }
 
     @Test
+    public void emptyIconKeepsItsOwnDrawablePalette() throws Exception {
+        Document doc = parse(new File(resDir, "layout/view_empty_state.xml"));
+        Element icon = findElementById(doc.getDocumentElement(), "emptyIcon");
+        assertNotNull(icon);
+        assertEquals("a layout-level tint flattens multi-colour empty art",
+                "", icon.getAttributeNS(NS_APP, "tint"));
+        assertEquals("", icon.getAttributeNS(NS_ANDROID, "tint"));
+
+        Document chat = parse(new File(resDir, "drawable/ic_empty_chat.xml"));
+        NodeList paths = chat.getElementsByTagName("path");
+        assertTrue("empty-state art must contain paths", paths.getLength() > 0);
+        for (int i = 0; i < paths.getLength(); i++) {
+            String fill = ((Element) paths.item(i)).getAttributeNS(NS_ANDROID, "fillColor");
+            assertTrue("empty-state art must use named palette colors, not raw hex: " + fill,
+                    fill.startsWith("@color/") || fill.startsWith("?attr/"));
+        }
+    }
+
+    @Test
     public void stateIconsAndIndicatorUseTheSharedSizes() throws Exception {
         Document emptyDoc = parse(new File(resDir, "layout/view_empty_state.xml"));
         Element emptyIcon = findElementById(emptyDoc.getDocumentElement(), "emptyIcon");

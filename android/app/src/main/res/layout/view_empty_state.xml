@@ -8,8 +8,7 @@
         android:layout_gravity="center_horizontal"
         android:layout_marginBottom="@dimen/space_md"
         android:importantForAccessibility="no"
-        android:visibility="gone"
-        app:tint="?attr/colorPrimary" />
+        android:visibility="gone" />
     <TextView
         android:id="@+id/emptyMessage"
         android:layout_width="match_parent"
