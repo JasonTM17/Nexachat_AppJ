@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_sheet_surface"
+    android:orientation="vertical"
+    android:paddingBottom="@dimen/space_md">
+
+    <include layout="@layout/include_sheet_handle" />
+
+    <TextView
+        android:id="@+id/reportTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="@dimen/space_md"
+        android:text="@string/report_title"
+        android:textAppearance="?attr/textAppearanceTitleLarge"
+        android:textColor="?attr/colorOnSurface"
+        android:textStyle="bold" />
+
+    <com.google.android.material.chip.ChipGroup
+        android:id="@+id/reportReasons"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/space_md"
+        android:layout_marginTop="@dimen/space_sm"
+        app:chipSpacingHorizontal="@dimen/space_xs"
+        app:chipSpacingVertical="@dimen/space_xs"
+        app:selectionRequired="true"
+        app:singleLine="false"
+        app:singleSelection="true">
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/reasonSpam"
+            style="@style/Widget.Material3.Chip.Filter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/report_reason_spam" />
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/reasonHarassment"
+            style="@style/Widget.Material3.Chip.Filter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/report_reason_harassment" />
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/reasonViolence"
+            style="@style/Widget.Material3.Chip.Filter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/report_reason_violence" />
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/reasonSexual"
+            style="@style/Widget.Material3.Chip.Filter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/report_reason_sexual" />
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/reasonScam"
+            style="@style/Widget.Material3.Chip.Filter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/report_reason_scam" />
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/reasonOther"
+            style="@style/Widget.Material3.Chip.Filter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/report_reason_other" />
+    </com.google.android.material.chip.ChipGroup>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/space_md"
+        android:layout_marginTop="@dimen/space_sm"
+        android:hint="@string/report_details_hint"
+        app:counterEnabled="true"
+        app:counterMaxLength="500">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/reportDetailsInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="textCapSentences|textMultiLine"
+            android:maxLength="500"
+            android:maxLines="4" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/reportSubmit"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/space_md"
+        android:layout_marginTop="@dimen/space_md"
+        android:enabled="false"
+        android:minHeight="@dimen/min_touch_target"
+        android:text="@string/report_submit" />
+</LinearLayout>

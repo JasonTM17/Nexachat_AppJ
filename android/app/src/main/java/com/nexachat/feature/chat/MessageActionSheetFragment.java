@@ -39,6 +39,7 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
     private static final String ARG_MESSAGE_ID = "messageId";
     private static final String ARG_CAN_PIN = "canPin";
     private static final String ARG_PINNED = "pinned";
+    private static final String ARG_STARRED = "starred";
     private static final String ARG_DELETE_ACTION = "deleteAction";
 
     private static final String[] REACTIONS = {"👍", "❤️", "😂", "😮", "😢", "🙏"};
@@ -57,11 +58,13 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
         void delete(@NonNull ChatMessage message, @NonNull RecallWindowRules.DeleteAction action);
         void react(@NonNull ChatMessage message, @NonNull String emoji);
         void pin(@NonNull ChatMessage message);
+        void star(@NonNull ChatMessage message);
+        void report(@NonNull ChatMessage message);
         void forward(@NonNull ChatMessage message);
     }
 
     private enum MessageActionKind {
-        REPLY, COPY, FORWARD, PIN, EDIT, DELETE
+        REPLY, COPY, FORWARD, PIN, STAR, EDIT, REPORT, DELETE
     }
 
     private static final class MessageActionEntry {
@@ -86,11 +89,22 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
             boolean canPin,
             boolean pinned,
             @NonNull RecallWindowRules.DeleteAction deleteAction) {
+        return newInstance(messageId, canPin, pinned, false, deleteAction);
+    }
+
+    @NonNull
+    public static MessageActionSheetFragment newInstance(
+            @NonNull String messageId,
+            boolean canPin,
+            boolean pinned,
+            boolean starred,
+            @NonNull RecallWindowRules.DeleteAction deleteAction) {
         MessageActionSheetFragment sheet = new MessageActionSheetFragment();
         Bundle args = new Bundle();
         args.putString(ARG_MESSAGE_ID, messageId);
         args.putBoolean(ARG_CAN_PIN, canPin);
         args.putBoolean(ARG_PINNED, pinned);
+        args.putBoolean(ARG_STARRED, starred);
         args.putString(ARG_DELETE_ACTION, deleteAction.name());
         sheet.setArguments(args);
         return sheet;
@@ -169,6 +183,18 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
             entries.add(new MessageActionEntry(getString(pinned ? R.string.action_unpin : R.string.action_pin),
                     getString(pinned ? R.string.action_unpin_desc : R.string.action_pin_desc),
                     () -> callbacks.pin(message), MessageActionKind.PIN));
+        }
+        if (sent && !message.isDeleted()) {
+            boolean starred = args.getBoolean(ARG_STARRED);
+            entries.add(new MessageActionEntry(
+                    getString(starred ? R.string.action_unstar : R.string.action_star),
+                    getString(starred ? R.string.action_unstar_desc : R.string.action_star_desc),
+                    () -> callbacks.star(message), MessageActionKind.STAR));
+        }
+        if (sent) {
+            entries.add(new MessageActionEntry(getString(R.string.action_report),
+                    getString(R.string.action_report_desc),
+                    () -> callbacks.report(message), MessageActionKind.REPORT));
         }
         if (message.getMine() && sent && !message.isEncrypted()
                 && "TEXT".equals(message.getType())) {
@@ -264,6 +290,11 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
             }
             case FORWARD -> iconRes = R.drawable.ic_forward;
             case PIN -> iconRes = R.drawable.ic_push_pin;
+            case STAR -> iconRes = R.drawable.ic_star_outline;
+            case REPORT -> {
+                iconRes = R.drawable.ic_flag;
+                iconAttr = com.google.android.material.R.attr.colorOnSurfaceVariant;
+            }
             case EDIT -> iconRes = R.drawable.ic_edit;
             case DELETE -> {
                 iconRes = R.drawable.ic_delete;

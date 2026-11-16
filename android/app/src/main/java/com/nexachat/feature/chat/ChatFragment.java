@@ -73,6 +73,7 @@ import com.nexachat.feature.inbox.InboxViewModel;
 import com.nexachat.feature.inbox.ConversationPreferenceMenu;
 import com.nexachat.feature.profile.AppSettingsViewModel;
 import com.nexachat.feature.label.LabelDialogFragment;
+import com.nexachat.feature.safety.ReportSheetFragment;
 import com.nexachat.notification.ForegroundConversationTracker;
 import com.nexachat.summary.SummaryResponse;
 import com.nexachat.summary.SummaryScope;
@@ -86,6 +87,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
@@ -98,7 +100,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         MessageActionSheetFragment.Host,
         MessageActionSheetFragment.Actions,
         ForwardPickerSheet.Host,
-        AttachmentPickerSheet.Host {
+        AttachmentPickerSheet.Host,
+        ReportSheetFragment.Host {
     @Inject ForegroundConversationTracker foregroundConversationTracker;
     private static final String PREFS_VOICE_PERMISSION = "chat_voice_permission";
     private static final String KEY_RECORD_AUDIO_REQUESTED = "record_audio_requested";
@@ -116,6 +119,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     private static final int MENU_SEARCH = 10;
     private static final int MENU_INFO = 11;
     private static final int MENU_ENCRYPTION = 12;
+    private static final int MENU_BLOCK_PEER = 13;
+    private static final int MENU_UNBLOCK_PEER = 14;
+    private static final int MENU_REPORT = 15;
+    private static final int MENU_STARRED = 16;
     private final CompositeDisposable subscriptions = new CompositeDisposable();
     private FragmentChatBinding binding;
     private ChatViewModel viewModel;
@@ -127,6 +134,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     private boolean serverStarting;
     private ChatSearchState searchState = new ChatSearchState();
     private RecallWindowConfig recallWindowConfig = RecallWindowConfig.DEFAULT;
+    private Set<String> starredIds = Set.of();
+    private boolean peerBlocked;
+    @Nullable private String lastProbedBlockPeerId;
     private String conversationId = "";
     private String pulsingMessageId;
     private MentionDraft composerMentionDraft = MentionDraft.empty("");
@@ -279,6 +289,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             CallLauncher.start(requireContext(), conversationId, peerId, state.getPeerName() == null ? "" : state.getPeerName());
         });
         binding.moreButton.setOnClickListener(v -> showMoreOptions());
+        binding.unblockPeerButton.setOnClickListener(v -> viewModel.unblockPeer());
         binding.closeChatSearch.setOnClickListener(v -> setSearchOpen(false));
         binding.chatSearchInput.setOnEditorActionListener((text, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEARCH) return true;
@@ -870,6 +881,13 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             }
         });
         viewModel.getEditSession().observe(getViewLifecycleOwner(), ignored -> render());
+        viewModel.getStarredIds().observe(getViewLifecycleOwner(), next -> {
+            starredIds = next == null ? Set.of() : next;
+        });
+        viewModel.getPeerBlocked().observe(getViewLifecycleOwner(), next -> {
+            peerBlocked = Boolean.TRUE.equals(next);
+            renderPeerBlockBanner();
+        });
         viewModel.getSearchState().observe(getViewLifecycleOwner(), next -> {
             if (next != null) {
                 searchState = next;
@@ -936,6 +954,14 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             groupMembersRequested = true;
             viewModel.loadGroupMembers();
         }
+        String otherUserId = state.getOtherUserId();
+        if (otherUserId != null && !otherUserId.equals(lastProbedBlockPeerId)) {
+            lastProbedBlockPeerId = otherUserId;
+            viewModel.refreshPeerBlocked();
+        } else if (otherUserId == null && lastProbedBlockPeerId != null) {
+            lastProbedBlockPeerId = null;
+        }
+        renderPeerBlockBanner();
         String peerTitle = state.getPeerName() == null ? getString(R.string.chat_title) : state.getPeerName();
         binding.chatToolbar.setTitle(peerTitle);
         applyChatTitleWrapping();
@@ -1531,9 +1557,18 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         actions.add(MENU_ASSIGN_LABEL);
         labels.add(getString(R.string.archive_title));
         actions.add(MENU_SHARED_MEDIA);
+        labels.add(getString(R.string.starred_messages_title));
+        actions.add(MENU_STARRED);
         if (flags.group) {
             labels.add(getString(R.string.group_board_title));
             actions.add(MENU_GROUP_BOARD);
+        }
+        if (!flags.group && state != null && state.getOtherUserId() != null
+                && !state.getOtherUserId().isBlank()) {
+            labels.add(getString(peerBlocked ? R.string.unblock_user : R.string.block_user));
+            actions.add(peerBlocked ? MENU_UNBLOCK_PEER : MENU_BLOCK_PEER);
+            labels.add(getString(R.string.action_report));
+            actions.add(MENU_REPORT);
         }
 
         new MaterialAlertDialogBuilder(requireContext())
@@ -1572,6 +1607,14 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             openEncryption();
         } else if (action == MENU_GROUP_BOARD) {
             openGroupBoard();
+        } else if (action == MENU_STARRED) {
+            openStarred();
+        } else if (action == MENU_BLOCK_PEER) {
+            confirmBlockPeer();
+        } else if (action == MENU_UNBLOCK_PEER) {
+            viewModel.unblockPeer();
+        } else if (action == MENU_REPORT) {
+            openPeerReport();
         }
     }
 
@@ -1697,6 +1740,61 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         }
     }
 
+    private void openStarred() {
+        try {
+            NavHostFragment.findNavController(this)
+                    .navigate(R.id.starredMessagesFragment);
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    /** Blocking is reversible, so a single confirmation with an undo snackbar is enough. */
+    private void confirmBlockPeer() {
+        if (state == null || state.getOtherUserId() == null) {
+            return;
+        }
+        String name = state.getPeerName() == null ? "" : state.getPeerName();
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(getString(R.string.block_user_dialog_title, name))
+                .setMessage(R.string.block_user_dialog_body)
+                .setNegativeButton(R.string.action_cancel, null)
+                .setPositiveButton(R.string.block_user, (dialog, which) -> {
+                    viewModel.blockPeer();
+                    if (binding != null) {
+                        Snackbar.make(binding.getRoot(), R.string.user_blocked_snackbar,
+                                        Snackbar.LENGTH_LONG)
+                                .setAction(R.string.action_undo,
+                                        ignored -> viewModel.unblockPeer())
+                                .show();
+                    }
+                })
+                .show();
+    }
+
+    private void openPeerReport() {
+        if (state == null || state.getOtherUserId() == null
+                || getChildFragmentManager().isStateSaved()
+                || getChildFragmentManager().findFragmentByTag(ReportSheetFragment.TAG) != null) {
+            return;
+        }
+        ReportSheetFragment.forUser(state.getOtherUserId())
+                .show(getChildFragmentManager(), ReportSheetFragment.TAG);
+    }
+
+    /**
+     * Blocked peers cannot be messaged, so the composer swaps for a banner that
+     * explains the state and offers inline unblock. Re-probed on resume because
+     * the blocked-users screen may have changed the edge.
+     */
+    private void renderPeerBlockBanner() {
+        if (binding == null) {
+            return;
+        }
+        boolean blocked = peerBlocked && state != null && !state.isGroup();
+        binding.composerBar.getRoot().setVisibility(blocked ? View.GONE : View.VISIBLE);
+        binding.blockedPeerBanner.setVisibility(blocked ? View.VISIBLE : View.GONE);
+    }
+
     private void openGroupBoard() {
         if (conversationId.isBlank()) {
             return;
@@ -1816,7 +1914,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             return;
         }
         MessageActionSheetFragment.newInstance(messageId, state.getCanPin(),
-                        state.isPinned(messageId), deleteAction)
+                        state.isPinned(messageId), starredIds.contains(messageId), deleteAction)
                 .show(getChildFragmentManager(), MessageActionSheetFragment.TAG);
     }
     @Override public ChatMessage findActionMessage(@NonNull String messageId) { return resolveOriginal(messageId); }
@@ -1832,6 +1930,22 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     }
     @Override public void react(@NonNull ChatMessage value, @NonNull String emoji) { viewModel.toggleReaction(value, emoji); }
     @Override public void pin(@NonNull ChatMessage value) { viewModel.togglePin(value); }
+    @Override public void star(@NonNull ChatMessage value) { viewModel.toggleStar(value); }
+    @Override public void report(@NonNull ChatMessage value) {
+        if (getChildFragmentManager().isStateSaved()
+                || getChildFragmentManager().findFragmentByTag(ReportSheetFragment.TAG) != null) {
+            return;
+        }
+        String snapshot = value.isEncrypted() ? value.getContent() : null;
+        ReportSheetFragment.forMessage(value.getId(), snapshot)
+                .show(getChildFragmentManager(), ReportSheetFragment.TAG);
+    }
+    @Override public void onReportSent() {
+        if (binding != null) {
+            Snackbar.make(binding.getRoot(), R.string.report_sent_snackbar,
+                    Snackbar.LENGTH_SHORT).show();
+        }
+    }
     @Override public void forward(@NonNull ChatMessage value) { showForward(value); }
     @Override public void onRetryTap(@NonNull String messageId) { viewModel.retryFailed(messageId); }
     @Override public void onReplyQuoteTap(@NonNull String replyToId) { viewModel.jumpToMessage(replyToId); }
@@ -1911,6 +2025,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             foregroundConversationTracker.onConversationResumed(conversationId);
         }
         viewModel.refreshKeysetNotice();
+        viewModel.refreshPeerBlocked();
     }
 
     @Override public void onPause() {

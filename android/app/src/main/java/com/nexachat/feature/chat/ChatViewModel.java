@@ -35,6 +35,7 @@ import com.nexachat.data.PeerPresence;
 import com.nexachat.data.SettingsRepository;
 import com.nexachat.data.TypingEvent;
 import com.nexachat.feature.media.PendingAttachment;
+import com.nexachat.feature.safety.SafetyRepository;
 import dagger.hilt.android.lifecycle.HiltViewModel;
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
 import io.reactivex.rxjava3.core.Completable;
@@ -106,6 +107,11 @@ public final class ChatViewModel extends ViewModel {
     private final MutableLiveData<Boolean> serverStarting = new MutableLiveData<>(false);
     @Nullable private final SettingsRepository settingsRepository;
     @Nullable private final KeysetTrustStore keysetTrustStore;
+    @Nullable private final SafetyRepository safetyRepository;
+    private final MutableLiveData<Set<String>> starredIds =
+            new MutableLiveData<>(Set.of());
+    /** Per-peer block probe for direct chats; stays false for groups and misses. */
+    private final MutableLiveData<Boolean> peerBlocked = new MutableLiveData<>(false);
     private final MutableLiveData<UiState> mutableUiState;
     private final MutableLiveData<ChatEditSession> editSession;
     private boolean editSubmitInFlight;
@@ -150,9 +156,11 @@ public final class ChatViewModel extends ViewModel {
             TokenStore tokenStore,
             EphemeralStateRouter ephemeralRouter,
             @Nullable SettingsRepository settingsRepository,
-            KeysetTrustStore keysetTrustStore) {
+            KeysetTrustStore keysetTrustStore,
+            @Nullable SafetyRepository safetyRepository) {
         this(savedStateHandle, messageRepository, conversationRepository, attachmentRepository,
-                session, tokenStore, settingsRepository, ephemeralRouter, keysetTrustStore);
+                session, tokenStore, settingsRepository, ephemeralRouter, keysetTrustStore,
+                safetyRepository);
     }
 
     /** Compatibility constructor for existing focused ViewModel tests. */
@@ -165,7 +173,7 @@ public final class ChatViewModel extends ViewModel {
             TokenStore tokenStore,
             @Nullable SettingsRepository settingsRepository) {
         this(savedStateHandle, messageRepository, conversationRepository, attachmentRepository,
-                session, tokenStore, settingsRepository, null, null);
+                session, tokenStore, settingsRepository, null, null, null);
     }
 
     private ChatViewModel(
@@ -177,7 +185,8 @@ public final class ChatViewModel extends ViewModel {
             TokenStore tokenStore,
             @Nullable SettingsRepository settingsRepository,
             @Nullable EphemeralStateRouter ephemeralRouter,
-            @Nullable KeysetTrustStore keysetTrustStore) {
+            @Nullable KeysetTrustStore keysetTrustStore,
+            @Nullable SafetyRepository safetyRepository) {
         this.savedStateHandle = Objects.requireNonNull(savedStateHandle, "savedStateHandle");
         this.messageRepository = Objects.requireNonNull(messageRepository, "messageRepository");
         this.conversationRepository = Objects.requireNonNull(
@@ -194,8 +203,15 @@ public final class ChatViewModel extends ViewModel {
         }
         this.settingsRepository = settingsRepository;
         this.keysetTrustStore = keysetTrustStore;
+        this.safetyRepository = safetyRepository;
         String savedConversationId = savedStateHandle.get("conversationId");
         this.conversationId = savedConversationId == null ? "" : savedConversationId;
+        if (safetyRepository != null && !this.conversationId.isEmpty()) {
+            disposables.add(safetyRepository.starredIds(this.conversationId)
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(starredIds::setValue, ignored -> { }));
+        }
         String input = savedStateHandle.get(KEY_INPUT);
         this.mutableUiState = new MutableLiveData<>(new UiState(
                 input == null ? "" : input));
@@ -300,7 +316,7 @@ public final class ChatViewModel extends ViewModel {
             KeysetTrustStore keysetTrustStore) {
         this(savedStateHandle, messageRepository, conversationRepository,
                 attachmentRepository, session, tokenStore, (SettingsRepository) null,
-                (EphemeralStateRouter) null, keysetTrustStore);
+                (EphemeralStateRouter) null, keysetTrustStore, null);
     }
 
     public LiveData<UiState> getUiState() {
@@ -313,6 +329,72 @@ public final class ChatViewModel extends ViewModel {
 
     public LiveData<Boolean> getServerStarting() {
         return serverStarting;
+    }
+
+    /** Caller-starred message ids for this conversation (empty without a repository). */
+    public LiveData<Set<String>> getStarredIds() {
+        return starredIds;
+    }
+
+    /** Whether the caller blocked the direct peer; false for groups and misses. */
+    public LiveData<Boolean> getPeerBlocked() {
+        return peerBlocked;
+    }
+
+    /** Idempotent caller-star toggle; failures roll the local marker back. */
+    public void toggleStar(@NonNull ChatMessage message) {
+        if (safetyRepository == null || message.getId() == null) {
+            return;
+        }
+        Set<String> ids = starredIds.getValue();
+        Completable operation = ids != null && ids.contains(message.getId())
+                ? safetyRepository.unstarMessage(message.getId(), conversationId)
+                : safetyRepository.starMessage(message.getId(), conversationId);
+        disposables.add(operation
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(() -> { }, error -> surfaceStreamFailure(error)));
+    }
+
+    /** Re-probes the directed block edge for the current direct peer. */
+    public void refreshPeerBlocked() {
+        UiState state = currentUiState();
+        String otherUserId = state == null ? null : state.getOtherUserId();
+        if (safetyRepository == null || state == null || state.isGroup()
+                || otherUserId == null || otherUserId.isBlank()) {
+            peerBlocked.setValue(false);
+            return;
+        }
+        disposables.add(safetyRepository.blockStatus(otherUserId)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(peerBlocked::setValue, ignored -> { }));
+    }
+
+    /** Removes the caller's block edge on the direct peer, then re-probes. */
+    public void unblockPeer() {
+        UiState state = currentUiState();
+        String otherUserId = state == null ? null : state.getOtherUserId();
+        if (safetyRepository == null || otherUserId == null || otherUserId.isBlank()) {
+            return;
+        }
+        disposables.add(safetyRepository.unblockUser(otherUserId)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(this::refreshPeerBlocked, error -> surfaceStreamFailure(error)));
+    }
+
+    /** Blocks the direct peer, then re-probes so the banner state stays truthful. */
+    public void blockPeer() {
+        UiState state = currentUiState();
+        String otherUserId = state == null ? null : state.getOtherUserId();
+        if (safetyRepository == null || otherUserId == null || otherUserId.isBlank()) {
+            return;
+        }
+        disposables.add(safetyRepository.blockUser(otherUserId)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(this::refreshPeerBlocked, error -> surfaceStreamFailure(error)));
     }
 
     /** Live per-conversation AI opt-out state used by the settings dialog. */
