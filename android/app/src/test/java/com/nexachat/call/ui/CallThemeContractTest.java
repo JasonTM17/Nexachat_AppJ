@@ -22,4 +22,18 @@ public final class CallThemeContractTest {
         assertTrue(day.contains("parent=\"Theme.Material3.DayNight.NoActionBar\""));
         assertTrue(night.contains("parent=\"Theme.Material3.DayNight.NoActionBar\""));
     }
+
+    @Test
+    public void callThemeUsesTheAppFont() throws Exception {
+        String day = new String(
+                Files.readAllBytes(Path.of("src/main/res/values/styles_call.xml")),
+                StandardCharsets.UTF_8);
+        String night = new String(
+                Files.readAllBytes(Path.of("src/main/res/values-night/styles_call.xml")),
+                StandardCharsets.UTF_8);
+        assertTrue("call theme must render text in Inter",
+                day.contains("android:fontFamily\">@font/inter"));
+        assertTrue("call night theme must render text in Inter",
+                night.contains("android:fontFamily\">@font/inter"));
+    }
 }

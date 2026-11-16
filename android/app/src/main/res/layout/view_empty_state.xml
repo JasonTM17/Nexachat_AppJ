@@ -3,11 +3,12 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <ImageView
         android:id="@+id/emptyIcon"
-        android:layout_width="@dimen/min_touch_target"
-        android:layout_height="@dimen/min_touch_target"
+        android:layout_width="@dimen/state_icon_size"
+        android:layout_height="@dimen/state_icon_size"
         android:layout_gravity="center_horizontal"
         android:layout_marginBottom="@dimen/space_md"
         android:importantForAccessibility="no"
+        android:visibility="gone"
         app:tint="?attr/colorPrimary" />
     <TextView
         android:id="@+id/emptyMessage"

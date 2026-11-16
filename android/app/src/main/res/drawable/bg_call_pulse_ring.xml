@@ -3,6 +3,6 @@
     android:shape="oval">
     <stroke
         android:width="2dp"
-        android:color="#40818CF8" />
-    <solid android:color="#1A4F46E5" />
+        android:color="@color/call_pulse_ring_stroke" />
+    <solid android:color="@color/call_pulse_ring_fill" />
 </shape>
