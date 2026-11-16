@@ -40,7 +40,8 @@ class AuthorizationFieldAllowlistIT extends SecurityITBase {
                         owner.accessToken())
                 .andExpect(status().isCreated()).andReturn();
         JsonNode group = objectMapper.readTree(groupResult.getResponse().getContentAsString());
-        assertKeys(group, Set.of("id", "type", "members", "createdAt", "aiOptOut", "e2eeEnabled"));
+        assertKeys(group, Set.of("id", "type", "members", "createdAt", "aiOptOut", "e2eeEnabled",
+                "disappearingSeconds"));
         for (JsonNode groupMember : group.path("members")) {
             assertKeys(groupMember, Set.of("userId", "displayName", "phone", "deleted"));
         }
@@ -63,7 +64,8 @@ class AuthorizationFieldAllowlistIT extends SecurityITBase {
         JsonNode inboxGroup = findById(inbox, groupId);
         assertKeys(inboxGroup, Set.of("id", "type", "title", "avatarUrl", "members", "lastMessage",
                 "unreadCount", "lastReadSeq", "peerPresence", "muted", "mutedUntil", "archived",
-                "aiOptOut", "pinned", "pinnedAt", "labels", "e2eeEnabled", "lastMessageEncrypted"));
+                "aiOptOut", "pinned", "pinnedAt", "labels", "e2eeEnabled", "lastMessageEncrypted",
+                "disappearingSeconds"));
         for (JsonNode inboxMember : inboxGroup.path("members")) {
             assertKeys(inboxMember, Set.of("userId", "displayName", "phone", "avatarUrl", "role"));
         }
