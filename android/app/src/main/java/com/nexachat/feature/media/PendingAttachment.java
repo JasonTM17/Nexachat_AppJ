@@ -65,11 +65,13 @@ public final class PendingAttachment {
     @Nullable public ApiError getError() { return error; }
 
     public PendingAttachment withProgress(float value) {
-        return new PendingAttachment(localId, uri, displayName, mimeType, type, value, state, error);
+        return new PendingAttachment(localId, uri, displayName, mimeType, type, value, state,
+                state == PendingState.FAILED ? error : null);
     }
 
     public PendingAttachment withState(@NonNull PendingState value) {
-        return new PendingAttachment(localId, uri, displayName, mimeType, type, progress, value, error);
+        return new PendingAttachment(localId, uri, displayName, mimeType, type, progress, value,
+                value == PendingState.FAILED ? error : null);
     }
 
     public PendingAttachment withError(@NonNull PendingState value, @Nullable ApiError newError) {
