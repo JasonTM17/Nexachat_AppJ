@@ -362,7 +362,8 @@ public final class GroupDetailFragment extends Fragment {
             LinearLayout container = new LinearLayout(requireContext());
             int pad = getResources().getDimensionPixelSize(R.dimen.dialog_padding);
             container.setPadding(pad, 0, pad, 0);
-            container.addView(inputLayout);
+            container.addView(inputLayout, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             renameDialog = new MaterialAlertDialogBuilder(requireContext())
                     .setTitle(R.string.action_rename_group)
                     .setView(container)
