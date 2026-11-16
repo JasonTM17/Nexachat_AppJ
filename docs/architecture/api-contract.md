@@ -1291,6 +1291,53 @@ phone numbers configured in `NEXACHAT_ADMIN_PHONES`. Non-admin authenticated
 callers receive `403 FORBIDDEN` (`code: FORBIDDEN`). When `NEXACHAT_ADMIN_PHONES`
 is empty or unset, the endpoint is denied to all users.
 
+## Admin console — `/api/v1/admin`
+
+The staff console surface (`admin-web/`). Every route requires a Bearer access
+token whose principal holds the `ADMIN` or `MODERATOR` role; role-mutating
+routes (`/users/{}/role`, `/rules` writes) additionally require `ADMIN`.
+Suspended accounts are rejected by the JWT filter before routing. Sensitive
+mutations take a `reason` (min length enforced) and are written to
+`admin_audit_log`; alert reveals are rate-limited per staff account. E2EE
+messages and AI-opted-out conversations are never scanned or shown.
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `GET /api/v1/admin/me` | staff | — | `200` `{userId, phone, displayName, role}` | 401/403 |
+| `GET /api/v1/admin/overview` | staff | `?days=` | `200` KPIs + daily series | 401/403 |
+| `GET /api/v1/admin/system/health` | staff | — | `200` service status map | 401/403 |
+| `GET /api/v1/admin/users` | staff | `?q=&role=&status=&page=&size=` | `200` page of user summaries | 401/403 |
+| `GET /api/v1/admin/users/deleted` | staff | `?page=&size=` | `200` deleted-account page | 401/403 |
+| `GET /api/v1/admin/users/{userId}` | staff | — | `200` user detail + counters | 401/403 · `USER_NOT_FOUND` 404 |
+| `POST /api/v1/admin/users/{userId}/suspend` | staff | `{reason}` | `200` updated summary; revokes sessions | 401/403 · 404 · `SELF_ACTION` 400 |
+| `POST /api/v1/admin/users/{userId}/unsuspend` | staff | `{reason}` | `200` updated summary | 401/403 · 404 |
+| `POST /api/v1/admin/users/{userId}/revoke-sessions` | staff | `{reason}` | `200`; stamps token cutoff | 401/403 · 404 |
+| `POST /api/v1/admin/users/{userId}/actions` | staff | `{type, reason}` (`WARN`/`ESCALATE`) | `200` `{notice}` | 401/403 · 404 |
+| `PATCH /api/v1/admin/users/{userId}/role` | ADMIN | `{role, reason}` | `200` updated summary | 401/403 · `LAST_ADMIN` 400 · `SELF_ACTION` 400 |
+| `GET /api/v1/admin/alerts` | staff | `?status=&category=&severity=&q=&page=` | `200` alert page (redacted snippets) | 401/403 |
+| `GET /api/v1/admin/alerts/{alertId}` | staff | — | `200` alert detail + notes | 401/403 · `ALERT_NOT_FOUND` 404 |
+| `PATCH /api/v1/admin/alerts/{alertId}` | staff | `{status?, assigneeId?, escalation?, reason}` | `200` updated alert | 401/403 · 404 |
+| `POST /api/v1/admin/alerts/{alertId}/notes` | staff | `{note}` | `200` appended note | 401/403 · 404 |
+| `POST /api/v1/admin/alerts/{alertId}/actions` | staff | `{type, reason}` | `200` workflow action | 401/403 · 404 |
+| `POST /api/v1/admin/alerts/{alertId}/reveal` | staff | `{reason}` | `200` message content + context | 401/403 · 404 · `RATE_LIMITED` 429 |
+| `POST /api/v1/admin/alerts/bulk-dismiss` | staff | `{alertIds[], reason}` | `200` `{dismissed}` | 401/403 |
+| `GET /api/v1/admin/rules` | staff | — | `200` rule list | 401/403 |
+| `POST /api/v1/admin/rules` | ADMIN | `{name, category, severity, patternType, pattern, locale?, description?, enabled?}` | `201` rule | 401/403 · `VALIDATION_FAILED` 400 |
+| `PATCH /api/v1/admin/rules/{ruleId}` | ADMIN | partial update | `200` rule | 401/403 · 404 |
+| `DELETE /api/v1/admin/rules/{ruleId}` | ADMIN | — | `204`; built-ins disable instead | 401/403 · 404 |
+| `POST /api/v1/admin/rules/test` | staff | `{patternType, pattern, text}` | `200` `{matched, category, severity}` | 401/403 · 400 |
+| `GET /api/v1/admin/audit` | staff | `?actor=&action=&target=&from=&to=&page=` | `200` audit page | 401/403 |
+
+Alert detection runs asynchronously: a bounded in-memory queue drains matched
+text messages into `alerts` rows storing a redacted snippet and matched rule
+names; duplicates within the dedupe window update the existing row. `reveal`
+fetches the full message on demand (rate-limited, audited) — content is never
+stored in the alert tables.
+
+Users see moderation notices at `GET /api/v1/users/me/notices` (Bearer, `200`
+page) and acknowledge with `POST /api/v1/users/me/notices/{noticeId}/read`
+(Bearer, `204`).
+
 ## Firebase realtime bridge (opt-in)
 
 The three `/api/v1/realtime` routes exist only when
