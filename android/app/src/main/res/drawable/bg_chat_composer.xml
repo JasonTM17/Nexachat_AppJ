@@ -9,7 +9,7 @@
         android:height="1dp"
         android:gravity="top">
         <shape android:shape="rectangle">
-            <solid android:color="@color/colorOutlineVariant" />
+            <solid android:color="@color/colorSurfaceContainerHighest" />
         </shape>
     </item>
 </layer-list>

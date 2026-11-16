@@ -25,10 +25,9 @@
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="@dimen/space_sm"
         android:background="@drawable/bg_date_separator"
-        android:backgroundTint="?attr/colorSurfaceContainerHigh"
         android:gravity="center"
-        android:paddingHorizontal="12dp"
-        android:paddingVertical="6dp"
+        android:paddingHorizontal="@dimen/space_inset"
+        android:paddingVertical="@dimen/space_xs"
         android:textAppearance="?attr/textAppearanceLabelSmall"
         android:textColor="?attr/colorPrimary"
         android:importantForAccessibility="no" />

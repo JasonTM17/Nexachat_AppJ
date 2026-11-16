@@ -7,5 +7,5 @@
     android:layout_marginTop="@dimen/space_xs"
     android:clipChildren="false"
     android:clipToPadding="false"
-    app:chipSpacing="@dimen/bubble_group_gap"
+    app:chipSpacing="@dimen/space_sm"
     app:singleLine="false" />

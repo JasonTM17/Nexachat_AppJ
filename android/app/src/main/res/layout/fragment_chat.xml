@@ -60,7 +60,7 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
             <ImageButton android:id="@+id/callButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_call" android:src="@drawable/ic_call" android:background="?attr/selectableItemBackground" app:tint="?attr/colorPrimary"/>
-            <ImageButton android:id="@+id/moreButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/a11y_open_chat_actions" android:src="@drawable/ic_more_vert" android:background="?attr/selectableItemBackground" app:tint="?attr/colorOnSurface"/>
+            <ImageButton android:id="@+id/moreButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/a11y_open_chat_actions" android:src="@drawable/ic_more_vert" android:background="?attr/selectableItemBackground" app:tint="?attr/colorOnSurfaceVariant"/>
         </LinearLayout>
     </HorizontalScrollView>
 
@@ -173,7 +173,6 @@
         layout="@layout/include_chat_composer_bar"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginHorizontal="0dp"
         android:layout_marginBottom="@dimen/space_sm"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
