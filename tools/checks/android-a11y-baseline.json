@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "total_findings": 25,
+  "total_findings": 26,
   "findings": [
     {
       "rule": "A6",
@@ -42,10 +42,10 @@
       "rule": "A6",
       "severity": "WARN",
       "file": "layout/include_message_reply_quote.xml",
-      "line": 14,
+      "line": 23,
       "element_id": "@+id/replySnippet",
       "tag": "TextView",
-      "message": "maxLines=2 on message/title/error text may clip at large font"
+      "message": "maxLines=3 on message/title/error text may clip at large font"
     },
     {
       "rule": "A1",
@@ -224,6 +224,15 @@
       "file": "layout-land/activity_call.xml",
       "line": 52,
       "element_id": "@+id/call_peer_name",
+      "tag": "TextView",
+      "message": "maxLines=1 on message/title/error text may clip at large font"
+    },
+    {
+      "rule": "A6",
+      "severity": "WARN",
+      "file": "layout/include_message_reply_quote.xml",
+      "line": 14,
+      "element_id": "@+id/replyAuthor",
       "tag": "TextView",
       "message": "maxLines=1 on message/title/error text may clip at large font"
     }
