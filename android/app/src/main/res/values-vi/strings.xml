@@ -222,10 +222,13 @@
 
     <!-- Message interactions -->
     <string name="action_reply">Trả lời</string>
+    <string name="action_reply_desc">Trích dẫn tin nhắn này trong cuộc trò chuyện</string>
     <string name="dialog_reaction_picker_title">Thả cảm xúc</string>
     <string name="a11y_reaction_chip_by_me">%1$s, %2$d, của bạn</string>
     <string name="action_pin">Ghim</string>
+    <string name="action_pin_desc">Ghim lên đầu cuộc trò chuyện</string>
     <string name="action_unpin">Bỏ ghim</string>
+    <string name="action_unpin_desc">Bỏ ghim khỏi đầu cuộc trò chuyện</string>
     <string name="action_pin_conversation">Ghim trò chuyện</string>
     <string name="action_unpin_conversation">Bỏ ghim trò chuyện</string>
     <string name="pinned_title">Đã ghim</string>
@@ -274,13 +277,19 @@
     <!-- Stage 2 Feature Strings -->
     <!-- Message Actions & Clipboard -->
     <string name="action_copy">Sao chép</string>
+    <string name="action_copy_desc">Lưu văn bản vào bộ nhớ tạm</string>
     <string name="copied_to_clipboard">Đã sao chép</string>
     <string name="action_forward">Chuyển tiếp</string>
+    <string name="action_forward_desc">Gửi sang hội thoại khác</string>
     <string name="action_edit">Chỉnh sửa</string>
+    <string name="action_edit_desc">Sửa lại nội dung đã gửi</string>
     <string name="action_delete">Xóa</string>
     <string name="action_recall">Thu hồi</string>
+    <string name="action_recall_desc">Thu hồi tin nhắn với tất cả thành viên</string>
     <string name="action_delete_for_me">Xóa ở phía tôi</string>
+    <string name="action_delete_for_me_desc">Chỉ xóa tin nhắn với bạn</string>
     <string name="action_admin_delete">Gỡ tin nhắn</string>
+    <string name="action_admin_delete_desc">Gỡ tin nhắn với tất cả thành viên</string>
     <string name="action_more_options">Tùy chọn khác</string>
     <string name="attachment_picker_title">Đính kèm</string>
     <string name="attachment_pick_image">Ảnh</string>

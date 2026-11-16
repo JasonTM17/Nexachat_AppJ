@@ -224,10 +224,13 @@
 
     <!-- Message interactions -->
     <string name="action_reply">Reply</string>
+    <string name="action_reply_desc">Quote this message in the conversation</string>
     <string name="dialog_reaction_picker_title">React</string>
     <string name="a11y_reaction_chip_by_me">%1$s, %2$d, yours</string>
     <string name="action_pin">Pin</string>
+    <string name="action_pin_desc">Keep it at the top of this conversation</string>
     <string name="action_unpin">Unpin</string>
+    <string name="action_unpin_desc">Remove it from the top of this conversation</string>
     <string name="action_pin_conversation">Pin conversation</string>
     <string name="action_unpin_conversation">Unpin conversation</string>
     <string name="pinned_title">Pinned</string>
@@ -276,13 +279,19 @@
     <!-- Stage 2 Feature Strings -->
     <!-- Message Actions & Clipboard -->
     <string name="action_copy">Copy</string>
+    <string name="action_copy_desc">Save the text to your clipboard</string>
     <string name="copied_to_clipboard">Copied</string>
     <string name="action_forward">Forward</string>
+    <string name="action_forward_desc">Send it to another conversation</string>
     <string name="action_edit">Edit</string>
+    <string name="action_edit_desc">Change the content you sent</string>
     <string name="action_delete">Delete</string>
     <string name="action_recall">Recall</string>
+    <string name="action_recall_desc">Recall it for everyone</string>
     <string name="action_delete_for_me">Delete for me</string>
+    <string name="action_delete_for_me_desc">Delete it only for you</string>
     <string name="action_admin_delete">Remove message</string>
+    <string name="action_admin_delete_desc">Remove it for all members</string>
     <string name="action_more_options">More options</string>
     <string name="attachment_picker_title">Add attachment</string>
     <string name="attachment_pick_image">Photo</string>
