@@ -46,6 +46,7 @@ public final class MessageListDiffCallback extends DiffUtil.ItemCallback<Message
         return Objects.equals(oldItem.getGroupPosition(), newItem.getGroupPosition())
                 && oldItem.shouldShowSenderName() == newItem.shouldShowSenderName()
                 && oldItem.isSeenReceipt() == newItem.isSeenReceipt()
+                && oldItem.isDeliveredReceipt() == newItem.isDeliveredReceipt()
                 && oldItem.isPulsing() == newItem.isPulsing();
     }
 
@@ -56,12 +57,14 @@ public final class MessageListDiffCallback extends DiffUtil.ItemCallback<Message
                 && Objects.equals(left.getStatus(), right.getStatus())
                 && left.getMine() == right.getMine()
                 && left.getCreatedAtEpochMs() == right.getCreatedAtEpochMs()
+                && Objects.equals(left.getClientMessageId(), right.getClientMessageId())
                 && Objects.equals(left.getEditedAtEpochMs(), right.getEditedAtEpochMs())
                 && Objects.equals(left.getDeletedAtEpochMs(), right.getDeletedAtEpochMs())
                 && Objects.equals(left.getReplyToId(), right.getReplyToId())
                 && Objects.equals(left.getReplyToSnippet(), right.getReplyToSnippet())
                 && Objects.equals(left.getReplyToSenderName(), right.getReplyToSenderName())
                 && left.isReplyToEncrypted() == right.isReplyToEncrypted()
+                && Objects.equals(left.getSenderId(), right.getSenderId())
                 && Objects.equals(left.getSenderDisplayName(), right.getSenderDisplayName())
                 && Objects.equals(left.getMentions(), right.getMentions())
                 && left.isMentionAll() == right.isMentionAll()
