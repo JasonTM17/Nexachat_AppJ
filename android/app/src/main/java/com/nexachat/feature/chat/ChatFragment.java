@@ -632,7 +632,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
     private void showMicRationaleThenRequest() {
         new AlertDialog.Builder(requireContext())
-                .setMessage(R.string.call_mic_rationale)
+                .setMessage(R.string.voice_mic_rationale)
                 .setPositiveButton(R.string.call_permission_continue,
                         (dialog, which) -> launchRecordAudioRequest())
                 .setNegativeButton(R.string.call_permission_cancel, null)

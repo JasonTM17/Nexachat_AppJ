@@ -351,6 +351,7 @@
     <string name="voice_too_short">Giữ để ghi âm, thả để gửi</string>
     <string name="voice_hold_to_record">Giữ để ghi âm</string>
     <string name="voice_permission_required">Hãy cấp quyền micrô để ghi âm tin nhắn thoại.</string>
+    <string name="voice_mic_rationale">Cần quyền micrô để ghi âm tin nhắn thoại.</string>
     <string name="voice_play">Phát tin nhắn thoại</string>
     <string name="voice_pause">Tạm dừng tin nhắn thoại</string>
     <string name="voice_loading">Đang tải tin nhắn thoại…</string>
