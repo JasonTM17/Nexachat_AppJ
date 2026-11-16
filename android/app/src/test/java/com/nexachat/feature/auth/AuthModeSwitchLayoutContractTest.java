@@ -60,9 +60,11 @@ public final class AuthModeSwitchLayoutContractTest {
             assertEquals(layout + "#" + id, "true", androidAttr(button, "checkable"));
             assertEquals(layout + "#" + id,
                     "false", appAttr(button, "toggleCheckedStateOnClick"));
-            assertEquals(layout + "#" + id + " must inherit the square theme shape",
+            assertEquals(layout + "#" + id + " must inherit the pill theme shape",
                     "", appAttr(button, "cornerRadius"));
         }
+        assertEquals(layout + " switch track is a pill",
+                "@drawable/bg_auth_mode_switch", androidAttr(group, "background"));
     }
 
     @Test
