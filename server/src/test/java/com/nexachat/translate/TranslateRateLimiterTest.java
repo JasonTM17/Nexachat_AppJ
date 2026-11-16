@@ -55,6 +55,19 @@ class TranslateRateLimiterTest {
     }
 
     @Test
+    void tryConsumeReportsExhaustionWithoutThrowing() {
+        TranslateRequestLimitRepository repository = mock(TranslateRequestLimitRepository.class);
+        UUID userId = UUID.randomUUID();
+        when(repository.tryConsume(eq(userId), eq("DAY"), any(), anyInt(), eq(1))).thenReturn(false);
+
+        boolean allowed = new TranslateRateLimiter(repository, properties,
+                Clock.fixed(Instant.parse("2026-11-16T12:00:00Z"), ZoneOffset.UTC))
+                .tryConsume(userId, 1);
+
+        assertThat(allowed).isFalse();
+    }
+
+    @Test
     void batchConsumesRequestedAmount() {
         TranslateRequestLimitRepository repository = mock(TranslateRequestLimitRepository.class);
         UUID userId = UUID.randomUUID();

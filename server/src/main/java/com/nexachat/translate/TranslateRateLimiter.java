@@ -40,22 +40,32 @@ public class TranslateRateLimiter {
      */
     @Transactional
     public void consume(UUID userId, int count) {
+        if (!tryConsume(userId, count)) {
+            throw ApiException.of(ApiErrorCode.RATE_LIMITED, "Translate request limit exceeded");
+        }
+    }
+
+    /**
+     * Non-throwing variant: returns {@code false} when a limit is exhausted so a
+     * caller already inside a transaction (the batch path) can report the
+     * refusal per item without marking its transaction rollback-only.
+     */
+    @Transactional
+    public boolean tryConsume(UUID userId, int count) {
         if (count <= 0) {
-            return;
+            return true;
         }
         Instant now = clock.instant();
         Instant dayStart = LocalDate.ofInstant(now, ZoneOffset.UTC)
                 .atStartOfDay(ZoneOffset.UTC)
                 .toInstant();
         if (!repository.tryConsume(userId, "DAY", dayStart, properties.getRateLimitPerDay(), count)) {
-            throw ApiException.of(ApiErrorCode.RATE_LIMITED, "Translate request limit exceeded");
+            return false;
         }
 
         Instant minuteStart = now.truncatedTo(ChronoUnit.MINUTES);
-        if (!repository.tryConsume(userId, "MINUTE", minuteStart,
-                properties.getRateLimitPerMinute(), count)) {
-            throw ApiException.of(ApiErrorCode.RATE_LIMITED, "Translate request limit exceeded");
-        }
+        return repository.tryConsume(userId, "MINUTE", minuteStart,
+                properties.getRateLimitPerMinute(), count);
     }
 
     /** Single-token convenience overload for the per-item batch path. */

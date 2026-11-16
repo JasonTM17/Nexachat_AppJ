@@ -41,6 +41,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -359,6 +360,7 @@ class TranslateServiceTest {
                 .thenReturn(Optional.of(new TranslationCacheRepository.CacheEntry(
                         "hello", "vi", "m", "cloud")));
         when(provider.translate(any())).thenReturn(completion("tonight", "vi"));
+        when(rateLimiter.tryConsume(userId, 1)).thenReturn(true);
 
         List<TranslateBatchItem> results = service.translateBatch(
                 userId, conversationId, List.of(cached, deleted, fresh), "en");
@@ -380,12 +382,12 @@ class TranslateServiceTest {
                 .thenReturn(List.of(
                         new TargetRow(a, 1L, senderId, "A", "tối nay", 0L, created, "TEXT", null, null),
                         new TargetRow(b, 2L, senderId, "A", "mai nhé", 0L, created, "TEXT", null, null)));
-        doThrow(ApiException.of(ApiErrorCode.RATE_LIMITED, "limited"))
-                .when(rateLimiter).consumeOne(userId);
+        when(rateLimiter.tryConsume(userId, 1)).thenReturn(false);
         lenient().when(provider.translate(any())).thenReturn(completion("x", "vi"));
 
         List<TranslateBatchItem> results = service.translateBatch(
                 userId, conversationId, List.of(a, b), "en");
+        verify(rateLimiter, times(1)).tryConsume(userId, 1);
 
         assertThat(results).allSatisfy(item -> assertThat(item.error())
                 .isEqualTo(ApiErrorCode.RATE_LIMITED.getCode()));
@@ -405,7 +407,7 @@ class TranslateServiceTest {
                 userId, conversationId, List.of(a), "en");
 
         assertThat(results.get(0).error()).isEqualTo(ApiErrorCode.AI_CONSENT_REQUIRED.getCode());
-        verify(rateLimiter, never()).consumeOne(any());
+        verify(rateLimiter, never()).tryConsume(any(), anyInt());
     }
 
     @Test

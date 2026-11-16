@@ -248,9 +248,7 @@ public class TranslateService {
                         ApiErrorCode.RATE_LIMITED.getCode()));
                 continue;
             }
-            try {
-                rateLimiter.consumeOne(userId);
-            } catch (ApiException limited) {
+            if (!rateLimiter.tryConsume(userId, 1)) {
                 rateLimited = true;
                 items.add(TranslateBatchItem.failed(id, target.code(),
                         ApiErrorCode.RATE_LIMITED.getCode()));
