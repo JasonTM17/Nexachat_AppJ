@@ -63,7 +63,7 @@ CREATE TRIGGER admin_audit_log_no_delete
 -- pattern column is inert and only labels the detector).
 CREATE TABLE alert_rules (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name         VARCHAR(80)  NOT NULL,
+    name         VARCHAR(200) NOT NULL,
     category     VARCHAR(32)  NOT NULL CHECK (category IN
         ('SELF_HARM', 'THREAT_VIOLENCE', 'SCAM_PHISHING', 'CREDENTIAL_SHARING',
          'ID_NUMBER', 'MINOR_SOLICITATION', 'DOXXING', 'CUSTOM')),
@@ -73,7 +73,7 @@ CREATE TABLE alert_rules (
     locale       VARCHAR(8)   NOT NULL DEFAULT 'any',
     built_in     BOOLEAN      NOT NULL DEFAULT FALSE,
     enabled      BOOLEAN      NOT NULL DEFAULT TRUE,
-    description  VARCHAR(400),
+    description  VARCHAR(500),
     created_by   UUID,
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
