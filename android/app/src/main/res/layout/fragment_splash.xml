@@ -12,7 +12,6 @@
         android:layout_width="@dimen/splash_logo_size"
         android:layout_height="@dimen/splash_logo_size"
         android:background="@drawable/bg_brand_logo"
-        android:elevation="@dimen/space_xs"
         android:importantForAccessibility="no"
         android:padding="@dimen/space_sm"
         android:scaleType="centerInside"
