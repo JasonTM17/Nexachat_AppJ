@@ -72,6 +72,19 @@ public class SystemEventParserTest {
     }
 
     @Test
+    public void mapsDisappearingTemplates() {
+        assertType(SystemEventType.DISAPPEARING_SET,
+                SystemEventParser.parse("An set messages to disappear after 1 hour"), "An", "1 hour");
+        assertType(SystemEventType.DISAPPEARING_OFF,
+                SystemEventParser.parse("An turned off disappearing messages"), "An");
+        assertType(SystemEventType.DISAPPEARING_SET,
+                SystemEventParser.parse("EVT|DISAPPEARING_SET|An|1 day"), "An", "1 day");
+        assertType(SystemEventType.DISAPPEARING_OFF,
+                SystemEventParser.parse("EVT|DISAPPEARING_OFF|An"), "An");
+        assertFalse(SystemEventParser.parse("EVT|DISAPPEARING_SET|An").isLocalized());
+    }
+
+    @Test
     public void adminPromotionIsNotParsedAsMemberAdded() {
         SystemEventPayload payload = SystemEventParser.parse("An made Binh a group admin");
         assertEquals(SystemEventType.GROUP_ADMIN_PROMOTED, payload.getType());

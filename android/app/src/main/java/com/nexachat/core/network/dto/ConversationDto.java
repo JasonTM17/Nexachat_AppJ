@@ -17,6 +17,8 @@ public final class ConversationDto {
     @Nullable private final Boolean aiOptOut;
     /** Server flag: true once E2EE is enabled on this DIRECT conversation. */
     @Nullable private final Boolean e2eeEnabled;
+    /** Disappearing-message timer in seconds (0 = off); absent in legacy payloads. */
+    @Nullable private Integer disappearingSeconds;
 
     public ConversationDto() {
         this(null, null, null, null, List.of(), null, null);
@@ -77,6 +79,15 @@ public final class ConversationDto {
     /** Server E2EE flag; absent in legacy payloads. */
     @Nullable public Boolean getE2eeEnabled() {
         return e2eeEnabled;
+    }
+
+    /** Conversation disappearing timer in seconds; null when absent or off. */
+    @Nullable public Integer getDisappearingSeconds() {
+        return disappearingSeconds;
+    }
+
+    public void setDisappearingSeconds(@Nullable Integer seconds) {
+        this.disappearingSeconds = seconds;
     }
 
     @Override

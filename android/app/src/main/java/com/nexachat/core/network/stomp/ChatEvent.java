@@ -181,7 +181,8 @@ public sealed interface ChatEvent
             @Nullable String change,
             @NonNull List<String> memberIds,
             @Nullable Boolean e2eeEnabled,
-            @Nullable String title) implements ChatEvent {
+            @Nullable String title,
+            @Nullable Integer disappearingSeconds) implements ChatEvent {
 
         public ConversationUpdated(@Nullable String conversationId) {
             this(conversationId, null, List.of());
@@ -204,6 +205,13 @@ public sealed interface ChatEvent
             this(conversationId, change, memberIds, e2eeEnabled, null);
         }
 
+        public ConversationUpdated(
+                @Nullable String conversationId, @Nullable String change,
+                @NonNull List<String> memberIds, @Nullable Boolean e2eeEnabled,
+                @Nullable String title) {
+            this(conversationId, change, memberIds, e2eeEnabled, title, null);
+        }
+
         /** Group title carried by the update payload; null when absent. */
         @Nullable
         public String getTitle() {
@@ -214,6 +222,12 @@ public sealed interface ChatEvent
         @Nullable
         public Boolean getE2eeEnabled() {
             return e2eeEnabled;
+        }
+
+        /** Disappearing timer in seconds; null when the frame does not carry it. */
+        @Nullable
+        public Integer getDisappearingSeconds() {
+            return disappearingSeconds;
         }
 
         @Nullable

@@ -841,7 +841,8 @@ public final class RealtimeSession {
                                 ? Collections.emptyList()
                                 : conversationUpdate.getMemberIds(),
                         conversationUpdate == null ? null : conversationUpdate.getE2eeEnabled(),
-                        conversationUpdate == null ? null : conversationUpdate.getTitle());
+                        conversationUpdate == null ? null : conversationUpdate.getTitle(),
+                        conversationUpdate == null ? null : conversationUpdate.getDisappearingSeconds());
             case EVENT_REACTION_UPDATED: {
                 ReactionUpdateDto update = parse(reactionAdapter, payload);
                 return new ChatEvent.ReactionUpdated(

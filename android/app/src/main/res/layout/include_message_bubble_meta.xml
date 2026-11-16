@@ -26,6 +26,16 @@
         android:textAppearance="?attr/textAppearanceBodySmall"
         android:textColor="?attr/colorOnSurfaceVariant" />
 
+    <ImageView
+        android:id="@+id/timerIcon"
+        android:contentDescription="@string/cd_disappearing_bubble"
+        android:layout_width="@dimen/metadata_icon_size"
+        android:layout_height="@dimen/metadata_icon_size"
+        android:layout_marginStart="@dimen/space_xs"
+        android:src="@drawable/ic_hourglass_top"
+        android:visibility="gone"
+        app:tint="?attr/colorOnSurfaceVariant" />
+
     <ProgressBar
         android:id="@+id/sendingProgress"
         style="?android:attr/progressBarStyleSmall"

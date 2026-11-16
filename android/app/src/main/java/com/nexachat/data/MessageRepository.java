@@ -397,7 +397,11 @@ public final class MessageRepository {
                                 (messages, pending, reactions) -> new MessageSnapshot(
                                         messages, pending, reactions, ownerUserId)),
                 tokenStore.observeLocallyHiddenMessageIds(),
-                (snapshot, hiddenIds) -> snapshot.withHiddenIds(hiddenIds)))
+                // Re-evaluates message expiry while the conversation is open; the
+                // server sweep is the authority, this only retires stale bubbles.
+                Flowable.interval(30, java.util.concurrent.TimeUnit.SECONDS,
+                        Schedulers.computation()).startWithItem(0L),
+                (snapshot, hiddenIds, expiryTick) -> snapshot.withHiddenIds(hiddenIds)))
                 .concatMapSingle(snapshot -> Single.fromCallable(() -> {
                     Map<String, List<ReactionChip>> chips = new java.util.HashMap<>();
                     for (MessageReactionEntity reaction : snapshot.reactions) {
@@ -2139,14 +2143,22 @@ public final class MessageRepository {
 
     /** Builds the render model from a persisted message and its reaction rows. */
     private ChatMessage toChatMessage(MessageEntity row, @Nullable String myId, List<ReactionChip> reactions) {
+        // An expired row that the server sweep has not tombstoned yet renders as
+        // a tombstone locally so its content cannot linger on screen.
+        boolean expired = row.getDeletedAtEpochMs() == null
+                && row.isExpired(System.currentTimeMillis());
+        Long deletedAt = row.getDeletedAtEpochMs() != null
+                ? row.getDeletedAtEpochMs() : expired ? row.getExpiresAtEpochMs() : null;
         return new ChatMessage(row.getId(), row.getConversationId(), row.getSeq(), row.getSenderId(),
-                row.getSenderDisplayName(), row.getType(), row.getContent(), row.getReplyToId(),
-                row.getReplyToSenderName(), row.getReplyToSnippet(), row.getCreatedAt(),
-                row.getClientMessageId(), DeliveryStatus.SENT, Objects.equals(row.getSenderId(), myId),
-                attachments(row.getAttachmentsJson()), reactions, row.getEditedAtEpochMs(),
-                row.getDeletedAtEpochMs(), MessageMentionCodec.decode(row.getMentionsJson()),
+                row.getSenderDisplayName(), row.getType(), expired ? "" : row.getContent(),
+                row.getReplyToId(), row.getReplyToSenderName(), row.getReplyToSnippet(),
+                row.getCreatedAt(), row.getClientMessageId(), DeliveryStatus.SENT,
+                Objects.equals(row.getSenderId(), myId),
+                expired ? Collections.emptyList() : attachments(row.getAttachmentsJson()),
+                expired ? Collections.emptyList() : reactions, row.getEditedAtEpochMs(),
+                deletedAt, MessageMentionCodec.decode(row.getMentionsJson()),
                 row.isMentionAll(), row.isEncrypted(), row.isDecryptFailed(),
-                row.isReplyToEncrypted());
+                row.isReplyToEncrypted(), false, row.getExpiresAtEpochMs());
     }
 
     private ChatMessage toChatMessage(OutboxEntity row) {
@@ -2191,7 +2203,8 @@ public final class MessageRepository {
                 !deleted && dto.isMentionAll(),
                 dto.getChangeVersion() == null ? 0 : dto.getChangeVersion(),
                 dto.getGeneration() == null ? 0 : dto.getGeneration(),
-                resolved.encrypted(), resolved.decryptFailed(), replyToEncrypted);
+                resolved.encrypted(), resolved.decryptFailed(), replyToEncrypted,
+                TimeAndJwt.isoToEpochMsOrNull(dto.getExpiresAt()));
     }
 
     /** Parses attachmentsJson; missing, blank, or malformed data becomes an empty list. */
@@ -2376,7 +2389,9 @@ public final class MessageRepository {
                 source.getSenderId(), source.getSenderDisplayName(), source.getType(), content,
                 source.getClientMessageId(), source.getReplyToId(), source.getReplyToSenderName(),
                 replyToSnippet, source.getCreatedAt(), attachmentsJson, editedAtEpochMs, deletedAtEpochMs,
-                mentionsJson, mentionAll, source.getChangeVersion(), source.getGeneration());
+                mentionsJson, mentionAll, source.getChangeVersion(), source.getGeneration(),
+                source.isEncrypted(), source.isDecryptFailed(), source.isReplyToEncrypted(),
+                source.getExpiresAtEpochMs());
     }
 
     private List<MessageEntity> mapEntities(List<MessageDto> dtos, String conversationId) {

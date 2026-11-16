@@ -31,6 +31,10 @@ public final class SystemEventParser {
             Pattern.compile("^(.+) turned on end-to-end encryption$");
     private static final Pattern E2EE_OFF =
             Pattern.compile("^(.+) turned off end-to-end encryption$");
+    private static final Pattern DISAPPEARING_SET =
+            Pattern.compile("^(.+) set messages to disappear after (.+)$");
+    private static final Pattern DISAPPEARING_OFF =
+            Pattern.compile("^(.+) turned off disappearing messages$");
 
     private SystemEventParser() { }
 
@@ -74,6 +78,8 @@ public final class SystemEventParser {
                     argsRequired(raw, SystemEventType.GROUP_ADMIN_PROMOTED, parts, 4, 2);
             case "E2EE_ENABLED" -> argsRequired(raw, SystemEventType.E2EE_ENABLED, parts, 3, 1);
             case "E2EE_DISABLED" -> argsRequired(raw, SystemEventType.E2EE_DISABLED, parts, 3, 1);
+            case "DISAPPEARING_SET" -> argsRequired(raw, SystemEventType.DISAPPEARING_SET, parts, 4, 2);
+            case "DISAPPEARING_OFF" -> argsRequired(raw, SystemEventType.DISAPPEARING_OFF, parts, 3, 1);
             default -> SystemEventPayload.unknown(raw);
         };
     }
@@ -109,6 +115,14 @@ public final class SystemEventParser {
         }
         if ((matcher = E2EE_OFF.matcher(raw)).matches()) {
             return SystemEventPayload.localized(SystemEventType.E2EE_DISABLED, matcher.group(1));
+        }
+        if ((matcher = DISAPPEARING_SET.matcher(raw)).matches()) {
+            return SystemEventPayload.localized(
+                    SystemEventType.DISAPPEARING_SET, matcher.group(1), matcher.group(2));
+        }
+        if ((matcher = DISAPPEARING_OFF.matcher(raw)).matches()) {
+            return SystemEventPayload.localized(
+                    SystemEventType.DISAPPEARING_OFF, matcher.group(1));
         }
         if ((matcher = ADMIN_PROMOTED.matcher(raw)).matches()) {
             return SystemEventPayload.localized(

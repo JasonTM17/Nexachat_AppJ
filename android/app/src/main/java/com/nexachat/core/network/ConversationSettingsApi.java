@@ -1,6 +1,8 @@
 package com.nexachat.core.network;
 
 import com.nexachat.core.network.dto.ConversationAiOptOutDto;
+import com.nexachat.core.network.dto.ConversationUpdateDto;
+import com.nexachat.core.network.dto.DisappearingRequest;
 import com.nexachat.core.network.dto.MuteRequest;
 import retrofit2.Call;
 import retrofit2.http.Body;
@@ -35,4 +37,9 @@ public interface ConversationSettingsApi {
 
     @DELETE("api/v1/conversations/{id}/ai-opt-out")
     Call<ConversationAiOptOutDto> clearAiOptOut(@Path("id") String conversationId);
+
+    /** Sets or clears the conversation's disappearing-message timer (seconds; 0 = off). */
+    @PUT("api/v1/conversations/{id}/disappearing")
+    Call<ConversationUpdateDto> setDisappearing(@Path("id") String conversationId,
+                                                @Body DisappearingRequest body);
 }

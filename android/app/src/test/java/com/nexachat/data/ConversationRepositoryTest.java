@@ -2170,6 +2170,17 @@ public final class ConversationRepositoryTest {
         }
 
         @Override
+        public Completable updateDisappearingSeconds(String conversationId, int seconds) {
+            return Completable.fromAction(() -> {
+                ConversationEntity row = rows.get(conversationId);
+                if (row != null) {
+                    rows.put(conversationId, row.withDisappearingSeconds(seconds));
+                }
+                publish();
+            });
+        }
+
+        @Override
         public Completable clearInbox() {
             return Completable.fromAction(() -> {
                 rows.values().removeIf(row -> !row.isArchived());

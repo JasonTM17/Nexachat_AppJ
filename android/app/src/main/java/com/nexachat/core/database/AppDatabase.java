@@ -26,7 +26,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             SyncCursorEntity.class,
             KeysetTrustEntity.class
         },
-        version = 17,
+        version = 18,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -291,6 +291,15 @@ public abstract class AppDatabase extends RoomDatabase {
                     + "`verified_transcript` BLOB NOT NULL, `changed_digest_hex` TEXT, "
                     + "`updated_at_ms` INTEGER NOT NULL, "
                     + "PRIMARY KEY(`owner_user_id`, `conversation_id`))");
+        }
+    };
+
+    /** Disappearing messages: per-row deadline and the conversation timer in seconds. */
+    public static final Migration MIGRATION_17_18 = new Migration(17, 18) {
+        @Override public void migrate(SupportSQLiteDatabase db) {
+            db.execSQL("ALTER TABLE `messages` ADD COLUMN `expiresAtEpochMs` INTEGER");
+            db.execSQL("ALTER TABLE `conversations` ADD COLUMN `disappearingSeconds` "
+                    + "INTEGER NOT NULL DEFAULT 0");
         }
     };
 

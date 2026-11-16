@@ -143,6 +143,7 @@ final class MessageStateApplier {
                 TimeAndJwt.isoToEpochMsOrNull(dto.getEditedAt()), TimeAndJwt.isoToEpochMsOrNull(dto.getDeletedAt()),
                 deleted ? "[]" : MessageMentionCodec.encode(dto.getMentions()), !deleted && dto.isMentionAll(),
                 dto.getChangeVersion() == null ? 0 : dto.getChangeVersion(), generation,
-                resolved.encrypted(), resolved.decryptFailed(), replyToEncrypted);
+                resolved.encrypted(), resolved.decryptFailed(), replyToEncrypted,
+                TimeAndJwt.isoToEpochMsOrNull(dto.getExpiresAt()));
     }
 }

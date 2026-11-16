@@ -29,6 +29,11 @@ public final class SystemEventFormatter {
         }
         int resId = stringResFor(payload.getType());
         Object[] args = payload.getArguments();
+        if (payload.getType() == SystemEventType.DISAPPEARING_SET && args.length == 2) {
+            args = new Object[] {args[0],
+                    com.nexachat.feature.chat.DisappearingDurations
+                            .fromSystemLabel(context, String.valueOf(args[1]))};
+        }
         if (args.length == 0) {
             return context.getString(resId);
         }
@@ -48,6 +53,8 @@ public final class SystemEventFormatter {
             case GROUP_ADMIN_PROMOTED -> R.string.system_event_group_admin_promoted;
             case E2EE_ENABLED -> R.string.system_event_e2ee_enabled;
             case E2EE_DISABLED -> R.string.system_event_e2ee_disabled;
+            case DISAPPEARING_SET -> R.string.system_event_disappearing_set;
+            case DISAPPEARING_OFF -> R.string.system_event_disappearing_off;
             // CALL_LOG resolves through CallLogResourceResolver and UNKNOWN never
             // reaches this switch because non-localized payloads return earlier.
             case CALL_LOG, UNKNOWN -> throw new IllegalStateException(
