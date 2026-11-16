@@ -224,7 +224,10 @@ public final class ContactsFragment extends Fragment {
         handler.removeCallbacks(hideBubble);
         binding.letterBubble.setText(letter);
         binding.letterBubble.setVisibility(View.VISIBLE);
-        float bubbleHeight = binding.letterBubble.getHeight();
+        // getHeight() is still 0 on the first activation because the bubble has
+        // not been laid out yet; the layout fixes its size via the dimen.
+        float bubbleHeight =
+                getResources().getDimensionPixelSize(R.dimen.letter_bubble_size);
         float min = binding.letterRail.getTop();
         float max = Math.max(min, binding.letterRail.getBottom() - bubbleHeight);
         float top = binding.letterRail.getTop() + anchorY - bubbleHeight / 2f;

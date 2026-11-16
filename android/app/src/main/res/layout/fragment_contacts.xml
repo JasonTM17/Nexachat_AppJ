@@ -114,14 +114,14 @@
 
     <TextView
         android:id="@+id/letterBubble"
-        android:layout_width="56dp"
-        android:layout_height="56dp"
+        android:layout_width="@dimen/letter_bubble_size"
+        android:layout_height="@dimen/letter_bubble_size"
         android:layout_gravity="top|end"
-        android:layout_marginEnd="52dp"
+        android:layout_marginEnd="@dimen/letter_bubble_margin_end"
         android:background="@drawable/bg_letter_bubble"
         android:gravity="center"
         android:importantForAccessibility="no"
-        android:minHeight="56dp"
+        android:minHeight="@dimen/letter_bubble_size"
         android:textAppearance="?attr/textAppearanceTitleLarge"
         android:textColor="?attr/colorOnPrimary"
         android:visibility="gone" />
