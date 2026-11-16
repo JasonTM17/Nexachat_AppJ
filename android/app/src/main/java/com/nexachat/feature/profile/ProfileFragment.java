@@ -597,9 +597,7 @@ public final class ProfileFragment extends Fragment {
         TextInputLayout layout = new TextInputLayout(
                 requireContext(),
                 null,
-                com.google.android.material.R.attr.textInputOutlinedStyle);
-        float radius = getResources().getDimension(R.dimen.corner_md);
-        layout.setBoxCornerRadii(radius, radius, radius, radius);
+                com.google.android.material.R.attr.textInputStyle);
         layout.setHint(getString(hint));
         layout.setStartIconDrawable(R.drawable.ic_lock);
         layout.setStartIconTintList(ColorStateList.valueOf(MaterialColors.getColor(

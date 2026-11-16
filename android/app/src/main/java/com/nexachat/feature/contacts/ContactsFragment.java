@@ -270,9 +270,7 @@ public final class ContactsFragment extends Fragment {
         TextInputLayout phoneLayout = new TextInputLayout(
                 requireContext(),
                 null,
-                com.google.android.material.R.attr.textInputOutlinedStyle);
-        float radius = getResources().getDimension(R.dimen.corner_md);
-        phoneLayout.setBoxCornerRadii(radius, radius, radius, radius);
+                com.google.android.material.R.attr.textInputStyle);
         phoneLayout.setEndIconMode(TextInputLayout.END_ICON_CLEAR_TEXT);
         addPhoneInput = new TextInputEditText(phoneLayout.getContext());
         addPhoneInput.setSingleLine(true);

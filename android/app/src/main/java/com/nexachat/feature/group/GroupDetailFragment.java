@@ -352,13 +352,10 @@ public final class GroupDetailFragment extends Fragment {
 
     private void showRenameDialog(@NonNull GroupDetailUiState state) {
         if (renameDialog == null) {
-            // Same outlined field + dialog padding as every other form dialog.
             TextInputLayout inputLayout = new TextInputLayout(
                     requireContext(),
                     null,
-                    com.google.android.material.R.attr.textInputOutlinedStyle);
-            float radius = getResources().getDimension(R.dimen.corner_md);
-            inputLayout.setBoxCornerRadii(radius, radius, radius, radius);
+                    com.google.android.material.R.attr.textInputStyle);
             inputLayout.setHint(getString(R.string.group_name_label));
             renameInput = new TextInputEditText(inputLayout.getContext());
             renameInput.setSingleLine(true);

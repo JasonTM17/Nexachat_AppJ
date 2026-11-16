@@ -77,9 +77,7 @@ public final class LabelEditorDialogFragment extends DialogFragment {
         nameLayout = new TextInputLayout(
                 requireContext(),
                 null,
-                com.google.android.material.R.attr.textInputOutlinedStyle);
-        float radius = getResources().getDimension(R.dimen.corner_md);
-        nameLayout.setBoxCornerRadii(radius, radius, radius, radius);
+                com.google.android.material.R.attr.textInputStyle);
         nameLayout.setHint(getString(R.string.label_name_hint));
         nameLayout.setCounterEnabled(true);
         nameLayout.setCounterMaxLength(LabelRules.MAX_NAME_CODE_POINTS);
