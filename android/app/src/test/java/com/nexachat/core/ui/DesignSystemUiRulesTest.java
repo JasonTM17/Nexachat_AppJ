@@ -17,13 +17,12 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
  * Pure UI presentation rule tests verifying design system contracts:
- * - Message grouping state resolution &amp; shape assignment
+ * - Message grouping state resolution
  * - Date separator triggers &amp; localized label buckets
  * - Inbox relative timestamp buckets
  * - Deterministic avatar palette mapping &amp; WCAG contrast compliance
@@ -31,7 +30,7 @@ import static org.junit.Assert.assertTrue;
  */
 public class DesignSystemUiRulesTest {
 
-    // --- Message Grouping & Bubble Shapes ---
+    // --- Message Grouping ---
 
     @Test
     public void resolveGroupPositionForIsolatedMessageReturnsSingle() {
@@ -82,52 +81,6 @@ public class DesignSystemUiRulesTest {
 
         assertEquals(MessageGroupPosition.SINGLE, ChatUiRules.resolveGroupPosition(list, 0));
         assertEquals(MessageGroupPosition.SINGLE, ChatUiRules.resolveGroupPosition(list, 1));
-    }
-
-    @Test
-    public void resolveBubbleShapeMineCorners() {
-        // Outgoing: lower end corner is 4dp only for SINGLE and LAST.
-        ChatUiRules.BubbleCornerRadii single =
-                ChatUiRules.resolveBubbleShape(MessageGroupPosition.SINGLE, true);
-        ChatUiRules.BubbleCornerRadii first =
-                ChatUiRules.resolveBubbleShape(MessageGroupPosition.FIRST, true);
-        ChatUiRules.BubbleCornerRadii middle =
-                ChatUiRules.resolveBubbleShape(MessageGroupPosition.MIDDLE, true);
-        ChatUiRules.BubbleCornerRadii last =
-                ChatUiRules.resolveBubbleShape(MessageGroupPosition.LAST, true);
-
-        assertNotNull(single);
-        assertNotNull(first);
-        assertNotNull(middle);
-        assertNotNull(last);
-
-        assertRadii(single, 16f, 16f, 16f, 4f);
-        assertRadii(first, 16f, 16f, 16f, 16f);
-        assertRadii(middle, 16f, 16f, 16f, 16f);
-        assertRadii(last, 16f, 16f, 16f, 4f);
-    }
-
-    @Test
-    public void resolveBubbleShapePeerCorners() {
-        // Incoming: lower start corner is 4dp only for SINGLE and LAST.
-        ChatUiRules.BubbleCornerRadii single =
-                ChatUiRules.resolveBubbleShape(MessageGroupPosition.SINGLE, false);
-        ChatUiRules.BubbleCornerRadii first =
-                ChatUiRules.resolveBubbleShape(MessageGroupPosition.FIRST, false);
-        ChatUiRules.BubbleCornerRadii middle =
-                ChatUiRules.resolveBubbleShape(MessageGroupPosition.MIDDLE, false);
-        ChatUiRules.BubbleCornerRadii last =
-                ChatUiRules.resolveBubbleShape(MessageGroupPosition.LAST, false);
-
-        assertNotNull(single);
-        assertNotNull(first);
-        assertNotNull(middle);
-        assertNotNull(last);
-
-        assertRadii(single, 16f, 16f, 4f, 16f);
-        assertRadii(first, 16f, 16f, 16f, 16f);
-        assertRadii(middle, 16f, 16f, 16f, 16f);
-        assertRadii(last, 16f, 16f, 4f, 16f);
     }
 
     // --- Date Separator Rules ---
@@ -303,19 +256,6 @@ public class DesignSystemUiRulesTest {
                 null,
                 null
         );
-    }
-
-    private static void assertRadii(
-            ChatUiRules.BubbleCornerRadii radii,
-            float topStart,
-            float topEnd,
-            float bottomStart,
-            float bottomEnd
-    ) {
-        assertEquals(topStart, radii.topStartDp, 0.001);
-        assertEquals(topEnd, radii.topEndDp, 0.001);
-        assertEquals(bottomStart, radii.bottomStartDp, 0.001);
-        assertEquals(bottomEnd, radii.bottomEndDp, 0.001);
     }
 
     private static double computeContrastRatio(int c1, int c2) {

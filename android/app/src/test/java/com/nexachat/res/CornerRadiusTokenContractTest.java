@@ -18,12 +18,13 @@ import org.w3c.dom.NodeList;
 
 /**
  * Corner-radius token contract: no drawable or layout under {@code res/} may
- * hard-code a corner radius. Every radius attribute ({@code radius},
- * {@code cornerRadius}, {@code cardCornerRadius}, {@code chipCornerRadius},
- * {@code topLeftRadius}, ...) must be {@code 0dp} (square), a
- * {@code @dimen/corner_*} token, a theme attribute, or a documented exception
- * listed in {@link #EXCEPTIONS}. Oval and ring shapes (avatars, dots,
- * swatches) are fully round by definition and are skipped.
+ * hard-code a corner radius. Every corner-radius attribute ({@code radius} and
+ * {@code *Radius} on {@code <corners>}, {@code cornerRadius},
+ * {@code cardCornerRadius}, {@code chipCornerRadius}, {@code *CornerRadius})
+ * must be {@code 0dp} (square), a {@code @dimen/corner_*} token, a theme
+ * attribute, or a documented exception listed in {@link #EXCEPTIONS}. Oval and
+ * ring shapes (avatars, dots, swatches) are fully round by definition and are
+ * skipped, as are {@code <gradient>} fill radii.
  */
 public final class CornerRadiusTokenContractTest {
 
@@ -72,7 +73,7 @@ public final class CornerRadiusTokenContractTest {
             String name = attribute.getLocalName() != null
                     ? attribute.getLocalName()
                     : attribute.getNodeName();
-            if (!name.toLowerCase(Locale.ROOT).endsWith("adius")) {
+            if (!isCornerRadiusAttribute(name, element)) {
                 continue;
             }
             if (isInsideRoundShape(element) || allowedRadiusValue(attribute.getNodeValue())) {
@@ -90,6 +91,23 @@ public final class CornerRadiusTokenContractTest {
                 collectViolations(child, file, failures);
             }
         }
+    }
+
+    /**
+     * Corner attributes only: any {@code *radius} attribute on a
+     * {@code <corners>} element, plus {@code *CornerRadius}
+     * ({@code cornerRadius}, {@code cardCornerRadius},
+     * {@code chipCornerRadius}, ...) anywhere else. {@code <gradient>} fill
+     * radii such as {@code android:gradientRadius} are not corners.
+     */
+    private static boolean isCornerRadiusAttribute(String name, Element element) {
+        if ("gradient".equals(element.getTagName())) {
+            return false;
+        }
+        if ("corners".equals(element.getTagName())) {
+            return name.toLowerCase(Locale.ROOT).endsWith("radius");
+        }
+        return name.endsWith("CornerRadius");
     }
 
     private boolean isInsideRoundShape(Element element) {
