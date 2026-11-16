@@ -56,11 +56,13 @@ public final class ChatInteractionsViews {
 
     private static final class MessageActionEntry {
         final String label;
+        final String caption;
         final Runnable callback;
         final MessageActionKind kind;
 
-        MessageActionEntry(String label, Runnable callback, MessageActionKind kind) {
+        MessageActionEntry(String label, String caption, Runnable callback, MessageActionKind kind) {
             this.label = label;
+            this.caption = caption;
             this.callback = callback;
             this.kind = kind;
         }
@@ -82,37 +84,53 @@ public final class ChatInteractionsViews {
                 && !message.isDeleted() && !undecryptable;
         if (sent) {
             entries.add(new MessageActionEntry(context.getString(R.string.action_reply),
+                    context.getString(R.string.action_reply_desc),
                     () -> actions.reply(message), MessageActionKind.REPLY));
         }
         if (message.getContent() != null && !message.getContent().isBlank()
                 && !message.isDeleted() && !undecryptable) {
             entries.add(new MessageActionEntry(context.getString(R.string.action_copy),
+                    context.getString(R.string.action_copy_desc),
                     () -> copy(context, message.getContent()), MessageActionKind.COPY));
         }
         if (sent && message.getContent() != null && !message.getContent().isBlank()
                 && !message.isEncrypted()
                 && ForwardFilter.canForward(message.getType(), message.isDeleted())) {
             entries.add(new MessageActionEntry(context.getString(R.string.action_forward),
+                    context.getString(R.string.action_forward_desc),
                     () -> actions.forward(message), MessageActionKind.FORWARD));
         }
         if (canPin && sent) {
             entries.add(new MessageActionEntry(context.getString(pinned ? R.string.action_unpin : R.string.action_pin),
+                    context.getString(pinned ? R.string.action_unpin_desc : R.string.action_pin_desc),
                     () -> actions.pin(message), MessageActionKind.PIN));
         }
         if (message.getMine() && sent && !message.isEncrypted()
                 && "TEXT".equals(message.getType())) {
             entries.add(new MessageActionEntry(context.getString(R.string.action_edit),
+                    context.getString(R.string.action_edit_desc),
                     () -> actions.edit(message), MessageActionKind.EDIT));
         }
         if (deleteAction != RecallWindowRules.DeleteAction.NONE) {
-            int actionLabel = switch (deleteAction) {
-                case RECALL -> R.string.action_recall;
-                case DELETE_FOR_ME -> R.string.action_delete_for_me;
-                case ADMIN_DELETE -> R.string.action_admin_delete;
-                case NONE -> throw new IllegalStateException("No delete action label");
+            int actionLabel;
+            int actionCaption;
+            switch (deleteAction) {
+                case RECALL -> {
+                    actionLabel = R.string.action_recall;
+                    actionCaption = R.string.action_recall_desc;
+                }
+                case DELETE_FOR_ME -> {
+                    actionLabel = R.string.action_delete_for_me;
+                    actionCaption = R.string.action_delete_for_me_desc;
+                }
+                case ADMIN_DELETE -> {
+                    actionLabel = R.string.action_admin_delete;
+                    actionCaption = R.string.action_admin_delete_desc;
+                }
                 default -> throw new IllegalStateException("Unknown delete action");
-            };
+            }
             entries.add(new MessageActionEntry(context.getString(actionLabel),
+                    context.getString(actionCaption),
                     () -> confirmDelete(context, message, deleteAction, actions), MessageActionKind.DELETE));
         }
         BottomSheetDialog dialog = new BottomSheetDialog(context);
@@ -133,7 +151,7 @@ public final class ChatInteractionsViews {
         LayoutInflater inflater = LayoutInflater.from(context);
         for (MessageActionEntry entry : entries) {
             View row = inflater.inflate(R.layout.item_message_action_row, actionList, false);
-            bindMessageActionRow(row, entry.label, entry.kind);
+            bindMessageActionRow(row, entry.label, entry.caption, entry.kind);
             row.setOnClickListener(v -> {
                 dialog.dismiss();
                 entry.callback.run();
@@ -154,15 +172,19 @@ public final class ChatInteractionsViews {
     private static void bindMessageActionRow(
             @NonNull View row,
             @NonNull CharSequence label,
+            @NonNull CharSequence caption,
             @NonNull MessageActionKind kind) {
         TextView actionLabel = row.findViewById(R.id.actionLabel);
+        TextView actionCaption = row.findViewById(R.id.actionCaption);
         ImageView actionIcon = row.findViewById(R.id.actionIcon);
         FrameLayout actionIconTile = row.findViewById(R.id.actionIconTile);
         actionLabel.setText(label);
+        actionCaption.setText(caption);
         int iconRes;
         int tileBg = R.drawable.bg_settings_tile_tint;
         int iconAttr = com.google.android.material.R.attr.colorOnSurface;
         int labelAttr = com.google.android.material.R.attr.colorOnSurface;
+        int captionAttr = com.google.android.material.R.attr.colorOnSurfaceVariant;
         switch (kind) {
             case REPLY -> {
                 iconRes = R.drawable.ic_reply;
@@ -180,6 +202,7 @@ public final class ChatInteractionsViews {
                 tileBg = R.drawable.bg_settings_tile_error;
                 iconAttr = com.google.android.material.R.attr.colorError;
                 labelAttr = com.google.android.material.R.attr.colorError;
+                captionAttr = com.google.android.material.R.attr.colorError;
             }
             default -> throw new IllegalStateException("Unknown message action");
         }
@@ -188,6 +211,7 @@ public final class ChatInteractionsViews {
         ImageViewCompat.setImageTintList(actionIcon, ColorStateList.valueOf(
                 MaterialColors.getColor(actionIcon, iconAttr)));
         actionLabel.setTextColor(MaterialColors.getColor(actionLabel, labelAttr));
+        actionCaption.setTextColor(MaterialColors.getColor(actionCaption, captionAttr));
     }
 
     private static HorizontalScrollView reactionRow(Context context,

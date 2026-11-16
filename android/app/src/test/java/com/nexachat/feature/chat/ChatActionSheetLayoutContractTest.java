@@ -167,6 +167,24 @@ public final class ChatActionSheetLayoutContractTest {
     }
 
     @Test
+    public void actionRowsBindATitleAndOneLineCaption() throws Exception {
+        Document row = parse("src/main/res/layout/item_message_action_row.xml");
+        Element caption = findById(row, "actionCaption");
+        assertEquals("1", caption.getAttributeNS(ANDROID, "maxLines"));
+        assertEquals("end", caption.getAttributeNS(ANDROID, "ellipsize"));
+
+        String source = readSource("feature/chat/ChatInteractionsViews.java");
+        int start = source.indexOf("private static void bindMessageActionRow(");
+        int end = source.indexOf("private static HorizontalScrollView reactionRow(", start);
+        assertTrue("action row binder must exist", start >= 0 && end > start);
+        String body = source.substring(start, end);
+        assertTrue("binder must fill the caption from the entry",
+                body.contains("R.id.actionCaption") && body.contains("actionCaption.setText"));
+        assertTrue("delete captions must follow the error tint",
+                body.contains("captionAttr"));
+    }
+
+    @Test
     public void mentionPickerSitsFlatOnTheSurfaceInBothOrientations() throws Exception {
         for (String directory : new String[]{"layout", "layout-land"}) {
             Document chat = parse("src/main/res/" + directory + "/fragment_chat.xml");

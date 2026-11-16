@@ -31,9 +31,23 @@ public final class MessageActionRowLayoutContractTest {
         Element root = loadRoot("item_message_action_row.xml");
         assertEquals("wrap_content", root.getAttributeNS(ANDROID, "layout_height"));
         assertEquals("@dimen/min_touch_target", root.getAttributeNS(ANDROID, "minHeight"));
+        Element column = findById("item_message_action_row.xml", "actionTextColumn");
+        assertEquals("0dp", column.getAttributeNS(ANDROID, "layout_width"));
+        assertEquals("1", column.getAttributeNS(ANDROID, "layout_weight"));
         Element label = findById("item_message_action_row.xml", "actionLabel");
-        assertEquals("0dp", label.getAttributeNS(ANDROID, "layout_width"));
-        assertEquals("1", label.getAttributeNS(ANDROID, "layout_weight"));
+        assertEquals("match_parent", label.getAttributeNS(ANDROID, "layout_width"));
+    }
+
+    @Test
+    public void actionCaptionIsASingleLineSupportingText() throws Exception {
+        Element caption = findById("item_message_action_row.xml", "actionCaption");
+        assertEquals("wrap_content", caption.getAttributeNS(ANDROID, "layout_height"));
+        assertEquals("1", caption.getAttributeNS(ANDROID, "maxLines"));
+        assertEquals("end", caption.getAttributeNS(ANDROID, "ellipsize"));
+        assertEquals("?attr/textAppearanceBodySmall",
+                caption.getAttributeNS(ANDROID, "textAppearance"));
+        assertEquals("?attr/colorOnSurfaceVariant",
+                caption.getAttributeNS(ANDROID, "textColor"));
     }
 
     @Test
