@@ -125,6 +125,19 @@ public final class SheetScaffoldContractTest {
     }
 
     @Test
+    public void forwardPickerRevalidatesARestoredSelectionAgainstLiveTargets() throws Exception {
+        String sheet = read("com/nexachat/feature/chat/ForwardPickerSheet.java");
+        int start = sheet.indexOf("void onViewCreated(");
+        int end = sheet.indexOf("void onStart(", start);
+        assertTrue("onViewCreated must exist", start >= 0 && end > start);
+        String body = sheet.substring(start, end);
+        assertTrue("a restored selection must be checked against the "
+                        + "submitted targets before Send re-enables",
+                body.contains("ForwardPickerRules.retainedSelectedId")
+                        && body.contains("forwardTargets()"));
+    }
+
+    @Test
     public void actionRowsKeepTheScaffoldMetrics() throws Exception {
         Document row = parse(res("layout/item_message_action_row.xml"));
         assertEquals("@dimen/sheet_action_row_min_height",

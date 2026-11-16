@@ -13,6 +13,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
+import com.nexachat.core.ui.ForwardPickerRules;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.databinding.DialogForwardBinding;
 import com.nexachat.feature.chat.adapter.ForwardTargetAdapter;
@@ -75,6 +76,13 @@ public final class ForwardPickerSheet extends NexaBottomSheetFragment {
             selectedId = savedInstanceState.getString(STATE_SELECTED_ID);
         }
         List<ConversationSummary> conversations = host.forwardTargets();
+        // A restored selection may name a conversation that left the list;
+        // only a live target may keep Send enabled.
+        List<String> targetIds = new ArrayList<>(conversations.size());
+        for (ConversationSummary item : conversations) {
+            targetIds.add(item.getId());
+        }
+        selectedId = ForwardPickerRules.retainedSelectedId(selectedId, targetIds);
         binding.forwardList.setLayoutManager(new LinearLayoutManager(requireContext()));
         adapter = new ForwardTargetAdapter(id -> {
             selectedId = id;
