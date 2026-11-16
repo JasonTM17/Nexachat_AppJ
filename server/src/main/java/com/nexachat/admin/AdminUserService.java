@@ -178,11 +178,12 @@ public class AdminUserService {
     @Transactional
     public void suspend(UUID targetId, String reason, UUID actorId, User.Role actorRole, String ip) {
         requireReason(reason);
+        int activeAdmins = lockedAdminCount();
         User target = requireActionableTarget(targetId, actorId, actorRole);
         // The final administrator cannot lose their account — demotion has the
         // same guard, and suspension is the operational equivalent.
         if (target.getRole() == User.Role.ADMIN
-                && lockedAdminCount() <= 1) {
+                && activeAdmins <= 1) {
             denyAudit(actorId, actorRole, "USER_SUSPEND", targetId, reason, ip, "last-admin");
             throw ApiException.of(ApiErrorCode.LAST_ADMIN, "Cannot suspend the last admin");
         }
@@ -237,13 +238,14 @@ public class AdminUserService {
                     "self-role-change");
             throw ApiException.of(ApiErrorCode.FORBIDDEN, "You cannot change your own role");
         }
+        int activeAdmins = lockedAdminCount();
         User target = userRepository.findByIdForUpdate(targetId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
         if (target.getDeletedAt() != null) {
             throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
         }
         if (target.getRole() == User.Role.ADMIN && newRole != User.Role.ADMIN
-                && lockedAdminCount() <= 1) {
+                && activeAdmins <= 1) {
             denyAudit(actorId, actorRole, "USER_CHANGE_ROLE", targetId, reason, ip, "last-admin");
             throw ApiException.of(ApiErrorCode.LAST_ADMIN, "Cannot demote the last admin");
         }
@@ -262,7 +264,7 @@ public class AdminUserService {
      */
     private int lockedAdminCount() {
         return jdbcTemplate.queryForList(
-                "SELECT id FROM users WHERE role = 'ADMIN' AND deleted_at IS NULL FOR UPDATE",
+                "SELECT id FROM users WHERE role = 'ADMIN' AND deleted_at IS NULL ORDER BY id FOR UPDATE",
                 UUID.class).size();
     }
 
