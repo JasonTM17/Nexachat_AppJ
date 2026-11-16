@@ -946,6 +946,9 @@ public final class ChatViewModel extends ViewModel {
                         } else if (item != null && item.getError() != null) {
                             autoTranslateRequested.remove(id);
                             putTranslation(id, TranslationUiState.error(target, item.getError()));
+                        } else {
+                            // Request-level failure or an omitted id: allow a later retry.
+                            autoTranslateRequested.remove(id);
                         }
                     }
                 }, ignored -> pendingIds.forEach(autoTranslateRequested::remove)));
