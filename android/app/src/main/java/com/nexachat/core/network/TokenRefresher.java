@@ -34,6 +34,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.inject.Inject;
 import javax.inject.Provider;
 import javax.inject.Singleton;
@@ -42,6 +44,8 @@ import retrofit2.Response;
 /** Serializes token rotation shared by startup restoration and OkHttp 401 recovery. */
 @Singleton
 public final class TokenRefresher {
+
+    private static final Logger LOGGER = Logger.getLogger("TokenRefresher");
 
     private static final Scheduler SESSION_SIGNAL_DISPATCHER =
             Schedulers.from(Executors.newSingleThreadExecutor(task -> {
@@ -341,25 +345,37 @@ public final class TokenRefresher {
                 bootstrapComplete = true;
                 return;
             }
-            SessionSnapshot snapshot = tokenStore.readSessionSnapshot().blockingGet();
-            if (snapshot.getLifecycle() == SessionSnapshot.Lifecycle.ACTIVE) {
-                sessionEpoch.set(snapshot.getEpoch());
-                admissionOpen = true;
-            } else if (snapshot.getEpoch() == 0L) {
-                long epoch = tokenStore.bootstrapLegacySessionIfNeeded().blockingGet();
-                if (epoch > 0L) {
-                    sessionEpoch.set(epoch);
+            try {
+                SessionSnapshot snapshot = tokenStore.readSessionSnapshot().blockingGet();
+                if (snapshot.getLifecycle() == SessionSnapshot.Lifecycle.ACTIVE) {
+                    sessionEpoch.set(snapshot.getEpoch());
                     admissionOpen = true;
+                } else if (snapshot.getEpoch() == 0L) {
+                    long epoch = tokenStore.bootstrapLegacySessionIfNeeded().blockingGet();
+                    if (epoch > 0L) {
+                        sessionEpoch.set(epoch);
+                        admissionOpen = true;
+                    }
+                } else {
+                    sessionEpoch.set(snapshot.getEpoch());
+                    admissionOpen = false;
+                    closingOrClosed = snapshot.getLifecycle() != SessionSnapshot.Lifecycle.ACTIVE;
                 }
-            } else {
-                sessionEpoch.set(snapshot.getEpoch());
-                admissionOpen = false;
-                closingOrClosed = snapshot.getLifecycle() != SessionSnapshot.Lifecycle.ACTIVE;
-            }
-            bootstrapComplete = true;
-            if (admissionOpen) {
-                queuedSessionSignals.onNext(new SessionSignal.AdmissionChanged(
-                        sessionEpoch.get(), true));
+                bootstrapComplete = true;
+                if (admissionOpen) {
+                    queuedSessionSignals.onNext(new SessionSignal.AdmissionChanged(
+                            sessionEpoch.get(), true));
+                }
+            } catch (Exception bootstrapFailure) {
+                // bootstrapComplete stays false so the next fence retries; a
+                // permanently failing store degrades to fail-closed.
+                if (bootstrapFailure instanceof InterruptedException
+                        || bootstrapFailure.getCause() instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                LOGGER.log(Level.WARNING,
+                        "session admission bootstrap failed; staying fenced out",
+                        bootstrapFailure);
             }
         }
     }

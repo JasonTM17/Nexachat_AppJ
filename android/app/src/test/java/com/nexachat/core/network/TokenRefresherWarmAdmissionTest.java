@@ -17,6 +17,7 @@ import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
+import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -114,6 +115,37 @@ public final class TokenRefresherWarmAdmissionTest {
         assertTrue(ran.get());
         assertTrue(refresher.isSessionCurrent(7L));
         assertEquals(7L, refresher.sessionEpoch());
+    }
+
+    @Test
+    public void fencedCallsFailClosedWhenSnapshotReadFailsAndAdmitAfterRecovery() {
+        SessionSnapshot active = new SessionSnapshot(7L, SessionSnapshot.Lifecycle.ACTIVE);
+        TokenStore store = storeWithSnapshot(active);
+        AtomicBoolean storageFailed = new AtomicBoolean(true);
+        when(store.readSessionSnapshot()).thenAnswer(ignored -> storageFailed.get()
+                ? Single.<SessionSnapshot>error(new IOException("snapshot store corrupt"))
+                : Single.just(active));
+        TokenRefresher refresher = new TokenRefresher(
+                store, new SessionEvents(), (Provider<AuthApi>) () -> mock(AuthApi.class));
+
+        // A corrupt or failing snapshot store must not throw out of the fences
+        // (they are reachable on the main thread); every call stays fenced out
+        // and retries the bootstrap instead of latching a failed state.
+        assertEquals(0L, refresher.sessionEpoch());
+        assertFalse(refresher.isSessionCurrent(7L));
+        AtomicBoolean ran = new AtomicBoolean();
+        assertFalse(refresher.runIfSessionCurrent(7L, () -> ran.set(true)));
+        assertFalse(ran.get());
+        refresher.warmSessionAdmission();
+        assertFalse(refresher.isSessionCurrent(7L));
+        assertFalse(refresher.sessionAdmission().blockingFirst());
+
+        // Once the store recovers, the next fenced call bootstraps and admits.
+        storageFailed.set(false);
+        assertTrue(refresher.isSessionCurrent(7L));
+        assertEquals(7L, refresher.sessionEpoch());
+        assertTrue(refresher.runIfSessionCurrent(7L, () -> ran.set(true)));
+        assertTrue(ran.get());
     }
 
     @Test

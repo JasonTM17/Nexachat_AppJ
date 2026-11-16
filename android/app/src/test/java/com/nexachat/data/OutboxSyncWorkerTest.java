@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -79,7 +80,7 @@ public final class OutboxSyncWorkerTest {
         // A cancelled flush (session rotated/closed mid-send) must not churn
         // WorkManager retries — the new session enqueues its own work.
         when(messageRepository.flushOutboxForWorker())
-                .thenReturn(Completable.error(new java.util.concurrent.CancellationException(
+                .thenReturn(Completable.error(new CancellationException(
                         "Sync session changed")));
         OfflineOutboxDao offlineOutboxDao = emptyDao();
 
