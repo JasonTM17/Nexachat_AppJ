@@ -7,7 +7,6 @@ import android.os.Bundle;
 import android.text.format.DateFormat;
 import android.view.Menu;
 import android.view.View;
-import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.util.Pair;
@@ -366,7 +365,7 @@ public final class ArchiveFragment extends Fragment {
         if (item.getLink() != null) {
             String safeUrl = ArchiveLinkRules.safeHttpsUrl(item.getLink().getUrl());
             if (safeUrl == null) {
-                Toast.makeText(requireContext(), R.string.archive_link_unsafe, Toast.LENGTH_SHORT).show();
+                showArchiveSnackbar(R.string.archive_link_unsafe);
                 return;
             }
             Intent share = new Intent(Intent.ACTION_SEND)
@@ -390,7 +389,7 @@ public final class ArchiveFragment extends Fragment {
     private void openLink(@Nullable String rawUrl) {
         String safeUrl = ArchiveLinkRules.safeHttpsUrl(rawUrl);
         if (safeUrl == null) {
-            Toast.makeText(requireContext(), R.string.archive_link_unsafe, Toast.LENGTH_SHORT).show();
+            showArchiveSnackbar(R.string.archive_link_unsafe);
             return;
         }
         try {
@@ -454,9 +453,14 @@ public final class ArchiveFragment extends Fragment {
     }
 
     private void showOpenFailure() {
-        if (isAdded()) {
-            Toast.makeText(requireContext(), R.string.archive_open_failed, Toast.LENGTH_SHORT).show();
+        showArchiveSnackbar(R.string.archive_open_failed);
+    }
+
+    private void showArchiveSnackbar(int messageId) {
+        if (!isAdded() || binding == null) {
+            return;
         }
+        Snackbar.make(binding.getRoot(), messageId, Snackbar.LENGTH_SHORT).show();
     }
 
     @NonNull

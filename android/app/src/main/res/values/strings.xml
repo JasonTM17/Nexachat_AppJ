@@ -375,6 +375,7 @@
     <string name="voice_release_to_cancel">Release to cancel</string>
     <string name="voice_too_short">Hold to record, release to send</string>
     <string name="voice_hold_to_record">Hold to record</string>
+    <string name="voice_recording_active_hint">Tap mic to send</string>
     <string name="voice_permission_required">Microphone permission is required to record voice messages</string>
     <string name="voice_mic_rationale">Microphone access is needed to record voice messages.</string>
     <string name="voice_play">Play voice message</string>

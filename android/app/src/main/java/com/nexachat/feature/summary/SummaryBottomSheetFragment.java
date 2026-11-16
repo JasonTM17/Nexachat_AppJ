@@ -15,7 +15,6 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
@@ -23,6 +22,7 @@ import androidx.lifecycle.ViewModelProvider;
 import com.nexachat.feature.ui.NexaBottomSheetFragment;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
+import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.core.ui.SummaryUiRules;
 import com.nexachat.databinding.BottomSheetSummaryBinding;
@@ -341,8 +341,8 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
                 clipboard.setPrimaryClip(ClipData.newPlainText("summary", text));
             }
             requireView().performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
-            Toast.makeText(requireContext(), R.string.summary_copied_to_clipboard, Toast.LENGTH_SHORT)
-                    .show();
+            Snackbar.make(binding.getRoot(), R.string.summary_copied_to_clipboard,
+                    Snackbar.LENGTH_SHORT).show();
         });
         binding.summaryShare.setOnClickListener(v -> {
             SummaryUiState state = viewModel.state().getValue();

@@ -31,15 +31,7 @@
         android:layout_height="match_parent"
         android:visibility="gone" />
 
-    <ProgressBar
-        android:id="@+id/pollNextPageProgress"
-        style="?android:attr/progressBarStyle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="@dimen/space_md"
-        android:indeterminate="true"
-        android:visibility="gone" />
+    <com.google.android.material.progressindicator.CircularProgressIndicator android:id="@+id/pollNextPageProgress" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="bottom|center_horizontal" android:layout_marginBottom="@dimen/space_md" android:indeterminate="true" android:visibility="gone" app:indicatorSize="@dimen/progress_indicator_size" />
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/pollAdd"
