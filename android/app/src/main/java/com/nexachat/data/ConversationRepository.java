@@ -136,6 +136,9 @@ public final class ConversationRepository implements AutoCloseable {
     private final FlowableProcessor<Boolean> refreshRequests = PublishProcessor.<Boolean>create().toSerialized();
     /** Group ids updated by the server, consumed only by currently-open detail screens. */
     private final FlowableProcessor<String> groupUpdateIds = PublishProcessor.<String>create().toSerialized();
+    /** Announces that the server removed this user from a group; carries the group title for the notice. */
+    private final FlowableProcessor<SelfRemovalNotice> selfRemovals =
+            PublishProcessor.<SelfRemovalNotice>create().toSerialized();
     /**
      * Groups just created by this device whose row may not yet be present in
      * a GET response already in flight. Entries are removed once a fetch lists
@@ -305,6 +308,15 @@ public final class ConversationRepository implements AutoCloseable {
                 .onBackpressureBuffer(8, () -> { }, BackpressureOverflowStrategy.DROP_OLDEST)
                 .filter(conversationId::equals)
                 .map(ignored -> Boolean.TRUE);
+    }
+
+    /**
+     * Emits once per group the server removes this user from, after the local
+     * row and its cache were deleted. UI surfaces it as a "removed" notice.
+     */
+    @NonNull
+    public Flowable<SelfRemovalNotice> selfRemovals() {
+        return selfRemovals;
     }
 
     /**
@@ -775,6 +787,11 @@ public final class ConversationRepository implements AutoCloseable {
                 appDatabase.runInTransaction(() ->
                         LocalConversationCleaner.deleteInTransaction(
                                 appDatabase, conversationId, ownerUserId));
+                if ("MEMBER_REMOVED".equals(update.getChange())) {
+                    // The row vanishes locally; without this notice the
+                    // removal is silent for the evicted member.
+                    selfRemovals.onNext(new SelfRemovalNotice(conversationId, update.getTitle()));
+                }
             }).subscribeOn(Schedulers.io()).andThen(Single.just(Boolean.TRUE));
         }));
     }
@@ -1763,6 +1780,10 @@ public final class ConversationRepository implements AutoCloseable {
 
     private static Result<Void> successVoid() {
         return new Result.Success<>(null);
+    }
+
+    /** Payload for {@link #selfRemovals()}: the evicted group, titled when the frame carried it. */
+    public record SelfRemovalNotice(@NonNull String conversationId, @Nullable String title) {
     }
 
     private static final class InboxFetch {
