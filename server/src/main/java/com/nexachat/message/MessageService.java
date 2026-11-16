@@ -284,6 +284,16 @@ public class MessageService {
     @Transactional
     public SendResult send(UUID senderId, UUID conversationId, SendMessageRequest request) {
         requireMember(conversationId, senderId);
+        // Belt-and-braces: the JWT filter and the STOMP fence already reject a
+        // suspended account, but send is a state-changing path and must not
+        // depend on every caller honoring the same check.
+        if (userRepository != null) {
+            userRepository.findAuthValidityById(senderId)
+                    .filter(com.nexachat.user.UserAuthValidity::suspended)
+                    .ifPresent(suspended -> {
+                        throw ApiException.of(ApiErrorCode.ACCOUNT_SUSPENDED, "Account is suspended");
+                    });
+        }
         validatePayload(request);
 
         Message.Type type = parseType(request.type());

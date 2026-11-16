@@ -54,7 +54,7 @@
                 android:layout_weight="1"
                 android:background="@android:color/transparent"
                 android:hint="@string/search_label"
-                android:imeOptions="actionSearch"
+                android:imeOptions="actionSearch|flagNoExtractUi"
                 android:inputType="text"
                 android:minHeight="@dimen/min_touch_target"
                 android:textColor="?attr/colorOnSurface"

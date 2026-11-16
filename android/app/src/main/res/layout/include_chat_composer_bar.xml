@@ -30,7 +30,7 @@
         android:background="@drawable/bg_composer_field"
         android:hint="@string/chat_input_hint"
         android:inputType="textCapSentences|textMultiLine"
-        android:imeOptions="actionNone"
+        android:imeOptions="actionNone|flagNoExtractUi"
         android:gravity="start|center_vertical"
         android:maxLines="6"
         android:minHeight="@dimen/min_touch_target"

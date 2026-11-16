@@ -156,7 +156,16 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
             Map.entry("self_group_request", roleScenario("SELF_GROUP_REQUEST",
                     "request owner sees their own request; another member cannot see it",
                     "pending group request and a different authenticated member",
-                    test("com.nexachat.invite.GroupInviteFlowIT", "endToEndInviteLinkAndApprovalFlow"))));
+                    test("com.nexachat.invite.GroupInviteFlowIT", "endToEndInviteLinkAndApprovalFlow"))),
+            Map.entry("admin_staff", roleScenario("ADMIN_STAFF",
+                    "staff account (ADMIN or MODERATOR role)=allowed; ordinary user=403; anonymous=401",
+                    "configured admin-phone account, promoted moderator, and ordinary user",
+                    test("com.nexachat.auth.AdminRouteAuthorizationIT",
+                            "adminReadEndpointsAllowStaffAndDenyUsers"),
+                    test("com.nexachat.auth.AdminRouteAuthorizationIT",
+                            "adminMutationEndpointsAllowAdminAndDenyModerator"),
+                    test("com.nexachat.auth.AdminRouteAuthorizationIT",
+                            "anonymousAdminRequestsAreUnauthorized"))));
     private static final Map<String, RoleScenario> STOMP_ROLE_SCENARIOS = Map.of(
             "stomp_conversation_member", roleScenario("CONVERSATION_MEMBER",
                     "current member=allowed; outsider, former member, expired or revoked session=denied",
@@ -415,7 +424,8 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
         RoleFixtures fixtures = createRoleFixtures();
         List<Route> routes = readMatrix();
         Set<String> expectedProbeIds = routes.stream()
-                .filter(route -> !Set.of("AUTHENTICATED", "PUBLIC_AUTH", "OPERATOR_ADMIN")
+                .filter(route -> !Set.of("AUTHENTICATED", "PUBLIC_AUTH", "OPERATOR_ADMIN",
+                        "ADMIN_STAFF")
                         .contains(route.policy()))
                 .map(Route::probeId)
                 .collect(Collectors.toSet());

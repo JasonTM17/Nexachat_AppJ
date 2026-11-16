@@ -20,10 +20,11 @@
         app:guidelineUseRtl="true" />
     <LinearLayout
         android:id="@+id/bubbleContainer"
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:background="@drawable/bg_message_bubble_incoming"
-        app:layout_constrainedWidth="true"
+        app:layout_constraintWidth_default="wrap"
+        app:layout_constraintWidth_max="@dimen/bubble_max_width"
         android:orientation="vertical"
         android:paddingHorizontal="@dimen/bubble_content_inset"
         android:paddingVertical="@dimen/space_sm"

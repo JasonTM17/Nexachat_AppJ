@@ -39,6 +39,9 @@ public class AuthSecurityErrorHandler implements AuthenticationEntryPoint, Acces
         if (code == ApiErrorCode.TOKEN_EXPIRED) {
             write(response, HttpServletResponse.SC_UNAUTHORIZED,
                     ApiErrorCode.TOKEN_EXPIRED, "Access token expired");
+        } else if (code == ApiErrorCode.ACCOUNT_SUSPENDED) {
+            write(response, HttpServletResponse.SC_FORBIDDEN,
+                    ApiErrorCode.ACCOUNT_SUSPENDED, "Account is suspended");
         } else if (code == ApiErrorCode.TOKEN_INVALID) {
             write(response, HttpServletResponse.SC_UNAUTHORIZED,
                     ApiErrorCode.TOKEN_INVALID, "Access token is not valid");

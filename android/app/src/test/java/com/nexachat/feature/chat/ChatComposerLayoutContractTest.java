@@ -29,7 +29,7 @@ public final class ChatComposerLayoutContractTest {
         assertTrue(input.getAttributeNS(ANDROID, "inputType").contains("textMultiLine"));
         assertEquals("wrap_content", input.getAttributeNS(ANDROID, "layout_height"));
         assertEquals("6", input.getAttributeNS(ANDROID, "maxLines"));
-        assertEquals("actionNone", input.getAttributeNS(ANDROID, "imeOptions"));
+        assertTrue(input.getAttributeNS(ANDROID, "imeOptions").contains("actionNone"));
     }
 
     @Test public void replyContextIsAdjacentToInputInBothOrientations() throws Exception {

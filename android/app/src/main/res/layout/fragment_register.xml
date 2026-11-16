@@ -56,7 +56,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_md"
-                    android:background="?attr/colorSurfaceContainerLow"
+                    android:background="@drawable/bg_auth_mode_switch"
                     android:gravity="center_vertical"
                     android:minHeight="@dimen/min_touch_target"
                     android:orientation="horizontal"

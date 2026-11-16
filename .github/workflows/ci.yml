@@ -198,6 +198,33 @@ jobs:
         working-directory: tools/firebase-rules
         run: npm test
 
+  admin-web:
+    runs-on: ubuntu-latest
+    steps:
+      # Full commit SHA pins are paired with the upstream release tags.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: admin-web/package-lock.json
+      - name: Install dependencies
+        working-directory: admin-web
+        run: npm ci
+      - name: Lint, typecheck, unit tests, build
+        working-directory: admin-web
+        run: |
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run build
+      - name: Install Playwright browser
+        working-directory: admin-web
+        run: npx playwright install --with-deps chromium
+      - name: Playwright smoke
+        working-directory: admin-web
+        run: npm run e2e
+
   secret-scan:
     runs-on: ubuntu-latest
     steps:
@@ -226,7 +253,7 @@ jobs:
   publish-container:
     # Publishes the server image to GitHub Packages (ghcr.io) after all gates pass on main.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'JasonTM17/Nexachat_AppJ'
-    needs: [server-test, android-test, repo-hygiene, site-js-test, firebase-rules, secret-scan]
+    needs: [server-test, android-test, repo-hygiene, site-js-test, firebase-rules, admin-web, secret-scan]
     runs-on: ubuntu-latest
     permissions:
       contents: read

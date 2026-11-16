@@ -26,9 +26,7 @@ import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.TextView;
-import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.PickVisualMediaRequest;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -89,7 +87,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import javax.inject.Inject;
 
@@ -196,7 +193,6 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     private float recordStartX;
     private boolean recordingCancelled;
     private boolean accessibleVoiceRecordingActive;
-    private ExecutorService voiceStartExecutor;
     private boolean voiceStartPending;
     private boolean voiceStopWhenStarted;
     private boolean voiceSendWhenStarted;
@@ -519,7 +515,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
 
     @SuppressLint("ClickableViewAccessibility")
     private void configureVoiceRecording() {
-        voiceRecorder = new VoiceRecorder(requireContext());
+        voiceRecorder = viewModel.getOrCreateVoiceRecorder(requireContext());
         ChatActionImageButton micButton = binding.composerBar.micButton;
         micButton.setOnClickListener(v -> handleAccessibleMicClick());
         micButton.setOnTouchListener((v, event) -> {
@@ -571,8 +567,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                         if (!recordingCancelled) {
                             // A plain release inside the start window matches the
                             // old too-short path: still cancelled, hint intact.
-                            Toast.makeText(requireContext(), R.string.voice_too_short,
-                                    Toast.LENGTH_SHORT).show();
+                            showComposerSnackbar(R.string.voice_too_short);
                         }
                         recordingCancelled = true;
                         return true;
@@ -581,6 +576,15 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                     return true;
 
                 case MotionEvent.ACTION_CANCEL:
+                    if (!v.isAttachedToWindow()
+                            || (getActivity() != null
+                                    && getActivity().isChangingConfigurations())) {
+                        // Teardown cancels the held touch before the view dies;
+                        // keep the ViewModel-owned capture running so the new
+                        // view reattaches the HUD in tap-controlled mode.
+                        viewModel.setVoiceRetainedForConfigChange(true);
+                        return true;
+                    }
                     if (voiceStartPending) {
                         voiceStopWhenStarted = true;
                         return true;
@@ -590,6 +594,58 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             }
             return false;
         });
+        if (viewModel.isVoiceRetainedForConfigChange()) {
+            // The retained flag only releases once an active capture is
+            // confirmed; a start still in-flight on the executor must keep it
+            // so the completion runnable does not cancel the recording.
+            maybeResumeVoiceRecording(micButton, 0);
+        }
+    }
+
+    @Nullable private Runnable voiceResumePoll;
+
+    private void maybeResumeVoiceRecording(@NonNull ChatActionImageButton micButton, int attempt) {
+        voiceResumePoll = null;
+        if (binding == null || !isAdded() || !viewModel.isVoiceRetainedForConfigChange()) {
+            return;
+        }
+        if (viewModel.isVoiceRecordingActive()) {
+            viewModel.setVoiceRetainedForConfigChange(false);
+            resumeVoiceRecordingAfterConfigChange(micButton);
+            return;
+        }
+        if (attempt < 10) {
+            // start() can still be mid-prepare on the start executor.
+            voiceResumePoll = () -> maybeResumeVoiceRecording(micButton, attempt + 1);
+            recordingHandler.postDelayed(voiceResumePoll, 250);
+        } else {
+            // The recorder never came up; drop it instead of holding the mic.
+            viewModel.setVoiceRetainedForConfigChange(false);
+            viewModel.releaseVoiceRecorder();
+            voiceRecorder = null;
+        }
+    }
+
+    /**
+     * The recorder survived view recreation; the held touch was cancelled by
+     * the config change, so the HUD comes back in the tap-controlled
+     * (accessible) mode: tap the mic to send, accessibility action cancels.
+     */
+    private void resumeVoiceRecordingAfterConfigChange(@NonNull ChatActionImageButton micButton) {
+        voiceRecorder = viewModel.getVoiceRecorder();
+        recordingCancelled = false;
+        voiceStartPending = false;
+        voiceStopWhenStarted = false;
+        voiceSendWhenStarted = false;
+        accessibleVoiceRecordingActive = true;
+        showVoiceRecordingOverlay();
+        binding.composerBar.recordingCancelLabel.setText(R.string.voice_recording_active_hint);
+        binding.composerBar.recordingCancelLabel.setTextColor(
+                ContextCompat.getColor(requireContext(), R.color.text_secondary_light));
+        micButton.setAccessibleVoiceRecording(true,
+                () -> finishVoiceRecording(true, true));
+        scheduleRecordingTimer();
+        announceVoiceRecordingState(R.string.cd_record_voice);
     }
 
     private void e2eeMediaUnsupported() {
@@ -712,7 +768,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
 
     private boolean beginVoiceRecording(@NonNull View source) {
         if (voiceRecorder == null) {
-            voiceRecorder = new VoiceRecorder(requireContext());
+            voiceRecorder = viewModel.getOrCreateVoiceRecorder(requireContext());
         }
         // MediaRecorder prepare()/start() can block for seconds on slow
         // devices; run it off the main thread so ACTION_DOWN cannot ANR.
@@ -739,7 +795,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                 }
                 voiceStartPending = false;
                 if (binding == null) {
-                    if (started) {
+                    // View gone mid-start: cancel unless the recorder was
+                    // retained for a configuration change; the next view
+                    // re-attaches the HUD to the live capture.
+                    if (started && !viewModel.isVoiceRetainedForConfigChange()) {
                         recorder.cancel();
                     }
                     return;
@@ -764,19 +823,21 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     }
 
     private void showQuickTapHint() {
-        android.content.Context context = getContext();
-        if (context == null) {
+        showComposerSnackbar(VoiceTapFeedbackRules.quickTapHintMessageId());
+    }
+
+    /** Anchored feedback for composer-scoped events (voice, attachment open). */
+    private void showComposerSnackbar(int messageId) {
+        if (binding == null || !isAdded()) {
             return;
         }
-        Toast.makeText(context, VoiceTapFeedbackRules.quickTapHintMessageId(),
-                Toast.LENGTH_SHORT).show();
+        Snackbar.make(binding.getRoot(), messageId, Snackbar.LENGTH_SHORT)
+                .setAnchorView(binding.composerBar.getRoot())
+                .show();
     }
 
     private ExecutorService voiceStartExecutor() {
-        if (voiceStartExecutor == null || voiceStartExecutor.isShutdown()) {
-            voiceStartExecutor = Executors.newSingleThreadExecutor();
-        }
-        return voiceStartExecutor;
+        return viewModel.voiceStartExecutor();
     }
 
     private void showVoiceRecordingOverlay() {
@@ -834,7 +895,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                     //noinspection ResultOfMethodCallIgnored
                     audioFile.delete();
                 }
-                Toast.makeText(requireContext(), R.string.voice_too_short, Toast.LENGTH_SHORT).show();
+                showComposerSnackbar(R.string.voice_too_short);
             } else {
                 Uri voiceUri = FileProvider.getUriForFile(
                         requireContext(),
@@ -1974,13 +2035,13 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                                             binding.getRoot(), file, mime);
                                 },
                                 error -> {
-                                    if (isAdded() && binding != null) {
-                                        Snackbar.make(binding.getRoot(), R.string.error_attachment_open, Snackbar.LENGTH_SHORT).show();
+                                    if (isAdded()) {
+                                        showComposerSnackbar(R.string.error_attachment_open);
                                     }
                                 },
                                 () -> {
-                                    if (isAdded() && binding != null) {
-                                        Snackbar.make(binding.getRoot(), R.string.error_attachment_open, Snackbar.LENGTH_SHORT).show();
+                                    if (isAdded()) {
+                                        showComposerSnackbar(R.string.error_attachment_open);
                                     }
                                 }));
     }
@@ -2039,25 +2100,30 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         if (recordingTimerRunnable != null) {
             recordingHandler.removeCallbacks(recordingTimerRunnable);
         }
-        if (voiceRecorder != null) {
-            final VoiceRecorder recorder = voiceRecorder;
-            voiceRecorder = null;
-            if (voiceStartExecutor != null && !voiceStartExecutor.isShutdown()) {
-                // start() holds the recorder monitor through prepare()+start(),
-                // so a synchronous cancel() could block main for the rest of an
-                // in-flight start; queue it behind the start instead.
-                voiceStartExecutor.execute(recorder::cancel);
+        if (voiceResumePoll != null) {
+            recordingHandler.removeCallbacks(voiceResumePoll);
+            voiceResumePoll = null;
+        }
+        boolean configChange = requireActivity().isChangingConfigurations();
+        if (voiceRecorder != null || viewModel.getVoiceRecorder() != null) {
+            if (configChange) {
+                // View is being recreated (rotation, font, theme); the recorder
+                // and start executor live on the ViewModel and keep running.
+                // Only a capture that is running or starting needs its HUD back;
+                // an idle recorder just stays parked on the ViewModel.
+                if (voiceStartPending || viewModel.isVoiceRecordingActive()) {
+                    viewModel.setVoiceRetainedForConfigChange(true);
+                }
             } else {
-                recorder.cancel();
+                viewModel.releaseVoiceRecorder();
             }
+            voiceRecorder = null;
         }
-        if (voiceStartExecutor != null) {
-            // Graceful shutdown: a queued cancel() must still run after the
-            // in-flight start() finishes rather than being dropped.
-            voiceStartExecutor.shutdown();
-            voiceStartExecutor = null;
+        if (!configChange) {
+            // Mark in-flight start completions stale so they cannot reattach
+            // UI or leak state into a future view of this fragment.
+            voiceStartGeneration++;
         }
-        voiceStartGeneration++;
         voiceStartPending = false;
         voiceStopWhenStarted = false;
         voiceSendWhenStarted = false;
