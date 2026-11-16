@@ -138,7 +138,9 @@ public final class ContactsFragment extends Fragment {
             return;
         }
         List<Contact> contacts = state.getContacts();
-        adapter.submitContacts(contacts);
+        // submitList diffs asynchronously, so the rail reads the committed list
+        // from the commit callback rather than the still-stale current list.
+        adapter.submitContacts(contacts, () -> updateLetterRail(!contacts.isEmpty()));
         boolean showLoading = state.isLoading() && !state.isContactsLoaded();
         ApiError error = state.getError();
         boolean showError = error != null && contacts.isEmpty();
@@ -162,7 +164,6 @@ public final class ContactsFragment extends Fragment {
 
         binding.loadingState.setVisibility(showLoading ? View.VISIBLE : View.GONE);
         binding.contactList.setVisibility(showList ? View.VISIBLE : View.GONE);
-        updateLetterRail(showList);
         binding.emptyState.setVisibility(showEmpty ? View.VISIBLE : View.GONE);
         binding.errorState.setVisibility(showError ? View.VISIBLE : View.GONE);
         if (showError && error != null) {
@@ -194,6 +195,9 @@ public final class ContactsFragment extends Fragment {
      * never sit under it; at large font scale the rail steps aside entirely.
      */
     private void updateLetterRail(boolean showList) {
+        if (binding == null) {
+            return;
+        }
         List<String> letters = ContactLetterIndex.letters(adapter.getCurrentList());
         boolean show = showList
                 && ContactLetterIndex.isRailVisible(
