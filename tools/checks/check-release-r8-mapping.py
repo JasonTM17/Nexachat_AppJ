@@ -60,7 +60,21 @@ RELEASE_BUILD_CONFIG = (
     / "BuildConfig.java"
 )
 RELEASE_APK_DIR = ROOT / "android" / "app" / "build" / "outputs" / "apk" / "release"
+RES_DIR = ROOT / "android" / "app" / "src" / "main" / "res"
+AAPT_RULES = (
+    ROOT
+    / "android"
+    / "app"
+    / "build"
+    / "intermediates"
+    / "aapt_proguard_file"
+    / "release"
+    / "processReleaseResources"
+    / "aapt_rules.txt"
+)
 ANDROID_NS = "{http://schemas.android.com/apk/res/android}"
+RES_AUTO_NS = "{http://schemas.android.com/apk/res-auto}"
+BEHAVIOR_BASE = "androidx.coordinatorlayout.widget.CoordinatorLayout$Behavior"
 GOOGLE_ID_TOKEN_TYPE = (
     b"com.google.android.libraries.identity.googleid.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL"
 )
@@ -217,6 +231,94 @@ def manifest_class_lookups() -> dict[str, str]:
     return lookups
 
 
+def layout_behavior_lookups(res_dir: Path = RES_DIR) -> dict[str, str]:
+    """Class names CoordinatorLayout resolves by string via app:layout_behavior.
+
+    AAPT keeps classes named by layout element tags and nav destinations but
+    not class names carried in attribute values, so every name here needs an
+    explicit keep or release inflation renames/strips it. ``@string/``
+    indirections resolve through the app's own values resources; names owned
+    by a library (unresolvable from source) are skipped because their consumer
+    rules, not this file, govern them.
+    """
+    strings: dict[str, str] = {}
+    for values_xml in sorted(res_dir.glob("values*/*.xml")):
+        for element in ET.parse(values_xml).getroot().iter("string"):
+            name = element.get("name")
+            text = (element.text or "").strip()
+            if name and text and name not in strings:
+                strings[name] = text
+    lookups: dict[str, str] = {}
+    for layout_xml in sorted(res_dir.glob("layout*/*.xml")):
+        for element in ET.parse(layout_xml).getroot().iter():
+            value = element.get(RES_AUTO_NS + "layout_behavior")
+            if value is None:
+                continue
+            resolved = value.strip()
+            if resolved.startswith("@string/"):
+                resolved = strings.get(resolved[len("@string/"):], "")
+            if resolved and "." in resolved and re.fullmatch(r"[\w.$]+", resolved):
+                lookups.setdefault(
+                    resolved, f"{layout_xml.name} app:layout_behavior"
+                )
+    return lookups
+
+
+def _class_spec_regex(spec: str) -> str:
+    """Translate a ProGuard class-name spec into a regex.
+
+    A lone ``*`` matches every class; inside a longer spec ``*`` stays within
+    one package segment while ``**`` crosses separators.
+    """
+    if spec == "*":
+        return ".*"
+    out: list[str] = []
+    i = 0
+    while i < len(spec):
+        if spec.startswith("**", i):
+            out.append(".*")
+            i += 2
+        elif spec[i] == "*":
+            out.append("[^.]*")
+            i += 1
+        elif spec[i] == "?":
+            out.append(".")
+            i += 1
+        else:
+            out.append(re.escape(spec[i]))
+            i += 1
+    return "".join(out)
+
+
+def keep_covers_behavior(rules: str, class_name: str) -> bool:
+    """True when a ``-keep`` rule preserves the class name for inflation.
+
+    Only a plain ``-keep`` counts: ``keepnames``/``keepclassmembers`` /
+    ``keepclasseswithmembers`` variants and ``allow*`` modifiers all let R8
+    rename or strip an attribute-string class. An ``extends``/``implements``
+    clause counts only when it names the CoordinatorLayout Behavior base,
+    because every layout_behavior value must be a Behavior subclass to
+    inflate at all.
+    """
+    for line in rules.splitlines():
+        if re.match(r"^\s*-keep(?:\s*,\s*allow\w+)+", line):
+            continue
+        match = re.match(
+            r"^\s*-keep(?:\s+[a-z]+)*\s+class\s+([^\s{]+)(.*)$", line
+        )
+        if match is None:
+            continue
+        spec, tail = match.group(1), match.group(2)
+        if "@" in spec:
+            continue
+        if not re.fullmatch(_class_spec_regex(spec), class_name):
+            continue
+        base = re.search(r"\b(?:extends|implements)\s+([\w.$]+)", tail)
+        if base is None or base.group(1) == BEHAVIOR_BASE:
+            return True
+    return False
+
+
 def google_web_client_id() -> str | None:
     if not RELEASE_BUILD_CONFIG.is_file():
         return None
@@ -366,6 +468,40 @@ def main() -> int:
             )
         return fail(f"{len(broken)} manifest or meta-data class names are not preserved by R8")
     print(f"  manifest/metadata class lookups: {len(lookups)} verified in mapping.txt")
+
+    behavior_lookups = layout_behavior_lookups()
+    coverage_rules = rules
+    if AAPT_RULES.is_file():
+        coverage_rules += "\n" + AAPT_RULES.read_text(encoding="utf-8")
+    uncovered = sorted(
+        name
+        for name in behavior_lookups
+        if not keep_covers_behavior(coverage_rules, name)
+    )
+    broken_behaviors = sorted(
+        (name, mapped.get(name))
+        for name in behavior_lookups
+        if mapped.get(name) != name
+    )
+    if uncovered or broken_behaviors:
+        for name in uncovered[:20]:
+            print(
+                f"BEHAVIOR {behavior_lookups[name]}: {name} has no -keep rule",
+                file=sys.stderr,
+            )
+        for name, target in broken_behaviors[:20]:
+            print(
+                f"BEHAVIOR {behavior_lookups[name]}: {name} -> {target or 'ABSENT'}",
+                file=sys.stderr,
+            )
+        return fail(
+            f"{len(uncovered)} layout_behavior classes lack a keep rule and "
+            f"{len(broken_behaviors)} are renamed or stripped by R8"
+        )
+    print(
+        f"  layout_behavior class lookups: {len(behavior_lookups)} "
+        "verified in mapping.txt"
+    )
 
     client_id = google_web_client_id()
     if client_id is None:
