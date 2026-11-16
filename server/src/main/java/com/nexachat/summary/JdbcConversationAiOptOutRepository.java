@@ -113,6 +113,15 @@ public class JdbcConversationAiOptOutRepository implements ConversationAiOptOuts
                 DELETE FROM rag_ask_cache
                 WHERE conversation_id = ?
                 """, conversationId);
+        // Cached translations of the member's messages are derived data too:
+        // they were generated from text the member now keeps out of AI.
+        jdbcTemplate.update("""
+                DELETE FROM message_translations t
+                USING messages m
+                WHERE t.message_id = m.id
+                  AND m.conversation_id = ?
+                  AND m.sender_id = ?
+                """, conversationId, userId);
     }
 
     @Transactional

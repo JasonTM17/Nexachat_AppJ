@@ -37,7 +37,7 @@ public class UserSettingsService {
 
     @Transactional
     public UserSettingsResponse setShowPresence(UUID userId, boolean showPresence) {
-        return updateSettings(userId, showPresence, null, null);
+        return updateSettings(userId, showPresence, null, null, null);
     }
 
     @Transactional
@@ -46,6 +46,16 @@ public class UserSettingsService {
             Boolean showPresence,
             Boolean showSeen,
             Boolean aiSummaryConsent) {
+        return updateSettings(userId, showPresence, showSeen, aiSummaryConsent, null);
+    }
+
+    @Transactional
+    public UserSettingsResponse updateSettings(
+            UUID userId,
+            Boolean showPresence,
+            Boolean showSeen,
+            Boolean aiSummaryConsent,
+            String translateTargetLang) {
         User user = findUserForUpdate(userId);
         if (showPresence != null) {
             boolean changed = user.isShowPresence() != showPresence;
@@ -66,6 +76,17 @@ public class UserSettingsService {
         if (aiSummaryConsent != null) {
             user.changeAiSummaryConsent(aiSummaryConsent);
         }
+        if (translateTargetLang != null) {
+            // Blank clears the override; otherwise the code must be a language
+            // the translate feature actually offers.
+            String lang = translateTargetLang.isBlank() ? null : translateTargetLang;
+            if (lang != null && !com.nexachat.translate.TranslationLanguage.isSupported(lang)) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "Unsupported target language");
+            }
+            user.changeTranslateTargetLang(lang == null ? null
+                    : com.nexachat.translate.TranslationLanguage.of(lang).orElseThrow().code());
+        }
         return toResponse(user);
     }
 
@@ -81,6 +102,6 @@ public class UserSettingsService {
 
     private static UserSettingsResponse toResponse(User user) {
         return new UserSettingsResponse(user.isShowPresence(), user.isShowSeen(),
-                user.isAiSummaryConsent());
+                user.isAiSummaryConsent(), user.getTranslateTargetLang());
     }
 }

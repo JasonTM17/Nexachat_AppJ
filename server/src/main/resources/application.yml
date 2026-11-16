@@ -274,6 +274,19 @@ nexachat:
       model: ${NEXACHAT_SUMMARY_LLM_FALLBACK_MODEL:deepseek-flash}
       api-key: ${NEXACHAT_SUMMARY_LLM_FALLBACK_API_KEY:}
       timeout-ms: ${NEXACHAT_SUMMARY_LLM_FALLBACK_TIMEOUT_MS:30000}
+  translate:
+    # RAG-grounded message translation. Provider endpoints/models come from
+    # the shared nexachat.summary.llm stack; these only bound the translate path.
+    context-messages: ${NEXACHAT_TRANSLATE_CONTEXT_MESSAGES:12}
+    context-max-chars: ${NEXACHAT_TRANSLATE_CONTEXT_MAX_CHARS:2000}
+    context-message-max-chars: ${NEXACHAT_TRANSLATE_CONTEXT_MSG_MAX_CHARS:500}
+    cache-ttl-hours: ${NEXACHAT_TRANSLATE_CACHE_TTL_HOURS:720}
+    cache-max-langs-per-message: ${NEXACHAT_TRANSLATE_CACHE_MAX_LANGS:8}
+    glossary-max-terms: ${NEXACHAT_TRANSLATE_GLOSSARY_MAX_TERMS:50}
+    glossary-max-term-chars: ${NEXACHAT_TRANSLATE_GLOSSARY_MAX_TERM_CHARS:100}
+    batch-max-messages: ${NEXACHAT_TRANSLATE_BATCH_MAX:20}
+    rate-limit-per-minute: ${NEXACHAT_TRANSLATE_RATE_LIMIT_PER_MINUTE:30}
+    rate-limit-per-day: ${NEXACHAT_TRANSLATE_RATE_LIMIT_PER_DAY:300}
   rag:
     enabled: ${NEXACHAT_RAG_ENABLED:true}
     embedding:
