@@ -2,6 +2,10 @@
 
 Still frames captured from live Android emulators (`emulator-5554` / `nexachat-audit` and `emulator-5556` / `campuscore-p07-native`, 1080×2400 portrait, 2400×1080 landscape) running the R8-minified release build against the local Spring Boot 3 + PostgreSQL 16 backend.
 
+> Every frame below predates the Tonal Plum palette refresh (seed `#733F68`; see
+> [docs/design/design-notes.md](../design/design-notes.md)) — treat them as
+> layout references, not current colors. A recapture pass is pending.
+
 ## UI Showcase Frames
 
 | File | What it shows |
