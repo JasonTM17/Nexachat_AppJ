@@ -13,7 +13,7 @@ public final class CallStateMachine {
             throw CallException.invalidState();
         }
         return new CallSession(session.callId(), session.conversationId(), session.callerId(), session.calleeId(),
-                CallState.ACTIVE, null, session.startedAt(), now, null, null);
+                CallState.ACTIVE, null, session.startedAt(), now, null, null, session.mediaType());
     }
 
     public static CallSession end(CallSession session, CallEndReason reason, Instant now) {
@@ -24,7 +24,8 @@ public final class CallStateMachine {
                 ? 0L
                 : Math.max(0L, Duration.between(session.answeredAt(), now).getSeconds());
         return new CallSession(session.callId(), session.conversationId(), session.callerId(), session.calleeId(),
-                CallState.ENDED, reason, session.startedAt(), session.answeredAt(), now, duration);
+                CallState.ENDED, reason, session.startedAt(), session.answeredAt(), now, duration,
+                session.mediaType());
     }
 
     private static boolean allowsEnd(CallState state, CallEndReason reason) {

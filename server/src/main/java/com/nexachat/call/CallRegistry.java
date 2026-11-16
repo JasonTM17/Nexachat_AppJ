@@ -40,6 +40,11 @@ public class CallRegistry {
 
     public synchronized Invitation invite(UUID callId, UUID conversationId, UUID callerId,
                                           UUID calleeId, Instant now) {
+        return invite(callId, conversationId, callerId, calleeId, CallMediaType.AUDIO, now);
+    }
+
+    public synchronized Invitation invite(UUID callId, UUID conversationId, UUID callerId,
+                                          UUID calleeId, CallMediaType mediaType, Instant now) {
         evictExpiredTerminals(now);
         if (calls.containsKey(callId)) {
             throw CallException.invalidState();
@@ -47,7 +52,8 @@ public class CallRegistry {
         if (activeCallByUser.containsKey(callerId)) {
             throw CallException.invalidState();
         }
-        CallSession ringing = CallSession.ringing(callId, conversationId, callerId, calleeId, now);
+        CallSession ringing = CallSession.ringing(callId, conversationId, callerId, calleeId,
+                mediaType, now);
         if (activeCallByUser.containsKey(calleeId)) {
             CallSession busy = CallStateMachine.end(ringing, CallEndReason.BUSY, now);
             calls.put(callId, busy);

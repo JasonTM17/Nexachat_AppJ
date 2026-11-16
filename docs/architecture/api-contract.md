@@ -97,6 +97,7 @@ Android client can consume the API but no dedicated screen is merged into
 | V34 | `V34__e2ee_direct_chats.sql` | `e2ee_devices` public-key registry, `conversations.e2ee_enabled` (DIRECT only) and message ciphertext/envelope columns. |
 | V35 | `V35__backfill_unversioned_messages.sql` | Backfills `change_version` on rows inserted outside the sync-v2 contract and raises each conversation's cursor. |
 | V38 | `V38__safety_block_report_stars.sql` | `user_blocks` directed edges, `reports` abuse filings with OPEN-dedupe, per-user `message_stars`, and `messages.peer_suppressed` for accepted-but-never-delivered sends. |
+| V40 | `V40__call_media_type.sql` | `call_records.media_type` (`AUDIO` default, `AUDIO`/`VIDEO` check) for video-call history. |
 
 ## Operational notes
 
@@ -1199,12 +1200,13 @@ instead of applying the (empty) partial page.
 
 ## Calls — `/api/v1/calls` and `/api/v1/conversations`
 
-1-to-1 voice calls use an authenticated STOMP signaling channel plus three REST
-helpers. Call state and busy reservations live in an in-memory registry on the
-current server node; PostgreSQL stores terminal history (`call_records`, Flyway
-V5). Only **DIRECT** conversations with exactly two members can place calls;
-group calls are out of scope. Signaling never carries audio bytes — WebRTC media
-is negotiated client-side after acceptance.
+1-to-1 voice and video calls use an authenticated STOMP signaling channel plus
+three REST helpers. Call state and busy reservations live in an in-memory
+registry on the current server node; PostgreSQL stores terminal history
+(`call_records`, Flyway V5, media kind added by V40). Only **DIRECT**
+conversations with exactly two members can place calls; group calls are out of
+scope. Signaling never carries media bytes — WebRTC media is negotiated
+client-side after acceptance.
 
 The full lifecycle diagram, STOMP payload shapes, timeouts, limitations and E2E
 verification live in [`docs/architecture/calls.md`](calls.md). This section lists every route
@@ -1220,14 +1222,16 @@ and the error surfaces verified from `CallRestController`, `CallController`,
 | `GET /conversations/{conversationId}/calls` | Bearer member of a **DIRECT** conversation | Query `limit?` (default `20`, valid 1–100; a value outside the range is `400`), optional opaque `cursor?` (keyset on `startedAt` + `callId`) | `200` `CallHistoryPage` — `{items: CallHistoryItem[], nextCursor?}` | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 (non-direct conversation, bad `limit`, or malformed `cursor`) |
 
 `CallHistoryItem` =
-`{callId, callerId, calleeId, state, endReason?, startedAt, answeredAt?, endedAt?, durationSeconds?}`.
+`{callId, callerId, calleeId, state, endReason?, startedAt, answeredAt?, endedAt?, durationSeconds?, mediaType}`.
 `state` is `RINGING`, `ACTIVE`, or `ENDED`. `endReason` is one of
 `COMPLETED`, `REJECTED`, `CANCELLED`, `MISSED`, `BUSY`, or `FAILED` when the
-call has ended; otherwise it is omitted/null. Items are newest-first by
+call has ended; otherwise it is omitted/null. `mediaType` is `AUDIO` or
+`VIDEO` (rows written before V40 report `AUDIO`). Items are newest-first by
 `startedAt`; `nextCursor` is null on the last page.
 
 Each terminal call also writes one `SYSTEM` chat message
-`CALL|<END_REASON>|<durationSeconds>|<callerUserId>` (older rows may omit the
+`CALL|<END_REASON>|<durationSeconds>|<callerUserId>`; video calls append a
+fifth part `|VIDEO` that audio-era clients ignore (older rows may omit the
 caller id); see [`docs/architecture/calls.md`](calls.md#design-note).
 
 **Fast-path offer (`GET /calls/{callId}/offer`).** The registry may hold one
@@ -1248,12 +1252,15 @@ signaling; media offer/answer still flows through `SDP` frames after `ACCEPT`.
 
 | Destination | Auth | Payload | Success | Errors |
 |---|---|---|---|---|
-| `SEND /app/calls/{conversationId}/signal` | Bearer STOMP session; conversation member for DIRECT 1:1 | JSON `CallSignal` — `{type, callId, sdp?, candidate?}` (`type`: `INVITE`, `ACCEPT`, `REJECT`, `CANCEL`, `END`, `SDP`, `ICE`) | `204` implicit (no STOMP reply body); server events on `/user/queue/calls` | `/user/queue/errors` → `{code, clientMessageId?}` — see call codes below |
+| `SEND /app/calls/{conversationId}/signal` | Bearer STOMP session; conversation member for DIRECT 1:1 | JSON `CallSignal` — `{type, callId, sdp?, candidate?, mediaType?}` (`type`: `INVITE`, `ACCEPT`, `REJECT`, `CANCEL`, `END`, `SDP`, `ICE`; `mediaType`: `AUDIO`, `VIDEO`) | `204` implicit (no STOMP reply body); server events on `/user/queue/calls` | `/user/queue/errors` → `{code, clientMessageId?}` — see call codes below |
 | `SUBSCRIBE /user/queue/calls` | Same session | — | Server push `CallEvent` JSON | Non-members are rejected by the STOMP interceptor before the controller (`NOT_MEMBER`) |
 
 `CallSignal` rules (enforced before the state machine runs):
 
 - Every frame requires `type` and `callId`.
+- `INVITE` may carry `mediaType` (`AUDIO` or `VIDEO`); an absent value means
+  `AUDIO` so pre-mediaType clients keep working. Any other value fails
+  `VALIDATION_FAILED`; `mediaType` is rejected on non-INVITE frames.
 - `INVITE` must not include `sdp` or `candidate` (control-only).
 - `SDP` carries `sdp` only (`type` `offer` or `answer`, `description` ≤ 16 KiB UTF-8).
 - `ICE` carries `candidate` only (`candidate` ≤ 1 KiB UTF-8; `sdpMid` ≤ 256 chars; `sdpMLineIndex` ≥ 0 when set).

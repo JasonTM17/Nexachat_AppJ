@@ -47,6 +47,10 @@ public class CallRecord {
     @Column(name = "duration_seconds")
     private Long durationSeconds;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "media_type", nullable = false, updatable = false, length = 5)
+    private CallMediaType mediaType;
+
     protected CallRecord() {
     }
 
@@ -56,6 +60,7 @@ public class CallRecord {
         record.conversationId = session.conversationId();
         record.callerId = session.callerId();
         record.calleeId = session.calleeId();
+        record.mediaType = session.mediaType();
         record.update(session);
         return record;
     }
@@ -109,5 +114,9 @@ public class CallRecord {
 
     public Long getDurationSeconds() {
         return durationSeconds;
+    }
+
+    public CallMediaType getMediaType() {
+        return mediaType;
     }
 }
