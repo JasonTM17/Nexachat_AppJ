@@ -182,19 +182,16 @@ public final class ChatActionSheetLayoutContractTest {
 
     @Test
     public void attachmentPickerIsADesignedBottomSheet() throws Exception {
-        String source = readSource("feature/chat/ChatInteractionsViews.java");
-        int start = source.indexOf("public static void showAttachmentPicker(");
-        int end = source.indexOf("public static void bindReplyBanner(", start);
-        assertTrue("attachment picker must exist", start >= 0 && end > start);
-        String body = source.substring(start, end);
-        assertTrue("attachment picker must use the bottom-sheet chrome",
-                body.contains("BottomSheetDialog"));
+        String source = readSource("feature/chat/AttachmentPickerSheet.java");
+        assertTrue("attachment picker must use the shared bottom-sheet scaffold",
+                source.contains("extends NexaBottomSheetFragment"));
         assertTrue("attachment picker must inflate the designed sheet",
-                body.contains("R.layout.sheet_attachment_picker"));
+                source.contains("SheetAttachmentPickerBinding.inflate"));
         assertTrue("attachment rows must be clickable targets",
-                body.contains("R.id.pickVisualRow") && body.contains("R.id.pickDocumentRow"));
+                source.contains("pickVisualRow.setOnClickListener")
+                        && source.contains("pickDocumentRow.setOnClickListener"));
         assertTrue("attachment picker must not fall back to the plain items dialog",
-                !body.contains("setItems"));
+                !source.contains("setItems"));
 
         Document sheet = parse("src/main/res/layout/sheet_attachment_picker.xml");
         assertNotNull(findById(sheet, "pickVisualRow"));

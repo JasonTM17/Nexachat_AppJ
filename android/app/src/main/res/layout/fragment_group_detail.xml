@@ -217,8 +217,8 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginHorizontal="@dimen/space_md"
-                        android:layout_marginTop="@dimen/space_xs"
-                        android:layout_marginBottom="@dimen/space_sm"
+                        android:layout_marginTop="@dimen/space_sm"
+                        android:layout_marginBottom="@dimen/space_md"
                         android:minHeight="@dimen/min_touch_target"
                         android:text="@string/invite_manage_action"
                         android:textColor="?attr/colorOnPrimaryContainer"
@@ -229,17 +229,14 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/leaveGroupButton"
-                style="@style/Widget.NexaChat.Button.Tonal"
+                style="@style/Widget.NexaChat.Button.Destructive"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
                 android:minHeight="@dimen/min_touch_target"
                 android:text="@string/action_leave_group"
-                android:textColor="?attr/colorOnErrorContainer"
-                app:backgroundTint="?attr/colorErrorContainer"
                 app:icon="@drawable/ic_logout"
-                app:iconGravity="textStart"
-                app:iconTint="?attr/colorOnErrorContainer" />
+                app:iconGravity="textStart" />
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 
