@@ -71,6 +71,7 @@ import com.nexachat.feature.ask.AskCitationJump;
 import com.nexachat.feature.inbox.InboxUiState;
 import com.nexachat.feature.inbox.InboxViewModel;
 import com.nexachat.feature.inbox.ConversationPreferenceMenu;
+import com.nexachat.feature.profile.AppSettingsViewModel;
 import com.nexachat.feature.label.LabelDialogFragment;
 import com.nexachat.notification.ForegroundConversationTracker;
 import com.nexachat.summary.SummaryResponse;
@@ -120,6 +121,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     private ChatViewModel viewModel;
     private InboxViewModel inboxViewModel;
     private SummaryViewModel summaryViewModel;
+    private AppSettingsViewModel settingsViewModel;
     private MessageListAdapter adapter;
     private ChatViewModel.UiState state = new ChatViewModel.UiState();
     private boolean serverStarting;
@@ -214,6 +216,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         // previous account's user id and inbox rows across an account switch.
         inboxViewModel = new ViewModelProvider(this).get(InboxViewModel.class);
         summaryViewModel = new ViewModelProvider(this).get(SummaryViewModel.class);
+        // Activity scope: shares the Profile screen's settings instance so a new
+        // swatch propagates here the moment the user returns.
+        settingsViewModel = new ViewModelProvider(requireActivity()).get(AppSettingsViewModel.class);
         configureList();
         configureMentionPicker();
         configureToolbar();
@@ -920,6 +925,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             }
         });
         summaryViewModel.state().observe(getViewLifecycleOwner(), this::renderSummaryState);
+        settingsViewModel.getChatColor().observe(getViewLifecycleOwner(), next -> {
+            if (next != null && adapter != null) adapter.setChatColor(next);
+        });
     }
 
     private void render() {

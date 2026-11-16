@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.LayerDrawable;
 import android.graphics.Typeface;
 import android.text.SpannableString;
 import android.text.Spanned;
@@ -45,9 +46,11 @@ import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.MessageMention;
 import com.nexachat.core.ui.MessageUiRules;
 import com.nexachat.core.ui.components.MessageGroupPosition;
+import com.nexachat.data.ChatColor;
 import com.nexachat.data.ChatMessage;
 import com.nexachat.data.DeliveryStatus;
 import com.nexachat.data.ReactionChip;
+import com.nexachat.feature.chat.ChatBubbleColors;
 import com.nexachat.feature.chat.ChatBubbleRules;
 import com.nexachat.feature.chat.ui.MessageActionListener;
 import java.text.DateFormat;
@@ -78,6 +81,8 @@ public final class MessageBubbleBinder {
 
     private final DateFormat timeFormat;
     @Nullable private String currentUserId;
+    /** Outgoing bubble colour picked in Profile; plum until the view model pushes one. */
+    @NonNull private ChatColor chatColor = ChatColor.PLUM;
     /** While non-zero, a conversation-level send pause is in force: rows the
      *  pause itself failed show this short reason instead of the retry label
      *  and taps do not retry; ordinary FAILED rows keep their own copy. */
@@ -115,6 +120,9 @@ public final class MessageBubbleBinder {
     }
 
     public void setCurrentUserId(@Nullable String userId) { currentUserId = userId; }
+
+    /** Applies the user-selected outgoing bubble colour on the next bind. */
+    public void setChatColor(@NonNull ChatColor color) { chatColor = color; }
 
     /** Sets the failure reason shown on FAILED rows while sends are paused, or 0. */
     public void setPausedFailReason(@StringRes int reasonRes) {
@@ -285,20 +293,19 @@ public final class MessageBubbleBinder {
         } else if (MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs())) {
             colorInt = resolveThemeColor(context, com.google.android.material.R.attr.colorSurfaceContainerHigh);
         } else {
-            int colorRes;
             switch (ChatBubbleRules.resolveBubbleContainerRole(message.getStatus(), message.getMine())) {
                 case ERROR:
-                    colorRes = R.color.colorErrorContainer;
+                    colorInt = ContextCompat.getColor(context, R.color.colorErrorContainer);
                     break;
                 case MINE:
-                    colorRes = R.color.bubble_mine;
+                    colorInt = ChatBubbleColors.bubbleArgb(
+                            chatColor, ChatBubbleColors.isNight(context));
                     break;
                 case PEER:
                 default:
-                    colorRes = R.color.bubble_other;
+                    colorInt = ContextCompat.getColor(context, R.color.bubble_other);
                     break;
             }
-            colorInt = ContextCompat.getColor(context, colorRes);
         }
         bubble.setBackgroundTintList(ColorStateList.valueOf(colorInt));
     }
@@ -369,6 +376,7 @@ public final class MessageBubbleBinder {
             return;
         }
         replyInclude.setVisibility(View.VISIBLE);
+        tintReplyQuote(root, replyInclude, message.getMine());
         TextView author = replyInclude.findViewById(R.id.replyAuthor);
         TextView snippetView = replyInclude.findViewById(R.id.replySnippet);
         if (author != null) {
@@ -382,6 +390,52 @@ public final class MessageBubbleBinder {
                 actionListener.onReplyQuoteTap(replyId);
             }
         });
+    }
+
+    /**
+     * Paints the embedded quote in the bubble's own family: outgoing rows draw
+     * their tones from the selected chat color, incoming rows keep the theme
+     * roles. The layer-list is mutated per row so a recycled view never leaks
+     * the previous row's palette.
+     */
+    private void tintReplyQuote(@NonNull View root, @NonNull View replyInclude, boolean mine) {
+        android.content.Context context = root.getContext();
+        boolean night = ChatBubbleColors.isNight(context);
+        int container;
+        int accent;
+        int content;
+        if (mine) {
+            int bubble = ChatBubbleColors.bubbleArgb(chatColor, night);
+            container = ChatBubbleColors.quoteContainerArgb(bubble, night);
+            accent = ChatBubbleColors.quoteAccentArgb(bubble, night);
+            content = ChatBubbleColors.quoteContentArgb(bubble, night);
+        } else {
+            container = resolveThemeColor(
+                    context, com.google.android.material.R.attr.colorPrimaryContainer);
+            accent = resolveThemeColor(
+                    context, com.google.android.material.R.attr.colorPrimary);
+            content = resolveThemeColor(
+                    context, com.google.android.material.R.attr.colorOnPrimaryContainer);
+        }
+        Drawable background = replyInclude.getBackground();
+        if (background instanceof LayerDrawable) {
+            LayerDrawable layers = (LayerDrawable) background.mutate();
+            for (int i = 0; i < layers.getNumberOfLayers(); i++) {
+                Drawable layer = layers.getDrawable(i);
+                if (layer instanceof GradientDrawable) {
+                    ((GradientDrawable) layer).setColor(i == 0 ? container : accent);
+                }
+            }
+            replyInclude.setBackground(layers);
+        }
+        TextView author = replyInclude.findViewById(R.id.replyAuthor);
+        TextView snippetView = replyInclude.findViewById(R.id.replySnippet);
+        if (author != null) {
+            author.setTextColor(content);
+        }
+        if (snippetView != null) {
+            snippetView.setTextColor(content);
+        }
     }
 
     private void bindPrimaryContent(View root, ChatMessage message) {
