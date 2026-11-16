@@ -183,6 +183,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private boolean voiceStartPending;
     private boolean voiceStopWhenStarted;
     private boolean voiceSendWhenStarted;
+    private long voiceStartGeneration;
 
     public static ChatFragment newInstance(@NonNull String conversationId) {
         ChatFragment fragment = new ChatFragment();
@@ -698,9 +699,18 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         source.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
         showVoiceRecordingOverlay();
         final VoiceRecorder recorder = voiceRecorder;
+        final long startGeneration = ++voiceStartGeneration;
         voiceStartExecutor().execute(() -> {
             boolean started = recorder.start();
             recordingHandler.post(() -> {
+                if (VoiceStartCompletionRules.isStale(startGeneration, voiceStartGeneration)) {
+                    // A newer attempt or teardown owns the voice flags now;
+                    // this completion's only job is to not leak the recorder.
+                    if (started) {
+                        recorder.cancel();
+                    }
+                    return;
+                }
                 voiceStartPending = false;
                 if (binding == null) {
                     if (started) {
@@ -1871,6 +1881,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             voiceStartExecutor.shutdown();
             voiceStartExecutor = null;
         }
+        voiceStartGeneration++;
         voiceStartPending = false;
         voiceStopWhenStarted = false;
         voiceSendWhenStarted = false;
