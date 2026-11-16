@@ -31,14 +31,6 @@
             android:paddingHorizontal="@dimen/space_md"
             android:paddingBottom="@dimen/space_lg">
 
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_md"
-                android:text="@string/invite_manage_hint"
-                android:textAppearance="?attr/textAppearanceBodyMedium"
-                android:textColor="?attr/colorOnSurfaceVariant" />
-
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -82,7 +74,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/expiryButton"
-                        style="?attr/materialButtonOutlinedStyle"
+                        style="@style/Widget.NexaChat.Button.Tonal"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_sm"
@@ -91,7 +83,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/maxUsesButton"
-                        style="?attr/materialButtonOutlinedStyle"
+                        style="@style/Widget.NexaChat.Button.Tonal"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xs"
@@ -143,7 +135,7 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/copyButton"
-                            style="?attr/materialButtonOutlinedStyle"
+                            style="@style/Widget.NexaChat.Button.Tonal"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_marginEnd="@dimen/space_xs"
@@ -155,7 +147,7 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/shareButton"
-                            style="?attr/materialButtonOutlinedStyle"
+                            style="@style/Widget.NexaChat.Button.Tonal"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_marginStart="@dimen/space_xs"
@@ -168,14 +160,15 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/revokeButton"
-                        style="?attr/materialButtonOutlinedStyle"
+                        style="@style/Widget.NexaChat.Button.Tonal"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xs"
                         android:minHeight="@dimen/min_touch_target"
                         android:text="@string/invite_revoke"
-                        android:textColor="?attr/colorError"
-                        android:visibility="gone" />
+                        android:textColor="?attr/colorOnErrorContainer"
+                        android:visibility="gone"
+                        app:backgroundTint="?attr/colorErrorContainer" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -195,17 +188,15 @@
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
-                <TextView
+                <com.nexachat.core.ui.components.SectionHeaderView
+                    android:id="@+id/requestsHeader"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/invite_requests_title"
-                    android:textAppearance="?attr/textAppearanceTitleMedium"
-                    android:textColor="?attr/colorOnSurface" />
+                    android:layout_weight="1" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/refreshRequestsButton"
-                    style="?attr/materialButtonOutlinedStyle"
+                    style="@style/Widget.NexaChat.Button.Text"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:minHeight="@dimen/min_touch_target"

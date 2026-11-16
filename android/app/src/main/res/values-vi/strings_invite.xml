@@ -2,7 +2,6 @@
 <resources>
     <string name="invite_manage_title">Liên kết mời nhóm</string>
     <string name="invite_join_title">Tham gia nhóm</string>
-    <string name="invite_manage_hint">Tạo và quản lý liên kết mời vào nhóm này.</string>
     <string name="invite_manage_action">Liên kết mời</string>
     <string name="invite_expiry">Thời hạn liên kết</string>
     <string name="invite_expiry_value">Thời hạn: %1$s</string>
