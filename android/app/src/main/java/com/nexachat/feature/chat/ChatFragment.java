@@ -182,6 +182,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private ExecutorService voiceStartExecutor;
     private boolean voiceStartPending;
     private boolean voiceStopWhenStarted;
+    private boolean voiceSendWhenStarted;
 
     public static ChatFragment newInstance(@NonNull String conversationId) {
         ChatFragment fragment = new ChatFragment();
@@ -578,7 +579,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         // recorder and would block while start() runs off the main thread.
         if (voiceRecorder != null && (voiceStartPending || voiceRecorder.isRecording())) {
             if (voiceStartPending) {
-                voiceStopWhenStarted = true;
+                voiceSendWhenStarted = true;
             } else {
                 finishVoiceRecording(false, true);
             }
@@ -679,6 +680,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         }
         voiceStartPending = true;
         voiceStopWhenStarted = false;
+        voiceSendWhenStarted = false;
         source.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
         showVoiceRecordingOverlay();
         final VoiceRecorder recorder = voiceRecorder;
@@ -700,6 +702,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 scheduleRecordingTimer();
                 if (voiceStopWhenStarted) {
                     finishVoiceRecording(true, false);
+                } else if (voiceSendWhenStarted) {
+                    finishVoiceRecording(false, true);
                 }
             });
         });
@@ -1838,6 +1842,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         }
         voiceStartPending = false;
         voiceStopWhenStarted = false;
+        voiceSendWhenStarted = false;
         if (binding != null) {
             binding.messageList.setAdapter(null);
         }
