@@ -2,16 +2,29 @@ package com.nexachat.feature.contacts;
 
 import androidx.annotation.NonNull;
 import com.nexachat.data.Contact;
+import java.text.Collator;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
 /**
- * Expands the already display-name-sorted contact list into rows: one letter
- * badge header per contiguous alphabetical bucket plus the contact rows in it.
- * Sorting stays wherever the data comes from; this only groups what arrives.
+ * Expands the contact list into rows: one letter badge header per letter
+ * bucket plus the contact rows in it. Contacts are ordered by the same label
+ * the row shows ({@link Contact#getPrimaryLabel()}), so each letter heads one
+ * contiguous section even when the incoming order differs — the server sorts
+ * by display name while a contact's alias can lead the row.
  */
 public final class ContactSections {
+
+    /**
+     * Orders by section letter first (A–Z, then "#") and inside a bucket by
+     * the displayed label under the device collator. The sort is stable, so
+     * equal labels keep the incoming order.
+     */
+    private static final Comparator<Contact> SECTION_ORDER = Comparator
+            .comparingInt((Contact contact) -> sectionRank(letterFor(contact.getPrimaryLabel())))
+            .thenComparing(Contact::getPrimaryLabel, Collator.getInstance());
 
     private ContactSections() {
     }
@@ -85,23 +98,31 @@ public final class ContactSections {
     }
 
     public static List<Row> group(@NonNull List<Contact> contacts) {
-        List<Row> rows = new ArrayList<>(contacts.size() + 4);
-        String[] letters = new String[contacts.size()];
-        for (int i = 0; i < contacts.size(); i++) {
-            letters[i] = letterFor(contacts.get(i).getPrimaryLabel());
+        List<Contact> ordered = new ArrayList<>(contacts);
+        ordered.sort(SECTION_ORDER);
+
+        List<Row> rows = new ArrayList<>(ordered.size() + 4);
+        String[] letters = new String[ordered.size()];
+        for (int i = 0; i < ordered.size(); i++) {
+            letters[i] = letterFor(ordered.get(i).getPrimaryLabel());
         }
 
         String lastLetter = null;
-        for (int i = 0; i < contacts.size(); i++) {
+        for (int i = 0; i < ordered.size(); i++) {
             if (!letters[i].equals(lastLetter)) {
                 lastLetter = letters[i];
                 rows.add(new Row.Header(lastLetter));
             }
             boolean first = i == 0 || !letters[i - 1].equals(letters[i]);
-            boolean last = i == contacts.size() - 1 || !letters[i + 1].equals(letters[i]);
-            rows.add(new Row.Item(contacts.get(i), first, last));
+            boolean last = i == ordered.size() - 1 || !letters[i + 1].equals(letters[i]);
+            rows.add(new Row.Item(ordered.get(i), first, last));
         }
         return rows;
+    }
+
+    /** A–Z keep alphabetical order; the "#" bucket sorts after every letter. */
+    private static int sectionRank(@NonNull String letter) {
+        return letter.charAt(0) == '#' ? 26 : letter.charAt(0) - 'A';
     }
 
     /**

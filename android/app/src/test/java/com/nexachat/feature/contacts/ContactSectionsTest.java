@@ -9,8 +9,10 @@ import java.util.List;
 import org.junit.Test;
 
 /**
- * Section grouping keeps the incoming display-name order and only marks the
- * first/last row of each contiguous same-letter bucket, so the adapter can
+ * Section grouping orders contacts by the label each row shows — the owner
+ * alias when set, else the profile name — so every letter heads one
+ * contiguous bucket even when the incoming server order (display name)
+ * disagrees, and marks the first/last row of each bucket so the adapter can
  * pick the right rounded band background per row.
  */
 public final class ContactSectionsTest {
@@ -35,7 +37,7 @@ public final class ContactSectionsTest {
     public void group_emitsOneHeaderPerContiguousLetterBucket() {
         List<ContactSections.Row> rows = ContactSections.group(List.of(
                 contact("1", "An Tuan"),
-                contact("2", "Anh Vu"),
+                contact("2", "An Vu"),
                 contact("3", "Bao Chau"),
                 contact("4", "Duc Anh")));
 
@@ -60,16 +62,50 @@ public final class ContactSectionsTest {
     }
 
     @Test
-    public void group_startsNewSectionWhenLetterChangesBack() {
+    public void group_mergesSameLetterIntoOneSection() {
         List<ContactSections.Row> rows = ContactSections.group(List.of(
                 contact("1", "An Tuan"),
                 contact("2", "Bao Chau"),
-                contact("3", "Anh Em")));
+                contact("3", "An Vu")));
+
+        assertEquals(5, rows.size());
+        assertHeader(rows.get(0), "A");
+        assertItem(rows.get(1), "1", true, false);
+        assertItem(rows.get(2), "3", false, true);
+        assertHeader(rows.get(3), "B");
+        assertItem(rows.get(4), "2", true, true);
+    }
+
+    @Test
+    public void group_aliasedContactSectionsByTheLabelTheRowShows() {
+        // The server orders by display name; "Zed" is an alias over the
+        // display name "Anh Vu", so without re-sorting its row lands under
+        // an "A" bucket while carrying a "Z" letter.
+        List<ContactSections.Row> rows = ContactSections.group(List.of(
+                contact("1", "An Tuan", null),
+                contact("2", "Anh Vu", "Zed"),
+                contact("3", "Bao Chau", null)));
 
         assertEquals(6, rows.size());
         assertHeader(rows.get(0), "A");
+        assertItem(rows.get(1), "1", true, true);
         assertHeader(rows.get(2), "B");
-        assertHeader(rows.get(4), "A");
+        assertItem(rows.get(3), "3", true, true);
+        assertHeader(rows.get(4), "Z");
+        assertItem(rows.get(5), "2", true, true);
+    }
+
+    @Test
+    public void group_hashSectionSortsAfterLetters() {
+        List<ContactSections.Row> rows = ContactSections.group(List.of(
+                contact("1", "0900000210"),
+                contact("2", "Bao Chau")));
+
+        assertEquals(4, rows.size());
+        assertHeader(rows.get(0), "B");
+        assertItem(rows.get(1), "2", true, true);
+        assertHeader(rows.get(2), "#");
+        assertItem(rows.get(3), "1", true, true);
     }
 
     @Test
@@ -78,7 +114,11 @@ public final class ContactSectionsTest {
     }
 
     private static Contact contact(String userId, String displayName) {
-        return new Contact(userId, null, displayName, null, null, null);
+        return contact(userId, displayName, null);
+    }
+
+    private static Contact contact(String userId, String displayName, String aliasName) {
+        return new Contact(userId, null, displayName, aliasName, null, null);
     }
 
     private static void assertHeader(ContactSections.Row row, String letter) {

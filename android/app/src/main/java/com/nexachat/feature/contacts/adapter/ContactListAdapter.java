@@ -36,7 +36,7 @@ public final class ContactListAdapter extends ListAdapter<ContactSections.Row, R
         this.listener = listener;
     }
 
-    /** Convenience: expands the flat, sorted contact list into sectioned rows. */
+    /** Convenience: expands contacts into letter-sectioned rows ordered by the displayed label. */
     public void submitContacts(@NonNull List<Contact> contacts) {
         submitList(ContactSections.group(contacts));
     }
