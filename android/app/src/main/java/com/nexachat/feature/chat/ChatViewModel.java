@@ -125,6 +125,8 @@ public final class ChatViewModel extends ViewModel {
     @Nullable private String accountTargetLang;
     /** Messages already submitted to auto-translate this session. */
     private final java.util.Set<String> autoTranslateRequested = new java.util.HashSet<>();
+    private static final long TRANSLATION_CACHE_MAX_AGE_MILLIS = 30L * 24 * 60 * 60 * 1000;
+    private boolean translationSweepDone;
     private final MutableLiveData<ChatSearchState> mutableSearchState =
             new MutableLiveData<>(new ChatSearchState());
     private final MutableLiveData<List<GroupMember>> mutableGroupMembers =
@@ -840,7 +842,17 @@ public final class ChatViewModel extends ViewModel {
         if (translationRepository == null) {
             return Single.just(Result.failure(new ApiError.Unknown("UNAVAILABLE")));
         }
-        return translationRepository.putGlossary(conversationId, terms);
+        return translationRepository.putGlossary(conversationId, terms)
+                .doOnSuccess(result -> {
+                    if (result instanceof Result.Success<?>) {
+                        // The server keys translations by glossary, so local copies made
+                        // under the old glossary would keep serving stale wording.
+                        translationStates.postValue(java.util.Map.of());
+                        autoTranslateRequested.clear();
+                        disposables.add(translationRepository.invalidateConversation(conversationId)
+                                .subscribe(() -> { }, ignored -> { }));
+                    }
+                });
     }
 
     /**
@@ -849,6 +861,11 @@ public final class ChatViewModel extends ViewModel {
      */
     private void seedCachedTranslations() {
         if (translationRepository == null) return;
+        if (!translationSweepDone) {
+            translationSweepDone = true;
+            disposables.add(translationRepository.sweepExpired(TRANSLATION_CACHE_MAX_AGE_MILLIS)
+                    .subscribe(() -> { }, ignored -> { }));
+        }
         String target = effectiveTargetLang();
         UiState state = currentUiState();
         java.util.List<ChatMessage> messages = state.getMessages();

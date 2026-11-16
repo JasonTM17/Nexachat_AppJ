@@ -159,6 +159,18 @@ public final class TranslationRepository {
         return translationDao.deleteForMessage(messageId).subscribeOn(Schedulers.io());
     }
 
+    /** Drops every cached row of a conversation (its glossary changed, so keys no longer match). */
+    public io.reactivex.rxjava3.core.Completable invalidateConversation(
+            @NonNull String conversationId) {
+        return translationDao.deleteForConversation(conversationId).subscribeOn(Schedulers.io());
+    }
+
+    /** Evicts rows older than the cache lifetime so local copies do not outlive the server TTL. */
+    public io.reactivex.rxjava3.core.Completable sweepExpired(long maxAgeMillis) {
+        return translationDao.deleteOlderThan(System.currentTimeMillis() - maxAgeMillis)
+                .subscribeOn(Schedulers.io());
+    }
+
     @NonNull
     public Single<Result<TranslationGlossaryDto>> getGlossary(@NonNull String conversationId) {
         return call(api.getGlossary(conversationId));
