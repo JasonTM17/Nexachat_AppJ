@@ -61,13 +61,14 @@ public final class MessageListDiffCallback extends DiffUtil.ItemCallback<Message
                 && Objects.equals(left.getReplyToId(), right.getReplyToId())
                 && Objects.equals(left.getReplyToSnippet(), right.getReplyToSnippet())
                 && Objects.equals(left.getReplyToSenderName(), right.getReplyToSenderName())
+                && left.isReplyToEncrypted() == right.isReplyToEncrypted()
                 && Objects.equals(left.getSenderDisplayName(), right.getSenderDisplayName())
+                && Objects.equals(left.getMentions(), right.getMentions())
+                && left.isMentionAll() == right.isMentionAll()
+                && left.isDecryptFailed() == right.isDecryptFailed()
+                && left.isPausedRefusal() == right.isPausedRefusal()
                 && reactionsEqual(left.getReactions(), right.getReactions())
-                && attachmentsSizeEqual(left, right);
-    }
-
-    private static boolean attachmentsSizeEqual(ChatMessage left, ChatMessage right) {
-        return left.getAttachments().size() == right.getAttachments().size();
+                && Objects.equals(left.getAttachments(), right.getAttachments());
     }
 
     private static boolean reactionsEqual(
