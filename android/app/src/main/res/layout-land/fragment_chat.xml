@@ -32,6 +32,19 @@
         app:layout_constraintStart_toStartOf="@id/chatToolbar"
         app:layout_constraintTop_toTopOf="@id/chatToolbar" />
 
+    <ImageView
+        android:id="@+id/e2eeLock"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:layout_marginEnd="@dimen/space_xs"
+        android:contentDescription="@string/cd_e2ee_lock"
+        android:src="@drawable/ic_lock"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@id/chatToolbar"
+        app:layout_constraintEnd_toStartOf="@id/chatToolbarActions"
+        app:layout_constraintTop_toTopOf="@id/chatToolbar"
+        app:tint="?attr/colorPrimary" />
+
     <HorizontalScrollView
         android:id="@+id/chatToolbarActions"
         android:layout_width="wrap_content"
