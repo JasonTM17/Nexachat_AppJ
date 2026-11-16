@@ -169,7 +169,7 @@
                                 android:layout_height="@dimen/icon_size"
                                 android:layout_gravity="center"
                                 android:importantForAccessibility="no"
-                                android:src="@drawable/ic_notification"
+                                android:src="@drawable/ic_notifications"
                                 app:tint="?attr/colorOnPrimaryContainer" />
                         </FrameLayout>
 

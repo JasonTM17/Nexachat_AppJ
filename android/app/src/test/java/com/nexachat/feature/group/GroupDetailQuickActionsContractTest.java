@@ -2,7 +2,9 @@ package com.nexachat.feature.group;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -48,6 +50,52 @@ public final class GroupDetailQuickActionsContractTest {
         assertNotNull(icon);
         assertNotNull(findById(tile, "muteText"));
         assertEquals("no", attr(icon, "importantForAccessibility"));
+    }
+
+    @Test
+    public void muteTileUsesTheNotificationBellGlyph() throws Exception {
+        Element tile = findById(loadLayout(), "muteTile");
+        Element icon = findById(tile, "muteIcon");
+        assertNotNull(icon);
+        assertEquals("unmuted state must show the bell glyph, not the app logo",
+                "@drawable/ic_notifications", attr(icon, "src"));
+
+        Path[] bells = {
+            Path.of("src/main/res/drawable/ic_notifications.xml"),
+            Path.of("app/src/main/res/drawable/ic_notifications.xml"),
+            Path.of("android/app/src/main/res/drawable/ic_notifications.xml")
+        };
+        Document bell = null;
+        for (Path candidate : bells) {
+            if (Files.isRegularFile(candidate)) {
+                DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+                factory.setNamespaceAware(true);
+                bell = factory.newDocumentBuilder().parse(candidate.toFile());
+            }
+        }
+        assertNotNull("ic_notifications drawable must exist", bell);
+        assertEquals("the bell must be a 24dp glyph",
+                "24", bell.getDocumentElement().getAttributeNS(ANDROID_NS, "viewportWidth"));
+    }
+
+    @Test
+    public void muteBinderSwapsBetweenTheTwoBellStates() throws Exception {
+        Path[] sources = {
+            Path.of("src/main/java/com/nexachat/feature/group/GroupDetailFragment.java"),
+            Path.of("app/src/main/java/com/nexachat/feature/group/GroupDetailFragment.java"),
+            Path.of("android/app/src/main/java/com/nexachat/feature/group/GroupDetailFragment.java")
+        };
+        String source = null;
+        for (Path candidate : sources) {
+            if (Files.isRegularFile(candidate)) {
+                source = new String(Files.readAllBytes(candidate), StandardCharsets.UTF_8);
+            }
+        }
+        assertNotNull("GroupDetailFragment source must exist", source);
+        assertTrue("unmuted branch must bind the bell glyph",
+                source.contains("R.drawable.ic_notifications"));
+        assertTrue("muted branch must bind the crossed bell",
+                source.contains("R.drawable.ic_notifications_off"));
     }
 
     @Test

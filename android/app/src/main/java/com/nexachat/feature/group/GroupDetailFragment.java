@@ -188,7 +188,7 @@ public final class GroupDetailFragment extends Fragment {
 
         boolean muted = mutedNow(state);
         binding.muteIcon.setImageResource(
-                muted ? R.drawable.ic_notifications_off : R.drawable.ic_notification);
+                muted ? R.drawable.ic_notifications_off : R.drawable.ic_notifications);
         binding.muteText.setText(muted ? R.string.unmute : R.string.mute_menu_title);
         binding.muteTile.setContentDescription(
                 getString(muted ? R.string.unmute : R.string.mute_menu_title));
