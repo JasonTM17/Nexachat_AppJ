@@ -1477,11 +1477,20 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
     private void showMoreOptions() {
         ConversationSummary conversation = currentConversation();
+        // The Room row hydrates before the chat UiState converges, so prefer it
+        // for every flag; state is only the fallback while the row is absent.
+        boolean isGroup = conversation != null
+                ? conversation.isGroup()
+                : state != null && state.isGroup();
         boolean muted = conversation != null
                 && conversation.isMutedAt(System.currentTimeMillis());
         boolean archived = conversation != null && conversation.isArchived();
-        boolean pinned = state != null && state.isConversationPinned();
-        boolean e2ee = state != null && state.isE2eeEnabled();
+        boolean pinned = conversation != null
+                ? conversation.isPinned()
+                : state != null && state.isConversationPinned();
+        boolean e2ee = conversation != null
+                ? conversation.isE2eeEnabled()
+                : state != null && state.isE2eeEnabled();
         List<CharSequence> labels = new ArrayList<>();
         List<Integer> actions = new ArrayList<>();
         if (!e2ee) {
@@ -1496,11 +1505,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             labels.add(getString(R.string.summary_overflow_action));
             actions.add(MENU_SUMMARY);
         }
-        if (state != null && !state.isGroup()) {
+        if (!isGroup) {
             labels.add(getString(R.string.e2ee_menu_title));
             actions.add(MENU_ENCRYPTION);
         }
-        if (state != null && ChatToolbarPolicy.infoAvailable(state.isGroup())) {
+        if (ChatToolbarPolicy.infoAvailable(isGroup)) {
             labels.add(getString(R.string.cd_group_info));
             actions.add(MENU_INFO);
         }
@@ -1516,7 +1525,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         actions.add(MENU_ASSIGN_LABEL);
         labels.add(getString(R.string.archive_title));
         actions.add(MENU_SHARED_MEDIA);
-        if (state != null && state.isGroup()) {
+        if (isGroup) {
             labels.add(getString(R.string.group_board_title));
             actions.add(MENU_GROUP_BOARD);
         }
