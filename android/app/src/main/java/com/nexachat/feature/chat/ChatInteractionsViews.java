@@ -29,6 +29,7 @@ import com.nexachat.data.ChatMessage;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.feature.chat.adapter.ForwardTargetAdapter;
 import com.nexachat.databinding.DialogForwardBinding;
+import com.nexachat.feature.ui.FormDialogs;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -283,12 +284,12 @@ public final class ChatInteractionsViews {
             }
             default -> throw new IllegalArgumentException("A delete action is required");
         }
-        new MaterialAlertDialogBuilder(context)
+        FormDialogs.markDestructive(new MaterialAlertDialogBuilder(context)
                 .setTitle(title)
                 .setMessage(body)
                 .setNegativeButton(R.string.action_cancel, null)
                 .setPositiveButton(R.string.action_delete, (dialog, which) -> actions.delete(message, action))
-                .show();
+                .show());
     }
 
     public static void showForwardPicker(

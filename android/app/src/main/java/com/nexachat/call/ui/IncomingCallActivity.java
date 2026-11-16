@@ -3,7 +3,7 @@ package com.nexachat.call.ui;
 import android.annotation.SuppressLint;
 import android.Manifest;
 import androidx.activity.ComponentActivity;
-import android.app.AlertDialog;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
@@ -349,7 +349,7 @@ public class IncomingCallActivity extends ComponentActivity {
         if (decision == CallPermissionHelper.Decision.GRANTED) {
             requestNotificationPermissionThenContinue();
         } else if (decision == CallPermissionHelper.Decision.SHOW_RATIONALE) {
-            new AlertDialog.Builder(this)
+            new MaterialAlertDialogBuilder(this)
                     .setMessage(R.string.call_mic_rationale)
                     .setPositiveButton(R.string.call_permission_continue,
                             (dialog, which) -> requestMicrophonePermission())
@@ -380,7 +380,7 @@ public class IncomingCallActivity extends ComponentActivity {
             ActivityCompat.requestPermissions(
                     this, new String[] {Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
         } else if (decision == CallPermissionHelper.Decision.SHOW_RATIONALE) {
-            new AlertDialog.Builder(this)
+            new MaterialAlertDialogBuilder(this)
                     .setMessage(R.string.call_notifications_rationale)
                     .setPositiveButton(R.string.call_permission_continue,
                             (dialog, which) -> ActivityCompat.requestPermissions(
@@ -439,7 +439,7 @@ public class IncomingCallActivity extends ComponentActivity {
 
     private void showPermissionFallback() {
         String phone = getIntent().getStringExtra(CallLauncher.EXTRA_PEER_PHONE);
-        AlertDialog.Builder dialog = new AlertDialog.Builder(this)
+        MaterialAlertDialogBuilder dialog = new MaterialAlertDialogBuilder(this)
                 .setMessage(R.string.call_mic_permission_needed)
                 .setNegativeButton(android.R.string.ok, (ignored, which) -> finish());
         if (CallPermissionHelper.hasPhoneFallback(phone)) {
