@@ -416,9 +416,10 @@ public class CallActivity extends ComponentActivity {
         } else {
             mainHandler.removeCallbacks(timerTick);
         }
-        muteButton.setVisibility(model.isShowMute() ? View.VISIBLE : View.GONE);
-        speakerButton.setVisibility(model.isShowSpeaker() ? View.VISIBLE : View.GONE);
-        hangUpButton.setVisibility(model.isShowHangUp() ? View.VISIBLE : View.GONE);
+        // Hide the whole weighted column so the visible controls stay evenly spaced.
+        setControlVisible(muteButton, model.isShowMute());
+        setControlVisible(speakerButton, model.isShowSpeaker());
+        setControlVisible(hangUpButton, model.isShowHangUp());
         if (muteLabel != null) {
             muteLabel.setVisibility(model.isShowMute() ? View.VISIBLE : View.GONE);
             muteLabel.setText(session.isMuted() ? R.string.call_unmute : R.string.call_mute);
@@ -442,13 +443,10 @@ public class CallActivity extends ComponentActivity {
                     .setIconResource(session.isSpeakerOn() ? R.drawable.ic_volume_down : R.drawable.ic_volume_up);
         }
         if (model.getHangUpLabelRes() != 0) {
-            hangUpButton.setText(model.getHangUpLabelRes());
             hangUpButton.setContentDescription(getString(model.getHangUpLabelRes()));
         }
-        muteButton.setText(session.isMuted() ? R.string.call_unmute : R.string.call_mute);
         muteButton.setContentDescription(getString(
                 session.isMuted() ? R.string.call_unmute : R.string.call_mute));
-        speakerButton.setText(session.isSpeakerOn() ? R.string.call_earpiece : R.string.call_speaker);
         speakerButton.setContentDescription(getString(
                 session.isSpeakerOn() ? R.string.call_earpiece : R.string.call_speaker));
         boolean videoCall = session.getMediaType() == CallMediaType.VIDEO;
@@ -465,22 +463,40 @@ public class CallActivity extends ComponentActivity {
         }
         boolean showCameraControls = videoCall && isLive && deviceHasCamera;
         if (cameraButton != null) {
-            cameraButton.setVisibility(showCameraControls ? View.VISIBLE : View.GONE);
+            // Hide the whole weighted column, not just the button, so voice calls keep their spacing.
+            setControlVisible(cameraButton, showCameraControls);
             int cameraIcon = session.isCameraOn() ? R.drawable.ic_videocam : R.drawable.ic_videocam_off;
             int cameraLabelRes = session.isCameraOn() ? R.string.call_camera_off : R.string.call_camera_on;
             if (cameraButton instanceof com.google.android.material.button.MaterialButton) {
                 ((com.google.android.material.button.MaterialButton) cameraButton)
                         .setIconResource(cameraIcon);
             }
-            cameraButton.setText(cameraLabelRes);
             cameraButton.setContentDescription(getString(cameraLabelRes));
         }
         if (switchCameraButton != null) {
-            switchCameraButton.setVisibility(showCameraControls ? View.VISIBLE : View.GONE);
+            setControlVisible(switchCameraButton, showCameraControls);
+            View switchLabel = findViewById(R.id.call_camera_switch_label);
+            if (switchLabel != null) {
+                switchLabel.setVisibility(showCameraControls ? View.VISIBLE : View.GONE);
+            }
         }
         if (cameraLabel != null) {
             cameraLabel.setVisibility(showCameraControls ? View.VISIBLE : View.GONE);
             cameraLabel.setText(session.isCameraOn() ? R.string.call_camera_off : R.string.call_camera_on);
+        }
+    }
+
+    /** Shows or hides a control together with its column (button and label). */
+    private static void setControlVisible(View button, boolean visible) {
+        int visibility = visible ? View.VISIBLE : View.GONE;
+        button.setVisibility(visibility);
+        View column = (View) button.getParent();
+        column.setVisibility(visibility);
+        if (column instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) column;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                group.getChildAt(i).setVisibility(visibility);
+            }
         }
     }
 

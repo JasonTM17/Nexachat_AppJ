@@ -52,6 +52,7 @@
     <string name="call_camera_off">Camera off</string>
     <string name="call_camera_on">Camera on</string>
     <string name="call_switch_camera">Switch camera</string>
+    <string name="call_switch_camera_short">Flip</string>
     <string name="call_camera_rationale">Camera access is needed for a video call. You can also answer as voice only.</string>
     <string name="call_camera_permission_needed">Allow camera access for video, or continue with voice only.</string>
     <string name="call_answer_as_voice">Answer as voice</string>

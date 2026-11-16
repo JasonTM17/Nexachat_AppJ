@@ -24,7 +24,7 @@
         android:layout_height="wrap_content"
         android:gravity="center_horizontal"
         android:orientation="vertical"
-        android:paddingHorizontal="24dp"
+        android:paddingHorizontal="16dp"
         android:paddingVertical="32dp">
 
         <View
@@ -249,6 +249,16 @@
                     app:iconPadding="0dp"
                     app:iconSize="28dp"
                     app:iconTint="@color/call_icon_on_control" />
+                <TextView
+                    android:id="@+id/call_camera_switch_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:importantForAccessibility="no"
+                    android:text="@string/call_switch_camera_short"
+                    android:textAppearance="?attr/textAppearanceLabelMedium"
+                    android:textColor="@color/call_text_muted"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <!-- End Call Column -->

@@ -60,7 +60,7 @@
     <dimen name="sheet_action_row_min_height">56dp</dimen>
     <dimen name="control_stroke_width">1dp</dimen>
     <dimen name="focus_stroke_width">2dp</dimen>
-    <dimen name="call_control_size">64dp</dimen>
+    <dimen name="call_control_size">60dp</dimen>
     <dimen name="call_end_size">72dp</dimen>
     <dimen name="call_avatar_size">112dp</dimen>
     <dimen name="chip_min_height">32dp</dimen>

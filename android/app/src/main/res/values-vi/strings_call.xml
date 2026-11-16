@@ -52,6 +52,7 @@
     <string name="call_camera_off">Tắt camera</string>
     <string name="call_camera_on">Bật camera</string>
     <string name="call_switch_camera">Đổi camera</string>
+    <string name="call_switch_camera_short">Lật</string>
     <string name="call_camera_rationale">Cần quyền camera để gọi video. Bạn cũng có thể trả lời bằng thoại.</string>
     <string name="call_camera_permission_needed">Hãy cấp quyền camera để gọi video, hoặc tiếp tục bằng thoại.</string>
     <string name="call_answer_as_voice">Trả lời bằng thoại</string>
