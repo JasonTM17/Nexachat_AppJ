@@ -39,7 +39,7 @@ public class AlertRuleController {
                               @NotBlank String severity,
                               @NotBlank String patternType,
                               @Size(max = 200) String pattern,
-                              @Size(max = 20) String locale,
+                              @Size(max = 8) String locale,
                               @Size(max = 500) String description) {
     }
 

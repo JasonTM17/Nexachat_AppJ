@@ -69,7 +69,7 @@ public class AlertRuleService {
         String newPattern = "CARD".equals(existing.patternType())
                 ? CARD_PATTERN_SENTINEL
                 : (pattern == null ? existing.pattern() : pattern);
-        if (!existing.builtIn() && !"CARD".equals(existing.patternType())) {
+        if (!"CARD".equals(existing.patternType())) {
             scanner.validatePattern(existing.patternType(), newPattern);
         }
         String newName = name == null || name.isBlank() ? existing.name()
