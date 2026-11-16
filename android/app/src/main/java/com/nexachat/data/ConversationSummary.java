@@ -394,6 +394,8 @@ public final class ConversationSummary {
                 && peerReadSeq == that.peerReadSeq
                 && peerDeliveredSeq == that.peerDeliveredSeq
                 && lastMessageDeleted == that.lastMessageDeleted
+                && e2eeEnabled == that.e2eeEnabled
+                && lastMessageEncrypted == that.lastMessageEncrypted
                 && muted == that.muted
                 && archived == that.archived
                 && aiOptOut == that.aiOptOut
@@ -422,6 +424,6 @@ public final class ConversationSummary {
                 lastMessageAtEpochMs, lastMessageSeq, unreadCount, myLastReadSeq, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, peerDeliveredSeq, myRole, otherUserId,
                 lastMessageDeleted, peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut,
-                pinned, pinnedAtEpochMs, labelIds, lastMessageType);
+                pinned, pinnedAtEpochMs, labelIds, lastMessageType, e2eeEnabled, lastMessageEncrypted);
     }
 }
