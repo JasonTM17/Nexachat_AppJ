@@ -25,8 +25,8 @@
         android:background="@drawable/bg_message_bubble_outgoing"
         app:layout_constrainedWidth="true"
         android:orientation="vertical"
-        android:paddingHorizontal="14dp"
-        android:paddingVertical="10dp"
+        android:paddingHorizontal="@dimen/bubble_content_inset"
+        android:paddingVertical="@dimen/space_sm"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintHorizontal_bias="1"
         app:layout_constraintStart_toEndOf="@id/bubbleStartLimit"
@@ -50,11 +50,12 @@
                 android:layout_width="@dimen/min_touch_target"
                 android:layout_height="@dimen/min_touch_target"
                 android:layout_gravity="center"
-                android:background="?attr/selectableItemBackgroundBorderless"
+                android:background="@drawable/bg_media_play_button"
                 android:contentDescription="@string/cd_open_attachment"
+                android:padding="@dimen/space_inset"
                 android:src="@drawable/ic_play_arrow"
                 android:visibility="visible"
-                app:tint="?attr/colorOnPrimaryContainer" />
+                app:tint="@color/nexa_on_media_meta" />
             <include
                 android:id="@+id/bubbleMeta"
                 layout="@layout/include_message_bubble_meta"

@@ -78,14 +78,16 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <ProgressBar
+        <com.google.android.material.progressindicator.CircularProgressIndicator
             android:id="@+id/e2eeLoading"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
             android:layout_marginTop="@dimen/space_md"
             android:contentDescription="@string/voice_status_loading"
-            android:visibility="gone" />
+            android:indeterminate="true"
+            android:visibility="gone"
+            app:indicatorColor="?attr/colorPrimary" />
 
         <TextView
             android:id="@+id/e2eeStatus"
@@ -171,18 +173,19 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center_horizontal"
-                    android:layout_marginTop="@dimen/space_xs"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:minHeight="@dimen/min_touch_target"
                     android:text="@string/e2ee_action_mark_verified" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/copyCodeButton"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.NexaChat.Button.Tonal"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="@dimen/space_sm"
                     android:minHeight="@dimen/min_touch_target"
-                    android:text="@string/action_copy"
-                    app:cornerRadius="@dimen/corner_md" />
+                    android:text="@string/action_copy" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

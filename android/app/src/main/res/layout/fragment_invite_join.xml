@@ -60,8 +60,7 @@
                         android:layout_marginTop="@dimen/space_md"
                         android:gravity="center"
                         android:textAppearance="?attr/textAppearanceHeadlineSmall"
-                        android:textColor="?attr/colorOnSurface"
-                        android:textStyle="bold" />
+                        android:textColor="?attr/colorOnSurface" />
 
                     <TextView
                         android:id="@+id/memberCount"
@@ -101,19 +100,17 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
-                android:minHeight="@dimen/min_touch_target"
-                app:cornerRadius="@dimen/corner_md" />
+                android:minHeight="@dimen/min_touch_target" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/checkStatusButton"
-                style="?attr/materialButtonOutlinedStyle"
+                style="@style/Widget.NexaChat.Button.Tonal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_sm"
                 android:minHeight="@dimen/min_touch_target"
                 android:text="@string/invite_check_status"
-                android:visibility="gone"
-                app:cornerRadius="@dimen/corner_md" />
+                android:visibility="gone" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/openChatButton"
@@ -122,30 +119,27 @@
                 android:layout_marginTop="@dimen/space_sm"
                 android:minHeight="@dimen/min_touch_target"
                 android:text="@string/invite_open_chat"
-                android:visibility="gone"
-                app:cornerRadius="@dimen/corner_md" />
+                android:visibility="gone" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/retryButton"
-                style="?attr/materialButtonOutlinedStyle"
+                style="@style/Widget.NexaChat.Button.Tonal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_sm"
                 android:minHeight="@dimen/min_touch_target"
                 android:text="@string/invite_retry"
-                android:visibility="gone"
-                app:cornerRadius="@dimen/corner_md" />
+                android:visibility="gone" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/signInButton"
-                style="?attr/materialButtonOutlinedStyle"
+                style="@style/Widget.NexaChat.Button.Tonal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_sm"
                 android:minHeight="@dimen/min_touch_target"
                 android:text="@string/invite_sign_in"
-                android:visibility="gone"
-                app:cornerRadius="@dimen/corner_md" />
+                android:visibility="gone" />
 
             <ProgressBar
                 android:id="@+id/loading"

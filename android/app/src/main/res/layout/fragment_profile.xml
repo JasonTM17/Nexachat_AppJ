@@ -49,8 +49,7 @@
             android:layout_marginTop="@dimen/space_sm"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/action_retry"
-            android:visibility="gone"
-            app:cornerRadius="@dimen/corner_md" />
+            android:visibility="gone" />
 
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
@@ -86,7 +85,7 @@
                         android:background="@drawable/bg_camera_badge"
                         android:contentDescription="@string/profile_change_avatar"
                         android:focusable="true"
-                        android:foreground="?attr/selectableItemBackgroundBorderless"
+                        android:foreground="?attr/selectableItemBackground"
                         android:padding="@dimen/space_md"
                         android:src="@drawable/ic_camera_alt"
                         app:tint="@color/brand_on_fill" />
@@ -139,27 +138,24 @@
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="@dimen/space_sm"
                         android:minHeight="@dimen/min_touch_target"
-                        android:text="@string/action_cancel"
-                        app:cornerRadius="@dimen/corner_md" />
+                        android:text="@string/action_cancel" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/saveName"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:minHeight="@dimen/min_touch_target"
-                        android:text="@string/action_save"
-                        app:cornerRadius="@dimen/corner_md" />
+                        android:text="@string/action_save" />
                 </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/editName"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.NexaChat.Button.Tonal"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_sm"
                     android:minHeight="@dimen/min_touch_target"
-                    android:text="@string/cd_edit_name"
-                    app:cornerRadius="@dimen/corner_md" />
+                    android:text="@string/cd_edit_name" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

@@ -83,7 +83,6 @@
             android:layout_marginTop="8dp"
             android:layout_marginBottom="16dp"
             android:minHeight="@dimen/min_touch_target"
-            android:text="@string/action_add"
-            app:cornerRadius="12dp" />
+            android:text="@string/action_add" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

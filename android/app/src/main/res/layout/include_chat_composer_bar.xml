@@ -15,7 +15,7 @@
         android:id="@+id/attachButton"
         android:layout_width="@dimen/min_touch_target"
         android:layout_height="@dimen/min_touch_target"
-        android:background="?attr/selectableItemBackgroundBorderless"
+        android:background="?attr/selectableItemBackground"
         android:contentDescription="@string/cd_attach"
         android:padding="10dp"
         android:src="@drawable/ic_add"
@@ -49,8 +49,8 @@
         android:gravity="center_vertical"
         android:minHeight="@dimen/min_touch_target"
         android:orientation="horizontal"
-        android:paddingHorizontal="14dp"
-        android:paddingVertical="8dp"
+        android:paddingHorizontal="@dimen/bubble_content_inset"
+        android:paddingVertical="@dimen/space_sm"
         android:visibility="gone">
 
         <ImageView
@@ -64,8 +64,7 @@
             android:id="@+id/recordingDuration"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:fontFamily="sans-serif-medium"
+            android:layout_marginStart="@dimen/space_sm"
             android:text="@string/voice_recording_duration_zero"
             android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="?attr/colorError" />
@@ -101,7 +100,7 @@
             android:id="@+id/micButton"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:background="?attr/selectableItemBackground"
             android:contentDescription="@string/cd_record_voice"
             android:padding="10dp"
             android:src="@drawable/ic_mic"

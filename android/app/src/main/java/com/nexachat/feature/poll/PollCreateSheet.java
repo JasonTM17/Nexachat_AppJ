@@ -169,7 +169,7 @@ public final class PollCreateSheet extends BottomSheetDialogFragment {
             row.binding.optionLayout.setHint(
                     getString(R.string.poll_option_hint, index + 1));
             row.binding.optionRemove.setVisibility(
-                    optionRows.size() > MIN_OPTIONS ? View.VISIBLE : View.INVISIBLE);
+                    optionRows.size() > MIN_OPTIONS ? View.VISIBLE : View.GONE);
         }
         binding.pollAddOption.setEnabled(optionRows.size() < MAX_OPTIONS);
     }

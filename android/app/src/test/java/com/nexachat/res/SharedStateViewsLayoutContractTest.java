@@ -25,6 +25,7 @@ import static org.junit.Assert.assertTrue;
 public final class SharedStateViewsLayoutContractTest {
 
     private static final String NS_ANDROID = "http://schemas.android.com/apk/res/android";
+    private static final String NS_APP = "http://schemas.android.com/apk/res-auto";
 
     private File resDir;
     private File javaDir;
@@ -99,6 +100,36 @@ public final class SharedStateViewsLayoutContractTest {
         Element retryButton = findElementById(errorDoc.getDocumentElement(), "retryButton");
         assertNotNull(retryButton);
         assertEquals("@string/action_retry", retryButton.getAttributeNS(NS_ANDROID, "text"));
+    }
+
+    @Test
+    public void emptyIconStaysHiddenUntilAnIconIsSet() throws Exception {
+        Document doc = parse(new File(resDir, "layout/view_empty_state.xml"));
+        Element icon = findElementById(doc.getDocumentElement(), "emptyIcon");
+        assertNotNull(icon);
+        assertEquals("message-only states must not reserve icon space",
+                "gone", icon.getAttributeNS(NS_ANDROID, "visibility"));
+    }
+
+    @Test
+    public void stateIconsAndIndicatorUseTheSharedSizes() throws Exception {
+        Document emptyDoc = parse(new File(resDir, "layout/view_empty_state.xml"));
+        Element emptyIcon = findElementById(emptyDoc.getDocumentElement(), "emptyIcon");
+        Document errorDoc = parse(new File(resDir, "layout/view_error_state.xml"));
+        Element errorIcon = findElementById(errorDoc.getDocumentElement(), "errorIcon");
+        for (Element icon : new Element[] {emptyIcon, errorIcon}) {
+            assertNotNull(icon);
+            assertEquals("@dimen/state_icon_size",
+                    icon.getAttributeNS(NS_ANDROID, "layout_width"));
+            assertEquals("@dimen/state_icon_size",
+                    icon.getAttributeNS(NS_ANDROID, "layout_height"));
+        }
+
+        Document loadingDoc = parse(new File(resDir, "layout/view_loading_state.xml"));
+        Element spinner = findElementById(loadingDoc.getDocumentElement(), "loadingSpinner");
+        assertNotNull(spinner);
+        assertEquals("@dimen/loading_indicator_size",
+                spinner.getAttributeNS(NS_APP, "indicatorSize"));
     }
 
     @Test

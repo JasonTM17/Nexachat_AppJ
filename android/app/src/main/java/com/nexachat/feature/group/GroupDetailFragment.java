@@ -171,10 +171,12 @@ public final class GroupDetailFragment extends Fragment {
         binding.groupAvatar.setFocusable(isAdmin);
         binding.groupTitle.setClickable(state.isIAmAdmin());
         binding.groupTitle.setFocusable(isAdmin);
+        binding.avatarEditBadge.setVisibility(isAdmin ? View.VISIBLE : View.GONE);
         memberAdapter.setShowRemove(state.isIAmAdmin());
         memberAdapter.submitList(state.getMembers());
-        binding.membersHeader.setTitle(com.nexachat.res.QuantityStrings.memberCount(
+        binding.groupSubtitle.setText(com.nexachat.res.QuantityStrings.memberCount(
                 getResources(), state.getMembers().size()));
+        binding.membersHeader.setTitle(getString(R.string.group_members_label));
         binding.addMemberButton.setVisibility(state.isIAmAdmin() ? View.VISIBLE : View.GONE);
         binding.inviteLinkButton.setVisibility(state.isIAmAdmin() ? View.VISIBLE : View.GONE);
         binding.toolbar.getMenu().findItem(MENU_RENAME).setVisible(state.isIAmAdmin());

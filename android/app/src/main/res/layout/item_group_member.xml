@@ -54,7 +54,7 @@
             android:id="@+id/removeMember"
             android:layout_width="@dimen/min_touch_target"
             android:layout_height="@dimen/min_touch_target"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:background="?attr/selectableItemBackground"
             android:contentDescription="@string/action_delete"
             android:src="@drawable/ic_person_remove"
             app:tint="?attr/colorOnSurfaceVariant" />
@@ -64,6 +64,6 @@
         android:layout_width="match_parent"
         android:layout_height="@dimen/divider_height"
         android:layout_gravity="bottom"
-        android:layout_marginStart="@dimen/divider_inset"
+        android:layout_marginStart="@dimen/divider_inset_compact"
         android:background="?attr/colorSurfaceContainerHighest" />
 </FrameLayout>

@@ -33,12 +33,29 @@
             android:paddingHorizontal="@dimen/space_md"
             android:paddingBottom="@dimen/space_md">
 
-            <com.nexachat.core.ui.components.AvatarView
-                android:id="@+id/groupAvatar"
-                android:layout_width="@dimen/avatar_lg"
-                android:layout_height="@dimen/avatar_lg"
+            <FrameLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:layout_gravity="center_horizontal"
-                android:layout_marginTop="@dimen/space_md" />
+                android:layout_marginTop="@dimen/space_md">
+
+                <com.nexachat.core.ui.components.AvatarView
+                    android:id="@+id/groupAvatar"
+                    android:layout_width="@dimen/avatar_lg"
+                    android:layout_height="@dimen/avatar_lg" />
+
+                <ImageView
+                    android:id="@+id/avatarEditBadge"
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:layout_gravity="bottom|end"
+                    android:background="@drawable/bg_camera_badge"
+                    android:importantForAccessibility="no"
+                    android:padding="6dp"
+                    android:src="@drawable/ic_camera_alt"
+                    android:visibility="gone"
+                    app:tint="@color/brand_on_fill" />
+            </FrameLayout>
 
             <TextView
                 android:id="@+id/groupTitle"
@@ -49,8 +66,15 @@
                 android:minHeight="@dimen/min_touch_target"
                 android:minWidth="@dimen/min_touch_target"
                 android:textAppearance="?attr/textAppearanceHeadlineSmall"
-                android:textColor="?attr/colorOnSurface"
-                android:textStyle="bold" />
+                android:textColor="?attr/colorOnSurface" />
+
+            <TextView
+                android:id="@+id/groupSubtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <LinearLayout
                 android:id="@+id/quickActions"
@@ -87,13 +111,13 @@
                         android:paddingVertical="@dimen/space_sm">
 
                         <FrameLayout
-                            android:layout_width="32dp"
-                            android:layout_height="32dp"
+                            android:layout_width="@dimen/icon_tile_size"
+                            android:layout_height="@dimen/icon_tile_size"
                             android:background="@drawable/bg_quick_action_icon_accent">
 
                             <ImageView
-                                android:layout_width="@dimen/icon_size_sm"
-                                android:layout_height="@dimen/icon_size_sm"
+                                android:layout_width="@dimen/icon_size"
+                                android:layout_height="@dimen/icon_size"
                                 android:layout_gravity="center"
                                 android:importantForAccessibility="no"
                                 android:src="@drawable/ic_add"
@@ -135,18 +159,18 @@
                         android:paddingVertical="@dimen/space_sm">
 
                         <FrameLayout
-                            android:layout_width="32dp"
-                            android:layout_height="32dp"
-                            android:background="@drawable/bg_settings_tile_tint">
+                            android:layout_width="@dimen/icon_tile_size"
+                            android:layout_height="@dimen/icon_tile_size"
+                            android:background="@drawable/bg_quick_action_icon_accent">
 
                             <ImageView
                                 android:id="@+id/muteIcon"
-                                android:layout_width="@dimen/icon_size_sm"
-                                android:layout_height="@dimen/icon_size_sm"
+                                android:layout_width="@dimen/icon_size"
+                                android:layout_height="@dimen/icon_size"
                                 android:layout_gravity="center"
                                 android:importantForAccessibility="no"
                                 android:src="@drawable/ic_notification"
-                                app:tint="?attr/colorOnSurfaceVariant" />
+                                app:tint="?attr/colorOnPrimaryContainer" />
                         </FrameLayout>
 
                         <TextView
@@ -189,7 +213,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/inviteLinkButton"
-                        style="@style/Widget.Material3.Button.TonalButton"
+                        style="@style/Widget.NexaChat.Button.Tonal"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginHorizontal="@dimen/space_md"
@@ -199,14 +223,13 @@
                         android:text="@string/invite_manage_action"
                         android:textColor="?attr/colorOnPrimaryContainer"
                         android:visibility="gone"
-                        app:backgroundTint="?attr/colorPrimaryContainer"
-                        app:cornerRadius="@dimen/corner_md" />
+                        app:backgroundTint="?attr/colorPrimaryContainer" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/leaveGroupButton"
-                style="@style/Widget.Material3.Button.TonalButton"
+                style="@style/Widget.NexaChat.Button.Tonal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
@@ -214,7 +237,6 @@
                 android:text="@string/action_leave_group"
                 android:textColor="?attr/colorOnErrorContainer"
                 app:backgroundTint="?attr/colorErrorContainer"
-                app:cornerRadius="@dimen/corner_md"
                 app:icon="@drawable/ic_logout"
                 app:iconGravity="textStart"
                 app:iconTint="?attr/colorOnErrorContainer" />

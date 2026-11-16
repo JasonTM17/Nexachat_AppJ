@@ -69,7 +69,7 @@
                 android:id="@+id/archiveMediaOptions"
                 android:layout_width="@dimen/min_touch_target"
                 android:layout_height="@dimen/min_touch_target"
-                android:background="?attr/selectableItemBackgroundBorderless"
+                android:background="?attr/selectableItemBackground"
                 android:contentDescription="@string/archive_item_options"
                 android:padding="@dimen/space_sm"
                 android:src="@drawable/ic_more_vert"

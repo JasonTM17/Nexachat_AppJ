@@ -11,7 +11,7 @@
         android:id="@+id/voicePlayButton"
         android:layout_width="@dimen/min_touch_target"
         android:layout_height="@dimen/min_touch_target"
-        android:background="?attr/selectableItemBackgroundBorderless"
+        android:background="?attr/selectableItemBackground"
         android:contentDescription="@string/voice_play"
         android:padding="12dp"
         android:src="@drawable/ic_play_arrow" />
@@ -28,7 +28,7 @@
         android:id="@+id/voiceDuration"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
+        android:layout_marginStart="@dimen/space_sm"
         android:maxLines="1"
         android:minWidth="40dp"
         android:text="@string/voice_zero_duration"
@@ -39,7 +39,7 @@
         android:id="@+id/playButton"
         android:layout_width="@dimen/min_touch_target"
         android:layout_height="@dimen/min_touch_target"
-        android:background="?attr/selectableItemBackgroundBorderless"
+        android:background="?attr/selectableItemBackground"
         android:contentDescription="@string/cd_open_attachment"
         android:src="@drawable/ic_play_arrow"
         android:visibility="gone" />
