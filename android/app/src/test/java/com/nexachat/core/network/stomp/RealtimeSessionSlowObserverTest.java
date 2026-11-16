@@ -87,10 +87,19 @@ public final class RealtimeSessionSlowObserverTest {
             }
         });
 
+        long captureDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5L);
         WebSocket socket = sockets.get(1L);
         WebSocketListener listener = listeners.get(1L);
+        while ((socket == null || listener == null)
+                && System.nanoTime() < captureDeadline) {
+            Thread.sleep(10L);
+            socket = sockets.get(1L);
+            listener = listeners.get(1L);
+        }
         assertNotNull(socket);
         assertNotNull(listener);
+        final WebSocket connectedSocket = socket;
+        final WebSocketListener connectedListener = listener;
         listener.onOpen(socket, mock(Response.class));
         listener.onMessage(socket, StompCodec.encode(new StompFrame(StompCommand.CONNECTED)));
         String body = "{\"eventType\":\"USER_TYPING\",\"conversationId\":\"1\","
@@ -99,7 +108,7 @@ public final class RealtimeSessionSlowObserverTest {
                 StompCommand.MESSAGE, Map.of("destination", "/user/queue/inbox"), body);
         Thread callback = new Thread(() -> {
             try {
-                listener.onMessage(socket, StompCodec.encode(event));
+                connectedListener.onMessage(connectedSocket, StompCodec.encode(event));
             } catch (Throwable failure) {
                 callbackFailure.set(failure);
             } finally {
