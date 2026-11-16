@@ -24,12 +24,15 @@ public final class FormSheetKeyboardContractTest {
     @Test
     public void passwordAndLabelEditorsLiftTheirWindowsAboveTheIme() throws Exception {
         String profile = read("com/nexachat/feature/profile/ProfileFragment.java");
-        String labels = read("com/nexachat/feature/label/LabelDialogFragment.java");
-        assertTrue(profile.contains("SOFT_INPUT_ADJUST_RESIZE"));
-        assertTrue(labels.contains("SOFT_INPUT_ADJUST_RESIZE"));
-        // The label editor resizes above the IME like the profile dialogs do;
-        // padding the decor clipped the dialog instead of lifting it.
-        assertFalse(labels.contains("ImeInsets.applyToDecor"));
+        String labelEditor = read("com/nexachat/feature/label/LabelEditorDialogFragment.java");
+        String helper = read("com/nexachat/feature/ui/FormDialogs.java");
+        assertTrue(profile.contains("FormDialogs.resizeAboveIme"));
+        assertTrue(labelEditor.contains("FormDialogs.resizeAboveIme"));
+        // All text-entry dialogs route through the shared helper, which is the
+        // one place that resizes the window above the IME instead of padding
+        // the decor and clipping the title and buttons.
+        assertTrue(helper.contains("SOFT_INPUT_ADJUST_RESIZE"));
+        assertFalse(labelEditor.contains("ImeInsets.applyToDecor"));
     }
 
     @Test

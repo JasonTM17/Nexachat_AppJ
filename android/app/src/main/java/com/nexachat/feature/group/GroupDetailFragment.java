@@ -10,6 +10,7 @@ import android.view.Menu;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
@@ -27,6 +28,8 @@ import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.color.MaterialColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
+import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.textfield.TextInputLayout;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.ui.GroupDetailListRules;
@@ -36,6 +39,7 @@ import com.nexachat.databinding.FragmentGroupDetailBinding;
 import com.nexachat.feature.group.adapter.GroupMemberAdapter;
 import com.nexachat.feature.group.adapter.SelectableContactAdapter;
 import com.nexachat.feature.inbox.ConversationPreferenceMenu;
+import com.nexachat.feature.ui.FormDialogs;
 import dagger.hilt.android.AndroidEntryPoint;
 import java.util.Objects;
 
@@ -301,13 +305,14 @@ public final class GroupDetailFragment extends Fragment {
         if (removeDialog != null && removeDialog.isShowing()) {
             return;
         }
-        removeDialog = new MaterialAlertDialogBuilder(requireContext())
+        removeDialog = FormDialogs.markDestructive(
+                new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.action_remove_member)
                 .setMessage(getString(R.string.group_remove_member_confirm, member.getDisplayName()))
                 .setNegativeButton(R.string.action_cancel, (d, w) -> viewModel.dismissRemoveMember())
                 .setPositiveButton(R.string.action_remove, (d, w) -> viewModel.confirmRemoveMember())
                 .setOnDismissListener(d -> removeDialog = null)
-                .show();
+                .show());
     }
 
     private void onLeaveClicked() {
@@ -335,19 +340,28 @@ public final class GroupDetailFragment extends Fragment {
         if (leaveDialog != null && leaveDialog.isShowing()) {
             return;
         }
-        leaveDialog = new MaterialAlertDialogBuilder(requireContext())
+        leaveDialog = FormDialogs.markDestructive(
+                new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.action_leave_group)
                 .setMessage(R.string.group_leave_confirm)
                 .setNegativeButton(R.string.action_cancel, (d, w) -> viewModel.dismissLeave())
                 .setPositiveButton(R.string.action_leave_group, (d, w) -> viewModel.confirmLeave())
                 .setOnDismissListener(d -> leaveDialog = null)
-                .show();
+                .show());
     }
 
     private void showRenameDialog(@NonNull GroupDetailUiState state) {
         if (renameDialog == null) {
-            renameInput = new EditText(requireContext());
-            renameInput.setHint(R.string.group_name_label);
+            // Same outlined field + dialog padding as every other form dialog.
+            TextInputLayout inputLayout = new TextInputLayout(
+                    requireContext(),
+                    null,
+                    com.google.android.material.R.attr.textInputOutlinedStyle);
+            float radius = getResources().getDimension(R.dimen.corner_md);
+            inputLayout.setBoxCornerRadii(radius, radius, radius, radius);
+            inputLayout.setHint(getString(R.string.group_name_label));
+            renameInput = new TextInputEditText(inputLayout.getContext());
+            renameInput.setSingleLine(true);
             renameInput.addTextChangedListener(new TextWatcher() {
                 @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
                 @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
@@ -357,9 +371,14 @@ public final class GroupDetailFragment extends Fragment {
                 }
                 @Override public void afterTextChanged(Editable s) {}
             });
+            inputLayout.addView(renameInput);
+            LinearLayout container = new LinearLayout(requireContext());
+            int pad = getResources().getDimensionPixelSize(R.dimen.dialog_padding);
+            container.setPadding(pad, 0, pad, 0);
+            container.addView(inputLayout);
             renameDialog = new MaterialAlertDialogBuilder(requireContext())
                     .setTitle(R.string.action_rename_group)
-                    .setView(renameInput)
+                    .setView(container)
                     .setNegativeButton(R.string.action_cancel, (d, w) -> viewModel.dismissRename())
                     .setPositiveButton(R.string.action_save, (d, w) -> viewModel.confirmRename())
                     .setOnDismissListener(d -> {
@@ -367,6 +386,7 @@ public final class GroupDetailFragment extends Fragment {
                         renameInput = null;
                     })
                     .show();
+            FormDialogs.resizeAboveIme(renameDialog);
         }
         if (renameInput != null) {
             renderingRename = true;

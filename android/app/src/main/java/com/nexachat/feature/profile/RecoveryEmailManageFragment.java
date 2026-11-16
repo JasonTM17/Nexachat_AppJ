@@ -15,6 +15,7 @@ import com.nexachat.core.common.ApiError;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.databinding.FragmentRecoveryEmailManageBinding;
 import com.nexachat.feature.auth.ApiErrorText;
+import com.nexachat.feature.ui.FormDialogs;
 import dagger.hilt.android.AndroidEntryPoint;
 
 @AndroidEntryPoint
@@ -51,12 +52,12 @@ public final class RecoveryEmailManageFragment extends Fragment {
     }
 
     private void confirmRemove() {
-        new MaterialAlertDialogBuilder(requireContext())
+        FormDialogs.markDestructive(new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.recovery_email_remove)
                 .setMessage(R.string.recovery_email_remove_confirm)
                 .setNegativeButton(R.string.action_cancel, null)
                 .setPositiveButton(R.string.recovery_email_remove, (dialog, which) -> viewModel.removeEmail())
-                .show();
+                .show());
     }
 
     private void render(RecoveryEmailManageViewModel.UiState state) {

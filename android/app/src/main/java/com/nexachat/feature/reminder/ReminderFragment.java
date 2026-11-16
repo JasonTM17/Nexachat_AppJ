@@ -11,6 +11,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.databinding.FragmentReminderBinding;
+import com.nexachat.feature.ui.FormDialogs;
 import dagger.hilt.android.AndroidEntryPoint;
 import java.util.Objects;
 
@@ -144,7 +145,7 @@ public final class ReminderFragment extends Fragment {
     }
 
     private void confirmDelete(@NonNull Reminder reminder) {
-        new MaterialAlertDialogBuilder(requireContext())
+        FormDialogs.markDestructive(new MaterialAlertDialogBuilder(requireContext())
                 .setMessage(R.string.reminder_delete_confirm)
                 .setNegativeButton(R.string.action_cancel, null)
                 .setPositiveButton(R.string.action_delete, (dialog, which) -> {
@@ -152,7 +153,7 @@ public final class ReminderFragment extends Fragment {
                         viewModel.deleteReminder(reminder.getId());
                     }
                 })
-                .show();
+                .show());
     }
 
     private void openEditor(@Nullable Reminder reminder) {

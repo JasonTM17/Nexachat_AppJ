@@ -14,6 +14,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.databinding.FragmentPollBinding;
+import com.nexachat.feature.ui.FormDialogs;
 import dagger.hilt.android.AndroidEntryPoint;
 import java.util.ArrayList;
 import java.util.List;
@@ -233,7 +234,7 @@ public final class PollFragment extends Fragment {
     }
 
     private void confirmDelete(@NonNull Poll poll) {
-        new MaterialAlertDialogBuilder(requireContext())
+        FormDialogs.markDestructive(new MaterialAlertDialogBuilder(requireContext())
                 .setMessage(R.string.poll_delete_confirm)
                 .setNegativeButton(R.string.action_cancel, null)
                 .setPositiveButton(R.string.action_delete, (dialog, which) -> {
@@ -241,7 +242,7 @@ public final class PollFragment extends Fragment {
                         viewModel.deletePoll(poll.getId());
                     }
                 })
-                .show();
+                .show());
     }
 
     /** Empty, error, and dead-end access failures for the poll board list. */

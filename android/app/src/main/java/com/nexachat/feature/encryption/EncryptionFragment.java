@@ -9,6 +9,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
@@ -17,6 +18,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.materialswitch.MaterialSwitch;
 import com.nexachat.R;
 import com.nexachat.core.network.dto.E2eeDeviceDtos.MemberDeviceDto;
+import com.nexachat.feature.ui.FormDialogs;
 import dagger.hilt.android.AndroidEntryPoint;
 
 /**
@@ -123,7 +125,7 @@ public final class EncryptionFragment extends Fragment {
             body = canReactivate ? R.string.e2ee_disable_confirm_body
                     : R.string.e2ee_disable_confirm_body_unavailable;
         }
-        new MaterialAlertDialogBuilder(requireContext())
+        AlertDialog confirm = new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(enabling ? R.string.e2ee_enable_confirm_title
                         : R.string.e2ee_disable_confirm_title)
                 .setMessage(body)
@@ -132,6 +134,10 @@ public final class EncryptionFragment extends Fragment {
                         (d, w) -> viewModel.setEnabled(enabling))
                 .setNegativeButton(R.string.action_cancel, null)
                 .show();
+        if (!enabling) {
+            // Turning E2EE off is the destructive half of the same confirm.
+            FormDialogs.markDestructive(confirm);
+        }
     }
 
     private void showVerifyConfirmation() {

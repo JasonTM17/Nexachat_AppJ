@@ -531,6 +531,7 @@
     <string name="label_chip_description">Label: %1$s</string>
     <string name="label_assign_checkbox">Assign label %1$s</string>
     <string name="label_delete_description">Delete label %1$s</string>
+    <string name="label_edit_description">Edit label %1$s</string>
     <string name="label_delete_title">Delete label?</string>
     <string name="label_delete_message">“%1$s” will be removed from all conversations.</string>
     <string name="label_error_validation">Use a unique name with 1–30 characters.</string>
