@@ -85,6 +85,8 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import javax.inject.Inject;
 
@@ -177,6 +179,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private float recordStartX;
     private boolean recordingCancelled;
     private boolean accessibleVoiceRecordingActive;
+    private ExecutorService voiceStartExecutor;
+    private boolean voiceStartPending;
+    private boolean voiceStopWhenStarted;
 
     public static ChatFragment newInstance(@NonNull String conversationId) {
         ChatFragment fragment = new ChatFragment();
@@ -514,7 +519,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                     return true;
 
                 case MotionEvent.ACTION_MOVE:
-                    if (voiceRecorder == null || !voiceRecorder.isRecording()) {
+                    if (voiceRecorder == null || (!voiceRecorder.isRecording() && !voiceStartPending)) {
                         return false;
                     }
                     float deltaX = recordStartX - event.getRawX();
@@ -537,10 +542,19 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                     return true;
 
                 case MotionEvent.ACTION_UP:
+                    if (voiceStartPending) {
+                        recordingCancelled = true;
+                        voiceStopWhenStarted = true;
+                        return true;
+                    }
                     finishVoiceRecording(recordingCancelled, false);
                     return true;
 
                 case MotionEvent.ACTION_CANCEL:
+                    if (voiceStartPending) {
+                        voiceStopWhenStarted = true;
+                        return true;
+                    }
                     finishVoiceRecording(true, false);
                     return true;
             }
@@ -650,13 +664,45 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         if (voiceRecorder == null) {
             voiceRecorder = new VoiceRecorder(requireContext());
         }
-        if (!voiceRecorder.start()) {
+        // MediaRecorder prepare()/start() can block for seconds on slow
+        // devices; run it off the main thread so ACTION_DOWN cannot ANR.
+        if (voiceStartPending || voiceRecorder.isRecording()) {
             return false;
         }
+        voiceStartPending = true;
+        voiceStopWhenStarted = false;
         source.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
         showVoiceRecordingOverlay();
-        scheduleRecordingTimer();
+        final VoiceRecorder recorder = voiceRecorder;
+        voiceStartExecutor().execute(() -> {
+            boolean started = recorder.start();
+            recordingHandler.post(() -> {
+                voiceStartPending = false;
+                if (binding == null) {
+                    if (started) {
+                        recorder.cancel();
+                    }
+                    return;
+                }
+                if (!started) {
+                    restoreComposerAfterRecording();
+                    resetAccessibleVoiceRecordingUi();
+                    return;
+                }
+                scheduleRecordingTimer();
+                if (voiceStopWhenStarted) {
+                    finishVoiceRecording(true, false);
+                }
+            });
+        });
         return true;
+    }
+
+    private ExecutorService voiceStartExecutor() {
+        if (voiceStartExecutor == null || voiceStartExecutor.isShutdown()) {
+            voiceStartExecutor = Executors.newSingleThreadExecutor();
+        }
+        return voiceStartExecutor;
     }
 
     private void showVoiceRecordingOverlay() {
@@ -1778,6 +1824,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             voiceRecorder.cancel();
             voiceRecorder = null;
         }
+        if (voiceStartExecutor != null) {
+            voiceStartExecutor.shutdownNow();
+            voiceStartExecutor = null;
+        }
+        voiceStartPending = false;
+        voiceStopWhenStarted = false;
         if (binding != null) {
             binding.messageList.setAdapter(null);
         }
