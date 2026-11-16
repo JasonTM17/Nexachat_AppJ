@@ -16,8 +16,8 @@ import android.text.TextUtils;
 import android.view.View;
 import android.widget.ImageButton;
 import android.widget.ImageView;
-import android.widget.ProgressBar;
 import android.widget.TextView;
+import androidx.annotation.IdRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
@@ -35,6 +35,7 @@ import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.target.Target;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
+import com.google.android.material.progressindicator.CircularProgressIndicator;
 import com.nexachat.R;
 import com.nexachat.feature.chat.system.SystemEventFormatter;
 import com.nexachat.core.common.AppConfig;
@@ -42,6 +43,7 @@ import com.nexachat.core.media.AttachmentBlurHashRegistry;
 import com.nexachat.core.media.BlurHashDecoder;
 import com.nexachat.core.media.BlurHashPlaceholderCache;
 import com.nexachat.core.media.ImageAttachmentBinding;
+import com.nexachat.core.media.VideoThumbnailLoader;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.MessageMention;
 import com.nexachat.core.ui.MessageUiRules;
@@ -267,11 +269,9 @@ public final class MessageBubbleBinder {
         if (mentionedMe) {
             int rowHighlight = resolveThemeColor(root.getContext(),
                     com.google.android.material.R.attr.colorSecondaryContainer);
-            root.setBackgroundColor(rowHighlight);
             bubble.setBackgroundTintList(ColorStateList.valueOf(rowHighlight));
-        } else {
-            root.setBackground(null);
         }
+        root.setBackground(null);
 
         wireGestures(root, message);
 
@@ -307,6 +307,39 @@ public final class MessageBubbleBinder {
         applyMentionHighlights(root, message, mentionedMe);
         bindMetaRow(root, message, item.isSeenReceipt(), item.isDeliveredReceipt(), item.isPulsing());
         bindReactions(root, message);
+        applyMediaOnlyFrame(root, bubble, message, mentionedMe);
+    }
+
+    /**
+     * A photo or video with no caption, quote or sender label is shown as the
+     * rounded media itself: the coloured bubble frame and its padding would
+     * only leave a plum border around the picture.
+     */
+    private void applyMediaOnlyFrame(
+            View root, View bubble, ChatMessage message, boolean mentionedMe) {
+        if (mentionedMe) {
+            return; // keep the highlighted frame so the mention stays visible
+        }
+        if (MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs())
+                || message.getAttachments().isEmpty()) {
+            return;
+        }
+        MessageContentKind kind = MessageViewTypeMapper.resolveContentKind(message);
+        if (kind != MessageContentKind.IMAGE && kind != MessageContentKind.VIDEO) {
+            return;
+        }
+        if (isShown(root, R.id.replyQuote) || isShown(root, R.id.senderName)
+                || isShown(root, R.id.messageBody)) {
+            return;
+        }
+        bubble.setBackground(null);
+        bubble.setBackgroundTintList(null);
+        bubble.setPadding(0, 0, 0, 0);
+    }
+
+    private static boolean isShown(View root, @IdRes int id) {
+        View view = root.findViewById(id);
+        return view != null && view.getVisibility() == View.VISIBLE;
     }
 
     public void bindDateSeparator(@NonNull View root, @NonNull String label) {
@@ -362,7 +395,7 @@ public final class MessageBubbleBinder {
     }
 
     private void applyBubbleShape(View bubble, MessageGroupPosition position, boolean mine) {
-        float radius = bubble.getResources().getDimension(R.dimen.corner_lg);
+        float radius = bubble.getResources().getDimension(R.dimen.corner_xl);
         float tailRadius = bubble.getResources().getDimension(R.dimen.corner_xs);
         boolean tailOnRight = mine != (bubble.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL);
         boolean[] merged = ChatBubbleRules.bubbleMergedCorners(position, tailOnRight);
@@ -465,6 +498,7 @@ public final class MessageBubbleBinder {
         String replyId = message.getReplyToId();
         if (tombstone || replyId == null) {
             replyInclude.setVisibility(View.GONE);
+            ((View) replyInclude.getParent()).setMinimumWidth(0);
             return;
         }
         ChatMessage original = resolveOriginal != null ? resolveOriginal.apply(replyId) : null;
@@ -482,9 +516,18 @@ public final class MessageBubbleBinder {
         boolean resolved = original != null || snippet != null || sender != null;
         if (!resolved) {
             replyInclude.setVisibility(View.GONE);
+            ((View) replyInclude.getParent()).setMinimumWidth(0);
             return;
         }
         replyInclude.setVisibility(View.VISIBLE);
+        // match_parent links are re-measured EXACTLY to the bubble's width, so
+        // a layout minWidth inside the quote can never widen a narrow bubble;
+        // set it on the bubble itself while the quote is visible.
+        View bubble = (View) replyInclude.getParent();
+        int quoteMin = root.getResources().getDimensionPixelSize(R.dimen.bubble_quote_min_width);
+        if (bubble.getMinimumWidth() != quoteMin) {
+            bubble.setMinimumWidth(quoteMin);
+        }
         tintReplyQuote(root, replyInclude, message.getMine());
         TextView author = replyInclude.findViewById(R.id.replyAuthor);
         TextView snippetView = replyInclude.findViewById(R.id.replySnippet);
@@ -614,11 +657,14 @@ public final class MessageBubbleBinder {
             });
             if (image != null && kind == MessageContentKind.VIDEO) {
                 image.setVisibility(View.VISIBLE);
-                if (attachment != null && attachment.contentUrl() != null) {
-                    Glide.with(image)
-                            .load(attachment.contentUrl())
-                            .centerCrop()
-                            .into(image);
+                image.setImageResource(R.drawable.bg_media_video_placeholder);
+                String videoUrl = attachment == null ? null : attachment.contentUrl();
+                if (videoUrl != null) {
+                    String absolute = videoUrl.startsWith("content:") || videoUrl.startsWith("file:")
+                            ? videoUrl
+                            : AppConfig.absoluteMediaUrl(videoUrl);
+                    image.setTag(absolute);
+                    VideoThumbnailLoader.load(image, absolute);
                 }
             }
             return;
@@ -885,7 +931,7 @@ public final class MessageBubbleBinder {
         if (systemMessage) {
             TextView time = metaInclude.findViewById(R.id.timeLabel);
             TextView edited = metaInclude.findViewById(R.id.editedLabel);
-            ProgressBar sending = metaInclude.findViewById(R.id.sendingProgress);
+            CircularProgressIndicator sending = metaInclude.findViewById(R.id.sendingProgress);
             ImageView deliveredIcon = metaInclude.findViewById(R.id.deliveryIcon);
             TextView deliveryText = metaInclude.findViewById(R.id.deliveryStatusText);
             int metaColor = resolveThemeColor(
@@ -930,7 +976,7 @@ public final class MessageBubbleBinder {
         }
         TextView edited = metaInclude.findViewById(R.id.editedLabel);
         TextView time = metaInclude.findViewById(R.id.timeLabel);
-        ProgressBar sending = metaInclude.findViewById(R.id.sendingProgress);
+        CircularProgressIndicator sending = metaInclude.findViewById(R.id.sendingProgress);
         ImageView deliveredIcon = metaInclude.findViewById(R.id.deliveryIcon);
         TextView deliveryText = metaInclude.findViewById(R.id.deliveryStatusText);
 
@@ -981,7 +1027,7 @@ public final class MessageBubbleBinder {
                     ? root.getContext().getString(R.string.cd_sending)
                     : null);
             if (isMine) {
-                sending.setIndeterminateTintList(ColorStateList.valueOf(metaColor));
+                sending.setIndicatorColor(metaColor);
             }
         }
         if (deliveredIcon != null) {
@@ -1081,9 +1127,9 @@ public final class MessageBubbleBinder {
             view.setCheckable(false);
             view.setClickable(true);
             TextViewCompat.setTextAppearance(view, R.style.TextAppearance_NexaChat_LabelMedium);
-            view.setChipCornerRadius(root.getResources().getDimension(R.dimen.corner_md));
-            int minTouchPx = root.getResources().getDimensionPixelSize(R.dimen.min_touch_target);
-            view.setChipMinHeight(minTouchPx);
+            view.setChipCornerRadius(root.getResources().getDimension(R.dimen.corner_full));
+            // The chip draws at 32dp; the 48dp touch target is padded around it, not painted.
+            view.setChipMinHeight(root.getResources().getDimension(R.dimen.chip_min_height));
             view.setEnsureMinTouchTargetSize(true);
             view.setTextColor(resolveThemeColor(
                     root.getContext(),

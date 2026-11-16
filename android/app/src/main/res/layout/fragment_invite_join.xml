@@ -36,7 +36,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_lg"
                 app:cardBackgroundColor="?attr/colorSurfaceContainer"
-                app:cardCornerRadius="@dimen/corner_md"
+                app:cardCornerRadius="@dimen/corner_xl"
                 app:cardElevation="0dp"
                 app:strokeWidth="0dp">
 
@@ -141,8 +141,7 @@
                 android:text="@string/invite_sign_in"
                 android:visibility="gone" />
 
-            <com.google.android.material.progressindicator.CircularProgressIndicator
-                android:id="@+id/loading"
+            <com.google.android.material.progressindicator.CircularProgressIndicator android:id="@+id/loading"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center_horizontal"

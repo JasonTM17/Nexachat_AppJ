@@ -120,7 +120,7 @@
             android:layout_weight="1"
             android:background="@android:color/transparent"
             android:hint="@string/search_in_chat_placeholder"
-            android:imeOptions="actionSearch"
+            android:imeOptions="actionSearch|flagNoExtractUi"
             android:singleLine="true"
             android:textColor="?attr/colorOnSurface"
             android:textColorHint="?attr/colorOnSurfaceVariant" />
@@ -140,7 +140,7 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:clipToPadding="false"
-        android:paddingHorizontal="@dimen/space_sm"
+        android:paddingHorizontal="@dimen/space_inset"
         android:paddingBottom="@dimen/space_sm"
         app:layout_constraintBottom_toTopOf="@id/mentionPicker"
         app:layout_constraintEnd_toEndOf="parent"
@@ -239,10 +239,10 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:visibility="gone"
-        app:layout_constraintBottom_toBottomOf="@id/messageList"
+        app:layout_constraintBottom_toTopOf="@id/mentionPicker"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="@id/messageList" />
+        app:layout_constraintTop_toBottomOf="@id/chatSearchBar" />
 
     <com.nexachat.core.ui.components.LoadingStateView android:id="@+id/loadingState" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent"/>
     <com.nexachat.core.ui.components.ErrorStateView android:id="@+id/errorState" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" app:layout_constraintBottom_toBottomOf="parent" app:layout_constraintEnd_toEndOf="parent" app:layout_constraintStart_toStartOf="parent" app:layout_constraintTop_toTopOf="parent"/>

@@ -119,7 +119,7 @@
                 android:layout_marginTop="@dimen/space_sm"
                 android:visibility="gone"
                 app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
-                app:cardCornerRadius="@dimen/corner_md"
+                app:cardCornerRadius="@dimen/corner_xl"
                 app:cardElevation="0dp"
                 app:strokeWidth="0dp">
 
@@ -190,7 +190,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="start|top"
-                android:imeOptions="actionSend"
+                android:imeOptions="actionSend|flagNoExtractUi"
                 android:inputType="textCapSentences|textMultiLine"
                 android:maxLength="500"
                 android:maxLines="5"

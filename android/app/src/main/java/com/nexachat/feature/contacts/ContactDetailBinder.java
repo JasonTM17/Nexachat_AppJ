@@ -7,7 +7,6 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
@@ -17,6 +16,7 @@ import androidx.fragment.app.Fragment;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.color.MaterialColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.progressindicator.CircularProgressIndicator;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
 import com.nexachat.R;
@@ -259,7 +259,7 @@ final class ContactDetailBinder {
                 LinearLayout.LayoutParams.WRAP_CONTENT));
 
         if (content.showsProgress()) {
-            ProgressBar bar = new ProgressBar(fragment.requireContext());
+            CircularProgressIndicator bar = new CircularProgressIndicator(fragment.requireContext());
             LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);

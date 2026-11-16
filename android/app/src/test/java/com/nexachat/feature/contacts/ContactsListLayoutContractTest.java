@@ -137,7 +137,7 @@ public final class ContactsListLayoutContractTest {
         assertEquals("@color/colorSurfaceContainerLowest",
                 solid.getAttributeNS(ANDROID, "color"));
         assertNotNull("band drawable must round its corners", corners);
-        assertEquals("@dimen/corner_md", corners.getAttributeNS(ANDROID, "radius"));
+        assertEquals("@dimen/corner_xl", corners.getAttributeNS(ANDROID, "radius"));
         assertEquals("no stroke element", 0, doc.getElementsByTagName("stroke").getLength());
     }
 
@@ -145,13 +145,13 @@ public final class ContactsListLayoutContractTest {
     public void sectionBandVariants_roundTheRightCorners() throws Exception {
         Document top = parse("drawable/bg_grouped_list_band_top.xml");
         Element topCorners = firstByTag(top, "corners");
-        assertEquals("@dimen/corner_md", topCorners.getAttributeNS(ANDROID, "topLeftRadius"));
-        assertEquals("@dimen/corner_md", topCorners.getAttributeNS(ANDROID, "topRightRadius"));
+        assertEquals("@dimen/corner_xl", topCorners.getAttributeNS(ANDROID, "topLeftRadius"));
+        assertEquals("@dimen/corner_xl", topCorners.getAttributeNS(ANDROID, "topRightRadius"));
         assertEquals("", topCorners.getAttributeNS(ANDROID, "bottomLeftRadius"));
         Document bottom = parse("drawable/bg_grouped_list_band_bottom.xml");
         Element bottomCorners = firstByTag(bottom, "corners");
-        assertEquals("@dimen/corner_md", bottomCorners.getAttributeNS(ANDROID, "bottomLeftRadius"));
-        assertEquals("@dimen/corner_md", bottomCorners.getAttributeNS(ANDROID, "bottomRightRadius"));
+        assertEquals("@dimen/corner_xl", bottomCorners.getAttributeNS(ANDROID, "bottomLeftRadius"));
+        assertEquals("@dimen/corner_xl", bottomCorners.getAttributeNS(ANDROID, "bottomRightRadius"));
         assertEquals("", bottomCorners.getAttributeNS(ANDROID, "topLeftRadius"));
         Document mid = parse("drawable/bg_grouped_list_band_mid.xml");
         assertEquals("middle rows are square", 0, mid.getElementsByTagName("corners").getLength());

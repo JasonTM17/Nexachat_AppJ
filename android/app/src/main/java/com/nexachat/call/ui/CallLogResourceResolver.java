@@ -17,6 +17,9 @@ public final class CallLogResourceResolver {
 
         public int getResourceId() { return resourceId; }
 
+        /** True when the call rang out unanswered; surfaces render it in the error colour. */
+        public boolean isMissed() { return resourceId == R.string.call_log_missed; }
+
         public Object[] getArguments() { return arguments.clone(); }
     }
 

@@ -1,5 +1,6 @@
 package com.nexachat.feature.chat;
 
+import android.content.Context;
 import android.net.Uri;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -35,6 +36,7 @@ import com.nexachat.data.PeerPresence;
 import com.nexachat.data.SettingsRepository;
 import com.nexachat.data.TranslationRepository;
 import com.nexachat.data.TypingEvent;
+import com.nexachat.feature.chat.voice.VoiceRecorder;
 import com.nexachat.feature.media.PendingAttachment;
 import dagger.hilt.android.lifecycle.HiltViewModel;
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
@@ -56,6 +58,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.UnaryOperator;
@@ -127,6 +131,12 @@ public final class ChatViewModel extends ViewModel {
             new MutableLiveData<>(List.of());
     private final ChatSingleLiveEvent<ChatActionEvent> actionEvents =
             new ChatSingleLiveEvent<>();
+
+    // Voice capture lives here so a configuration change (rotation, theme,
+    // font) recreates the view without killing an in-progress recording.
+    @Nullable private VoiceRecorder voiceRecorder;
+    @Nullable private ExecutorService voiceStartExecutor;
+    private boolean voiceRetainedForConfigChange;
     private final ChatSingleLiveEvent<String> jumpTargets = new ChatSingleLiveEvent<>();
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final SerialDisposable searchDisposable = new SerialDisposable();
@@ -1863,6 +1873,65 @@ public final class ChatViewModel extends ViewModel {
         return new ApiError.Network(error.getMessage());
     }
 
+    /**
+     * Recorder owned by this ViewModel so a view recreation during a
+     * configuration change does not cancel an active capture.
+     */
+    @NonNull
+    public VoiceRecorder getOrCreateVoiceRecorder(@NonNull Context context) {
+        if (voiceRecorder == null) {
+            voiceRecorder = new VoiceRecorder(context);
+        }
+        return voiceRecorder;
+    }
+
+    @Nullable
+    public VoiceRecorder getVoiceRecorder() {
+        return voiceRecorder;
+    }
+
+    @NonNull
+    public ExecutorService voiceStartExecutor() {
+        if (voiceStartExecutor == null || voiceStartExecutor.isShutdown()) {
+            voiceStartExecutor = Executors.newSingleThreadExecutor();
+        }
+        return voiceStartExecutor;
+    }
+
+    public boolean isVoiceRecordingActive() {
+        VoiceRecorder recorder = voiceRecorder;
+        return recorder != null && recorder.isRecording();
+    }
+
+    public boolean isVoiceRetainedForConfigChange() {
+        return voiceRetainedForConfigChange;
+    }
+
+    public void setVoiceRetainedForConfigChange(boolean retained) {
+        voiceRetainedForConfigChange = retained;
+    }
+
+    /** Cancels any active recording and stops the start executor for good. */
+    public void releaseVoiceRecorder() {
+        voiceRetainedForConfigChange = false;
+        final VoiceRecorder recorder = voiceRecorder;
+        voiceRecorder = null;
+        if (recorder != null) {
+            if (voiceStartExecutor != null && !voiceStartExecutor.isShutdown()) {
+                // start() holds the recorder monitor through prepare()+start(),
+                // so a synchronous cancel() could block behind an in-flight
+                // start; queue the cancel after it instead.
+                voiceStartExecutor.execute(recorder::cancel);
+            } else {
+                recorder.cancel();
+            }
+        }
+        if (voiceStartExecutor != null) {
+            voiceStartExecutor.shutdown();
+            voiceStartExecutor = null;
+        }
+    }
+
     @Override
     protected void onCleared() {
         disposables.clear();
@@ -1873,6 +1942,7 @@ public final class ChatViewModel extends ViewModel {
             clearOwnTypingSignal();
             ephemeralRouter.clearTypingScope(conversationId);
         }
+        releaseVoiceRecorder();
         messageRepository.closeConversation(conversationId);
         super.onCleared();
     }

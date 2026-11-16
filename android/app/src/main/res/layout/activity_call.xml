@@ -22,8 +22,8 @@
 
         <!-- 120dp Avatar with soft pulse ring -->
         <FrameLayout
-            android:layout_width="170dp"
-            android:layout_height="170dp"
+            android:layout_width="204dp"
+            android:layout_height="204dp"
             android:layout_gravity="center_horizontal">
 
             <View
@@ -43,8 +43,8 @@
                 android:background="@drawable/bg_call_avatar"
                 android:gravity="center"
                 android:importantForAccessibility="no"
+                android:textAppearance="?attr/textAppearanceDisplaySmall"
                 android:textColor="@color/call_avatar_foreground"
-                android:textSize="36sp"
                 android:textStyle="bold" />
         </FrameLayout>
 
@@ -56,8 +56,8 @@
             android:layout_marginTop="24dp"
             android:ellipsize="end"
             android:gravity="center"
+            android:textAppearance="?attr/textAppearanceHeadlineMedium"
             android:textColor="@color/call_text_primary"
-            android:textSize="26sp"
             android:textStyle="bold" />
 
         <!-- Call Status -->
@@ -68,8 +68,8 @@
             android:layout_marginTop="8dp"
             android:accessibilityLiveRegion="polite"
             android:gravity="center"
-            android:textColor="@color/call_text_secondary"
-            android:textSize="15sp" />
+            android:textAppearance="?attr/textAppearanceBodyLarge"
+            android:textColor="@color/call_text_secondary" />
 
         <!-- Timer -->
         <TextView
@@ -79,8 +79,8 @@
             android:layout_marginTop="12dp"
             android:accessibilityLiveRegion="polite"
             android:gravity="center"
+            android:textAppearance="?attr/textAppearanceHeadlineLarge"
             android:textColor="@color/call_text_primary"
-            android:textSize="32sp"
             android:textStyle="bold"
             android:visibility="gone" />
 
@@ -117,7 +117,6 @@
                     android:insetBottom="0dp"
                     android:padding="0dp"
                     android:textColor="@android:color/transparent"
-                    android:textSize="0sp"
                     app:icon="@drawable/ic_mic"
                     app:iconGravity="textStart"
                     app:iconPadding="0dp"
@@ -131,8 +130,8 @@
                     android:layout_marginTop="8dp"
                     android:importantForAccessibility="no"
                     android:text="@string/call_mute"
-                    android:textColor="@color/call_text_muted"
-                    android:textSize="12sp" />
+                    android:textAppearance="?attr/textAppearanceLabelMedium"
+                    android:textColor="@color/call_text_muted" />
             </LinearLayout>
 
             <!-- Speaker Column -->
@@ -155,7 +154,6 @@
                     android:insetBottom="0dp"
                     android:padding="0dp"
                     android:textColor="@android:color/transparent"
-                    android:textSize="0sp"
                     app:icon="@drawable/ic_volume_up"
                     app:iconGravity="textStart"
                     app:iconPadding="0dp"
@@ -169,8 +167,8 @@
                     android:layout_marginTop="8dp"
                     android:importantForAccessibility="no"
                     android:text="@string/call_speaker"
-                    android:textColor="@color/call_text_muted"
-                    android:textSize="12sp" />
+                    android:textAppearance="?attr/textAppearanceLabelMedium"
+                    android:textColor="@color/call_text_muted" />
             </LinearLayout>
 
             <!-- End Call Column -->
@@ -193,7 +191,6 @@
                     android:insetBottom="0dp"
                     android:padding="0dp"
                     android:textColor="@android:color/transparent"
-                    android:textSize="0sp"
                     app:icon="@drawable/ic_call_end"
                     app:iconGravity="textStart"
                     app:iconPadding="0dp"
@@ -207,8 +204,8 @@
                     android:layout_marginTop="8dp"
                     android:importantForAccessibility="no"
                     android:text="@string/call_hang_up"
-                    android:textColor="@color/call_action_decline_text"
-                    android:textSize="12sp" />
+                    android:textAppearance="?attr/textAppearanceLabelMedium"
+                    android:textColor="@color/call_action_decline_text" />
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>

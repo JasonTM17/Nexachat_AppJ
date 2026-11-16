@@ -23,6 +23,7 @@
     <dimen name="elevation_level4">12dp</dimen>
     <dimen name="auth_form_max_width">440dp</dimen>
     <dimen name="bubble_max_width">280dp</dimen>
+    <dimen name="bubble_quote_min_width">192dp</dimen>
     <dimen name="attachment_chip_max_width">240dp</dimen>
     <dimen name="media_dismiss_distance">96dp</dimen>
     <dimen name="inbox_swipe_text_size">14sp</dimen>
@@ -43,6 +44,8 @@
     <dimen name="avatar_xl">96dp</dimen>
     <dimen name="chat_toolbar_title_start_with_avatar">48dp</dimen>
     <dimen name="icon_size">24dp</dimen>
+    <dimen name="brand_mark_size">32dp</dimen>
+    <dimen name="splash_logo_size">160dp</dimen>
     <dimen name="icon_size_sm">20dp</dimen>
     <dimen name="icon_tile_size">40dp</dimen>
     <dimen name="metadata_icon_size">16dp</dimen>

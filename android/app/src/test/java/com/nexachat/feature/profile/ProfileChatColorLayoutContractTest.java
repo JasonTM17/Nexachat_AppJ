@@ -108,14 +108,14 @@ public final class ProfileChatColorLayoutContractTest {
     }
 
     @Test
-    public void everyCellPaintsASquareFillAndHiddenCheck() throws Exception {
+    public void everyCellPaintsAFillAndHiddenCheck() throws Exception {
         for (String cell : CELLS) {
             Element el = requireId(cell);
             // Cells hold two unnamed children in fixed order: fill, then check.
             NodeList children = el.getElementsByTagName("ImageView");
             assertEquals(cell + " must contain fill and check", 2, children.getLength());
             Element fill = (Element) children.item(0);
-            assertEquals(cell + " fill must draw the square swatch",
+            assertEquals(cell + " fill must draw the round swatch",
                     "@drawable/bg_chat_color_swatch",
                     fill.getAttributeNS(ANDROID, "background"));
             Element check = (Element) children.item(1);
@@ -125,7 +125,7 @@ public final class ProfileChatColorLayoutContractTest {
     }
 
     @Test
-    public void swatchDrawableStaysSquare() throws Exception {
+    public void swatchDrawableIsRound() throws Exception {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(true);
         Document doc = factory.newDocumentBuilder()
@@ -135,9 +135,7 @@ public final class ProfileChatColorLayoutContractTest {
         NodeList corners = shape.getElementsByTagName("corners");
         assertTrue("swatch needs a corners element", corners.getLength() == 1);
         String radius = ((Element) corners.item(0)).getAttributeNS(ANDROID, "radius");
-        // Sharp square only: never a circle, pill, or a large rounded token.
-        assertTrue("swatch corners must be 0dp or the documented corner_sm",
-                radius.equals("0dp") || radius.equals("@dimen/corner_sm"));
+        assertTrue("swatch must draw as a circle", radius.equals("@dimen/corner_full"));
     }
 
     private static Element requireId(String id) throws Exception {

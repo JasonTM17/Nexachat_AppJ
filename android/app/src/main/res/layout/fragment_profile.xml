@@ -56,7 +56,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_sm"
             app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
-            app:cardCornerRadius="@dimen/corner_md"
+            app:cardCornerRadius="@dimen/corner_xl"
             app:cardElevation="0dp"
             app:strokeWidth="0dp">
 
@@ -176,7 +176,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:cardBackgroundColor="?attr/colorSurfaceContainer"
-            app:cardCornerRadius="@dimen/corner_md"
+            app:cardCornerRadius="@dimen/corner_xl"
             app:cardElevation="0dp"
             app:strokeWidth="0dp">
 
@@ -494,7 +494,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:cardBackgroundColor="?attr/colorSurfaceContainer"
-            app:cardCornerRadius="@dimen/corner_md"
+            app:cardCornerRadius="@dimen/corner_xl"
             app:cardElevation="0dp"
             app:strokeWidth="0dp">
 
@@ -660,7 +660,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:cardBackgroundColor="?attr/colorSurfaceContainer"
-            app:cardCornerRadius="@dimen/corner_md"
+            app:cardCornerRadius="@dimen/corner_xl"
             app:cardElevation="0dp"
             app:strokeWidth="0dp">
 
@@ -693,7 +693,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:cardBackgroundColor="?attr/colorSurfaceContainer"
-            app:cardCornerRadius="@dimen/corner_md"
+            app:cardCornerRadius="@dimen/corner_xl"
             app:cardElevation="0dp"
             app:strokeWidth="0dp">
 
@@ -783,7 +783,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:cardBackgroundColor="?attr/colorSurfaceContainer"
-            app:cardCornerRadius="@dimen/corner_md"
+            app:cardCornerRadius="@dimen/corner_xl"
             app:cardElevation="0dp"
             app:strokeWidth="0dp">
 
@@ -816,7 +816,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
             app:cardBackgroundColor="?attr/colorErrorContainer"
-            app:cardCornerRadius="@dimen/corner_md"
+            app:cardCornerRadius="@dimen/corner_xl"
             app:cardElevation="0dp"
             app:strokeWidth="0dp">
 
