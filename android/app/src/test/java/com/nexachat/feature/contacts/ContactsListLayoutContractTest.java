@@ -11,9 +11,10 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
 /**
- * Stitch conformance contract for the contacts list and user-search rows: faint tonal
- * dividers, Inter title names, the borderless grouped band behind each list, and the
- * FilledBox theme search field (no outlined override).
+ * Stitch conformance contract for the contacts screen and user-search composition:
+ * the search pill on both screens, tonal entry cards for the destinations that
+ * exist, per-section grouped bands with faint dividers, Inter title names, the
+ * letter-badge section header, and the pill search field (no outlined override).
  */
 public final class ContactsListLayoutContractTest {
 
@@ -22,28 +23,65 @@ public final class ContactsListLayoutContractTest {
     private static final String TITLE_STYLE = "@style/TextAppearance.NexaChat.TitleMedium";
     private static final String TONAL_DIVIDER = "?attr/colorSurfaceContainerHighest";
     private static final String BAND_DRAWABLE = "@drawable/bg_grouped_list_band";
+    private static final String PILL_DRAWABLE = "@drawable/bg_search_pill";
 
     @Test
     public void contactRows_useTonalDividerAndInterTitle() throws Exception {
         Document doc = parse("layout/item_contact.xml");
         assertEquals(TITLE_STYLE, attr(findById(doc, "name"), "textAppearance"));
-        assertEquals(TONAL_DIVIDER, attr(findRowDivider(doc), "background"));
+        assertEquals(TONAL_DIVIDER, attr(findById(doc, "rowDivider"), "background"));
     }
 
     @Test
     public void userSearchRows_useTonalDividerAndInterTitle() throws Exception {
         Document doc = parse("layout/item_user_search.xml");
         assertEquals(TITLE_STYLE, attr(findById(doc, "name"), "textAppearance"));
-        assertEquals(TONAL_DIVIDER, attr(findRowDivider(doc), "background"));
+        assertEquals(TONAL_DIVIDER, attr(findById(doc, "rowDivider"), "background"));
     }
 
     @Test
-    public void contactList_sitsInTonalGroupedBand() throws Exception {
+    public void contactRow_carriesItsOwnBandAndRipple() throws Exception {
+        Element root = parse("layout/item_contact.xml").getDocumentElement();
+        assertEquals(BAND_DRAWABLE, attr(root, "background"));
+        assertEquals("?attr/selectableItemBackground", attr(root, "foreground"));
+        assertNotNull("row divider must be addressable so the last row can hide it",
+                findById(root.getOwnerDocument(), "rowDivider"));
+    }
+
+    @Test
+    public void contactsScreen_hasOnScreenSearchPill() throws Exception {
+        Element pill = findById(parse("layout/fragment_contacts.xml"), "searchPill");
+        assertEquals(PILL_DRAWABLE, attr(pill, "background"));
+        assertEquals("true", attr(pill, "clickable"));
+        assertEquals("true", attr(pill, "focusable"));
+        assertEquals("@dimen/min_touch_target", attr(pill, "minHeight"));
+        assertEquals("@string/inbox_search_hint", attr(pill, "contentDescription"));
+        // The toolbar icon keeps its id/label and the pill reuses the same destination.
+        Element icon = findById(pill.getOwnerDocument(), "searchButton");
+        assertEquals("@string/search_title", attr(icon, "contentDescription"));
+    }
+
+    @Test
+    public void contactsScreen_hasEntryCardsForExistingDestinations() throws Exception {
+        Document doc = parse("layout/fragment_contacts.xml");
+        for (String id : new String[] {"addContactEntry", "createGroupEntry"}) {
+            Element card = findById(doc, id);
+            assertEquals("entry cards must be the shared settings row",
+                    "com.nexachat.core.ui.components.SettingsRowView", card.getTagName());
+            assertEquals(BAND_DRAWABLE, attr(card, "background"));
+            assertEquals("true", attr(card, "clipToOutline"));
+        }
+    }
+
+    @Test
+    public void contactList_carriesNoViewportBand() throws Exception {
         Element list = findById(parse("layout/fragment_contacts.xml"), "contactList");
-        assertEquals(BAND_DRAWABLE, attr(list, "background"));
-        assertEquals("true", attr(list, "clipToOutline"));
-        assertEquals("band must hug the rows, not fill the viewport",
-                "wrap_content", attr(list, "layout_height"));
+        assertEquals("bands now wrap each letter section on the rows, not the viewport",
+                "", attr(list, "background"));
+        assertEquals("the list fills the scrolling region so the header can collapse",
+                "match_parent", attr(list, "layout_height"));
+        assertEquals("no add-contact FAB: the entry card is the add path",
+                0, countById(list.getOwnerDocument(), "addContactFab"));
     }
 
     @Test
@@ -56,10 +94,15 @@ public final class ContactsListLayoutContractTest {
     }
 
     @Test
-    public void userSearchField_usesFilledBoxTheme() throws Exception {
-        Element field = findById(parse("layout/fragment_user_search.xml"), "searchLayout");
-        assertEquals("@style/Widget.NexaChat.TextInputLayout", field.getAttribute("style"));
-        assertEquals("", field.getAttributeNS(APP, "boxStrokeWidth"));
+    public void userSearchField_isPillNotOutlinedBox() throws Exception {
+        Document doc = parse("layout/fragment_user_search.xml");
+        Element pill = findById(doc, "searchBar");
+        assertEquals(PILL_DRAWABLE, attr(pill, "background"));
+        assertEquals("@dimen/min_touch_target", attr(pill, "minHeight"));
+        findById(doc, "searchInput");
+        assertEquals("no outlined TextInputLayout remains", 0,
+                doc.getElementsByTagName(
+                        "com.google.android.material.textfield.TextInputLayout").getLength());
     }
 
     @Test
@@ -75,6 +118,41 @@ public final class ContactsListLayoutContractTest {
         assertEquals("no stroke element", 0, doc.getElementsByTagName("stroke").getLength());
     }
 
+    @Test
+    public void sectionBandVariants_roundTheRightCorners() throws Exception {
+        Document top = parse("drawable/bg_grouped_list_band_top.xml");
+        Element topCorners = firstByTag(top, "corners");
+        assertEquals("@dimen/corner_md", topCorners.getAttributeNS(ANDROID, "topLeftRadius"));
+        assertEquals("@dimen/corner_md", topCorners.getAttributeNS(ANDROID, "topRightRadius"));
+        assertEquals("", topCorners.getAttributeNS(ANDROID, "bottomLeftRadius"));
+        Document bottom = parse("drawable/bg_grouped_list_band_bottom.xml");
+        Element bottomCorners = firstByTag(bottom, "corners");
+        assertEquals("@dimen/corner_md", bottomCorners.getAttributeNS(ANDROID, "bottomLeftRadius"));
+        assertEquals("@dimen/corner_md", bottomCorners.getAttributeNS(ANDROID, "bottomRightRadius"));
+        assertEquals("", bottomCorners.getAttributeNS(ANDROID, "topLeftRadius"));
+        Document mid = parse("drawable/bg_grouped_list_band_mid.xml");
+        assertEquals("middle rows are square", 0, mid.getElementsByTagName("corners").getLength());
+        for (String name : new String[] {
+                "bg_grouped_list_band_top", "bg_grouped_list_band_bottom", "bg_grouped_list_band_mid"}) {
+            Element solid = firstByTag(parse("drawable/" + name + ".xml"), "solid");
+            assertEquals("@color/colorSurfaceContainerLowest", solid.getAttributeNS(ANDROID, "color"));
+        }
+    }
+
+    @Test
+    public void sectionHeader_isLetterBadgeOnCanvas() throws Exception {
+        Document doc = parse("layout/item_contact_section.xml");
+        Element root = doc.getDocumentElement();
+        assertEquals("?android:attr/colorBackground", attr(root, "background"));
+        Element letter = findById(doc, "sectionLetter");
+        assertEquals("?attr/textAppearanceLabelMedium", attr(letter, "textAppearance"));
+        assertEquals("?attr/colorPrimary", attr(letter, "textColor"));
+        Element badge = parse("drawable/bg_letter_badge.xml").getDocumentElement();
+        assertEquals("oval", badge.getAttributeNS(ANDROID, "shape"));
+        assertEquals("@color/colorSurfaceContainer",
+                firstByTag(badge.getOwnerDocument(), "solid").getAttributeNS(ANDROID, "color"));
+    }
+
     private static Element findById(Document doc, String id) {
         NodeList nodes = doc.getElementsByTagName("*");
         for (int i = 0; i < nodes.getLength(); i++) {
@@ -85,6 +163,18 @@ public final class ContactsListLayoutContractTest {
             }
         }
         throw new AssertionError("no element with id @" + id);
+    }
+
+    private static int countById(Document doc, String id) {
+        NodeList nodes = doc.getElementsByTagName("*");
+        int count = 0;
+        for (int i = 0; i < nodes.getLength(); i++) {
+            Element e = (Element) nodes.item(i);
+            if (e.getAttributeNS(ANDROID, "id").endsWith("/" + id)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private static Element findRowDivider(Document doc) {
