@@ -9,6 +9,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
@@ -124,7 +125,7 @@ public final class EncryptionFragment extends Fragment {
             body = canReactivate ? R.string.e2ee_disable_confirm_body
                     : R.string.e2ee_disable_confirm_body_unavailable;
         }
-        androidx.appcompat.app.AlertDialog confirm = new MaterialAlertDialogBuilder(requireContext())
+        AlertDialog confirm = new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(enabling ? R.string.e2ee_enable_confirm_title
                         : R.string.e2ee_disable_confirm_title)
                 .setMessage(body)

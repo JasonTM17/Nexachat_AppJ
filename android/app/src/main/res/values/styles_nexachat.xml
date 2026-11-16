@@ -262,6 +262,7 @@
         <item name="materialCalendarStyle">@style/Widget.NexaChat.MaterialCalendar</item>
         <item name="materialCalendarHeaderCancelButton">@style/Widget.NexaChat.MaterialCalendar.HeaderButton</item>
         <item name="materialCalendarHeaderConfirmButton">@style/Widget.NexaChat.MaterialCalendar.HeaderButton</item>
+        <item name="materialCalendarHeaderToggleButton">@style/Widget.NexaChat.MaterialCalendar.HeaderToggleButton</item>
         <item name="materialCalendarYearNavigationButton">@style/Widget.NexaChat.MaterialCalendar.YearNavigationButton</item>
         <item name="materialCalendarMonthNavigationButton">@style/Widget.NexaChat.MaterialCalendar.MonthNavigationButton</item>
     </style>
@@ -272,6 +273,12 @@
 
     <style name="Widget.NexaChat.MaterialCalendar.HeaderButton" parent="Widget.Material3.Button.TextButton">
         <item name="shapeAppearance">@style/ShapeAppearance.NexaChat.Button</item>
+    </style>
+
+    <!-- The fullscreen picker's mode toggle is an ImageButton, so the square
+         look comes from the bounded ripple, not a shapeAppearance. -->
+    <style name="Widget.NexaChat.MaterialCalendar.HeaderToggleButton" parent="Widget.Material3.MaterialCalendar.HeaderToggleButton">
+        <item name="android:background">?attr/selectableItemBackground</item>
     </style>
 
     <style name="Widget.NexaChat.MaterialCalendar.MonthNavigationButton" parent="Widget.Material3.MaterialCalendar.MonthNavigationButton">

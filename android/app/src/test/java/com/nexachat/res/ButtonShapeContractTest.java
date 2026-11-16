@@ -37,6 +37,7 @@ public final class ButtonShapeContractTest {
             "snackbarButtonStyle", "imageButtonStyle",
             "materialCalendarHeaderCancelButton",
             "materialCalendarHeaderConfirmButton",
+            "materialCalendarHeaderToggleButton",
             "materialCalendarYearNavigationButton",
             "materialCalendarMonthNavigationButton");
 

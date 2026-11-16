@@ -31,6 +31,7 @@ import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.data.Contact;
 import com.nexachat.databinding.FragmentContactsBinding;
 import com.nexachat.feature.contacts.adapter.ContactListAdapter;
+import com.nexachat.feature.ui.FormDialogs;
 import dagger.hilt.android.AndroidEntryPoint;
 import java.util.List;
 
@@ -370,7 +371,7 @@ public final class ContactsFragment extends Fragment {
                 })
                 .show();
         addDialogShowing = true;
-        com.nexachat.feature.ui.FormDialogs.resizeAboveIme(addDialog);
+        FormDialogs.resizeAboveIme(addDialog);
         updateAddDialog(viewModel.getUiState().getValue());
     }
 

@@ -42,6 +42,9 @@ import javax.inject.Inject;
 
 @AndroidEntryPoint
 public final class ProfileFragment extends Fragment {
+
+    private static final String STATE_GOOGLE_PASSWORD_DIALOG = "googlePasswordDialogShowing";
+
     @Inject
     AiConsentRepository consentRepository;
 
@@ -51,7 +54,6 @@ public final class ProfileFragment extends Fragment {
     private AppSettingsViewModel settingsViewModel;
     private ActivityResultLauncher<String> avatarPicker;
     private ActivityResultLauncher<String> notificationPermissionRequest;
-    private static final String STATE_GOOGLE_PASSWORD_DIALOG = "googlePasswordDialogShowing";
 
     private boolean syncingAiConsent;
     /** True while a switch shows a stored value, so the change is not saved back as a user edit. */
