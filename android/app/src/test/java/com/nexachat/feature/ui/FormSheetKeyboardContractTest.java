@@ -24,7 +24,7 @@ public final class FormSheetKeyboardContractTest {
     public void passwordAndLabelEditorsLiftTheirWindowsAboveTheIme() throws Exception {
         String profile = read("com/nexachat/feature/profile/ProfileFragment.java");
         String labels = read("com/nexachat/feature/label/LabelDialogFragment.java");
-        assertTrue(profile.contains("ImeInsets.applyToDecor"));
+        assertTrue(profile.contains("SOFT_INPUT_ADJUST_RESIZE"));
         assertTrue(labels.contains("ImeInsets.applyToDecor"));
     }
 
