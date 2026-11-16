@@ -10,8 +10,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingHorizontal="16dp"
-        android:paddingBottom="24dp">
+        android:paddingHorizontal="@dimen/space_md"
+        android:paddingBottom="@dimen/space_lg">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/recoveryFormToolbar"
@@ -22,9 +22,10 @@
 
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/recoveryFormEmailLayout"
+            style="@style/Widget.NexaChat.TextInputLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="@dimen/space_sm"
             android:hint="@string/recovery_email_field_label">
 
             <com.google.android.material.textfield.TextInputEditText
@@ -42,7 +43,7 @@
             android:id="@+id/recoveryFormError"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="@dimen/space_sm"
             android:accessibilityLiveRegion="polite"
             android:background="@drawable/bg_auth_inline_error"
             android:drawableStart="@drawable/ic_error_outline"
@@ -57,7 +58,7 @@
             android:id="@+id/recoveryFormSend"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="@dimen/space_md"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/recovery_email_send_code" />
     </LinearLayout>

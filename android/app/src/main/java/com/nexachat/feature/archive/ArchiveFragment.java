@@ -358,8 +358,13 @@ public final class ArchiveFragment extends Fragment {
             }
             return;
         }
-        downloadAttachment(attachment, file -> AttachmentViewBinder.openExternally(
-                requireContext(), file, mimeType(attachment, item.getKind())));
+        downloadAttachment(attachment, file -> {
+            FragmentArchiveBinding ui = binding;
+            if (ui != null) {
+                AttachmentViewBinder.openExternally(
+                        ui.getRoot(), file, mimeType(attachment, item.getKind()));
+            }
+        });
     }
 
     private void shareItem(@NonNull ArchivePage.Item item) {

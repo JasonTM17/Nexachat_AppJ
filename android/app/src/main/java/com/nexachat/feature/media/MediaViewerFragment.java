@@ -22,6 +22,7 @@ import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.engine.GlideException;
 import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.target.Target;
+import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.ui.components.ErrorStateView;
@@ -67,11 +68,17 @@ public final class MediaViewerFragment extends Fragment {
                     }
                 }).subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread())
                         .subscribe(() -> {
-                            if (isAdded()) android.widget.Toast.makeText(context,
-                                    R.string.media_saved, android.widget.Toast.LENGTH_SHORT).show();
+                            FragmentMediaViewerBinding ui = MediaViewerFragment.this.binding;
+                            if (isAdded() && ui != null) {
+                                Snackbar.make(ui.getRoot(),
+                                        R.string.media_saved, Snackbar.LENGTH_SHORT).show();
+                            }
                         }, error -> {
-                            if (isAdded()) android.widget.Toast.makeText(context,
-                                    R.string.media_save_failed, android.widget.Toast.LENGTH_SHORT).show();
+                            FragmentMediaViewerBinding ui = MediaViewerFragment.this.binding;
+                            if (isAdded() && ui != null) {
+                                Snackbar.make(ui.getRoot(),
+                                        R.string.media_save_failed, Snackbar.LENGTH_SHORT).show();
+                            }
                         }));
             });
 
@@ -153,7 +160,11 @@ public final class MediaViewerFragment extends Fragment {
         }
         String mime = state.getMimeType() == null ? "application/octet-stream" : state.getMimeType();
         if (item.getItemId() == MENU_OPEN) {
-            AttachmentViewBinder.openExternally(requireContext(), file, mime);
+            FragmentMediaViewerBinding ui = binding;
+            if (ui == null) {
+                return false;
+            }
+            AttachmentViewBinder.openExternally(ui.getRoot(), file, mime);
             return true;
         }
         if (item.getItemId() == MENU_SHARE) {
