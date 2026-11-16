@@ -932,23 +932,18 @@ public final class MessageBubbleBinder {
             view.setCheckable(false);
             view.setClickable(true);
             TextViewCompat.setTextAppearance(view, R.style.TextAppearance_NexaChat_LabelMedium);
-            view.setChipCornerRadius(root.getResources().getDimension(R.dimen.corner_lg));
+            view.setChipCornerRadius(root.getResources().getDimension(R.dimen.corner_md));
             int minTouchPx = root.getResources().getDimensionPixelSize(R.dimen.min_touch_target);
             view.setChipMinHeight(minTouchPx);
             view.setEnsureMinTouchTargetSize(true);
             view.setTextColor(resolveThemeColor(
                     root.getContext(),
                     mineReaction
-                            ? com.google.android.material.R.attr.colorOnPrimaryContainer
+                            ? com.google.android.material.R.attr.colorOnSecondaryContainer
                             : com.google.android.material.R.attr.colorOnSurfaceVariant));
-            view.setChipStrokeWidth(root.getResources().getDisplayMetrics().density);
-            view.setChipStrokeColor(ColorStateList.valueOf(resolveThemeColor(
-                    root.getContext(),
-                    mineReaction
-                            ? com.google.android.material.R.attr.colorPrimary
-                            : com.google.android.material.R.attr.colorOutline)));
+            view.setChipStrokeWidth(0f);
             view.setChipBackgroundColorResource(
-                    mineReaction ? R.color.colorPrimaryContainer : R.color.colorSurfaceContainer
+                    mineReaction ? R.color.colorSecondaryContainer : R.color.colorSurfaceContainerHigh
             );
             view.setOnClickListener(v -> {
                 if (actionListener != null) {
