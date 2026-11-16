@@ -276,30 +276,30 @@ public final class LabelViewModel extends ViewModel {
     }
 
     /**
-     * Returns {@code true} when the request was accepted (the caller may dismiss
-     * the editor). Rejections publish a visible error instead of no-opping, and
-     * a never-loaded labels list kicks off a reload so a retry can succeed.
+     * Returns {@link LabelUiState.Error#NONE} when the request was accepted (the
+     * caller may dismiss the editor) or the rejection reason so the caller can
+     * show feedback immediately — {@link #publish} posts asynchronously, so a
+     * synchronous caller cannot read the error back out of {@link #uiState}.
+     * Rejections also publish the error, and a never-loaded labels list kicks
+     * off a reload so a retry can succeed.
      */
-    public synchronized boolean createLabel(@Nullable String name, @NonNull LabelColor color) {
+    public synchronized LabelUiState.Error createLabel(
+            @Nullable String name, @NonNull LabelColor color) {
         if (!labelsLoaded && !labelsLoading) {
             loadLabelsLocked();
         }
         if (labelsMutating || assignmentMutationInFlight || !labelsLoaded || labelsLoading) {
-            setError(LabelUiState.Error.GENERIC);
-            return false;
+            return reject(LabelUiState.Error.GENERIC);
         }
         if (labels.size() >= LabelRules.MAX_LABELS) {
-            setError(LabelUiState.Error.LABEL_LIMIT);
-            return false;
+            return reject(LabelUiState.Error.LABEL_LIMIT);
         }
         String normalized = LabelRules.normalizeName(name);
         if (!LabelRules.isValidName(normalized)) {
-            setError(LabelUiState.Error.VALIDATION);
-            return false;
+            return reject(LabelUiState.Error.VALIDATION);
         }
         if (LabelRules.hasDuplicateName(normalized, labels, null)) {
-            setError(LabelUiState.Error.CONFLICT);
-            return false;
+            return reject(LabelUiState.Error.CONFLICT);
         }
 
         List<ConversationLabel> previous = labels;
@@ -334,28 +334,25 @@ public final class LabelViewModel extends ViewModel {
                                 setError(errorFor(failure));
                             }
                         }));
-        return true;
+        return LabelUiState.Error.NONE;
     }
 
-    public synchronized boolean updateLabel(
+    /** See {@link #createLabel} for the return contract. */
+    public synchronized LabelUiState.Error updateLabel(
             @NonNull String labelId, @Nullable String name, @NonNull LabelColor color) {
         if (labelsMutating || assignmentMutationInFlight) {
-            setError(LabelUiState.Error.GENERIC);
-            return false;
+            return reject(LabelUiState.Error.GENERIC);
         }
         String normalized = LabelRules.normalizeName(name);
         if (!LabelRules.isValidName(normalized)) {
-            setError(LabelUiState.Error.VALIDATION);
-            return false;
+            return reject(LabelUiState.Error.VALIDATION);
         }
         if (LabelRules.hasDuplicateName(normalized, labels, labelId)) {
-            setError(LabelUiState.Error.CONFLICT);
-            return false;
+            return reject(LabelUiState.Error.CONFLICT);
         }
         ConversationLabel current = findLabel(labelId);
         if (current == null || current.isPending()) {
-            setError(LabelUiState.Error.GENERIC);
-            return false;
+            return reject(LabelUiState.Error.GENERIC);
         }
 
         List<ConversationLabel> previous = labels;
@@ -384,7 +381,7 @@ public final class LabelViewModel extends ViewModel {
                                 setError(errorFor(failure));
                             }
                         }));
-        return true;
+        return LabelUiState.Error.NONE;
     }
 
     public synchronized void deleteLabel(@NonNull String labelId) {
@@ -575,6 +572,11 @@ public final class LabelViewModel extends ViewModel {
         error = nextError;
         errorVersion++;
         publish();
+    }
+
+    private LabelUiState.Error reject(LabelUiState.Error reason) {
+        setError(reason);
+        return reason;
     }
 
     private void clearError() {
