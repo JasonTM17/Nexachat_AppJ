@@ -64,8 +64,7 @@
                 android:layout_marginEnd="@dimen/space_xs"
                 android:layout_weight="1"
                 android:minHeight="@dimen/min_touch_target"
-                android:text="@string/invite_approve"
-                app:cornerRadius="@dimen/corner_md" />
+                android:text="@string/invite_approve" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/rejectButton"
@@ -75,8 +74,7 @@
                 android:layout_marginStart="@dimen/space_xs"
                 android:layout_weight="1"
                 android:minHeight="@dimen/min_touch_target"
-                android:text="@string/invite_reject"
-                app:cornerRadius="@dimen/corner_md" />
+                android:text="@string/invite_reject" />
         </LinearLayout>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

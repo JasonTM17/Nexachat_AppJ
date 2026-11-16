@@ -93,7 +93,6 @@
             android:layout_marginHorizontal="@dimen/space_md"
             android:layout_marginTop="@dimen/space_sm"
             android:minHeight="@dimen/min_touch_target"
-            android:text="@string/forward_send"
-            app:cornerRadius="@dimen/corner_md" />
+            android:text="@string/forward_send" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

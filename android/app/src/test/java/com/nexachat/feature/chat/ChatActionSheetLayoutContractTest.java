@@ -86,13 +86,13 @@ public final class ChatActionSheetLayoutContractTest {
     }
 
     @Test
-    public void reactionTilesUseCircularRipples() throws Exception {
+    public void reactionTilesUseSquareRipples() throws Exception {
         String source = readSource("feature/chat/ChatInteractionsViews.java");
         int start = source.indexOf("private static void populateReactionButtons(");
         int end = source.indexOf("private static void confirmDelete(", start);
         assertTrue("reaction tile builder must exist", start >= 0 && end > start);
         String loop = source.substring(start, end);
-        assertTrue("each emoji must sit on the bounded circular ripple tile",
+        assertTrue("each emoji must sit on the bounded square ripple tile",
                 loop.contains("R.drawable.bg_reaction_tile"));
         assertTrue("the tile lookup must not re-resolve a theme attr per emoji",
                 !loop.contains("resolveAttribute"));
@@ -103,17 +103,17 @@ public final class ChatActionSheetLayoutContractTest {
         assertEquals("tile background must be a ripple",
                 "ripple", tile.getDocumentElement().getTagName());
         NodeList shapes = tile.getElementsByTagName("shape");
-        boolean circularMask = false;
+        boolean squareMask = false;
         for (int i = 0; i < shapes.getLength(); i++) {
             Element shape = (Element) shapes.item(i);
             Element item = (Element) shape.getParentNode();
-            if ("oval".equals(shape.getAttributeNS(ANDROID, "shape"))
+            if ("rectangle".equals(shape.getAttributeNS(ANDROID, "shape"))
                     && "@android:id/mask".equals(
                             item.getAttributeNS(ANDROID, "id"))) {
-                circularMask = true;
+                squareMask = true;
             }
         }
-        assertTrue("ripple must be masked to a circle", circularMask);
+        assertTrue("ripple must be masked to a square", squareMask);
     }
 
     @Test

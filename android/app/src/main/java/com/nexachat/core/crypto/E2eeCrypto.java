@@ -243,6 +243,26 @@ public final class E2eeCrypto {
         return Base64.getUrlDecoder().decode(value);
     }
 
+    /**
+     * The member-advertised X25519 public key every roster consumer shares:
+     * base64url decoding to exactly {@link #KEY_BYTES}, or {@code null} for
+     * absent, undecodable, or wrong-length input. The encrypt path refuses
+     * a roster carrying anything else, so every shape check must too.
+     */
+    @Nullable
+    public static byte[] memberPublicKey(@Nullable String encoded) {
+        if (encoded == null) {
+            return null;
+        }
+        final byte[] key;
+        try {
+            key = b64urlDecode(encoded);
+        } catch (RuntimeException malformed) {
+            return null;
+        }
+        return key.length == KEY_BYTES ? key : null;
+    }
+
     private static byte[] utf8(String value) {
         return value.getBytes(StandardCharsets.UTF_8);
     }

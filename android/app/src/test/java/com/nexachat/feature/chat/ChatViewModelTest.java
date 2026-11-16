@@ -1415,6 +1415,66 @@ public final class ChatViewModelTest {
     }
 
     @Test
+    public void recoveryClearsThePauseErrorCard() {
+        // The keyset notice follows the durable verdict, but the refusal's
+        // inline error card was left behind: once the verdict re-permits
+        // sends, the pause's own error must retire with it.
+        KeysetTrustStore trustStore = Mockito.mock(KeysetTrustStore.class);
+        when(messageRepository.currentUserId()).thenReturn(Maybe.just("me-1"));
+        when(trustStore.state("me-1", CONVERSATION_ID))
+                .thenReturn(Single.just(Optional.of(
+                        trustRecord(KeysetTrustStore.TrustState.CHANGED))))
+                .thenReturn(Single.just(Optional.of(
+                        trustRecord(KeysetTrustStore.TrustState.CHANGED))))
+                .thenReturn(Single.just(Optional.of(
+                        trustRecord(KeysetTrustStore.TrustState.VERIFIED))));
+        ChatViewModel vm = newKeysetViewModel(trustStore);
+        conversationFlow.onNext(Optional.of(e2eeSummary(true)));
+
+        interactionFlow.onNext(new ApiError.Unknown(
+                MessageRepository.ERROR_E2EE_KEYSET_CHANGED));
+        assertTrue(vm.getUiState().getValue().isSendingPaused());
+        assertTrue(vm.getUiState().getValue().getError() instanceof ApiError.Unknown);
+        assertEquals(MessageRepository.ERROR_E2EE_KEYSET_CHANGED,
+                ((ApiError.Unknown) vm.getUiState().getValue().getError()).getCode());
+
+        vm.refreshKeysetNotice();
+
+        ChatViewModel.UiState ui = vm.getUiState().getValue();
+        assertEquals(ChatViewModel.KeysetTrust.VERIFIED, ui.getKeysetTrust());
+        assertFalse(ui.isSendingPaused());
+        assertNull(ui.getError());
+    }
+
+    @Test
+    public void recoveryKeepsAnUnrelatedErrorCard() {
+        // Only the pause's own error retires on a re-permitting verdict; an
+        // unrelated card must survive the same transition.
+        KeysetTrustStore trustStore = Mockito.mock(KeysetTrustStore.class);
+        when(messageRepository.currentUserId()).thenReturn(Maybe.just("me-1"));
+        when(trustStore.state("me-1", CONVERSATION_ID))
+                .thenReturn(Single.just(Optional.of(
+                        trustRecord(KeysetTrustStore.TrustState.CHANGED))))
+                .thenReturn(Single.just(Optional.of(
+                        trustRecord(KeysetTrustStore.TrustState.VERIFIED))));
+        ChatViewModel vm = newKeysetViewModel(trustStore);
+        conversationFlow.onNext(Optional.of(e2eeSummary(true)));
+        assertTrue(vm.getUiState().getValue().isSendingPaused());
+
+        interactionFlow.onNext(new ApiError.Unknown(MessageRepository.ERROR_NOT_MEMBER));
+        assertEquals(MessageRepository.ERROR_NOT_MEMBER,
+                ((ApiError.Unknown) vm.getUiState().getValue().getError()).getCode());
+
+        vm.refreshKeysetNotice();
+
+        ChatViewModel.UiState ui = vm.getUiState().getValue();
+        assertFalse(ui.isSendingPaused());
+        assertTrue(ui.getError() instanceof ApiError.Unknown);
+        assertEquals(MessageRepository.ERROR_NOT_MEMBER,
+                ((ApiError.Unknown) ui.getError()).getCode());
+    }
+
+    @Test
     public void pauseCodeProbeResolvesBeforeTheDurableTrustRead() {
         // An INVALID probe can itself rewrite the record (a detected rotation
         // flips it to CHANGED); the verdict read must run after the probe,

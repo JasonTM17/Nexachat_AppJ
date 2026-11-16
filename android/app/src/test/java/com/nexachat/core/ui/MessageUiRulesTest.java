@@ -76,5 +76,9 @@ public class MessageUiRulesTest {
         assertEquals("?", MessageUiRules.extractInitials(null));
         assertEquals("?", MessageUiRules.extractInitials(""));
         assertEquals("?", MessageUiRules.extractInitials("   "));
+
+        // Supplementary-plane characters must not split into a lone surrogate
+        assertEquals("😀", MessageUiRules.extractInitials("😀"));
+        assertEquals("😀A", MessageUiRules.extractInitials("😀 An"));
     }
 }

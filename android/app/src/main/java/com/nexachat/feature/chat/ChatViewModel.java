@@ -1803,7 +1803,7 @@ public final class ChatViewModel extends ViewModel {
 
         private UiState withConversation(ConversationSummary conversation) {
             String displayName = conversation.getDisplayName();
-            return copy(loading, messages, sending, input, peerTyping,
+            return clearingPauseErrorOnRepermit(copy(loading, messages, sending, input, peerTyping,
                     displayName == null || displayName.isBlank() ? null : displayName,
                     conversation.isGroup(),
                     !conversation.isGroup() || "ADMIN".equals(conversation.getMyRole()),
@@ -1815,7 +1815,7 @@ public final class ChatViewModel extends ViewModel {
                     conversation.isPinned(),
                     conversation.isE2eeEnabled(),
                     conversation.isLastMessageEncrypted(),
-                    keysetTrust, keysetInvalidMarked);
+                    keysetTrust, keysetInvalidMarked));
         }
 
         private UiState withInput(String nextInput) {
@@ -1916,11 +1916,27 @@ public final class ChatViewModel extends ViewModel {
 
         private UiState withKeysetVerdict(@NonNull KeysetTrust next,
                 boolean nextInvalidMarked) {
-            return copy(loading, messages, sending, input, peerTyping, peerName, group,
+            return clearingPauseErrorOnRepermit(copy(loading, messages, sending, input,
+                    peerTyping, peerName, group,
                     canPin, connected, hasMore, chatError, pendingAttachments, replyTarget, pins,
                     peerReadSeq, peerDeliveredSeq, peerPresence, otherUserId,
                     showSeen, conversationPinned, e2eeEnabled, lastMessageEncrypted, next,
-                    nextInvalidMarked);
+                    nextInvalidMarked));
+        }
+
+        /**
+         * The pause's own inline error retires with the pause: an update that
+         * takes sends from refused to permitted makes a card carrying one of
+         * the terminal pause codes stale, so it drops; every other error is
+         * left untouched.
+         */
+        private UiState clearingPauseErrorOnRepermit(@NonNull UiState updated) {
+            if (!isSendingPaused() || updated.isSendingPaused()
+                    || updated.chatError == null
+                    || !isKeysetPauseEvent(updated.chatError.getError())) {
+                return updated;
+            }
+            return updated.withChatError(null);
         }
 
         private static UiState copy(

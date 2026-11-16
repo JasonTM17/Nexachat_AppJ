@@ -63,8 +63,7 @@
             android:layout_marginTop="@dimen/space_lg"
             android:minHeight="@dimen/button_min_height"
             android:text="@string/delete_account_send_code"
-            android:visibility="gone"
-            app:cornerRadius="@dimen/corner_md" />
+            android:visibility="gone" />
 
         <TextView
             android:id="@+id/deletionCodeSentMessage"
@@ -124,8 +123,7 @@
             android:layout_marginTop="@dimen/space_md"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/action_retry"
-            android:visibility="gone"
-            app:cornerRadius="@dimen/corner_md" />
+            android:visibility="gone" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/confirmDelete"
@@ -138,8 +136,7 @@
             android:text="@string/delete_account_confirm"
             android:textColor="?attr/colorOnError"
             android:visibility="gone"
-            app:backgroundTint="?attr/colorError"
-            app:cornerRadius="@dimen/corner_md" />
+            app:backgroundTint="?attr/colorError" />
 
         <com.google.android.material.progressindicator.LinearProgressIndicator
             android:id="@+id/deleteProgress"

@@ -59,8 +59,8 @@
             android:layout_height="match_parent"
             android:gravity="center_vertical"
             android:orientation="horizontal">
-            <ImageButton android:id="@+id/callButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_call" android:src="@drawable/ic_call" android:background="?attr/selectableItemBackgroundBorderless" app:tint="?attr/colorPrimary"/>
-            <ImageButton android:id="@+id/moreButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/a11y_open_chat_actions" android:src="@drawable/ic_more_vert" android:background="?attr/selectableItemBackgroundBorderless" app:tint="?attr/colorOnSurface"/>
+            <ImageButton android:id="@+id/callButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_call" android:src="@drawable/ic_call" android:background="?attr/selectableItemBackground" app:tint="?attr/colorPrimary"/>
+            <ImageButton android:id="@+id/moreButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/a11y_open_chat_actions" android:src="@drawable/ic_more_vert" android:background="?attr/selectableItemBackground" app:tint="?attr/colorOnSurface"/>
         </LinearLayout>
     </HorizontalScrollView>
 
@@ -129,7 +129,7 @@
             android:id="@+id/closeChatSearch"
             android:layout_width="@dimen/min_touch_target"
             android:layout_height="@dimen/min_touch_target"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:background="?attr/selectableItemBackground"
             android:contentDescription="@string/cd_clear_search"
             android:src="@drawable/ic_close"
             app:tint="?attr/colorOnSurfaceVariant" />

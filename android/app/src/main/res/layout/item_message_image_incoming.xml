@@ -50,7 +50,7 @@
                 android:layout_width="@dimen/min_touch_target"
                 android:layout_height="@dimen/min_touch_target"
                 android:layout_gravity="center"
-                android:background="?attr/selectableItemBackgroundBorderless"
+                android:background="?attr/selectableItemBackground"
                 android:contentDescription="@string/cd_open_attachment"
                 android:src="@drawable/ic_play_arrow"
                 android:visibility="gone"

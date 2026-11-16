@@ -4,6 +4,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.crypto.E2eeCrypto;
 import com.nexachat.core.crypto.E2eeMessageMapping;
 import com.nexachat.core.crypto.E2eeSession;
 import com.nexachat.core.crypto.KeysetTrustStore;
@@ -1210,8 +1211,9 @@ public final class MessageRepository {
      * lets the next send proceed and a tracked pair durably records
      * CHANGED — either verdict ends the INVALID episode, so the marker is
      * retired. A roster that still forms a direct shape, carries a
-     * malformed row, is disabled, or cannot be re-read keeps the marker:
-     * sends would refuse the same way or fail before any verdict exists.
+     * malformed row or unusable key material, is disabled, or cannot be
+     * re-read keeps the marker: sends would refuse the same way or fail
+     * before any verdict exists.
      */
     private Completable revalidateNonDirectShape(String ownerUserId,
             String conversationId, String key, String episode) {
@@ -1235,17 +1237,20 @@ public final class MessageRepository {
 
     /**
      * Whether the roster is a fully formed non-direct shape: every member
-     * row carries its fields yet the distinct users are not a pair — the
-     * healed-group or collapsed-membership case the send path resolves
-     * through the trust record. A roster with a malformed row is not
-     * non-direct here: a send would refuse it before any keyset verdict,
-     * so the episode stays closed.
+     * row carries its fields and key material the encrypt path would
+     * accept, yet the distinct users are not a pair — the healed-group or
+     * collapsed-membership case the send path resolves through the trust
+     * record. A roster with a malformed row or unusable key material is
+     * not non-direct here: a send would refuse it before any keyset
+     * verdict exists, so the episode stays closed and no verdict is
+     * written.
      */
     private static boolean isNonDirectKeysetShape(List<MemberDeviceDto> devices) {
         Set<String> users = new HashSet<>();
         for (MemberDeviceDto device : devices) {
             if (device == null || device.getUserId() == null
-                    || device.getDeviceId() == null || device.getPublicKey() == null) {
+                    || device.getDeviceId() == null
+                    || E2eeCrypto.memberPublicKey(device.getPublicKey()) == null) {
                 return false;
             }
             users.add(device.getUserId());
