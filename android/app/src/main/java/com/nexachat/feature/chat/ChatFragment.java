@@ -51,12 +51,14 @@ import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.call.CallLauncher;
 import com.nexachat.core.common.PhoneNormalizer;
+import com.nexachat.core.common.Result;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.MessageMention;
 import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.ui.components.DateSeparatorLabels;
 import com.nexachat.core.ui.RecallWindowRules;
 import com.nexachat.data.ChatMessage;
+import com.nexachat.data.ContactsRepository;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.data.DeliveryStatus;
 import com.nexachat.data.GroupMember;
@@ -91,7 +93,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
+import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import javax.inject.Inject;
 
 /** View-based direct/group chat. The ViewModel remains the owner of message state and actions. */
@@ -105,6 +109,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         SharedContentSheet.Host,
         ReportSheetFragment.Host {
     @Inject ForegroundConversationTracker foregroundConversationTracker;
+    @Inject ContactsRepository contactsRepository;
     private static final String PREFS_VOICE_PERMISSION = "chat_voice_permission";
     private static final String KEY_RECORD_AUDIO_REQUESTED = "record_audio_requested";
     private static final String PREFS_LOCATION_PERMISSION = "chat_location_permission";
@@ -1438,7 +1443,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         View root = binding.replyEditBanner.getRoot();
         ChatEditSession editing = viewModel.currentEditSession();
         if (editing != null) {
-            ChatInteractionsViews.bindReplyBanner(root, getString(R.string.action_edit) + ": " + editing.getOriginalContent(), () -> { viewModel.cancelEdit(); mentionQuery = null; render(); });
+            ChatInteractionsViews.bindReplyBanner(root, getString(R.string.action_edit) + ": " + SharedContentUi.previewText(requireContext(), editing.getOriginalContent()), () -> { viewModel.cancelEdit(); mentionQuery = null; render(); });
             root.findViewById(R.id.cancelReplyEdit).setContentDescription(getString(R.string.cd_cancel_edit));
             ((android.widget.ImageView) root.findViewById(R.id.replyIcon)).setImageResource(R.drawable.ic_edit);
             return;
@@ -1446,7 +1451,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         ChatViewModel.ReplyTarget target = state.getReplyTarget();
         if (target == null) { root.setVisibility(View.GONE); return; }
         String prefix = target.getSenderName() == null ? getString(R.string.action_reply) : target.getSenderName();
-        ChatInteractionsViews.bindReplyBanner(root, prefix + ": " + target.getSnippet(), viewModel::clearReplyTarget);
+        ChatInteractionsViews.bindReplyBanner(root, prefix + ": " + SharedContentUi.previewText(requireContext(), target.getSnippet()), viewModel::clearReplyTarget);
         ((android.widget.ImageView) root.findViewById(R.id.replyIcon)).setImageResource(R.drawable.ic_reply);
     }
 
@@ -2463,6 +2468,46 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     }
     @Override public void onShareContactConfirmed(@NonNull String name, @NonNull String phone) {
         viewModel.sendSharedContent(new SharedContent.Contact(name, phone));
+    }
+    @Override public void onOpenMap(@NonNull SharedContent.Location location) {
+        if (isAdded()) {
+            SharedContentUi.openMap(requireContext(), location);
+        }
+    }
+    @Override public void onAddContact(@NonNull SharedContent.Contact contact) {
+        if (isAdded() && !SharedContentUi.addContact(requireContext(), contact) && binding != null) {
+            Snackbar.make(binding.getRoot(), R.string.contact_add_error,
+                    Snackbar.LENGTH_LONG).show();
+        }
+    }
+    @Override public void onMessageContact(@NonNull SharedContent.Contact contact) {
+        if (!isAdded()) {
+            return;
+        }
+        subscriptions.add(contactsRepository.openDirectConversation(null, contact.getPhone())
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(result -> {
+                    if (!isAdded()) {
+                        return;
+                    }
+                    if (result instanceof Result.Success<?> success) {
+                        Bundle args = new Bundle();
+                        args.putString("conversationId", (String) success.getValue());
+                        try {
+                            NavHostFragment.findNavController(this)
+                                    .navigate(R.id.chatFragment, args);
+                        } catch (RuntimeException ignored) {
+                            // Nav graph unavailable in this host; stay put.
+                        }
+                    } else {
+                        showComposerSnackbar(R.string.error_generic);
+                    }
+                }, error -> {
+                    if (isAdded()) {
+                        showComposerSnackbar(R.string.error_generic);
+                    }
+                }));
     }
 
     @Override public void onResume() {

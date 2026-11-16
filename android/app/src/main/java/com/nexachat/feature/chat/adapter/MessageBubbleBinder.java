@@ -37,6 +37,9 @@ import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
 import com.google.android.material.progressindicator.CircularProgressIndicator;
 import com.nexachat.R;
+import com.nexachat.core.ui.components.AvatarColors;
+import com.nexachat.feature.chat.SharedContent;
+import com.nexachat.feature.chat.SharedContentUi;
 import com.nexachat.feature.chat.system.SystemEventFormatter;
 import com.nexachat.core.common.AppConfig;
 import com.nexachat.core.media.AttachmentBlurHashRegistry;
@@ -535,7 +538,11 @@ public final class MessageBubbleBinder {
             author.setText(sender != null ? sender : "");
         }
         if (snippetView != null) {
-            snippetView.setText(snippet != null ? snippet : "");
+            // The persisted snippet quotes the wire text verbatim; shared
+            // tokens render as their human summary instead.
+            snippetView.setText(snippet == null
+                    ? ""
+                    : SharedContentUi.previewText(root.getContext(), snippet));
         }
         replyInclude.setOnClickListener(v -> {
             if (actionListener != null) {
@@ -603,7 +610,9 @@ public final class MessageBubbleBinder {
             image.setTag(null);
             image.setImageDrawable(null);
         }
-        hideAll(body, image, play, fileName, systemLabel);
+        View locationCard = root.findViewById(R.id.sharedLocationCard);
+        View contactCard = root.findViewById(R.id.sharedContactCard);
+        hideAll(body, image, play, fileName, systemLabel, locationCard, contactCard);
         if (VoiceBubbleBinder.bindIfVoice(
                 root, message, voiceLifecycleOwner, voiceStoreOwner)) return;
 
@@ -706,6 +715,17 @@ public final class MessageBubbleBinder {
             }
             body.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0);
             body.setTypeface(null, android.graphics.Typeface.NORMAL);
+            SharedContent.Shared shared = raw == null ? null : SharedContent.parse(raw);
+            if (shared instanceof SharedContent.Location location && locationCard != null) {
+                body.setVisibility(View.GONE);
+                bindSharedLocationCard(root, locationCard, location, message);
+                return;
+            }
+            if (shared instanceof SharedContent.Contact contact && contactCard != null) {
+                body.setVisibility(View.GONE);
+                bindSharedContactCard(root, contactCard, contact, message);
+                return;
+            }
             if (raw != null && raw.startsWith("CALL|")) {
                 body.setText(SystemEventFormatter.format(
                         root.getContext(), raw, message.getMine()));
@@ -714,6 +734,100 @@ public final class MessageBubbleBinder {
                 body.setText(raw != null ? raw : "");
             }
         }
+    }
+
+    /**
+     * Shared-card palette in the reply-quote family: outgoing rows tint off
+     * the selected bubble colour, incoming rows use the primary-container
+     * roles, so the card stays tonal in every scheme and chat colour.
+     */
+    private int[] sharedCardPalette(@NonNull android.content.Context context, boolean mine) {
+        if (mine) {
+            boolean night = ChatBubbleColors.isNight(context);
+            int bubble = ChatBubbleColors.bubbleArgb(chatColor, night);
+            return new int[] {
+                    ChatBubbleColors.quoteContainerArgb(bubble, night),
+                    ChatBubbleColors.quoteAccentArgb(bubble, night),
+                    ChatBubbleColors.quoteContentArgb(bubble, night)};
+        }
+        return new int[] {
+                resolveThemeColor(context, com.google.android.material.R.attr.colorPrimaryContainer),
+                resolveThemeColor(context, com.google.android.material.R.attr.colorPrimary),
+                resolveThemeColor(context, com.google.android.material.R.attr.colorOnPrimaryContainer)};
+    }
+
+    private void bindSharedLocationCard(
+            @NonNull View root,
+            @NonNull View card,
+            @NonNull SharedContent.Location location,
+            @NonNull ChatMessage message) {
+        card.setVisibility(View.VISIBLE);
+        android.content.Context context = root.getContext();
+        int[] palette = sharedCardPalette(context, message.getMine());
+        GradientDrawable background = new GradientDrawable();
+        background.setShape(GradientDrawable.RECTANGLE);
+        background.setCornerRadius(
+                card.getResources().getDimension(R.dimen.corner_xl));
+        background.setColor(palette[0]);
+        card.setBackground(background);
+        ImageView icon = card.findViewById(R.id.sharedLocationIcon);
+        TextView title = card.findViewById(R.id.sharedLocationTitle);
+        TextView coords = card.findViewById(R.id.sharedLocationCoords);
+        icon.setImageTintList(ColorStateList.valueOf(palette[1]));
+        String titleText = location.getLabel() != null
+                ? location.getLabel()
+                : context.getString(R.string.shared_location_title);
+        title.setText(titleText);
+        title.setTextColor(palette[2]);
+        coords.setText(SharedContent.coordinates(location));
+        coords.setTextColor(palette[2]);
+        card.setContentDescription(titleText + ", " + SharedContent.coordinates(location));
+        View open = card.findViewById(R.id.sharedLocationOpen);
+        open.setOnClickListener(v -> {
+            if (actionListener != null) {
+                actionListener.onOpenMap(location);
+            }
+        });
+    }
+
+    private void bindSharedContactCard(
+            @NonNull View root,
+            @NonNull View card,
+            @NonNull SharedContent.Contact contact,
+            @NonNull ChatMessage message) {
+        card.setVisibility(View.VISIBLE);
+        android.content.Context context = root.getContext();
+        int[] palette = sharedCardPalette(context, message.getMine());
+        GradientDrawable background = new GradientDrawable();
+        background.setShape(GradientDrawable.RECTANGLE);
+        background.setCornerRadius(
+                card.getResources().getDimension(R.dimen.corner_xl));
+        background.setColor(palette[0]);
+        card.setBackground(background);
+        TextView avatar = card.findViewById(R.id.sharedContactAvatar);
+        TextView name = card.findViewById(R.id.sharedContactName);
+        TextView phone = card.findViewById(R.id.sharedContactPhone);
+        avatar.setText(MessageUiRules.extractInitials(contact.getDisplayName()));
+        avatar.setTextColor(AvatarColors.onContainerColor(context, contact.getDisplayName()));
+        avatar.setBackgroundTintList(ColorStateList.valueOf(
+                AvatarColors.containerColor(context, contact.getDisplayName())));
+        name.setText(contact.getDisplayName());
+        name.setTextColor(palette[2]);
+        phone.setText(contact.getPhone());
+        phone.setTextColor(palette[2]);
+        card.setContentDescription(contact.getDisplayName() + ", " + contact.getPhone());
+        View messageButton = card.findViewById(R.id.sharedContactMessage);
+        View addButton = card.findViewById(R.id.sharedContactAdd);
+        messageButton.setOnClickListener(v -> {
+            if (actionListener != null) {
+                actionListener.onMessageContact(contact);
+            }
+        });
+        addButton.setOnClickListener(v -> {
+            if (actionListener != null) {
+                actionListener.onAddContact(contact);
+            }
+        });
     }
 
     private void applyMentionHighlights(View root, ChatMessage message, boolean mentionedMe) {

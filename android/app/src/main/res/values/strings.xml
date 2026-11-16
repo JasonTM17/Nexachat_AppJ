@@ -252,6 +252,9 @@
     <string name="share_location_title">Share location</string>
     <string name="share_contact_title">Share contact</string>
     <string name="shared_location_title">Shared location</string>
+    <string name="shared_contact_preview">Contact: %1$s</string>
+    <string name="action_open_map">Open map</string>
+    <string name="contact_add_error">No app can save contacts</string>
     <string name="share_location_label_hint">Label (optional)</string>
     <string name="action_send">Send</string>
     <string name="location_permission_required">Location permission is required to share your location</string>

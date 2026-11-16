@@ -171,6 +171,43 @@ public final class ConversationPreviewHelperTest {
                 ConversationPreviewHelper.previewText(context, group, "me"));
     }
 
+    @Test
+    public void sharedLocationPreviewsAsTitleOrLabelNeverToken() {
+        Context context = mock(Context.class);
+        when(context.getString(R.string.shared_location_title)).thenReturn("Shared location");
+
+        assertEquals("Shared location", ConversationPreviewHelper.previewText(
+                context, conversation("DIRECT", null,
+                        "nexachat:loc:v1 21.0278,105.8342", null, false, "TEXT"), "me"));
+        assertEquals("Home", ConversationPreviewHelper.previewText(
+                context, conversation("DIRECT", null,
+                        "nexachat:loc:v1 21.0278,105.8342 Home", null, false, "TEXT"), "me"));
+        assertEquals("Mai: Home", ConversationPreviewHelper.previewText(
+                context, conversation("GROUP", "Team",
+                        "nexachat:loc:v1 21.0278,105.8342 Home", "Mai", false, "TEXT"), "me"));
+    }
+
+    @Test
+    public void sharedContactPreviewsAsNameNeverToken() {
+        Context context = mock(Context.class);
+        when(context.getString(eq(R.string.shared_contact_preview), any()))
+                .thenAnswer(invocation -> "Contact: "
+                        + invocation.getArgument(1));
+
+        assertEquals("Contact: An", ConversationPreviewHelper.previewText(
+                context, conversation("DIRECT", null,
+                        "nexachat:contact:v1\nAn\n+84901234567", null, false, "TEXT"), "me"));
+    }
+
+    @Test
+    public void malformedSharedTokensStayRawText() {
+        Context context = mock(Context.class);
+
+        assertEquals("nexachat:loc:v1 91,0", ConversationPreviewHelper.previewText(
+                context, conversation("DIRECT", null,
+                        "nexachat:loc:v1 91,0", null, false, "TEXT"), "me"));
+    }
+
     private static ConversationSummary conversation(
             String type, String title, String content, String sender, boolean deleted) {
         return conversation(type, title, content, sender, deleted, null);

@@ -6,6 +6,7 @@ import androidx.annotation.Nullable;
 import com.nexachat.R;
 import com.nexachat.call.ui.CallLogResourceResolver;
 import com.nexachat.data.ConversationSummary;
+import com.nexachat.feature.chat.SharedContentUi;
 import com.nexachat.feature.chat.system.SystemEventFormatter;
 import com.nexachat.feature.inbox.CallPreviewDirection;
 import com.nexachat.feature.inbox.InboxPreviewKind;
@@ -61,7 +62,9 @@ public final class ConversationPreviewHelper {
         } else if (kind == InboxPreviewKind.FILE) {
             preview = context.getString(R.string.inbox_preview_file);
         } else {
-            preview = raw;
+            // Shared location/contact arrive as text tokens; the row shows
+            // their localized summary, never the wire format.
+            preview = SharedContentUi.previewText(context, raw);
         }
         return withGroupSender(conversation, preview);
     }
