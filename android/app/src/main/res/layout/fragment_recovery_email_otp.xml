@@ -69,8 +69,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:minHeight="@dimen/min_touch_target"
-            android:text="@string/recovery_email_verify"
-            app:cornerRadius="@dimen/corner_md" />
+            android:text="@string/recovery_email_verify" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/recoveryOtpResend"
@@ -79,7 +78,6 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:minHeight="@dimen/min_touch_target"
-            android:text="@string/recovery_email_resend"
-            app:cornerRadius="@dimen/corner_md" />
+            android:text="@string/recovery_email_resend" />
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

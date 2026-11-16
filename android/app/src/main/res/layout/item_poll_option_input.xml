@@ -27,7 +27,7 @@
         android:layout_width="@dimen/min_touch_target"
         android:layout_height="@dimen/min_touch_target"
         android:layout_marginStart="@dimen/space_xs"
-        android:background="?attr/selectableItemBackgroundBorderless"
+        android:background="?attr/selectableItemBackground"
         android:contentDescription="@string/poll_remove_option"
         android:padding="12dp"
         android:src="@drawable/ic_close"

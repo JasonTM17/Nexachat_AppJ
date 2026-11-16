@@ -2,7 +2,7 @@
 <com.google.android.material.button.MaterialButton xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/citationButton"
-    style="@style/Widget.Material3.Button.TonalButton"
+    style="@style/Widget.NexaChat.Button.Tonal"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginBottom="@dimen/space_xs"
@@ -13,5 +13,4 @@
     android:textAlignment="viewStart"
     android:textColor="?attr/colorOnSurface"
     android:maxLines="2"
-    app:backgroundTint="?attr/colorSurfaceContainerLow"
-    app:cornerRadius="@dimen/corner_lg" />
+    app:backgroundTint="?attr/colorSurfaceContainerLow" />

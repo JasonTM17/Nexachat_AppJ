@@ -1490,6 +1490,84 @@ public class MessageRepositoryTest {
         }
     }
 
+    @Test public void invalidPauseStaysWhenHealedGroupCarriesACorruptKey() {
+        com.nexachat.core.crypto.E2eeSession e2ee =
+                mock(com.nexachat.core.crypto.E2eeSession.class);
+        ConversationEntity conv = mock(ConversationEntity.class);
+        when(conv.isE2eeEnabled()).thenReturn(true);
+        conversations.put(CONVERSATION_ID, conv);
+        com.nexachat.core.crypto.KeysetTrustStore trustStore =
+                new com.nexachat.core.crypto.KeysetTrustStore(new InMemoryKeysetTrustDao());
+        await(trustStore.markVerified("me-1", CONVERSATION_ID, new byte[]{4, 5, 6}));
+        when(e2ee.encryptFor(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                        MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        // A group-shaped roster whose third member advertises undecodable
+        // key material is not fully formed: the send path would refuse it
+        // with stale devices before any verdict, so the episode stays
+        // closed and no verdict is written.
+        when(e2ee.currentTranscript(CONVERSATION_ID))
+                .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                        MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        when(e2ee.e2eeState(CONVERSATION_ID))
+                .thenReturn(Single.just(new com.nexachat.core.network.dto.E2eeDeviceDtos
+                        .ConversationE2eeDto(true, List.of(member("u-1"), member("u-2"),
+                                new com.nexachat.core.network.dto.E2eeDeviceDtos.MemberDeviceDto(
+                                        "u-3", "dev-u-3", "not-base64!!")))));
+        MessageRepository repo = repositoryWithTrust(e2ee, trustStore);
+        try {
+            await(repo.send(CONVERSATION_ID, "blocked"));
+
+            assertEquals(Optional.of(MessageRepository.ERROR_E2EE_KEYSET_INVALID),
+                    repo.keysetPauseCode("me-1", CONVERSATION_ID).blockingGet());
+            // Failing closed means no verdict either: an unusable roster
+            // must not flip the verified record to CHANGED.
+            assertEquals(com.nexachat.core.crypto.KeysetTrustStore.TrustState.VERIFIED,
+                    trustStore.state("me-1", CONVERSATION_ID).blockingGet()
+                            .orElseThrow(AssertionError::new).state());
+        } finally {
+            repo.dispose();
+        }
+    }
+
+    @Test public void invalidPauseStaysWhenHealedGroupCarriesAShortKey() {
+        com.nexachat.core.crypto.E2eeSession e2ee =
+                mock(com.nexachat.core.crypto.E2eeSession.class);
+        ConversationEntity conv = mock(ConversationEntity.class);
+        when(conv.isE2eeEnabled()).thenReturn(true);
+        conversations.put(CONVERSATION_ID, conv);
+        com.nexachat.core.crypto.KeysetTrustStore trustStore =
+                new com.nexachat.core.crypto.KeysetTrustStore(new InMemoryKeysetTrustDao());
+        await(trustStore.markVerified("me-1", CONVERSATION_ID, new byte[]{4, 5, 6}));
+        when(e2ee.encryptFor(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                        MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        // Decodable but wrong-length key material fails the same way: the
+        // encrypt path's acceptance rule applies to shape probes too.
+        when(e2ee.currentTranscript(CONVERSATION_ID))
+                .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                        MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        when(e2ee.e2eeState(CONVERSATION_ID))
+                .thenReturn(Single.just(new com.nexachat.core.network.dto.E2eeDeviceDtos
+                        .ConversationE2eeDto(true, List.of(member("u-1"), member("u-2"),
+                                new com.nexachat.core.network.dto.E2eeDeviceDtos.MemberDeviceDto(
+                                        "u-3", "dev-u-3", Base64.getUrlEncoder()
+                                                .withoutPadding()
+                                                .encodeToString(new byte[5]))))));
+        MessageRepository repo = repositoryWithTrust(e2ee, trustStore);
+        try {
+            await(repo.send(CONVERSATION_ID, "blocked"));
+
+            assertEquals(Optional.of(MessageRepository.ERROR_E2EE_KEYSET_INVALID),
+                    repo.keysetPauseCode("me-1", CONVERSATION_ID).blockingGet());
+            assertEquals(com.nexachat.core.crypto.KeysetTrustStore.TrustState.VERIFIED,
+                    trustStore.state("me-1", CONVERSATION_ID).blockingGet()
+                            .orElseThrow(AssertionError::new).state());
+        } finally {
+            repo.dispose();
+        }
+    }
+
     @Test public void invalidPauseStaysWhenShapeProbeCannotRun() {
         com.nexachat.core.crypto.E2eeSession e2ee =
                 mock(com.nexachat.core.crypto.E2eeSession.class);
@@ -1578,8 +1656,11 @@ public class MessageRepositoryTest {
 
     private static com.nexachat.core.network.dto.E2eeDeviceDtos.MemberDeviceDto member(
             String userId) {
+        // A well-formed row needs key material the encrypt path accepts:
+        // base64url decoding to a full-size X25519 public key.
         return new com.nexachat.core.network.dto.E2eeDeviceDtos.MemberDeviceDto(
-                userId, "dev-" + userId, "key-" + userId);
+                userId, "dev-" + userId, Base64.getUrlEncoder().withoutPadding()
+                        .encodeToString(new byte[com.nexachat.core.crypto.E2eeCrypto.KEY_BYTES]));
     }
 
     private MessageRepository repositoryWithTrust(com.nexachat.core.crypto.E2eeSession e2ee,

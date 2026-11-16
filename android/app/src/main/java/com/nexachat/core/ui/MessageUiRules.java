@@ -70,10 +70,15 @@ public final class MessageUiRules {
             return "?";
         }
         if (parts.length == 1) {
-            return parts[0].substring(0, 1).toUpperCase(java.util.Locale.ROOT);
+            return firstCodePoint(parts[0]).toUpperCase(java.util.Locale.ROOT);
         }
-        String first = parts[0].substring(0, 1).toUpperCase(java.util.Locale.ROOT);
-        String last = parts[parts.length - 1].substring(0, 1).toUpperCase(java.util.Locale.ROOT);
+        String first = firstCodePoint(parts[0]).toUpperCase(java.util.Locale.ROOT);
+        String last = firstCodePoint(parts[parts.length - 1]).toUpperCase(java.util.Locale.ROOT);
         return first + last;
+    }
+
+    /** First Unicode code point of a word — substring(0, 1) would split surrogate pairs. */
+    private static String firstCodePoint(String word) {
+        return word.substring(0, word.offsetByCodePoints(0, 1));
     }
 }

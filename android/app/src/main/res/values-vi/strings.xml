@@ -504,7 +504,7 @@
     <string name="poll_error_manage">Không cập nhật được bình chọn. Hãy thử lại.</string>
     <string name="poll_error_admin">Chỉ người tạo hoặc quản trị viên mới sửa được bình chọn này.</string>
 
-    <string name="label_filter_all">Tất cả</string>
+    <string name="label_filter_all">Tất cả nhãn</string>
     <string name="label_manage">Quản lý nhãn</string>
     <string name="label_manage_description">Quản lý nhãn trò chuyện</string>
     <string name="label_assign_menu">Gán nhãn</string>
