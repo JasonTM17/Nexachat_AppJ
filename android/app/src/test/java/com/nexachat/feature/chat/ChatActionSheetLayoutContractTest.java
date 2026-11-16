@@ -185,6 +185,27 @@ public final class ChatActionSheetLayoutContractTest {
     }
 
     @Test
+    public void attachmentPickerIsADesignedBottomSheet() throws Exception {
+        String source = readSource("feature/chat/ChatInteractionsViews.java");
+        int start = source.indexOf("public static void showAttachmentPicker(");
+        int end = source.indexOf("public static void bindReplyBanner(", start);
+        assertTrue("attachment picker must exist", start >= 0 && end > start);
+        String body = source.substring(start, end);
+        assertTrue("attachment picker must use the bottom-sheet chrome",
+                body.contains("BottomSheetDialog"));
+        assertTrue("attachment picker must inflate the designed sheet",
+                body.contains("R.layout.sheet_attachment_picker"));
+        assertTrue("attachment rows must be clickable targets",
+                body.contains("R.id.pickVisualRow") && body.contains("R.id.pickDocumentRow"));
+        assertTrue("attachment picker must not fall back to the plain items dialog",
+                !body.contains("setItems"));
+
+        Document sheet = parse("src/main/res/layout/sheet_attachment_picker.xml");
+        assertNotNull(findById(sheet, "pickVisualRow"));
+        assertNotNull(findById(sheet, "pickDocumentRow"));
+    }
+
+    @Test
     public void mentionPickerSitsFlatOnTheSurfaceInBothOrientations() throws Exception {
         for (String directory : new String[]{"layout", "layout-land"}) {
             Document chat = parse("src/main/res/" + directory + "/fragment_chat.xml");

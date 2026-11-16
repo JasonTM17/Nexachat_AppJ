@@ -342,11 +342,19 @@ public final class ChatInteractionsViews {
     }
 
     public static void showAttachmentPicker(@NonNull Context context, @NonNull Runnable visual, @NonNull Runnable document) {
-        new MaterialAlertDialogBuilder(context)
-                .setTitle(R.string.attachment_picker_title)
-                .setItems(new CharSequence[]{context.getString(R.string.media_pick_visual), context.getString(R.string.media_pick_document)},
-                        (dialog, which) -> { if (which == 0) visual.run(); else document.run(); })
-                .show();
+        BottomSheetDialog dialog = new BottomSheetDialog(context);
+        View sheet = LayoutInflater.from(context).inflate(R.layout.sheet_attachment_picker, null, false);
+        sheet.findViewById(R.id.pickVisualRow).setOnClickListener(v -> {
+            dialog.dismiss();
+            visual.run();
+        });
+        sheet.findViewById(R.id.pickDocumentRow).setOnClickListener(v -> {
+            dialog.dismiss();
+            document.run();
+        });
+        dialog.setContentView(sheet);
+        dialog.show();
+        dialog.getBehavior().setState(BottomSheetBehavior.STATE_EXPANDED);
     }
 
     public static void bindReplyBanner(@NonNull View root, @NonNull String text, @NonNull Runnable cancel) {
