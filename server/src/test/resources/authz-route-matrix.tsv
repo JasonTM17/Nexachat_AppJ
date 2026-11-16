@@ -144,3 +144,9 @@ POST	/api/v1/admin/rules	ADMIN_STAFF	admin_staff	rest-133
 PATCH	/api/v1/admin/rules/{ruleId}	ADMIN_STAFF	admin_staff	rest-134
 DELETE	/api/v1/admin/rules/{ruleId}	ADMIN_STAFF	admin_staff	rest-135
 POST	/api/v1/admin/rules/test	ADMIN_STAFF	admin_staff	rest-136
+POST	/api/v1/messages/{messageId}/translate	MESSAGE_CONVERSATION_MEMBER	message_conversation_member	rest-137
+POST	/api/v1/conversations/{conversationId}/translate-batch	CONVERSATION_MEMBER	conversation_member	rest-138
+GET	/api/v1/conversations/{conversationId}/translation-glossary	CONVERSATION_MEMBER	conversation_member	rest-139
+PUT	/api/v1/conversations/{conversationId}/translation-glossary	CONVERSATION_MEMBER	conversation_member	rest-140
+GET	/api/v1/conversations/{conversationId}/translate-prefs	CONVERSATION_MEMBER	conversation_member	rest-141
+PUT	/api/v1/conversations/{conversationId}/translate-prefs	CONVERSATION_MEMBER	conversation_member	rest-142

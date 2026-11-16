@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 18,
-    "identityHash": "9d6754bdf1831b54e0a701a49f4cab52",
+    "identityHash": "9c59f69f60cdf871c12101540ebe3a43",
     "entities": [
       {
         "tableName": "messages",
@@ -892,8 +892,8 @@
         "foreignKeys": []
       },
       {
-        "tableName": "message_stars",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`messageId` TEXT NOT NULL, `conversationId` TEXT NOT NULL, `starredAt` INTEGER NOT NULL, PRIMARY KEY(`messageId`))",
+        "tableName": "message_translations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`messageId` TEXT NOT NULL, `conversationId` TEXT NOT NULL, `changeVersion` INTEGER NOT NULL, `targetLang` TEXT NOT NULL, `sourceLang` TEXT NOT NULL, `translatedText` TEXT NOT NULL, `fetchedAt` INTEGER NOT NULL, PRIMARY KEY(`messageId`, `changeVersion`, `targetLang`))",
         "fields": [
           {
             "fieldPath": "messageId",
@@ -908,8 +908,32 @@
             "notNull": true
           },
           {
-            "fieldPath": "starredAt",
-            "columnName": "starredAt",
+            "fieldPath": "changeVersion",
+            "columnName": "changeVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetLang",
+            "columnName": "targetLang",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceLang",
+            "columnName": "sourceLang",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "translatedText",
+            "columnName": "translatedText",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fetchedAt",
+            "columnName": "fetchedAt",
             "affinity": "INTEGER",
             "notNull": true
           }
@@ -917,27 +941,19 @@
         "primaryKey": {
           "autoGenerate": false,
           "columnNames": [
-            "messageId"
+            "messageId",
+            "changeVersion",
+            "targetLang"
           ]
         },
-        "indices": [
-          {
-            "name": "index_message_stars_conversationId",
-            "unique": false,
-            "columnNames": [
-              "conversationId"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_message_stars_conversationId` ON `${TABLE_NAME}` (`conversationId`)"
-          }
-        ],
+        "indices": [],
         "foreignKeys": []
       }
     ],
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '9d6754bdf1831b54e0a701a49f4cab52')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '9c59f69f60cdf871c12101540ebe3a43')"
     ]
   }
 }

@@ -252,7 +252,11 @@ These keys are Spring properties; override them with the matching
 | `E2EE_STALE_DEVICES` | 409 | An envelope targets a revoked, unknown, or non-member device — client refetches `GET /conversations/{id}/e2ee` and retries |
 | `E2EE_MEDIA_UNSUPPORTED` | 409 | Non-TEXT message in an `e2ee_enabled` conversation |
 | `E2EE_EDIT_UNSUPPORTED` | 409 | Edit attempted on an encrypted message |
-| `E2EE_AI_UNAVAILABLE` | 409 | Summary/ask invoked on an `e2ee_enabled` conversation |
+| `E2EE_AI_UNAVAILABLE` | 409 | Summary/ask/translate invoked on an `e2ee_enabled` conversation |
+| `AI_CONSENT_REQUIRED` | 403 | AI feature invoked without the caller's external-AI consent |
+| `AI_OPTED_OUT` | 403 | The target message's sender opted out of AI in that conversation |
+| `TRANSLATION_UNSUPPORTED` | 400 | Unsupported target language or non-translatable message shape |
+| `TRANSLATION_UNAVAILABLE` | 503 | No translation provider available or provider output rejected |
 | `NOT_FOUND` | 404 | Unknown path |
 | `METHOD_NOT_ALLOWED` | 405 | Wrong HTTP method for the path |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | Request `Content-Type` not accepted |
@@ -594,6 +598,26 @@ uses the server-authorized message DELETE.
 | `PUT /conversations/{conversationId}/ai-opt-out` | Bearer member | — | `200` `{conversationId, aiOptOut: true}` (idempotent; sets the caller's own opt-out for this conversation) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `DELETE /conversations/{conversationId}/ai-opt-out` | Bearer member | — | `200` `{conversationId, aiOptOut: false}` (idempotent) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `GET /conversations/{conversationId}/ai-opt-out` | Bearer member | — | `200` `{conversationId, aiOptOut: <bool>}` — the caller's own state only | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+
+## Message translation — `/api/v1`
+
+RAG-grounded translation of conversation text; see
+[`ai-translation.md`](ai-translation.md) for the full pipeline. Every route
+requires conversation membership, refuses E2EE conversations/messages and
+senders who opted out of AI, and only charges the per-user minute/day
+budget when a provider call actually happens (cache hits and same-language
+short-circuits are free). Supported `targetLang` values: `vi`, `en`, `zh`,
+`ja`, `ko`, `fr`, `de`, `es`, `th`, `id`, `ru`, `ar`, `pt`, `hi` (aliases
+and BCP-47 forms are normalized).
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `POST /messages/{messageId}/translate` | Bearer member | `{targetLang}` | `200` `{text, sourceLang, targetLang, cached, model}`; `cached: true` on cache hits | `VALIDATION_FAILED` 400 · `TRANSLATION_UNSUPPORTED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `AI_OPTED_OUT` 403 · `AI_CONSENT_REQUIRED` 403 · `CONVERSATION_NOT_FOUND` 404 · `MESSAGE_NOT_FOUND` 404 · `MESSAGE_DELETED` 409 · `E2EE_AI_UNAVAILABLE` 409 · `RATE_LIMITED` 429 · `TRANSLATION_UNAVAILABLE` 503 |
+| `POST /conversations/{conversationId}/translate-batch` | Bearer member | `{messageIds, targetLang}` — ≤20 ids | `200` `{results: [{messageId, text?, sourceLang?, targetLang, cached?, model?, error?}]}` — one item per requested id; per-item refusals carry a stable error code in `error` instead of failing the batch | `VALIDATION_FAILED` 400 · `TRANSLATION_UNSUPPORTED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `E2EE_AI_UNAVAILABLE` 409 |
+| `GET /conversations/{conversationId}/translation-glossary` | Bearer member | — | `200` `{conversationId, terms: [{term, replacement?}]}` | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `PUT /conversations/{conversationId}/translation-glossary` | Bearer member | `{terms: [{term, replacement?}]}` — ≤50 terms, each ≤100 chars; `replacement` absent means "keep verbatim"; case-insensitive dedupe, last wins | `200` stored glossary | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `GET /conversations/{conversationId}/translate-prefs` | Bearer member | — | `200` `{conversationId, autoTranslate, targetLang}` | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `PUT /conversations/{conversationId}/translate-prefs` | Bearer member | `{autoTranslate, targetLang}` — full replace; null/blank `targetLang` clears the conversation override | `200` stored prefs | `VALIDATION_FAILED` 400 · `TRANSLATION_UNSUPPORTED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 
 ## Conversation labels — `/api/v1/labels`
 

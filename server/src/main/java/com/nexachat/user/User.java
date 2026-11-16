@@ -69,6 +69,14 @@ public class User {
     @Column(name = "ai_summary_consent_epoch", nullable = false)
     private long aiSummaryConsentEpoch;
 
+    /**
+     * Member-wide default target language for message translation (V37).
+     * {@code null} leaves the default to the client's app language; a
+     * conversation-level preference overrides it.
+     */
+    @Column(name = "translate_target_lang", length = 8)
+    private String translateTargetLang;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -195,6 +203,10 @@ public class User {
         return aiSummaryConsent;
     }
 
+    public String getTranslateTargetLang() {
+        return translateTargetLang;
+    }
+
     public long getAiSummaryConsentEpoch() {
         return aiSummaryConsentEpoch;
     }
@@ -224,6 +236,10 @@ public class User {
             aiSummaryConsentEpoch++;
         }
         this.aiSummaryConsent = aiSummaryConsent;
+    }
+
+    public void changeTranslateTargetLang(String translateTargetLang) {
+        this.translateTargetLang = translateTargetLang;
     }
 
     public void recordLastSeen(Instant lastSeenAt) {

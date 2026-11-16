@@ -25,9 +25,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             OfflineOutboxEntity.class,
             SyncCursorEntity.class,
             KeysetTrustEntity.class,
+            MessageTranslationEntity.class,
             StarredMessageEntity.class
         },
-        version = 18,
+        version = 19,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -40,6 +41,7 @@ public abstract class AppDatabase extends RoomDatabase {
     public abstract OfflineOutboxDao offlineOutboxDao();
     public abstract SyncCursorDao syncCursorDao();
     public abstract KeysetTrustDao keysetTrustDao();
+    public abstract MessageTranslationDao messageTranslationDao();
     public abstract StarDao starDao();
 
     /** Clears cached account data and other offline actions while retaining message sends. */
@@ -56,6 +58,7 @@ public abstract class AppDatabase extends RoomDatabase {
             db.execSQL("DELETE FROM `offline_outbox`");
             db.execSQL("DELETE FROM `sync_cursors`");
             db.execSQL("DELETE FROM `e2ee_keyset_trust`");
+            db.execSQL("DELETE FROM `message_translations`");
         });
     }
 
@@ -297,8 +300,20 @@ public abstract class AppDatabase extends RoomDatabase {
         }
     };
 
-    /** Per-user star markers; ids stay stable across reinstalls of cached history. */
+    /** Local message-translation cache keyed by message revision (Room v18). */
     public static final Migration MIGRATION_17_18 = new Migration(17, 18) {
+        @Override public void migrate(SupportSQLiteDatabase db) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS `message_translations` ("
+                    + "`messageId` TEXT NOT NULL, `conversationId` TEXT NOT NULL, "
+                    + "`changeVersion` INTEGER NOT NULL, `targetLang` TEXT NOT NULL, "
+                    + "`sourceLang` TEXT NOT NULL, `translatedText` TEXT NOT NULL, "
+                    + "`fetchedAt` INTEGER NOT NULL, "
+                    + "PRIMARY KEY(`messageId`, `changeVersion`, `targetLang`))");
+        }
+    };
+
+    /** Per-user star markers; ids stay stable across reinstalls of cached history. */
+    public static final Migration MIGRATION_18_19 = new Migration(18, 19) {
         @Override public void migrate(SupportSQLiteDatabase db) {
             db.execSQL("CREATE TABLE IF NOT EXISTS `message_stars` ("
                     + "`messageId` TEXT NOT NULL, `conversationId` TEXT NOT NULL, "

@@ -69,6 +69,24 @@ public final class MessageListAdapter extends ListAdapter<MessageListItem, Recyc
         notifyDataSetChanged();
     }
 
+    /** Replaces the per-message translation states and rebinds affected rows. */
+    public void setTranslations(
+            @NonNull java.util.Map<String, com.nexachat.feature.chat.TranslationUiState> next) {
+        if (translations.equals(next)) return;
+        translations = next;
+        binder.setTranslations(next);
+        notifyDataSetChanged();
+    }
+
+    /** Retry callback for failed translations, keyed by message id. */
+    public void setTranslationRetry(
+            @Nullable Function<String, Boolean> onRetry) {
+        binder.setTranslationRetry(onRetry);
+    }
+
+    @NonNull private java.util.Map<String, com.nexachat.feature.chat.TranslationUiState>
+            translations = java.util.Map.of();
+
     @Override
     public int getItemViewType(int position) {
         MessageListItem item = getItem(position);
