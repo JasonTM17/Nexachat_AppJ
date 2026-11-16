@@ -10,9 +10,9 @@ A separate staff console for system and account management:
 - **Alerts** — asynchronous sensitive-message detection on committed messages, a triage queue with acknowledge/assign/resolve/dismiss/escalate/warn-sender workflow, bulk dismiss, notes, and an audited, rate-limited content-reveal.
 - **Rules** — built-in and custom detection rules (KEYWORD, REGEX, payment-CARD detector), enable/severity editing, live pattern test.
 - **Audit** — append-only `admin_audit_log` browsable by actor, action, target, time.
-- **System** — KPIs (signups, DAU/WAU, messages, calls, DB/uploads size, 5xx rate), 14-day series, service health, scan-queue depth.
+- **System** — KPIs (signups, DAU/WAU, messages, calls, DB/uploads size, 5xx rate), 7, 30 or 90 day series, service health, scan-queue depth.
 
-Two staff roles: `ADMIN` (all mutations) and `MODERATOR` (reads + non-destructive triage on plain users). Configured `nexachat.security.admin-phones` accounts are promoted to `ADMIN` at startup and login (`AdminRoleBootstrap`); promotion is never auto-revoked by config removal.
+Two staff roles: `ADMIN` (all mutations) and `MODERATOR` (reads, triage, and suspend, revoke sessions or warn on plain accounts). Configured `nexachat.security.admin-phones` accounts are promoted to `ADMIN` at startup and login (`AdminRoleBootstrap`); promotion is never auto-revoked by config removal.
 
 ## Architecture
 
@@ -60,4 +60,4 @@ flowchart LR
 
 ## Schema (V36)
 
-`users.role`, `users.suspended_at`, `users.suspended_reason`, `users.suspended_by` + `admin_audit_log` (immutable triggers), `alert_rules` (7 built-ins seeded), `message_alerts`, `alert_notes`, `user_notices`. Retention purge `AlertRetentionPurge` is opt-in (`nexachat.admin.retention.enabled`) and supports dry-run.
+`users.role`, `users.suspended_at`, `users.suspended_reason`, `users.suspended_by` + `admin_audit_log` (immutable triggers), `alert_rules` (a seeded set of built-in rules), `message_alerts`, `alert_notes`, `user_notices`. Retention purge `AlertRetentionPurge` is opt-in (`nexachat.admin.alerts.retention.enabled`) and supports dry-run.
