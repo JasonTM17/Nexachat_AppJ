@@ -56,6 +56,8 @@ public final class ContactsListLayoutContractTest {
         assertEquals("true", attr(pill, "focusable"));
         assertEquals("@dimen/min_touch_target", attr(pill, "minHeight"));
         assertEquals("@string/inbox_search_hint", attr(pill, "contentDescription"));
+        assertEquals("?attr/selectableItemBackground", attr(pill, "foreground"));
+        assertEquals("true", attr(pill, "clipToOutline"));
         // The toolbar icon keeps its id/label and the pill reuses the same destination.
         Element icon = findById(pill.getOwnerDocument(), "searchButton");
         assertEquals("@string/search_title", attr(icon, "contentDescription"));
