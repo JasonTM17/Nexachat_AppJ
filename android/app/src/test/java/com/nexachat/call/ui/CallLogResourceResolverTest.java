@@ -7,6 +7,8 @@ import com.nexachat.call.core.CallSession;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public class CallLogResourceResolverTest {
     @Test public void resolvesEveryFormatterKeyToLocalizedResources() {
@@ -60,5 +62,11 @@ public class CallLogResourceResolverTest {
                 CallLogResourceResolver.fromSystemMessage("CALL|UNKNOWN|oops", true);
         assertEquals(R.string.call_log_failed, result.getResourceId());
         assertEquals(0, result.getArguments().length);
+    }
+
+    @Test public void onlyAnUnansweredCallIsMarkedMissed() {
+        assertTrue(CallLogResourceResolver.fromSystemMessage("CALL|MISSED|0|caller-id", false).isMissed());
+        assertFalse(CallLogResourceResolver.fromSystemMessage("CALL|COMPLETED|61|caller-id", false).isMissed());
+        assertFalse(CallLogResourceResolver.fromSystemMessage("CALL|DECLINED|0|caller-id", false).isMissed());
     }
 }

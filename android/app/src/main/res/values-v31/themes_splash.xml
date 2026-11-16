@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The system launch screen takes the same background as the in-app splash so the hand-over has no flash. -->
+    <style name="Theme.NexaChat" parent="Theme.NexaChat.Views">
+        <item name="android:windowSplashScreenBackground">?android:attr/colorBackground</item>
+    </style>
+</resources>

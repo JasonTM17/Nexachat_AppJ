@@ -40,7 +40,7 @@ public final class ChatSurfacePolishContractTest {
         assertTrue("sender-side merge must come from ChatBubbleRules",
                 body.contains("ChatBubbleRules.bubbleMergedCorners(position, tailOnRight)"));
         assertTrue("corner radii must still honour the dimens",
-                body.contains("R.dimen.corner_lg") && body.contains("R.dimen.corner_xs"));
+                body.contains("R.dimen.corner_xl") && body.contains("R.dimen.corner_xs"));
     }
 
     @Test
@@ -130,7 +130,7 @@ public final class ChatSurfacePolishContractTest {
                 "0dp", card.getAttributeNS(APP, "cardElevation"));
         assertEquals("?attr/colorSurfaceContainerHigh",
                 card.getAttributeNS(APP, "cardBackgroundColor"));
-        assertEquals("@dimen/corner_md", card.getAttributeNS(APP, "cardCornerRadius"));
+        assertEquals("@dimen/corner_xl", card.getAttributeNS(APP, "cardCornerRadius"));
 
         Element icon = firstTag(card, "ImageView");
         assertEquals("?attr/colorPrimary", icon.getAttributeNS(APP, "tint"));

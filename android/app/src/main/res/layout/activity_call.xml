@@ -22,8 +22,8 @@
 
         <!-- 120dp Avatar with soft pulse ring -->
         <FrameLayout
-            android:layout_width="170dp"
-            android:layout_height="170dp"
+            android:layout_width="204dp"
+            android:layout_height="204dp"
             android:layout_gravity="center_horizontal">
 
             <View

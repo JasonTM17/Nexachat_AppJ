@@ -8,7 +8,7 @@
     android:gravity="bottom"
     android:minHeight="@dimen/composer_min_height"
     android:orientation="horizontal"
-    android:paddingHorizontal="@dimen/space_xs"
+    android:paddingHorizontal="@dimen/space_sm"
     android:paddingVertical="@dimen/space_xs">
 
     <ImageButton
@@ -100,11 +100,11 @@
             android:id="@+id/micButton"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="?attr/selectableItemBackground"
+            android:background="@drawable/bg_mic_button"
             android:contentDescription="@string/cd_record_voice"
             android:padding="10dp"
             android:src="@drawable/ic_mic"
             android:visibility="visible"
-            app:tint="?attr/colorOnSurfaceVariant" />
+            app:tint="?attr/colorOnPrimaryContainer" />
     </FrameLayout>
 </LinearLayout>

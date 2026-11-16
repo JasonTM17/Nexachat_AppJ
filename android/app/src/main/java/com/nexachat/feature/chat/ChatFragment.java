@@ -590,8 +590,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         }
     }
 
+    @Nullable private Runnable voiceResumePoll;
+
     private void maybeResumeVoiceRecording(@NonNull ChatActionImageButton micButton, int attempt) {
-        if (!viewModel.isVoiceRetainedForConfigChange()) {
+        voiceResumePoll = null;
+        if (binding == null || !isAdded() || !viewModel.isVoiceRetainedForConfigChange()) {
             return;
         }
         if (viewModel.isVoiceRecordingActive()) {
@@ -599,10 +602,14 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             resumeVoiceRecordingAfterConfigChange(micButton);
             return;
         }
-        if (attempt < 10 && binding != null) {
+        if (attempt < 10) {
             // start() can still be mid-prepare on the start executor.
-            recordingHandler.postDelayed(
-                    () -> maybeResumeVoiceRecording(micButton, attempt + 1), 250);
+            voiceResumePoll = () -> maybeResumeVoiceRecording(micButton, attempt + 1);
+            recordingHandler.postDelayed(voiceResumePoll, 250);
+        } else {
+            // The recorder never came up; drop it instead of holding the mic.
+            viewModel.setVoiceRetainedForConfigChange(false);
+            viewModel.releaseVoiceRecorder();
         }
     }
 
@@ -1904,12 +1911,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                 viewModel.attachmentFile(attachment)
                         .subscribe(
                                 file -> {
-                                    if (!isAdded()) return;
+                                    if (!isAdded() || binding == null) return;
                                     String mime = attachment.getMimeType() == null
                                             ? "application/octet-stream"
                                             : attachment.getMimeType();
                                     com.nexachat.feature.media.AttachmentViewBinder.openExternally(
-                                            requireContext(), file, mime);
+                                            binding.getRoot(), file, mime);
                                 },
                                 error -> {
                                     if (isAdded()) {
@@ -1975,6 +1982,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         subscriptions.clear();
         if (recordingTimerRunnable != null) {
             recordingHandler.removeCallbacks(recordingTimerRunnable);
+        }
+        if (voiceResumePoll != null) {
+            recordingHandler.removeCallbacks(voiceResumePoll);
+            voiceResumePoll = null;
         }
         boolean configChange = requireActivity().isChangingConfigurations();
         if (voiceRecorder != null || viewModel.getVoiceRecorder() != null) {

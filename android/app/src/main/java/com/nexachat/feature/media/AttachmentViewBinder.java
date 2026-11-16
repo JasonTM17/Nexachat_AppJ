@@ -4,8 +4,10 @@ import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.view.View;
 import androidx.annotation.NonNull;
 import androidx.core.content.FileProvider;
+import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import java.io.File;
 
@@ -50,21 +52,19 @@ public final class AttachmentViewBinder {
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
     }
 
-    /** Starts {@link #createViewIntent} and shows a snackbar-style toast if nothing handles it. */
+    /** Starts {@link #createViewIntent} and anchors a snackbar on {@code anchor} if nothing handles it. */
     public static void openExternally(
-            @NonNull Context context,
+            @NonNull View anchor,
             @NonNull File file,
             @NonNull String mimeType) {
+        Context context = anchor.getContext();
         Intent intent = Intent.createChooser(
                 createViewIntent(context, file, mimeType),
                 context.getString(R.string.action_view));
         try {
             context.startActivity(intent);
         } catch (ActivityNotFoundException ignored) {
-            android.widget.Toast.makeText(
-                    context,
-                    R.string.error_attachment_open,
-                    android.widget.Toast.LENGTH_SHORT).show();
+            Snackbar.make(anchor, R.string.error_attachment_open, Snackbar.LENGTH_SHORT).show();
         }
     }
 }

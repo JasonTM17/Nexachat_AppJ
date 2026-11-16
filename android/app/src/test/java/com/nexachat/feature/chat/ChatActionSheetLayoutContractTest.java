@@ -124,14 +124,14 @@ public final class ChatActionSheetLayoutContractTest {
         assertTrue("selected chips use the secondary container pair",
                 body.contains("R.color.colorSecondaryContainer")
                         && body.contains("colorOnSecondaryContainer"));
-        assertTrue("chips keep the 12dp shape",
-                body.contains("R.dimen.corner_md"));
+        assertTrue("chips are pills",
+                body.contains("R.dimen.corner_full"));
         assertTrue("chips draw no hairline outline",
                 body.contains("setChipStrokeWidth(0f)")
                         && !body.contains("setChipStrokeColor")
                         && !body.contains("colorOutline"));
         assertTrue("reaction chips keep the minimum touch target",
-                body.contains("R.dimen.min_touch_target")
+                body.contains("R.dimen.chip_min_height")
                         && body.contains("setEnsureMinTouchTargetSize(true)"));
     }
 
@@ -213,7 +213,8 @@ public final class ChatActionSheetLayoutContractTest {
     public void composerBannersUseTonalFillsWithoutStrokes() throws Exception {
         Document pinned = parse("src/main/res/layout/include_chat_pinned_banner.xml");
         Element pinnedRoot = findById(pinned, "pinnedRoot");
-        assertEquals("?attr/colorSurfaceContainerLow",
+        // Distinct from the incoming bubble fill (surface container) so the banner never blends in.
+        assertEquals("?attr/colorSecondaryContainer",
                 pinnedRoot.getAttributeNS(ANDROID, "background"));
         NodeList pinnedChildren = pinned.getElementsByTagName("*");
         for (int i = 0; i < pinnedChildren.getLength(); i++) {

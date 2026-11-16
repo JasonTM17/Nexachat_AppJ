@@ -13,7 +13,7 @@ This document describes the design language, token definitions, component states
 ### 1.2 Group Detail Calm Role Chip & Destructive Actions
 - **Problem**: An alarming red "Admin" pill and a red trash can icon appeared on every group member row, causing false danger affordances.
 - **Decision**:
-  - The "Admin" / "Quản trị viên" role badge uses a calm Material 3 chip with `?attr/colorSecondaryContainer` background and `?attr/colorOnSecondaryContainer` text, shaped with `@dimen/corner_sm` corners and modest vertical padding.
+  - The "Admin" / "Quản trị viên" role badge uses a Material 3 chip with `?attr/colorPrimary` background and `?attr/colorOnPrimary` text, shaped as a `corner_full` pill with the primary fill (`?attr/colorPrimary` / `?attr/colorOnPrimary`) so the role is clear at a glance.
   - Member removal icons are tinted neutrally with `?attr/colorOnSurfaceVariant`, reserving destructive red exclusively for "Leave group" / "Rời khỏi nhóm" and confirmation alert dialogs.
 
 ### 1.3 Deterministic Avatar Palette & Initials Fallback
@@ -47,12 +47,12 @@ Strict 8pt grid baseline:
 
 ### 2.3 Shapes (dimens + bubble drawables)
 Corner scale (`dimens_nexachat.xml`): `corner_xs` `2dp`, `corner_sm` `4dp`, `corner_md` `8dp`, `corner_lg` `12dp`, `corner_xl` `16dp`, `corner_full` `999dp`.
-- Buttons and FABs: square `0dp` corners via `ShapeAppearance.NexaChat.Button` on every `Widget.NexaChat.Button*` style; layouts must not set `app:cornerRadius` on a `MaterialButton` (pinned by `ButtonShapeContractTest`; `CornerRadiusTokenContractTest` bans literal radii in drawables and layouts).
-- Cards: `corner_md` (`8dp`); sheets and dialogs: `corner_xl` (`16dp`) via `cardCornerRadius`.
+- Buttons and FABs: fully rounded pills (`corner_full`) via `ShapeAppearance.NexaChat.Button` on every `Widget.NexaChat.Button*` style (owner decision after review: the earlier square buttons read as rough next to mainstream messengers; the Stitch reference's 12dp buttons are superseded); layouts must not set `app:cornerRadius` on a `MaterialButton` (pinned by `ButtonShapeContractTest`; `CornerRadiusTokenContractTest` bans literal radii in drawables and layouts).
+- Cards, list bands and grouped surfaces: `corner_xl` (`16dp`); sheets and dialogs: `corner_xl`; filter, reaction and role chips: `corner_full`; text inputs: `corner_lg` (`12dp`) on all four corners; overflow menus: `corner_lg`; selection checks and swatches: circles.
 - Chat input field: `corner_full` pill (`bg_composer_field`); recording overlay: `corner_xl` (`bg_composer_pill`).
 - Search bar: `corner_full` pill (`bg_search_pill`).
 - Avatars: circular (`GradientDrawable.OVAL` in `AvatarView`).
-- Message bubbles: `corner_lg` (`12dp`) main corners with a `corner_xs` (`2dp`) tail on single/last rows; the tail follows sender direction and layout RTL.
+- Message bubbles: `corner_xl` (`16dp`) main corners with a `corner_xs` (`2dp`) tail on single/last rows; the tail follows sender direction and layout RTL.
 
 ---
 
@@ -138,7 +138,7 @@ Presentation rules and helpers are pure Java throughout: `PresenceFormatter`, `S
 
 ## 10. Chat Screen Refresh Wave
 
-The refreshed chat screen uses the v2 semantic roles and the bundled Inter type styles. Normal bubbles are capped at `min(280dp, 80% of the row)`; at font scale 1.5 or larger the cap becomes `min(480dp, row width - 32dp)`. Bubbles use `corner_lg` (12dp) corners, with a `corner_xs` (2dp) lower-directional tail only on a single message or the last message of a run. Grouped row edges contribute 2dp each (4dp between messages); separate turns contribute 4dp each. Media timestamps use the opaque media-meta pair. Reply quotes sit on the primary container. The composer field uses the `corner_full` pill and a six-line input. Send and microphone actions cross-fade over 150ms with the standard easing and follow the system reduced-motion setting. Search, group info, and summary stay in the existing overflow menu; call stays on the bar for direct chats.
+The refreshed chat screen uses the v2 semantic roles and the bundled Inter type styles. Normal bubbles are capped at `min(280dp, 80% of the row)`; at font scale 1.5 or larger the cap becomes `min(480dp, row width - 32dp)`. Bubbles use `corner_xl` (16dp) corners, with a `corner_xs` (2dp) lower-directional tail only on a single message or the last message of a run. Grouped row edges contribute 2dp each (4dp between messages); separate turns contribute 4dp each. Media timestamps use the opaque media-meta pair. Reply quotes sit on the primary container. The composer field uses the `corner_full` pill and a six-line input. Send and microphone actions cross-fade over 150ms with the standard easing and follow the system reduced-motion setting. Search, group info, and summary stay in the existing overflow menu; call stays on the bar for direct chats.
 
 ---
 

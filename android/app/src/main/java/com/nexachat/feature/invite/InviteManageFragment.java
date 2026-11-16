@@ -10,7 +10,6 @@ import android.os.PersistableBundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
@@ -18,6 +17,7 @@ import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.databinding.FragmentInviteManageBinding;
 import com.nexachat.feature.ui.FormDialogs;
@@ -263,7 +263,9 @@ public final class InviteManageFragment extends Fragment {
             clip.getDescription().setExtras(extras);
         }
         clipboard.setPrimaryClip(clip);
-        Toast.makeText(requireContext(), R.string.invite_copy_done, Toast.LENGTH_SHORT).show();
+        if (binding != null) {
+            Snackbar.make(binding.getRoot(), R.string.invite_copy_done, Snackbar.LENGTH_SHORT).show();
+        }
     }
 
     private void shareLink() {

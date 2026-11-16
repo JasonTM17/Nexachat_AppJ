@@ -7,6 +7,7 @@
     android:orientation="vertical">
 
     <com.google.android.material.checkbox.MaterialCheckBox
+        style="@style/Widget.NexaChat.CheckBox.Round"
         android:id="@+id/optionControl"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
