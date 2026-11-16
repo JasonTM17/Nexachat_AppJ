@@ -35,13 +35,15 @@
             android:background="@drawable/bg_search_pill"
             android:gravity="center_vertical"
             android:minHeight="@dimen/min_touch_target"
-            android:orientation="horizontal"
-            android:paddingStart="@dimen/space_md">
+            android:orientation="horizontal">
 
-            <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:importantForAccessibility="no"
+            <ImageButton
+                android:id="@+id/searchSubmitButton"
+                android:layout_width="@dimen/min_touch_target"
+                android:layout_height="@dimen/min_touch_target"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/search_title"
+                android:padding="14dp"
                 android:src="@drawable/ic_search"
                 app:tint="?attr/colorOnSurfaceVariant" />
 
@@ -49,7 +51,6 @@
                 android:id="@+id/searchInput"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="@dimen/space_sm"
                 android:layout_weight="1"
                 android:background="@android:color/transparent"
                 android:hint="@string/search_label"

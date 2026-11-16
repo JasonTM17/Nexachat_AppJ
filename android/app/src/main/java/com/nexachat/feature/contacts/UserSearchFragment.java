@@ -70,6 +70,7 @@ public final class UserSearchFragment extends Fragment {
         binding.emptyState.setMessage(getString(R.string.search_no_results));
         binding.emptyState.setIcon(R.drawable.ic_search_outline);
         binding.clearSearchButton.setOnClickListener(v -> binding.searchInput.setText(""));
+        binding.searchSubmitButton.setOnClickListener(v -> viewModel.search());
         binding.searchInput.setOnEditorActionListener((v, action, event) -> {
             if (action == EditorInfo.IME_ACTION_SEARCH || action == EditorInfo.IME_ACTION_DONE) {
                 viewModel.search();

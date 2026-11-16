@@ -2,8 +2,10 @@ package com.nexachat.feature.contacts;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
+import java.nio.file.Files;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.junit.Test;
 import org.w3c.dom.Document;
@@ -105,6 +107,19 @@ public final class ContactsListLayoutContractTest {
         assertEquals("no outlined TextInputLayout remains", 0,
                 doc.getElementsByTagName(
                         "com.google.android.material.textfield.TextInputLayout").getLength());
+    }
+
+    @Test
+    public void userSearch_leadingIconSubmitsSearch() throws Exception {
+        Element icon = findById(parse("layout/fragment_user_search.xml"), "searchSubmitButton");
+        assertEquals("the pill leading icon is a touch-sized button, not decoration",
+                "ImageButton", icon.getTagName());
+        assertEquals("@string/search_title", attr(icon, "contentDescription"));
+        assertEquals("@dimen/min_touch_target", attr(icon, "layout_width"));
+        assertEquals("@dimen/min_touch_target", attr(icon, "layout_height"));
+        assertTrue("the leading icon must submit the same search as the IME action",
+                source("java/com/nexachat/feature/contacts/UserSearchFragment.java")
+                        .contains("searchSubmitButton.setOnClickListener(v -> viewModel.search())"));
     }
 
     @Test
@@ -214,5 +229,19 @@ public final class ContactsListLayoutContractTest {
             }
         }
         throw new AssertionError("Could not locate res/" + relative);
+    }
+
+    private static String source(String relative) throws Exception {
+        File[] candidates = {
+                new File("src/main/" + relative),
+                new File("app/src/main/" + relative),
+                new File("android/app/src/main/" + relative)
+        };
+        for (File f : candidates) {
+            if (f.isFile()) {
+                return new String(Files.readAllBytes(f.toPath()));
+            }
+        }
+        throw new AssertionError("Could not locate src/main/" + relative);
     }
 }
