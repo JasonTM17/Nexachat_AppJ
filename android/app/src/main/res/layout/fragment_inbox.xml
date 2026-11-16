@@ -34,10 +34,11 @@
                     android:id="@+id/inboxBrandMark"
                     android:layout_width="@dimen/brand_mark_size"
                     android:layout_height="@dimen/brand_mark_size"
-                    android:background="@drawable/bg_auth_logo"
+                    android:background="@drawable/bg_brand_logo"
                     android:importantForAccessibility="no"
                     android:padding="@dimen/space_xs"
-                    android:src="@drawable/ic_logo_mark" />
+                    android:src="@drawable/ic_logo_mark"
+        app:tint="@color/nexa_logo_on_brand" />
 
                 <TextView
                     android:id="@+id/inboxBrandTitle"

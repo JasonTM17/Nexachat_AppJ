@@ -105,9 +105,9 @@ public final class LauncherVectorContractTest {
         String notification = read(new File(resDir, "drawable/ic_notification.xml"));
         assertFalse(notification.contains("#"));
         assertFalse(notification.contains("@color/nexa_logo"));
-        String plate = read(new File(resDir, "drawable/bg_auth_logo.xml"));
-        assertTrue(plate.contains("?attr/colorPrimaryContainer"));
-        assertFalse(plate.contains("?attr/colorPrimary\""));
+        String plate = read(new File(resDir, "drawable/bg_brand_logo.xml"));
+        assertTrue(plate.contains("@color/brand_fill"));
+        assertFalse(plate.contains("?attr/colorPrimary"));
         String source = read(new File(appDir, "src/main/java/com/nexachat/call/service/CallNotifications.java"));
         assertTrue(source.contains("R.drawable.ic_notification"));
         assertFalse(source.contains("setSmallIcon(android.R.drawable"));
