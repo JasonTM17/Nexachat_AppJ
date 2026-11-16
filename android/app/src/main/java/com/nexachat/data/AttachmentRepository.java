@@ -46,6 +46,39 @@ public final class AttachmentRepository {
 
     public static final long MAX_UPLOAD_BYTES = 25L * 1024L * 1024L;
     public static final String ERROR_TOO_LARGE = "ATTACHMENT_TOO_LARGE";
+    /** Server-side magic-byte whitelist ({@code MIME_NOT_ALLOWED} when missed). */
+    public static final String ERROR_MIME_NOT_ALLOWED = "MIME_NOT_ALLOWED";
+    /**
+     * MIME types the server accepts (see {@code MagicBytes.ALLOWED_MIMES}).
+     * Passed to the SAF document picker so disallowed files are greyed out
+     * before upload. {@code application/octet-stream} stays in the list for
+     * providers that cannot type a file; the server sniffs the bytes anyway.
+     * The OLE and ISO-BMFF provider aliases are admitted because the server
+     * sniffs them as an accepted type; a text alias such as
+     * {@code text/comma-separated-values} stays out since the server's text
+     * fallback only honors the exact declared {@code text/csv} type.
+     */
+    public static final String[] UPLOAD_ALLOWED_MIMES = {
+            "image/jpeg", "image/png", "image/webp", "image/gif",
+            "video/mp4",
+            "audio/mpeg", "audio/mp4", "audio/ogg",
+            "application/pdf",
+            "text/plain", "text/csv", "text/markdown",
+            "application/zip",
+            "application/msword",
+            // .xls/.ppt share the OLE signature the server sniffs as msword.
+            "application/vnd.ms-excel",
+            "application/vnd.ms-powerpoint",
+            "application/CDFV2",
+            "application/x-ole-storage",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            // Provider spellings for ISO-BMFF the server sniffs as audio/mp4, video/mp4.
+            "audio/x-m4a",
+            "video/quicktime",
+            "application/octet-stream"
+    };
     /** The picked content URI can no longer be read (grant revoked/gone). */
     public static final String ERROR_UNREADABLE = "ATTACHMENT_UNREADABLE";
     public static final String PART_FILE = "file";

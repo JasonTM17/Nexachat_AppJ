@@ -65,7 +65,14 @@ public final class ChatBubbleRules {
     }
 
     public static int resolveSenderPaletteIndex(String senderId) {
-        return Math.floorMod(senderId == null ? 0 : senderId.hashCode(), SENDER_PALETTE_SIZE);
+        if (senderId == null) {
+            return 0;
+        }
+        // Spread the hash before taking the palette slot: modulo 8 reads only
+        // the low 3 bits, and UUID-shaped ids collide systematically there.
+        int hash = senderId.hashCode();
+        hash ^= hash >>> 16;
+        return Math.floorMod(hash, SENDER_PALETTE_SIZE);
     }
 
     public static int bubbleRowPaddingTopDp(MessageGroupPosition position) {

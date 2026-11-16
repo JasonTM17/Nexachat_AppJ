@@ -97,6 +97,46 @@ public final class LabelViewModelTest {
     }
 
     @Test
+    public void updateWithoutALoadedListKicksLoadThenApplies() {
+        repository.labels.add(label("work", "Work"));
+        LabelViewModel viewModel = new LabelViewModel(repository);
+
+        LabelUiState.Error result = viewModel.updateLabel("work", "Renamed", LabelColor.BLUE);
+
+        assertEquals(LabelUiState.Error.NONE, result);
+        assertTrue(state(viewModel).isLabelsLoaded());
+        assertEquals(List.of("Renamed"), state(viewModel).getLabels().stream()
+                .map(ConversationLabel::getName).toList());
+    }
+
+    @Test
+    public void updateWhileTheInitialListLoadIsInFlightRejectsLikeCreate() {
+        repository.labelsResponse = SingleSubject.create();
+        LabelViewModel viewModel = new LabelViewModel(repository);
+        viewModel.load();
+
+        LabelUiState.Error result = viewModel.updateLabel("work", "Renamed", LabelColor.BLUE);
+
+        assertEquals(LabelUiState.Error.GENERIC, result);
+        assertEquals(LabelUiState.Error.GENERIC, state(viewModel).getError());
+    }
+
+    @Test
+    public void deleteBlockedByAnInFlightMutationPublishesAnErrorLikeSiblings() {
+        repository.labels.addAll(List.of(label("work", "Work"), label("other", "Other")));
+        repository.deleteResponse = CompletableSubject.create();
+        LabelViewModel viewModel = new LabelViewModel(repository);
+        viewModel.load();
+
+        viewModel.deleteLabel("work");
+        viewModel.deleteLabel("other");
+
+        assertEquals(1, repository.deleteCalls);
+        assertEquals(LabelUiState.Error.GENERIC, state(viewModel).getError());
+        assertEquals(List.of("other"), ids(state(viewModel).getLabels()));
+    }
+
+    @Test
     public void deleteWaitsUntilAnAssignmentWriteFinishes() {
         repository.labels.add(label("work", "Work"));
         repository.assignmentGate = CompletableSubject.create();

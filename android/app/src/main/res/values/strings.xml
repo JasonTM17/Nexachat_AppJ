@@ -243,6 +243,7 @@
     <string name="media_attachment">Attachment</string>
     <string name="error_attachment_open">No app can open this file</string>
     <string name="error_attachment_too_large">File exceeds the 25 MB limit</string>
+    <string name="error_attachment_mime_not_allowed">This file type is not supported</string>
 
     <!-- Group -->
     <string name="group_create_title">New group</string>
@@ -352,6 +353,7 @@
     <string name="voice_too_short">Hold to record, release to send</string>
     <string name="voice_hold_to_record">Hold to record</string>
     <string name="voice_permission_required">Microphone permission is required to record voice messages</string>
+    <string name="voice_mic_rationale">Microphone access is needed to record voice messages.</string>
     <string name="voice_play">Play voice message</string>
     <string name="voice_pause">Pause voice message</string>
     <string name="voice_loading">Loading voice message</string>

@@ -240,6 +240,10 @@ public final class StompClient {
         final long attemptId;
         synchronized (attemptSequenceLock) {
             attemptId = connectAttemptSeq.incrementAndGet();
+            // A superseded attempt's socket must not answer send() or
+            // isOpen() while this attempt handshakes.
+            open = false;
+            socket = null;
         }
         AttemptLiveness liveness = new AttemptLiveness(
                 connectAttemptSeq, attemptId, sessionActionGate, attemptSequenceLock);
@@ -676,6 +680,9 @@ public final class StompClient {
     }
 
     private boolean sendFrame(@NonNull StompFrame frame) {
+        if (!open) {
+            return false;
+        }
         WebSocket active = socket;
         return active != null && active.send(StompCodec.encode(frame));
     }

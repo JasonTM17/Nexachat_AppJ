@@ -275,20 +275,31 @@ public final class LabelViewModel extends ViewModel {
                 }));
     }
 
-    public synchronized void createLabel(@Nullable String name, @NonNull LabelColor color) {
-        if (labelsMutating || assignmentMutationInFlight || !labelsLoaded || labelsLoading) return;
+    /**
+     * Returns {@link LabelUiState.Error#NONE} when the request was accepted (the
+     * caller may dismiss the editor) or the rejection reason so the caller can
+     * show feedback immediately — {@link #publish} posts asynchronously, so a
+     * synchronous caller cannot read the error back out of {@link #uiState}.
+     * Rejections also publish the error, and a never-loaded labels list kicks
+     * off a reload so a retry can succeed.
+     */
+    public synchronized LabelUiState.Error createLabel(
+            @Nullable String name, @NonNull LabelColor color) {
+        if (!labelsLoaded && !labelsLoading) {
+            loadLabelsLocked();
+        }
+        if (labelsMutating || assignmentMutationInFlight || !labelsLoaded || labelsLoading) {
+            return reject(LabelUiState.Error.GENERIC);
+        }
         if (labels.size() >= LabelRules.MAX_LABELS) {
-            setError(LabelUiState.Error.LABEL_LIMIT);
-            return;
+            return reject(LabelUiState.Error.LABEL_LIMIT);
         }
         String normalized = LabelRules.normalizeName(name);
         if (!LabelRules.isValidName(normalized)) {
-            setError(LabelUiState.Error.VALIDATION);
-            return;
+            return reject(LabelUiState.Error.VALIDATION);
         }
         if (LabelRules.hasDuplicateName(normalized, labels, null)) {
-            setError(LabelUiState.Error.CONFLICT);
-            return;
+            return reject(LabelUiState.Error.CONFLICT);
         }
 
         List<ConversationLabel> previous = labels;
@@ -323,22 +334,29 @@ public final class LabelViewModel extends ViewModel {
                                 setError(errorFor(failure));
                             }
                         }));
+        return LabelUiState.Error.NONE;
     }
 
-    public synchronized void updateLabel(
+    /** See {@link #createLabel} for the return contract. */
+    public synchronized LabelUiState.Error updateLabel(
             @NonNull String labelId, @Nullable String name, @NonNull LabelColor color) {
-        if (labelsMutating || assignmentMutationInFlight) return;
+        if (!labelsLoaded && !labelsLoading) {
+            loadLabelsLocked();
+        }
+        if (labelsMutating || assignmentMutationInFlight || !labelsLoaded || labelsLoading) {
+            return reject(LabelUiState.Error.GENERIC);
+        }
         String normalized = LabelRules.normalizeName(name);
         if (!LabelRules.isValidName(normalized)) {
-            setError(LabelUiState.Error.VALIDATION);
-            return;
+            return reject(LabelUiState.Error.VALIDATION);
         }
         if (LabelRules.hasDuplicateName(normalized, labels, labelId)) {
-            setError(LabelUiState.Error.CONFLICT);
-            return;
+            return reject(LabelUiState.Error.CONFLICT);
         }
         ConversationLabel current = findLabel(labelId);
-        if (current == null || current.isPending()) return;
+        if (current == null || current.isPending()) {
+            return reject(LabelUiState.Error.GENERIC);
+        }
 
         List<ConversationLabel> previous = labels;
         long requestSessionGeneration = sessionGeneration;
@@ -366,12 +384,19 @@ public final class LabelViewModel extends ViewModel {
                                 setError(errorFor(failure));
                             }
                         }));
+        return LabelUiState.Error.NONE;
     }
 
     public synchronized void deleteLabel(@NonNull String labelId) {
-        if (labelsMutating || assignmentMutationInFlight) return;
+        if (labelsMutating || assignmentMutationInFlight) {
+            setError(LabelUiState.Error.GENERIC);
+            return;
+        }
         ConversationLabel current = findLabel(labelId);
-        if (current == null || current.isPending()) return;
+        if (current == null || current.isPending()) {
+            setError(LabelUiState.Error.GENERIC);
+            return;
+        }
 
         List<ConversationLabel> previousLabels = labels;
         String previousFilter = selectedFilterId;
@@ -553,6 +578,11 @@ public final class LabelViewModel extends ViewModel {
         error = nextError;
         errorVersion++;
         publish();
+    }
+
+    private LabelUiState.Error reject(LabelUiState.Error reason) {
+        setError(reason);
+        return reason;
     }
 
     private void clearError() {

@@ -85,6 +85,8 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import javax.inject.Inject;
 
@@ -177,6 +179,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     private float recordStartX;
     private boolean recordingCancelled;
     private boolean accessibleVoiceRecordingActive;
+    private ExecutorService voiceStartExecutor;
+    private boolean voiceStartPending;
+    private boolean voiceStopWhenStarted;
+    private boolean voiceSendWhenStarted;
+    private long voiceStartGeneration;
 
     public static ChatFragment newInstance(@NonNull String conversationId) {
         ChatFragment fragment = new ChatFragment();
@@ -304,7 +311,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             ChatInteractionsViews.showAttachmentPicker(
                 requireContext(),
                 () -> visualPicker.launch(new PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo.INSTANCE).build()),
-                () -> documentPicker.launch(new String[]{"*/*"}));
+                () -> documentPicker.launch(com.nexachat.data.AttachmentRepository.UPLOAD_ALLOWED_MIMES));
         });
         binding.composerBar.sendButton.setOnClickListener(v -> {
             if (!binding.composerBar.sendButton.isEnabled()) {
@@ -506,15 +513,15 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                     if (!beginVoiceRecording(v)) {
                         // Consume the tap so it cannot fall through to the accessible
                         // click path and retry silently; the hint explains the gesture.
-                        Toast.makeText(requireContext(),
-                                VoiceTapFeedbackRules.quickTapHintMessageId(),
-                                Toast.LENGTH_SHORT).show();
+                        showQuickTapHint();
                         return true;
                     }
                     return true;
 
                 case MotionEvent.ACTION_MOVE:
-                    if (voiceRecorder == null || !voiceRecorder.isRecording()) {
+                    // voiceStartPending first: isRecording() is synchronized
+                    // on the recorder and would block while start() runs.
+                    if (voiceRecorder == null || (!voiceStartPending && !voiceRecorder.isRecording())) {
                         return false;
                     }
                     float deltaX = recordStartX - event.getRawX();
@@ -537,10 +544,25 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                     return true;
 
                 case MotionEvent.ACTION_UP:
+                    if (voiceStartPending) {
+                        voiceStopWhenStarted = true;
+                        if (!recordingCancelled) {
+                            // A plain release inside the start window matches the
+                            // old too-short path: still cancelled, hint intact.
+                            Toast.makeText(requireContext(), R.string.voice_too_short,
+                                    Toast.LENGTH_SHORT).show();
+                        }
+                        recordingCancelled = true;
+                        return true;
+                    }
                     finishVoiceRecording(recordingCancelled, false);
                     return true;
 
                 case MotionEvent.ACTION_CANCEL:
+                    if (voiceStartPending) {
+                        voiceStopWhenStarted = true;
+                        return true;
+                    }
                     finishVoiceRecording(true, false);
                     return true;
             }
@@ -558,8 +580,14 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             e2eeMediaUnsupported();
             return;
         }
-        if (voiceRecorder != null && voiceRecorder.isRecording()) {
-            finishVoiceRecording(false, true);
+        // voiceStartPending first: isRecording() is synchronized on the
+        // recorder and would block while start() runs off the main thread.
+        if (voiceRecorder != null && (voiceStartPending || voiceRecorder.isRecording())) {
+            if (voiceStartPending) {
+                voiceSendWhenStarted = true;
+            } else {
+                finishVoiceRecording(false, true);
+            }
             announceVoiceRecordingState(R.string.cd_send);
             return;
         }
@@ -574,6 +602,13 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             return;
         }
         binding.composerBar.micButton.setAccessibleVoiceRecording(true, () -> {
+            // voiceStartPending first: isRecording() is synchronized on the
+            // recorder and would block while start() runs off the main thread.
+            if (voiceStartPending) {
+                voiceStopWhenStarted = true;
+                announceVoiceRecordingState(R.string.voice_release_to_cancel);
+                return;
+            }
             if (voiceRecorder != null && voiceRecorder.isRecording()) {
                 finishVoiceRecording(true, true);
                 announceVoiceRecordingState(R.string.voice_release_to_cancel);
@@ -609,7 +644,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
     private void showMicRationaleThenRequest() {
         new AlertDialog.Builder(requireContext())
-                .setMessage(R.string.call_mic_rationale)
+                .setMessage(R.string.voice_mic_rationale)
                 .setPositiveButton(R.string.call_permission_continue,
                         (dialog, which) -> launchRecordAudioRequest())
                 .setNegativeButton(R.string.call_permission_cancel, null)
@@ -617,13 +652,20 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     }
 
     private void showVoicePermissionSnackbar(boolean offerSettings) {
-        if (binding == null) return;
-        Snackbar snackbar = Snackbar.make(
-                binding.getRoot(), R.string.voice_permission_required, Snackbar.LENGTH_LONG);
+        if (binding == null || !isAdded()) return;
         if (offerSettings) {
-            snackbar.setAction(R.string.action_open_app_settings, v -> openAppSettings());
+            // Permanent denial: a fading snackbar reads as a dead mic button, so
+            // show a persistent dialog that routes to app settings instead.
+            new AlertDialog.Builder(requireContext())
+                    .setMessage(R.string.voice_permission_required)
+                    .setPositiveButton(R.string.action_open_app_settings,
+                            (dialog, which) -> openAppSettings())
+                    .setNegativeButton(R.string.action_cancel, null)
+                    .show();
+            return;
         }
-        snackbar.show();
+        Snackbar.make(binding.getRoot(), R.string.voice_permission_required,
+                Snackbar.LENGTH_LONG).show();
     }
 
     private void openAppSettings() {
@@ -650,13 +692,69 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         if (voiceRecorder == null) {
             voiceRecorder = new VoiceRecorder(requireContext());
         }
-        if (!voiceRecorder.start()) {
+        // MediaRecorder prepare()/start() can block for seconds on slow
+        // devices; run it off the main thread so ACTION_DOWN cannot ANR.
+        if (voiceStartPending || voiceRecorder.isRecording()) {
             return false;
         }
+        voiceStartPending = true;
+        voiceStopWhenStarted = false;
+        voiceSendWhenStarted = false;
         source.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
         showVoiceRecordingOverlay();
-        scheduleRecordingTimer();
+        final VoiceRecorder recorder = voiceRecorder;
+        final long startGeneration = ++voiceStartGeneration;
+        voiceStartExecutor().execute(() -> {
+            boolean started = recorder.start();
+            recordingHandler.post(() -> {
+                if (VoiceStartCompletionRules.isStale(startGeneration, voiceStartGeneration)) {
+                    // A newer attempt or teardown owns the voice flags now;
+                    // this completion's only job is to not leak the recorder.
+                    if (started) {
+                        recorder.cancel();
+                    }
+                    return;
+                }
+                voiceStartPending = false;
+                if (binding == null) {
+                    if (started) {
+                        recorder.cancel();
+                    }
+                    return;
+                }
+                if (!started) {
+                    restoreComposerAfterRecording();
+                    resetAccessibleVoiceRecordingUi();
+                    // The old synchronous failure surfaced the same hint; a
+                    // silent return would just flash the recording overlay.
+                    showQuickTapHint();
+                    return;
+                }
+                scheduleRecordingTimer();
+                if (voiceStopWhenStarted) {
+                    finishVoiceRecording(true, false);
+                } else if (voiceSendWhenStarted) {
+                    finishVoiceRecording(false, true);
+                }
+            });
+        });
         return true;
+    }
+
+    private void showQuickTapHint() {
+        android.content.Context context = getContext();
+        if (context == null) {
+            return;
+        }
+        Toast.makeText(context, VoiceTapFeedbackRules.quickTapHintMessageId(),
+                Toast.LENGTH_SHORT).show();
+    }
+
+    private ExecutorService voiceStartExecutor() {
+        if (voiceStartExecutor == null || voiceStartExecutor.isShutdown()) {
+            voiceStartExecutor = Executors.newSingleThreadExecutor();
+        }
+        return voiceStartExecutor;
     }
 
     private void showVoiceRecordingOverlay() {
@@ -1064,8 +1162,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                     ? item.getDisplayName()
                     : item.getType();
             if (item.getState() == com.nexachat.feature.media.PendingAttachment.PendingState.FAILED) {
+                int reasonRes = item.getError() != null
+                        ? ChatErrorIds.messageId(item.getError())
+                        : R.string.error_generic;
                 label.setText(getString(R.string.a11y_attachment_pending_failed,
-                        attachmentLabel, getString(R.string.error_generic)));
+                        attachmentLabel, getString(reasonRes)));
             } else {
                 label.setText(getString(R.string.a11y_attachment_pending_progress,
                         attachmentLabel, Math.round(item.getProgress() * 100)));
@@ -1277,6 +1378,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         searchOpen = open;
         binding.chatSearchBar.setVisibility(open ? View.VISIBLE : View.GONE);
         binding.messageList.setVisibility(View.VISIBLE);
+        RecyclerView.LayoutManager layoutManager = binding.messageList.getLayoutManager();
+        if (layoutManager instanceof LinearLayoutManager) {
+            ((LinearLayoutManager) layoutManager).setStackFromEnd(!open);
+        }
         if (open) {
             binding.chatSearchInput.requestFocus();
             renderSearchResults();
@@ -1775,9 +1880,27 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             recordingHandler.removeCallbacks(recordingTimerRunnable);
         }
         if (voiceRecorder != null) {
-            voiceRecorder.cancel();
+            final VoiceRecorder recorder = voiceRecorder;
             voiceRecorder = null;
+            if (voiceStartExecutor != null && !voiceStartExecutor.isShutdown()) {
+                // start() holds the recorder monitor through prepare()+start(),
+                // so a synchronous cancel() could block main for the rest of an
+                // in-flight start; queue it behind the start instead.
+                voiceStartExecutor.execute(recorder::cancel);
+            } else {
+                recorder.cancel();
+            }
         }
+        if (voiceStartExecutor != null) {
+            // Graceful shutdown: a queued cancel() must still run after the
+            // in-flight start() finishes rather than being dropped.
+            voiceStartExecutor.shutdown();
+            voiceStartExecutor = null;
+        }
+        voiceStartGeneration++;
+        voiceStartPending = false;
+        voiceStopWhenStarted = false;
+        voiceSendWhenStarted = false;
         if (binding != null) {
             binding.messageList.setAdapter(null);
         }

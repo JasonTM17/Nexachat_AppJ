@@ -1303,14 +1303,14 @@ public final class ChatViewModel extends ViewModel {
         uploadTask.add(uploads.subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(event -> onUploadEvent(localId, local, event),
-                        error -> markUploadFailed(localId)));
+                        error -> markUploadFailed(localId,
+                                new ApiError.Network(error.getMessage()))));
     }
 
     private void onUploadEvent(String localId, LocalAttachment local, AttachmentUploadEvent event) {
         if (event instanceof AttachmentUploadEvent.Progress progress) {
-            updatePending(rows -> mapPending(rows, localId, row -> new PendingAttachment(
-                    row.getLocalId(), row.getUri(), row.getDisplayName(), row.getMimeType(),
-                    row.getType(), progress.getFraction(), row.getState())));
+            updatePending(rows -> mapPending(rows, localId,
+                    row -> row.withProgress(progress.getFraction())));
         } else if (event instanceof AttachmentUploadEvent.Uploaded uploaded) {
             AttachmentDto attachment = uploaded.getAttachment();
             String replyToId = attachmentReplyIds.remove(localId);
@@ -1339,8 +1339,8 @@ public final class ChatViewModel extends ViewModel {
                     .subscribeOn(Schedulers.io())
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(() -> { }, this::surfaceStreamFailure));
-        } else if (event instanceof AttachmentUploadEvent.Failed) {
-            markUploadFailed(localId);
+        } else if (event instanceof AttachmentUploadEvent.Failed failed) {
+            markUploadFailed(localId, failed.getError());
         }
     }
 
@@ -1357,11 +1357,10 @@ public final class ChatViewModel extends ViewModel {
         });
     }
 
-    private void markUploadFailed(String localId) {
+    private void markUploadFailed(String localId, @Nullable ApiError error) {
         attachmentReplyIds.remove(localId);
-        updatePending(rows -> mapPending(rows, localId, row -> new PendingAttachment(
-                row.getLocalId(), row.getUri(), row.getDisplayName(), row.getMimeType(),
-                row.getType(), row.getProgress(), PendingAttachment.PendingState.FAILED)));
+        updatePending(rows -> mapPending(rows, localId, row -> row.withError(
+                PendingAttachment.PendingState.FAILED, error)));
         uploadDisposables.remove(localId);
     }
 
