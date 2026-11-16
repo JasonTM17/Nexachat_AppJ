@@ -388,6 +388,9 @@ public final class LabelViewModel extends ViewModel {
     }
 
     public synchronized void deleteLabel(@NonNull String labelId) {
+        if (!labelsLoaded && !labelsLoading) {
+            loadLabelsLocked();
+        }
         if (labelsMutating || assignmentMutationInFlight) {
             setError(LabelUiState.Error.GENERIC);
             return;
