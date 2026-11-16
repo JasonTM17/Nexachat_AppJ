@@ -67,9 +67,27 @@ public final class PollCreateSheetLayoutContractTest {
                 isDescendant(find(doc, "pollCreateCancel"), scroll));
         assertEquals("scrolling body must shrink-wrap until it hits the chrome",
                 "true", app(scroll, "layout_constrainedHeight"));
-        assertEquals("0dp", android(scroll, "layout_height"));
+        assertEquals("wrap_content", android(scroll, "layout_height"));
         assertEquals("@id/pollCreateFooter",
                 app(scroll, "layout_constraintBottom_toTopOf"));
+        assertNoDeprecatedConstraintHeightDefault();
+    }
+
+    private void assertNoDeprecatedConstraintHeightDefault() throws Exception {
+        File[] layoutDirs = resDir.listFiles((dir, name) -> name.startsWith("layout"));
+        assertTrue("res must contain layout directories", layoutDirs != null && layoutDirs.length > 0);
+        for (File layoutDir : layoutDirs) {
+            File[] xmls = layoutDir.listFiles((dir, name) -> name.endsWith(".xml"));
+            if (xmls == null) {
+                continue;
+            }
+            for (File xml : xmls) {
+                String source = new String(Files.readAllBytes(xml.toPath()), StandardCharsets.UTF_8);
+                assertFalse(layoutDir.getName() + "/" + xml.getName()
+                                + " must not use deprecated layout_constraintHeight_default",
+                        source.contains("layout_constraintHeight_default"));
+            }
+        }
     }
 
     @Test

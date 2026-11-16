@@ -54,11 +54,10 @@
     <androidx.core.widget.NestedScrollView
         android:id="@+id/pollCreateBody"
         android:layout_width="0dp"
-        android:layout_height="0dp"
+        android:layout_height="wrap_content"
         android:fillViewport="true"
         app:layout_constrainedHeight="true"
         app:layout_constraintBottom_toTopOf="@id/pollCreateFooter"
-        app:layout_constraintHeight_default="wrap"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/pollCreateHeader">
