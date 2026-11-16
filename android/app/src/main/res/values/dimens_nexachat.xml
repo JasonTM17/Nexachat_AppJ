@@ -33,6 +33,7 @@
     <dimen name="list_item_two_line_min_height">80dp</dimen>
     <dimen name="list_item_padding_vertical">10dp</dimen>
     <dimen name="divider_inset">76dp</dimen>
+    <dimen name="divider_inset_compact">68dp</dimen>
     <dimen name="divider_height">1dp</dimen>
     <dimen name="avatar_inbox_size">48dp</dimen>
     <dimen name="avatar_chat_size">36dp</dimen>
