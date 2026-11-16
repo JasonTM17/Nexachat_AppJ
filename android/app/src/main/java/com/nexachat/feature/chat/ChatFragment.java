@@ -1852,21 +1852,21 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                 viewModel.attachmentFile(attachment)
                         .subscribe(
                                 file -> {
-                                    if (!isAdded()) return;
+                                    if (!isAdded() || binding == null) return;
                                     String mime = attachment.getMimeType() == null
                                             ? "application/octet-stream"
                                             : attachment.getMimeType();
                                     com.nexachat.feature.media.AttachmentViewBinder.openExternally(
-                                            requireContext(), file, mime);
+                                            binding.getRoot(), file, mime);
                                 },
                                 error -> {
-                                    if (isAdded()) {
-                                        Toast.makeText(requireContext(), R.string.error_attachment_open, Toast.LENGTH_SHORT).show();
+                                    if (isAdded() && binding != null) {
+                                        Snackbar.make(binding.getRoot(), R.string.error_attachment_open, Snackbar.LENGTH_SHORT).show();
                                     }
                                 },
                                 () -> {
-                                    if (isAdded()) {
-                                        Toast.makeText(requireContext(), R.string.error_attachment_open, Toast.LENGTH_SHORT).show();
+                                    if (isAdded() && binding != null) {
+                                        Snackbar.make(binding.getRoot(), R.string.error_attachment_open, Snackbar.LENGTH_SHORT).show();
                                     }
                                 }));
     }

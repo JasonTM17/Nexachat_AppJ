@@ -17,7 +17,6 @@ import android.widget.CompoundButton;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.view.inputmethod.EditorInfo;
-import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
@@ -32,6 +31,7 @@ import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
 import com.google.android.material.color.MaterialColors;
+import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.network.dto.UserDto;
@@ -170,7 +170,8 @@ public final class ProfileFragment extends Fragment {
         });
         consentRepository.error().observe(getViewLifecycleOwner(), error -> {
             if (error != null) {
-                Toast.makeText(requireContext(), R.string.settings_consent_update_failed, Toast.LENGTH_SHORT).show();
+                Snackbar.make(binding.getRoot(),
+                        R.string.settings_consent_update_failed, Snackbar.LENGTH_SHORT).show();
             }
         });
         binding.aiConsentRow.setOnClickListener(v -> binding.aiSummaryConsent.toggle());
@@ -387,9 +388,9 @@ public final class ProfileFragment extends Fragment {
         }
 
         if (state.getError() != null) {
-            Toast.makeText(requireContext(),
+            Snackbar.make(binding.getRoot(),
                     ApiErrorText.text(requireContext(), state.getError()),
-                    Toast.LENGTH_SHORT).show();
+                    Snackbar.LENGTH_SHORT).show();
             linkedAccountsViewModel.consumeError();
         }
     }
