@@ -155,6 +155,28 @@ class ReactionServiceTest {
     }
 
     @Test
+    void toggle_peerSuppressedMessageOfSomeoneElse_looksLikeAMissingMessage() {
+        Message hidden = messageInConversation();
+        User sender = User.create("+84921112244", "hash", "Blocked sender");
+        ReflectionTestUtils.setField(sender, "id", otherId);
+        ReflectionTestUtils.setField(hidden, "sender", sender);
+        ReflectionTestUtils.setField(hidden, "peerSuppressed", true);
+        when(messageRepository.findConversationIdById(messageId))
+                .thenReturn(Optional.of(conversationId));
+        when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.of(hidden));
+        when(conversationRepository.findByIdForUpdate(conversationId))
+                .thenReturn(Optional.of(hidden.getConversation()));
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(true);
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> reactionService.toggle(userId, messageId, new ReactRequest("👍")));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.MESSAGE_NOT_FOUND);
+        verify(reactionRepository, never()).deleteOne(any(), any(), any());
+    }
+
+    @Test
     void toggle_notMember_throwsNotMember() {
         when(messageRepository.findConversationIdById(messageId))
                 .thenReturn(Optional.of(conversationId));

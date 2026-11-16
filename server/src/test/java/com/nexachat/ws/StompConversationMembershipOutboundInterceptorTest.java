@@ -344,6 +344,36 @@ class StompConversationMembershipOutboundInterceptorTest {
     // ------------------------------------------------------------- V38 blocks
 
     @Test
+    void quotePreviewOfAPeerSuppressedMessageIsRemovedForEveryoneButItsSender() throws Exception {
+        UUID viewer = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        bindSessionTo(viewer);
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, viewer)).thenReturn(true);
+        when(memberRepository.existsAdmittedAt(org.mockito.ArgumentMatchers.eq(conversationId),
+                org.mockito.ArgumentMatchers.eq(viewer), org.mockito.ArgumentMatchers.any())).thenReturn(true);
+        UUID quotedId = UUID.randomUUID();
+        when(messageRepository.findPeerSuppressedSenderId(quotedId))
+                .thenReturn(java.util.Optional.of(UUID.randomUUID()));
+
+        Message<?> released = interceptor.preSend(
+                replyFrame(conversationId, "2026-01-01T10:00:00Z", "2026-01-01T09:00:00Z", quotedId),
+                channel);
+
+        assertThat(released).isNotNull();
+        var payload = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree((byte[]) released.getPayload()).path("payload");
+        assertThat(payload.has("replyTo"))
+                .as("a hidden row's content must not leak through a later reply's preview")
+                .isFalse();
+
+        when(messageRepository.findPeerSuppressedSenderId(quotedId))
+                .thenReturn(java.util.Optional.of(viewer));
+        Message<byte[]> ownQuote = replyFrame(
+                conversationId, "2026-01-01T10:00:00Z", "2026-01-01T09:00:00Z", quotedId);
+        assertThat(interceptor.preSend(ownQuote, channel)).isSameAs(ownQuote);
+    }
+
+    @Test
     void suppressedMessageFrameReachesOnlyItsSender() {
         UUID viewer = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
@@ -457,10 +487,14 @@ class StompConversationMembershipOutboundInterceptorTest {
     }
 
     private static Message<byte[]> replyFrame(UUID conversationId, String createdAt, String quotedAt) {
+        return replyFrame(conversationId, createdAt, quotedAt, UUID.randomUUID());
+    }
+
+    private static Message<byte[]> replyFrame(UUID conversationId, String createdAt, String quotedAt,
+                                              UUID quotedId) {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.MESSAGE);
         accessor.setSessionId(SESSION_ID);
         accessor.setDestination("/topic/conversations." + conversationId);
-        UUID quotedId = UUID.randomUUID();
         String json = "{\"eventType\":\"MESSAGE_CREATED\",\"conversationId\":\"" + conversationId
                 + "\",\"payload\":{\"content\":\"reply\",\"createdAt\":\"" + createdAt
                 + "\",\"replyToId\":\"" + quotedId + "\",\"replyTo\":{\"id\":\"" + quotedId

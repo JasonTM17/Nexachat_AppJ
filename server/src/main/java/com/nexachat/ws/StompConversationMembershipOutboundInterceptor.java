@@ -119,7 +119,8 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
                 return message;
             }
             Instant quotedAt = parseInstant(replyTo.path("createdAt"));
-            if (quotedAt != null && memberRepository.existsAdmittedAt(conversationId, userId, quotedAt)) {
+            if (quotedAt != null && memberRepository.existsAdmittedAt(conversationId, userId, quotedAt)
+                    && !quoteIsHiddenFrom(replyTo.path("id"), userId)) {
                 return message;
             }
             ((com.fasterxml.jackson.databind.node.ObjectNode) payload).remove("replyTo");
@@ -179,6 +180,18 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
             default -> {
                 return true;
             }
+        }
+    }
+
+    /** A quote of a peer-suppressed message is shown only to that message's own sender. */
+    private boolean quoteIsHiddenFrom(JsonNode quotedId, UUID recipientId) {
+        try {
+            return messageRepository.findPeerSuppressedSenderId(UUID.fromString(quotedId.asText("")))
+                    .map(senderId -> !senderId.equals(recipientId))
+                    .orElse(false);
+        } catch (IllegalArgumentException e) {
+            // A quote without a readable id cannot be shown safely.
+            return true;
         }
     }
 
