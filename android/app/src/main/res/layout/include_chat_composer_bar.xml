@@ -49,8 +49,8 @@
         android:gravity="center_vertical"
         android:minHeight="@dimen/min_touch_target"
         android:orientation="horizontal"
-        android:paddingHorizontal="14dp"
-        android:paddingVertical="8dp"
+        android:paddingHorizontal="@dimen/bubble_content_inset"
+        android:paddingVertical="@dimen/space_sm"
         android:visibility="gone">
 
         <ImageView
@@ -64,8 +64,7 @@
             android:id="@+id/recordingDuration"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:fontFamily="sans-serif-medium"
+            android:layout_marginStart="@dimen/space_sm"
             android:text="@string/voice_recording_duration_zero"
             android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="?attr/colorError" />

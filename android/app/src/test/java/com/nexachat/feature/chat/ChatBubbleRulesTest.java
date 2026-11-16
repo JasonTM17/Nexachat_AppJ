@@ -1,5 +1,6 @@
 package com.nexachat.feature.chat;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -54,6 +55,49 @@ public final class ChatBubbleRulesTest {
         assertEquals(2, ChatBubbleRules.bubbleRowPaddingBottomDp(MessageGroupPosition.MIDDLE));
         assertEquals(2, ChatBubbleRules.bubbleRowPaddingTopDp(MessageGroupPosition.LAST));
         assertEquals(4, ChatBubbleRules.bubbleRowPaddingBottomDp(MessageGroupPosition.LAST));
+    }
+
+    @Test
+    public void mergedCornersStackRunOnTheSenderSide() {
+        // Corner pair order: [topLeft, topRight, bottomRight, bottomLeft].
+        assertArrayEquals(
+                new boolean[]{false, false, true, false},
+                ChatBubbleRules.bubbleMergedCorners(MessageGroupPosition.SINGLE, true));
+        assertArrayEquals(
+                new boolean[]{false, false, false, true},
+                ChatBubbleRules.bubbleMergedCorners(MessageGroupPosition.SINGLE, false));
+
+        assertArrayEquals(
+                new boolean[]{false, false, true, false},
+                ChatBubbleRules.bubbleMergedCorners(MessageGroupPosition.FIRST, true));
+        assertArrayEquals(
+                new boolean[]{false, true, true, false},
+                ChatBubbleRules.bubbleMergedCorners(MessageGroupPosition.MIDDLE, true));
+        assertArrayEquals(
+                new boolean[]{false, true, true, false},
+                ChatBubbleRules.bubbleMergedCorners(MessageGroupPosition.LAST, true));
+
+        assertArrayEquals(
+                new boolean[]{false, false, false, true},
+                ChatBubbleRules.bubbleMergedCorners(MessageGroupPosition.FIRST, false));
+        assertArrayEquals(
+                new boolean[]{true, false, false, true},
+                ChatBubbleRules.bubbleMergedCorners(MessageGroupPosition.MIDDLE, false));
+        assertArrayEquals(
+                new boolean[]{true, false, false, true},
+                ChatBubbleRules.bubbleMergedCorners(MessageGroupPosition.LAST, false));
+    }
+
+    @Test
+    public void mergedCornersNeverMergeTheInnerSide() {
+        for (MessageGroupPosition position : MessageGroupPosition.values()) {
+            boolean[] rightTail = ChatBubbleRules.bubbleMergedCorners(position, true);
+            assertFalse(rightTail[0]);
+            assertFalse(rightTail[3]);
+            boolean[] leftTail = ChatBubbleRules.bubbleMergedCorners(position, false);
+            assertFalse(leftTail[1]);
+            assertFalse(leftTail[2]);
+        }
     }
 
     @Test

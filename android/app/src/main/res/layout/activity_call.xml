@@ -107,8 +107,8 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/call_mute"
-                    android:layout_width="64dp"
-                    android:layout_height="64dp"
+                    android:layout_width="@dimen/call_control_size"
+                    android:layout_height="@dimen/call_control_size"
                     app:backgroundTint="@color/call_control_background"
                     android:contentDescription="@string/call_mute"
                     android:insetLeft="0dp"
@@ -145,8 +145,8 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/call_speaker"
-                    android:layout_width="64dp"
-                    android:layout_height="64dp"
+                    android:layout_width="@dimen/call_control_size"
+                    android:layout_height="@dimen/call_control_size"
                     app:backgroundTint="@color/call_control_background"
                     android:contentDescription="@string/call_speaker"
                     android:insetLeft="0dp"
@@ -183,9 +183,9 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/call_hang_up"
-                    android:layout_width="72dp"
-                    android:layout_height="72dp"
-                    android:backgroundTint="@color/call_end_background"
+                    android:layout_width="@dimen/call_end_size"
+                    android:layout_height="@dimen/call_end_size"
+                    app:backgroundTint="@color/call_end_background"
                     android:contentDescription="@string/call_hang_up"
                     android:insetLeft="0dp"
                     android:insetTop="0dp"

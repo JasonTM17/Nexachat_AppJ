@@ -26,9 +26,6 @@
         android:background="?attr/colorSurface"
         android:minHeight="@dimen/min_touch_target"
         app:tabMode="scrollable"
-        app:tabIndicatorColor="?attr/colorPrimary"
-        app:tabTextColor="?attr/colorOnSurfaceVariant"
-        app:tabSelectedTextColor="?attr/colorPrimary"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/archiveToolbar" />

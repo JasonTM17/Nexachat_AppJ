@@ -67,6 +67,37 @@ public final class CallContrastContractTest {
         }
     }
 
+    @Test public void callButtonsDeclareTintInTheAppNamespace() throws Exception {
+        for (String layout : new String[]{"layout/activity_call.xml",
+                "layout-land/activity_call.xml", "layout/activity_incoming_call.xml"}) {
+            Path path = Path.of("src/main/res", layout);
+            if (!Files.exists(path)) continue;
+            NodeList buttons = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                    .parse(path.toFile()).getElementsByTagName(
+                            "com.google.android.material.button.MaterialButton");
+            for (int i = 0; i < buttons.getLength(); i++) {
+                Element button = (Element) buttons.item(i);
+                assertTrue(layout + " " + button.getAttribute("android:id")
+                                + " must tint via app:backgroundTint",
+                        button.getAttribute("android:backgroundTint").isEmpty());
+            }
+        }
+    }
+
+    @Test public void pulseRingColorsComeFromCallTokens() throws Exception {
+        String body = new String(Files.readAllBytes(
+                Path.of("src/main/res/drawable/bg_call_pulse_ring.xml")),
+                java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue("pulse ring must not hard-code hex colors", !body.contains("#"));
+        for (boolean night : new boolean[]{false, true}) {
+            Map<String, String> colors = new HashMap<>();
+            load(colors, "values");
+            if (night) load(colors, "values-night");
+            resolve(colors, "call_pulse_ring_stroke");
+            resolve(colors, "call_pulse_ring_fill");
+        }
+    }
+
     private static void load(Map<String, String> colors, String dir) throws Exception {
         try (var files = Files.list(Path.of("src/main/res", dir))) {
             for (Path path : files.filter(p -> p.toString().endsWith(".xml")).toList()) {

@@ -8,6 +8,7 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:colorBackground">@color/nexa_call_surface</item>
+        <item name="android:fontFamily">@font/inter</item>
         <item name="colorSurface">@color/nexa_call_surface</item>
         <item name="colorOnSurface">@color/call_text_primary</item>
         <item name="colorOnSurfaceVariant">@color/call_text_secondary</item>

@@ -63,6 +63,7 @@
         <item name="materialButtonOutlinedStyle">@style/Widget.NexaChat.Button.Outlined</item>
         <item name="borderlessButtonStyle">@style/Widget.NexaChat.Button.Text</item>
         <item name="textInputStyle">@style/Widget.NexaChat.TextInputLayout</item>
+        <item name="tabStyle">@style/Widget.NexaChat.TabLayout</item>
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.NexaChat.MaterialAlertDialog</item>
         <item name="materialCalendarTheme">@style/ThemeOverlay.NexaChat.MaterialCalendar</item>
         <item name="materialCalendarFullscreenTheme">@style/ThemeOverlay.NexaChat.MaterialCalendar.Fullscreen</item>
@@ -121,6 +122,14 @@
         <item name="android:textAppearance">@style/TextAppearance.NexaChat.LabelLarge</item>
         <item name="rippleColor">@color/nexa_button_ripple</item>
         <item name="shapeAppearance">@style/ShapeAppearance.NexaChat.Button</item>
+        <item name="backgroundTint">@color/colorPrimaryContainer</item>
+        <item name="android:textColor">@color/colorOnPrimaryContainer</item>
+        <item name="iconTint">@color/colorOnPrimaryContainer</item>
+    </style>
+
+    <!-- Lets code-built MaterialButtons inherit the tonal look via a wrapped context. -->
+    <style name="ThemeOverlay.NexaChat.Button.Tonal" parent="">
+        <item name="materialButtonStyle">@style/Widget.NexaChat.Button.Tonal</item>
     </style>
 
     <style name="Widget.NexaChat.Button.Icon" parent="Widget.Material3.Button.IconButton">
@@ -157,6 +166,12 @@
         <item name="boxStrokeWidth">@dimen/control_stroke_width</item>
         <item name="boxStrokeWidthFocused">@dimen/focus_stroke_width</item>
         <item name="android:minHeight">56dp</item>
+    </style>
+
+    <style name="Widget.NexaChat.TabLayout" parent="Widget.Material3.TabLayout">
+        <item name="tabIndicatorColor">@color/colorPrimary</item>
+        <item name="tabSelectedTextColor">@color/colorPrimary</item>
+        <item name="tabTextColor">@color/colorOnSurfaceVariant</item>
     </style>
 
     <style name="Widget.NexaChat.Chip.Filter" parent="Widget.Material3.Chip.Filter">

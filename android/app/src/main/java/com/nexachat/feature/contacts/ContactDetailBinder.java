@@ -2,6 +2,7 @@ package com.nexachat.feature.contacts;
 
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.view.ContextThemeWrapper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
@@ -179,13 +180,8 @@ final class ContactDetailBinder {
         }
 
         if (content.showsAliasEditor()) {
-            TextInputLayout aliasLayout = new TextInputLayout(
-                    fragment.requireContext(),
-                    null,
-                    com.google.android.material.R.attr.textInputOutlinedStyle);
+            TextInputLayout aliasLayout = new TextInputLayout(fragment.requireContext());
             aliasLayout.setHint(fragment.getString(R.string.contact_alias_label));
-            float radius = fragment.getResources().getDimension(R.dimen.corner_md);
-            aliasLayout.setBoxCornerRadii(radius, radius, radius, radius);
             TextInputEditText alias = new TextInputEditText(aliasLayout.getContext());
             alias.setSingleLine(true);
             alias.setImeOptions(EditorInfo.IME_ACTION_DONE);
@@ -217,9 +213,8 @@ final class ContactDetailBinder {
             root.addView(aliasLayout, aliasLp);
 
             MaterialButton saveAlias = new MaterialButton(
-                    fragment.requireContext(),
-                    null,
-                    com.google.android.material.R.attr.materialButtonOutlinedStyle);
+                    new ContextThemeWrapper(
+                            fragment.requireContext(), R.style.ThemeOverlay_NexaChat_Button_Tonal));
             saveAlias.setText(R.string.action_save);
             saveAlias.setOnClickListener(v -> viewModel.saveAlias());
             LinearLayout.LayoutParams saveLp = new LinearLayout.LayoutParams(
@@ -240,20 +235,25 @@ final class ContactDetailBinder {
         root.addView(message, messageLp);
 
         MaterialButton secondary = new MaterialButton(
-                fragment.requireContext(),
-                null,
-                com.google.android.material.R.attr.materialButtonOutlinedStyle);
+                new ContextThemeWrapper(
+                        fragment.requireContext(), R.style.ThemeOverlay_NexaChat_Button_Tonal));
         secondary.setEnabled(content.isActionEnabled());
         secondary.setText(content.getSecondaryActionTextRes());
         if (content.isContact()) {
+            // The destructive variant mirrors the error-container tonal button in XML.
+            secondary.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
+                    MaterialColors.getColor(
+                            secondary, com.google.android.material.R.attr.colorErrorContainer)));
+            secondary.setTextColor(MaterialColors.getColor(
+                    secondary, com.google.android.material.R.attr.colorOnErrorContainer));
             secondary.setOnClickListener(v -> FormDialogs.markDestructive(
                     new MaterialAlertDialogBuilder(fragment.requireContext())
-                    .setMessage(R.string.confirm_remove_contact)
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .setPositiveButton(
-                            R.string.action_remove_contact,
-                            (d, w) -> viewModel.removeSelectedContact())
-                    .show()));
+                            .setMessage(R.string.confirm_remove_contact)
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .setPositiveButton(
+                                    R.string.action_remove_contact,
+                                    (d, w) -> viewModel.removeSelectedContact())
+                            .show()));
         } else {
             secondary.setOnClickListener(v -> viewModel.addDetailContact());
         }

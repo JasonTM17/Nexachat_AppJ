@@ -57,6 +57,7 @@ public final class InviteManageFragment extends Fragment {
         binding.requestList.setAdapter(requestAdapter);
         binding.toolbar.setNavigationOnClickListener(
                 ignored -> NavHostFragment.findNavController(this).navigateUp());
+        binding.requestsHeader.setTitle(getString(R.string.invite_requests_title));
         binding.expiryButton.setOnClickListener(ignored -> showExpiryOptions());
         binding.maxUsesButton.setOnClickListener(ignored -> showMaxUsesOptions());
         updateOptionLabels();
