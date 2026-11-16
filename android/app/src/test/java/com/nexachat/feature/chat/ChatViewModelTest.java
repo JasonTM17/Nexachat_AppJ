@@ -1422,4 +1422,25 @@ public final class ChatViewModelTest {
         assertEquals(ChatViewModel.KeysetPause.NONE, ui.getKeysetPause());
         assertFalse(ui.isSendingPaused());
     }
+
+    @Test
+    public void pauseCodeProbeResolvesBeforeTheDurableTrustRead() {
+        // An INVALID probe can itself rewrite the record (a detected rotation
+        // flips it to CHANGED); the verdict read must run after the probe,
+        // never on a pre-flip snapshot.
+        KeysetTrustStore trustStore = Mockito.mock(KeysetTrustStore.class);
+        when(messageRepository.currentUserId()).thenReturn(Maybe.just("me-1"));
+        when(messageRepository.keysetPauseCode("me-1", CONVERSATION_ID))
+                .thenReturn(Single.just(Optional.empty()));
+        when(trustStore.state("me-1", CONVERSATION_ID)).thenReturn(
+                Single.just(Optional.of(trustRecord(KeysetTrustStore.TrustState.CHANGED))));
+        ChatViewModel vm = newKeysetViewModel(trustStore);
+        conversationFlow.onNext(Optional.of(e2eeSummary(true)));
+
+        org.mockito.InOrder order = Mockito.inOrder(messageRepository, trustStore);
+        order.verify(messageRepository).keysetPauseCode("me-1", CONVERSATION_ID);
+        order.verify(trustStore).state("me-1", CONVERSATION_ID);
+        assertEquals(ChatViewModel.KeysetPause.CHANGED,
+                vm.getUiState().getValue().getKeysetPause());
+    }
 }
