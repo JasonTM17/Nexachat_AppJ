@@ -3,6 +3,7 @@ package com.nexachat.core.network;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
+import androidx.annotation.WorkerThread;
 import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.core.network.dto.ErrorResponse;
 import com.nexachat.core.network.dto.RefreshRequest;
@@ -33,6 +34,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.inject.Inject;
 import javax.inject.Provider;
 import javax.inject.Singleton;
@@ -41,6 +44,8 @@ import retrofit2.Response;
 /** Serializes token rotation shared by startup restoration and OkHttp 401 recovery. */
 @Singleton
 public final class TokenRefresher {
+
+    private static final Logger LOGGER = Logger.getLogger("TokenRefresher");
 
     private static final Scheduler SESSION_SIGNAL_DISPATCHER =
             Schedulers.from(Executors.newSingleThreadExecutor(task -> {
@@ -138,21 +143,33 @@ public final class TokenRefresher {
         return serverWakeGate == null ? Flowable.just(false) : serverWakeGate.getIsStarting();
     }
 
-    /** Read-only epoch for realtime callers; never opens admission or performs IO. */
+    /**
+     * Read-only epoch for realtime callers. Waits for an in-flight bootstrap and
+     * may perform the first durable-snapshot read on the calling thread; a cheap
+     * volatile read once bootstrap completes.
+     */
     public long sessionEpoch() {
+        ensureBootstrap();
         return sessionEpoch.get();
     }
 
     /**
      * True only while the supplied epoch is the active admitted session revision.
-     * Never performs bootstrap or storage IO.
+     * Waits for an in-flight bootstrap so a fence check can never observe the
+     * pre-bootstrap state; cheap once bootstrap completes.
      */
     public boolean isSessionCurrent(long expectedEpoch) {
+        ensureBootstrap();
         return admissionOpen && sessionEpoch.get() == expectedEpoch;
     }
 
-    /** Runs a short realtime callback atomically with session epoch changes. */
+    /**
+     * Runs a short realtime callback atomically with session epoch changes.
+     * Self-bootstraps like {@link #isSessionCurrent(long)} so a fenced operation
+     * never runs against the pre-bootstrap state.
+     */
     public boolean runIfSessionCurrent(long expectedEpoch, @NonNull Runnable action) {
+        ensureBootstrap();
         synchronized (lock) {
             if (!admissionOpen || sessionEpoch.get() != expectedEpoch) {
                 return false;
@@ -178,6 +195,17 @@ public final class TokenRefresher {
     @NonNull
     public Flowable<SessionSignal> sessionSignals() {
         return publishedSessionSignals.onBackpressureLatest();
+    }
+
+    /**
+     * Admits the durable session for process entry points that never run splash
+     * restore (task-state restore, WorkManager, push). Cheap no-op once bootstrap
+     * completes. Performs one blocking durable-snapshot read on the calling
+     * thread; never call on the main thread.
+     */
+    @WorkerThread
+    public void warmSessionAdmission() {
+        ensureBootstrap();
     }
 
     /** Forced rotation used when restoring a session at startup. */
@@ -317,25 +345,37 @@ public final class TokenRefresher {
                 bootstrapComplete = true;
                 return;
             }
-            SessionSnapshot snapshot = tokenStore.readSessionSnapshot().blockingGet();
-            if (snapshot.getLifecycle() == SessionSnapshot.Lifecycle.ACTIVE) {
-                sessionEpoch.set(snapshot.getEpoch());
-                admissionOpen = true;
-            } else if (snapshot.getEpoch() == 0L) {
-                long epoch = tokenStore.bootstrapLegacySessionIfNeeded().blockingGet();
-                if (epoch > 0L) {
-                    sessionEpoch.set(epoch);
+            try {
+                SessionSnapshot snapshot = tokenStore.readSessionSnapshot().blockingGet();
+                if (snapshot.getLifecycle() == SessionSnapshot.Lifecycle.ACTIVE) {
+                    sessionEpoch.set(snapshot.getEpoch());
                     admissionOpen = true;
+                } else if (snapshot.getEpoch() == 0L) {
+                    long epoch = tokenStore.bootstrapLegacySessionIfNeeded().blockingGet();
+                    if (epoch > 0L) {
+                        sessionEpoch.set(epoch);
+                        admissionOpen = true;
+                    }
+                } else {
+                    sessionEpoch.set(snapshot.getEpoch());
+                    admissionOpen = false;
+                    closingOrClosed = snapshot.getLifecycle() != SessionSnapshot.Lifecycle.ACTIVE;
                 }
-            } else {
-                sessionEpoch.set(snapshot.getEpoch());
-                admissionOpen = false;
-                closingOrClosed = snapshot.getLifecycle() != SessionSnapshot.Lifecycle.ACTIVE;
-            }
-            bootstrapComplete = true;
-            if (admissionOpen) {
-                queuedSessionSignals.onNext(new SessionSignal.AdmissionChanged(
-                        sessionEpoch.get(), true));
+                bootstrapComplete = true;
+                if (admissionOpen) {
+                    queuedSessionSignals.onNext(new SessionSignal.AdmissionChanged(
+                            sessionEpoch.get(), true));
+                }
+            } catch (Exception bootstrapFailure) {
+                // bootstrapComplete stays false so the next fence retries; a
+                // permanently failing store degrades to fail-closed.
+                if (bootstrapFailure instanceof InterruptedException
+                        || bootstrapFailure.getCause() instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                LOGGER.log(Level.WARNING,
+                        "session admission bootstrap failed; staying fenced out",
+                        bootstrapFailure);
             }
         }
     }
