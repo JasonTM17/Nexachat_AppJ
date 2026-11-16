@@ -240,6 +240,10 @@ public final class StompClient {
         final long attemptId;
         synchronized (attemptSequenceLock) {
             attemptId = connectAttemptSeq.incrementAndGet();
+            // A superseded attempt's socket must not answer send() or
+            // isOpen() while this attempt handshakes.
+            open = false;
+            socket = null;
         }
         AttemptLiveness liveness = new AttemptLiveness(
                 connectAttemptSeq, attemptId, sessionActionGate, attemptSequenceLock);
@@ -471,14 +475,6 @@ public final class StompClient {
         java.util.function.Consumer<String> bearerObserver = connectBearerObserver;
         if (bearerObserver != null) {
             bearerObserver.accept(token);
-        }
-        synchronized (attemptSequenceLock) {
-            if (connectAttemptSeq.get() == attemptId) {
-                // A superseded attempt's socket must not answer send() or
-                // isOpen() while this attempt handshakes.
-                open = false;
-                socket = null;
-            }
         }
         StompParser parser = new StompParser();
         Request request = new Request.Builder()

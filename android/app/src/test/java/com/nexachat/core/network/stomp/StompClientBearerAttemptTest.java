@@ -20,6 +20,7 @@ import com.nexachat.core.storage.Tokens;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import io.reactivex.rxjava3.subjects.MaybeSubject;
 import io.reactivex.rxjava3.subscribers.TestSubscriber;
 import io.reactivex.rxjava3.subscribers.TestSubscriber;
 import java.io.IOException;
@@ -459,6 +460,56 @@ public final class StompClientBearerAttemptTest {
         assertFalse("a SEND must never land on the superseded socket",
                 client.send("/app/x", "{}"));
         assertEquals(socketAFramesBefore, sentFrames.get(1L).size());
+
+        WebSocket socketB = sockets.get(2L);
+        WebSocketListener listenerB = listeners.get(2L);
+        assertNotNull(socketB);
+        assertNotNull(listenerB);
+        listenerB.onOpen(socketB, mock(Response.class));
+        listenerB.onMessage(socketB, StompCodec.encode(new StompFrame(StompCommand.CONNECTED)));
+        assertTrue(client.isOpen());
+        assertTrue(client.send("/app/x", "{}"));
+        assertEquals(2, sentFrames.get(2L).size());
+    }
+
+    @Test
+    public void supersededSocketIsRetiredBeforeTheTokenReadCompletes() {
+        TokenStore store = mock(TokenStore.class);
+        MaybeSubject<Tokens> tokenRead = MaybeSubject.create();
+        when(store.readTokens()).thenReturn(tokenRead);
+        StompClient client = new StompClient(new OkHttpClient(), store);
+        Map<Long, WebSocketListener> listeners = new ConcurrentHashMap<>();
+        Map<Long, WebSocket> sockets = new ConcurrentHashMap<>();
+        Map<Long, List<String>> sentFrames = new ConcurrentHashMap<>();
+        client.setTestListenerCapture((listener, attemptId) -> listeners.put(attemptId, listener));
+        client.setTestWebSocketFactoryForTests((listener, attemptId) -> {
+            WebSocket socket = mock(WebSocket.class);
+            List<String> frames = new CopyOnWriteArrayList<>();
+            sentFrames.put(attemptId, frames);
+            when(socket.send(anyString())).thenAnswer(invocation -> {
+                frames.add(invocation.getArgument(0));
+                return true;
+            });
+            sockets.put(attemptId, socket);
+            return socket;
+        });
+        client.connect("account-a").test();
+        WebSocketListener listenerA = listeners.get(1L);
+        WebSocket socketA = sockets.get(1L);
+        listenerA.onOpen(socketA, mock(Response.class));
+        listenerA.onMessage(socketA, StompCodec.encode(new StompFrame(StompCommand.CONNECTED)));
+        assertTrue(client.isOpen());
+        int socketAFramesBefore = sentFrames.get(1L).size();
+
+        client.connect().test().assertValueAt(0, StompClient.State.Connecting.INSTANCE);
+
+        assertFalse("the retired socket must report closed while the token read is pending",
+                client.isOpen());
+        assertFalse("a SEND must not reach the retired socket while the token read is pending",
+                client.send("/app/x", "{}"));
+        assertEquals(socketAFramesBefore, sentFrames.get(1L).size());
+
+        tokenRead.onSuccess(new Tokens("account-b", Long.MAX_VALUE, "r"));
 
         WebSocket socketB = sockets.get(2L);
         WebSocketListener listenerB = listeners.get(2L);
