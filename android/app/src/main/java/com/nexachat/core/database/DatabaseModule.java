@@ -38,7 +38,8 @@ public final class DatabaseModule {
                         AppDatabase.MIGRATION_13_14,
                         AppDatabase.MIGRATION_14_15,
                         AppDatabase.MIGRATION_15_16,
-                        AppDatabase.MIGRATION_16_17)
+                        AppDatabase.MIGRATION_16_17,
+                        AppDatabase.MIGRATION_17_18)
                 .addCallback(AppDatabase.SYNC_CACHE_CALLBACK)
                 .build();
     }
@@ -95,5 +96,11 @@ public final class DatabaseModule {
     @Singleton
     public static KeysetTrustDao provideKeysetTrustDao(AppDatabase database) {
         return database.keysetTrustDao();
+    }
+
+    @Provides
+    @Singleton
+    public static MessageTranslationDao provideMessageTranslationDao(AppDatabase database) {
+        return database.messageTranslationDao();
     }
 }

@@ -50,6 +50,10 @@ public final class SettingsRepository implements AutoCloseable {
     private final BehaviorProcessor<Boolean> mutableShowSeen =
             BehaviorProcessor.createDefault(Boolean.TRUE);
     private final Flowable<Boolean> showSeen = mutableShowSeen.hide().distinctUntilChanged();
+    private final BehaviorProcessor<String> mutableTranslateTargetLang =
+            BehaviorProcessor.create();
+    private final Flowable<String> translateTargetLang =
+            mutableTranslateTargetLang.hide().distinctUntilChanged();
     private final CompositeDisposable subscriptions = new CompositeDisposable();
 
     @Inject
@@ -114,6 +118,37 @@ public final class SettingsRepository implements AutoCloseable {
         return showSeen;
     }
 
+    /**
+     * Account-level translation target. Emits the server value after the
+     * first settings refresh; an empty string means "use the app language"
+     * (RxJava streams cannot carry null).
+     */
+    @NonNull
+    public Flowable<String> getTranslateTargetLang() {
+        return translateTargetLang;
+    }
+
+    @NonNull
+    public Single<Result<Unit>> setTranslateTargetLang(@androidx.annotation.Nullable String value) {
+        return Single.defer(() -> ApiResult.safeApiCall(
+                        userApi.updateSettings(new UpdateUserSettingsRequest(
+                                null, null, value == null ? "" : value)))
+                .map(result -> {
+                    if (result instanceof ApiResult.Success<?> success) {
+                        UserSettingsDto settings = (UserSettingsDto) success.getBody();
+                        mutableTranslateTargetLang.onNext(
+                                langOrEmpty(settings.getTranslateTargetLang()));
+                        return new Result.Success<Unit>(Unit.INSTANCE);
+                    }
+                    return Result.<Unit>cast(settingsFailure(result));
+                }));
+    }
+
+    @NonNull
+    private static String langOrEmpty(@androidx.annotation.Nullable String lang) {
+        return lang == null ? "" : lang;
+    }
+
     public void setThemeMode(@NonNull ThemeMode mode) {
         prefs.edit().putString(KEY_THEME, mode.name()).apply();
         mutableThemeMode.onNext(mode);
@@ -136,6 +171,8 @@ public final class SettingsRepository implements AutoCloseable {
                         if (settings.getShowSeen() != null) {
                             mutableShowSeen.onNext(settings.getShowSeen());
                         }
+                        mutableTranslateTargetLang.onNext(
+                                langOrEmpty(settings.getTranslateTargetLang()));
                         return new Result.Success<Unit>(Unit.INSTANCE);
                     }
                     return Result.<Unit>cast(settingsFailure(result));

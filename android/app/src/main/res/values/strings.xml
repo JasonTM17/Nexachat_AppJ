@@ -701,4 +701,42 @@
     <string name="group_leave_only_admin">You are the only admin. Leaving while other members remain is unavailable.</string>
     <!-- Account and session notices -->
     <string name="logout_all_unconfirmed">Signed out here. We could not confirm sign-out on other devices. Sign in and try again.</string>
+
+    <!-- message translation -->
+    <string name="action_translate">Translate</string>
+    <string name="action_translate_desc">Translate this message</string>
+    <string name="action_show_original">Show original</string>
+    <string name="action_show_original_desc">Hide the translation</string>
+    <string name="translation_loading">Translating…</string>
+    <string name="translation_caption">Translated from %1$s</string>
+    <string name="translation_failed">Translation failed</string>
+    <string name="translation_failed_retry_cd">Translation failed. Activate to retry.</string>
+    <string name="translation_error_generic">Could not translate. Try again.</string>
+    <string name="translation_error_offline">You are offline. Check your connection.</string>
+    <string name="translation_error_rate_limited">Too many translations. Try again later.</string>
+    <string name="translate_auto_title">Auto-translate</string>
+    <string name="translate_target_language_title">Translate to</string>
+    <string name="translate_target_default">Default · %1$s</string>
+    <string name="translate_language_search_hint">Search languages</string>
+    <string name="translate_glossary_title">Glossary</string>
+    <string name="translate_glossary_empty">No terms yet. Keep names or slang consistent across translations.</string>
+    <string name="translate_glossary_add">Add term</string>
+    <string name="translate_glossary_term_hint">Term</string>
+    <string name="translate_glossary_replacement_hint">Translate as (optional)</string>
+    <string name="translate_glossary_remove">Remove term</string>
+    <!-- language names -->
+    <string name="lang_vi">Vietnamese</string>
+    <string name="lang_en">English</string>
+    <string name="lang_zh">Chinese</string>
+    <string name="lang_ja">Japanese</string>
+    <string name="lang_ko">Korean</string>
+    <string name="lang_fr">French</string>
+    <string name="lang_de">German</string>
+    <string name="lang_es">Spanish</string>
+    <string name="lang_th">Thai</string>
+    <string name="lang_id">Indonesian</string>
+    <string name="lang_ru">Russian</string>
+    <string name="lang_ar">Arabic</string>
+    <string name="lang_pt">Portuguese</string>
+    <string name="lang_hi">Hindi</string>
 </resources>

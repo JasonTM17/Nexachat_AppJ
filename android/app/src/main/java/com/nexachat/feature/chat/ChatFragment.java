@@ -251,6 +251,13 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         DateFormat timeFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
         adapter = new MessageListAdapter(
                 timeFormat, this::resolveOriginal, this, getViewLifecycleOwner(), this);
+        adapter.setTranslationRetry(id -> {
+            ChatMessage m = resolveOriginal(id);
+            if (m != null) {
+                viewModel.retryTranslation(m);
+            }
+            return true;
+        });
         RecyclerView list = binding.messageList;
         LinearLayoutManager layout = new LinearLayoutManager(requireContext());
         layout.setStackFromEnd(true);
@@ -928,6 +935,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         settingsViewModel.getChatColor().observe(getViewLifecycleOwner(), next -> {
             if (next != null && adapter != null) adapter.setChatColor(next);
         });
+        viewModel.getTranslations().observe(getViewLifecycleOwner(), next -> {
+            if (next != null && adapter != null) adapter.setTranslations(next);
+        });
+        viewModel.loadTranslatePrefs();
     }
 
     private void render() {
@@ -1679,8 +1690,166 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         row.setOnClickListener(v -> {
             if (toggle.isEnabled()) viewModel.setAiOptOut(!toggle.isChecked());
         });
+        bindTranslateSettings(content);
         dialog.show();
         viewModel.loadAiOptOut();
+    }
+
+    private void bindTranslateSettings(@NonNull View content) {
+        com.google.android.material.materialswitch.MaterialSwitch autoSwitch =
+                content.findViewById(R.id.autoTranslateSwitch);
+        TextView translateStatus = content.findViewById(R.id.translateStatus);
+        TextView langValue = content.findViewById(R.id.translateLangValue);
+        View autoRow = content.findViewById(R.id.autoTranslateRow);
+        View langRow = content.findViewById(R.id.translateLangRow);
+        View glossaryRow = content.findViewById(R.id.glossaryRow);
+
+        androidx.lifecycle.Observer<ChatViewModel.TranslatePrefsState> observer = state -> {
+            autoSwitch.setOnCheckedChangeListener(null);
+            autoSwitch.setChecked(state.getAutoTranslate());
+            autoSwitch.setEnabled(!state.isBusy());
+            langRow.setEnabled(!state.isBusy());
+            String langName;
+            if (state.getTargetLang() != null) {
+                int res = TranslationLanguages.nameRes(state.getTargetLang());
+                langName = res == 0 ? state.getTargetLang() : getString(res);
+            } else {
+                int res = TranslationLanguages.nameRes(viewModel.effectiveTargetLang());
+                langName = getString(R.string.translate_target_default,
+                        res == 0 ? viewModel.effectiveTargetLang() : getString(res));
+            }
+            langValue.setText(langName);
+            translateStatus.setVisibility(state.getError() == null ? View.GONE : View.VISIBLE);
+            if (state.getError() != null) {
+                translateStatus.setText(ChatErrorText.messageId(state.getError()));
+            }
+            autoSwitch.setOnCheckedChangeListener((button, checked) -> {
+                viewModel.setAutoTranslate(checked);
+            });
+        };
+        viewModel.getTranslatePrefsState().observe(getViewLifecycleOwner(), observer);
+        autoRow.setOnClickListener(v -> {
+            if (autoSwitch.isEnabled()) viewModel.setAutoTranslate(!autoSwitch.isChecked());
+        });
+        langRow.setOnClickListener(v -> showTranslateLanguagePicker());
+        glossaryRow.setOnClickListener(v -> showGlossaryEditor());
+    }
+
+    /** Searchable target-language picker backed by the supported catalog. */
+    private void showTranslateLanguagePicker() {
+        View content = getLayoutInflater().inflate(R.layout.dialog_language_picker, null);
+        android.widget.EditText search = content.findViewById(R.id.languageSearchInput);
+        android.widget.ListView list = content.findViewById(R.id.languageList);
+        java.util.List<String> names = new java.util.ArrayList<>();
+        for (TranslationLanguages.Entry entry : TranslationLanguages.SUPPORTED) {
+            names.add(getString(entry.nameRes()));
+        }
+        android.widget.ArrayAdapter<String> items = new android.widget.ArrayAdapter<>(
+                requireContext(), android.R.layout.simple_list_item_1, names);
+        list.setAdapter(items);
+        AlertDialog picker = new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.translate_target_language_title)
+                .setView(content)
+                .setNegativeButton(R.string.action_close, null)
+                .create();
+        list.setOnItemClickListener((parent, view, position, id) -> {
+            String name = items.getItem(position);
+            for (TranslationLanguages.Entry entry : TranslationLanguages.SUPPORTED) {
+                if (getString(entry.nameRes()).equals(name)) {
+                    viewModel.setTranslateTargetLang(entry.code());
+                    break;
+                }
+            }
+            picker.dismiss();
+        });
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int st, int c, int a) { }
+            @Override public void onTextChanged(CharSequence s, int st, int b, int c) {
+                items.getFilter().filter(s);
+            }
+            @Override public void afterTextChanged(android.text.Editable s) { }
+        });
+        picker.show();
+    }
+
+    /** Glossary editor: add/remove term rows with client-side validation. */
+    private void showGlossaryEditor() {
+        View content = getLayoutInflater().inflate(R.layout.dialog_translation_glossary, null);
+        android.widget.LinearLayout termList = content.findViewById(R.id.glossaryTermList);
+        View empty = content.findViewById(R.id.glossaryEmpty);
+        View addButton = content.findViewById(R.id.glossaryAddButton);
+        java.util.List<View> rows = new java.util.ArrayList<>();
+
+        Runnable refreshEmpty = () -> empty.setVisibility(rows.isEmpty() ? View.VISIBLE : View.GONE);
+        java.util.function.Consumer<com.nexachat.core.network.dto.TranslationGlossaryDto.Term>
+                addRow = term -> {
+            View rowView = getLayoutInflater().inflate(R.layout.item_glossary_term, termList, false);
+            android.widget.EditText termInput = rowView.findViewById(R.id.glossaryTermInput);
+            android.widget.EditText replacementInput = rowView.findViewById(R.id.glossaryReplacementInput);
+            if (term != null) {
+                if (term.getTerm() != null) termInput.setText(term.getTerm());
+                if (term.getReplacement() != null) replacementInput.setText(term.getReplacement());
+            }
+            rowView.findViewById(R.id.glossaryRemoveButton).setOnClickListener(v -> {
+                termList.removeView(rowView);
+                rows.remove(rowView);
+                refreshEmpty.run();
+            });
+            termList.addView(rowView);
+            rows.add(rowView);
+            refreshEmpty.run();
+        };
+        addButton.setOnClickListener(v -> addRow.accept(null));
+
+        AlertDialog editor = new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.translate_glossary_title)
+                .setView(content)
+                .setPositiveButton(R.string.action_save, null)
+                .setNegativeButton(R.string.action_close, null)
+                .create();
+        editor.setOnShowListener(ignored -> editor.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(v -> {
+                    java.util.List<com.nexachat.core.network.dto.TranslationGlossaryDto.Term> terms =
+                            new java.util.ArrayList<>();
+                    for (View rowView : rows) {
+                        String term = ((android.widget.EditText)
+                                rowView.findViewById(R.id.glossaryTermInput)).getText().toString().trim();
+                        String replacement = ((android.widget.EditText)
+                                rowView.findViewById(R.id.glossaryReplacementInput)).getText().toString().trim();
+                        if (term.isEmpty()) continue;
+                        terms.add(new com.nexachat.core.network.dto.TranslationGlossaryDto.Term(
+                                term, replacement.isEmpty() ? null : replacement));
+                    }
+                    com.nexachat.core.network.dto.TranslationGlossaryDto.Term[] array =
+                            terms.toArray(new com.nexachat.core.network.dto.TranslationGlossaryDto.Term[0]);
+                    subscriptions.add(viewModel.saveGlossary(java.util.Arrays.asList(array))
+                            .observeOn(io.reactivex.rxjava3.android.schedulers.AndroidSchedulers.mainThread())
+                            .subscribe(result -> {
+                                if (result instanceof com.nexachat.core.common.Result.Success<?>) {
+                                    editor.dismiss();
+                                } else {
+                                    Toast.makeText(requireContext(),
+                                            R.string.translation_error_generic, Toast.LENGTH_SHORT).show();
+                                }
+                            }, error -> Toast.makeText(requireContext(),
+                                    R.string.translation_error_generic, Toast.LENGTH_SHORT).show()));
+                }));
+        editor.show();
+        subscriptions.add(viewModel.loadGlossary()
+                .observeOn(io.reactivex.rxjava3.android.schedulers.AndroidSchedulers.mainThread())
+                .subscribe(result -> {
+                    if (result instanceof com.nexachat.core.common.Result.Success<?> success) {
+                        com.nexachat.core.network.dto.TranslationGlossaryDto dto =
+                                (com.nexachat.core.network.dto.TranslationGlossaryDto) success.getValue();
+                        if (dto.getTerms() != null) {
+                            for (com.nexachat.core.network.dto.TranslationGlossaryDto.Term term
+                                    : dto.getTerms()) {
+                                addRow.accept(term);
+                            }
+                        }
+                    }
+                    refreshEmpty.run();
+                }, ignored -> refreshEmpty.run()));
     }
 
     private static int preferenceMessage(@NonNull ChatActionEvent.PreferenceChanged.Kind kind) {
@@ -1816,7 +1985,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             return;
         }
         MessageActionSheetFragment.newInstance(messageId, state.getCanPin(),
-                        state.isPinned(messageId), deleteAction)
+                        state.isPinned(messageId), deleteAction,
+                        viewModel.isTranslated(messageId))
                 .show(getChildFragmentManager(), MessageActionSheetFragment.TAG);
     }
     @Override public ChatMessage findActionMessage(@NonNull String messageId) { return resolveOriginal(messageId); }
@@ -1833,6 +2003,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     @Override public void react(@NonNull ChatMessage value, @NonNull String emoji) { viewModel.toggleReaction(value, emoji); }
     @Override public void pin(@NonNull ChatMessage value) { viewModel.togglePin(value); }
     @Override public void forward(@NonNull ChatMessage value) { showForward(value); }
+    @Override public void translate(@NonNull ChatMessage value) { viewModel.translateMessage(value); }
+    @Override public void showOriginal(@NonNull ChatMessage value) { viewModel.showOriginal(value); }
     @Override public void onRetryTap(@NonNull String messageId) { viewModel.retryFailed(messageId); }
     @Override public void onReplyQuoteTap(@NonNull String replyToId) { viewModel.jumpToMessage(replyToId); }
     @Override public void onOpenMedia(@NonNull String messageId, @NonNull AttachmentDto attachment) {

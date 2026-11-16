@@ -139,6 +139,12 @@ public final class NetworkModule {
 
     @Provides
     @Singleton
+    public static TranslateApi provideTranslateApi(Retrofit retrofit) {
+        return retrofit.create(TranslateApi.class);
+    }
+
+    @Provides
+    @Singleton
     public static FirebaseRealtimeApi provideFirebaseRealtimeApi(Retrofit retrofit) {
         return retrofit.create(FirebaseRealtimeApi.class);
     }

@@ -24,9 +24,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             CallLogEntity.class,
             OfflineOutboxEntity.class,
             SyncCursorEntity.class,
-            KeysetTrustEntity.class
+            KeysetTrustEntity.class,
+            MessageTranslationEntity.class
         },
-        version = 17,
+        version = 18,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -39,6 +40,7 @@ public abstract class AppDatabase extends RoomDatabase {
     public abstract OfflineOutboxDao offlineOutboxDao();
     public abstract SyncCursorDao syncCursorDao();
     public abstract KeysetTrustDao keysetTrustDao();
+    public abstract MessageTranslationDao messageTranslationDao();
 
     /** Clears cached account data and other offline actions while retaining message sends. */
     public void clearAccountDataPreservingOutbox() {
@@ -291,6 +293,20 @@ public abstract class AppDatabase extends RoomDatabase {
                     + "`verified_transcript` BLOB NOT NULL, `changed_digest_hex` TEXT, "
                     + "`updated_at_ms` INTEGER NOT NULL, "
                     + "PRIMARY KEY(`owner_user_id`, `conversation_id`))");
+        }
+    };
+
+    /** Local message-translation cache keyed by message revision (Room v18). */
+    public static final Migration MIGRATION_17_18 = new Migration(17, 18) {
+        @Override public void migrate(SupportSQLiteDatabase db) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS `message_translations` ("
+                    + "`messageId` TEXT NOT NULL, `conversationId` TEXT NOT NULL, "
+                    + "`changeVersion` INTEGER NOT NULL, `targetLang` TEXT NOT NULL, "
+                    + "`sourceLang` TEXT NOT NULL, `translatedText` TEXT NOT NULL, "
+                    + "`fetchedAt` INTEGER NOT NULL, "
+                    + "PRIMARY KEY(`messageId`, `changeVersion`, `targetLang`))");
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_message_translations_conversationId` "
+                    + "ON `message_translations` (`conversationId`)");
         }
     };
 
