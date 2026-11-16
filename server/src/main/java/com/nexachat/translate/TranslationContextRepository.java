@@ -70,6 +70,7 @@ public class TranslationContextRepository {
                   AND m.seq < ?
                   AND m.type = 'TEXT'
                   AND m.deleted_at IS NULL
+                  AND (m.expires_at IS NULL OR m.expires_at > now())
                   AND m.encryption IS NULL
                   AND m.content IS NOT NULL
                   AND btrim(m.content) <> ''
