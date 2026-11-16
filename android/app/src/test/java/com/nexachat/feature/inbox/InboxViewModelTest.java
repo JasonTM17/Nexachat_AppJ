@@ -6,8 +6,10 @@ import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.data.ConversationRepository;
 import com.nexachat.data.ConversationSummary;
+import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.processors.BehaviorProcessor;
+import io.reactivex.rxjava3.processors.PublishProcessor;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.subjects.SingleSubject;
 import io.reactivex.rxjava3.schedulers.Schedulers;
@@ -54,6 +56,7 @@ public final class InboxViewModelTest {
                 new Result.Success<Boolean>(Boolean.TRUE)));
         when(repository.loadNextInboxPage()).thenReturn(Single.just(
                 new Result.Success<Boolean>(Boolean.FALSE)));
+        when(repository.selfRemovals()).thenReturn(Flowable.never());
         savedStateHandle = new SavedStateHandle();
         viewModel = new InboxViewModel(repository, savedStateHandle);
     }
@@ -353,6 +356,23 @@ public final class InboxViewModelTest {
                 archived("c-arch", 5)));
 
         assertEquals(2, viewModel.getUiState().getValue().getTotalUnread());
+    }
+
+    @Test
+    public void selfRemovalNoticeSurfacesAGroupRemovalEvent() {
+        PublishProcessor<ConversationRepository.SelfRemovalNotice> removals =
+                PublishProcessor.create();
+        when(repository.selfRemovals()).thenReturn(removals);
+        viewModel = new InboxViewModel(repository, savedStateHandle);
+
+        removals.onNext(new ConversationRepository.SelfRemovalNotice("c-1", "NexaChat Team"));
+
+        InboxSingleLiveEvent.Event<InboxEvent> raw = viewModel.getEvents().getValue();
+        assertNotNull(raw);
+        InboxEvent event = raw.consume();
+        assertNotNull(event);
+        assertTrue(event instanceof InboxGroupRemovalEvent);
+        assertEquals("NexaChat Team", ((InboxGroupRemovalEvent) event).getGroupTitle());
     }
 
     @Test
