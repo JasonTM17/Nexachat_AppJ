@@ -75,7 +75,7 @@ public final class LabelEditorDialogFragment extends DialogFragment {
                 dimenPx(R.dimen.dialog_padding), dimenPx(R.dimen.space_sm));
 
         nameLayout = new TextInputLayout(
-                requireContext(),
+                FormDialogs.dialogContext(requireContext()),
                 null,
                 com.google.android.material.R.attr.textInputStyle);
         nameLayout.setHint(getString(R.string.label_name_hint));

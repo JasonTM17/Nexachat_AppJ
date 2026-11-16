@@ -266,7 +266,7 @@ public final class ContactsFragment extends Fragment {
         root.setPadding(pad, pad, pad, pad);
 
         TextInputLayout phoneLayout = new TextInputLayout(
-                requireContext(),
+                FormDialogs.dialogContext(requireContext()),
                 null,
                 com.google.android.material.R.attr.textInputStyle);
         phoneLayout.setEndIconMode(TextInputLayout.END_ICON_CLEAR_TEXT);

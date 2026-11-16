@@ -596,7 +596,7 @@ public final class ProfileFragment extends Fragment {
 
     private TextInputLayout passwordInputLayout(int hint) {
         TextInputLayout layout = new TextInputLayout(
-                requireContext(),
+                FormDialogs.dialogContext(requireContext()),
                 null,
                 com.google.android.material.R.attr.textInputStyle);
         layout.setHint(getString(hint));

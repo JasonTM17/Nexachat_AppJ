@@ -22,6 +22,16 @@ public final class FormDialogs {
     private FormDialogs() {
     }
 
+    /**
+     * Context for views built in code and hosted in a dialog: the dialog theme overlay
+     * re-points the text-input style so fields read against the dialog surface.
+     */
+    @NonNull
+    public static android.content.Context dialogContext(@NonNull android.content.Context base) {
+        return new android.view.ContextThemeWrapper(
+                base, com.nexachat.R.style.ThemeOverlay_NexaChat_MaterialAlertDialog);
+    }
+
     /** Wraps a form body so it scrolls inside the dialog instead of overflowing. */
     @NonNull
     public static View scrollableBody(@NonNull View form) {

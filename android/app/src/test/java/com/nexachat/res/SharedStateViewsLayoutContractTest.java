@@ -131,6 +131,21 @@ public final class SharedStateViewsLayoutContractTest {
     }
 
     @Test
+    public void singleColourEmptyGlyphsAreTintedInCode() throws Exception {
+        File source = new File(resDir.getParentFile(),
+                "java/com/nexachat/core/ui/components/EmptyStateView.java");
+        String text = new String(java.nio.file.Files.readAllBytes(source.toPath()),
+                java.nio.charset.StandardCharsets.UTF_8);
+        int start = text.indexOf("public void setIcon(");
+        assertTrue("setIcon must exist", start >= 0);
+        String body = text.substring(start, text.indexOf('}', text.indexOf("setVisibility", start)));
+        assertTrue("white single-colour glyphs must be tinted, or they vanish on the surface",
+                body.contains("setImageTintList"));
+        assertTrue("only the multi-colour illustration may skip the tint",
+                body.contains("R.drawable.ic_empty_chat"));
+    }
+
+    @Test
     public void stateIconsAndIndicatorUseTheSharedSizes() throws Exception {
         Document emptyDoc = parse(new File(resDir, "layout/view_empty_state.xml"));
         Element emptyIcon = findElementById(emptyDoc.getDocumentElement(), "emptyIcon");

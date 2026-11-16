@@ -343,7 +343,7 @@ public final class GroupDetailFragment extends Fragment {
     private void showRenameDialog(@NonNull GroupDetailUiState state) {
         if (renameDialog == null) {
             TextInputLayout inputLayout = new TextInputLayout(
-                    requireContext(),
+                    FormDialogs.dialogContext(requireContext()),
                     null,
                     com.google.android.material.R.attr.textInputStyle);
             inputLayout.setHint(getString(R.string.group_name_label));
