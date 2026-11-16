@@ -27,7 +27,8 @@ public class DisappearingMessagePurgeJob {
         this.purger = purger;
     }
 
-    @Scheduled(fixedDelayString = "${nexachat.disappearing.purge-interval-ms:60000}")
+    @Scheduled(fixedDelayString = "${nexachat.disappearing.purge-interval-ms:60000}",
+            initialDelayString = "${nexachat.disappearing.purge-interval-ms:60000}")
     public void scheduledPurge() {
         advisoryLock.withLock(ScheduledLockIds.DISAPPEARING_SWEEP, purger::purgeBatch);
     }
