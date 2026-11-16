@@ -180,6 +180,14 @@ public final class TokenRefresher {
         return publishedSessionSignals.onBackpressureLatest();
     }
 
+    /**
+     * Admits the durable session for process entry points that never run splash
+     * restore (task-state restore, WorkManager, push). Cheap no-op once complete.
+     */
+    public void warmSessionAdmission() {
+        ensureBootstrap();
+    }
+
     /** Forced rotation used when restoring a session at startup. */
     @NonNull
     public Single<TokenRefreshOutcome> refresh() {

@@ -75,6 +75,24 @@ public final class OutboxSyncWorkerTest {
     }
 
     @Test
+    public void createWorkReturnsSuccessWhenFlushIsCancelled() {
+        // A cancelled flush (session rotated/closed mid-send) must not churn
+        // WorkManager retries — the new session enqueues its own work.
+        when(messageRepository.flushOutboxForWorker())
+                .thenReturn(Completable.error(new java.util.concurrent.CancellationException(
+                        "Sync session changed")));
+        OfflineOutboxDao offlineOutboxDao = emptyDao();
+
+        OutboxSyncWorker worker = new OutboxSyncWorker(
+                context, workerParameters, messageRepository, offlineOutboxDao);
+        TestObserver<ListenableWorker.Result> observer = worker.createWork().test();
+
+        observer.awaitCount(1);
+        observer.assertComplete();
+        assertEquals(ListenableWorker.Result.success(), observer.values().get(0));
+    }
+
+    @Test
     public void createWorkWithoutDaoReturnsRetry() {
         OutboxSyncWorker worker = new OutboxSyncWorker(context, workerParameters, messageRepository);
         TestObserver<ListenableWorker.Result> observer = worker.createWork().test();
