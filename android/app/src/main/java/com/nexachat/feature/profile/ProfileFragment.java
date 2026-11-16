@@ -3,6 +3,7 @@ package com.nexachat.feature.profile;
 import android.Manifest;
 import android.content.Intent;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -21,6 +22,7 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.ViewCompat;
 import androidx.appcompat.app.AlertDialog;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputEditText;
@@ -32,6 +34,7 @@ import com.google.android.material.color.MaterialColors;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.network.dto.UserDto;
+import com.nexachat.data.ChatColor;
 import com.nexachat.data.ThemeMode;
 import com.nexachat.databinding.FragmentProfileBinding;
 import com.nexachat.feature.auth.ApiErrorText;
@@ -44,6 +47,11 @@ import javax.inject.Inject;
 public final class ProfileFragment extends Fragment {
 
     private static final String STATE_GOOGLE_PASSWORD_DIALOG = "googlePasswordDialogShowing";
+    /** Swatch cell ids in {@link ChatColor} declaration order. */
+    private static final int[] CHAT_COLOR_CELLS = {
+            R.id.chatColorSwatchPlum, R.id.chatColorSwatchIndigo, R.id.chatColorSwatchBlue,
+            R.id.chatColorSwatchTeal, R.id.chatColorSwatchGreen, R.id.chatColorSwatchAmber,
+            R.id.chatColorSwatchRose, R.id.chatColorSwatchSlate };
 
     @Inject
     AiConsentRepository consentRepository;
@@ -132,6 +140,10 @@ public final class ProfileFragment extends Fragment {
         binding.themeChipSystem.setOnClickListener(onThemeChipClick);
         binding.themeChipLight.setOnClickListener(onThemeChipClick);
         binding.themeChipDark.setOnClickListener(onThemeChipClick);
+        binding.chatColorRow.setTitle(getString(R.string.settings_chat_color));
+        binding.chatColorRow.setLeadingIcon(R.drawable.ic_palette);
+        binding.chatColorRow.setShowChevron(false);
+        bindChatColorSwatches(view);
         // Render persisted values from the model; widget restoration could invoke the save listeners.
         binding.showPresence.setSaveEnabled(false);
         binding.showSeen.setSaveEnabled(false);
@@ -207,6 +219,8 @@ public final class ProfileFragment extends Fragment {
             binding.themeChipLight.setChecked(active == ThemeMode.LIGHT);
             binding.themeChipDark.setChecked(active == ThemeMode.DARK);
         });
+        settingsViewModel.getChatColor().observe(getViewLifecycleOwner(),
+                this::renderChatColorSelection);
         if (state != null && state.getBoolean(STATE_GOOGLE_PASSWORD_DIALOG, false)) {
             // The Google password prompt is stateless (its secret never leaves
             // the field); the click path re-derives link vs unlink from the
@@ -448,6 +462,44 @@ public final class ProfileFragment extends Fragment {
             }
         });
         dialog.show();
+    }
+
+    private void bindChatColorSwatches(@NonNull View view) {
+        boolean night = (getResources().getConfiguration().uiMode
+                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        ChatColor[] colors = ChatColor.values();
+        for (int i = 0; i < CHAT_COLOR_CELLS.length; i++) {
+            View cell = view.findViewById(CHAT_COLOR_CELLS[i]);
+            if (cell == null) {
+                continue;
+            }
+            ChatColor color = colors[i];
+            View swatch = cell instanceof ViewGroup ? ((ViewGroup) cell).getChildAt(0) : null;
+            if (swatch != null) {
+                swatch.setBackgroundTintList(
+                        ColorStateList.valueOf(color.bubbleArgb(night)));
+            }
+            cell.setOnClickListener(v -> settingsViewModel.setChatColor(color));
+        }
+    }
+
+    private void renderChatColorSelection(@Nullable ChatColor selected) {
+        ChatColor active = selected != null ? selected : ChatColor.PLUM;
+        ChatColor[] colors = ChatColor.values();
+        for (int i = 0; i < CHAT_COLOR_CELLS.length; i++) {
+            View cell = requireView().findViewById(CHAT_COLOR_CELLS[i]);
+            if (cell == null) {
+                continue;
+            }
+            boolean checked = colors[i] == active;
+            View mark = cell instanceof ViewGroup ? ((ViewGroup) cell).getChildAt(1) : null;
+            if (mark != null) {
+                mark.setVisibility(checked ? View.VISIBLE : View.GONE);
+            }
+            cell.setSelected(checked);
+            ViewCompat.setStateDescription(
+                    cell, checked ? getString(R.string.forward_selected) : null);
+        }
     }
 
     private void showThemeDialog() {
