@@ -139,9 +139,15 @@ public final class PollCreateSheetLayoutContractTest {
     @Test
     public void removeSlotCollapsesWhenRemovalIsDisallowed() throws Exception {
         String source = readJava("com/nexachat/feature/poll/PollCreateSheet.java");
+        int start = source.indexOf("optionRemove.setVisibility");
+        assertTrue("PollCreateSheet must set optionRemove visibility", start >= 0);
+        int end = source.indexOf(';', start);
+        assertTrue("optionRemove.setVisibility must terminate", end > start);
+        String statement = source.substring(start, end);
+        assertTrue("a hidden remove slot must collapse to GONE",
+                statement.contains("View.GONE"));
         assertFalse("a hidden remove slot must not keep reserving width",
-                source.contains("View.INVISIBLE"));
-        assertTrue(source.contains("View.GONE"));
+                statement.contains("View.INVISIBLE"));
     }
 
     private boolean isDescendant(Element node, Element ancestor) {
