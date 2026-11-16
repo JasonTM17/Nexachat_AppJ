@@ -140,7 +140,7 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:clipToPadding="false"
-        android:paddingHorizontal="@dimen/space_sm"
+        android:paddingHorizontal="@dimen/space_inset"
         android:paddingBottom="@dimen/space_sm"
         app:layout_constraintBottom_toTopOf="@id/mentionPicker"
         app:layout_constraintEnd_toEndOf="parent"

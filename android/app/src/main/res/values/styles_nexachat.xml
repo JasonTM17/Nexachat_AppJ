@@ -189,7 +189,7 @@
 
     <style name="Widget.NexaChat.Chip.Filter" parent="Widget.Material3.Chip.Filter">
         <item name="checkedIconVisible">true</item>
-        <item name="chipCornerRadius">@dimen/corner_sm</item>
+        <item name="chipCornerRadius">@dimen/corner_full</item>
         <item name="chipBackgroundColor">@color/nexa_filter_chip_bg</item>
         <item name="android:textColor">@color/nexa_filter_chip_text</item>
         <item name="checkedIconTint">@color/nexa_filter_chip_text</item>

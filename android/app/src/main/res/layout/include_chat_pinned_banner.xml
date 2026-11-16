@@ -4,7 +4,7 @@
     android:id="@+id/pinnedRoot"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="?attr/colorSurfaceContainerLow"
+    android:background="?attr/colorSecondaryContainer"
     android:contentDescription="@string/pinned_title"
     android:minHeight="@dimen/min_touch_target"
     android:orientation="vertical"
@@ -20,11 +20,12 @@
         <FrameLayout
             android:layout_width="32dp"
             android:layout_height="32dp"
-            android:background="@drawable/bg_settings_tile_tint">
+            android:background="@drawable/bg_settings_tile_tint"
+            android:backgroundTint="?attr/colorSurfaceContainerLowest">
 
             <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
+                android:layout_width="@dimen/icon_size_sm"
+                android:layout_height="@dimen/icon_size_sm"
                 android:layout_gravity="center"
                 android:importantForAccessibility="no"
                 android:src="@drawable/ic_push_pin"
@@ -54,7 +55,7 @@
                 android:ellipsize="end"
                 android:importantForAccessibility="no"
                 android:textAppearance="?attr/textAppearanceBodyMedium"
-                android:textColor="?attr/colorOnSurface" />
+                android:textColor="?attr/colorOnSecondaryContainer" />
         </LinearLayout>
 
         <ImageView

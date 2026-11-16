@@ -15,12 +15,12 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
 /**
- * Square-button contract: every button in the app renders with 0dp corners.
+ * Pill-button contract: every button in the app renders fully rounded.
  * The square shape lives in {@code ShapeAppearance.NexaChat.Button}, applied by
  * the {@code Widget.NexaChat.Button*} styles the themes route through
  * {@code materialButtonStyle} and friends. A layout must not re-round a button
  * with {@code app:cornerRadius} or a raw {@code Widget.Material3.Button.*} style,
- * and icon buttons use the bounded (square) ripple, never the borderless circle.
+ * and icon buttons keep the bounded ripple, never the borderless circle.
  */
 public final class ButtonShapeContractTest {
 
@@ -61,9 +61,9 @@ public final class ButtonShapeContractTest {
     }
 
     @Test
-    public void buttonShapeAppearanceIsSquare() throws Exception {
+    public void buttonShapeAppearanceIsPill() throws Exception {
         Element shape = style(parse("values/shapes.xml"), "ShapeAppearance.NexaChat.Button");
-        assertEquals("0dp", item(shape, "cornerSize"));
+        assertEquals("@dimen/corner_full", item(shape, "cornerSize"));
     }
 
     @Test
@@ -79,9 +79,9 @@ public final class ButtonShapeContractTest {
                 continue;
             }
             buttonStyles++;
-            assertEquals(name + " must pin the square shape",
+            assertEquals(name + " must pin the pill shape",
                     SQUARE_SHAPE, item(style, "shapeAppearance"));
-            assertEquals(name + " must not override the square corners",
+            assertEquals(name + " must not override the pill corners",
                     "", item(style, "cornerRadius"));
         }
         assertTrue("no NexaChat button styles found", buttonStyles >= 5);
@@ -210,7 +210,7 @@ public final class ButtonShapeContractTest {
                 "Widget.NexaChat.MaterialCalendar.YearNavigationButton",
                 "Widget.NexaChat.MaterialTimePicker.Button",
                 "Widget.NexaChat.MaterialTimePicker.ImageButton"}) {
-            assertEquals(name + " must pin the square shape",
+            assertEquals(name + " must pin the pill shape",
                     SQUARE_SHAPE, item(style(styles, name), "shapeAppearance"));
         }
     }
@@ -267,14 +267,14 @@ public final class ButtonShapeContractTest {
     }
 
     @Test
-    public void sendButtonDrawableIsASquareRipple() throws Exception {
+    public void sendButtonDrawableIsARoundRipple() throws Exception {
         Document send = parse("drawable/bg_send_button.xml");
         assertEquals("ripple", send.getDocumentElement().getTagName());
         NodeList shapes = send.getElementsByTagName("shape");
-        assertTrue("send button needs a visible square shape", shapes.getLength() > 0);
+        assertTrue("send button needs a visible round shape", shapes.getLength() > 0);
         for (int i = 0; i < shapes.getLength(); i++) {
             Element shape = (Element) shapes.item(i);
-            assertEquals("rectangle", shape.getAttributeNS(ANDROID, "shape"));
+            assertEquals("oval", shape.getAttributeNS(ANDROID, "shape"));
         }
     }
 

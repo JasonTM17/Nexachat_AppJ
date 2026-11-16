@@ -40,7 +40,7 @@ public final class ChatSurfacePolishContractTest {
         assertTrue("sender-side merge must come from ChatBubbleRules",
                 body.contains("ChatBubbleRules.bubbleMergedCorners(position, tailOnRight)"));
         assertTrue("corner radii must still honour the dimens",
-                body.contains("R.dimen.corner_lg") && body.contains("R.dimen.corner_xs"));
+                body.contains("R.dimen.corner_xl") && body.contains("R.dimen.corner_xs"));
     }
 
     @Test

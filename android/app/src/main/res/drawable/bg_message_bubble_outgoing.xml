@@ -3,8 +3,8 @@
     android:shape="rectangle">
     <solid android:color="@color/bubble_mine" />
     <corners
-        android:topLeftRadius="@dimen/corner_lg"
-        android:topRightRadius="@dimen/corner_lg"
-        android:bottomLeftRadius="@dimen/corner_lg"
+        android:topLeftRadius="@dimen/corner_xl"
+        android:topRightRadius="@dimen/corner_xl"
+        android:bottomLeftRadius="@dimen/corner_xl"
         android:bottomRightRadius="@dimen/corner_xs" />
 </shape>
