@@ -50,6 +50,25 @@ public final class GroupDetailQuickActionsContractTest {
         assertEquals("no", attr(icon, "importantForAccessibility"));
     }
 
+    @Test
+    public void tilesShareOneAccentIconChip() throws Exception {
+        Element row = findById(loadLayout(), "quickActions");
+        for (String id : new String[] {"addMemberButton", "muteTile"}) {
+            Element tile = findById(row, id);
+            assertNotNull(tile);
+            Element chip = (Element) tile.getElementsByTagName("FrameLayout").item(0);
+            assertNotNull(id + " icon chip", chip);
+            assertEquals(id + " chip backdrop",
+                    "@drawable/bg_quick_action_icon_accent", attr(chip, "background"));
+            assertEquals(id + " chip size",
+                    "@dimen/icon_tile_size", attr(chip, "layout_width"));
+            Element icon = (Element) chip.getElementsByTagName("ImageView").item(0);
+            assertNotNull(id + " icon", icon);
+            assertEquals(id + " icon tint",
+                    "?attr/colorOnPrimaryContainer", attr(icon, "tint"));
+        }
+    }
+
     private static Document loadLayout() throws Exception {
         Path[] candidates = {
             Path.of("src/main/res/layout/fragment_group_detail.xml"),

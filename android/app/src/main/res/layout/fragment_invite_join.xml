@@ -60,8 +60,7 @@
                         android:layout_marginTop="@dimen/space_md"
                         android:gravity="center"
                         android:textAppearance="?attr/textAppearanceHeadlineSmall"
-                        android:textColor="?attr/colorOnSurface"
-                        android:textStyle="bold" />
+                        android:textColor="?attr/colorOnSurface" />
 
                     <TextView
                         android:id="@+id/memberCount"
@@ -105,7 +104,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/checkStatusButton"
-                style="?attr/materialButtonOutlinedStyle"
+                style="@style/Widget.NexaChat.Button.Tonal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_sm"
@@ -124,7 +123,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/retryButton"
-                style="?attr/materialButtonOutlinedStyle"
+                style="@style/Widget.NexaChat.Button.Tonal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_sm"
@@ -134,7 +133,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/signInButton"
-                style="?attr/materialButtonOutlinedStyle"
+                style="@style/Widget.NexaChat.Button.Tonal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_sm"

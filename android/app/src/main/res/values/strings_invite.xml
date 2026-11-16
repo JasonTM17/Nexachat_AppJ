@@ -2,7 +2,6 @@
 <resources>
     <string name="invite_manage_title">Group invite link</string>
     <string name="invite_join_title">Join a group</string>
-    <string name="invite_manage_hint">Create and manage a link for this group.</string>
     <string name="invite_manage_action">Invite link</string>
     <string name="invite_expiry">Link expiry</string>
     <string name="invite_expiry_value">Expiry: %1$s</string>

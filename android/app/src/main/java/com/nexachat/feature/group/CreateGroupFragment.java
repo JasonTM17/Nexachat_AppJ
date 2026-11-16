@@ -51,6 +51,7 @@ public final class CreateGroupFragment extends Fragment {
         binding.memberPickerList.setAdapter(memberAdapter);
         binding.toolbar.setNavigationOnClickListener(v -> NavHostFragment.findNavController(this).navigateUp());
         binding.errorState.setOnRetry(viewModel::loadContacts);
+        binding.membersHeader.setTitle(getString(R.string.group_members_label));
         binding.emptyState.setMessage(getString(R.string.contacts_empty));
         binding.emptyState.setIcon(R.drawable.ic_person_outline);
         binding.groupNameInput.addTextChangedListener(new TextWatcher() {
@@ -99,7 +100,8 @@ public final class CreateGroupFragment extends Fragment {
         boolean showPicker = !state.getContacts().isEmpty();
 
         binding.loadingState.setVisibility(showLoading ? View.VISIBLE : View.GONE);
-        binding.memberPickerList.setVisibility(showPicker ? View.VISIBLE : View.GONE);
+        binding.membersHeader.setVisibility(showPicker ? View.VISIBLE : View.GONE);
+        binding.memberPickerCard.setVisibility(showPicker ? View.VISIBLE : View.GONE);
         binding.emptyState.setVisibility(showEmpty ? View.VISIBLE : View.GONE);
         binding.errorState.setVisibility(showLoadError ? View.VISIBLE : View.GONE);
         if (showLoadError) {
