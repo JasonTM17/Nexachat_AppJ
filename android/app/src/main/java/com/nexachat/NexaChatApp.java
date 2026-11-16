@@ -11,6 +11,9 @@ import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.network.stomp.RealtimeSession;
 import com.nexachat.core.realtime.ephemeral.EphemeralStateRouter;
 import dagger.hilt.android.HiltAndroidApp;
+import io.reactivex.rxjava3.schedulers.Schedulers;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.inject.Inject;
 
 /**
@@ -18,6 +21,8 @@ import javax.inject.Inject;
  */
 @HiltAndroidApp
 public final class NexaChatApp extends Application {
+
+    private static final Logger LOGGER = Logger.getLogger("NexaChatApp");
 
     @Inject
     RealtimeSession realtimeSession;
@@ -34,7 +39,15 @@ public final class NexaChatApp extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
-        tokenRefresher.warmSessionAdmission();
+        Schedulers.io().scheduleDirect(() -> {
+            try {
+                tokenRefresher.warmSessionAdmission();
+            } catch (Throwable warmFailure) {
+                LOGGER.log(Level.WARNING,
+                        "session admission warm-up failed; fenced paths will bootstrap lazily",
+                        warmFailure);
+            }
+        });
         new CallNotificationObserver(this, callManager).start();
         ProcessLifecycleOwner.get().getLifecycle().addObserver(new DefaultLifecycleObserver() {
             @Override

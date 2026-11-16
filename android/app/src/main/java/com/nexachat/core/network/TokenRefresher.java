@@ -3,6 +3,7 @@ package com.nexachat.core.network;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
+import androidx.annotation.WorkerThread;
 import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.core.network.dto.ErrorResponse;
 import com.nexachat.core.network.dto.RefreshRequest;
@@ -138,21 +139,33 @@ public final class TokenRefresher {
         return serverWakeGate == null ? Flowable.just(false) : serverWakeGate.getIsStarting();
     }
 
-    /** Read-only epoch for realtime callers; never opens admission or performs IO. */
+    /**
+     * Read-only epoch for realtime callers. Waits for an in-flight bootstrap and
+     * may perform the first durable-snapshot read on the calling thread; a cheap
+     * volatile read once bootstrap completes.
+     */
     public long sessionEpoch() {
+        ensureBootstrap();
         return sessionEpoch.get();
     }
 
     /**
      * True only while the supplied epoch is the active admitted session revision.
-     * Never performs bootstrap or storage IO.
+     * Waits for an in-flight bootstrap so a fence check can never observe the
+     * pre-bootstrap state; cheap once bootstrap completes.
      */
     public boolean isSessionCurrent(long expectedEpoch) {
+        ensureBootstrap();
         return admissionOpen && sessionEpoch.get() == expectedEpoch;
     }
 
-    /** Runs a short realtime callback atomically with session epoch changes. */
+    /**
+     * Runs a short realtime callback atomically with session epoch changes.
+     * Self-bootstraps like {@link #isSessionCurrent(long)} so a fenced operation
+     * never runs against the pre-bootstrap state.
+     */
     public boolean runIfSessionCurrent(long expectedEpoch, @NonNull Runnable action) {
+        ensureBootstrap();
         synchronized (lock) {
             if (!admissionOpen || sessionEpoch.get() != expectedEpoch) {
                 return false;
@@ -182,8 +195,11 @@ public final class TokenRefresher {
 
     /**
      * Admits the durable session for process entry points that never run splash
-     * restore (task-state restore, WorkManager, push). Cheap no-op once complete.
+     * restore (task-state restore, WorkManager, push). Cheap no-op once bootstrap
+     * completes. Performs one blocking durable-snapshot read on the calling
+     * thread; never call on the main thread.
      */
+    @WorkerThread
     public void warmSessionAdmission() {
         ensureBootstrap();
     }

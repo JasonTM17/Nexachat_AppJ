@@ -1,5 +1,6 @@
 package com.nexachat.core.network;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -16,6 +17,8 @@ import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.inject.Provider;
@@ -37,10 +40,10 @@ public final class TokenRefresherWarmAdmissionTest {
                 new SessionEvents(),
                 (Provider<AuthApi>) () -> mock(AuthApi.class));
 
-        // Before any bootstrap the session is inert: this is the stuck state
-        // observed in the wild (epoch=0, admission closed, acks cancelled).
-        assertFalse(refresher.isSessionCurrent(0L));
-        assertFalse(refresher.isSessionCurrent(7L));
+        // Before any bootstrap the replayed admission state is closed: this is
+        // the stuck state observed in the wild (epoch=0, admission closed, acks
+        // cancelled). The replayed stream observes it without bootstrapping.
+        assertFalse(refresher.sessionAdmission().blockingFirst());
 
         refresher.warmSessionAdmission();
 
@@ -67,6 +70,23 @@ public final class TokenRefresherWarmAdmissionTest {
     }
 
     @Test
+    public void warmSessionAdmissionDoesNotResurrectClosingSession() {
+        TokenRefresher refresher = new TokenRefresher(
+                storeWithSnapshot(new SessionSnapshot(5L, SessionSnapshot.Lifecycle.CLOSING)),
+                new SessionEvents(),
+                (Provider<AuthApi>) () -> mock(AuthApi.class));
+
+        refresher.warmSessionAdmission();
+
+        // A session mid-close (logout or rejection in flight) must stay fenced
+        // out just like a fully closed one.
+        assertFalse(refresher.isSessionCurrent(5L));
+        assertFalse(refresher.runIfSessionCurrent(5L, () -> {
+            throw new AssertionError("closing session must not run work");
+        }));
+    }
+
+    @Test
     public void warmSessionAdmissionIsIdempotent() {
         TokenRefresher refresher = new TokenRefresher(
                 storeWithSnapshot(new SessionSnapshot(3L, SessionSnapshot.Lifecycle.ACTIVE)),
@@ -77,6 +97,65 @@ public final class TokenRefresherWarmAdmissionTest {
         refresher.warmSessionAdmission();
 
         assertTrue(refresher.isSessionCurrent(3L));
+    }
+
+    @Test
+    public void fencedCheckBeforeWarmBootstrapSelfAdmits() {
+        TokenRefresher refresher = new TokenRefresher(
+                storeWithSnapshot(new SessionSnapshot(7L, SessionSnapshot.Lifecycle.ACTIVE)),
+                new SessionEvents(),
+                (Provider<AuthApi>) () -> mock(AuthApi.class));
+
+        // A fenced operation that arrives before the async warm has run must
+        // bootstrap from the durable snapshot itself instead of observing the
+        // pre-bootstrap (unadmitted, epoch=0) state.
+        AtomicBoolean ran = new AtomicBoolean();
+        assertTrue(refresher.runIfSessionCurrent(7L, () -> ran.set(true)));
+        assertTrue(ran.get());
+        assertTrue(refresher.isSessionCurrent(7L));
+        assertEquals(7L, refresher.sessionEpoch());
+    }
+
+    @Test
+    public void fencedCheckDuringInFlightWarmWaitsAndSeesAdmittedSession() throws Exception {
+        CountDownLatch snapshotReadEntered = new CountDownLatch(1);
+        CountDownLatch releaseSnapshotRead = new CountDownLatch(1);
+        TokenStore store = storeWithSnapshot(
+                new SessionSnapshot(7L, SessionSnapshot.Lifecycle.ACTIVE));
+        when(store.readSessionSnapshot()).thenReturn(Single.fromCallable(() -> {
+            snapshotReadEntered.countDown();
+            if (!releaseSnapshotRead.await(10L, TimeUnit.SECONDS)) {
+                throw new AssertionError("timed out waiting to release the snapshot read");
+            }
+            return new SessionSnapshot(7L, SessionSnapshot.Lifecycle.ACTIVE);
+        }));
+        TokenRefresher refresher = new TokenRefresher(
+                store, new SessionEvents(), (Provider<AuthApi>) () -> mock(AuthApi.class));
+
+        // The app dispatches the warm on a worker thread. A fenced operation
+        // that starts while its blocking read is in flight must wait on the
+        // same lock, then see the admitted session — never fail fast against
+        // the pre-bootstrap state.
+        Thread warm = new Thread(refresher::warmSessionAdmission, "warm-admission");
+        warm.start();
+        assertTrue(snapshotReadEntered.await(10L, TimeUnit.SECONDS));
+
+        AtomicBoolean ran = new AtomicBoolean();
+        AtomicBoolean applied = new AtomicBoolean();
+        Thread fenced = new Thread(() -> {
+            applied.set(refresher.runIfSessionCurrent(7L, () -> ran.set(true)));
+        }, "fenced-ack");
+        fenced.start();
+
+        fenced.join(500L);
+        assertTrue("fenced check must wait for the in-flight warm, not fail fast",
+                fenced.isAlive());
+        releaseSnapshotRead.countDown();
+        fenced.join(10_000L);
+        warm.join(10_000L);
+
+        assertTrue(applied.get());
+        assertTrue(ran.get());
     }
 
     private static TokenStore storeWithSnapshot(SessionSnapshot snapshot) {
