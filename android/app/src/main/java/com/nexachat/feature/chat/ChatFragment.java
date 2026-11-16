@@ -513,9 +513,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                     if (!beginVoiceRecording(v)) {
                         // Consume the tap so it cannot fall through to the accessible
                         // click path and retry silently; the hint explains the gesture.
-                        Toast.makeText(requireContext(),
-                                VoiceTapFeedbackRules.quickTapHintMessageId(),
-                                Toast.LENGTH_SHORT).show();
+                        showQuickTapHint();
                         return true;
                     }
                     return true;
@@ -547,8 +545,14 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
                 case MotionEvent.ACTION_UP:
                     if (voiceStartPending) {
-                        recordingCancelled = true;
                         voiceStopWhenStarted = true;
+                        if (!recordingCancelled) {
+                            // A plain release inside the start window matches the
+                            // old too-short path: still cancelled, hint intact.
+                            Toast.makeText(requireContext(), R.string.voice_too_short,
+                                    Toast.LENGTH_SHORT).show();
+                        }
+                        recordingCancelled = true;
                         return true;
                     }
                     finishVoiceRecording(recordingCancelled, false);
@@ -721,6 +725,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 if (!started) {
                     restoreComposerAfterRecording();
                     resetAccessibleVoiceRecordingUi();
+                    // The old synchronous failure surfaced the same hint; a
+                    // silent return would just flash the recording overlay.
+                    showQuickTapHint();
                     return;
                 }
                 scheduleRecordingTimer();
@@ -732,6 +739,15 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             });
         });
         return true;
+    }
+
+    private void showQuickTapHint() {
+        android.content.Context context = getContext();
+        if (context == null) {
+            return;
+        }
+        Toast.makeText(context, VoiceTapFeedbackRules.quickTapHintMessageId(),
+                Toast.LENGTH_SHORT).show();
     }
 
     private ExecutorService voiceStartExecutor() {
