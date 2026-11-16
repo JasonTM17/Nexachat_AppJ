@@ -1303,17 +1303,17 @@ messages and AI-opted-out conversations are never scanned or shown.
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
-| `GET /api/v1/admin/me` | staff | — | `200` `{userId, phone, displayName, role}` | 401/403 |
+| `GET /api/v1/admin/me` | staff | — | `200` `{userId, role, displayName}` | 401/403 |
 | `GET /api/v1/admin/overview` | staff | `?days=` | `200` KPIs + daily series | 401/403 |
 | `GET /api/v1/admin/system/health` | staff | — | `200` service status map | 401/403 |
 | `GET /api/v1/admin/users` | staff | `?q=&role=&status=&page=&size=` | `200` page of user summaries | 401/403 |
 | `GET /api/v1/admin/users/deleted` | staff | `?page=&size=` | `200` deleted-account page | 401/403 |
 | `GET /api/v1/admin/users/{userId}` | staff | — | `200` user detail + counters | 401/403 · `USER_NOT_FOUND` 404 |
-| `POST /api/v1/admin/users/{userId}/suspend` | staff | `{reason}` | `200` updated summary; revokes sessions | 401/403 · 404 · `SELF_ACTION` 400 |
-| `POST /api/v1/admin/users/{userId}/unsuspend` | staff | `{reason}` | `200` updated summary | 401/403 · 404 |
-| `POST /api/v1/admin/users/{userId}/revoke-sessions` | staff | `{reason}` | `200`; stamps token cutoff | 401/403 · 404 |
-| `POST /api/v1/admin/users/{userId}/actions` | staff | `{type, reason}` (`WARN`/`ESCALATE`) | `200` `{notice}` | 401/403 · 404 |
-| `PATCH /api/v1/admin/users/{userId}/role` | ADMIN | `{role, reason}` | `200` updated summary | 401/403 · `LAST_ADMIN` 400 · `SELF_ACTION` 400 |
+| `POST /api/v1/admin/users/{userId}/suspend` | staff | `{reason}` | `204` empty; revokes sessions | 401/403 · 404 · `FORBIDDEN` 403 (self or higher role) · `LAST_ADMIN` 409 |
+| `POST /api/v1/admin/users/{userId}/unsuspend` | staff | `{reason}` | `204` empty | 401/403 · 404 |
+| `POST /api/v1/admin/users/{userId}/revoke-sessions` | staff | `{reason}` | `204` empty; stamps token cutoff | 401/403 · 404 |
+| `POST /api/v1/admin/users/{userId}/actions` | staff | `{reason, alertId?}` (a warning notice) | `200` `{id, kind, body, createdAt}` | 401/403 · 404 |
+| `PATCH /api/v1/admin/users/{userId}/role` | ADMIN | `{role, reason}` | `200` user detail | 401/403 · `LAST_ADMIN` 409 · `FORBIDDEN` 403 (self) |
 | `GET /api/v1/admin/alerts` | staff | `?status=&category=&severity=&q=&page=` | `200` alert page (redacted snippets) | 401/403 |
 | `GET /api/v1/admin/alerts/{alertId}` | staff | — | `200` alert detail + notes | 401/403 · `ALERT_NOT_FOUND` 404 |
 | `PATCH /api/v1/admin/alerts/{alertId}` | staff | `{status?, assigneeId?, escalation?, reason}` | `200` updated alert | 401/403 · 404 |
