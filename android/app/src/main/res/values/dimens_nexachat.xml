@@ -55,6 +55,7 @@
     <dimen name="control_stroke_width">1dp</dimen>
     <dimen name="focus_stroke_width">2dp</dimen>
     <dimen name="call_control_size">64dp</dimen>
+    <dimen name="call_end_size">72dp</dimen>
     <dimen name="call_avatar_size">112dp</dimen>
     <dimen name="chip_min_height">32dp</dimen>
     <dimen name="button_min_height">48dp</dimen>
@@ -64,4 +65,6 @@
     <dimen name="row_min_height_dialog">52dp</dimen>
     <dimen name="progress_indicator_size">28dp</dimen>
     <dimen name="label_row_gap">6dp</dimen>
+    <dimen name="state_icon_size">64dp</dimen>
+    <dimen name="loading_indicator_size">40dp</dimen>
 </resources>
