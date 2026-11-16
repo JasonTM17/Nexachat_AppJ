@@ -640,13 +640,20 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     }
 
     private void showVoicePermissionSnackbar(boolean offerSettings) {
-        if (binding == null) return;
-        Snackbar snackbar = Snackbar.make(
-                binding.getRoot(), R.string.voice_permission_required, Snackbar.LENGTH_LONG);
+        if (binding == null || !isAdded()) return;
         if (offerSettings) {
-            snackbar.setAction(R.string.action_open_app_settings, v -> openAppSettings());
+            // Permanent denial: a fading snackbar reads as a dead mic button, so
+            // show a persistent dialog that routes to app settings instead.
+            new AlertDialog.Builder(requireContext())
+                    .setMessage(R.string.voice_permission_required)
+                    .setPositiveButton(R.string.action_open_app_settings,
+                            (dialog, which) -> openAppSettings())
+                    .setNegativeButton(R.string.action_cancel, null)
+                    .show();
+            return;
         }
-        snackbar.show();
+        Snackbar.make(binding.getRoot(), R.string.voice_permission_required,
+                Snackbar.LENGTH_LONG).show();
     }
 
     private void openAppSettings() {

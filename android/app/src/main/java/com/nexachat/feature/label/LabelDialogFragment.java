@@ -407,9 +407,19 @@ public final class LabelDialogFragment extends DialogFragment {
                         return;
                     }
                     nameLayout.setError(null);
-                    if (existing == null) viewModel.createLabel(value, color);
-                    else viewModel.updateLabel(existing.getId(), value, color);
-                    editor.dismiss();
+                    boolean accepted = existing == null
+                            ? viewModel.createLabel(value, color)
+                            : viewModel.updateLabel(existing.getId(), value, color);
+                    if (accepted) {
+                        editor.dismiss();
+                    } else {
+                        // Keep the editor open so the typed name isn't lost; the
+                        // outer dialog's status line shows the published error.
+                        LabelUiState latest = viewModel.getUiState().getValue();
+                        if (latest != null && latest.getError() != LabelUiState.Error.NONE) {
+                            nameLayout.setError(getString(LabelText.errorMessage(latest.getError())));
+                        }
+                    }
                 });
         });
         editor.show();

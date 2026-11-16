@@ -275,20 +275,31 @@ public final class LabelViewModel extends ViewModel {
                 }));
     }
 
-    public synchronized void createLabel(@Nullable String name, @NonNull LabelColor color) {
-        if (labelsMutating || assignmentMutationInFlight || !labelsLoaded || labelsLoading) return;
+    /**
+     * Returns {@code true} when the request was accepted (the caller may dismiss
+     * the editor). Rejections publish a visible error instead of no-opping, and
+     * a never-loaded labels list kicks off a reload so a retry can succeed.
+     */
+    public synchronized boolean createLabel(@Nullable String name, @NonNull LabelColor color) {
+        if (!labelsLoaded && !labelsLoading) {
+            loadLabelsLocked();
+        }
+        if (labelsMutating || assignmentMutationInFlight || !labelsLoaded || labelsLoading) {
+            setError(LabelUiState.Error.GENERIC);
+            return false;
+        }
         if (labels.size() >= LabelRules.MAX_LABELS) {
             setError(LabelUiState.Error.LABEL_LIMIT);
-            return;
+            return false;
         }
         String normalized = LabelRules.normalizeName(name);
         if (!LabelRules.isValidName(normalized)) {
             setError(LabelUiState.Error.VALIDATION);
-            return;
+            return false;
         }
         if (LabelRules.hasDuplicateName(normalized, labels, null)) {
             setError(LabelUiState.Error.CONFLICT);
-            return;
+            return false;
         }
 
         List<ConversationLabel> previous = labels;
@@ -323,22 +334,29 @@ public final class LabelViewModel extends ViewModel {
                                 setError(errorFor(failure));
                             }
                         }));
+        return true;
     }
 
-    public synchronized void updateLabel(
+    public synchronized boolean updateLabel(
             @NonNull String labelId, @Nullable String name, @NonNull LabelColor color) {
-        if (labelsMutating || assignmentMutationInFlight) return;
+        if (labelsMutating || assignmentMutationInFlight) {
+            setError(LabelUiState.Error.GENERIC);
+            return false;
+        }
         String normalized = LabelRules.normalizeName(name);
         if (!LabelRules.isValidName(normalized)) {
             setError(LabelUiState.Error.VALIDATION);
-            return;
+            return false;
         }
         if (LabelRules.hasDuplicateName(normalized, labels, labelId)) {
             setError(LabelUiState.Error.CONFLICT);
-            return;
+            return false;
         }
         ConversationLabel current = findLabel(labelId);
-        if (current == null || current.isPending()) return;
+        if (current == null || current.isPending()) {
+            setError(LabelUiState.Error.GENERIC);
+            return false;
+        }
 
         List<ConversationLabel> previous = labels;
         long requestSessionGeneration = sessionGeneration;
@@ -366,12 +384,16 @@ public final class LabelViewModel extends ViewModel {
                                 setError(errorFor(failure));
                             }
                         }));
+        return true;
     }
 
     public synchronized void deleteLabel(@NonNull String labelId) {
         if (labelsMutating || assignmentMutationInFlight) return;
         ConversationLabel current = findLabel(labelId);
-        if (current == null || current.isPending()) return;
+        if (current == null || current.isPending()) {
+            setError(LabelUiState.Error.GENERIC);
+            return;
+        }
 
         List<ConversationLabel> previousLabels = labels;
         String previousFilter = selectedFilterId;
