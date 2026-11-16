@@ -396,16 +396,18 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     /**
      * Starred-list hydration (V38): one IN query over the viewer's starred
      * ids, filtered by the same read boundary as history — peer-suppressed
-     * rows only reach their sender, and a conversation the viewer left stops
+     * rows only reach their sender, expired rows hide until the purge turns
+     * them into tombstones, and a conversation the viewer left stops
      * surfacing its starred rows.
      */
     @Query("""
             SELECT new com.nexachat.message.dto.MessageRow(
                        m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
                        m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
-                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration, m.expiresAt)
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.id IN :ids
+              AND (m.deletedAt IS NOT NULL OR m.expiresAt IS NULL OR m.expiresAt > CURRENT_TIMESTAMP)
               AND (m.peerSuppressed = false OR m.sender.id = :userId)
               AND EXISTS (SELECT 1 FROM ConversationMember member
                           WHERE member.conversation.id = m.conversation.id
