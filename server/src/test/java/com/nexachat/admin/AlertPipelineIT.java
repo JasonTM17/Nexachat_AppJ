@@ -98,6 +98,8 @@ class AlertPipelineIT {
     @Autowired
     private AdminUserService adminUserService;
     @Autowired
+    private AlertService alertService;
+    @Autowired
     private ConversationAiOptOutService optOutService;
 
     private User admin;
@@ -540,6 +542,49 @@ class AlertPipelineIT {
                 "SELECT count(*) FROM admin_audit_log WHERE actor_id = ?",
                 Integer.class, actor.getId());
         assertThat(rows).isEqualTo(1);
+    }
+
+    @Test
+    void bulkDismissWritesOneAuditRowWithTheJoinedIds() throws Exception {
+        send(sender, "send me the code 482913 please");
+        send(sender, "wire transfer the money now");
+        List<String> ids = awaitAlerts(2).stream()
+                .map(alert -> alert.get("id").toString()).toList();
+
+        mockMvc.perform(post("/api/v1/admin/alerts/bulk-dismiss")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("ids", ids, "reason", "sweep probe"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dismissed").value(2));
+
+        Map<String, Object> audit = jdbcTemplate.queryForMap(
+                "SELECT target_id FROM admin_audit_log WHERE action = 'ALERT_BULK_DISMISS'");
+        assertThat((String) audit.get("target_id")).contains(ids.get(0), ids.get(1));
+    }
+
+    @Test
+    void aFailedAuditWriteRollsTheDismissBack() {
+        send(sender, "send me the code 482913 please");
+        send(sender, "wire transfer the money now");
+        List<UUID> ids = awaitAlerts(2).stream()
+                .map(alert -> (UUID) alert.get("id")).toList();
+
+        // actor_id is NOT NULL in admin_audit_log: a null actor makes the
+        // audit insert fail, and the dismissal must roll back with it.
+        assertThatThrownBy(() -> alertService.bulkDismiss(ids, "rollback probe", null,
+                User.Role.ADMIN, "127.0.0.1"))
+                .isInstanceOf(DataAccessException.class);
+
+        Integer stillOpen = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM message_alerts WHERE status = 'OPEN' AND id IN (?, ?)",
+                Integer.class, ids.get(0), ids.get(1));
+        assertThat(stillOpen).isEqualTo(2);
+        Integer auditRows = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM admin_audit_log WHERE action = 'ALERT_BULK_DISMISS'",
+                Integer.class);
+        assertThat(auditRows).isZero();
     }
 
     // ------------------------------------------------------------- service

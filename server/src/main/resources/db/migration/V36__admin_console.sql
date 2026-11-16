@@ -32,7 +32,8 @@ CREATE TABLE admin_audit_log (
     actor_role  VARCHAR(16) NOT NULL,
     action      VARCHAR(64) NOT NULL,
     target_type VARCHAR(32) NOT NULL,
-    target_id   VARCHAR(64),
+    -- TEXT: bulk actions store the comma-joined target list, not one id.
+    target_id   TEXT,
     reason      TEXT,
     detail      JSONB,
     ip          VARCHAR(45),

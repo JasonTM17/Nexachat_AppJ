@@ -3,8 +3,6 @@ package com.nexachat.admin;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.user.User;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -32,12 +30,11 @@ import java.util.UUID;
  * audit row commits exactly when the audited mutation does; {@link
  * #recordAttempt} runs {@code REQUIRES_NEW} so a denied attempt (last-admin
  * guard, rate-limited reveal) is captured even though the action itself then
- * fails and rolls back.
+ * fails and rolls back. A failed insert propagates in both modes: an action
+ * that cannot be audited must not commit silently.
  */
 @Service
 public class AdminAuditService {
-
-    private static final Logger log = LoggerFactory.getLogger(AdminAuditService.class);
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -83,24 +80,19 @@ public class AdminAuditService {
     private void insert(UUID actorId, User.Role actorRole, String action,
                         String targetType, String targetId, String reason,
                         Map<String, Object> detail, String ip) {
-        try {
-            jdbcTemplate.update("""
-                    INSERT INTO admin_audit_log
-                        (actor_id, actor_role, action, target_type, target_id, reason, detail, ip)
-                    VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?)
-                    """,
-                    actorId,
-                    actorRole == null ? "UNKNOWN" : actorRole.name(),
-                    action,
-                    targetType,
-                    targetId,
-                    reason,
-                    detail == null ? null : toJson(detail),
-                    ip);
-        } catch (RuntimeException failure) {
-            log.error("Admin audit write failed for action {} on {} {}",
-                    action, targetType, targetId, failure);
-        }
+        jdbcTemplate.update("""
+                INSERT INTO admin_audit_log
+                    (actor_id, actor_role, action, target_type, target_id, reason, detail, ip)
+                VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?)
+                """,
+                actorId,
+                actorRole == null ? "UNKNOWN" : actorRole.name(),
+                action,
+                targetType,
+                targetId,
+                reason,
+                detail == null ? null : toJson(detail),
+                ip);
     }
 
     /** Filtered, newest-first page over the audit log. */

@@ -52,7 +52,7 @@ flowchart LR
 - **E2EE** — messages carrying an `encryption` payload are never scanned and are excluded from reveal queries.
 - **AI opt-out** — the scanner skips senders who opted out; a `ConversationAiOptOutEvent` tombstones snippets on pending alerts; reveal re-checks opt-out at read time so later opt-outs cannot be bypassed.
 - **Reveal** — bounded context window, per-minute budget (`nexachat.admin.reveal.per-minute`), mandatory reason, audited.
-- **Audit** — successful mutations record inside the same transaction; denied attempts record via `REQUIRES_NEW`; DB triggers make the table append-only.
+- **Audit** — successful mutations record inside the same transaction, so a failed audit write rolls the action back with it; denied attempts record via `REQUIRES_NEW`; DB triggers make the table append-only. Bulk dismiss stores the comma-joined alert id list in `target_id`.
 
 ## Frontend
 

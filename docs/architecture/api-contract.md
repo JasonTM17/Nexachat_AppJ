@@ -1332,7 +1332,9 @@ Alert detection runs asynchronously: a bounded in-memory queue drains matched
 text messages into `alerts` rows storing a redacted snippet and matched rule
 names; duplicates within the dedupe window update the existing row. `reveal`
 fetches the full message on demand (rate-limited, audited) — content is never
-stored in the alert tables.
+stored in the alert tables. In `admin_audit_log`, `target_id` carries the
+audited subject — a single id for row-scoped actions, the comma-joined alert
+id list for `ALERT_BULK_DISMISS`.
 
 Users see moderation notices at `GET /api/v1/users/me/notices` (Bearer, `200`
 page) and acknowledge with `POST /api/v1/users/me/notices/{noticeId}/read`
