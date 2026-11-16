@@ -10,8 +10,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingHorizontal="16dp"
-        android:paddingBottom="24dp">
+        android:paddingHorizontal="@dimen/space_md"
+        android:paddingBottom="@dimen/space_lg">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/recoveryEmailToolbar"
@@ -24,7 +24,7 @@
             android:id="@+id/recoveryEmailStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="@dimen/space_sm"
             android:textAppearance="?attr/textAppearanceBodyLarge"
             android:textColor="?attr/colorOnSurface" />
 
@@ -32,7 +32,7 @@
             android:id="@+id/recoveryEmailError"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="@dimen/space_inset"
             android:accessibilityLiveRegion="polite"
             android:background="@drawable/bg_auth_inline_error"
             android:drawableStart="@drawable/ic_error_outline"
@@ -47,16 +47,16 @@
             android:id="@+id/recoveryEmailChange"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="@dimen/space_md"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/recovery_email_change" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/recoveryEmailRemove"
-            style="?attr/materialButtonOutlinedStyle"
+            style="@style/Widget.NexaChat.Button.Destructive"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="@dimen/space_sm"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/recovery_email_remove" />
 
@@ -64,16 +64,16 @@
             android:id="@+id/recoveryEmailAdd"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="@dimen/space_md"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/recovery_email_add" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/recoveryEmailRetry"
-            style="?attr/materialButtonOutlinedStyle"
+            style="@style/Widget.NexaChat.Button.Outlined"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="@dimen/space_md"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/action_retry"
             android:visibility="gone" />

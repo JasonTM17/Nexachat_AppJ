@@ -62,5 +62,6 @@
         app:navigationIcon="@drawable/ic_arrow_back"
         app:navigationIconTint="@color/nexa_on_media_meta"
         app:titleTextAppearance="?attr/textAppearanceTitleMedium"
-        app:titleTextColor="@color/nexa_on_media_meta" />
+        app:titleTextColor="@color/nexa_on_media_meta"
+        app:subtitleTextColor="@color/nexa_on_media_meta" />
 </FrameLayout>
