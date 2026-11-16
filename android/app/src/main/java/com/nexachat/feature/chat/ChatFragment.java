@@ -45,7 +45,6 @@ import androidx.navigation.fragment.NavHostFragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.appbar.MaterialToolbar;
-import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
@@ -93,7 +92,12 @@ import javax.inject.Inject;
 
 /** View-based direct/group chat. The ViewModel remains the owner of message state and actions. */
 @AndroidEntryPoint
-public final class ChatFragment extends androidx.fragment.app.Fragment implements MessageActionListener {
+public final class ChatFragment extends androidx.fragment.app.Fragment
+        implements MessageActionListener,
+        MessageActionSheetFragment.Host,
+        MessageActionSheetFragment.Actions,
+        ForwardPickerSheet.Host,
+        AttachmentPickerSheet.Host {
     @Inject ForegroundConversationTracker foregroundConversationTracker;
     private static final String PREFS_VOICE_PERMISSION = "chat_voice_permission";
     private static final String KEY_RECORD_AUDIO_REQUESTED = "record_audio_requested";
@@ -309,10 +313,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 e2eeMediaUnsupported();
                 return;
             }
-            ChatInteractionsViews.showAttachmentPicker(
-                requireContext(),
-                () -> visualPicker.launch(new PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo.INSTANCE).build()),
-                () -> documentPicker.launch(com.nexachat.data.AttachmentRepository.UPLOAD_ALLOWED_MIMES));
+            if (!getChildFragmentManager().isStateSaved()
+                    && getChildFragmentManager().findFragmentByTag(AttachmentPickerSheet.TAG) == null) {
+                new AttachmentPickerSheet()
+                        .show(getChildFragmentManager(), AttachmentPickerSheet.TAG);
+            }
         });
         binding.composerBar.sendButton.setOnClickListener(v -> {
             if (!binding.composerBar.sendButton.isEnabled()) {
@@ -1777,7 +1782,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     }
 
     @Nullable private ChatMessage resolveOriginal(String id) {
-        return state.getMessages().stream().filter(message -> id.equals(message.getId())).findFirst().orElse(null);
+        // `state` only receives LiveData emissions once the view lifecycle is
+        // STARTED; a child sheet restored with this fragment resolves before
+        // that, so the retained ViewModel value must lead.
+        ChatViewModel.UiState current = viewModel == null ? null : viewModel.getUiState().getValue();
+        return ChatBubbleRules.findActionMessage(
+                current == null ? null : current.getMessages(), state.getMessages(), id);
     }
 
     @Override public void onMessageTap(@NonNull String messageId) { if (searchOpen) { setSearchOpen(false); viewModel.jumpToMessage(messageId); } }
@@ -1793,23 +1803,28 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                 message.getCreatedAtEpochMs(),
                 System.currentTimeMillis(),
                 recallWindowConfig.getRecallWindowSeconds());
-        ChatInteractionsViews.showMessageActions(requireContext(), message, state.getCanPin(),
-                state.isPinned(messageId), deleteAction, new ChatInteractionsViews.MessageActions() {
-            @Override public void reply(@NonNull ChatMessage value) { viewModel.setReplyTarget(value); }
-            @Override public void edit(@NonNull ChatMessage value) { showEdit(value); }
-            @Override public void delete(@NonNull ChatMessage value,
-                    @NonNull RecallWindowRules.DeleteAction action) {
-                if (action == RecallWindowRules.DeleteAction.DELETE_FOR_ME) {
-                    viewModel.deleteMessageForMe(value.getId());
-                } else {
-                    viewModel.deleteMessage(value.getId());
-                }
-            }
-            @Override public void react(@NonNull ChatMessage value, @NonNull String emoji) { viewModel.toggleReaction(value, emoji); }
-            @Override public void pin(@NonNull ChatMessage value) { viewModel.togglePin(value); }
-            @Override public void forward(@NonNull ChatMessage value) { showForward(value); }
-        });
+        if (getChildFragmentManager().isStateSaved()
+                || getChildFragmentManager().findFragmentByTag(MessageActionSheetFragment.TAG) != null) {
+            return;
+        }
+        MessageActionSheetFragment.newInstance(messageId, state.getCanPin(),
+                        state.isPinned(messageId), deleteAction)
+                .show(getChildFragmentManager(), MessageActionSheetFragment.TAG);
     }
+    @Override public ChatMessage findActionMessage(@NonNull String messageId) { return resolveOriginal(messageId); }
+    @Override public void reply(@NonNull ChatMessage value) { viewModel.setReplyTarget(value); }
+    @Override public void edit(@NonNull ChatMessage value) { showEdit(value); }
+    @Override public void delete(@NonNull ChatMessage value,
+            @NonNull RecallWindowRules.DeleteAction action) {
+        if (action == RecallWindowRules.DeleteAction.DELETE_FOR_ME) {
+            viewModel.deleteMessageForMe(value.getId());
+        } else {
+            viewModel.deleteMessage(value.getId());
+        }
+    }
+    @Override public void react(@NonNull ChatMessage value, @NonNull String emoji) { viewModel.toggleReaction(value, emoji); }
+    @Override public void pin(@NonNull ChatMessage value) { viewModel.togglePin(value); }
+    @Override public void forward(@NonNull ChatMessage value) { showForward(value); }
     @Override public void onRetryTap(@NonNull String messageId) { viewModel.retryFailed(messageId); }
     @Override public void onReplyQuoteTap(@NonNull String replyToId) { viewModel.jumpToMessage(replyToId); }
     @Override public void onOpenMedia(@NonNull String messageId, @NonNull AttachmentDto attachment) {
@@ -1857,9 +1872,29 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
     }
 
     private void showForward(ChatMessage message) {
+        if (getChildFragmentManager().isStateSaved()
+                || getChildFragmentManager().findFragmentByTag(ForwardPickerSheet.TAG) != null) {
+            return;
+        }
+        ForwardPickerSheet.newInstance(message.getId())
+                .show(getChildFragmentManager(), ForwardPickerSheet.TAG);
+    }
+
+    @NonNull
+    @Override public List<ConversationSummary> forwardTargets() {
         InboxUiState inbox = inboxViewModel.getUiState().getValue();
-        List<ConversationSummary> rows = inbox == null ? Collections.emptyList() : inbox.getConversations();
-        ChatInteractionsViews.showForwardPicker(requireContext(), rows, id -> viewModel.forwardMessage(message.getId(), id));
+        return inbox == null ? Collections.emptyList() : inbox.getConversations();
+    }
+    @Override public void onForwardTarget(@NonNull String messageId, @NonNull String targetId) {
+        viewModel.forwardMessage(messageId, targetId);
+    }
+    @Override public void onPickVisual() {
+        visualPicker.launch(new PickVisualMediaRequest.Builder()
+                .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo.INSTANCE)
+                .build());
+    }
+    @Override public void onPickDocument() {
+        documentPicker.launch(com.nexachat.data.AttachmentRepository.UPLOAD_ALLOWED_MIMES);
     }
 
     @Override public void onResume() {

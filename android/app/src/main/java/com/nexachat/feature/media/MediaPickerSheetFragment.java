@@ -10,14 +10,14 @@ import androidx.activity.result.PickVisualMediaRequest;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import com.google.android.material.bottomsheet.BottomSheetDialogFragment;
 import com.nexachat.databinding.SheetAttachmentPickerBinding;
+import com.nexachat.feature.ui.NexaBottomSheetFragment;
 
 /**
  * Attach bottom sheet: Photo Picker for visual media and SAF for documents/audio.
  * The hosting screen owns upload; this sheet only returns the picked {@link Uri}.
  */
-public final class MediaPickerSheetFragment extends BottomSheetDialogFragment {
+public final class MediaPickerSheetFragment extends NexaBottomSheetFragment {
 
     public interface Listener {
         void onAttachmentPicked(@NonNull Uri uri, @Nullable String mimeType);
