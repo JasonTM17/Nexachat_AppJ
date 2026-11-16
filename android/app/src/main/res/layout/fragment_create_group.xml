@@ -72,8 +72,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
                 android:minHeight="@dimen/min_touch_target"
-                android:text="@string/action_create_group"
-                app:cornerRadius="@dimen/corner_md" />
+                android:text="@string/action_create_group" />
         </LinearLayout>
     </ScrollView>
 

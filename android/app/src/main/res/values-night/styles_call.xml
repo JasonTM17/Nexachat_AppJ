@@ -15,5 +15,12 @@
         <item name="colorOnPrimary">@color/call_avatar_foreground</item>
         <item name="colorError">@color/call_end_background</item>
         <item name="colorOnError">@color/call_text_primary</item>
+        <item name="materialButtonStyle">@style/Widget.NexaChat.Button</item>
+        <item name="materialButtonOutlinedStyle">@style/Widget.NexaChat.Button.Outlined</item>
+        <item name="borderlessButtonStyle">@style/Widget.NexaChat.Button.Text</item>
+        <item name="materialIconButtonStyle">@style/Widget.NexaChat.Button.Icon</item>
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.NexaChat.Button.Text.Dialog</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.NexaChat.Button.Text.Dialog.Flush</item>
+        <item name="buttonBarNeutralButtonStyle">@style/Widget.NexaChat.Button.Text.Dialog</item>
     </style>
 </resources>

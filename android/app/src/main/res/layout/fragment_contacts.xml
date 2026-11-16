@@ -22,7 +22,7 @@
             app:navigationContentDescription="@string/cd_back">
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/searchButton"
-                style="@style/Widget.Material3.Button.IconButton"
+                style="@style/Widget.NexaChat.Button.Icon"
                 android:layout_width="@dimen/min_touch_target"
                 android:layout_height="@dimen/min_touch_target"
                 android:layout_gravity="end|center_vertical"

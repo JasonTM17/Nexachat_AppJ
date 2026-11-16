@@ -24,6 +24,5 @@
         android:layout_gravity="center_horizontal"
         android:layout_marginTop="@dimen/space_md"
         android:minHeight="@dimen/min_touch_target"
-        android:visibility="gone"
-        app:cornerRadius="@dimen/corner_md" />
+        android:visibility="gone" />
 </merge>
