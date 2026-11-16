@@ -1520,6 +1520,62 @@ public class MessageRepositoryTest {
         }
     }
 
+    @Test public void invalidPauseStaysWhenSessionIsAbsent() throws Exception {
+        ConversationEntity conv = mock(ConversationEntity.class);
+        when(conv.isE2eeEnabled()).thenReturn(true);
+        conversations.put(CONVERSATION_ID, conv);
+        com.nexachat.core.crypto.KeysetTrustStore trustStore =
+                new com.nexachat.core.crypto.KeysetTrustStore(new InMemoryKeysetTrustDao());
+        MessageRepository repo = repositoryWithTrust(null, trustStore);
+        try {
+            seedInvalidPauseMarker(repo);
+            // No session means the probe cannot run at all: the episode stays.
+            assertEquals(Optional.of(MessageRepository.ERROR_E2EE_KEYSET_INVALID),
+                    repo.keysetPauseCode("me-1", CONVERSATION_ID).blockingGet());
+        } finally {
+            repo.dispose();
+        }
+    }
+
+    @Test public void invalidPauseStaysWhenTrustStoreIsAbsent() throws Exception {
+        com.nexachat.core.crypto.E2eeSession e2ee =
+                mock(com.nexachat.core.crypto.E2eeSession.class);
+        ConversationEntity conv = mock(ConversationEntity.class);
+        when(conv.isE2eeEnabled()).thenReturn(true);
+        conversations.put(CONVERSATION_ID, conv);
+        when(e2ee.currentTranscript(CONVERSATION_ID))
+                .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                        MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        // The follow-up roster read fails too — inconclusive — so without a
+        // trust store nothing can lift the marker.
+        when(e2ee.e2eeState(CONVERSATION_ID))
+                .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                        "E2EE_NETWORK")));
+        MessageRepository repo = repositoryWithTrust(e2ee, null);
+        try {
+            seedInvalidPauseMarker(repo);
+            assertEquals(Optional.of(MessageRepository.ERROR_E2EE_KEYSET_INVALID),
+                    repo.keysetPauseCode("me-1", CONVERSATION_ID).blockingGet());
+        } finally {
+            repo.dispose();
+        }
+    }
+
+    /**
+     * Plants the INVALID episode marker straight into the dedup map: the send
+     * path only stamps one while a trust store exists, so probes over the
+     * absent-collaborator branches can only be exercised by seeding it.
+     */
+    @SuppressWarnings("unchecked")
+    private static void seedInvalidPauseMarker(MessageRepository repo) throws Exception {
+        java.lang.reflect.Field field =
+                MessageRepository.class.getDeclaredField("keysetPauseNotified");
+        field.setAccessible(true);
+        ((java.util.concurrent.ConcurrentMap<String, String>) field.get(repo))
+                .put("me-1:" + CONVERSATION_ID,
+                        MessageRepository.ERROR_E2EE_KEYSET_INVALID + ":-1");
+    }
+
     private static com.nexachat.core.network.dto.E2eeDeviceDtos.MemberDeviceDto member(
             String userId) {
         return new com.nexachat.core.network.dto.E2eeDeviceDtos.MemberDeviceDto(
