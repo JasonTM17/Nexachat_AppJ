@@ -65,6 +65,8 @@
     <string name="conversation_archived">Đã lưu trữ</string>
     <string name="conversation_archived_snackbar">Đã lưu trữ cuộc trò chuyện</string>
     <string name="conversation_unarchived">Đã bỏ lưu trữ</string>
+    <string name="inbox_removed_from_group">Bạn đã bị xóa khỏi nhóm</string>
+    <string name="inbox_removed_from_group_named">Bạn đã bị xóa khỏi %1$s</string>
     <string name="conversation_settings_title">Cài đặt trò chuyện</string>
     <string name="conversation_ai_opt_out_title">Không dùng tin nhắn của tôi cho AI</string>
     <string name="conversation_ai_opt_in_title">Cho phép AI trong cuộc trò chuyện này</string>
@@ -241,6 +243,7 @@
     <string name="media_attachment">Đính kèm</string>
     <string name="error_attachment_open">Không có ứng dụng mở được tệp này</string>
     <string name="error_attachment_too_large">Tệp vượt quá giới hạn 25 MB</string>
+    <string name="error_attachment_mime_not_allowed">Loại tệp này không được hỗ trợ</string>
 
     <!-- Group -->
     <string name="group_create_title">Nhóm mới</string>
@@ -350,6 +353,7 @@
     <string name="voice_too_short">Giữ để ghi âm, thả để gửi</string>
     <string name="voice_hold_to_record">Giữ để ghi âm</string>
     <string name="voice_permission_required">Hãy cấp quyền micrô để ghi âm tin nhắn thoại.</string>
+    <string name="voice_mic_rationale">Cần quyền micrô để ghi âm tin nhắn thoại.</string>
     <string name="voice_play">Phát tin nhắn thoại</string>
     <string name="voice_pause">Tạm dừng tin nhắn thoại</string>
     <string name="voice_loading">Đang tải tin nhắn thoại…</string>

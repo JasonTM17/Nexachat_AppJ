@@ -365,6 +365,31 @@ public final class AttachmentRepositoryTest {
     }
 
     @Test
+    public void pickerWhitelistPinsTheServerAcceptedMimeList() {
+        // Mirrors MagicBytes.ALLOWED_MIMES on the server plus the provider
+        // aliases that sniff to an accepted type; drift surfaces here.
+        assertArrayEquals(new String[] {
+                "image/jpeg", "image/png", "image/webp", "image/gif",
+                "video/mp4",
+                "audio/mpeg", "audio/mp4", "audio/ogg",
+                "application/pdf",
+                "text/plain", "text/csv", "text/markdown",
+                "application/zip",
+                "application/msword",
+                "application/vnd.ms-excel",
+                "application/vnd.ms-powerpoint",
+                "application/CDFV2",
+                "application/x-ole-storage",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "audio/x-m4a",
+                "video/quicktime",
+                "application/octet-stream"
+        }, AttachmentRepository.UPLOAD_ALLOWED_MIMES);
+    }
+
+    @Test
     public void noUsableTypeFallsBackToOctetStream() throws Exception {
         stubResolver(new byte[] {1, 2, 3, 4}, null, 4);
         AtomicReference<String> sentType = new AtomicReference<>();

@@ -1349,6 +1349,52 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
+    public void selfRemovalEmitsANoticeWithTheGroupTitle() {
+        buildRepository();
+        dao().upsert(conversation("conv-a", 200)).blockingAwait();
+        TestSubscriber<ConversationRepository.SelfRemovalNotice> notices =
+                repository.selfRemovals().test();
+
+        repository.handleConversationUpdate(new ChatEvent.ConversationUpdated(
+                "conv-a", "MEMBER_REMOVED", List.of("other-member"), null, "NexaChat Team"))
+                .blockingGet();
+
+        notices.assertValueCount(1);
+        assertEquals("conv-a", notices.values().get(0).conversationId());
+        assertEquals("NexaChat Team", notices.values().get(0).title());
+    }
+
+    @Test
+    public void selfLeaveDoesNotEmitARemovalNotice() {
+        buildRepository();
+        dao().upsert(conversation("conv-a", 200)).blockingAwait();
+        TestSubscriber<ConversationRepository.SelfRemovalNotice> notices =
+                repository.selfRemovals().test();
+
+        repository.handleConversationUpdate(new ChatEvent.ConversationUpdated(
+                "conv-a", "MEMBER_LEFT", List.of("other-member"), null, "NexaChat Team"))
+                .blockingGet();
+
+        notices.assertNoValues();
+        assertFalse(dao().rows.containsKey("conv-a"));
+    }
+
+    @Test
+    public void anotherMemberBeingRemovedDoesNotEmitANotice() {
+        buildRepository();
+        dao().upsert(conversation("conv-a", 200)).blockingAwait();
+        TestSubscriber<ConversationRepository.SelfRemovalNotice> notices =
+                repository.selfRemovals().test();
+
+        repository.handleConversationUpdate(new ChatEvent.ConversationUpdated(
+                "conv-a", "MEMBER_REMOVED", List.of(MY_ID), null, "NexaChat Team"))
+                .blockingGet();
+
+        notices.assertNoValues();
+        assertTrue(dao().rows.containsKey("conv-a"));
+    }
+
+    @Test
     public void anotherMemberLeavingKeepsTheConversation() {
         buildRepository();
         dao().upsert(conversation("conv-a", 200)).blockingAwait();

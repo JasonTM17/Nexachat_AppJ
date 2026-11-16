@@ -17,6 +17,7 @@ import com.squareup.moshi.Moshi;
 import dagger.hilt.android.lifecycle.HiltViewModel;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.Objects;
 import java.util.Optional;
@@ -283,6 +284,10 @@ public final class InboxViewModel extends ViewModel {
                                 state.withConversations(conversations, state.isLoading() && refreshInFlight)),
                         error -> updateState(state -> state.withError(
                                 new ApiError.Network(error.getMessage())))));
+        disposables.add(conversationRepository.selfRemovals()
+                .subscribe(
+                        notice -> events.postEvent(new InboxGroupRemovalEvent(notice.title())),
+                        RxJavaPlugins::onError));
         refresh();
     }
 
@@ -340,7 +345,7 @@ public final class InboxViewModel extends ViewModel {
 }
 
 /** One-shot inbox surface events; consumed once so rotation does not replay them. */
-sealed interface InboxEvent permits InboxErrorEvent, InboxPreferenceSuccess {
+sealed interface InboxEvent permits InboxErrorEvent, InboxPreferenceSuccess, InboxGroupRemovalEvent {
 }
 
 /** Preference failure surfaced as a snackbar. */
@@ -372,6 +377,19 @@ final class InboxPreferenceSuccess implements InboxEvent {
 
     @Nullable Runnable getUndo() {
         return undo;
+    }
+}
+
+/** The server evicted this user from a group; rendered as a named snackbar. */
+final class InboxGroupRemovalEvent implements InboxEvent {
+    @Nullable private final String groupTitle;
+
+    InboxGroupRemovalEvent(@Nullable String groupTitle) {
+        this.groupTitle = groupTitle;
+    }
+
+    @Nullable String getGroupTitle() {
+        return groupTitle;
     }
 }
 

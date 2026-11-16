@@ -37,7 +37,6 @@ import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.data.ThemeMode;
 import com.nexachat.databinding.FragmentProfileBinding;
 import com.nexachat.feature.auth.ApiErrorText;
-import com.nexachat.feature.ui.ImeInsets;
 import com.nexachat.summary.AiConsentRepository;
 import dagger.hilt.android.AndroidEntryPoint;
 import javax.inject.Inject;
@@ -402,7 +401,11 @@ public final class ProfileFragment extends Fragment {
                 .create();
         dialog.setOnShowListener(ignored -> {
             if (dialog.getWindow() != null) {
-                ImeInsets.applyToDecor(dialog.getWindow());
+                // Resize the dialog above the IME instead of padding its decor:
+                // padding by the full IME height pushed the title and buttons
+                // out of the visible band and left the fields floating.
+                dialog.getWindow().setSoftInputMode(
+                        android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
             }
             android.widget.Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
             positive.setOnClickListener(v -> {
@@ -503,6 +506,13 @@ public final class ProfileFragment extends Fragment {
             passwordDialogError = null;
         });
         dialog.setOnShowListener(ignored -> {
+            if (dialog.getWindow() != null) {
+                // Resize the dialog above the IME instead of padding its decor:
+                // padding by the full IME height pushed the title and buttons
+                // out of the visible band and left the fields floating.
+                dialog.getWindow().setSoftInputMode(
+                        android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+            }
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             String oldValue = old == null || old.getText() == null ? "" : old.getText().toString();
             String newValue = next == null || next.getText() == null ? "" : next.getText().toString();

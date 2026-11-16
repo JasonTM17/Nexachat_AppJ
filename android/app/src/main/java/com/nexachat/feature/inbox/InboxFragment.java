@@ -188,6 +188,16 @@ public final class InboxFragment extends Fragment {
                     snackbar.setAction(R.string.action_undo, ignored -> success.getUndo().run());
                 }
                 snackbar.show();
+                return;
+            }
+            if (event instanceof InboxGroupRemovalEvent removal) {
+                String groupTitle = removal.getGroupTitle();
+                Snackbar.make(binding.getRoot(),
+                                groupTitle == null || groupTitle.isBlank()
+                                        ? getString(R.string.inbox_removed_from_group)
+                                        : getString(R.string.inbox_removed_from_group_named, groupTitle),
+                                Snackbar.LENGTH_LONG)
+                        .show();
             }
         });
         viewModel.getPinError().observe(getViewLifecycleOwner(), error -> {

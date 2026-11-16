@@ -407,9 +407,17 @@ public final class LabelDialogFragment extends DialogFragment {
                         return;
                     }
                     nameLayout.setError(null);
-                    if (existing == null) viewModel.createLabel(value, color);
-                    else viewModel.updateLabel(existing.getId(), value, color);
-                    editor.dismiss();
+                    LabelUiState.Error rejection = existing == null
+                            ? viewModel.createLabel(value, color)
+                            : viewModel.updateLabel(existing.getId(), value, color);
+                    if (rejection == LabelUiState.Error.NONE) {
+                        editor.dismiss();
+                    } else {
+                        // Keep the editor open so the typed name isn't lost and
+                        // mirror the rejection on the name field — the published
+                        // error lands asynchronously via postValue.
+                        nameLayout.setError(getString(LabelText.errorMessage(rejection)));
+                    }
                 });
         });
         editor.show();

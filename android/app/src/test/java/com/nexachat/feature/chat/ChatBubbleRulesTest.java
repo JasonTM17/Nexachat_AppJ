@@ -16,15 +16,32 @@ public final class ChatBubbleRulesTest {
 
     @Test
     public void senderNamePaletteIndexIsStableAndBounded() {
-        assertEquals(6, ChatBubbleRules.resolveSenderPaletteIndex("sender-42"));
-        assertEquals(2, ChatBubbleRules.resolveSenderPaletteIndex("alice-7"));
-        assertEquals(3, ChatBubbleRules.resolveSenderPaletteIndex("peer-99"));
-        assertEquals(6, ChatBubbleRules.resolveSenderPaletteIndex("sender-42"));
+        assertEquals(4, ChatBubbleRules.resolveSenderPaletteIndex("sender-42"));
+        assertEquals(7, ChatBubbleRules.resolveSenderPaletteIndex("alice-7"));
+        assertEquals(4, ChatBubbleRules.resolveSenderPaletteIndex("peer-99"));
+        assertEquals(4, ChatBubbleRules.resolveSenderPaletteIndex("sender-42"));
 
         assertEquals(0, ChatBubbleRules.resolveSenderPaletteIndex(null));
         assertTrue(ChatBubbleRules.resolveSenderPaletteIndex("boundary-x") >= 0);
         assertTrue(ChatBubbleRules.resolveSenderPaletteIndex("boundary-x")
                 < ChatBubbleRules.SENDER_PALETTE_SIZE);
+    }
+
+    @Test
+    public void uuidShapedSenderIdsDoNotCollapseOntoOnePaletteSlot() {
+        // Modulo 8 reads only the low 3 bits of String.hashCode(); sequential
+        // UUIDs all landed on one slot before the spreader was added.
+        java.util.Set<Integer> slots = new java.util.HashSet<>();
+        slots.add(ChatBubbleRules.resolveSenderPaletteIndex(
+                "11111111-1111-4111-8111-111111111111"));
+        slots.add(ChatBubbleRules.resolveSenderPaletteIndex(
+                "22222222-2222-4222-8222-222222222222"));
+        slots.add(ChatBubbleRules.resolveSenderPaletteIndex(
+                "33333333-3333-4333-8333-333333333333"));
+        slots.add(ChatBubbleRules.resolveSenderPaletteIndex(
+                "44444444-4444-4444-8444-444444444444"));
+        assertTrue("sequential UUIDs must color at least three senders distinctly",
+                slots.size() >= 3);
     }
 
     @Test

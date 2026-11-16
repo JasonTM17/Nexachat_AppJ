@@ -117,6 +117,29 @@ public final class ChatActionSheetLayoutContractTest {
     }
 
     @Test
+    public void bubbleReactionChipsAreTonalFillsWithoutOutlines() throws Exception {
+        String source = readSource("feature/chat/adapter/MessageBubbleBinder.java");
+        int start = source.indexOf("private void bindReactions(");
+        int end = source.indexOf("private static void hideAll(", start);
+        assertTrue("reaction binder must exist", start >= 0 && end > start);
+        String body = source.substring(start, end);
+        assertTrue("resting chips fill with the high surface container",
+                body.contains("R.color.colorSurfaceContainerHigh"));
+        assertTrue("selected chips use the secondary container pair",
+                body.contains("R.color.colorSecondaryContainer")
+                        && body.contains("colorOnSecondaryContainer"));
+        assertTrue("chips keep the 12dp shape",
+                body.contains("R.dimen.corner_md"));
+        assertTrue("chips draw no hairline outline",
+                body.contains("setChipStrokeWidth(0f)")
+                        && !body.contains("setChipStrokeColor")
+                        && !body.contains("colorOutline"));
+        assertTrue("reaction chips keep the minimum touch target",
+                body.contains("R.dimen.min_touch_target")
+                        && body.contains("setEnsureMinTouchTargetSize(true)"));
+    }
+
+    @Test
     public void deleteActionKeepsErrorTintedTileAndLabel() throws Exception {
         String source = readSource("feature/chat/ChatInteractionsViews.java");
         int start = source.indexOf("case DELETE ->");
