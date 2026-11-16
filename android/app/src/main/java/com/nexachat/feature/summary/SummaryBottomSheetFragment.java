@@ -20,7 +20,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.lifecycle.ViewModelProvider;
-import com.google.android.material.bottomsheet.BottomSheetDialogFragment;
+import com.nexachat.feature.ui.NexaBottomSheetFragment;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
 import com.nexachat.R;
@@ -45,7 +45,7 @@ import javax.inject.Inject;
  * Bottom sheet for conversation catch-up summaries.
  */
 @AndroidEntryPoint
-public final class SummaryBottomSheetFragment extends BottomSheetDialogFragment {
+public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
 
     public interface OnCitationClickListener {
         void onCitationClick(@NonNull String messageId);

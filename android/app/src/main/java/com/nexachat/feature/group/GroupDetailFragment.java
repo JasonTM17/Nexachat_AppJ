@@ -1,6 +1,5 @@
 package com.nexachat.feature.group;
 
-import android.app.Dialog;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
@@ -16,15 +15,10 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
-import com.google.android.material.bottomsheet.BottomSheetBehavior;
-import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.color.MaterialColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
@@ -34,10 +28,8 @@ import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.ui.GroupDetailListRules;
 import com.nexachat.data.GroupMember;
-import com.nexachat.databinding.BottomSheetGroupAddMemberBinding;
 import com.nexachat.databinding.FragmentGroupDetailBinding;
 import com.nexachat.feature.group.adapter.GroupMemberAdapter;
-import com.nexachat.feature.group.adapter.SelectableContactAdapter;
 import com.nexachat.feature.inbox.ConversationPreferenceMenu;
 import com.nexachat.feature.ui.FormDialogs;
 import dagger.hilt.android.AndroidEntryPoint;
@@ -57,9 +49,6 @@ public final class GroupDetailFragment extends Fragment {
     @Nullable private AlertDialog removeDialog;
     @Nullable private AlertDialog leaveDialog;
     @Nullable private AlertDialog onlyAdminDialog;
-    @Nullable private Dialog addMemberDialog;
-    @Nullable private SelectableContactAdapter addMemberPickerAdapter;
-    @Nullable private BottomSheetGroupAddMemberBinding addMemberSheetBinding;
     @Nullable private EditText renameInput;
     private boolean renderingRename;
     @Nullable private ApiError lastSnackbarError;
@@ -131,7 +120,7 @@ public final class GroupDetailFragment extends Fragment {
                 });
     }
 
-    private void openInviteManager() {
+    void openInviteManager() {
         Bundle args = getArguments();
         String conversationId = args == null ? null : args.getString("conversationId");
         if (conversationId == null || conversationId.isBlank()) return;
@@ -242,13 +231,14 @@ public final class GroupDetailFragment extends Fragment {
             renameInput = null;
         }
 
+        AddMemberSheetFragment addMemberSheet = addMemberSheet();
         if (state.isShowAddPicker()) {
-            showAddMemberDialog(state);
-        } else if (addMemberDialog != null) {
-            addMemberDialog.dismiss();
-            addMemberDialog = null;
-            addMemberPickerAdapter = null;
-            addMemberSheetBinding = null;
+            if (addMemberSheet == null && !getChildFragmentManager().isStateSaved()) {
+                new AddMemberSheetFragment()
+                        .show(getChildFragmentManager(), AddMemberSheetFragment.TAG);
+            }
+        } else if (addMemberSheet != null) {
+            addMemberSheet.dismiss();
         }
 
         binding.loadingState.setVisibility(state.isLoading() || state.isBusy() ? View.VISIBLE : View.GONE);
@@ -397,73 +387,10 @@ public final class GroupDetailFragment extends Fragment {
         }
     }
 
-    private void showAddMemberDialog(@NonNull GroupDetailUiState state) {
-        if (addMemberDialog != null && addMemberDialog.isShowing()) {
-            if (addMemberPickerAdapter != null) {
-                addMemberPickerAdapter.submit(state.getAddableContacts(), state.getSelectedAddIds());
-            }
-            if (addMemberSheetBinding != null) {
-                renderAddMemberPickerState(addMemberSheetBinding, state);
-            }
-            return;
-        }
-        BottomSheetGroupAddMemberBinding sheet =
-                BottomSheetGroupAddMemberBinding.inflate(LayoutInflater.from(requireContext()));
-        addMemberPickerAdapter = new SelectableContactAdapter(viewModel::toggleAddCandidate);
-        addMemberPickerAdapter.submit(state.getAddableContacts(), state.getSelectedAddIds());
-        sheet.addMemberList.setLayoutManager(new LinearLayoutManager(requireContext()));
-        sheet.addMemberList.setAdapter(addMemberPickerAdapter);
-        addMemberSheetBinding = sheet;
-        sheet.addMemberConfirm.setEnabled(!state.getSelectedAddIds().isEmpty() && !state.isBusy());
-        sheet.addMemberConfirm.setOnClickListener(v -> viewModel.addSelectedMembers());
-        sheet.addMemberInviteLink.setOnClickListener(v -> {
-            Dialog dialog = addMemberDialog;
-            if (dialog != null) {
-                dialog.dismiss();
-            }
-            openInviteManager();
-        });
-
-        BottomSheetDialog dialog = new BottomSheetDialog(requireContext());
-        dialog.setContentView(sheet.getRoot());
-        final int baseBottom = sheet.getRoot().getPaddingBottom();
-        ViewCompat.setOnApplyWindowInsetsListener(sheet.getRoot(), (view, windowInsets) -> {
-            Insets ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime());
-            Insets bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars());
-            int bottom = baseBottom + Math.max(bars.bottom, ime.bottom);
-            view.setPadding(view.getPaddingLeft(), view.getPaddingTop(), view.getPaddingRight(), bottom);
-            return windowInsets;
-        });
-        dialog.getBehavior().setState(BottomSheetBehavior.STATE_EXPANDED);
-        dialog.getBehavior().setSkipCollapsed(true);
-        dialog.setOnDismissListener(d -> {
-            viewModel.dismissAddMember();
-            addMemberDialog = null;
-            addMemberPickerAdapter = null;
-            addMemberSheetBinding = null;
-        });
-        addMemberDialog = dialog;
-        dialog.show();
-    }
-
-    /**
-     * An empty addable list means every contact is already a member: the
-     * disabled confirm is swapped for an explanation and an invite-link
-     * shortcut. Only applied once the contacts result has arrived; while the
-     * fetch is in flight the sheet shows an empty list with a disabled
-     * confirm instead of a false empty state.
-     */
-    private void renderAddMemberPickerState(
-            @NonNull BottomSheetGroupAddMemberBinding sheet,
-            @NonNull GroupDetailUiState state) {
-        boolean noAddable = GroupDetailListRules.showAddMemberEmptyState(
-                state.isAddableContactsLoaded(), state.getAddableContacts().isEmpty());
-        sheet.addMemberList.setVisibility(noAddable ? View.GONE : View.VISIBLE);
-        sheet.addMemberEmptyState.setVisibility(noAddable ? View.VISIBLE : View.GONE);
-        sheet.addMemberEmpty.setVisibility(noAddable ? View.VISIBLE : View.GONE);
-        sheet.addMemberInviteLink.setVisibility(noAddable ? View.VISIBLE : View.GONE);
-        sheet.addMemberConfirm.setVisibility(noAddable ? View.GONE : View.VISIBLE);
-        sheet.addMemberConfirm.setEnabled(!state.getSelectedAddIds().isEmpty() && !state.isBusy());
+    @Nullable
+    private AddMemberSheetFragment addMemberSheet() {
+        Fragment sheet = getChildFragmentManager().findFragmentByTag(AddMemberSheetFragment.TAG);
+        return sheet instanceof AddMemberSheetFragment ? (AddMemberSheetFragment) sheet : null;
     }
 
     @Override
@@ -479,11 +406,6 @@ public final class GroupDetailFragment extends Fragment {
         }
         if (onlyAdminDialog != null) {
             onlyAdminDialog.dismiss();
-        }
-        if (addMemberDialog != null) {
-            addMemberDialog.dismiss();
-            addMemberPickerAdapter = null;
-            addMemberSheetBinding = null;
         }
         if (binding != null) {
             binding.memberList.setAdapter(null);

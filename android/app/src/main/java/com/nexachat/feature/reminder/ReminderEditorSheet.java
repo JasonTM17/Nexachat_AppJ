@@ -1,6 +1,5 @@
 package com.nexachat.feature.reminder;
 
-import android.app.Dialog;
 import android.os.Bundle;
 import android.text.format.DateFormat;
 import android.view.LayoutInflater;
@@ -10,9 +9,6 @@ import android.widget.EditText;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.lifecycle.ViewModelProvider;
-import com.google.android.material.bottomsheet.BottomSheetBehavior;
-import com.google.android.material.bottomsheet.BottomSheetDialog;
-import com.google.android.material.bottomsheet.BottomSheetDialogFragment;
 import com.google.android.material.datepicker.CalendarConstraints;
 import com.google.android.material.datepicker.MaterialDatePicker;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -21,13 +17,14 @@ import com.google.android.material.timepicker.TimeFormat;
 import com.nexachat.R;
 import com.nexachat.databinding.SheetReminderEditorBinding;
 import com.nexachat.feature.ui.ImeInsets;
+import com.nexachat.feature.ui.NexaBottomSheetFragment;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 
 /** Create/edit sheet for one reminder; the board ViewModel owns validation and the request. */
-public final class ReminderEditorSheet extends BottomSheetDialogFragment {
+public final class ReminderEditorSheet extends NexaBottomSheetFragment {
 
     private static final String ARG_ID = "reminderId";
     private static final String ARG_TITLE = "reminderTitle";
@@ -56,17 +53,6 @@ public final class ReminderEditorSheet extends BottomSheetDialogFragment {
         }
         sheet.setArguments(args);
         return sheet;
-    }
-
-    @NonNull
-    @Override
-    public Dialog onCreateDialog(@Nullable Bundle savedInstanceState) {
-        BottomSheetDialog dialog = (BottomSheetDialog) super.onCreateDialog(savedInstanceState);
-        dialog.setOnShowListener(ignored -> {
-            dialog.getBehavior().setSkipCollapsed(true);
-            dialog.getBehavior().setState(BottomSheetBehavior.STATE_EXPANDED);
-        });
-        return dialog;
     }
 
     @Nullable

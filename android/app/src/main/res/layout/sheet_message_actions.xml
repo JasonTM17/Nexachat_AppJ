@@ -2,17 +2,11 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="?attr/colorSurface"
+    android:background="@drawable/bg_sheet_surface"
     android:orientation="vertical"
     android:paddingBottom="@dimen/space_md">
 
-    <View
-        android:layout_width="@dimen/sheet_handle_width"
-        android:layout_height="@dimen/sheet_handle_height"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginTop="@dimen/space_sm"
-        android:background="@drawable/bg_sheet_handle"
-        android:importantForAccessibility="no" />
+    <include layout="@layout/include_sheet_handle" />
 
     <TextView
         android:id="@+id/messageActionsTitle"
@@ -20,33 +14,46 @@
         android:layout_height="wrap_content"
         android:paddingHorizontal="@dimen/space_md"
         android:text="@string/message_actions_title"
-        android:textAppearance="?attr/textAppearanceTitleMedium"
-        android:textColor="?attr/colorOnSurface" />
+        android:textAppearance="?attr/textAppearanceTitleLarge"
+        android:textColor="?attr/colorOnSurface"
+        android:textStyle="bold" />
 
-    <HorizontalScrollView
-        android:id="@+id/reactionScroller"
+    <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginHorizontal="@dimen/space_md"
-        android:layout_marginTop="@dimen/space_xs"
-        android:layout_marginBottom="@dimen/space_sm"
-        android:background="@drawable/bg_reaction_strip"
-        android:fillViewport="true"
-        android:scrollbars="none">
+        android:fillViewport="false">
 
         <LinearLayout
-            android:id="@+id/reactionRow"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_horizontal"
-            android:orientation="horizontal"
-            android:paddingHorizontal="@dimen/space_sm"
-            android:paddingVertical="@dimen/space_xs" />
-    </HorizontalScrollView>
+            android:orientation="vertical">
 
-    <LinearLayout
-        android:id="@+id/messageActionList"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical" />
+            <HorizontalScrollView
+                android:id="@+id/reactionScroller"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="@dimen/space_md"
+                android:layout_marginTop="@dimen/space_xs"
+                android:layout_marginBottom="@dimen/space_sm"
+                android:background="@drawable/bg_reaction_strip"
+                android:fillViewport="true"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/reactionRow"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_horizontal"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="@dimen/space_sm"
+                    android:paddingVertical="@dimen/space_xs" />
+            </HorizontalScrollView>
+
+            <LinearLayout
+                android:id="@+id/messageActionList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
 </LinearLayout>
