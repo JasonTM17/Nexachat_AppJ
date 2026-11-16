@@ -22,5 +22,7 @@
         <item name="buttonBarPositiveButtonStyle">@style/Widget.NexaChat.Button.Text.Dialog</item>
         <item name="buttonBarNegativeButtonStyle">@style/Widget.NexaChat.Button.Text.Dialog.Flush</item>
         <item name="buttonBarNeutralButtonStyle">@style/Widget.NexaChat.Button.Text.Dialog</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.NexaChat.MaterialAlertDialog</item>
+        <item name="snackbarButtonStyle">@style/Widget.NexaChat.Button.Text.Snackbar</item>
     </style>
 </resources>
