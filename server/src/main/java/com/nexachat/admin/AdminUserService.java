@@ -182,7 +182,7 @@ public class AdminUserService {
         // The final administrator cannot lose their account — demotion has the
         // same guard, and suspension is the operational equivalent.
         if (target.getRole() == User.Role.ADMIN
-                && userRepository.countByRoleAndDeletedAtIsNull(User.Role.ADMIN) <= 1) {
+                && lockedAdminCount() <= 1) {
             denyAudit(actorId, actorRole, "USER_SUSPEND", targetId, reason, ip, "last-admin");
             throw ApiException.of(ApiErrorCode.LAST_ADMIN, "Cannot suspend the last admin");
         }
@@ -243,7 +243,7 @@ public class AdminUserService {
             throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
         }
         if (target.getRole() == User.Role.ADMIN && newRole != User.Role.ADMIN
-                && userRepository.countByRoleAndDeletedAtIsNull(User.Role.ADMIN) <= 1) {
+                && lockedAdminCount() <= 1) {
             denyAudit(actorId, actorRole, "USER_CHANGE_ROLE", targetId, reason, ip, "last-admin");
             throw ApiException.of(ApiErrorCode.LAST_ADMIN, "Cannot demote the last admin");
         }
@@ -255,12 +255,27 @@ public class AdminUserService {
                 reason.trim(), Map.of("newRole", newRole.name(), "phone", maskPhone(target)), ip);
     }
 
+    /**
+     * Counts active admins while holding a row lock on all of them, so two
+     * concurrent suspend/demote actions on different admins serialize and the
+     * last-admin invariant cannot be bypassed.
+     */
+    private int lockedAdminCount() {
+        return jdbcTemplate.queryForList(
+                "SELECT id FROM users WHERE role = 'ADMIN' AND deleted_at IS NULL FOR UPDATE",
+                UUID.class).size();
+    }
+
     /** Staff warning notice shown to the user; optionally bound to an alert. */
     @Transactional
     public NoticeResult warnUser(UUID targetId, UUID alertId, String reason,
                                  UUID actorId, User.Role actorRole, String ip) {
         requireReason(reason);
         requireActionableTarget(targetId, actorId, actorRole);
+        if (alertId != null && !Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM message_alerts WHERE id = ?)", Boolean.class, alertId))) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Unknown alert");
+        }
         String body = "Your messages violated the community rules (" + reason.trim() + ")";
         UUID noticeId = jdbcTemplate.queryForObject("""
                 INSERT INTO user_notices (user_id, alert_id, kind, body, created_by)
