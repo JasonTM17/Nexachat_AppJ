@@ -597,6 +597,13 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             return;
         }
         binding.composerBar.micButton.setAccessibleVoiceRecording(true, () -> {
+            // voiceStartPending first: isRecording() is synchronized on the
+            // recorder and would block while start() runs off the main thread.
+            if (voiceStartPending) {
+                voiceStopWhenStarted = true;
+                announceVoiceRecordingState(R.string.voice_release_to_cancel);
+                return;
+            }
             if (voiceRecorder != null && voiceRecorder.isRecording()) {
                 finishVoiceRecording(true, true);
                 announceVoiceRecordingState(R.string.voice_release_to_cancel);
@@ -1847,11 +1854,21 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             recordingHandler.removeCallbacks(recordingTimerRunnable);
         }
         if (voiceRecorder != null) {
-            voiceRecorder.cancel();
+            final VoiceRecorder recorder = voiceRecorder;
             voiceRecorder = null;
+            if (voiceStartExecutor != null && !voiceStartExecutor.isShutdown()) {
+                // start() holds the recorder monitor through prepare()+start(),
+                // so a synchronous cancel() could block main for the rest of an
+                // in-flight start; queue it behind the start instead.
+                voiceStartExecutor.execute(recorder::cancel);
+            } else {
+                recorder.cancel();
+            }
         }
         if (voiceStartExecutor != null) {
-            voiceStartExecutor.shutdownNow();
+            // Graceful shutdown: a queued cancel() must still run after the
+            // in-flight start() finishes rather than being dropped.
+            voiceStartExecutor.shutdown();
             voiceStartExecutor = null;
         }
         voiceStartPending = false;
