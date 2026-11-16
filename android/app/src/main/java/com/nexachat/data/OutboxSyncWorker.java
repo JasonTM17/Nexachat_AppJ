@@ -122,8 +122,7 @@ public final class OutboxSyncWorker extends RxWorker {
         Completable flushMessages = messageRepository == null
                 ? Completable.complete() : messageRepository.flushOutboxForWorker();
         return operationTracker.track(flushMessages.andThen(drainOfflineOutbox())
-                .toSingleDefault(Result.success())
-                .onErrorReturnItem(Result.retry()))
+                .toSingleDefault(Result.success()))
                 .onErrorReturn(error -> error instanceof CancellationException
                         ? Result.success() : Result.retry());
     }
