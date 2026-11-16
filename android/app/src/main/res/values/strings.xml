@@ -509,7 +509,7 @@
     <string name="poll_error_manage">Couldn’t update the poll</string>
     <string name="poll_error_admin">Only the creator or a group admin can change this poll.</string>
 
-    <string name="label_filter_all">All</string>
+    <string name="label_filter_all">All labels</string>
     <string name="label_manage">Manage labels</string>
     <string name="label_manage_description">Manage conversation labels</string>
     <string name="label_assign_menu">Assign labels</string>
