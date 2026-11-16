@@ -108,7 +108,7 @@
                 android:id="@+id/pollMultipleChoice"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_xs"
+                android:layout_marginTop="@dimen/space_sm"
                 android:minHeight="@dimen/min_touch_target"
                 android:text="@string/poll_multiple_label" />
 
@@ -116,6 +116,7 @@
                 android:id="@+id/pollAnonymous"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
                 android:minHeight="@dimen/min_touch_target"
                 android:text="@string/poll_anonymous_label" />
 

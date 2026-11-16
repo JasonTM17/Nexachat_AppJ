@@ -115,6 +115,27 @@ public final class PollCreateSheetLayoutContractTest {
     }
 
     @Test
+    public void fieldStackKeepsDocumentedVerticalRhythm() throws Exception {
+        Document sheet = parse("layout/sheet_create_poll.xml");
+        assertEquals("option rows keep the 8dp field-stack gap",
+                "@dimen/space_sm",
+                android(parse("layout/item_poll_option_input.xml").getDocumentElement(),
+                        "layout_marginTop"));
+        assertEquals("add-option keeps the 8dp field-stack gap",
+                "@dimen/space_sm",
+                android(find(sheet, "pollAddOption"), "layout_marginTop"));
+        assertEquals("checkbox group keeps the 8dp field-stack gap",
+                "@dimen/space_sm",
+                android(find(sheet, "pollMultipleChoice"), "layout_marginTop"));
+        assertEquals("checkbox pair stays grouped at 4dp",
+                "@dimen/space_xs",
+                android(find(sheet, "pollAnonymous"), "layout_marginTop"));
+        Element expiryRow = (Element) find(sheet, "pollExpiry").getParentNode();
+        assertEquals("expiry row keeps the 8dp field-stack gap",
+                "@dimen/space_sm", android(expiryRow, "layout_marginTop"));
+    }
+
+    @Test
     public void sheetButtonsCarryNoLocalRoundingOrFixedWidth() throws Exception {
         String[] layouts = {"layout/sheet_create_poll.xml", "layout/item_poll_option_input.xml"};
         for (String layout : layouts) {
