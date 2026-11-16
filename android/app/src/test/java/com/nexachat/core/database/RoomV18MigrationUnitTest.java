@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import androidx.sqlite.db.SupportSQLiteDatabase;
 import java.nio.file.Files;
@@ -24,8 +25,9 @@ public final class RoomV18MigrationUnitTest {
                 + "`sourceLang` TEXT NOT NULL, `translatedText` TEXT NOT NULL, "
                 + "`fetchedAt` INTEGER NOT NULL, "
                 + "PRIMARY KEY(`messageId`, `changeVersion`, `targetLang`))");
-        verify(db).execSQL("CREATE INDEX IF NOT EXISTS `index_message_translations_conversationId` "
-                + "ON `message_translations` (`conversationId`)");
+        // The entity declares no index, so an upgraded database must not carry one either:
+        // Room compares the real table info with the exported schema on first open.
+        verifyNoMoreInteractions(db);
     }
 
     @Test public void exportedSchemaContainsTranslationTable() throws Exception {
@@ -36,5 +38,10 @@ public final class RoomV18MigrationUnitTest {
         assertTrue("missing revision key", json.contains("changeVersion"));
         assertTrue("missing language key", json.contains("targetLang"));
         assertTrue("missing translated text", json.contains("translatedText"));
+        int table = json.indexOf("\"tableName\": \"message_translations\"");
+        int indices = json.indexOf("\"indices\"", table);
+        assertTrue("message_translations must declare no index (the migration creates none)",
+                json.substring(indices, json.indexOf(']', indices) + 1).replaceAll("\\s+", "")
+                        .equals("\"indices\":[]"));
     }
 }

@@ -305,8 +305,6 @@ public abstract class AppDatabase extends RoomDatabase {
                     + "`sourceLang` TEXT NOT NULL, `translatedText` TEXT NOT NULL, "
                     + "`fetchedAt` INTEGER NOT NULL, "
                     + "PRIMARY KEY(`messageId`, `changeVersion`, `targetLang`))");
-            db.execSQL("CREATE INDEX IF NOT EXISTS `index_message_translations_conversationId` "
-                    + "ON `message_translations` (`conversationId`)");
         }
     };
 
