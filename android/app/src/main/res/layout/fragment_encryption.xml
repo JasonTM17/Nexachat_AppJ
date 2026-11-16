@@ -176,13 +176,12 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/copyCodeButton"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    style="@style/Widget.NexaChat.Button.Tonal"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center_horizontal"
                     android:minHeight="@dimen/min_touch_target"
-                    android:text="@string/action_copy"
-                    app:cornerRadius="@dimen/corner_md" />
+                    android:text="@string/action_copy" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

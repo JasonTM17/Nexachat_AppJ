@@ -42,7 +42,7 @@
             android:id="@+id/askClose"
             android:layout_width="@dimen/min_touch_target"
             android:layout_height="@dimen/min_touch_target"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:background="?attr/selectableItemBackground"
             android:contentDescription="@string/ask_close_accessibility"
             android:padding="12dp"
             android:src="@drawable/ic_close"
@@ -115,7 +115,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/askRetry"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.NexaChat.Button.Text"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:minHeight="@dimen/min_touch_target"
@@ -230,7 +230,7 @@
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/askCancel"
-        style="@style/Widget.Material3.Button.TextButton"
+        style="@style/Widget.NexaChat.Button.Text"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="end"

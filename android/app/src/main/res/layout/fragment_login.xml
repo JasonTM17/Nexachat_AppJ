@@ -74,7 +74,6 @@
                         android:text="@string/action_sign_in"
                         android:textColor="@color/nexa_auth_mode_text"
                         app:backgroundTint="@color/nexa_auth_mode_bg"
-                        app:cornerRadius="@dimen/corner_sm"
                         app:rippleColor="@color/nexa_button_ripple"
                         app:toggleCheckedStateOnClick="false" />
 
@@ -91,7 +90,6 @@
                         android:text="@string/action_create_account"
                         android:textColor="@color/nexa_auth_mode_text"
                         app:backgroundTint="@color/nexa_auth_mode_bg"
-                        app:cornerRadius="@dimen/corner_sm"
                         app:rippleColor="@color/nexa_button_ripple"
                         app:toggleCheckedStateOnClick="false" />
                 </LinearLayout>
@@ -192,7 +190,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/forgotPasswordAction"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.NexaChat.Button.Text"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="end"
@@ -209,7 +207,6 @@
                     android:minHeight="@dimen/min_touch_target"
                     android:text="@string/action_sign_in"
                     android:textStyle="bold"
-                    app:cornerRadius="@dimen/corner_md"
                     app:icon="@drawable/ic_arrow_forward"
                     app:iconGravity="textEnd"
                     app:iconTint="?attr/colorOnPrimary" />

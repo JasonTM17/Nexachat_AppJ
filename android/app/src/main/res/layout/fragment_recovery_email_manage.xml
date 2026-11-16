@@ -49,8 +49,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
             android:minHeight="@dimen/min_touch_target"
-            android:text="@string/recovery_email_change"
-            app:cornerRadius="@dimen/corner_md" />
+            android:text="@string/recovery_email_change" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/recoveryEmailRemove"
@@ -59,8 +58,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:minHeight="@dimen/min_touch_target"
-            android:text="@string/recovery_email_remove"
-            app:cornerRadius="@dimen/corner_md" />
+            android:text="@string/recovery_email_remove" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/recoveryEmailAdd"
@@ -68,8 +66,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
             android:minHeight="@dimen/min_touch_target"
-            android:text="@string/recovery_email_add"
-            app:cornerRadius="@dimen/corner_md" />
+            android:text="@string/recovery_email_add" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/recoveryEmailRetry"
@@ -79,7 +76,6 @@
             android:layout_marginTop="16dp"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/action_retry"
-            android:visibility="gone"
-            app:cornerRadius="@dimen/corner_md" />
+            android:visibility="gone" />
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

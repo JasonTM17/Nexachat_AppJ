@@ -59,7 +59,6 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:minHeight="@dimen/min_touch_target"
-            android:text="@string/recovery_email_send_code"
-            app:cornerRadius="@dimen/corner_md" />
+            android:text="@string/recovery_email_send_code" />
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

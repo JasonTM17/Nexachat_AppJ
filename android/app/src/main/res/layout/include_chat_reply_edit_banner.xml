@@ -38,7 +38,7 @@
         android:id="@+id/cancelReplyEdit"
         android:layout_width="@dimen/min_touch_target"
         android:layout_height="@dimen/min_touch_target"
-        android:background="?attr/selectableItemBackgroundBorderless"
+        android:background="?attr/selectableItemBackground"
         android:contentDescription="@string/cd_cancel_reply"
         android:src="@drawable/ic_close"
         app:tint="?attr/colorOnSurfaceVariant" />

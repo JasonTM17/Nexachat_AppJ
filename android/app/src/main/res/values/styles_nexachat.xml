@@ -38,6 +38,13 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="materialButtonStyle">@style/Widget.NexaChat.Button</item>
+        <item name="materialIconButtonStyle">@style/Widget.NexaChat.Button.Icon</item>
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.NexaChat.Button.Text.Dialog</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.NexaChat.Button.Text.Dialog.Flush</item>
+        <item name="buttonBarNeutralButtonStyle">@style/Widget.NexaChat.Button.Text.Dialog</item>
+        <item name="snackbarButtonStyle">@style/Widget.NexaChat.Button.Text.Snackbar</item>
+        <item name="floatingActionButtonStyle">@style/Widget.NexaChat.FloatingActionButton</item>
+        <item name="toolbarNavigationButtonStyle">@style/Widget.NexaChat.Toolbar.Button.Navigation</item>
         <item name="textAppearanceHeadlineLarge">@style/TextAppearance.NexaChat.HeadlineLarge</item>
         <item name="textAppearanceHeadlineMedium">@style/TextAppearance.NexaChat.HeadlineMedium</item>
         <item name="textAppearanceHeadlineSmall">@style/TextAppearance.NexaChat.HeadlineSmall</item>
@@ -68,7 +75,7 @@
         <item name="android:paddingTop">@dimen/space_sm</item>
         <item name="android:paddingBottom">@dimen/space_sm</item>
         <item name="android:textAppearance">@style/TextAppearance.NexaChat.LabelLarge</item>
-        <item name="cornerRadius">@dimen/corner_md</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.NexaChat.Button</item>
         <item name="iconSize">20dp</item>
         <item name="iconPadding">@dimen/space_sm</item>
         <item name="backgroundTint">@color/nexa_filled_button_bg</item>
@@ -86,7 +93,7 @@
         <item name="android:paddingTop">@dimen/space_sm</item>
         <item name="android:paddingBottom">@dimen/space_sm</item>
         <item name="android:textAppearance">@style/TextAppearance.NexaChat.LabelLarge</item>
-        <item name="cornerRadius">@dimen/corner_md</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.NexaChat.Button</item>
         <item name="strokeWidth">@dimen/control_stroke_width</item>
         <item name="strokeColor">@color/colorPrimary</item>
         <item name="android:textColor">@color/nexa_outlined_button_text</item>
@@ -100,6 +107,41 @@
         <item name="android:textAppearance">@style/TextAppearance.NexaChat.LabelLarge</item>
         <item name="android:textColor">@color/nexa_outlined_button_text</item>
         <item name="rippleColor">@color/nexa_button_ripple</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.NexaChat.Button</item>
+    </style>
+
+    <style name="Widget.NexaChat.Button.Tonal" parent="Widget.Material3.Button.TonalButton">
+        <item name="android:minHeight">@dimen/min_touch_target</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:textAppearance">@style/TextAppearance.NexaChat.LabelLarge</item>
+        <item name="rippleColor">@color/nexa_button_ripple</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.NexaChat.Button</item>
+    </style>
+
+    <style name="Widget.NexaChat.Button.Icon" parent="Widget.Material3.Button.IconButton">
+        <item name="shapeAppearance">@style/ShapeAppearance.NexaChat.Button</item>
+    </style>
+
+    <style name="Widget.NexaChat.Button.Text.Dialog" parent="Widget.Material3.Button.TextButton.Dialog">
+        <item name="shapeAppearance">@style/ShapeAppearance.NexaChat.Button</item>
+    </style>
+
+    <style name="Widget.NexaChat.Button.Text.Dialog.Flush" parent="Widget.Material3.Button.TextButton.Dialog.Flush">
+        <item name="shapeAppearance">@style/ShapeAppearance.NexaChat.Button</item>
+    </style>
+
+    <style name="Widget.NexaChat.Button.Text.Snackbar" parent="Widget.Material3.Button.TextButton.Snackbar">
+        <item name="shapeAppearance">@style/ShapeAppearance.NexaChat.Button</item>
+    </style>
+
+    <style name="Widget.NexaChat.FloatingActionButton" parent="Widget.Material3.FloatingActionButton.Primary">
+        <item name="shapeAppearance">@style/ShapeAppearance.NexaChat.Button</item>
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.NexaChat.Button</item>
+    </style>
+
+    <style name="Widget.NexaChat.Toolbar.Button.Navigation" parent="Widget.AppCompat.Toolbar.Button.Navigation">
+        <item name="android:background">?attr/selectableItemBackground</item>
     </style>
 
     <style name="Widget.NexaChat.TextInputLayout" parent="Widget.Material3.TextInputLayout.FilledBox">
@@ -140,7 +182,7 @@
         <item name="strokeWidth">@dimen/control_stroke_width</item>
         <item name="android:textColor">@color/colorOnSurface</item>
         <item name="android:textAppearance">@style/TextAppearance.NexaChat.LabelLarge</item>
-        <item name="cornerRadius">@dimen/corner_md</item>
+        <item name="shapeAppearance">@style/ShapeAppearance.NexaChat.Button</item>
         <item name="android:insetTop">0dp</item>
         <item name="android:insetBottom">0dp</item>
         <item name="android:minHeight">@dimen/min_touch_target</item>
