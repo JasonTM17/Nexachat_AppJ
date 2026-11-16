@@ -51,8 +51,13 @@ SELECT md5('nexachat-qa-20261105-conversation-' || n)::uuid,
        'MEMBER'
   FROM generate_series(1, 50) AS n;
 
+-- change_version is the per-conversation sync revision
+-- (V32__message_change_cursors): sync-v2 clients drop messages whose
+-- change_version is <= 0 or above the conversation cursor. Conversation n
+-- receives g = n, n+50, ... so (g - 1) / 50 + 1 is the send-order revision.
 INSERT INTO messages
-       (id, conversation_id, sender_id, client_message_id, type, content, created_at)
+       (id, conversation_id, sender_id, client_message_id, type, content,
+        created_at, change_version)
 SELECT md5('nexachat-qa-20261105-message-' || g)::uuid,
        md5('nexachat-qa-20261105-conversation-' || (((g - 1) % 50) + 1))::uuid,
        CASE WHEN g % 2 = 0
@@ -65,8 +70,16 @@ SELECT md5('nexachat-qa-20261105-message-' || g)::uuid,
             THEN 'qa-search-rare-marker-' || g || ' ordinary payload'
             ELSE 'qa-scale ordinary message ' || g
        END,
-       now() - (200000 - g) * interval '1 millisecond'
+       now() - (200000 - g) * interval '1 millisecond',
+       ((g - 1) / 50) + 1
   FROM generate_series(1, 200000) AS g;
+
+UPDATE conversations c
+   SET change_version = GREATEST(c.change_version, COALESCE((
+           SELECT MAX(m.change_version)
+             FROM messages m
+            WHERE m.conversation_id = c.id), 0))
+ WHERE c.direct_key LIKE 'qa-perf-20261105-%';
 
 UPDATE conversations c
    SET last_message_id = latest.id,

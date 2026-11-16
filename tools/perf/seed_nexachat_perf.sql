@@ -1,7 +1,7 @@
 -- Seed the private query-performance database (nexachat_perf).
 --
--- Applies to an empty database that already carries Flyway V1..V16 (the
--- production schema). Produces a Zipf-shaped dataset for EXPLAIN ANALYZE work:
+-- Applies to an empty database that already carries the full Flyway migration
+-- set (the production schema). Produces a Zipf-shaped dataset for EXPLAIN ANALYZE work:
 --   ~200 users, ~2000 conversations (100 DIRECT + 1900 GROUP), ~500k messages
 --   (40 hot conversations at 8000 messages each, the rest at 92), ~100k
 --   attachments, 2000 polls with votes, 5000 reminders, reactions and
@@ -101,7 +101,13 @@ FROM (
     FROM conversation_members
 ) AS s;
 
-INSERT INTO messages (conversation_id, sender_id, client_message_id, type, content, created_at)
+-- change_version is the per-conversation sync revision (V32__message_change_cursors):
+-- the server allocates conversations.change_version + 1 per send, so r doubles as
+-- the revision here — send order inside one conversation is r order. Sync-v2
+-- clients drop messages whose change_version is <= 0 or above the conversation
+-- cursor, so every row needs a positive one and the cursor must cover the max.
+INSERT INTO messages (conversation_id, sender_id, client_message_id, type, content,
+                      created_at, change_version)
 SELECT s.conversation_id,
        m.user_id,
        gen_random_uuid(),
@@ -113,7 +119,8 @@ SELECT s.conversation_id,
        CASE WHEN r % 10 BETWEEN 4 AND 9 AND r % 3 = 0
             THEN 'See https://example.com/page-' || r
             ELSE 'Message ' || r END,
-       now() - ((s.msg_count - r) * interval '30 seconds')
+       now() - ((s.msg_count - r) * interval '30 seconds'),
+       r
 FROM tmp_conv_stats AS s
 CROSS JOIN LATERAL generate_series(1, s.msg_count) AS r
 JOIN tmp_conv_member AS m
@@ -121,14 +128,58 @@ JOIN tmp_conv_member AS m
  AND m.member_no = ((r - 1) % m.member_count) + 1;
 
 -- A realistic share of edited and soft-deleted messages, all recently touched
--- so the delta-sync "since" windows have rows to find.
-UPDATE messages
-SET edited_at = now() - ((seq % 100) || ' hours')::interval
-WHERE seq % 1000 = 0;
+-- so the delta-sync "since" windows have rows to find. The server allocates a
+-- fresh revision for every edit/delete, so each batch continues after the
+-- conversation's highest revision and leaves the insert revisions as gaps.
+WITH base AS (
+    SELECT conversation_id, MAX(change_version) AS cv
+    FROM messages
+    GROUP BY conversation_id
+), edited AS (
+    SELECT m.id,
+           b.cv + row_number() OVER (
+               PARTITION BY m.conversation_id ORDER BY m.seq, m.id) AS revision
+    FROM messages m
+    JOIN base b ON b.conversation_id = m.conversation_id
+    WHERE m.seq % 1000 = 0
+)
+UPDATE messages m
+SET edited_at = now() - ((m.seq % 100) || ' hours')::interval,
+    change_version = edited.revision
+FROM edited
+WHERE m.id = edited.id;
 
-UPDATE messages
-SET deleted_at = now() - ((seq % 100) || ' hours')::interval
-WHERE seq % 1500 = 0;
+WITH base AS (
+    SELECT conversation_id, MAX(change_version) AS cv
+    FROM messages
+    GROUP BY conversation_id
+), deleted_rows AS (
+    SELECT m.id,
+           b.cv + row_number() OVER (
+               PARTITION BY m.conversation_id ORDER BY m.seq, m.id) AS revision
+    FROM messages m
+    JOIN base b ON b.conversation_id = m.conversation_id
+    WHERE m.seq % 1500 = 0
+)
+UPDATE messages m
+SET deleted_at = now() - ((m.seq % 100) || ' hours')::interval,
+    change_version = deleted_rows.revision
+FROM deleted_rows
+WHERE m.id = deleted_rows.id;
+
+-- Raise every conversation cursor to cover its message revisions; writers
+-- allocate from conversations.change_version, so it must stay the high-water mark.
+UPDATE conversations c
+SET change_version = GREATEST(c.change_version, COALESCE((
+        SELECT MAX(m.change_version)
+        FROM messages m
+        WHERE m.conversation_id = c.id
+    ), 0))
+WHERE c.change_version < COALESCE((
+        SELECT MAX(m.change_version)
+        FROM messages m
+        WHERE m.conversation_id = c.id
+    ), 0);
 
 -- Denormalized inbox pointers and per-member read/delivery watermarks.
 UPDATE conversations AS c
