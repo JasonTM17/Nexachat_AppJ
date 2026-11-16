@@ -1315,6 +1315,11 @@ public class MessageRepositoryTest {
         when(e2ee.currentTranscript(CONVERSATION_ID))
                 .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
                         MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        // The roster is still a direct shape, just unparseable: a send would
+        // refuse the same way, so the marker must stay.
+        when(e2ee.e2eeState(CONVERSATION_ID))
+                .thenReturn(Single.just(new com.nexachat.core.network.dto.E2eeDeviceDtos
+                        .ConversationE2eeDto(true, List.of(member("u-1"), member("u-2")))));
         MessageRepository repo = repositoryWithTrust(e2ee, trustStore);
         try {
             await(repo.send(CONVERSATION_ID, "blocked"));
@@ -1381,6 +1386,144 @@ public class MessageRepositoryTest {
         } finally {
             repo.dispose();
         }
+    }
+
+    @Test public void invalidPauseRetiresWhenRosterHealsIntoUntrackedGroup() {
+        com.nexachat.core.crypto.E2eeSession e2ee =
+                mock(com.nexachat.core.crypto.E2eeSession.class);
+        ConversationEntity conv = mock(ConversationEntity.class);
+        when(conv.isE2eeEnabled()).thenReturn(true);
+        conversations.put(CONVERSATION_ID, conv);
+        com.nexachat.core.crypto.KeysetTrustStore trustStore =
+                new com.nexachat.core.crypto.KeysetTrustStore(new InMemoryKeysetTrustDao());
+        when(e2ee.encryptFor(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                        MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        // The roster healed into a group: still no direct transcript, but no
+        // trust record tracks the pair — the send path would proceed, so the
+        // episode is over.
+        when(e2ee.currentTranscript(CONVERSATION_ID))
+                .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                        MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        when(e2ee.e2eeState(CONVERSATION_ID))
+                .thenReturn(Single.just(new com.nexachat.core.network.dto.E2eeDeviceDtos
+                        .ConversationE2eeDto(true, List.of(member("u-1"), member("u-2"),
+                                member("u-3")))));
+        MessageRepository repo = repositoryWithTrust(e2ee, trustStore);
+        try {
+            await(repo.send(CONVERSATION_ID, "blocked"));
+
+            assertEquals(Optional.empty(),
+                    repo.keysetPauseCode("me-1", CONVERSATION_ID).blockingGet());
+            // Untracked stays untracked: the shape check records nothing.
+            assertTrue(trustStore.state("me-1", CONVERSATION_ID).blockingGet().isEmpty());
+        } finally {
+            repo.dispose();
+        }
+    }
+
+    @Test public void invalidPauseRetiresWhenHealedGroupRecordsChanged() {
+        com.nexachat.core.crypto.E2eeSession e2ee =
+                mock(com.nexachat.core.crypto.E2eeSession.class);
+        ConversationEntity conv = mock(ConversationEntity.class);
+        when(conv.isE2eeEnabled()).thenReturn(true);
+        conversations.put(CONVERSATION_ID, conv);
+        com.nexachat.core.crypto.KeysetTrustStore trustStore =
+                new com.nexachat.core.crypto.KeysetTrustStore(new InMemoryKeysetTrustDao());
+        await(trustStore.markVerified("me-1", CONVERSATION_ID, new byte[]{4, 5, 6}));
+        when(e2ee.encryptFor(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                        MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        // A verified direct roster reshaped into a group: the send path
+        // records CHANGED through the untracked-shape verdict, which is a
+        // definite verdict, so the INVALID episode ends.
+        when(e2ee.currentTranscript(CONVERSATION_ID))
+                .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                        MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        when(e2ee.e2eeState(CONVERSATION_ID))
+                .thenReturn(Single.just(new com.nexachat.core.network.dto.E2eeDeviceDtos
+                        .ConversationE2eeDto(true, List.of(member("u-1"), member("u-2"),
+                                member("u-3")))));
+        MessageRepository repo = repositoryWithTrust(e2ee, trustStore);
+        try {
+            await(repo.send(CONVERSATION_ID, "blocked"));
+
+            assertEquals(Optional.empty(),
+                    repo.keysetPauseCode("me-1", CONVERSATION_ID).blockingGet());
+            assertEquals(com.nexachat.core.crypto.KeysetTrustStore.TrustState.CHANGED,
+                    trustStore.state("me-1", CONVERSATION_ID).blockingGet()
+                            .orElseThrow(AssertionError::new).state());
+        } finally {
+            repo.dispose();
+        }
+    }
+
+    @Test public void invalidPauseStaysWhenHealedShapeStillHasMalformedRows() {
+        com.nexachat.core.crypto.E2eeSession e2ee =
+                mock(com.nexachat.core.crypto.E2eeSession.class);
+        ConversationEntity conv = mock(ConversationEntity.class);
+        when(conv.isE2eeEnabled()).thenReturn(true);
+        conversations.put(CONVERSATION_ID, conv);
+        com.nexachat.core.crypto.KeysetTrustStore trustStore =
+                new com.nexachat.core.crypto.KeysetTrustStore(new InMemoryKeysetTrustDao());
+        when(e2ee.encryptFor(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                        MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        // A group roster that still carries a malformed row is not a usable
+        // shape: the episode stays closed.
+        when(e2ee.currentTranscript(CONVERSATION_ID))
+                .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                        MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        when(e2ee.e2eeState(CONVERSATION_ID))
+                .thenReturn(Single.just(new com.nexachat.core.network.dto.E2eeDeviceDtos
+                        .ConversationE2eeDto(true, List.of(member("u-1"), member("u-2"),
+                                new com.nexachat.core.network.dto.E2eeDeviceDtos.MemberDeviceDto(
+                                        "u-3", "dev-u-3", null)))));
+        MessageRepository repo = repositoryWithTrust(e2ee, trustStore);
+        try {
+            await(repo.send(CONVERSATION_ID, "blocked"));
+
+            assertEquals(Optional.of(MessageRepository.ERROR_E2EE_KEYSET_INVALID),
+                    repo.keysetPauseCode("me-1", CONVERSATION_ID).blockingGet());
+        } finally {
+            repo.dispose();
+        }
+    }
+
+    @Test public void invalidPauseStaysWhenShapeProbeCannotRun() {
+        com.nexachat.core.crypto.E2eeSession e2ee =
+                mock(com.nexachat.core.crypto.E2eeSession.class);
+        ConversationEntity conv = mock(ConversationEntity.class);
+        when(conv.isE2eeEnabled()).thenReturn(true);
+        conversations.put(CONVERSATION_ID, conv);
+        com.nexachat.core.crypto.KeysetTrustStore trustStore =
+                new com.nexachat.core.crypto.KeysetTrustStore(new InMemoryKeysetTrustDao());
+        when(e2ee.encryptFor(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                        MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        when(e2ee.currentTranscript(CONVERSATION_ID))
+                .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                        MessageRepository.ERROR_E2EE_KEYSET_INVALID)));
+        // The follow-up roster read itself failed — inconclusive, so the
+        // marker keeps the pause closed.
+        when(e2ee.e2eeState(CONVERSATION_ID))
+                .thenReturn(Single.error(new com.nexachat.core.crypto.E2eeSession.E2eeException(
+                        "E2EE_NETWORK")));
+        MessageRepository repo = repositoryWithTrust(e2ee, trustStore);
+        try {
+            await(repo.send(CONVERSATION_ID, "blocked"));
+
+            assertEquals(Optional.of(MessageRepository.ERROR_E2EE_KEYSET_INVALID),
+                    repo.keysetPauseCode("me-1", CONVERSATION_ID).blockingGet());
+        } finally {
+            repo.dispose();
+        }
+    }
+
+    private static com.nexachat.core.network.dto.E2eeDeviceDtos.MemberDeviceDto member(
+            String userId) {
+        return new com.nexachat.core.network.dto.E2eeDeviceDtos.MemberDeviceDto(
+                userId, "dev-" + userId, "key-" + userId);
     }
 
     private MessageRepository repositoryWithTrust(com.nexachat.core.crypto.E2eeSession e2ee,
