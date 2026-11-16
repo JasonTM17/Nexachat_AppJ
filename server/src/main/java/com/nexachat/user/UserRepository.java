@@ -46,6 +46,14 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             + " FROM User u WHERE u.id = :id AND u.deletedAt IS NULL")
     Optional<UserAuthValidity> findAuthValidityById(@Param("id") UUID id);
 
+    /**
+     * Non-locking role read. Callers that lock rows in a fixed order use it
+     * to size the lock set first; the authoritative role is always re-read
+     * under the row lock afterwards.
+     */
+    @Query("SELECT u.role FROM User u WHERE u.id = :id")
+    Optional<User.Role> findRoleById(@Param("id") UUID id);
+
     /** Accounts holding the ADMIN role — guards the last-admin invariant. */
     long countByRoleAndDeletedAtIsNull(User.Role role);
 

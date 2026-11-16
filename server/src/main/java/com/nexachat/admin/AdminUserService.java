@@ -178,10 +178,17 @@ public class AdminUserService {
     @Transactional
     public void suspend(UUID targetId, String reason, UUID actorId, User.Role actorRole, String ip) {
         requireReason(reason);
-        int activeAdmins = lockedAdminCount();
+        // Lock the admin set only when the target can actually be an admin —
+        // an unlocked pre-read sizes the lock set so plain-account suspends
+        // never queue behind unrelated admin rows. The authoritative role is
+        // re-read under the target's row lock in requireActionableTarget.
+        int activeAdmins = isAdminTarget(targetId) ? lockedAdminCount() : -1;
         User target = requireActionableTarget(targetId, actorId, actorRole);
         // The final administrator cannot lose their account — demotion has the
-        // same guard, and suspension is the operational equivalent.
+        // same guard, and suspension is the operational equivalent. When the
+        // pre-read was stale (role became ADMIN between read and lock,
+        // activeAdmins stays -1) the guard fails closed: the admin set was
+        // never locked, so no count it yields can be trusted.
         if (target.getRole() == User.Role.ADMIN
                 && activeAdmins <= 1) {
             denyAudit(actorId, actorRole, "USER_SUSPEND", targetId, reason, ip, "last-admin");
@@ -238,7 +245,11 @@ public class AdminUserService {
                     "self-role-change");
             throw ApiException.of(ApiErrorCode.FORBIDDEN, "You cannot change your own role");
         }
-        int activeAdmins = lockedAdminCount();
+        // Only a demotion can hit the last-admin invariant, and only an ADMIN
+        // target needs the set locked first — the same unlocked pre-read and
+        // under-lock re-validation as suspend.
+        int activeAdmins = newRole != User.Role.ADMIN && isAdminTarget(targetId)
+                ? lockedAdminCount() : -1;
         User target = userRepository.findByIdForUpdate(targetId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found"));
         if (target.getDeletedAt() != null) {
@@ -255,6 +266,13 @@ public class AdminUserService {
         accessTokenRevocationService.revoke(targetId);
         auditService.record(actorId, actorRole, "USER_CHANGE_ROLE", "user", targetId.toString(),
                 reason.trim(), Map.of("newRole", newRole.name(), "phone", maskPhone(target)), ip);
+    }
+
+    /** Non-locking peek at the target's role — only sizes the lock set. */
+    private boolean isAdminTarget(UUID targetId) {
+        return userRepository.findRoleById(targetId)
+                .map(role -> role == User.Role.ADMIN)
+                .orElse(false);
     }
 
     /**
