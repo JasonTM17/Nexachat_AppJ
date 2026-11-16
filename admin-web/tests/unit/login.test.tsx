@@ -1,0 +1,61 @@
+import { describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
+import LoginPage from '../../src/pages/LoginPage';
+import { I18nProvider } from '../../src/i18n';
+import { SessionProvider } from '../../src/auth';
+import { ApiException } from '../../src/api';
+
+vi.mock('../../src/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api')>();
+  return {
+    ...actual,
+    api: vi.fn(),
+    login: vi.fn(),
+  };
+});
+
+import { api } from '../../src/api';
+
+const renderLogin = () =>
+  render(
+    <MemoryRouter>
+      <I18nProvider>
+        <SessionProvider>
+          <LoginPage />
+        </SessionProvider>
+      </I18nProvider>
+    </MemoryRouter>,
+  );
+
+describe('LoginPage', () => {
+  it('renders the sign-in form with labels', () => {
+    renderLogin();
+    expect(screen.getByLabelText('Phone')).toBeInTheDocument();
+    expect(screen.getByLabelText('Password')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+  });
+
+  it('shows staff error when login succeeds but /me rejects', async () => {
+    const user = userEvent.setup();
+    renderLogin();
+    (api as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new ApiException(403, 'FORBIDDEN', 'no'),
+    );
+    await user.type(screen.getByLabelText('Phone'), '+841234');
+    await user.type(screen.getByLabelText('Password'), 'secret');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'This account has no admin access',
+    );
+  });
+
+  it('escapes user input — phone typed stays a value, never HTML', async () => {
+    const user = userEvent.setup();
+    const { container } = renderLogin();
+    await user.type(screen.getByLabelText('Phone'), '<img src=x onerror=alert(1)>');
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByLabelText('Phone')).toHaveValue('<img src=x onerror=alert(1)>');
+  });
+});
