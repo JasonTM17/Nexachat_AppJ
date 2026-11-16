@@ -6,6 +6,29 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.11] - 2026-11-17
+
+Android APK release with a server update: message translation, block and
+report, starred messages, disappearing messages, location and contact sharing,
+an admin console and a broad interface polish pass. See
+[docs/release-notes/v1.2.11.md](docs/release-notes/v1.2.11.md).
+
+### Added
+- Message translation with a view-original toggle; encrypted and shared
+  content is never translated.
+- User blocking, message and conversation reports, and starred messages.
+- Disappearing messages with a per-conversation timer (`V39`,
+  `PUT /api/v1/conversations/{id}/disappearing`).
+- Share a location or a contact card from the attach sheet.
+- Admin console for designated administrators (`NEXACHAT_ADMIN_PHONES`).
+
+### Changed
+- Android interface polish across dialogs, sheets, chat, account settings and
+  the conversation list.
+
+### Fixed
+- Messages no longer stick in the sending state on a slow acknowledgement.
+
 ## [1.2.10] - 2026-11-16
 
 Android APK release with bug fixes and interface refinements; no server
@@ -904,7 +927,8 @@ First tagged release (`v1.0.0`).
 - Architecture diagrams, REST/STOMP contracts, security notes, operations
   guide and UI design documentation.
 
-[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.10...HEAD
+[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.11...HEAD
+[1.2.11]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.10...v1.2.11
 [1.2.10]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.9...v1.2.10
 [1.2.9]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.8...v1.2.9
 [1.2.8]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.7...v1.2.8
