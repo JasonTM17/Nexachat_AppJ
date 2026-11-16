@@ -122,6 +122,19 @@ public final class LabelViewModelTest {
     }
 
     @Test
+    public void deleteWithoutALoadedListKicksLoadThenDeletes() {
+        repository.labels.add(label("work", "Work"));
+        LabelViewModel viewModel = new LabelViewModel(repository);
+
+        viewModel.deleteLabel("work");
+
+        assertEquals(1, repository.deleteCalls);
+        assertTrue(state(viewModel).isLabelsLoaded());
+        assertTrue(state(viewModel).getLabels().isEmpty());
+        assertEquals(LabelUiState.Error.NONE, state(viewModel).getError());
+    }
+
+    @Test
     public void deleteBlockedByAnInFlightMutationPublishesAnErrorLikeSiblings() {
         repository.labels.addAll(List.of(label("work", "Work"), label("other", "Other")));
         repository.deleteResponse = CompletableSubject.create();
