@@ -65,6 +65,8 @@
     <string name="conversation_archived">Archived</string>
     <string name="conversation_archived_snackbar">Conversation archived</string>
     <string name="conversation_unarchived">Moved to Chats</string>
+    <string name="inbox_removed_from_group">You were removed from the group</string>
+    <string name="inbox_removed_from_group_named">You were removed from %1$s</string>
     <string name="conversation_settings_title">Conversation settings</string>
     <string name="conversation_ai_opt_out_title">Keep my messages out of AI</string>
     <string name="conversation_ai_opt_in_title">Allow AI for this conversation</string>

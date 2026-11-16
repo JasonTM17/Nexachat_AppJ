@@ -180,7 +180,8 @@ public sealed interface ChatEvent
             @Nullable String conversationId,
             @Nullable String change,
             @NonNull List<String> memberIds,
-            @Nullable Boolean e2eeEnabled) implements ChatEvent {
+            @Nullable Boolean e2eeEnabled,
+            @Nullable String title) implements ChatEvent {
 
         public ConversationUpdated(@Nullable String conversationId) {
             this(conversationId, null, List.of());
@@ -195,6 +196,18 @@ public sealed interface ChatEvent
                 @Nullable String conversationId, @Nullable String change,
                 @NonNull List<String> memberIds) {
             this(conversationId, change, memberIds, null);
+        }
+
+        public ConversationUpdated(
+                @Nullable String conversationId, @Nullable String change,
+                @NonNull List<String> memberIds, @Nullable Boolean e2eeEnabled) {
+            this(conversationId, change, memberIds, e2eeEnabled, null);
+        }
+
+        /** Group title carried by the update payload; null when absent. */
+        @Nullable
+        public String getTitle() {
+            return title;
         }
 
         /** E2EE flag sent on the conversation-updated frame; null when absent. */
