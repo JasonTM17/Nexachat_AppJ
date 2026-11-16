@@ -354,6 +354,15 @@
     <string name="theme_system">Theo hệ thống</string>
     <string name="theme_light">Sáng</string>
     <string name="theme_dark">Tối</string>
+    <string name="settings_chat_color">Màu trò chuyện</string>
+    <string name="chat_color_plum">Mận</string>
+    <string name="chat_color_indigo">Chàm</string>
+    <string name="chat_color_blue">Xanh dương</string>
+    <string name="chat_color_teal">Mòng két</string>
+    <string name="chat_color_green">Xanh lá</string>
+    <string name="chat_color_amber">Hổ phách</string>
+    <string name="chat_color_rose">Hồng</string>
+    <string name="chat_color_slate">Xám xanh</string>
     <string name="privacy_show_presence">Hiện trạng thái hoạt động</string>
     <string name="privacy_show_seen">Hiện trạng thái đã xem</string>
     <string name="cd_show_seen">Hiện trạng thái đã xem</string>

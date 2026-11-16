@@ -13,6 +13,7 @@ import androidx.lifecycle.ViewModelStoreOwner;
 import com.nexachat.feature.chat.ui.MessageActionListener;
 import java.text.DateFormat;
 import java.util.function.Function;
+import com.nexachat.data.ChatColor;
 import com.nexachat.data.ChatMessage;
 
 /**
@@ -23,6 +24,7 @@ public final class MessageListAdapter extends ListAdapter<MessageListItem, Recyc
     private final MessageBubbleBinder binder;
     @Nullable private String currentUserId;
     private int pausedFailReasonRes;
+    @NonNull private ChatColor chatColor = ChatColor.PLUM;
 
     public MessageListAdapter(
             @NonNull DateFormat timeFormat,
@@ -56,6 +58,14 @@ public final class MessageListAdapter extends ListAdapter<MessageListItem, Recyc
         if (pausedFailReasonRes == reasonRes) return;
         pausedFailReasonRes = reasonRes;
         binder.setPausedFailReason(reasonRes);
+        notifyDataSetChanged();
+    }
+
+    /** Repaints outgoing bubbles when the Profile chat-color choice changes. */
+    public void setChatColor(@NonNull ChatColor color) {
+        if (chatColor == color) return;
+        chatColor = color;
+        binder.setChatColor(color);
         notifyDataSetChanged();
     }
 

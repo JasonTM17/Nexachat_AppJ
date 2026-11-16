@@ -356,6 +356,15 @@
     <string name="theme_system">System default</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
+    <string name="settings_chat_color">Chat color</string>
+    <string name="chat_color_plum">Plum</string>
+    <string name="chat_color_indigo">Indigo</string>
+    <string name="chat_color_blue">Blue</string>
+    <string name="chat_color_teal">Teal</string>
+    <string name="chat_color_green">Green</string>
+    <string name="chat_color_amber">Amber</string>
+    <string name="chat_color_rose">Rose</string>
+    <string name="chat_color_slate">Slate</string>
     <string name="privacy_show_presence">Show activity status</string>
     <string name="privacy_show_seen">Show seen status</string>
     <string name="cd_show_seen">Show seen status</string>

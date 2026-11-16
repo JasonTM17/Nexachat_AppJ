@@ -80,6 +80,45 @@ public final class SettingsRepositoryTest {
     }
 
     @Test
+    public void chatColorDefaultsToPlumAndPersistsSelection() {
+        Map<String, String> store = new HashMap<>();
+        build(store);
+        assertEquals(ChatColor.PLUM, repository.getChatColor().blockingFirst());
+
+        repository.setChatColor(ChatColor.TEAL);
+
+        assertEquals(ChatColor.TEAL, repository.getChatColor().blockingFirst());
+        assertEquals("TEAL", store.get("chat_color"));
+
+        repository.setChatColor(ChatColor.SLATE);
+        assertEquals("SLATE", store.get("chat_color"));
+    }
+
+    @Test
+    public void chatColorIsRestoredFromLastStoredValue() {
+        build(new HashMap<>(Map.of("chat_color", "ROSE")));
+
+        assertEquals(ChatColor.ROSE, repository.getChatColor().blockingFirst());
+    }
+
+    @Test
+    public void chatColorSurvivesLogoutLikeTheTheme() {
+        build(new HashMap<>());
+        repository.setChatColor(ChatColor.GREEN);
+
+        sessionSignals.onNext(SessionEvents.Event.LoggedOut.INSTANCE);
+
+        assertEquals(ChatColor.GREEN, repository.getChatColor().blockingFirst());
+    }
+
+    @Test
+    public void unknownStoredChatColorFallsBackToPlum() {
+        build(new HashMap<>(Map.of("chat_color", "chartreuse")));
+
+        assertEquals(ChatColor.PLUM, repository.getChatColor().blockingFirst());
+    }
+
+    @Test
     public void setShowPresenceAppliesOptimisticallyThenAcceptsServerValue() throws Exception {
         build(new HashMap<>());
         Call<UserSettingsDto> updateCall = mock(Call.class);
