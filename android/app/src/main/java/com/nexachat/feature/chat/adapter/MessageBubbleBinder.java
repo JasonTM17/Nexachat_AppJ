@@ -198,7 +198,7 @@ public final class MessageBubbleBinder {
         applyMentionHighlights(root, message, mentionedMe);
         bindMetaRow(root, message, item.isSeenReceipt(), item.isDeliveredReceipt(), item.isPulsing());
         bindReactions(root, message);
-        applyMediaOnlyFrame(root, bubble, message);
+        applyMediaOnlyFrame(root, bubble, message, mentionedMe);
     }
 
     /**
@@ -206,7 +206,11 @@ public final class MessageBubbleBinder {
      * rounded media itself: the coloured bubble frame and its padding would
      * only leave a plum border around the picture.
      */
-    private void applyMediaOnlyFrame(View root, View bubble, ChatMessage message) {
+    private void applyMediaOnlyFrame(
+            View root, View bubble, ChatMessage message, boolean mentionedMe) {
+        if (mentionedMe) {
+            return; // keep the highlighted frame so the mention stays visible
+        }
         if (MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs())
                 || message.getAttachments().isEmpty()) {
             return;

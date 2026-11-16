@@ -88,7 +88,7 @@
     <color name="nexa_link_outgoing">#FFF6DFF0</color>
     <color name="nexa_media_meta_surface">#FF211E25</color>
     <color name="nexa_on_media_meta">#FFFFFCFF</color>
-    <color name="media_video_placeholder">#FF1D1B20</color>
+    <color name="nexa_media_video_placeholder">#FF1D1B20</color>
     <color name="nexa_call_surface">#FF1D1920</color>
     <color name="nexa_call_surface_end">#FF302333</color>
 </resources>

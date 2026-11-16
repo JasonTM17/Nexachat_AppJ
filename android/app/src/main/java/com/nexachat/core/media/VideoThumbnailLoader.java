@@ -10,10 +10,12 @@ import android.os.Looper;
 import android.widget.ImageView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import com.nexachat.core.common.AppConfig;
 import dagger.hilt.android.EntryPointAccessors;
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -40,7 +42,6 @@ public final class VideoThumbnailLoader {
         thread.setDaemon(true);
         return thread;
     });
-    private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
     private VideoThumbnailLoader() {}
 
@@ -62,7 +63,7 @@ public final class VideoThumbnailLoader {
                 return;
             }
             CACHE.put(url, frame);
-            MAIN.post(() -> {
+            new Handler(Looper.getMainLooper()).post(() -> {
                 if (url.equals(target.getTag())) {
                     target.setImageBitmap(frame);
                 }
@@ -77,6 +78,11 @@ public final class VideoThumbnailLoader {
             if (url.startsWith("content:") || url.startsWith("file:")) {
                 retriever.setDataSource(context, Uri.parse(url));
             } else {
+                if (!isApiOrigin(url)) {
+                    // The authenticated client attaches the bearer token to every
+                    // request, so it must never be pointed at another host.
+                    return null;
+                }
                 OkHttpClient client = EntryPointAccessors
                         .fromApplication(context, MediaOkHttpEntryPoint.class)
                         .okHttpClient();
@@ -94,6 +100,20 @@ public final class VideoThumbnailLoader {
                 // Nothing left to release.
             }
         }
+    }
+
+    /** True only for URLs on the API's scheme, host and port. */
+    static boolean isApiOrigin(String url) {
+        HttpUrl target = HttpUrl.parse(url);
+        HttpUrl api = HttpUrl.parse(AppConfig.API_BASE_URL);
+        return isSameOrigin(target, api);
+    }
+
+    static boolean isSameOrigin(@Nullable HttpUrl target, @Nullable HttpUrl api) {
+        return target != null && api != null
+                && target.scheme().equals(api.scheme())
+                && target.host().equals(api.host())
+                && target.port() == api.port();
     }
 
     private static Bitmap downscale(Bitmap source) {
