@@ -62,7 +62,7 @@ public final class MediaPickerSheetFragment extends BottomSheetDialogFragment {
                         .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo.INSTANCE)
                         .build()));
         sheet.pickDocumentRow.setOnClickListener(v ->
-                documentPicker.launch(new String[]{"*/*"}));
+                documentPicker.launch(com.nexachat.data.AttachmentRepository.UPLOAD_ALLOWED_MIMES));
     }
 
     private void deliverVisual(@Nullable Uri uri) {

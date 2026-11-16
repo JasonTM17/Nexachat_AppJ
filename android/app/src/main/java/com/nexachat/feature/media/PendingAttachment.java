@@ -3,6 +3,7 @@ package com.nexachat.feature.media;
 import android.net.Uri;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import com.nexachat.core.common.ApiError;
 import java.util.Objects;
 
 /**
@@ -21,6 +22,8 @@ public final class PendingAttachment {
     @NonNull private final String type;
     private final float progress;
     @NonNull private final PendingState state;
+    /** Failure cause, set only while {@link #state} is {@code FAILED}. */
+    @Nullable private final ApiError error;
 
     public PendingAttachment(
             @NonNull String localId,
@@ -30,6 +33,18 @@ public final class PendingAttachment {
             @NonNull String type,
             float progress,
             @NonNull PendingState state) {
+        this(localId, uri, displayName, mimeType, type, progress, state, null);
+    }
+
+    public PendingAttachment(
+            @NonNull String localId,
+            @NonNull Uri uri,
+            @Nullable String displayName,
+            @Nullable String mimeType,
+            @NonNull String type,
+            float progress,
+            @NonNull PendingState state,
+            @Nullable ApiError error) {
         this.localId = Objects.requireNonNull(localId, "localId");
         this.uri = Objects.requireNonNull(uri, "uri");
         this.displayName = displayName;
@@ -37,6 +52,7 @@ public final class PendingAttachment {
         this.type = Objects.requireNonNull(type, "type");
         this.progress = progress;
         this.state = Objects.requireNonNull(state, "state");
+        this.error = error;
     }
 
     @NonNull public String getLocalId() { return localId; }
@@ -46,13 +62,18 @@ public final class PendingAttachment {
     @NonNull public String getType() { return type; }
     public float getProgress() { return progress; }
     @NonNull public PendingState getState() { return state; }
+    @Nullable public ApiError getError() { return error; }
 
     public PendingAttachment withProgress(float value) {
-        return new PendingAttachment(localId, uri, displayName, mimeType, type, value, state);
+        return new PendingAttachment(localId, uri, displayName, mimeType, type, value, state, error);
     }
 
     public PendingAttachment withState(@NonNull PendingState value) {
-        return new PendingAttachment(localId, uri, displayName, mimeType, type, progress, value);
+        return new PendingAttachment(localId, uri, displayName, mimeType, type, progress, value, error);
+    }
+
+    public PendingAttachment withError(@NonNull PendingState value, @Nullable ApiError newError) {
+        return new PendingAttachment(localId, uri, displayName, mimeType, type, progress, value, newError);
     }
 
     @Override
@@ -66,12 +87,13 @@ public final class PendingAttachment {
                 && Objects.equals(displayName, that.displayName)
                 && Objects.equals(mimeType, that.mimeType)
                 && type.equals(that.type)
-                && state == that.state;
+                && state == that.state
+                && Objects.equals(error, that.error);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(localId, uri, displayName, mimeType, type, progress, state);
+        return Objects.hash(localId, uri, displayName, mimeType, type, progress, state, error);
     }
 
     public enum PendingState { UPLOADING, FAILED }

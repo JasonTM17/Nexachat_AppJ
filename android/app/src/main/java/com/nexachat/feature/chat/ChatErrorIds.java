@@ -35,6 +35,9 @@ public final class ChatErrorIds {
             if (AttachmentRepository.ERROR_TOO_LARGE.equals(code)) {
                 return R.string.error_attachment_too_large;
             }
+            if (AttachmentRepository.ERROR_MIME_NOT_ALLOWED.equals(code)) {
+                return R.string.error_attachment_mime_not_allowed;
+            }
             if (ERROR_PIN_LIMIT.equals(code)) {
                 return R.string.error_pin_limit;
             }

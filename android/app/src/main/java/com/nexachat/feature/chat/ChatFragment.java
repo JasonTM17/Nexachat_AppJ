@@ -310,7 +310,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             ChatInteractionsViews.showAttachmentPicker(
                 requireContext(),
                 () -> visualPicker.launch(new PickVisualMediaRequest.Builder().setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo.INSTANCE).build()),
-                () -> documentPicker.launch(new String[]{"*/*"}));
+                () -> documentPicker.launch(com.nexachat.data.AttachmentRepository.UPLOAD_ALLOWED_MIMES));
         });
         binding.composerBar.sendButton.setOnClickListener(v -> {
             if (!binding.composerBar.sendButton.isEnabled()) {
@@ -1122,8 +1122,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
                     ? item.getDisplayName()
                     : item.getType();
             if (item.getState() == com.nexachat.feature.media.PendingAttachment.PendingState.FAILED) {
+                int reasonRes = item.getError() != null
+                        ? ChatErrorIds.messageId(item.getError())
+                        : R.string.error_generic;
                 label.setText(getString(R.string.a11y_attachment_pending_failed,
-                        attachmentLabel, getString(R.string.error_generic)));
+                        attachmentLabel, getString(reasonRes)));
             } else {
                 label.setText(getString(R.string.a11y_attachment_pending_progress,
                         attachmentLabel, Math.round(item.getProgress() * 100)));

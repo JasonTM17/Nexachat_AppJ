@@ -241,6 +241,7 @@
     <string name="media_attachment">Đính kèm</string>
     <string name="error_attachment_open">Không có ứng dụng mở được tệp này</string>
     <string name="error_attachment_too_large">Tệp vượt quá giới hạn 25 MB</string>
+    <string name="error_attachment_mime_not_allowed">Loại tệp này không được hỗ trợ</string>
 
     <!-- Group -->
     <string name="group_create_title">Nhóm mới</string>
