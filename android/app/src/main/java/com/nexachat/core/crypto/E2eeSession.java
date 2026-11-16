@@ -638,14 +638,8 @@ public final class E2eeSession {
                     return Single.<E2eeCrypto.EncryptedMessage>error(
                             new E2eeException("E2EE_STALE_DEVICES"));
                 }
-                byte[] publicKey;
-                try {
-                    publicKey = E2eeCrypto.b64urlDecode(device.getPublicKey());
-                } catch (RuntimeException malformed) {
-                    return Single.<E2eeCrypto.EncryptedMessage>error(
-                            new E2eeException("E2EE_STALE_DEVICES"));
-                }
-                if (publicKey.length != E2eeCrypto.KEY_BYTES) {
+                byte[] publicKey = E2eeCrypto.memberPublicKey(device.getPublicKey());
+                if (publicKey == null) {
                     return Single.<E2eeCrypto.EncryptedMessage>error(
                             new E2eeException("E2EE_STALE_DEVICES"));
                 }
