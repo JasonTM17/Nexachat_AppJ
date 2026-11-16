@@ -63,6 +63,8 @@
         <item name="materialButtonOutlinedStyle">@style/Widget.NexaChat.Button.Outlined</item>
         <item name="borderlessButtonStyle">@style/Widget.NexaChat.Button.Text</item>
         <item name="textInputStyle">@style/Widget.NexaChat.TextInputLayout</item>
+        <item name="popupMenuStyle">@style/Widget.NexaChat.PopupMenu</item>
+        <item name="android:popupMenuStyle">@style/Widget.NexaChat.PopupMenu</item>
         <item name="tabStyle">@style/Widget.NexaChat.TabLayout</item>
         <item name="materialAlertDialogTheme">@style/ThemeOverlay.NexaChat.MaterialAlertDialog</item>
         <item name="materialCalendarTheme">@style/ThemeOverlay.NexaChat.MaterialCalendar</item>
@@ -177,7 +179,7 @@
         <item name="boxCornerRadiusBottomStart">@dimen/corner_lg</item>
         <item name="boxCornerRadiusBottomEnd">@dimen/corner_lg</item>
         <item name="boxStrokeWidth">0dp</item>
-        <item name="boxStrokeWidthFocused">@dimen/control_stroke_width</item>
+        <item name="boxStrokeWidthFocused">@dimen/focus_stroke_width</item>
         <item name="android:minHeight">56dp</item>
     </style>
 
@@ -337,5 +339,11 @@
         <item name="buttonTint">@null</item>
         <item name="android:minWidth">@dimen/min_touch_target</item>
         <item name="android:minHeight">@dimen/min_touch_target</item>
+    </style>
+
+    <!-- Overflow and context menus: rounded surface instead of the default square card. -->
+    <style name="Widget.NexaChat.PopupMenu" parent="Widget.Material3.PopupMenu">
+        <item name="android:popupBackground">@drawable/bg_popup_menu</item>
+        <item name="android:popupElevation">@dimen/space_sm</item>
     </style>
 </resources>
