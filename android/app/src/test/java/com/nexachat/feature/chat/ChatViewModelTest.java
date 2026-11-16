@@ -1107,32 +1107,23 @@ public final class ChatViewModelTest {
     }
 
     @Test
-    public void toggleConversationPinDelegatesToRepositoryAndSurfacesCapError() {
-        assertFalse(state().isConversationPinned());
-
+    public void setConversationPinnedDelegatesToRepositoryAndSurfacesCapError() {
         ApiError capError = new ApiError.Unknown("CONVERSATION_PIN_LIMIT");
         when(conversationRepository.setConversationPinned(CONVERSATION_ID, true))
                 .thenReturn(Single.just(Result.failure(capError)));
 
-        viewModel.toggleConversationPin();
+        viewModel.setConversationPinned(true);
 
         verify(conversationRepository, times(1)).setConversationPinned(CONVERSATION_ID, true);
         assertEquals(capError, state().getError());
     }
 
     @Test
-    public void toggleConversationPinTogglesStateWhenAlreadyPinned() {
-        conversationFlow.onNext(Optional.of(new ConversationSummary(
-                CONVERSATION_ID, "DIRECT", null, "last", "Lan", 1_700_000_000_000L,
-                42L, 0, "Lan", null, null, 0L, 0L, null, null, false, null,
-                true, 1_700_000_000_000L)));
-
-        assertTrue(state().isConversationPinned());
-
+    public void setConversationPinnedAppliesTheRequestedTarget() {
         when(conversationRepository.setConversationPinned(CONVERSATION_ID, false))
                 .thenReturn(Single.just(new Result.Success<Void>(null)));
 
-        viewModel.toggleConversationPin();
+        viewModel.setConversationPinned(false);
 
         verify(conversationRepository, times(1)).setConversationPinned(CONVERSATION_ID, false);
     }

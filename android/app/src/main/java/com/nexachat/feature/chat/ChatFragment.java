@@ -1532,11 +1532,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
                 .setItems(labels.toArray(new CharSequence[0]), (dialog, which) ->
-                        onChatMenuItemSelected(actions.get(which), muted, archived))
+                        onChatMenuItemSelected(actions.get(which), muted, archived, pinned))
                 .show();
     }
 
-    private void onChatMenuItemSelected(int action, boolean muted, boolean archived) {
+    private void onChatMenuItemSelected(int action, boolean muted, boolean archived, boolean pinned) {
         if (action == MENU_ASK) {
             showAsk();
         } else if (action == MENU_SEARCH) {
@@ -1555,7 +1555,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         } else if (action == MENU_ARCHIVE) {
             viewModel.setConversationArchived(!archived);
         } else if (action == MENU_PIN) {
-            viewModel.toggleConversationPin();
+            viewModel.setConversationPinned(!pinned);
         } else if (action == MENU_SETTINGS) {
             showConversationSettings();
         } else if (action == MENU_ASSIGN_LABEL && !conversationId.isBlank()) {
