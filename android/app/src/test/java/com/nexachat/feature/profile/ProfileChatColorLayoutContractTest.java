@@ -53,17 +53,57 @@ public final class ProfileChatColorLayoutContractTest {
     }
 
     @Test
-    public void allEightSwatchCellsAreSquareTargets() throws Exception {
+    public void allEightSwatchCellsAreEqualWidthTargets() throws Exception {
         for (String cell : CELLS) {
             Element el = requireId(cell);
-            assertEquals(cell + " width", "@dimen/min_touch_target",
+            // 4x2 grid: cells share the row width evenly, never wrap unevenly.
+            assertEquals(cell + " width must stretch to an equal grid share", "0dp",
                     el.getAttributeNS(ANDROID, "layout_width"));
+            assertEquals(cell + " needs a weight to share the row", "1",
+                    el.getAttributeNS(ANDROID, "layout_weight"));
             assertEquals(cell + " height", "@dimen/min_touch_target",
                     el.getAttributeNS(ANDROID, "layout_height"));
             assertEquals(cell + " must be clickable", "true",
                     el.getAttributeNS(ANDROID, "clickable"));
             assertTrue(cell + " needs a color name description",
                     el.getAttributeNS(ANDROID, "contentDescription").startsWith("@string/chat_color_"));
+        }
+    }
+
+    @Test
+    public void swatchesTileTwoRowsOfFour() throws Exception {
+        Document doc = parseLayout();
+        Element area = null;
+        NodeList nodes = doc.getElementsByTagName("*");
+        for (int i = 0; i < nodes.getLength(); i++) {
+            Element node = (Element) nodes.item(i);
+            if ("@+id/chatColorSwatchArea".equals(node.getAttributeNS(ANDROID, "id"))) {
+                area = node;
+            }
+        }
+        assertNotNull("chatColorSwatchArea", area);
+        List<Element> rows = new ArrayList<>();
+        NodeList children = area.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            if (children.item(i) instanceof Element child) {
+                rows.add(child);
+            }
+        }
+        assertEquals("grid must be exactly two rows", 2, rows.size());
+        for (int r = 0; r < rows.size(); r++) {
+            List<Element> cells = new ArrayList<>();
+            NodeList rowChildren = rows.get(r).getChildNodes();
+            for (int i = 0; i < rowChildren.getLength(); i++) {
+                if (rowChildren.item(i) instanceof Element child) {
+                    cells.add(child);
+                }
+            }
+            assertEquals("row " + r + " must hold four cells", 4, cells.size());
+            for (int c = 0; c < cells.size(); c++) {
+                String expected = "@+id/" + CELLS[r * 4 + c];
+                assertEquals("row " + r + " cell " + c,
+                        expected, cells.get(c).getAttributeNS(ANDROID, "id"));
+            }
         }
     }
 

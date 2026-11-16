@@ -245,216 +245,235 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content" />
 
-                <androidx.constraintlayout.widget.ConstraintLayout
+                <LinearLayout
                     android:id="@+id/chatColorSwatchArea"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginHorizontal="16dp"
-                    android:layout_marginBottom="@dimen/space_sm">
+                    android:layout_marginHorizontal="@dimen/space_md"
+                    android:layout_marginBottom="@dimen/space_sm"
+                    android:orientation="vertical">
 
-                    <FrameLayout
-                        android:id="@+id/chatColorSwatchPlum"
-                        android:layout_width="@dimen/min_touch_target"
-                        android:layout_height="@dimen/min_touch_target"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:foreground="?attr/selectableItemBackground"
-                        android:contentDescription="@string/chat_color_plum">
-                        <ImageView
-                            android:layout_width="32dp"
-                            android:layout_height="32dp"
-                            android:layout_gravity="center"
-                            android:background="@drawable/bg_chat_color_swatch"
-                            android:importantForAccessibility="no" />
-                        <ImageView
-                            android:layout_width="@dimen/icon_size"
-                            android:layout_height="@dimen/icon_size"
-                            android:layout_gravity="center"
-                            android:importantForAccessibility="no"
-                            android:src="@drawable/ic_check"
-                            android:visibility="gone"
-                            app:tint="@color/chat_bubble_outgoing_text" />
-                    </FrameLayout>
-
-                    <FrameLayout
-                        android:id="@+id/chatColorSwatchIndigo"
-                        android:layout_width="@dimen/min_touch_target"
-                        android:layout_height="@dimen/min_touch_target"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:foreground="?attr/selectableItemBackground"
-                        android:contentDescription="@string/chat_color_indigo">
-                        <ImageView
-                            android:layout_width="32dp"
-                            android:layout_height="32dp"
-                            android:layout_gravity="center"
-                            android:background="@drawable/bg_chat_color_swatch"
-                            android:importantForAccessibility="no" />
-                        <ImageView
-                            android:layout_width="@dimen/icon_size"
-                            android:layout_height="@dimen/icon_size"
-                            android:layout_gravity="center"
-                            android:importantForAccessibility="no"
-                            android:src="@drawable/ic_check"
-                            android:visibility="gone"
-                            app:tint="@color/chat_bubble_outgoing_text" />
-                    </FrameLayout>
-
-                    <FrameLayout
-                        android:id="@+id/chatColorSwatchBlue"
-                        android:layout_width="@dimen/min_touch_target"
-                        android:layout_height="@dimen/min_touch_target"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:foreground="?attr/selectableItemBackground"
-                        android:contentDescription="@string/chat_color_blue">
-                        <ImageView
-                            android:layout_width="32dp"
-                            android:layout_height="32dp"
-                            android:layout_gravity="center"
-                            android:background="@drawable/bg_chat_color_swatch"
-                            android:importantForAccessibility="no" />
-                        <ImageView
-                            android:layout_width="@dimen/icon_size"
-                            android:layout_height="@dimen/icon_size"
-                            android:layout_gravity="center"
-                            android:importantForAccessibility="no"
-                            android:src="@drawable/ic_check"
-                            android:visibility="gone"
-                            app:tint="@color/chat_bubble_outgoing_text" />
-                    </FrameLayout>
-
-                    <FrameLayout
-                        android:id="@+id/chatColorSwatchTeal"
-                        android:layout_width="@dimen/min_touch_target"
-                        android:layout_height="@dimen/min_touch_target"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:foreground="?attr/selectableItemBackground"
-                        android:contentDescription="@string/chat_color_teal">
-                        <ImageView
-                            android:layout_width="32dp"
-                            android:layout_height="32dp"
-                            android:layout_gravity="center"
-                            android:background="@drawable/bg_chat_color_swatch"
-                            android:importantForAccessibility="no" />
-                        <ImageView
-                            android:layout_width="@dimen/icon_size"
-                            android:layout_height="@dimen/icon_size"
-                            android:layout_gravity="center"
-                            android:importantForAccessibility="no"
-                            android:src="@drawable/ic_check"
-                            android:visibility="gone"
-                            app:tint="@color/chat_bubble_outgoing_text" />
-                    </FrameLayout>
-
-                    <FrameLayout
-                        android:id="@+id/chatColorSwatchGreen"
-                        android:layout_width="@dimen/min_touch_target"
-                        android:layout_height="@dimen/min_touch_target"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:foreground="?attr/selectableItemBackground"
-                        android:contentDescription="@string/chat_color_green">
-                        <ImageView
-                            android:layout_width="32dp"
-                            android:layout_height="32dp"
-                            android:layout_gravity="center"
-                            android:background="@drawable/bg_chat_color_swatch"
-                            android:importantForAccessibility="no" />
-                        <ImageView
-                            android:layout_width="@dimen/icon_size"
-                            android:layout_height="@dimen/icon_size"
-                            android:layout_gravity="center"
-                            android:importantForAccessibility="no"
-                            android:src="@drawable/ic_check"
-                            android:visibility="gone"
-                            app:tint="@color/chat_bubble_outgoing_text" />
-                    </FrameLayout>
-
-                    <FrameLayout
-                        android:id="@+id/chatColorSwatchAmber"
-                        android:layout_width="@dimen/min_touch_target"
-                        android:layout_height="@dimen/min_touch_target"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:foreground="?attr/selectableItemBackground"
-                        android:contentDescription="@string/chat_color_amber">
-                        <ImageView
-                            android:layout_width="32dp"
-                            android:layout_height="32dp"
-                            android:layout_gravity="center"
-                            android:background="@drawable/bg_chat_color_swatch"
-                            android:importantForAccessibility="no" />
-                        <ImageView
-                            android:layout_width="@dimen/icon_size"
-                            android:layout_height="@dimen/icon_size"
-                            android:layout_gravity="center"
-                            android:importantForAccessibility="no"
-                            android:src="@drawable/ic_check"
-                            android:visibility="gone"
-                            app:tint="@color/chat_bubble_outgoing_text" />
-                    </FrameLayout>
-
-                    <FrameLayout
-                        android:id="@+id/chatColorSwatchRose"
-                        android:layout_width="@dimen/min_touch_target"
-                        android:layout_height="@dimen/min_touch_target"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:foreground="?attr/selectableItemBackground"
-                        android:contentDescription="@string/chat_color_rose">
-                        <ImageView
-                            android:layout_width="32dp"
-                            android:layout_height="32dp"
-                            android:layout_gravity="center"
-                            android:background="@drawable/bg_chat_color_swatch"
-                            android:importantForAccessibility="no" />
-                        <ImageView
-                            android:layout_width="@dimen/icon_size"
-                            android:layout_height="@dimen/icon_size"
-                            android:layout_gravity="center"
-                            android:importantForAccessibility="no"
-                            android:src="@drawable/ic_check"
-                            android:visibility="gone"
-                            app:tint="@color/chat_bubble_outgoing_text" />
-                    </FrameLayout>
-
-                    <FrameLayout
-                        android:id="@+id/chatColorSwatchSlate"
-                        android:layout_width="@dimen/min_touch_target"
-                        android:layout_height="@dimen/min_touch_target"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:foreground="?attr/selectableItemBackground"
-                        android:contentDescription="@string/chat_color_slate">
-                        <ImageView
-                            android:layout_width="32dp"
-                            android:layout_height="32dp"
-                            android:layout_gravity="center"
-                            android:background="@drawable/bg_chat_color_swatch"
-                            android:importantForAccessibility="no" />
-                        <ImageView
-                            android:layout_width="@dimen/icon_size"
-                            android:layout_height="@dimen/icon_size"
-                            android:layout_gravity="center"
-                            android:importantForAccessibility="no"
-                            android:src="@drawable/ic_check"
-                            android:visibility="gone"
-                            app:tint="@color/chat_bubble_outgoing_text" />
-                    </FrameLayout>
-
-                    <androidx.constraintlayout.helper.widget.Flow
-                        android:layout_width="0dp"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        app:constraint_referenced_ids="chatColorSwatchPlum,chatColorSwatchIndigo,chatColorSwatchBlue,chatColorSwatchTeal,chatColorSwatchGreen,chatColorSwatchAmber,chatColorSwatchRose,chatColorSwatchSlate"
-                        app:flow_wrapMode="aligned"
-                        app:flow_horizontalGap="@dimen/space_sm"
-                        app:flow_verticalGap="@dimen/space_sm"
-                        app:layout_constraintTop_toTopOf="parent"
-                        app:layout_constraintStart_toStartOf="parent"
-                        app:layout_constraintEnd_toEndOf="parent" />
-                </androidx.constraintlayout.widget.ConstraintLayout>
+                        android:layout_marginBottom="@dimen/space_sm"
+                        android:orientation="horizontal">
+
+                        <FrameLayout
+                            android:id="@+id/chatColorSwatchPlum"
+                            android:layout_width="0dp"
+                            android:layout_height="@dimen/min_touch_target"
+                            android:layout_weight="1"
+                            android:layout_marginHorizontal="@dimen/space_xs"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:foreground="?attr/selectableItemBackground"
+                            android:contentDescription="@string/chat_color_plum">
+                            <ImageView
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:layout_gravity="center"
+                                android:background="@drawable/bg_chat_color_swatch"
+                                android:importantForAccessibility="no" />
+                            <ImageView
+                                android:layout_width="@dimen/icon_size"
+                                android:layout_height="@dimen/icon_size"
+                                android:layout_gravity="center"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_check"
+                                android:visibility="gone"
+                                app:tint="@color/chat_bubble_outgoing_text" />
+                        </FrameLayout>
+
+                        <FrameLayout
+                            android:id="@+id/chatColorSwatchIndigo"
+                            android:layout_width="0dp"
+                            android:layout_height="@dimen/min_touch_target"
+                            android:layout_weight="1"
+                            android:layout_marginHorizontal="@dimen/space_xs"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:foreground="?attr/selectableItemBackground"
+                            android:contentDescription="@string/chat_color_indigo">
+                            <ImageView
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:layout_gravity="center"
+                                android:background="@drawable/bg_chat_color_swatch"
+                                android:importantForAccessibility="no" />
+                            <ImageView
+                                android:layout_width="@dimen/icon_size"
+                                android:layout_height="@dimen/icon_size"
+                                android:layout_gravity="center"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_check"
+                                android:visibility="gone"
+                                app:tint="@color/chat_bubble_outgoing_text" />
+                        </FrameLayout>
+
+                        <FrameLayout
+                            android:id="@+id/chatColorSwatchBlue"
+                            android:layout_width="0dp"
+                            android:layout_height="@dimen/min_touch_target"
+                            android:layout_weight="1"
+                            android:layout_marginHorizontal="@dimen/space_xs"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:foreground="?attr/selectableItemBackground"
+                            android:contentDescription="@string/chat_color_blue">
+                            <ImageView
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:layout_gravity="center"
+                                android:background="@drawable/bg_chat_color_swatch"
+                                android:importantForAccessibility="no" />
+                            <ImageView
+                                android:layout_width="@dimen/icon_size"
+                                android:layout_height="@dimen/icon_size"
+                                android:layout_gravity="center"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_check"
+                                android:visibility="gone"
+                                app:tint="@color/chat_bubble_outgoing_text" />
+                        </FrameLayout>
+
+                        <FrameLayout
+                            android:id="@+id/chatColorSwatchTeal"
+                            android:layout_width="0dp"
+                            android:layout_height="@dimen/min_touch_target"
+                            android:layout_weight="1"
+                            android:layout_marginHorizontal="@dimen/space_xs"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:foreground="?attr/selectableItemBackground"
+                            android:contentDescription="@string/chat_color_teal">
+                            <ImageView
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:layout_gravity="center"
+                                android:background="@drawable/bg_chat_color_swatch"
+                                android:importantForAccessibility="no" />
+                            <ImageView
+                                android:layout_width="@dimen/icon_size"
+                                android:layout_height="@dimen/icon_size"
+                                android:layout_gravity="center"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_check"
+                                android:visibility="gone"
+                                app:tint="@color/chat_bubble_outgoing_text" />
+                        </FrameLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <FrameLayout
+                            android:id="@+id/chatColorSwatchGreen"
+                            android:layout_width="0dp"
+                            android:layout_height="@dimen/min_touch_target"
+                            android:layout_weight="1"
+                            android:layout_marginHorizontal="@dimen/space_xs"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:foreground="?attr/selectableItemBackground"
+                            android:contentDescription="@string/chat_color_green">
+                            <ImageView
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:layout_gravity="center"
+                                android:background="@drawable/bg_chat_color_swatch"
+                                android:importantForAccessibility="no" />
+                            <ImageView
+                                android:layout_width="@dimen/icon_size"
+                                android:layout_height="@dimen/icon_size"
+                                android:layout_gravity="center"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_check"
+                                android:visibility="gone"
+                                app:tint="@color/chat_bubble_outgoing_text" />
+                        </FrameLayout>
+
+                        <FrameLayout
+                            android:id="@+id/chatColorSwatchAmber"
+                            android:layout_width="0dp"
+                            android:layout_height="@dimen/min_touch_target"
+                            android:layout_weight="1"
+                            android:layout_marginHorizontal="@dimen/space_xs"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:foreground="?attr/selectableItemBackground"
+                            android:contentDescription="@string/chat_color_amber">
+                            <ImageView
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:layout_gravity="center"
+                                android:background="@drawable/bg_chat_color_swatch"
+                                android:importantForAccessibility="no" />
+                            <ImageView
+                                android:layout_width="@dimen/icon_size"
+                                android:layout_height="@dimen/icon_size"
+                                android:layout_gravity="center"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_check"
+                                android:visibility="gone"
+                                app:tint="@color/chat_bubble_outgoing_text" />
+                        </FrameLayout>
+
+                        <FrameLayout
+                            android:id="@+id/chatColorSwatchRose"
+                            android:layout_width="0dp"
+                            android:layout_height="@dimen/min_touch_target"
+                            android:layout_weight="1"
+                            android:layout_marginHorizontal="@dimen/space_xs"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:foreground="?attr/selectableItemBackground"
+                            android:contentDescription="@string/chat_color_rose">
+                            <ImageView
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:layout_gravity="center"
+                                android:background="@drawable/bg_chat_color_swatch"
+                                android:importantForAccessibility="no" />
+                            <ImageView
+                                android:layout_width="@dimen/icon_size"
+                                android:layout_height="@dimen/icon_size"
+                                android:layout_gravity="center"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_check"
+                                android:visibility="gone"
+                                app:tint="@color/chat_bubble_outgoing_text" />
+                        </FrameLayout>
+
+                        <FrameLayout
+                            android:id="@+id/chatColorSwatchSlate"
+                            android:layout_width="0dp"
+                            android:layout_height="@dimen/min_touch_target"
+                            android:layout_weight="1"
+                            android:layout_marginHorizontal="@dimen/space_xs"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:foreground="?attr/selectableItemBackground"
+                            android:contentDescription="@string/chat_color_slate">
+                            <ImageView
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:layout_gravity="center"
+                                android:background="@drawable/bg_chat_color_swatch"
+                                android:importantForAccessibility="no" />
+                            <ImageView
+                                android:layout_width="@dimen/icon_size"
+                                android:layout_height="@dimen/icon_size"
+                                android:layout_gravity="center"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_check"
+                                android:visibility="gone"
+                                app:tint="@color/chat_bubble_outgoing_text" />
+                        </FrameLayout>
+                    </LinearLayout>
+                </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
