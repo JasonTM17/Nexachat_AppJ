@@ -340,7 +340,10 @@ public final class LabelViewModel extends ViewModel {
     /** See {@link #createLabel} for the return contract. */
     public synchronized LabelUiState.Error updateLabel(
             @NonNull String labelId, @Nullable String name, @NonNull LabelColor color) {
-        if (labelsMutating || assignmentMutationInFlight) {
+        if (!labelsLoaded && !labelsLoading) {
+            loadLabelsLocked();
+        }
+        if (labelsMutating || assignmentMutationInFlight || !labelsLoaded || labelsLoading) {
             return reject(LabelUiState.Error.GENERIC);
         }
         String normalized = LabelRules.normalizeName(name);
@@ -385,7 +388,10 @@ public final class LabelViewModel extends ViewModel {
     }
 
     public synchronized void deleteLabel(@NonNull String labelId) {
-        if (labelsMutating || assignmentMutationInFlight) return;
+        if (labelsMutating || assignmentMutationInFlight) {
+            setError(LabelUiState.Error.GENERIC);
+            return;
+        }
         ConversationLabel current = findLabel(labelId);
         if (current == null || current.isPending()) {
             setError(LabelUiState.Error.GENERIC);
