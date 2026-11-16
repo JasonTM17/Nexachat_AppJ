@@ -376,6 +376,22 @@ public final class InboxViewModelTest {
     }
 
     @Test
+    public void selfRemovalNoticeHeldBeforeAttachSurfacesAnEvent() {
+        // The repository delivers a pending notice as soon as a subscriber
+        // attaches; the view model must turn it into the same one-shot event.
+        when(repository.selfRemovals()).thenReturn(Flowable.just(
+                new ConversationRepository.SelfRemovalNotice("c-9", "Late Group")));
+        viewModel = new InboxViewModel(repository, savedStateHandle);
+
+        InboxSingleLiveEvent.Event<InboxEvent> raw = viewModel.getEvents().getValue();
+        assertNotNull(raw);
+        InboxEvent event = raw.consume();
+        assertNotNull(event);
+        assertTrue(event instanceof InboxGroupRemovalEvent);
+        assertEquals("Late Group", ((InboxGroupRemovalEvent) event).getGroupTitle());
+    }
+
+    @Test
     public void muteFailureSurfacesThroughTheOneShotEvent() {
         ApiError failure = new ApiError.Network("down");
         when(repository.muteConversation(eq("c-1"), any(Instant.class)))
