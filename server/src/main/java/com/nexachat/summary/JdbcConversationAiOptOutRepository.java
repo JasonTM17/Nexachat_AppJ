@@ -64,6 +64,7 @@ public class JdbcConversationAiOptOutRepository implements ConversationAiOptOuts
                     WHERE o.conversation_id = ?
                       AND m.type = 'TEXT'
                       AND m.deleted_at IS NULL
+                      AND (m.expires_at IS NULL OR m.expires_at > now())
                       AND m.content IS NOT NULL
                       AND btrim(m.content) <> ''
                 )

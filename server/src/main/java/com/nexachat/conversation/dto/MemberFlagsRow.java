@@ -18,8 +18,15 @@ public record MemberFlagsRow(
         Instant mutedUntil,
         boolean archived,
         boolean pinned,
-        Instant pinnedAt
+        Instant pinnedAt,
+        Integer disappearingSeconds
 ) {
+
+    /** Pre-disappearing shape for callers that predate the timer column. */
+    public MemberFlagsRow(UUID conversationId, boolean muted, Instant mutedUntil,
+                          boolean archived, boolean pinned, Instant pinnedAt) {
+        this(conversationId, muted, mutedUntil, archived, pinned, pinnedAt, null);
+    }
 
     /** Effective mute state at {@code now}: a past expiry no longer mutes. */
     public boolean isMutedAt(Instant now) {

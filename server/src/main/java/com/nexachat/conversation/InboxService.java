@@ -226,13 +226,17 @@ public class InboxService {
                     }
                     boolean lastEncrypted = last != null
                             && encryptedLastMessageIds.contains(last.id());
+                    // An expired-but-unpurged last message previews exactly like
+                    // a recall tombstone — never its body.
+                    boolean lastExpired = last != null && last.deletedAt() == null
+                            && last.expiresAt() != null && !last.expiresAt().isAfter(now);
                     return new InboxEntry(
                             row.id(),
                             row.type().name(),
                             row.title(),
                             row.avatarUrl(),
                             membersByConversation.getOrDefault(row.id(), List.of()),
-                            toLastMessage(last, lastEncrypted),
+                            toLastMessage(last, lastEncrypted && !lastExpired, lastExpired),
                             unreadByConversation.getOrDefault(row.id(), 0L),
                             row.lastReadSeq(),
                             row.type() == com.nexachat.conversation.Conversation.Type.DIRECT
@@ -244,7 +248,8 @@ public class InboxService {
                             row.pinned(),
                             row.pinned() ? row.pinnedAt() : null,
                             labelsByConversation.getOrDefault(row.id(), List.of()),
-                            lastEncrypted, row.e2eeEnabled());
+                            lastEncrypted, row.e2eeEnabled(),
+                            row.disappearingSeconds() == null ? 0 : row.disappearingSeconds());
                 })
                 .toList();
     }
@@ -299,13 +304,16 @@ public class InboxService {
                 view.role().name());
     }
 
-    private static InboxEntry.LastMessage toLastMessage(MessageRow row, boolean encrypted) {
+    private static InboxEntry.LastMessage toLastMessage(MessageRow row, boolean encrypted,
+                                                        boolean expired) {
         if (row == null) {
             return null;
         }
+        Instant deletedAt = row.deletedAt() != null ? row.deletedAt()
+                : expired ? row.expiresAt() : null;
         return new InboxEntry.LastMessage(
-                row.seq(), row.type().name(), encrypted ? null : snippet(row.content()),
-                row.senderId(), row.createdAt(), row.deletedAt());
+                row.seq(), row.type().name(), encrypted || expired ? null : snippet(row.content()),
+                row.senderId(), row.createdAt(), deletedAt);
     }
 
     private static String snippet(String content) {

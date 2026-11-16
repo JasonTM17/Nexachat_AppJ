@@ -154,8 +154,8 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     @Query("""
             SELECT new com.nexachat.conversation.dto.MemberFlagsRow(
                        m.conversation.id, m.muted, m.mutedUntil, m.archived,
-                       m.pinned, m.pinnedAt)
-            FROM ConversationMember m
+                       m.pinned, m.pinnedAt, c.disappearingSeconds)
+            FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId AND m.conversation.id IN :conversationIds
             """)
     List<MemberFlagsRow> findMemberFlags(@Param("userId") UUID userId,
@@ -261,7 +261,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
                        m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
-                       c.e2eeEnabled, m.joinedAt)
+                       c.e2eeEnabled, m.joinedAt, c.disappearingSeconds)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId AND m.archived = :archived
             ORDER BY m.pinned DESC, COALESCE(c.lastMessageSeq, 0) DESC,
@@ -276,7 +276,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
                        m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
-                       c.e2eeEnabled, m.joinedAt)
+                       c.e2eeEnabled, m.joinedAt, c.disappearingSeconds)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId AND m.archived = :archived
               AND EXISTS (SELECT a.id FROM ConversationLabelAssignment a
@@ -301,7 +301,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
                        m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
-                       c.e2eeEnabled, m.joinedAt)
+                       c.e2eeEnabled, m.joinedAt, c.disappearingSeconds)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId
               AND m.archived = :archived
@@ -332,7 +332,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
                        m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
-                       c.e2eeEnabled, m.joinedAt)
+                       c.e2eeEnabled, m.joinedAt, c.disappearingSeconds)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId
               AND m.archived = :archived
@@ -367,7 +367,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
                        m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
-                       c.e2eeEnabled, m.joinedAt)
+                       c.e2eeEnabled, m.joinedAt, c.disappearingSeconds)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId
               AND m.archived = :archived
@@ -397,7 +397,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
                        c.id, c.type, c.title, c.avatarUrl, c.lastMessageId,
                        c.lastMessageSeq, c.createdAt, m.lastReadSeq,
                        m.muted, m.mutedUntil, m.archived, m.pinned, m.pinnedAt,
-                       c.e2eeEnabled, m.joinedAt)
+                       c.e2eeEnabled, m.joinedAt, c.disappearingSeconds)
             FROM ConversationMember m JOIN m.conversation c
             WHERE m.user.id = :userId
               AND m.archived = :archived
@@ -456,6 +456,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
               AND msg.conversation.id = m.conversation.id
               AND msg.seq > m.lastReadSeq
               AND msg.deletedAt IS NULL
+              AND (msg.expiresAt IS NULL OR msg.expiresAt > CURRENT_TIMESTAMP)
               AND msg.createdAt >= m.joinedAt
             GROUP BY m.conversation.id
             """)
