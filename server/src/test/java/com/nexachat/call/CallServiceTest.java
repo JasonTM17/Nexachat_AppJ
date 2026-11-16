@@ -75,7 +75,8 @@ class CallServiceTest {
         service = new CallService(registry, recordRepository, conversationRepository,
                 memberRepository, rateLimitService, systemMessageWriter,
                 userRepository, eventPublisher,
-                "stun:stun.l.google.com:19302");
+                "stun:stun.l.google.com:19302",
+                mock(com.nexachat.user.UserBlockRepository.class));
     }
 
     private void stubActiveParticipants(UUID firstUserId, UUID secondUserId) {
@@ -320,7 +321,8 @@ class CallServiceTest {
         service = new CallService(registry, recordRepository, conversationRepository,
                 memberRepository, rateLimitService, systemMessageWriter,
                 userRepository, eventPublisher,
-                "stun:stun.l.google.com:19302");
+                "stun:stun.l.google.com:19302",
+                mock(com.nexachat.user.UserBlockRepository.class));
         UUID callId = UUID.randomUUID();
         service.signal(conversationId, callerId,
                 new CallSignal(CallSignal.Type.INVITE, callId, null, null));

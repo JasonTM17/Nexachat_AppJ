@@ -148,6 +148,13 @@ public class PinService {
         requirePinRole(conversation, member);
         Message message = requireConversationMessage(conversationId, messageId);
 
+        // A suppressed row is invisible to everyone but its sender: a member
+        // who could not see it must not pin it into shared visibility either —
+        // the refusal is the same MESSAGE_NOT_FOUND a foreign id gives.
+        if (message.isPeerSuppressed() && !message.getSender().getId().equals(userId)) {
+            throw ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found");
+        }
+
         if (!pinRepository.existsByConversation_IdAndMessage_Id(conversationId, messageId)) {
             if (pinRepository.countByConversation_Id(conversationId) >= MAX_PINS_PER_CONVERSATION) {
                 throw ApiException.of(ApiErrorCode.PIN_LIMIT,

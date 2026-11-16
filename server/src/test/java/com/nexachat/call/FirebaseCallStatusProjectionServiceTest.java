@@ -209,7 +209,8 @@ class FirebaseCallStatusProjectionServiceTest {
         });
         return new CallService(registry, records, conversations, members, rateLimits,
                 systemMessages, users, events,
-                "stun:stun.l.google.com:19302");
+                "stun:stun.l.google.com:19302",
+                mock(com.nexachat.user.UserBlockRepository.class));
     }
 
     private static final class RecordingRtdbClient implements FirebaseRtdbClient {

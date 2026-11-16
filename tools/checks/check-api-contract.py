@@ -46,7 +46,8 @@ DOC_ROUTE = re.compile(
     r"(/api/v1/[A-Za-z0-9_./{}*:-]*|/actuator[A-Za-z0-9_./{}*:-]*"
     r"|/ws[A-Za-z0-9_./{}*:-]*"
     r"|/(?:auth|users|contacts|conversations|labels|messages|attachments|files"
-    r"|sync|chat|calls|invite-links|account-deletion|devices|rag|realtime)"
+    r"|sync|chat|calls|invite-links|account-deletion|devices|rag|realtime"
+    r"|reports)"
     r"[A-Za-z0-9_./{}*:-]*)`?"
 )
 VARIABLE = re.compile(r"\{[^}]*\}")

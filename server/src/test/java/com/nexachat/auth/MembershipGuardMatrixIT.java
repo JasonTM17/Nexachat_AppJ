@@ -85,7 +85,7 @@ class MembershipGuardMatrixIT extends SecurityITBase {
         for (String line : readMatrixLines()) {
             String[] columns = line.split("\t", -1);
             String path = columns[1];
-            if (isConversationScoped(path)) {
+            if (isConversationScoped(columns[0], path)) {
                 conversationScopedProbeIds.add(columns[4]);
             }
         }
@@ -119,7 +119,7 @@ class MembershipGuardMatrixIT extends SecurityITBase {
                 // These routes resolve the target resource before any conversation
                 // id exists, so their "unknown target" case is an unknown message or
                 // attachment rather than an unknown conversation.
-                case "rest-017", "rest-081", "rest-091", "rest-019", "rest-037", "rest-137" -> unknownTarget;
+                case "rest-017", "rest-081", "rest-091", "rest-019", "rest-037", "rest-137", "rest-149" -> unknownTarget;
                 default -> unknownConversation;
             };
             assertCase(op, "unknown", f.outsider(), unknownProbe, op.unknown());
@@ -768,6 +768,11 @@ class MembershipGuardMatrixIT extends SecurityITBase {
                 "/api/v1/conversations/{conversationId}/translate-prefs",
                 Map.of("autoTranslate", false)));
 
+        // Starring resolves the message first, then membership; unstarring and listing
+        // only touch the caller's own stars, so they are not membership-gated.
+        ops.put("rest-149", messageReaction("rest-149", "PUT",
+                "/api/v1/messages/{messageId}/star"));
+
         // Attachment and file reads resolve the stored object first, then the
         // owner-or-member rule of the bound message.
         ops.put("rest-019", attachmentContent("rest-019"));
@@ -889,7 +894,11 @@ class MembershipGuardMatrixIT extends SecurityITBase {
                 FILE_NOT_FOUND, NOT_MEMBER, NOT_MEMBER, null, null);
     }
 
-    private static boolean isConversationScoped(String path) {
+    private static boolean isConversationScoped(String method, String path) {
+        if (path.equals("/api/v1/messages/starred")
+                || (method.equals("DELETE") && path.equals("/api/v1/messages/{id}/star"))) {
+            return false;
+        }
         return path.startsWith("/api/v1/conversations/{")
                 || path.startsWith("/api/v1/messages/")
                 || path.equals("/api/v1/attachments/{id}/content")

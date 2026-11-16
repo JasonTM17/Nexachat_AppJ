@@ -31,13 +31,16 @@ public class MessageBroadcastListener {
 
     private final SimpMessagingTemplate messaging;
     private final ConversationMemberRepository memberRepository;
+    private final MessageRepository messageRepository;
     private final UserRepository userRepository;
 
     public MessageBroadcastListener(SimpMessagingTemplate messaging,
                                     ConversationMemberRepository memberRepository,
+                                    MessageRepository messageRepository,
                                     UserRepository userRepository) {
         this.messaging = messaging;
         this.memberRepository = memberRepository;
+        this.messageRepository = messageRepository;
         this.userRepository = userRepository;
     }
 
@@ -61,12 +64,25 @@ public class MessageBroadcastListener {
                 ? java.util.Set.of()
                 : java.util.Set.copyOf(memberRepository.findAdmittedUserIds(
                         event.conversationId(), replyTo.createdAt()));
+        java.util.Optional<UUID> quoteSuppressedSender = replyTo == null
+                ? java.util.Optional.empty()
+                : messageRepository.findPeerSuppressedSenderId(replyTo.id());
         EventEnvelope withoutQuote = replyTo == null ? envelope : EventEnvelope.of(
                 WsEventType.MESSAGE_CREATED, event.conversationId(), event.message().withoutReplyPreview());
+        // V38: inbox pushes go per-user around the topic gate, so the durable
+        // suppression flag is checked again here — a hidden row updates only
+        // its sender's inbox (their other devices still converge).
+        java.util.Optional<UUID> suppressedSenderId =
+                messageRepository.findPeerSuppressedSenderId(event.message().id());
         for (UUID memberId : memberRepository.findAdmittedUserIds(
                 event.conversationId(), event.message().createdAt())) {
+            if (suppressedSenderId.isPresent() && !suppressedSenderId.get().equals(memberId)) {
+                continue;
+            }
             messaging.convertAndSendToUser(memberId.toString(), "/queue/inbox",
-                    replyTo == null || admittedToQuote.contains(memberId) ? envelope : withoutQuote);
+                    replyTo == null || (admittedToQuote.contains(memberId)
+                            && quoteSuppressedSender.map(memberId::equals).orElse(true))
+                            ? envelope : withoutQuote);
         }
     }
 

@@ -640,6 +640,28 @@
                         android:layout_height="wrap_content"
                         android:contentDescription="@string/cd_show_seen" />
                 </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="56dp"
+                    android:background="?attr/colorSurfaceContainerHighest" />
+
+                <com.nexachat.core.ui.components.SettingsRowView
+                    android:id="@+id/starredMessagesRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="56dp"
+                    android:background="?attr/colorSurfaceContainerHighest" />
+
+                <com.nexachat.core.ui.components.SettingsRowView
+                    android:id="@+id/blockedUsersRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

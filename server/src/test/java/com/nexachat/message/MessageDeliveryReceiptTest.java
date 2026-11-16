@@ -75,6 +75,7 @@ class MessageDeliveryReceiptTest {
         messageController = new MessageController(messageService);
         wsController = new WsMessageController(messageService, messaging);
         broadcastListener = new MessageBroadcastListener(messaging, memberRepository,
+                messageRepository,
                 mock(com.nexachat.user.UserRepository.class));
     }
 

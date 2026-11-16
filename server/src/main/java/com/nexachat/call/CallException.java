@@ -7,7 +7,8 @@ public class CallException extends RuntimeException {
         CALL_STATE_INVALID,
         NOT_MEMBER,
         VALIDATION_FAILED,
-        RATE_LIMITED
+        RATE_LIMITED,
+        BLOCKED
     }
 
     private final Code code;
@@ -39,5 +40,10 @@ public class CallException extends RuntimeException {
 
     public static CallException rateLimited() {
         return new CallException(Code.RATE_LIMITED, "Call rate limit exceeded");
+    }
+
+    /** The caller blocked the callee — a typed refusal (the caller created the block). */
+    public static CallException blocked() {
+        return new CallException(Code.BLOCKED, "You blocked this user");
     }
 }

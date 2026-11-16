@@ -48,7 +48,8 @@ class ContactServiceTest {
     void setUp() {
         // lenient: the pass-through save covers every happy-path insert.
         lenient().when(contactRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
-        contactService = new ContactService(contactRepository, userRepository, phoneService);
+        contactService = new ContactService(contactRepository, userRepository, phoneService,
+                org.mockito.Mockito.mock(com.nexachat.user.UserBlockRepository.class));
     }
 
     private User userWithId(String phone, String displayName) {

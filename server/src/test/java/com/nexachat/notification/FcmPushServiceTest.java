@@ -62,7 +62,10 @@ class FcmPushServiceTest {
         mockGateway = new MockFcmGateway();
         pushService = new DefaultFcmPushService(tokenRepository, mockGateway);
         eventListener = new NotificationEventListener(
-                pushService, memberRepository, presenceState, callRegistry, userRepository,
+                pushService, memberRepository,
+                mock(com.nexachat.message.MessageRepository.class),
+                mock(com.nexachat.user.UserBlockRepository.class),
+                presenceState, callRegistry, userRepository,
                 tokenRepository, Clock.systemUTC());
     }
 

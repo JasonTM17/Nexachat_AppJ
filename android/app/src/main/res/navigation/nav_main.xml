@@ -141,6 +141,16 @@
     </fragment>
 
     <fragment
+        android:id="@+id/blockedUsersFragment"
+        android:name="com.nexachat.feature.safety.BlockedUsersFragment"
+        android:label="@string/blocked_users_title" />
+
+    <fragment
+        android:id="@+id/starredMessagesFragment"
+        android:name="com.nexachat.feature.safety.StarredMessagesFragment"
+        android:label="@string/starred_messages_title" />
+
+    <fragment
         android:id="@+id/groupBoardFragment"
         android:name="com.nexachat.feature.groupboard.GroupBoardFragment"
         android:label="@string/group_board_title">

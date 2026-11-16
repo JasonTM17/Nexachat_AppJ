@@ -41,6 +41,8 @@ class MessageBroadcastListenerTest {
     private ConversationMemberRepository memberRepository;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private MessageRepository messageRepository;
 
     private MessageBroadcastListener listener;
 
@@ -50,7 +52,8 @@ class MessageBroadcastListenerTest {
 
     @BeforeEach
     void setUp() {
-        listener = new MessageBroadcastListener(messaging, memberRepository, userRepository);
+        listener = new MessageBroadcastListener(messaging, memberRepository,
+                messageRepository, userRepository);
     }
 
     @Test
@@ -131,6 +134,31 @@ class MessageBroadcastListenerTest {
         assertThat(forB.replyTo()).isNull();
         assertThat(forB.replyToId()).isEqualTo(quotedId);
         assertThat(forB.content()).isEqualTo("reply");
+    }
+
+    @Test
+    void inboxPushDropsTheQuotePreviewOfAPeerSuppressedMessageForItsPeer() {
+        Instant quotedAt = Instant.parse("2026-01-01T00:00:00Z");
+        Instant sentAt = Instant.parse("2026-01-02T00:00:00Z");
+        UUID quotedId = UUID.randomUUID();
+        var quote = new com.nexachat.message.dto.ReplyRefResponse(
+                quotedId, memberA, "A", "TEXT", "hidden from B", false, quotedAt);
+        MessageResponse message = new MessageResponse(
+                UUID.randomUUID(), conversationId, 9L, memberA, "A", "TEXT",
+                "reply", UUID.randomUUID(), quotedId, quote, List.of(), List.of(),
+                sentAt, null, null, List.of(), false);
+        when(memberRepository.findAdmittedUserIds(conversationId, sentAt)).thenReturn(List.of(memberA, memberB));
+        when(memberRepository.findAdmittedUserIds(conversationId, quotedAt)).thenReturn(List.of(memberA, memberB));
+        when(messageRepository.findPeerSuppressedSenderId(quotedId)).thenReturn(java.util.Optional.of(memberA));
+
+        listener.onMessageCreated(new MessageCreatedEvent(conversationId, message));
+
+        ArgumentCaptor<EventEnvelope> toA = ArgumentCaptor.forClass(EventEnvelope.class);
+        verify(messaging).convertAndSendToUser(eq(memberA.toString()), eq("/queue/inbox"), toA.capture());
+        assertThat(((MessageResponse) toA.getValue().payload()).replyTo()).isEqualTo(quote);
+        ArgumentCaptor<EventEnvelope> toB = ArgumentCaptor.forClass(EventEnvelope.class);
+        verify(messaging).convertAndSendToUser(eq(memberB.toString()), eq("/queue/inbox"), toB.capture());
+        assertThat(((MessageResponse) toB.getValue().payload()).replyTo()).isNull();
     }
 
     @Test

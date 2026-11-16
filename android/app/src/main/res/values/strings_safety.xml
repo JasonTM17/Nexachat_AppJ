@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Block -->
+    <string name="block_user">Block</string>
+    <string name="unblock_user">Unblock</string>
+    <string name="block_user_dialog_title">Block %1$s?</string>
+    <string name="block_user_dialog_body">Blocked contacts can\'t call you or reach you directly.</string>
+    <string name="user_blocked_snackbar">Blocked</string>
+    <string name="user_unblocked_snackbar">Unblocked</string>
+    <string name="blocked_users_title">Blocked users</string>
+    <string name="blocked_users_empty">No blocked users</string>
+    <string name="blocked_composer_banner">You blocked this contact</string>
+    <string name="action_star">Star</string>
+    <string name="action_unstar">Unstar</string>
+    <string name="action_star_desc">Save for quick access</string>
+    <string name="action_unstar_desc">Remove from starred</string>
+    <string name="action_report">Report</string>
+    <string name="action_report_desc">Report this message</string>
+    <string name="starred_messages_title">Starred messages</string>
+    <string name="starred_messages_empty">No starred messages</string>
+    <string name="report_title">Report</string>
+    <string name="report_reason_spam">Spam</string>
+    <string name="report_reason_harassment">Harassment</string>
+    <string name="report_reason_violence">Violence</string>
+    <string name="report_reason_sexual">Sexual content</string>
+    <string name="report_reason_scam">Scam</string>
+    <string name="report_reason_other">Other</string>
+    <string name="report_details_hint">Details (optional)</string>
+    <string name="report_submit">Submit report</string>
+    <string name="report_sent_snackbar">Report submitted</string>
+    <string name="report_error_snackbar">Report failed</string>
+    <string name="report_rate_limited">Too many reports — try again later</string>
+    <string name="safety_error_generic">Something went wrong</string>
+    <string name="cd_starred_message">Starred message</string>
+    <string name="cd_unblock">Unblock</string>
+</resources>

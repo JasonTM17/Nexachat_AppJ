@@ -25,9 +25,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             OfflineOutboxEntity.class,
             SyncCursorEntity.class,
             KeysetTrustEntity.class,
-            MessageTranslationEntity.class
+            MessageTranslationEntity.class,
+            StarredMessageEntity.class
         },
-        version = 18,
+        version = 19,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -41,6 +42,7 @@ public abstract class AppDatabase extends RoomDatabase {
     public abstract SyncCursorDao syncCursorDao();
     public abstract KeysetTrustDao keysetTrustDao();
     public abstract MessageTranslationDao messageTranslationDao();
+    public abstract StarDao starDao();
 
     /** Clears cached account data and other offline actions while retaining message sends. */
     public void clearAccountDataPreservingOutbox() {
@@ -50,6 +52,7 @@ public abstract class AppDatabase extends RoomDatabase {
             db.execSQL("DELETE FROM `conversations`");
             db.execSQL("DELETE FROM `message_reactions`");
             db.execSQL("DELETE FROM `pinned_messages`");
+            db.execSQL("DELETE FROM `message_stars`");
             db.execSQL("DELETE FROM `users`");
             db.execSQL("DELETE FROM `call_logs`");
             db.execSQL("DELETE FROM `offline_outbox`");
@@ -306,6 +309,17 @@ public abstract class AppDatabase extends RoomDatabase {
                     + "`sourceLang` TEXT NOT NULL, `translatedText` TEXT NOT NULL, "
                     + "`fetchedAt` INTEGER NOT NULL, "
                     + "PRIMARY KEY(`messageId`, `changeVersion`, `targetLang`))");
+        }
+    };
+
+    /** Per-user star markers; ids stay stable across reinstalls of cached history. */
+    public static final Migration MIGRATION_18_19 = new Migration(18, 19) {
+        @Override public void migrate(SupportSQLiteDatabase db) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS `message_stars` ("
+                    + "`messageId` TEXT NOT NULL, `conversationId` TEXT NOT NULL, "
+                    + "`starredAt` INTEGER NOT NULL, PRIMARY KEY(`messageId`))");
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_message_stars_conversationId` "
+                    + "ON `message_stars` (`conversationId`)");
         }
     };
 

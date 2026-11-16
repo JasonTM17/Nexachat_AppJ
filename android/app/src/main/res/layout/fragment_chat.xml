@@ -179,6 +179,38 @@
         app:layout_constraintStart_toStartOf="parent" />
 
     <LinearLayout
+        android:id="@+id/blockedPeerBanner"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:background="?attr/colorSurfaceContainer"
+        android:gravity="center_vertical"
+        android:minHeight="@dimen/min_touch_target"
+        android:orientation="horizontal"
+        android:paddingHorizontal="@dimen/space_md"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/blocked_composer_banner"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/unblockPeerButton"
+            style="@style/Widget.NexaChat.Button.Text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="@string/cd_unblock"
+            android:minHeight="@dimen/min_touch_target"
+            android:text="@string/unblock_user" />
+    </LinearLayout>
+
+    <LinearLayout
         android:id="@+id/chatError"
         android:layout_width="0dp"
         android:layout_height="wrap_content"

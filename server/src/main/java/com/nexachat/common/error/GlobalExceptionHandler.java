@@ -72,6 +72,8 @@ public class GlobalExceptionHandler {
         return switch (ex.getCode()) {
             case NOT_MEMBER -> ResponseEntity.status(HttpStatus.FORBIDDEN).body(ErrorResponse.of(
                     ApiErrorCode.NOT_MEMBER, ex.getMessage()));
+            case BLOCKED -> ResponseEntity.status(HttpStatus.FORBIDDEN).body(ErrorResponse.of(
+                    ApiErrorCode.BLOCKED, ex.getMessage()));
             case VALIDATION_FAILED -> ResponseEntity.badRequest().body(ErrorResponse.of(
                     ApiErrorCode.VALIDATION_FAILED, ex.getMessage()));
             case RATE_LIMITED -> ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(ErrorResponse.of(

@@ -17,15 +17,18 @@ public class UserSettingsService {
 
     private final UserRepository userRepository;
     private final ConversationMemberRepository memberRepository;
+    private final UserBlockRepository blockRepository;
     private final PresenceSessionState sessionState;
     private final ApplicationEventPublisher eventPublisher;
 
     public UserSettingsService(UserRepository userRepository,
                                ConversationMemberRepository memberRepository,
+                               UserBlockRepository blockRepository,
                                PresenceSessionState sessionState,
                                ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.memberRepository = memberRepository;
+        this.blockRepository = blockRepository;
         this.sessionState = sessionState;
         this.eventPublisher = eventPublisher;
     }
@@ -66,8 +69,17 @@ public class UserSettingsService {
                 eventPublisher.publishEvent(new UserPresenceVisibilityChangedEvent(userId, showPresence));
             }
             if (changed && sessionState.isOnline(userId)) {
+                java.util.List<UUID> peers = memberRepository.findDirectPeerUserIds(userId);
+                // V38: the visibility-flip broadcast honors the same block
+                // audience as connect/disconnect — an edge in either
+                // direction removes the peer from the update.
+                java.util.Set<UUID> hidden = new java.util.HashSet<>(
+                        blockRepository.findRelatedIdsEitherDirection(userId, peers));
+                if (!hidden.isEmpty()) {
+                    peers = peers.stream().filter(id -> !hidden.contains(id)).toList();
+                }
                 eventPublisher.publishEvent(new UserPresenceChangedEvent(
-                        userId, showPresence, null, memberRepository.findDirectPeerUserIds(userId)));
+                        userId, showPresence, null, peers));
             }
         }
         if (showSeen != null) {

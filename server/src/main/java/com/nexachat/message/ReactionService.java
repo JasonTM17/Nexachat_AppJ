@@ -184,6 +184,9 @@ public class ReactionService {
         if (!memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)) {
             throw ApiException.of(ApiErrorCode.NOT_MEMBER, "Not a member of this conversation");
         }
+        if (message.isPeerSuppressed() && !message.getSender().getId().equals(userId)) {
+            throw ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found");
+        }
         if (message.getDeletedAt() != null) {
             throw ApiException.of(ApiErrorCode.MESSAGE_DELETED, "Message was deleted");
         }

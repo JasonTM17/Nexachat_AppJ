@@ -154,6 +154,14 @@ public final class ProfileFragment extends Fragment {
         binding.showPresence.setOnCheckedChangeListener((button, checked) -> {
             if (!syncingPrivacy) viewModel.setShowPresence(checked);
         });
+        binding.starredMessagesRow.setTitle(getString(R.string.starred_messages_title));
+        binding.starredMessagesRow.setLeadingIcon(R.drawable.ic_star_outline);
+        binding.starredMessagesRow.setOnClickListener(v ->
+                NavHostFragment.findNavController(this).navigate(R.id.starredMessagesFragment));
+        binding.blockedUsersRow.setTitle(getString(R.string.blocked_users_title));
+        binding.blockedUsersRow.setLeadingIcon(R.drawable.ic_block);
+        binding.blockedUsersRow.setOnClickListener(v ->
+                NavHostFragment.findNavController(this).navigate(R.id.blockedUsersFragment));
         binding.showPresenceRow.setOnClickListener(v -> binding.showPresence.toggle());
         binding.showSeen.setOnCheckedChangeListener((button, checked) -> {
             if (!syncingPrivacy) viewModel.setShowSeen(checked);

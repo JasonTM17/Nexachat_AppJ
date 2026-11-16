@@ -53,9 +53,14 @@ class StompConversationMembershipOutboundInterceptorTest {
     private final SimpUserRegistry userRegistry = mock(SimpUserRegistry.class);
     private final StompSessionRegistry sessionRegistry = mock(StompSessionRegistry.class);
     private final MessageChannel channel = mock(MessageChannel.class);
+    private final com.nexachat.message.MessageRepository messageRepository =
+            mock(com.nexachat.message.MessageRepository.class);
+    private final com.nexachat.user.UserBlockRepository blockRepository =
+            mock(com.nexachat.user.UserBlockRepository.class);
     private final StompConversationMembershipOutboundInterceptor interceptor =
             new StompConversationMembershipOutboundInterceptor(
-                    memberRepository, userRegistry, sessionRegistry);
+                    memberRepository, messageRepository, blockRepository,
+                    userRegistry, sessionRegistry);
 
     @Test
     void connectedResponsePassesBeforeSessionBindingCompletes() {
@@ -133,7 +138,10 @@ class StompConversationMembershipOutboundInterceptorTest {
             return true;
         });
         StompConversationMembershipOutboundInterceptor outbound =
-                new StompConversationMembershipOutboundInterceptor(members, connectedUsers, registry);
+                new StompConversationMembershipOutboundInterceptor(members,
+                        mock(com.nexachat.message.MessageRepository.class),
+                        mock(com.nexachat.user.UserBlockRepository.class),
+                        connectedUsers, registry);
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
@@ -193,7 +201,10 @@ class StompConversationMembershipOutboundInterceptorTest {
         ConversationMemberRepository members = mock(ConversationMemberRepository.class);
         when(members.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
         StompConversationMembershipOutboundInterceptor outbound =
-                new StompConversationMembershipOutboundInterceptor(members, connectedUsers, registry);
+                new StompConversationMembershipOutboundInterceptor(members,
+                        mock(com.nexachat.message.MessageRepository.class),
+                        mock(com.nexachat.user.UserBlockRepository.class),
+                        connectedUsers, registry);
 
         Message<byte[]> authorized = conversationMessage(conversationId);
         assertThat(outbound.preSend(authorized, channel)).isSameAs(authorized);
@@ -330,11 +341,160 @@ class StompConversationMembershipOutboundInterceptorTest {
         assertThat(interceptor.preSend(withQuote, channel)).isSameAs(withQuote);
     }
 
-    private static Message<byte[]> replyFrame(UUID conversationId, String createdAt, String quotedAt) {
+    // ------------------------------------------------------------- V38 blocks
+
+    @Test
+    void quotePreviewOfAPeerSuppressedMessageIsRemovedForEveryoneButItsSender() throws Exception {
+        UUID viewer = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        bindSessionTo(viewer);
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, viewer)).thenReturn(true);
+        when(memberRepository.existsAdmittedAt(org.mockito.ArgumentMatchers.eq(conversationId),
+                org.mockito.ArgumentMatchers.eq(viewer), org.mockito.ArgumentMatchers.any())).thenReturn(true);
+        UUID quotedId = UUID.randomUUID();
+        when(messageRepository.findPeerSuppressedSenderId(quotedId))
+                .thenReturn(java.util.Optional.of(UUID.randomUUID()));
+
+        Message<?> released = interceptor.preSend(
+                replyFrame(conversationId, "2026-01-01T10:00:00Z", "2026-01-01T09:00:00Z", quotedId),
+                channel);
+
+        assertThat(released).isNotNull();
+        var payload = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree((byte[]) released.getPayload()).path("payload");
+        assertThat(payload.has("replyTo"))
+                .as("a hidden row's content must not leak through a later reply's preview")
+                .isFalse();
+
+        when(messageRepository.findPeerSuppressedSenderId(quotedId))
+                .thenReturn(java.util.Optional.of(viewer));
+        Message<byte[]> ownQuote = replyFrame(
+                conversationId, "2026-01-01T10:00:00Z", "2026-01-01T09:00:00Z", quotedId);
+        assertThat(interceptor.preSend(ownQuote, channel)).isSameAs(ownQuote);
+    }
+
+    @Test
+    void suppressedMessageFrameReachesOnlyItsSender() {
+        UUID viewer = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        bindSessionTo(viewer);
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, viewer)).thenReturn(true);
+        when(memberRepository.existsAdmittedAt(
+                conversationId, viewer, Instant.parse("2026-01-01T10:00:00Z"))).thenReturn(true);
+        UUID suppressedId = UUID.randomUUID();
+        UUID otherSender = UUID.randomUUID();
+        when(messageRepository.findPeerSuppressedSenderId(suppressedId))
+                .thenReturn(java.util.Optional.of(otherSender));
+
+        assertThat(interceptor.preSend(
+                messageFrame(conversationId, "MESSAGE_CREATED", suppressedId), channel))
+                .as("a peer-suppressed row never reaches anyone but its sender")
+                .isNull();
+
+        when(messageRepository.findPeerSuppressedSenderId(suppressedId))
+                .thenReturn(java.util.Optional.of(viewer));
+        Message<byte[]> ownRow = messageFrame(conversationId, "MESSAGE_CREATED", suppressedId);
+        assertThat(interceptor.preSend(ownRow, channel))
+                .as("the sender's own sessions keep seeing their suppressed row")
+                .isSameAs(ownRow);
+    }
+
+    @Test
+    void suppressedRowInteractionFramesAreDroppedForNonSenders() {
+        UUID viewer = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        bindSessionTo(viewer);
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, viewer)).thenReturn(true);
+        when(memberRepository.existsAdmittedAt(
+                conversationId, viewer, Instant.parse("2026-01-01T10:00:00Z"))).thenReturn(true);
+        UUID suppressedId = UUID.randomUUID();
+        when(messageRepository.findPeerSuppressedSenderId(suppressedId))
+                .thenReturn(java.util.Optional.of(UUID.randomUUID()));
+
+        assertThat(interceptor.preSend(
+                interactionFrame(conversationId, "PIN_UPDATED", suppressedId,
+                        "\"2026-01-01T10:00:00Z\""), channel))
+                .as("a pin frame naming a hidden row is dropped with it")
+                .isNull();
+        assertThat(interceptor.preSend(
+                interactionFrame(conversationId, "REACTION_UPDATED", suppressedId,
+                        "\"2026-01-01T10:00:00Z\""), channel))
+                .isNull();
+    }
+
+    @Test
+    void activityFramesStopAcrossABlockEdgeInEitherDirection() {
+        UUID viewer = UUID.randomUUID();
+        UUID actor = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        bindSessionTo(viewer);
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, viewer)).thenReturn(true);
+        when(blockRepository.existsBetweenEitherDirection(actor, viewer)).thenReturn(true);
+
+        assertThat(interceptor.preSend(
+                activityFrame(conversationId, "USER_TYPING", actor), channel))
+                .as("typing between blocked users is dropped")
+                .isNull();
+        assertThat(interceptor.preSend(
+                activityFrame(conversationId, "MESSAGE_READ", actor), channel))
+                .as("read receipts between blocked users are dropped")
+                .isNull();
+        assertThat(interceptor.preSend(
+                activityFrame(conversationId, "MESSAGE_DELIVERED", actor), channel))
+                .isNull();
+        // The actor's own sessions still receive their own frames.
+        assertThat(interceptor.preSend(
+                activityFrame(conversationId, "USER_TYPING", viewer), channel))
+                .isNotNull();
+        // An unrelated actor's activity still flows.
+        assertThat(interceptor.preSend(
+                activityFrame(conversationId, "USER_TYPING", UUID.randomUUID()), channel))
+                .isNotNull();
+    }
+
+    private static Message<byte[]> messageFrame(UUID conversationId, String eventType,
+                                                UUID messageId) {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.MESSAGE);
         accessor.setSessionId(SESSION_ID);
         accessor.setDestination("/topic/conversations." + conversationId);
-        UUID quotedId = UUID.randomUUID();
+        String json = "{\"eventType\":\"" + eventType + "\",\"conversationId\":\"" + conversationId
+                + "\",\"payload\":{\"id\":\"" + messageId
+                + "\",\"createdAt\":\"2026-01-01T10:00:00Z\"}}";
+        return MessageBuilder.createMessage(
+                json.getBytes(java.nio.charset.StandardCharsets.UTF_8), accessor.getMessageHeaders());
+    }
+
+    private static Message<byte[]> activityFrame(UUID conversationId, String eventType, UUID actorId) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.MESSAGE);
+        accessor.setSessionId(SESSION_ID);
+        accessor.setDestination("/topic/conversations." + conversationId);
+        String json = "{\"eventType\":\"" + eventType + "\",\"conversationId\":\"" + conversationId
+                + "\",\"payload\":{\"userId\":\"" + actorId + "\"}}";
+        return MessageBuilder.createMessage(
+                json.getBytes(java.nio.charset.StandardCharsets.UTF_8), accessor.getMessageHeaders());
+    }
+
+    private static Message<byte[]> interactionFrame(UUID conversationId, String eventType,
+                                                    UUID messageId, String messageCreatedAtJson) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.MESSAGE);
+        accessor.setSessionId(SESSION_ID);
+        accessor.setDestination("/topic/conversations." + conversationId);
+        String json = "{\"eventType\":\"" + eventType + "\",\"conversationId\":\"" + conversationId
+                + "\",\"payload\":{\"messageId\":\"" + messageId
+                + "\",\"messageCreatedAt\":" + messageCreatedAtJson + "}}";
+        return MessageBuilder.createMessage(
+                json.getBytes(java.nio.charset.StandardCharsets.UTF_8), accessor.getMessageHeaders());
+    }
+
+    private static Message<byte[]> replyFrame(UUID conversationId, String createdAt, String quotedAt) {
+        return replyFrame(conversationId, createdAt, quotedAt, UUID.randomUUID());
+    }
+
+    private static Message<byte[]> replyFrame(UUID conversationId, String createdAt, String quotedAt,
+                                              UUID quotedId) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.MESSAGE);
+        accessor.setSessionId(SESSION_ID);
+        accessor.setDestination("/topic/conversations." + conversationId);
         String json = "{\"eventType\":\"MESSAGE_CREATED\",\"conversationId\":\"" + conversationId
                 + "\",\"payload\":{\"content\":\"reply\",\"createdAt\":\"" + createdAt
                 + "\",\"replyToId\":\"" + quotedId + "\",\"replyTo\":{\"id\":\"" + quotedId
