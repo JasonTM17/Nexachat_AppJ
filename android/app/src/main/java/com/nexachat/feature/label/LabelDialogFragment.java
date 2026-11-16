@@ -384,7 +384,8 @@ public final class LabelDialogFragment extends DialogFragment {
         form.addView(colorGroup, matchWrap());
 
         ScrollView formScroll = new ScrollView(requireContext());
-        formScroll.addView(form);
+        formScroll.addView(form, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(existing == null ? R.string.label_create_title : R.string.label_edit_title)
