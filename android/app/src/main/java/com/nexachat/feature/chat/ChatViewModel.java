@@ -685,9 +685,7 @@ public final class ChatViewModel extends ViewModel {
                     .subscribeOn(Schedulers.io())
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(lang -> {
-                        if (lang != null && !lang.isBlank()) {
-                            accountTargetLang = lang;
-                        }
+                        accountTargetLang = lang == null || lang.isBlank() ? null : lang;
                     }, ignored -> { }));
         }
     }
@@ -814,6 +812,11 @@ public final class ChatViewModel extends ViewModel {
                                     .withSaving(false);
                             if (result instanceof Result.Success<?>) {
                                 translatePrefsState.setValue(state.withError(null));
+                                // Shown translations are in the old language: drop them and
+                                // load (or auto-translate) the new target.
+                                translationStates.setValue(java.util.Map.of());
+                                autoTranslateRequested.clear();
+                                seedCachedTranslations();
                             } else if (result instanceof Result.Failure<?> failure) {
                                 translatePrefsState.setValue(state
                                         .withTargetLang(before.getTargetLang())
@@ -843,11 +846,12 @@ public final class ChatViewModel extends ViewModel {
             return Single.just(Result.failure(new ApiError.Unknown("UNAVAILABLE")));
         }
         return translationRepository.putGlossary(conversationId, terms)
+                .observeOn(AndroidSchedulers.mainThread())
                 .doOnSuccess(result -> {
                     if (result instanceof Result.Success<?>) {
                         // The server keys translations by glossary, so local copies made
                         // under the old glossary would keep serving stale wording.
-                        translationStates.postValue(java.util.Map.of());
+                        translationStates.setValue(java.util.Map.of());
                         autoTranslateRequested.clear();
                         disposables.add(translationRepository.invalidateConversation(conversationId)
                                 .subscribe(() -> { }, ignored -> { }));
