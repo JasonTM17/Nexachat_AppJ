@@ -130,7 +130,7 @@ public final class ChatSurfacePolishContractTest {
                 "0dp", card.getAttributeNS(APP, "cardElevation"));
         assertEquals("?attr/colorSurfaceContainerHigh",
                 card.getAttributeNS(APP, "cardBackgroundColor"));
-        assertEquals("@dimen/corner_md", card.getAttributeNS(APP, "cardCornerRadius"));
+        assertEquals("@dimen/corner_xl", card.getAttributeNS(APP, "cardCornerRadius"));
 
         Element icon = firstTag(card, "ImageView");
         assertEquals("?attr/colorPrimary", icon.getAttributeNS(APP, "tint"));

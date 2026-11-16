@@ -172,12 +172,12 @@
 
     <style name="Widget.NexaChat.TextInputLayout" parent="Widget.Material3.TextInputLayout.FilledBox">
         <item name="boxBackgroundColor">@color/colorSurfaceContainerHigh</item>
-        <item name="boxCornerRadiusTopStart">@dimen/corner_md</item>
-        <item name="boxCornerRadiusTopEnd">@dimen/corner_md</item>
-        <item name="boxCornerRadiusBottomStart">0dp</item>
-        <item name="boxCornerRadiusBottomEnd">0dp</item>
-        <item name="boxStrokeWidth">@dimen/control_stroke_width</item>
-        <item name="boxStrokeWidthFocused">@dimen/focus_stroke_width</item>
+        <item name="boxCornerRadiusTopStart">@dimen/corner_lg</item>
+        <item name="boxCornerRadiusTopEnd">@dimen/corner_lg</item>
+        <item name="boxCornerRadiusBottomStart">@dimen/corner_lg</item>
+        <item name="boxCornerRadiusBottomEnd">@dimen/corner_lg</item>
+        <item name="boxStrokeWidth">0dp</item>
+        <item name="boxStrokeWidthFocused">@dimen/control_stroke_width</item>
         <item name="android:minHeight">56dp</item>
     </style>
 
@@ -329,5 +329,13 @@
 
     <style name="Widget.NexaChat.MaterialTimePicker.ImageButton" parent="Widget.Material3.MaterialTimePicker.ImageButton">
         <item name="shapeAppearance">@style/ShapeAppearance.NexaChat.Button</item>
+    </style>
+
+    <!-- Circular selection indicator for pickers and multi-choice rows. -->
+    <style name="Widget.NexaChat.CheckBox.Round" parent="Widget.Material3.CompoundButton.CheckBox">
+        <item name="android:button">@drawable/sel_check_round</item>
+        <item name="buttonTint">@null</item>
+        <item name="android:minWidth">@dimen/min_touch_target</item>
+        <item name="android:minHeight">@dimen/min_touch_target</item>
     </style>
 </resources>
