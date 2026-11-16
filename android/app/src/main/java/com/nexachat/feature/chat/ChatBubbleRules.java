@@ -1,5 +1,7 @@
 package com.nexachat.feature.chat;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 import com.nexachat.R;
 import com.nexachat.data.ChatMessage;
@@ -125,6 +127,27 @@ public final class ChatBubbleRules {
             long peerDeliveredSeq
     ) {
         return !isGroup && mine && messageSeq != null && messageSeq > 0 && messageSeq <= peerDeliveredSeq;
+    }
+
+    /**
+     * Resolves the message a restored action sheet binds to. The retained
+     * ViewModel list leads: a child sheet recreated with its host resolves
+     * before the view lifecycle republishes the rendered mirror, which is
+     * still the initial empty state then. The rendered list is the fallback
+     * for when no ViewModel value exists yet.
+     */
+    @Nullable
+    public static ChatMessage findActionMessage(
+            @Nullable List<ChatMessage> retainedMessages,
+            @NonNull List<ChatMessage> renderedMessages,
+            @NonNull String messageId) {
+        List<ChatMessage> source = retainedMessages != null ? retainedMessages : renderedMessages;
+        for (ChatMessage message : source) {
+            if (messageId.equals(message.getId())) {
+                return message;
+            }
+        }
+        return null;
     }
 
     public static int findMessageReversedIndex(List<ChatMessage> messages, String targetId) {

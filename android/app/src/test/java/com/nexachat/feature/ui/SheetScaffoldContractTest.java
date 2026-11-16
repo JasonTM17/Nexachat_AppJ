@@ -105,6 +105,26 @@ public final class SheetScaffoldContractTest {
     }
 
     @Test
+    public void actionSheetResolvesItsMessageThroughTheRetainedViewModelState() throws Exception {
+        // On recreation the child sheet resolves before the host view
+        // lifecycle reaches STARTED; the rendered `state` mirror is still
+        // the initial empty UiState then, so the lookup must lead with the
+        // retained ViewModel value.
+        String chat = read("com/nexachat/feature/chat/ChatFragment.java");
+        int start = chat.indexOf("private ChatMessage resolveOriginal(");
+        int end = chat.indexOf("onMessageTap(", start);
+        assertTrue("resolveOriginal must exist", start >= 0 && end > start);
+        String body = chat.substring(start, end);
+        assertTrue("resolution must consult the retained ViewModel state",
+                body.contains("viewModel.getUiState().getValue()"));
+        assertTrue("resolution must delegate to the tested lookup rule",
+                body.contains("ChatBubbleRules.findActionMessage"));
+
+        String rules = read("com/nexachat/feature/chat/ChatBubbleRules.java");
+        assertTrue(rules.contains("findActionMessage"));
+    }
+
+    @Test
     public void actionRowsKeepTheScaffoldMetrics() throws Exception {
         Document row = parse(res("layout/item_message_action_row.xml"));
         assertEquals("@dimen/sheet_action_row_min_height",

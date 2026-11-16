@@ -3,6 +3,8 @@ package com.nexachat.feature.chat;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import com.nexachat.R;
@@ -216,6 +218,45 @@ public final class ChatBubbleRulesTest {
     }
 
     @Test
+    public void actionMessageResolvesFromRetainedStateWhileRenderedListIsEmpty() {
+        // Recreation restores the child sheet before the host view lifecycle
+        // republishes its mirror: the rendered list is still the initial
+        // empty state, and the retained ViewModel list is the only source
+        // that already holds the message.
+        ChatMessage m1 = testMessage("msg-1");
+        ChatMessage m2 = testMessage("msg-2");
+
+        assertSame(m2, ChatBubbleRules.findActionMessage(
+                List.of(m1, m2), Collections.emptyList(), "msg-2"));
+    }
+
+    @Test
+    public void actionMessageFallsBackToTheRenderedListWithoutARetainedState() {
+        ChatMessage m1 = testMessage("msg-1");
+
+        assertSame(m1, ChatBubbleRules.findActionMessage(
+                null, List.of(m1), "msg-1"));
+        assertNull(ChatBubbleRules.findActionMessage(
+                null, List.of(m1), "msg-unknown"));
+    }
+
+    @Test
+    public void actionMessagePrefersTheRetainedListOverTheRenderedMirror() {
+        // The retained state is at least as fresh as the rendered mirror, so
+        // a message absent from it is treated as gone rather than looked up
+        // in the lagging mirror.
+        ChatMessage stale = testMessage("msg-1");
+        ChatMessage fresh = testMessage("msg-1");
+
+        assertSame(fresh, ChatBubbleRules.findActionMessage(
+                List.of(fresh), List.of(stale), "msg-1"));
+        assertNull(ChatBubbleRules.findActionMessage(
+                Collections.emptyList(), List.of(stale), "msg-1"));
+        assertNull(ChatBubbleRules.findActionMessage(
+                List.of(fresh), List.of(stale), "msg-unknown"));
+    }
+
+    @Test
     public void findMessageReversedIndexReturnsCorrectOffset() {
         ChatMessage m1 = new ChatMessage("msg-1", "c1", 1L, "u1", "User", "TEXT", "1",
                 null, null, null, 100L, null, DeliveryStatus.SENT, true,
@@ -229,5 +270,11 @@ public final class ChatBubbleRulesTest {
         assertEquals(0, ChatBubbleRules.findMessageReversedIndex(list, "msg-2"));
         assertEquals(1, ChatBubbleRules.findMessageReversedIndex(list, "msg-1"));
         assertEquals(-1, ChatBubbleRules.findMessageReversedIndex(list, "msg-unknown"));
+    }
+
+    private static ChatMessage testMessage(String id) {
+        return new ChatMessage(id, "c1", 1L, "u1", "User", "TEXT", "body " + id,
+                null, null, null, 100L, null, DeliveryStatus.SENT, true,
+                Collections.emptyList(), Collections.emptyList(), null, null);
     }
 }

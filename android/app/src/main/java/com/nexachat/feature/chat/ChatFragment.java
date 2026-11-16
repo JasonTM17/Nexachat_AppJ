@@ -1781,7 +1781,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     }
 
     @Nullable private ChatMessage resolveOriginal(String id) {
-        return state.getMessages().stream().filter(message -> id.equals(message.getId())).findFirst().orElse(null);
+        // `state` only receives LiveData emissions once the view lifecycle is
+        // STARTED; a child sheet restored with this fragment resolves before
+        // that, so the retained ViewModel value must lead.
+        ChatViewModel.UiState current = viewModel == null ? null : viewModel.getUiState().getValue();
+        return ChatBubbleRules.findActionMessage(
+                current == null ? null : current.getMessages(), state.getMessages(), id);
     }
 
     @Override public void onMessageTap(@NonNull String messageId) { if (searchOpen) { setSearchOpen(false); viewModel.jumpToMessage(messageId); } }
