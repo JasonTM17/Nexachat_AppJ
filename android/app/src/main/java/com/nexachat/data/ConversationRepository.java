@@ -1293,8 +1293,12 @@ public final class ConversationRepository implements AutoCloseable {
      * can still reach and returns the ids it cannot. The server omits a
      * conversation whose member row is gone, which is the only signal that
      * separates a removal from an archive — an archived conversation stays
-     * listed because the caller is still a member. Every failure fails
-     * closed: an unverifiable loss is not a confirmed removal.
+     * listed because the caller is still a member. The server evaluates only
+     * a bounded number of watermarks per request, so candidates are asked in
+     * the same chunks the sync engine uses and the lost sets are unioned.
+     * Every failure fails closed: an unverifiable loss is not a confirmed
+     * removal, and one failed chunk makes the whole confirmation
+     * unverifiable.
      */
     private Single<Set<String>> confirmedInaccessibleIds(List<ConversationEntity> candidates) {
         if (candidates.isEmpty()) {
@@ -1305,23 +1309,44 @@ public final class ConversationRepository implements AutoCloseable {
             watermarks.add(new SyncRequest.Watermark(
                     candidate.getId(), candidate.getLastMessageSeq()));
         }
-        SyncRequest request = new SyncRequest(watermarks, 1, null);
+        List<SyncRequest> requests = SyncEngine.splitWatermarks(watermarks, 1, null);
+        return Flowable.fromIterable(requests)
+                .concatMapSingle(this::accessibleConversationIds)
+                .collect(HashSet<String>::new, Set::addAll)
+                .map(accessible -> {
+                    Set<String> lost = new HashSet<>();
+                    for (ConversationEntity candidate : candidates) {
+                        if (!accessible.contains(candidate.getId())) {
+                            lost.add(candidate.getId());
+                        }
+                    }
+                    return lost;
+                })
+                .onErrorResumeNext(unverifiable -> Single.just(Collections.emptySet()));
+    }
+
+    /**
+     * Ids the caller can still reach within one bounded sync request. Any
+     * call or response failure surfaces as an error so the confirmation can
+     * fail closed as a whole instead of reading a partial answer as a loss.
+     */
+    private Single<Set<String>> accessibleConversationIds(SyncRequest request) {
         Call<SyncResponse> call;
         try {
             call = messageApi.syncDeltas(request);
         } catch (RuntimeException e) {
-            return Single.just(Collections.emptySet());
+            return Single.error(e);
         }
         if (call == null) {
-            return Single.just(Collections.emptySet());
+            return Single.error(new IOException("sync delta request failed"));
         }
         return safeApiCall(call).map(result -> {
             if (!(result instanceof ApiResult.Success<?> success)) {
-                return Collections.<String>emptySet();
+                throw new IOException("sync delta request failed");
             }
             SyncResponse response = (SyncResponse) success.getBody();
             if (response == null) {
-                return Collections.<String>emptySet();
+                throw new IOException("sync delta request failed");
             }
             Set<String> accessible = new HashSet<>();
             for (SyncResponse.ConversationDeltaDto delta : response.getDeltas()) {
@@ -1329,13 +1354,7 @@ public final class ConversationRepository implements AutoCloseable {
                     accessible.add(delta.getConversationId());
                 }
             }
-            Set<String> lost = new HashSet<>();
-            for (ConversationEntity candidate : candidates) {
-                if (!accessible.contains(candidate.getId())) {
-                    lost.add(candidate.getId());
-                }
-            }
-            return lost;
+            return accessible;
         });
     }
 
