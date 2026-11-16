@@ -16,10 +16,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Vertical A–Z rail beside the contact list. One cell per existing section
- * letter; tapping or dragging scrubs the list to that section. Each cell is
- * 48dp wide with its own content description, so screen-reader and keyboard
- * users get the same jump without the swipe gesture.
+ * Vertical A–Z rail beside the contact list. One cell per displayed section
+ * letter; tapping or dragging scrubs the list to that section. The rail is
+ * deliberately one continuous drag target rather than a column of 48dp tap
+ * targets: cells keep a minimum height, and when the viewport is too short
+ * for every section the middle letters are sampled out (first, last and '#'
+ * always stay) instead of shrinking below legibility. Each cell is 48dp wide
+ * with its own content description, so screen-reader and keyboard users get
+ * the same jump without the swipe gesture.
  */
 public final class ContactLetterRailView extends LinearLayout {
 
@@ -32,11 +36,13 @@ public final class ContactLetterRailView extends LinearLayout {
     }
 
     private final List<TextView> cells = new ArrayList<>();
+    private List<String> allLetters = List.of();
     private List<String> letters = List.of();
     @Nullable private Listener listener;
     @Nullable private String activeLetter;
     private int letterColor;
     private int activeColor;
+    private int minCellHeight;
 
     public ContactLetterRailView(@NonNull Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
@@ -45,6 +51,8 @@ public final class ContactLetterRailView extends LinearLayout {
                 this, com.google.android.material.R.attr.colorOnSurfaceVariant);
         activeColor = MaterialColors.getColor(
                 this, com.google.android.material.R.attr.colorPrimary);
+        minCellHeight = getResources().getDimensionPixelSize(
+                R.dimen.letter_rail_cell_min_height);
     }
 
     public void setListener(@Nullable Listener listener) {
@@ -53,10 +61,32 @@ public final class ContactLetterRailView extends LinearLayout {
 
     /** Rebuilds the cells when the section letters changed. */
     public void setLetters(@NonNull List<String> next) {
-        if (next.equals(letters)) {
+        if (next.equals(allLetters)) {
             return;
         }
-        letters = new ArrayList<>(next);
+        allLetters = new ArrayList<>(next);
+        refit(getHeight());
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        refit(MeasureSpec.getSize(heightMeasureSpec));
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+    }
+
+    /**
+     * Rebuilds the cells when the set of letters that fits {@code heightPx}
+     * changed. A rail too short for every section drops middle letters
+     * instead of squeezing cells under the minimum cell height.
+     */
+    private void refit(int heightPx) {
+        int inner = Math.max(0, heightPx - getPaddingTop() - getPaddingBottom());
+        int maxCells = minCellHeight > 0 ? inner / minCellHeight : allLetters.size();
+        List<String> fitted = ContactLetterIndex.fitToCells(allLetters, maxCells);
+        if (fitted.equals(letters)) {
+            return;
+        }
+        letters = fitted;
         activeLetter = null;
         removeAllViews();
         cells.clear();
@@ -66,6 +96,7 @@ public final class ContactLetterRailView extends LinearLayout {
             TextViewCompat.setTextAppearance(cell, R.style.TextAppearance_NexaChat_LabelSmall);
             cell.setTextColor(letterColor);
             cell.setGravity(Gravity.CENTER);
+            cell.setMinimumHeight(minCellHeight);
             cell.setContentDescription("#".equals(letter)
                     ? getContext().getString(R.string.a11y_contacts_section_other)
                     : getContext().getString(R.string.a11y_contacts_section_jump, letter));

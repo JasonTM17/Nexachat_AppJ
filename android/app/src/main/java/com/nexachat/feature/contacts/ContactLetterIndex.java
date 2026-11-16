@@ -75,4 +75,32 @@ public final class ContactLetterIndex {
     public static boolean isRailVisible(int sectionCount, float fontScale) {
         return sectionCount >= MIN_SECTIONS && fontScale < LARGE_FONT_SCALE;
     }
+
+    /**
+     * Letters the rail can show in {@code maxCells} cells. When every section
+     * fits, the list is returned as-is. Otherwise the middle letters are
+     * sampled at the smallest stride that fits — every other letter first —
+     * always keeping the first and last entries; '#' sorts last, so it
+     * survives every stride.
+     */
+    @NonNull
+    public static List<String> fitToCells(@NonNull List<String> letters, int maxCells) {
+        if (letters.isEmpty() || maxCells <= 0) {
+            return List.of();
+        }
+        int count = letters.size();
+        if (count <= maxCells) {
+            return letters;
+        }
+        if (maxCells == 1) {
+            return List.of(letters.get(0));
+        }
+        int stride = (int) Math.ceil((count - 1) / (double) (maxCells - 1));
+        List<String> fitted = new ArrayList<>(maxCells);
+        for (int i = 0; i < count - 1; i += stride) {
+            fitted.add(letters.get(i));
+        }
+        fitted.add(letters.get(count - 1));
+        return fitted;
+    }
 }
