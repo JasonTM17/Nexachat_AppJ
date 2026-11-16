@@ -24,8 +24,8 @@
             android:orientation="vertical">
 
             <FrameLayout
-                android:layout_width="140dp"
-                android:layout_height="140dp">
+                android:layout_width="168dp"
+                android:layout_height="168dp">
 
                 <View
                     android:id="@+id/call_pulse_ring"

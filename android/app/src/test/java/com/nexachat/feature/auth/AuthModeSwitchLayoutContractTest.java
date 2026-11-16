@@ -16,7 +16,7 @@ import org.w3c.dom.NodeList;
 
 /**
  * The sign-in/create-account mode switch keeps a plain {@code LinearLayout} track
- * so the selected segment keeps all four square corners, while each
+ * (a pill background) so the selected segment keeps its own corner shape, while each
  * {@code MaterialButton} is checkable so screen readers announce the active mode.
  * Checked state is driven from the fragments ({@code toggleCheckedStateOnClick}
  * is off) so tapping the active mode can never uncheck it.
