@@ -157,6 +157,29 @@ public final class ChatInboxSweepContractTest {
                 fragment.contains("new VoiceRecorder("));
         assertTrue("recreated view must re-attach the recording HUD",
                 fragment.contains("resumeVoiceRecordingAfterConfigChange"));
+        assertTrue("teardown-cancelled touch must retain, not cancel, the capture",
+                fragment.indexOf("isChangingConfigurations()") > 0
+                        && fragment.contains("setVoiceRetainedForConfigChange(true)"));
+    }
+
+    @Test
+    public void chatInputsNeverTriggerImeExtractMode() throws Exception {
+        // In landscape the IME fullscreen extracted editor hides the whole
+        // chat behind a giant text field; chat-area inputs must opt out.
+        String[][] cases = {
+                {"src/main/res/layout/fragment_chat.xml", "chatSearchInput"},
+                {"src/main/res/layout-land/fragment_chat.xml", "chatSearchInput"},
+                {"src/main/res/layout/include_chat_composer_bar.xml", "messageInput"},
+                {"src/main/res/layout/dialog_forward.xml", "forwardSearch"},
+                {"src/main/res/layout/bottom_sheet_ask_chat.xml", "askQuestion"},
+                {"src/main/res/layout/fragment_user_search.xml", "searchInput"},
+        };
+        for (String[] c : cases) {
+            Element input = findById(parse(c[0]), c[1]);
+            String options = input.getAttributeNS(ANDROID, "imeOptions");
+            assertTrue(c[0] + "#" + c[1] + " must keep its UI while typing",
+                    options.contains("flagNoExtractUi"));
+        }
     }
 
     private static Document parse(String path) throws Exception {

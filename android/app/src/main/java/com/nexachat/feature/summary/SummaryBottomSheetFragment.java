@@ -193,6 +193,7 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
                     R.style.Widget_NexaChat_Chip_Filter);
             chip.setTag(scope);
             chip.setCheckable(true);
+            chip.setCheckedIconVisible(false);
             chip.setText(scopeLabel(scope));
             com.nexachat.feature.inbox.InboxFilterChipColourRules.apply(chip, context);
             chip.setOnClickListener(v -> {

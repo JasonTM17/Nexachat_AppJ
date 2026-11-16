@@ -120,7 +120,7 @@
             android:layout_weight="1"
             android:background="@android:color/transparent"
             android:hint="@string/search_in_chat_placeholder"
-            android:imeOptions="actionSearch"
+            android:imeOptions="actionSearch|flagNoExtractUi"
             android:singleLine="true"
             android:textColor="?attr/colorOnSurface"
             android:textColorHint="?attr/colorOnSurfaceVariant" />
