@@ -1235,10 +1235,10 @@ public final class ChatViewModel extends ViewModel {
                 .subscribe(() -> { }, this::surfaceStreamFailure));
     }
 
-    public void toggleConversationPin() {
+    /** Pins or unpins this conversation for the caller. */
+    public void setConversationPinned(boolean pinned) {
         if (conversationId.isBlank()) return;
-        boolean currentlyPinned = currentUiState().isConversationPinned();
-        disposables.add(conversationRepository.setConversationPinned(conversationId, !currentlyPinned)
+        disposables.add(conversationRepository.setConversationPinned(conversationId, pinned)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(result -> {

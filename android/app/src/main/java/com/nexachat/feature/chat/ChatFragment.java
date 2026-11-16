@@ -1477,14 +1477,15 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
     private void showMoreOptions() {
         ConversationSummary conversation = currentConversation();
-        boolean muted = conversation != null
-                && conversation.isMutedAt(System.currentTimeMillis());
-        boolean archived = conversation != null && conversation.isArchived();
-        boolean pinned = state != null && state.isConversationPinned();
-        boolean e2ee = state != null && state.isE2eeEnabled();
+        ChatMenuPolicy.Flags flags = ChatMenuPolicy.resolve(
+                conversation,
+                state != null && state.isGroup(),
+                state != null && state.isConversationPinned(),
+                state != null && state.isE2eeEnabled(),
+                System.currentTimeMillis());
         List<CharSequence> labels = new ArrayList<>();
         List<Integer> actions = new ArrayList<>();
-        if (!e2ee) {
+        if (!flags.e2ee) {
             labels.add(getString(R.string.ask_action));
             actions.add(MENU_ASK);
         }
@@ -1492,23 +1493,23 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
             labels.add(getString(R.string.cd_search_in_chat));
             actions.add(MENU_SEARCH);
         }
-        if (!e2ee && ChatToolbarPolicy.summaryAvailable()) {
+        if (!flags.e2ee && ChatToolbarPolicy.summaryAvailable()) {
             labels.add(getString(R.string.summary_overflow_action));
             actions.add(MENU_SUMMARY);
         }
-        if (state != null && !state.isGroup()) {
+        if (!flags.group) {
             labels.add(getString(R.string.e2ee_menu_title));
             actions.add(MENU_ENCRYPTION);
         }
-        if (state != null && ChatToolbarPolicy.infoAvailable(state.isGroup())) {
+        if (ChatToolbarPolicy.infoAvailable(flags.group)) {
             labels.add(getString(R.string.cd_group_info));
             actions.add(MENU_INFO);
         }
-        labels.add(getString(muted ? R.string.unmute : R.string.mute_menu_title));
+        labels.add(getString(flags.muted ? R.string.unmute : R.string.mute_menu_title));
         actions.add(MENU_MUTE);
-        labels.add(getString(archived ? R.string.conversation_unarchive : R.string.conversation_archive));
+        labels.add(getString(flags.archived ? R.string.conversation_unarchive : R.string.conversation_archive));
         actions.add(MENU_ARCHIVE);
-        labels.add(getString(pinned ? R.string.action_unpin_conversation : R.string.action_pin_conversation));
+        labels.add(getString(ChatMenuPolicy.pinLabelRes(flags)));
         actions.add(MENU_PIN);
         labels.add(getString(R.string.conversation_settings_title));
         actions.add(MENU_SETTINGS);
@@ -1516,18 +1517,18 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         actions.add(MENU_ASSIGN_LABEL);
         labels.add(getString(R.string.archive_title));
         actions.add(MENU_SHARED_MEDIA);
-        if (state != null && state.isGroup()) {
+        if (flags.group) {
             labels.add(getString(R.string.group_board_title));
             actions.add(MENU_GROUP_BOARD);
         }
 
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
                 .setItems(labels.toArray(new CharSequence[0]), (dialog, which) ->
-                        onChatMenuItemSelected(actions.get(which), muted, archived))
+                        onChatMenuItemSelected(actions.get(which), flags))
                 .show();
     }
 
-    private void onChatMenuItemSelected(int action, boolean muted, boolean archived) {
+    private void onChatMenuItemSelected(int action, ChatMenuPolicy.Flags flags) {
         if (action == MENU_ASK) {
             showAsk();
         } else if (action == MENU_SEARCH) {
@@ -1537,16 +1538,16 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
         } else if (action == MENU_SUMMARY) {
             showSummary();
         } else if (action == MENU_MUTE) {
-            if (muted) {
+            if (flags.muted) {
                 viewModel.unmuteConversation();
             } else {
                 ConversationPreferenceMenu.showMutePresets(
                         requireContext(), false, preferenceListener());
             }
         } else if (action == MENU_ARCHIVE) {
-            viewModel.setConversationArchived(!archived);
+            viewModel.setConversationArchived(!flags.archived);
         } else if (action == MENU_PIN) {
-            viewModel.toggleConversationPin();
+            viewModel.setConversationPinned(flags.pinTarget());
         } else if (action == MENU_SETTINGS) {
             showConversationSettings();
         } else if (action == MENU_ASSIGN_LABEL && !conversationId.isBlank()) {
@@ -1942,6 +1943,67 @@ public final class ChatFragment extends androidx.fragment.app.Fragment implement
 
         static int avatarOccupiedWidthEndDp() {
             return 48 + 36;
+        }
+    }
+
+    /**
+     * Flag resolution for the overflow menu. The Room row hydrates before the
+     * chat UiState converges, so its values win whenever the row is present;
+     * the state flags are only the fallback while the row is absent.
+     */
+    static final class ChatMenuPolicy {
+        private ChatMenuPolicy() {
+        }
+
+        /** The flags the menu was built from; every label and action reads this one instance. */
+        static final class Flags {
+            final boolean group;
+            final boolean muted;
+            final boolean archived;
+            final boolean pinned;
+            final boolean e2ee;
+
+            private Flags(
+                    boolean group,
+                    boolean muted,
+                    boolean archived,
+                    boolean pinned,
+                    boolean e2ee) {
+                this.group = group;
+                this.muted = muted;
+                this.archived = archived;
+                this.pinned = pinned;
+                this.e2ee = e2ee;
+            }
+
+            /** Pin action target — the inverse of the pin state the label showed. */
+            boolean pinTarget() {
+                return !pinned;
+            }
+        }
+
+        static Flags resolve(
+                @Nullable ConversationSummary conversation,
+                boolean stateGroup,
+                boolean statePinned,
+                boolean stateE2ee,
+                long nowEpochMs) {
+            if (conversation != null) {
+                return new Flags(
+                        conversation.isGroup(),
+                        conversation.isMutedAt(nowEpochMs),
+                        conversation.isArchived(),
+                        conversation.isPinned(),
+                        conversation.isE2eeEnabled());
+            }
+            return new Flags(stateGroup, false, false, statePinned, stateE2ee);
+        }
+
+        /** Label for the pin row; pairs with {@link Flags#pinTarget()} off the same flag. */
+        static int pinLabelRes(Flags flags) {
+            return flags.pinned
+                    ? R.string.action_unpin_conversation
+                    : R.string.action_pin_conversation;
         }
     }
 
