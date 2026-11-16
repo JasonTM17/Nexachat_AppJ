@@ -64,6 +64,11 @@ public final class TokenRefresherAdmissionOrderingTest {
         refresher.onLogout();
         assertFalse(refresher.isSessionCurrent(2L));
         assertTrue("closed admission should be delivered", loggedOutAdmission.await(5, TimeUnit.SECONDS));
+        // loggedOutAdmission trips inside doOnNext, which runs just before the
+        // TestSubscriber records the value; the terminal read below must wait
+        // for the record (default false, admission true, closing false) or it
+        // can still observe the pre-close true.
+        admission.awaitCount(3);
         List<Boolean> afterLogout = admission.values();
         assertEquals(Boolean.FALSE, afterLogout.get(afterLogout.size() - 1));
 
