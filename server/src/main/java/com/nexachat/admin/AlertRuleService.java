@@ -64,6 +64,10 @@ public class AlertRuleService {
                                UUID actorId, User.Role actorRole, String ip) {
         requireAdmin(actorRole);
         AlertRuleRow existing = requireRule(ruleId);
+        if (existing.builtIn() && (name != null || pattern != null || description != null)) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "Built-in rules can only change severity or be enabled and disabled");
+        }
         String newSeverity = severity == null || severity.isBlank()
                 ? existing.severity() : AlertSeverity.parse(severity).name();
         String newPattern = "CARD".equals(existing.patternType())
