@@ -141,6 +141,10 @@ public final class ConversationRepositoryTest {
         when(messageDao.deleteForConversation(any())).thenReturn(Completable.complete());
         when(reactionDao.deleteForConversation(any())).thenReturn(Completable.complete());
         when(pinDao.deleteForConversation(any())).thenReturn(Completable.complete());
+        com.nexachat.core.database.MessageTranslationDao translationDao =
+                org.mockito.Mockito.mock(com.nexachat.core.database.MessageTranslationDao.class);
+        when(appDatabase.messageTranslationDao()).thenReturn(translationDao);
+        when(translationDao.deleteForConversation(any())).thenReturn(Completable.complete());
         when(outboxDao.deleteForConversation(any(), any())).thenReturn(Completable.complete());
     }
 
