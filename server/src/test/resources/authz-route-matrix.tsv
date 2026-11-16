@@ -109,3 +109,9 @@ GET	/api/v1/conversations/{conversationId}/e2ee	CONVERSATION_MEMBER	conversation
 PUT	/api/v1/conversations/{conversationId}/e2ee	CONVERSATION_MEMBER	conversation_member	rest-108
 PUT	/api/v1/e2ee/devices/{deviceId}	AUTHENTICATED	authenticated_self	rest-109
 DELETE	/api/v1/e2ee/devices/{deviceId}	AUTHENTICATED	authenticated_self	rest-110
+POST	/api/v1/messages/{messageId}/translate	MESSAGE_CONVERSATION_MEMBER	message_conversation_member	rest-111
+POST	/api/v1/conversations/{conversationId}/translate-batch	CONVERSATION_MEMBER	conversation_member	rest-112
+GET	/api/v1/conversations/{conversationId}/translation-glossary	CONVERSATION_MEMBER	conversation_member	rest-113
+PUT	/api/v1/conversations/{conversationId}/translation-glossary	CONVERSATION_MEMBER	conversation_member	rest-114
+GET	/api/v1/conversations/{conversationId}/translate-prefs	CONVERSATION_MEMBER	conversation_member	rest-115
+PUT	/api/v1/conversations/{conversationId}/translate-prefs	CONVERSATION_MEMBER	conversation_member	rest-116
