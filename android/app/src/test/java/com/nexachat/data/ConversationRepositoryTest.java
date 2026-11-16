@@ -84,6 +84,8 @@ import retrofit2.Response;
 public final class ConversationRepositoryTest {
 
     private static final String MY_ID = "me-1";
+    /** Watermarks the server evaluates per sync request before it ignores the rest. */
+    private static final int SERVER_WATERMARK_BOUND = 100;
 
     private final MessageApi messageApi = org.mockito.Mockito.mock(MessageApi.class);
     private final GroupApi groupApi = org.mockito.Mockito.mock(GroupApi.class);
@@ -246,6 +248,23 @@ public final class ConversationRepositoryTest {
             idAndSequences[i * 2 + 1] = count - i + 10L;
         }
         return inboxJson(idAndSequences);
+    }
+
+    /**
+     * Server view of POST /api/v1/sync: one delta per requested watermark the
+     * caller can still reach, evaluated only inside the per-request bound.
+     */
+    private SyncResponse deltaResponseFor(SyncRequest request, java.util.Set<String> accessibleIds) {
+        List<SyncResponse.ConversationDeltaDto> deltas = new ArrayList<>();
+        int evaluated = Math.min(request.getWatermarks().size(), SERVER_WATERMARK_BOUND);
+        for (SyncRequest.Watermark watermark : request.getWatermarks().subList(0, evaluated)) {
+            if (accessibleIds.contains(watermark.getConversationId())) {
+                deltas.add(new SyncResponse.ConversationDeltaDto(
+                        watermark.getConversationId(), List.of(), List.of(), List.of(),
+                        List.of(), watermark.getLastSeq(), false));
+            }
+        }
+        return new SyncResponse(deltas, "2026-11-08T10:00:00Z");
     }
 
     @Test
@@ -1627,6 +1646,136 @@ public final class ConversationRepositoryTest {
 
         notices.assertValueCount(2);
         assertEquals("conv-g", notices.values().get(1).conversationId());
+    }
+
+    @Test
+    public void pagedWalkConfirmsEverySuspectBeyondTheServerBound() throws Exception {
+        buildRepository();
+        List<ConversationEntity> rows = new ArrayList<>();
+        rows.add(conversation("conv-a", 100));
+        java.util.Set<String> suspectIds = new java.util.HashSet<>();
+        for (int i = 0; i < 250; i++) {
+            String id = "conv-" + (1000 + i);
+            suspectIds.add(id);
+            rows.add(conversation(id, 110));
+        }
+        dao().upsertAll(rows).blockingAwait();
+        TestSubscriber<ConversationRepository.SelfRemovalNotice> notices =
+                repository.selfRemovals().test();
+        stubInboxPage(null, "cursor-page-2", inboxJson("conv-a", 100));
+
+        // Two groups ranked beyond the first hundred suspects stay
+        // accessible; a single request would never let the server see them.
+        java.util.Set<String> accessible = java.util.Set.of("conv-1150", "conv-1249");
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenAnswer(invocation ->
+                asCall(Response.success(
+                        deltaResponseFor(invocation.getArgument(0), accessible))));
+
+        repository.refreshInbox().blockingGet();
+
+        ArgumentCaptor<SyncRequest> captor = ArgumentCaptor.forClass(SyncRequest.class);
+        verify(messageApi, times(3)).syncDeltas(captor.capture());
+        List<Integer> requestSizes = new ArrayList<>();
+        java.util.Set<String> asked = new java.util.HashSet<>();
+        for (SyncRequest request : captor.getAllValues()) {
+            requestSizes.add(request.getWatermarks().size());
+            for (SyncRequest.Watermark watermark : request.getWatermarks()) {
+                asked.add(watermark.getConversationId());
+            }
+        }
+        assertEquals(List.of(100, 100, 50), requestSizes);
+        assertEquals(suspectIds, asked);
+        assertEquals(
+                java.util.Set.of("conv-a", "conv-1150", "conv-1249"), dao().rows.keySet());
+        notices.assertValueCount(248);
+    }
+
+    @Test
+    public void pagedWalkKeepsEverySuspectWhenAConfirmationChunkFails() throws Exception {
+        buildRepository();
+        List<ConversationEntity> rows = new ArrayList<>();
+        rows.add(conversation("conv-a", 100));
+        for (int i = 0; i < 250; i++) {
+            rows.add(conversation("conv-" + (2000 + i), 110));
+        }
+        dao().upsertAll(rows).blockingAwait();
+        TestSubscriber<ConversationRepository.SelfRemovalNotice> notices =
+                repository.selfRemovals().test();
+        stubInboxPage(null, "cursor-page-2", inboxJson("conv-a", 100));
+
+        // The first chunk already reads as a full loss; the second fails, so
+        // the whole confirmation is unverifiable and nothing may be pruned.
+        java.util.concurrent.atomic.AtomicInteger calls =
+                new java.util.concurrent.atomic.AtomicInteger();
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenAnswer(invocation -> {
+            if (calls.incrementAndGet() == 1) {
+                return asCall(Response.success(
+                        new SyncResponse(List.of(), "2026-11-08T10:00:00Z")));
+            }
+            return asCall(Response.error(500, ResponseBody.create(
+                    okhttp3.MediaType.parse("application/json"), "{}")));
+        });
+
+        Result<Void> result = repository.refreshInbox().blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        verify(messageApi, times(2)).syncDeltas(any(SyncRequest.class));
+        assertEquals(251, dao().rows.size());
+        notices.assertNoValues();
+    }
+
+    @Test
+    public void pagedWalkConfirmsSuspectsInWholeBoundSizedChunks() throws Exception {
+        buildRepository();
+        List<ConversationEntity> rows = new ArrayList<>();
+        rows.add(conversation("conv-a", 100));
+        java.util.Set<String> suspectIds = new java.util.HashSet<>();
+        for (int i = 0; i < 200; i++) {
+            String id = "conv-" + (3000 + i);
+            suspectIds.add(id);
+            rows.add(conversation(id, 110));
+        }
+        dao().upsertAll(rows).blockingAwait();
+        TestSubscriber<ConversationRepository.SelfRemovalNotice> notices =
+                repository.selfRemovals().test();
+        stubInboxPage(null, "cursor-page-2", inboxJson("conv-a", 100));
+
+        java.util.Set<String> accessible = new java.util.HashSet<>();
+        for (int i = 100; i < 200; i++) {
+            accessible.add("conv-" + (3000 + i));
+        }
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenAnswer(invocation ->
+                asCall(Response.success(
+                        deltaResponseFor(invocation.getArgument(0), accessible))));
+
+        repository.refreshInbox().blockingGet();
+
+        ArgumentCaptor<SyncRequest> captor = ArgumentCaptor.forClass(SyncRequest.class);
+        verify(messageApi, times(2)).syncDeltas(captor.capture());
+        java.util.Set<String> asked = new java.util.HashSet<>();
+        for (SyncRequest request : captor.getAllValues()) {
+            assertEquals(SERVER_WATERMARK_BOUND, request.getWatermarks().size());
+            for (SyncRequest.Watermark watermark : request.getWatermarks()) {
+                asked.add(watermark.getConversationId());
+            }
+        }
+        assertEquals(suspectIds, asked);
+        assertEquals(101, dao().rows.size());
+        notices.assertValueCount(100);
+    }
+
+    @Test
+    public void singlePagePruneOfOnlyDirectRowsSkipsTheDeltaConfirmation() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 20), directConversation("conv-direct", 25)))
+                .blockingAwait();
+        stubInbox(List.of(inboxDto("conv-a", 20)));
+
+        repository.refreshInbox().blockingGet();
+
+        assertFalse(dao().rows.containsKey("conv-direct"));
+        verify(messageApi, never()).syncDeltas(any());
     }
 
     @Test

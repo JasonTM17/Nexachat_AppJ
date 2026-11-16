@@ -271,7 +271,7 @@ public final class SyncEngine {
                                         wm.getConversationId(), wm.getMaxSeq()));
                             }
                             List<SyncRequest> requests = splitWatermarks(
-                                    reqWatermarks, cursor.serverTime);
+                                    reqWatermarks, DELTA_LIMIT_PER_CONVERSATION, cursor.serverTime);
                             AtomicReference<String> earliestServerTime = new AtomicReference<>();
                             AtomicBoolean missingServerTime = new AtomicBoolean();
                             AtomicBoolean batchHasMore = new AtomicBoolean();
@@ -514,8 +514,15 @@ public final class SyncEngine {
         return missing;
     }
 
-    private static List<SyncRequest> splitWatermarks(
-            List<SyncRequest.Watermark> watermarks, @Nullable String since) {
+    /**
+     * Splits watermarks into requests the server evaluates whole: it reads at
+     * most {@link #MAX_WATERMARKS_PER_REQUEST} watermarks per call and ignores
+     * the rest, so larger sets must be asked in chunks.
+     */
+    static List<SyncRequest> splitWatermarks(
+            List<SyncRequest.Watermark> watermarks,
+            int perConversationLimit,
+            @Nullable String since) {
         List<SyncRequest> requests = new ArrayList<>(
                 (watermarks.size() + MAX_WATERMARKS_PER_REQUEST - 1)
                         / MAX_WATERMARKS_PER_REQUEST);
@@ -523,7 +530,7 @@ public final class SyncEngine {
             int end = Math.min(start + MAX_WATERMARKS_PER_REQUEST, watermarks.size());
             requests.add(new SyncRequest(
                     new ArrayList<>(watermarks.subList(start, end)),
-                    DELTA_LIMIT_PER_CONVERSATION,
+                    perConversationLimit,
                     since));
         }
         return requests;
