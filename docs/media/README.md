@@ -4,7 +4,22 @@ Still frames captured from live Android emulators (`emulator-5554` / `nexachat-a
 
 > Every frame below predates the Tonal Plum palette refresh (seed `#733F68`; see
 > [docs/design/design-notes.md](../design/design-notes.md)) — treat them as
-> layout references, not current colors. A recapture pass is pending.
+> layout references, not current colors.
+
+## Current Tonal Plum frames (`screens/01-*` .. `screens/06-*`)
+
+Captured on `emulator-5556` (1080×2400 portrait) running the debug build
+against the local Spring Boot + PostgreSQL stack with seeded demo data; shown
+in the root README gallery.
+
+| File | What it shows |
+| --- | --- |
+| `screens/01-inbox-dark.png` | Inbox in dark mode: `ACTIVE NOW` strip, filter chips, compose FAB |
+| `screens/02-chat-dark.png` | Direct chat in dark mode: pinned banner, merged bubbles, quote block |
+| `screens/03-contacts-dark.png` | Contacts in dark mode: letter index, add-contact and new-group rows |
+| `screens/04-profile-light.png` | Profile in light mode: theme chips, language row, privacy switches |
+| `screens/05-call-dark.png` | Outgoing voice call screen while ringing |
+| `screens/06-summary-dark.png` | Conversation summary sheet in dark mode with overview and key points |
 
 ## UI Showcase Frames
 

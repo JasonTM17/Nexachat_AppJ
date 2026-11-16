@@ -9,12 +9,15 @@ Firebase và nhà cung cấp AI tùy chọn, mặc định đều tắt.
 
 [![CI](https://github.com/JasonTM17/Nexachat_AppJ/actions/workflows/ci.yml/badge.svg)](https://github.com/JasonTM17/Nexachat_AppJ/actions/workflows/ci.yml)
 
-<!-- Ảnh chụp màn hình: thư viện ảnh cũ đã được gỡ vì mọi khung hình commit sẵn
-     đều từ trước đợt làm mới bảng màu Tonal Plum (seed #733F68). Một đợt chụp
-     sau sẽ thêm docs/media/screens/01-inbox-dark.png, 02-chat-dark.png,
-     03-contacts-dark.png, 04-profile-light.png, 05-call-dark.png và
-     06-summary-dark.png. Chỉ khôi phục mục thư viện ảnh khi các tệp đó tồn tại;
-     các khung hình trước làm mới vẫn được liệt kê trong docs/media/README.md. -->
+## Ảnh chụp màn hình
+
+| Hộp thư (tối) | Trò chuyện (tối) | Danh bạ (tối) |
+| --- | --- | --- |
+| ![Hộp thư ở chế độ tối](docs/media/screens/01-inbox-dark.png) | ![Trò chuyện ở chế độ tối](docs/media/screens/02-chat-dark.png) | ![Danh bạ ở chế độ tối](docs/media/screens/03-contacts-dark.png) |
+
+| Hồ sơ (sáng) | Cuộc gọi đi | Tóm tắt AI (tối) |
+| --- | --- | --- |
+| ![Hồ sơ ở chế độ sáng](docs/media/screens/04-profile-light.png) | ![Màn hình gọi đi](docs/media/screens/05-call-dark.png) | ![Bảng tóm tắt ở chế độ tối](docs/media/screens/06-summary-dark.png) |
 
 ## Tính năng
 

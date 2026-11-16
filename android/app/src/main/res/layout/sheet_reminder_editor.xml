@@ -127,6 +127,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/reminderEditorSave"
+            style="@style/Widget.NexaChat.Button"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginStart="@dimen/space_sm"

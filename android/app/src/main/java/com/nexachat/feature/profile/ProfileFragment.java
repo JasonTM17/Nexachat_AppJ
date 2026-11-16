@@ -7,6 +7,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.graphics.Typeface;
 import android.text.InputType;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -595,11 +596,9 @@ public final class ProfileFragment extends Fragment {
 
     private TextInputLayout passwordInputLayout(int hint) {
         TextInputLayout layout = new TextInputLayout(
-                requireContext(),
+                FormDialogs.dialogContext(requireContext()),
                 null,
-                com.google.android.material.R.attr.textInputOutlinedStyle);
-        float radius = getResources().getDimension(R.dimen.corner_md);
-        layout.setBoxCornerRadii(radius, radius, radius, radius);
+                com.google.android.material.R.attr.textInputStyle);
         layout.setHint(getString(hint));
         layout.setStartIconDrawable(R.drawable.ic_lock);
         layout.setStartIconTintList(ColorStateList.valueOf(MaterialColors.getColor(
@@ -609,7 +608,9 @@ public final class ProfileFragment extends Fragment {
         TextInputEditText input = new TextInputEditText(layout.getContext());
         input.setSaveEnabled(false);
         input.setSingleLine(true);
+        Typeface bodyTypeface = input.getTypeface();
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        input.setTypeface(bodyTypeface);
         input.setAutofillHints((hint == R.string.auth_current_password_label || hint == R.string.auth_password_label)
                 ? View.AUTOFILL_HINT_PASSWORD : "newPassword");
         input.setImeOptions((hint == R.string.auth_confirm_password_label || hint == R.string.auth_password_label)

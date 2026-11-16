@@ -236,16 +236,13 @@ final class ContactDetailBinder {
 
         MaterialButton secondary = new MaterialButton(
                 new ContextThemeWrapper(
-                        fragment.requireContext(), R.style.ThemeOverlay_NexaChat_Button_Tonal));
+                        fragment.requireContext(),
+                        content.isContact()
+                                ? R.style.ThemeOverlay_NexaChat_Button_Destructive
+                                : R.style.ThemeOverlay_NexaChat_Button_Tonal));
         secondary.setEnabled(content.isActionEnabled());
         secondary.setText(content.getSecondaryActionTextRes());
         if (content.isContact()) {
-            // The destructive variant mirrors the error-container tonal button in XML.
-            secondary.setBackgroundTintList(android.content.res.ColorStateList.valueOf(
-                    MaterialColors.getColor(
-                            secondary, com.google.android.material.R.attr.colorErrorContainer)));
-            secondary.setTextColor(MaterialColors.getColor(
-                    secondary, com.google.android.material.R.attr.colorOnErrorContainer));
             secondary.setOnClickListener(v -> FormDialogs.markDestructive(
                     new MaterialAlertDialogBuilder(fragment.requireContext())
                             .setMessage(R.string.confirm_remove_contact)

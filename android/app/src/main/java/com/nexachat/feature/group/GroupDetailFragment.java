@@ -177,7 +177,7 @@ public final class GroupDetailFragment extends Fragment {
 
         boolean muted = mutedNow(state);
         binding.muteIcon.setImageResource(
-                muted ? R.drawable.ic_notifications_off : R.drawable.ic_notification);
+                muted ? R.drawable.ic_notifications_off : R.drawable.ic_notifications);
         binding.muteText.setText(muted ? R.string.unmute : R.string.mute_menu_title);
         binding.muteTile.setContentDescription(
                 getString(muted ? R.string.unmute : R.string.mute_menu_title));
@@ -342,13 +342,10 @@ public final class GroupDetailFragment extends Fragment {
 
     private void showRenameDialog(@NonNull GroupDetailUiState state) {
         if (renameDialog == null) {
-            // Same outlined field + dialog padding as every other form dialog.
             TextInputLayout inputLayout = new TextInputLayout(
-                    requireContext(),
+                    FormDialogs.dialogContext(requireContext()),
                     null,
-                    com.google.android.material.R.attr.textInputOutlinedStyle);
-            float radius = getResources().getDimension(R.dimen.corner_md);
-            inputLayout.setBoxCornerRadii(radius, radius, radius, radius);
+                    com.google.android.material.R.attr.textInputStyle);
             inputLayout.setHint(getString(R.string.group_name_label));
             renameInput = new TextInputEditText(inputLayout.getContext());
             renameInput.setSingleLine(true);

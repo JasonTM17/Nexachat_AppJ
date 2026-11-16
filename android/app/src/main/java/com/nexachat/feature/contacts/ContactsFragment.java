@@ -112,8 +112,6 @@ public final class ContactsFragment extends Fragment {
             }
         });
         binding.toolbar.setNavigationOnClickListener(v -> NavHostFragment.findNavController(this).navigateUp());
-        binding.searchButton.setOnClickListener(
-                v -> NavHostFragment.findNavController(this).navigate(R.id.searchFragment));
         binding.searchPill.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.searchFragment));
         binding.addContactEntry.setTitle(getString(R.string.add_contact_title));
@@ -268,11 +266,9 @@ public final class ContactsFragment extends Fragment {
         root.setPadding(pad, pad, pad, pad);
 
         TextInputLayout phoneLayout = new TextInputLayout(
-                requireContext(),
+                FormDialogs.dialogContext(requireContext()),
                 null,
-                com.google.android.material.R.attr.textInputOutlinedStyle);
-        float radius = getResources().getDimension(R.dimen.corner_md);
-        phoneLayout.setBoxCornerRadii(radius, radius, radius, radius);
+                com.google.android.material.R.attr.textInputStyle);
         phoneLayout.setEndIconMode(TextInputLayout.END_ICON_CLEAR_TEXT);
         addPhoneInput = new TextInputEditText(phoneLayout.getContext());
         addPhoneInput.setSingleLine(true);

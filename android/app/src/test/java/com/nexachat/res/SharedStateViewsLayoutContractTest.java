@@ -112,6 +112,40 @@ public final class SharedStateViewsLayoutContractTest {
     }
 
     @Test
+    public void emptyIconKeepsItsOwnDrawablePalette() throws Exception {
+        Document doc = parse(new File(resDir, "layout/view_empty_state.xml"));
+        Element icon = findElementById(doc.getDocumentElement(), "emptyIcon");
+        assertNotNull(icon);
+        assertEquals("a layout-level tint flattens multi-colour empty art",
+                "", icon.getAttributeNS(NS_APP, "tint"));
+        assertEquals("", icon.getAttributeNS(NS_ANDROID, "tint"));
+
+        Document chat = parse(new File(resDir, "drawable/ic_empty_chat.xml"));
+        NodeList paths = chat.getElementsByTagName("path");
+        assertTrue("empty-state art must contain paths", paths.getLength() > 0);
+        for (int i = 0; i < paths.getLength(); i++) {
+            String fill = ((Element) paths.item(i)).getAttributeNS(NS_ANDROID, "fillColor");
+            assertTrue("empty-state art must use named palette colors, not raw hex: " + fill,
+                    fill.startsWith("@color/") || fill.startsWith("?attr/"));
+        }
+    }
+
+    @Test
+    public void singleColourEmptyGlyphsAreTintedInCode() throws Exception {
+        File source = new File(resDir.getParentFile(),
+                "java/com/nexachat/core/ui/components/EmptyStateView.java");
+        String text = new String(java.nio.file.Files.readAllBytes(source.toPath()),
+                java.nio.charset.StandardCharsets.UTF_8);
+        int start = text.indexOf("public void setIcon(");
+        assertTrue("setIcon must exist", start >= 0);
+        String body = text.substring(start, text.indexOf('}', text.indexOf("setVisibility", start)));
+        assertTrue("white single-colour glyphs must be tinted, or they vanish on the surface",
+                body.contains("setImageTintList"));
+        assertTrue("only the multi-colour illustration may skip the tint",
+                body.contains("R.drawable.ic_empty_chat"));
+    }
+
+    @Test
     public void stateIconsAndIndicatorUseTheSharedSizes() throws Exception {
         Document emptyDoc = parse(new File(resDir, "layout/view_empty_state.xml"));
         Element emptyIcon = findElementById(emptyDoc.getDocumentElement(), "emptyIcon");

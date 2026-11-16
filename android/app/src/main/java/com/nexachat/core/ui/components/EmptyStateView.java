@@ -1,6 +1,7 @@
 package com.nexachat.core.ui.components;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.util.AttributeSet;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -12,6 +13,7 @@ import androidx.annotation.DrawableRes;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.color.MaterialColors;
 import com.nexachat.R;
 
 /**
@@ -48,6 +50,11 @@ public class EmptyStateView extends FrameLayout {
 
     public void setIcon(@DrawableRes int iconRes) {
         iconView.setImageResource(iconRes);
+        // Single-colour glyphs follow the brand colour; the multi-colour illustration keeps its palette.
+        iconView.setImageTintList(iconRes == R.drawable.ic_empty_chat
+                ? null
+                : ColorStateList.valueOf(MaterialColors.getColor(
+                        iconView, androidx.appcompat.R.attr.colorPrimary)));
         iconView.setVisibility(VISIBLE);
     }
 

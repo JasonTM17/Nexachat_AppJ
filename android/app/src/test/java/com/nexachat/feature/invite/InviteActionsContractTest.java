@@ -40,8 +40,7 @@ public final class InviteActionsContractTest {
 
         Element revoke = findById(root, "revokeButton");
         assertNotNull(revoke);
-        assertEquals("?attr/colorErrorContainer", attr(revoke, "backgroundTint"));
-        assertEquals("?attr/colorOnErrorContainer", attr(revoke, "textColor"));
+        assertEquals("@style/Widget.NexaChat.Button.Destructive", attr(revoke, "style"));
 
         Element header = findById(root, "requestsHeader");
         assertNotNull(header);
