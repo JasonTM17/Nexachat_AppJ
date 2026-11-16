@@ -251,6 +251,7 @@ tools/     checks/ release/ ops/ backup/ e2e/ firebase-rules/ site-tests/ rag-ev
 [calls](docs/architecture/calls.md) ·
 [AI summary](docs/architecture/ai-summary.md) ·
 [RAG](docs/architecture/rag.md) ·
+[AI translation](docs/architecture/ai-translation.md) ·
 [Firebase bridge](docs/architecture/firebase-realtime.md) ·
 [operations](docs/operations/operations.md) ·
 [security notes](docs/quality/security.md) ·
