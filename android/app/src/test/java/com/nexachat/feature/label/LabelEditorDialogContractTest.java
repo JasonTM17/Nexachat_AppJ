@@ -22,7 +22,8 @@ public final class LabelEditorDialogContractTest {
     public void editorFormScrollsVertically() throws Exception {
         String openEditor = methodBody("private void openEditor");
         assertTrue(openEditor.contains("new ScrollView"));
-        assertTrue(openEditor.contains("formScroll.addView(form)"));
+        assertTrue(openEditor.contains("formScroll.addView(form, new ScrollView.LayoutParams("));
+        assertTrue(openEditor.contains("ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT"));
         assertTrue(openEditor.contains("setView(formScroll)"));
     }
 
