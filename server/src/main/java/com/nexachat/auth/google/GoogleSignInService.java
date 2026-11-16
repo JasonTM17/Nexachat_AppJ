@@ -1,5 +1,6 @@
 package com.nexachat.auth.google;
 
+import com.nexachat.admin.AdminRoleBootstrap;
 import com.nexachat.auth.AuthResponseFactory;
 import com.nexachat.auth.RateLimitService;
 import com.nexachat.auth.TokenService;
@@ -64,6 +65,8 @@ public class GoogleSignInService {
     private final ObjectProvider<PlatformTransactionManager> transactionManagerProvider;
     private final ApplicationEventPublisher eventPublisher;
 
+    private final AdminRoleBootstrap adminRoleBootstrap;
+
     public GoogleSignInService(GoogleSignInProperties properties,
                                GoogleIdTokenVerifier verifier,
                                GoogleNonceService nonceService,
@@ -74,7 +77,9 @@ public class GoogleSignInService {
                                AuthResponseFactory responseFactory,
                                RateLimitService rateLimitService,
                                ObjectProvider<PlatformTransactionManager> transactionManagerProvider,
-                               ApplicationEventPublisher eventPublisher) {
+                               ApplicationEventPublisher eventPublisher,
+                               AdminRoleBootstrap adminRoleBootstrap) {
+        this.adminRoleBootstrap = adminRoleBootstrap;
         this.properties = properties;
         this.verifier = verifier;
         this.nonceService = nonceService;
@@ -135,6 +140,7 @@ public class GoogleSignInService {
         if (user.isSuspended()) {
             throw ApiException.of(ApiErrorCode.ACCOUNT_SUSPENDED, "Account is suspended");
         }
+        adminRoleBootstrap.promoteIfConfigured(user);
         String refreshToken = tokenService.issue(user, deviceLabel);
         return new GoogleSignInResult(responseFactory.create(user, refreshToken), false);
     }
