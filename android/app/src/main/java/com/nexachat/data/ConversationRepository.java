@@ -37,6 +37,7 @@ import com.squareup.moshi.Moshi;
 import com.squareup.moshi.Types;
 import dagger.hilt.android.qualifiers.ApplicationContext;
 import io.reactivex.rxjava3.core.BackpressureOverflowStrategy;
+import io.reactivex.rxjava3.core.BackpressureStrategy;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
@@ -139,6 +140,21 @@ public final class ConversationRepository implements AutoCloseable {
     /** Announces that the server removed this user from a group; carries the group title for the notice. */
     private final FlowableProcessor<SelfRemovalNotice> selfRemovals =
             PublishProcessor.<SelfRemovalNotice>create().toSerialized();
+    /**
+     * Guards {@link #pendingSelfRemoval} against the emit path so a notice
+     * never lands between a subscriber attaching and the pending slot being
+     * drained.
+     */
+    private final Object selfRemovalNoticeLock = new Object();
+    /** Latest removal notice no subscriber was attached for; cleared on drain. */
+    @Nullable private SelfRemovalNotice pendingSelfRemoval;
+    /** Conversations already announced once, so a late push cannot repeat a REST-confirmed notice. */
+    private final Set<String> announcedRemovalIds = ConcurrentHashMap.newKeySet();
+    /**
+     * Conversations this device deliberately left. A reconcile that later
+     * prunes one must not read the accepted leave back as a removal.
+     */
+    private final Set<String> voluntaryExitIds = ConcurrentHashMap.newKeySet();
     /**
      * Groups just created by this device whose row may not yet be present in
      * a GET response already in flight. Entries are removed once a fetch lists
@@ -313,10 +329,54 @@ public final class ConversationRepository implements AutoCloseable {
     /**
      * Emits once per group the server removes this user from, after the local
      * row and its cache were deleted. UI surfaces it as a "removed" notice.
+     * A notice that arrives while nobody is subscribed is held in a single
+     * pending slot — the latest one wins — and is delivered when a subscriber
+     * next attaches, so a removal that lands while the inbox view model is
+     * cleared is not dropped.
      */
     @NonNull
     public Flowable<SelfRemovalNotice> selfRemovals() {
-        return selfRemovals;
+        return Flowable.create(emitter -> {
+            Disposable live;
+            SelfRemovalNotice pending;
+            synchronized (selfRemovalNoticeLock) {
+                live = selfRemovals.subscribe(
+                        emitter::onNext, emitter::onError, emitter::onComplete);
+                pending = pendingSelfRemoval;
+                pendingSelfRemoval = null;
+                if (pending != null) {
+                    emitter.onNext(pending);
+                }
+            }
+            emitter.setDisposable(live);
+        }, BackpressureStrategy.BUFFER);
+    }
+
+    /**
+     * Delivers a removal notice live or parks it in the pending slot when no
+     * subscriber is attached. Each conversation is announced at most once —
+     * a REST reconcile and a late {@code MEMBER_REMOVED} push cannot repeat
+     * the same eviction.
+     */
+    private void announceSelfRemoval(@NonNull String conversationId, @Nullable String title) {
+        synchronized (selfRemovalNoticeLock) {
+            SelfRemovalNotice held = pendingSelfRemoval;
+            if (held != null && held.conversationId().equals(conversationId)) {
+                if (held.title() == null && title != null) {
+                    pendingSelfRemoval = new SelfRemovalNotice(conversationId, title);
+                }
+                return;
+            }
+            if (!announcedRemovalIds.add(conversationId)) {
+                return;
+            }
+            SelfRemovalNotice notice = new SelfRemovalNotice(conversationId, title);
+            if (selfRemovals.hasSubscribers()) {
+                selfRemovals.onNext(notice);
+            } else {
+                pendingSelfRemoval = notice;
+            }
+        }
     }
 
     /**
@@ -657,9 +717,14 @@ public final class ConversationRepository implements AutoCloseable {
      */
     @NonNull
     public Single<Result<Void>> leaveGroup(@NonNull String conversationId) {
+        // Marked before the call so a reconcile racing the accepted leave
+        // cannot read it back as a removal; rolled back when the server
+        // rejects so a later real removal still announces.
+        voluntaryExitIds.add(conversationId);
         return operationTracker.track(callVoid(groupApi.leaveGroup(conversationId))
                 .flatMap(result -> {
                     if (result instanceof Result.Failure<?>) {
+                        voluntaryExitIds.remove(conversationId);
                         return Single.<Result<Void>>just(Result.cast(result));
                     }
                     return currentUserIdOptional().flatMap(myId -> Completable.fromAction(() -> {
@@ -783,6 +848,7 @@ public final class ConversationRepository implements AutoCloseable {
                 synchronized (inboxPagingLock) {
                     locallyCreatedIds.remove(conversationId);
                     inboxWalkIds.remove(conversationId);
+                    voluntaryExitIds.remove(conversationId);
                 }
                 appDatabase.runInTransaction(() ->
                         LocalConversationCleaner.deleteInTransaction(
@@ -790,7 +856,7 @@ public final class ConversationRepository implements AutoCloseable {
                 if ("MEMBER_REMOVED".equals(update.getChange())) {
                     // The row vanishes locally; without this notice the
                     // removal is silent for the evicted member.
-                    selfRemovals.onNext(new SelfRemovalNotice(conversationId, update.getTitle()));
+                    announceSelfRemoval(conversationId, update.getTitle());
                 }
             }).subscribeOn(Schedulers.io()).andThen(Single.just(Boolean.TRUE));
         }));
@@ -948,6 +1014,10 @@ public final class ConversationRepository implements AutoCloseable {
                                         oldestInboxSequence, row.getLastMessageSeq());
                             }
                             locallyCreatedIds.removeAll(pageIds);
+                            // The server lists these again, so membership was
+                            // restored: earlier leave/removal marks are stale.
+                            voluntaryExitIds.removeAll(pageIds);
+                            announcedRemovalIds.removeAll(pageIds);
                             if (fetch.nextCursor != null) {
                                 seenInboxCursors.add(fetch.nextCursor);
                             }
@@ -1088,6 +1158,11 @@ public final class ConversationRepository implements AutoCloseable {
      *
      * <p>Rows of the other variant are never candidates in any case: an archived
      * row cannot be pruned by a default-inbox walk and vice versa.
+     *
+     * <p>Every prune additionally asks the delta endpoint which rows are truly
+     * inaccessible and announces a removal only for confirmed group losses —
+     * an archived conversation keeps its membership and a locally-initiated
+     * leave is in {@link #voluntaryExitIds}, so neither produces a notice.
      */
     private Completable reconcileInboxRows(
             long generation,
@@ -1109,27 +1184,29 @@ public final class ConversationRepository implements AutoCloseable {
 
             // Case 1: First page and complete (single-page full inbox)
             if (firstPage && isComplete) {
-                Set<String> toDelete = new LinkedHashSet<>();
+                List<ConversationEntity> toDelete = new ArrayList<>();
                 for (ConversationEntity row : localRows) {
                     if (row.isArchived() != archived) continue;
                     if (!pageIdSet.contains(row.getId()) && !locallyCreatedIds.contains(row.getId())) {
-                        toDelete.add(row.getId());
+                        toDelete.add(row);
                     }
                 }
                 if (toDelete.isEmpty()) return Completable.complete();
                 return Completable.fromAction(() -> {
                     appDatabase.runInTransaction(() -> {
-                        for (String id : toDelete) {
-                            LocalConversationCleaner.deleteInTransaction(appDatabase, id, ownerUserId);
+                        for (ConversationEntity row : toDelete) {
+                            LocalConversationCleaner.deleteInTransaction(
+                                    appDatabase, row.getId(), ownerUserId);
                         }
                     });
-                }).andThen(Completable.fromAction(() -> locallyCreatedIds.removeAll(pageIdSet)));
+                }).andThen(Completable.fromAction(() -> locallyCreatedIds.removeAll(pageIdSet)))
+                        .andThen(notifyConfirmedRemovals(toDelete));
             }
 
             // Case 2: Multi-page walk completion
             if (isComplete) {
                 List<ConversationEntity> suspects = new ArrayList<>();
-                Set<String> definiteDeletes = new LinkedHashSet<>();
+                List<ConversationEntity> definiteDeletes = new ArrayList<>();
                 for (ConversationEntity row : localRows) {
                     if (row.isArchived() != archived) continue;
                     if (walkIdSet.contains(row.getId()) || locallyCreatedIds.contains(row.getId())) {
@@ -1137,7 +1214,7 @@ public final class ConversationRepository implements AutoCloseable {
                     }
                     if (row.getLastMessageSeq() > 0 && row.getLastMessageSeq() < oldestSequenceInPage) {
                         // Older than the oldest row in a walk that reached the end: definitely absent.
-                        definiteDeletes.add(row.getId());
+                        definiteDeletes.add(row);
                     } else {
                         // Newer or equal, or no-message chat (seq 0): could have moved during the walk; verify via delta endpoint.
                         suspects.add(row);
@@ -1147,12 +1224,14 @@ public final class ConversationRepository implements AutoCloseable {
                         ? Completable.complete()
                         : Completable.fromAction(() -> {
                             appDatabase.runInTransaction(() -> {
-                                for (String id : definiteDeletes) {
-                                    LocalConversationCleaner.deleteInTransaction(appDatabase, id, ownerUserId);
+                                for (ConversationEntity row : definiteDeletes) {
+                                    LocalConversationCleaner.deleteInTransaction(
+                                            appDatabase, row.getId(), ownerUserId);
                                 }
                             });
                         });
                 return deleteDefinite
+                        .andThen(notifyConfirmedRemovals(definiteDeletes))
                         .andThen(confirmAbsenceAndPrune(suspects, ownerUserId))
                         .andThen(Completable.fromAction(() -> locallyCreatedIds.removeAll(walkIdSet)));
             }
@@ -1180,46 +1259,19 @@ public final class ConversationRepository implements AutoCloseable {
      * Confirms suspects against the authoritative delta endpoint. The server
      * lists every conversation the caller can still access; an omitted
      * watermark therefore proves the conversation is gone, so its local cache
-     * is pruned in the same transaction as the rows already applied.
+     * is pruned in the same transaction as the rows already applied. A prune
+     * the server confirmed also announces the removal when it was one.
      */
     private Completable confirmAbsenceAndPrune(
             List<ConversationEntity> suspects, @Nullable String ownerUserId) {
         if (suspects.isEmpty()) {
             return Completable.complete();
         }
-        List<SyncRequest.Watermark> watermarks = new ArrayList<>(suspects.size());
-        for (ConversationEntity suspect : suspects) {
-            watermarks.add(new SyncRequest.Watermark(
-                    suspect.getId(), suspect.getLastMessageSeq()));
-        }
-        SyncRequest request = new SyncRequest(watermarks, 1, null);
-        Call<SyncResponse> call;
-        try {
-            call = messageApi.syncDeltas(request);
-        } catch (RuntimeException e) {
-            return Completable.complete();
-        }
-        if (call == null) {
-            return Completable.complete();
-        }
-        return safeApiCall(call).flatMapCompletable(result -> {
-            if (!(result instanceof ApiResult.Success<?> success)) {
-                return Completable.complete();
-            }
-            SyncResponse response = (SyncResponse) success.getBody();
-            if (response == null) {
-                return Completable.complete();
-            }
-            Set<String> accessible = new HashSet<>();
-            for (SyncResponse.ConversationDeltaDto delta : response.getDeltas()) {
-                if (delta.getConversationId() != null) {
-                    accessible.add(delta.getConversationId());
-                }
-            }
-            List<String> toPrune = new ArrayList<>();
+        return confirmedInaccessibleIds(suspects).flatMapCompletable(lostIds -> {
+            List<ConversationEntity> toPrune = new ArrayList<>();
             for (ConversationEntity suspect : suspects) {
-                if (!accessible.contains(suspect.getId())) {
-                    toPrune.add(suspect.getId());
+                if (lostIds.contains(suspect.getId())) {
+                    toPrune.add(suspect);
                 }
             }
             if (toPrune.isEmpty()) {
@@ -1227,11 +1279,104 @@ public final class ConversationRepository implements AutoCloseable {
             }
             return Completable.fromAction(() -> {
                 appDatabase.runInTransaction(() -> {
-                    for (String id : toPrune) {
-                        LocalConversationCleaner.deleteInTransaction(appDatabase, id, ownerUserId);
+                    for (ConversationEntity row : toPrune) {
+                        LocalConversationCleaner.deleteInTransaction(
+                                appDatabase, row.getId(), ownerUserId);
                     }
                 });
-            });
+            }).andThen(emitRemovalNotices(toPrune));
+        });
+    }
+
+    /**
+     * Asks the authoritative delta endpoint which of the candidates the caller
+     * can still reach and returns the ids it cannot. The server omits a
+     * conversation whose member row is gone, which is the only signal that
+     * separates a removal from an archive — an archived conversation stays
+     * listed because the caller is still a member. Every failure fails
+     * closed: an unverifiable loss is not a confirmed removal.
+     */
+    private Single<Set<String>> confirmedInaccessibleIds(List<ConversationEntity> candidates) {
+        if (candidates.isEmpty()) {
+            return Single.just(Collections.emptySet());
+        }
+        List<SyncRequest.Watermark> watermarks = new ArrayList<>(candidates.size());
+        for (ConversationEntity candidate : candidates) {
+            watermarks.add(new SyncRequest.Watermark(
+                    candidate.getId(), candidate.getLastMessageSeq()));
+        }
+        SyncRequest request = new SyncRequest(watermarks, 1, null);
+        Call<SyncResponse> call;
+        try {
+            call = messageApi.syncDeltas(request);
+        } catch (RuntimeException e) {
+            return Single.just(Collections.emptySet());
+        }
+        if (call == null) {
+            return Single.just(Collections.emptySet());
+        }
+        return safeApiCall(call).map(result -> {
+            if (!(result instanceof ApiResult.Success<?> success)) {
+                return Collections.<String>emptySet();
+            }
+            SyncResponse response = (SyncResponse) success.getBody();
+            if (response == null) {
+                return Collections.<String>emptySet();
+            }
+            Set<String> accessible = new HashSet<>();
+            for (SyncResponse.ConversationDeltaDto delta : response.getDeltas()) {
+                if (delta.getConversationId() != null) {
+                    accessible.add(delta.getConversationId());
+                }
+            }
+            Set<String> lost = new HashSet<>();
+            for (ConversationEntity candidate : candidates) {
+                if (!accessible.contains(candidate.getId())) {
+                    lost.add(candidate.getId());
+                }
+            }
+            return lost;
+        });
+    }
+
+    /**
+     * Emits removal notices for rows a reconcile pruned without consulting the
+     * delta endpoint — but only for the ones that endpoint confirms are truly
+     * inaccessible. Candidates are restricted to group rows (only a group can
+     * evict the caller) and to ids the caller did not leave on this device.
+     */
+    private Completable notifyConfirmedRemovals(List<ConversationEntity> pruned) {
+        List<ConversationEntity> candidates = new ArrayList<>();
+        for (ConversationEntity row : pruned) {
+            if (TYPE_GROUP.equals(row.getType()) && !voluntaryExitIds.contains(row.getId())) {
+                candidates.add(row);
+            }
+        }
+        return confirmedInaccessibleIds(candidates).flatMapCompletable(lostIds -> {
+            List<ConversationEntity> confirmed = new ArrayList<>();
+            for (ConversationEntity row : candidates) {
+                if (lostIds.contains(row.getId())) {
+                    confirmed.add(row);
+                }
+            }
+            return emitRemovalNotices(confirmed);
+        });
+    }
+
+    /**
+     * Delivers the removal notice for every pruned group row the caller did
+     * not leave voluntarily. The caller must already have confirmed the
+     * access loss; this only performs the group/voluntary gating and emits.
+     */
+    private Completable emitRemovalNotices(List<ConversationEntity> confirmedLost) {
+        return Completable.fromAction(() -> {
+            for (ConversationEntity row : confirmedLost) {
+                if (!TYPE_GROUP.equals(row.getType())
+                        || voluntaryExitIds.contains(row.getId())) {
+                    continue;
+                }
+                announceSelfRemoval(row.getId(), row.getTitle());
+            }
         });
     }
 

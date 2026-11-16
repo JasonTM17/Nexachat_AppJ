@@ -1395,6 +1395,241 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
+    public void selfRemovalNoticeIsHeldUntilASubscriberAttaches() {
+        buildRepository();
+        dao().upsert(conversation("conv-a", 200)).blockingAwait();
+
+        // Nobody listens yet — the notice must be held, not dropped.
+        repository.handleConversationUpdate(new ChatEvent.ConversationUpdated(
+                "conv-a", "MEMBER_REMOVED", List.of("other-member"), null, "NexaChat Team"))
+                .blockingGet();
+
+        TestSubscriber<ConversationRepository.SelfRemovalNotice> late =
+                repository.selfRemovals().test();
+        late.assertValueCount(1);
+        assertEquals("conv-a", late.values().get(0).conversationId());
+        assertEquals("NexaChat Team", late.values().get(0).title());
+    }
+
+    @Test
+    public void pendingSelfRemovalNoticeIsConsumedOnce() {
+        buildRepository();
+        dao().upsert(conversation("conv-a", 200)).blockingAwait();
+        repository.handleConversationUpdate(new ChatEvent.ConversationUpdated(
+                "conv-a", "MEMBER_REMOVED", List.of("other-member"))).blockingGet();
+
+        repository.selfRemovals().test().assertValueCount(1);
+
+        // Already consumed — a later attach must not replay it.
+        repository.selfRemovals().test().assertNoValues();
+    }
+
+    @Test
+    public void pendingSelfRemovalNoticeKeepsOnlyTheLatest() {
+        buildRepository();
+        dao().upsertAll(List.of(conversation("conv-a", 200), conversation("conv-b", 201)))
+                .blockingAwait();
+        repository.handleConversationUpdate(new ChatEvent.ConversationUpdated(
+                "conv-a", "MEMBER_REMOVED", List.of("other-member"))).blockingGet();
+        repository.handleConversationUpdate(new ChatEvent.ConversationUpdated(
+                "conv-b", "MEMBER_REMOVED", List.of("other-member"), null, "Team B"))
+                .blockingGet();
+
+        TestSubscriber<ConversationRepository.SelfRemovalNotice> late =
+                repository.selfRemovals().test();
+
+        late.assertValueCount(1);
+        assertEquals("conv-b", late.values().get(0).conversationId());
+        assertEquals("Team B", late.values().get(0).title());
+    }
+
+    @Test
+    public void firstPageDeltaConfirmedPruneEmitsTheRemovalNotice() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 100),
+                conversation("conv-removed", 110),
+                conversation("conv-page2", 10))).blockingAwait();
+        TestSubscriber<ConversationRepository.SelfRemovalNotice> notices =
+                repository.selfRemovals().test();
+        stubInboxPage(null, "cursor-page-2", inboxJson("conv-a", 100));
+        SyncResponse deltaResponse = new SyncResponse(List.of(
+                new SyncResponse.ConversationDeltaDto(
+                        "conv-a", List.of(), List.of(), List.of(), List.of(), 100L, false)),
+                "2026-11-08T10:00:00Z");
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(deltaResponse)));
+
+        repository.refreshInbox().blockingGet();
+
+        notices.assertValueCount(1);
+        assertEquals("conv-removed", notices.values().get(0).conversationId());
+        assertEquals("conv-removed", notices.values().get(0).title());
+    }
+
+    @Test
+    public void completedWalkConfirmedPruneEmitsTheRemovalNotice() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 100),
+                conversation("conv-removed", 80))).blockingAwait();
+        TestSubscriber<ConversationRepository.SelfRemovalNotice> notices =
+                repository.selfRemovals().test();
+        stubInboxPage(null, "cursor-page-2", inboxJson("conv-a", 100));
+        stubInboxPage("cursor-page-2", null, inboxJson("conv-b", 50));
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(
+                        new SyncResponse(List.of(), "2026-11-08T10:00:00Z"))));
+
+        repository.refreshInboxPage().blockingGet();
+        repository.loadNextInboxPage().blockingGet();
+
+        notices.assertValueCount(1);
+        assertEquals("conv-removed", notices.values().get(0).conversationId());
+    }
+
+    @Test
+    public void singlePageDeltaConfirmedRemovalEmitsTheNotice() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 20), conversation("conv-gone", 25))).blockingAwait();
+        TestSubscriber<ConversationRepository.SelfRemovalNotice> notices =
+                repository.selfRemovals().test();
+        stubInbox(List.of(inboxDto("conv-a", 20)));
+        SyncResponse deltaResponse = new SyncResponse(List.of(
+                new SyncResponse.ConversationDeltaDto(
+                        "conv-a", List.of(), List.of(), List.of(), List.of(), 20L, false)),
+                "2026-11-08T10:00:00Z");
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(deltaResponse)));
+
+        repository.refreshInbox().blockingGet();
+
+        notices.assertValueCount(1);
+        assertEquals("conv-gone", notices.values().get(0).conversationId());
+        assertEquals("conv-gone", notices.values().get(0).title());
+    }
+
+    @Test
+    public void singlePagePruneOfAnArchivedRowDoesNotAnnounceARemoval() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 20), conversation("conv-arch", 25))).blockingAwait();
+        TestSubscriber<ConversationRepository.SelfRemovalNotice> notices =
+                repository.selfRemovals().test();
+        // The authoritative page omits conv-arch, so the local row converges —
+        // but the delta endpoint still lists it because an archive keeps the
+        // caller's membership. No removal, no notice.
+        stubInbox(List.of(inboxDto("conv-a", 20)));
+        SyncResponse deltaResponse = new SyncResponse(List.of(
+                new SyncResponse.ConversationDeltaDto(
+                        "conv-arch", List.of(), List.of(), List.of(), List.of(), 25L, false)),
+                "2026-11-08T10:00:00Z");
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(deltaResponse)));
+
+        repository.refreshInbox().blockingGet();
+
+        assertEquals(java.util.Set.of("conv-a"), dao().rows.keySet());
+        notices.assertNoValues();
+    }
+
+    @Test
+    public void confirmedPruneOfADirectRowDoesNotAnnounceARemoval() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 100), directConversation("conv-direct", 110)))
+                .blockingAwait();
+        TestSubscriber<ConversationRepository.SelfRemovalNotice> notices =
+                repository.selfRemovals().test();
+        stubInboxPage(null, "cursor-page-2", inboxJson("conv-a", 100));
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(
+                        new SyncResponse(List.of(), "2026-11-08T10:00:00Z"))));
+
+        repository.refreshInbox().blockingGet();
+
+        assertFalse(dao().rows.containsKey("conv-direct"));
+        notices.assertNoValues();
+    }
+
+    @Test
+    public void confirmedPruneAfterAVoluntaryLeaveDoesNotAnnounceARemoval() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 100), conversation("conv-left", 110))).blockingAwait();
+        TestSubscriber<ConversationRepository.SelfRemovalNotice> notices =
+                repository.selfRemovals().test();
+        when(groupApi.leaveGroup("conv-left")).thenReturn(asCall(Response.success(
+                ResponseBody.create(okhttp3.MediaType.parse("application/json"), "{}"))));
+
+        repository.leaveGroup("conv-left").blockingGet();
+        assertFalse(dao().rows.containsKey("conv-left"));
+
+        // A stale row image that still carries the left conversation — the
+        // reconcile may have snapshotted local rows before the leave landed —
+        // is pruned silently because the exit was voluntary.
+        dao().upsert(conversation("conv-left", 110)).blockingAwait();
+        stubInboxPage(null, "cursor-page-2", inboxJson("conv-a", 100));
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(
+                        new SyncResponse(List.of(), "2026-11-08T10:00:00Z"))));
+
+        repository.refreshInbox().blockingGet();
+
+        assertFalse(dao().rows.containsKey("conv-left"));
+        notices.assertNoValues();
+    }
+
+    @Test
+    public void removalPushAfterAReconcileNoticeDoesNotRepeat() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 100), conversation("conv-gone", 110))).blockingAwait();
+        TestSubscriber<ConversationRepository.SelfRemovalNotice> notices =
+                repository.selfRemovals().test();
+        stubInboxPage(null, "cursor-page-2", inboxJson("conv-a", 100));
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(
+                        new SyncResponse(List.of(), "2026-11-08T10:00:00Z"))));
+
+        repository.refreshInbox().blockingGet();
+        repository.handleConversationUpdate(new ChatEvent.ConversationUpdated(
+                "conv-gone", "MEMBER_REMOVED", List.of("other-member"))).blockingGet();
+
+        notices.assertValueCount(1);
+        assertEquals("conv-gone", notices.values().get(0).conversationId());
+    }
+
+    @Test
+    public void rejoinedGroupAnnouncesARenewedRemoval() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 100), conversation("conv-g", 110))).blockingAwait();
+        TestSubscriber<ConversationRepository.SelfRemovalNotice> notices =
+                repository.selfRemovals().test();
+        stubInboxPage(null, "cursor-page-2", inboxJson("conv-a", 100));
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(
+                        new SyncResponse(List.of(), "2026-11-08T10:00:00Z"))));
+
+        repository.refreshInbox().blockingGet();
+        notices.assertValueCount(1);
+
+        // Re-added: an inbox page lists the group again, so the old removal
+        // mark no longer suppresses a new confirmed removal.
+        dao().upsert(conversation("conv-g", 130)).blockingAwait();
+        stubInbox(List.of(inboxDto("conv-a", 100), inboxDto("conv-g", 130)));
+        repository.refreshInboxPage().blockingGet();
+
+        stubInbox(List.of(inboxDto("conv-a", 100)));
+        repository.refreshInbox().blockingGet();
+
+        notices.assertValueCount(2);
+        assertEquals("conv-g", notices.values().get(1).conversationId());
+    }
+
+    @Test
     public void anotherMemberLeavingKeepsTheConversation() {
         buildRepository();
         dao().upsert(conversation("conv-a", 200)).blockingAwait();
@@ -1547,6 +1782,12 @@ public final class ConversationRepositoryTest {
         return new ConversationEntity(
                 id, "GROUP", id, seq, null, null, seq == 0 ? null : seq, 0,
                 null, null, null, 0L, null, null, false);
+    }
+
+    private ConversationEntity directConversation(String id, long seq) {
+        return new ConversationEntity(
+                id, "DIRECT", null, seq, null, null, seq == 0 ? null : seq, 0,
+                "Peer " + id, null, null, 0L, null, "peer-" + id, false);
     }
 
     private ConversationEntity withPeerReadAndRole(
