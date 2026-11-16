@@ -823,6 +823,8 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
         if (route.path().endsWith("/translate-batch")
                 || route.path().endsWith("/translate-prefs")
                 || route.path().endsWith("/translation-glossary")) return 200;
+        // The disappearing-timer PUT returns the conversation update payload.
+        if (route.path().endsWith("/disappearing")) return 200;
         if (route.policy().equals("CONVERSATION_MEMBER")) {
             if ((route.path().endsWith("/vote") && route.method().equals("DELETE"))
                     || (route.path().endsWith("/vote") && route.method().equals("PUT"))) return 200;
