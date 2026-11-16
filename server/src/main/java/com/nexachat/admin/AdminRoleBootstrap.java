@@ -1,5 +1,6 @@
 package com.nexachat.admin;
 
+import com.nexachat.auth.AccessTokenValidityCache;
 import com.nexachat.common.PhoneNormalizer;
 import com.nexachat.config.SecurityProperties;
 import com.nexachat.user.User;
@@ -35,13 +36,16 @@ public class AdminRoleBootstrap {
 
     private final UserRepository userRepository;
     private final NamedParameterJdbcTemplate jdbc;
+    private final AccessTokenValidityCache validityCache;
     private final Set<String> adminPhones;
 
     public AdminRoleBootstrap(UserRepository userRepository,
                               org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
-                              SecurityProperties properties) {
+                              SecurityProperties properties,
+                              AccessTokenValidityCache validityCache) {
         this.userRepository = userRepository;
         this.jdbc = new NamedParameterJdbcTemplate(jdbcTemplate);
+        this.validityCache = validityCache;
         this.adminPhones = properties.adminPhones().stream()
                 .map(phone -> {
                     try {
@@ -86,6 +90,9 @@ public class AdminRoleBootstrap {
         }
         user.changeRole(User.Role.ADMIN);
         userRepository.save(user);
+        // The new role must reach the JWT hot path at once: a cached USER
+        // validity would hide the admin routes until the entry expired.
+        validityCache.evict(user.getId());
         log.info("Promoted a configured admin phone to ADMIN role at session issue");
     }
 }
