@@ -391,6 +391,24 @@ class AlertPipelineIT {
     }
 
     @Test
+    void revealOmitsContextFromMembersWhoOptedOut() throws Exception {
+        send(peer, "private opted out neighbour line");
+        send(sender, "send me the code 482913 please");
+        UUID alertId = (UUID) awaitAlerts(1).get(0).get("id");
+        optOutService.optOut(conversationId, peer.getId());
+
+        var reveal = mockMvc.perform(post("/api/v1/admin/alerts/" + alertId + "/reveal")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("reason", "context probe"))))
+                .andExpect(status().isOk())
+                .andReturn();
+        String body = reveal.getResponse().getContentAsString();
+        assertThat(body).contains("send me the code");
+        assertThat(body).doesNotContain("private opted out neighbour line");
+    }
+
+    @Test
     void revealRefusesAnOptedOutSender() throws Exception {
         send(sender, "send me the code 482913 please");
         UUID alertId = (UUID) awaitAlerts(1).get(0).get("id");

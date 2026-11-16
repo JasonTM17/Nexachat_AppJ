@@ -214,6 +214,9 @@ public class AlertService {
                         WHERE conversation_id = ? AND seq BETWEEN ? AND ?
                           AND deleted_at IS NULL AND type = 'TEXT'
                           AND encryption IS NULL AND content IS NOT NULL
+                          AND sender_id NOT IN (
+                              SELECT user_id FROM conversation_ai_opt_outs
+                              WHERE conversation_id = ?)
                         ORDER BY seq LIMIT ?
                         """,
                 (rs, rowNum) -> new RevealedMessage(
@@ -223,6 +226,7 @@ public class AlertService {
                 row.conversationId(),
                 Math.max(0, row.messageSeq() - properties.alerts().revealContextRadius()),
                 row.messageSeq() + properties.alerts().revealContextRadius(),
+                row.conversationId(),
                 properties.alerts().revealContextRadius() * 2 + 1);
         // Opt-out gate re-checked here, not only at scan time: an opt-out taken
         // after the alert was filed still suppresses this sender's content.
