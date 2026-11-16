@@ -18,8 +18,14 @@ class MessageStarRepositoryIT {
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url",
-                () -> System.getenv().getOrDefault("IT_DB_URL",
-                        "jdbc:postgresql://localhost:5433/nexachat_test"));
+                () -> env("IT_DB_URL", "jdbc:postgresql://localhost:5433/nexachat_test"));
+        registry.add("spring.datasource.username", () -> env("IT_DB_USER", "nexachat"));
+        registry.add("spring.datasource.password", () -> env("IT_DB_PASSWORD", "nexachat"));
+    }
+
+    private static String env(String name, String fallback) {
+        String value = System.getenv(name);
+        return value == null || value.isBlank() ? fallback : value;
     }
 
     @Autowired
