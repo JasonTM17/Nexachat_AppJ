@@ -358,6 +358,35 @@ class AttachmentFlowIT {
         }
     }
 
+    @Test
+    void expiredMessageAttachment_isHiddenBeforeThePurgeSweepRuns() throws Exception {
+        UUID conversationId = openDirectConversation();
+        JsonNode uploaded = upload(alice, "fading.png", "image/png", PNG_BYTES);
+        UUID attachmentId = UUID.fromString(uploaded.get("id").asText());
+        String filesUrl = uploaded.get("url").asText();
+        MvcResult sent = postJson("/api/v1/conversations/" + conversationId + "/messages",
+                alice.accessToken(),
+                Map.of("clientMessageId", UUID.randomUUID().toString(),
+                        "type", "IMAGE",
+                        "attachmentIds", List.of(attachmentId.toString())))
+                .andExpect(status().isCreated())
+                .andReturn();
+        UUID messageId = UUID.fromString(
+                objectMapper.readTree(sent.getResponse().getContentAsString()).get("id").asText());
+
+        mockMvc.perform(get(filesUrl).header("Authorization", "Bearer " + bob.accessToken()))
+                .andExpect(status().isOk());
+
+        jdbcTemplate.update(
+                "UPDATE messages SET expires_at = now() - interval '1 minute' WHERE id = ?", messageId);
+
+        for (String token : new String[] {alice.accessToken(), bob.accessToken()}) {
+            mockMvc.perform(get(filesUrl).header("Authorization", "Bearer " + token))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.error.code").value("ATTACHMENT_NOT_FOUND"));
+        }
+    }
+
     // ==================================================== ISO-BMFF MIME
 
     @Test

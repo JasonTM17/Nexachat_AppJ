@@ -122,6 +122,14 @@ public class Message {
     @Column(name = "e2ee_envelopes", columnDefinition = "jsonb")
     private String e2eeEnvelopes;
 
+    /**
+     * Disappearing-message deadline, stamped at insert as
+     * {@code created_at + conversation.disappearing_seconds}. {@code null} for
+     * messages that never expire (timer off, or SYSTEM rows).
+     */
+    @Column(name = "expires_at")
+    private Instant expiresAt;
+
     protected Message() {
         // JPA only
     }
@@ -188,6 +196,14 @@ public class Message {
 
     public String getE2eeEnvelopes() {
         return e2eeEnvelopes;
+    }
+
+    public Instant getExpiresAt() {
+        return expiresAt;
+    }
+
+    public void setExpiresAt(Instant expiresAt) {
+        this.expiresAt = expiresAt;
     }
 
     public void editContent(String content, Instant editedAt) {

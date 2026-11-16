@@ -51,6 +51,8 @@ public final class MessageEntity {
     @ColumnInfo(defaultValue = "0") private final boolean decryptFailed;
     /** 1 when the reply/quote target was encrypted and its snippet must not render verbatim. */
     @ColumnInfo(defaultValue = "0") private final boolean replyToEncrypted;
+    /** Disappearing-message deadline in epoch ms; null for non-expiring rows. */
+    @Nullable private final Long expiresAtEpochMs;
 
     @Ignore
     public MessageEntity(
@@ -126,6 +128,7 @@ public final class MessageEntity {
                 generation, encrypted, decryptFailed, false);
     }
 
+    @androidx.room.Ignore
     public MessageEntity(@NonNull String id, @NonNull String conversationId, long seq,
             @NonNull String senderId, @Nullable String senderDisplayName, @NonNull String type,
             @Nullable String content, @Nullable String clientMessageId, @Nullable String replyToId,
@@ -134,9 +137,24 @@ public final class MessageEntity {
             @Nullable Long deletedAtEpochMs, @NonNull String mentionsJson, boolean mentionAll,
             long changeVersion, long generation, boolean encrypted, boolean decryptFailed,
             boolean replyToEncrypted) {
+        this(id, conversationId, seq, senderId, senderDisplayName, type, content, clientMessageId,
+                replyToId, replyToSenderName, replyToSnippet, createdAt, attachmentsJson,
+                editedAtEpochMs, deletedAtEpochMs, mentionsJson, mentionAll, changeVersion,
+                generation, encrypted, decryptFailed, replyToEncrypted, null);
+    }
+
+    public MessageEntity(@NonNull String id, @NonNull String conversationId, long seq,
+            @NonNull String senderId, @Nullable String senderDisplayName, @NonNull String type,
+            @Nullable String content, @Nullable String clientMessageId, @Nullable String replyToId,
+            @Nullable String replyToSenderName, @Nullable String replyToSnippet, long createdAt,
+            @Nullable String attachmentsJson, @Nullable Long editedAtEpochMs,
+            @Nullable Long deletedAtEpochMs, @NonNull String mentionsJson, boolean mentionAll,
+            long changeVersion, long generation, boolean encrypted, boolean decryptFailed,
+            boolean replyToEncrypted, @Nullable Long expiresAtEpochMs) {
         this.encrypted = encrypted;
         this.decryptFailed = decryptFailed;
         this.replyToEncrypted = replyToEncrypted;
+        this.expiresAtEpochMs = expiresAtEpochMs;
         this.changeVersion = changeVersion;
         this.generation = generation;
         this.id = id;
@@ -184,19 +202,25 @@ public final class MessageEntity {
     public boolean isDecryptFailed() { return decryptFailed; }
     /** 1 when the quoted target was encrypted; the UI shows the neutral snippet. */
     public boolean isReplyToEncrypted() { return replyToEncrypted; }
+    /** Disappearing deadline in epoch ms; null for non-expiring rows. */
+    @Nullable public Long getExpiresAtEpochMs() { return expiresAtEpochMs; }
+    /** True once the disappearing deadline has passed relative to {@code nowEpochMs}. */
+    public boolean isExpired(long nowEpochMs) {
+        return expiresAtEpochMs != null && expiresAtEpochMs <= nowEpochMs;
+    }
 
     @NonNull public MessageEntity withReplyToSnippet(@Nullable String snippet) {
         return new MessageEntity(id, conversationId, seq, senderId, senderDisplayName, type,
                 content, clientMessageId, replyToId, replyToSenderName, snippet, createdAt,
                 attachmentsJson, editedAtEpochMs, deletedAtEpochMs, mentionsJson, mentionAll,
-                changeVersion, generation, encrypted, decryptFailed, replyToEncrypted);
+                changeVersion, generation, encrypted, decryptFailed, replyToEncrypted, expiresAtEpochMs);
     }
 
     @NonNull public MessageEntity withSyncVersion(long version, long nextGeneration) {
         return new MessageEntity(id, conversationId, seq, senderId, senderDisplayName, type,
                 content, clientMessageId, replyToId, replyToSenderName, replyToSnippet, createdAt,
                 attachmentsJson, editedAtEpochMs, deletedAtEpochMs, mentionsJson, mentionAll,
-                version, nextGeneration, encrypted, decryptFailed, replyToEncrypted);
+                version, nextGeneration, encrypted, decryptFailed, replyToEncrypted, expiresAtEpochMs);
     }
 
     /** Returns this row with the edited text and edit time replaced. */
@@ -205,7 +229,8 @@ public final class MessageEntity {
         return new MessageEntity(id, conversationId, seq, senderId, senderDisplayName, type,
                 newContent, clientMessageId, replyToId, replyToSenderName, replyToSnippet,
                 createdAt, attachmentsJson, newEditedAtEpochMs, deletedAtEpochMs,
-                mentionsJson, mentionAll, changeVersion, generation, encrypted, decryptFailed, replyToEncrypted);
+                mentionsJson, mentionAll, changeVersion, generation, encrypted, decryptFailed,
+                replyToEncrypted, expiresAtEpochMs);
     }
 
     /** Returns the neutral tombstone form while retaining message identity and ordering. */
@@ -213,7 +238,7 @@ public final class MessageEntity {
         return new MessageEntity(id, conversationId, seq, senderId, senderDisplayName, type,
                 "", clientMessageId, replyToId, replyToSenderName, replyToSnippet, createdAt,
                 null, editedAtEpochMs, newDeletedAtEpochMs, "[]", false, changeVersion, generation,
-                encrypted, decryptFailed);
+                encrypted, decryptFailed, replyToEncrypted, expiresAtEpochMs);
     }
 
     /** Returns this row with only its edit timestamp replaced. */
@@ -221,7 +246,7 @@ public final class MessageEntity {
         return new MessageEntity(id, conversationId, seq, senderId, senderDisplayName, type,
                 content, clientMessageId, replyToId, replyToSenderName, replyToSnippet, createdAt,
                 attachmentsJson, newEditedAtEpochMs, deletedAtEpochMs, mentionsJson, mentionAll,
-                changeVersion, generation, encrypted, decryptFailed, replyToEncrypted);
+                changeVersion, generation, encrypted, decryptFailed, replyToEncrypted, expiresAtEpochMs);
     }
 
     @Override public boolean equals(Object other) {
@@ -244,13 +269,15 @@ public final class MessageEntity {
                 && Objects.equals(editedAtEpochMs, that.editedAtEpochMs)
                 && Objects.equals(deletedAtEpochMs, that.deletedAtEpochMs)
                 && Objects.equals(mentionsJson, that.mentionsJson)
-                && mentionAll == that.mentionAll;
+                && mentionAll == that.mentionAll
+                && Objects.equals(expiresAtEpochMs, that.expiresAtEpochMs);
     }
 
     @Override public int hashCode() {
         return Objects.hash(id, conversationId, seq, senderId, senderDisplayName, type, content,
                 clientMessageId, replyToId, replyToSenderName, replyToSnippet, createdAt,
-                attachmentsJson, editedAtEpochMs, deletedAtEpochMs, mentionsJson, mentionAll, changeVersion, generation);
+                attachmentsJson, editedAtEpochMs, deletedAtEpochMs, mentionsJson, mentionAll,
+                changeVersion, generation, expiresAtEpochMs);
     }
 
     @NonNull @Override public String toString() {

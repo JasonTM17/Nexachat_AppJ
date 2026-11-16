@@ -139,6 +139,7 @@ class MessageSearchServiceTest {
             @Override public Boolean getMentionAll() { return row.mentionAll(); }
             @Override public Long getChangeVersion() { return row.changeVersion(); }
             @Override public Long getGeneration() { return row.generation(); }
+            @Override public Instant getExpiresAt() { return row.expiresAt(); }
         };
     }
 }

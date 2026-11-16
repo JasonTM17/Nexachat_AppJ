@@ -45,6 +45,8 @@ public final class ChatMessage {
     private final boolean replyToEncrypted;
     /** FAILED on the terminal e2ee send pause, not an ordinary rejection. */
     private final boolean pausedRefusal;
+    /** Disappearing deadline in epoch ms; null for non-expiring messages. */
+    @Nullable private final Long expiresAtEpochMs;
 
     public ChatMessage(String id, String conversationId, @Nullable Long seq, String senderId,
             @Nullable String senderDisplayName, String type, @Nullable String content,
@@ -97,6 +99,23 @@ public final class ChatMessage {
             List<MessageMention> mentions, boolean mentionAll,
             boolean encrypted, boolean decryptFailed, boolean replyToEncrypted,
             boolean pausedRefusal) {
+        this(id, conversationId, seq, senderId, senderDisplayName, type, content, replyToId,
+                replyToSenderName, replyToSnippet, createdAtEpochMs, clientMessageId, status,
+                mine, attachments, reactions, editedAtEpochMs, deletedAtEpochMs, mentions,
+                mentionAll, encrypted, decryptFailed, replyToEncrypted, pausedRefusal, null);
+    }
+
+    public ChatMessage(String id, String conversationId, @Nullable Long seq, String senderId,
+            @Nullable String senderDisplayName, String type, @Nullable String content,
+            @Nullable String replyToId, @Nullable String replyToSenderName,
+            @Nullable String replyToSnippet, long createdAtEpochMs,
+            @Nullable String clientMessageId, DeliveryStatus status, boolean mine,
+            List<AttachmentDto> attachments, List<ReactionChip> reactions,
+            @Nullable Long editedAtEpochMs, @Nullable Long deletedAtEpochMs,
+            List<MessageMention> mentions, boolean mentionAll,
+            boolean encrypted, boolean decryptFailed, boolean replyToEncrypted,
+            boolean pausedRefusal, @Nullable Long expiresAtEpochMs) {
+        this.expiresAtEpochMs = expiresAtEpochMs;
         this.encrypted = encrypted;
         this.decryptFailed = decryptFailed;
         this.replyToEncrypted = replyToEncrypted;
@@ -153,6 +172,10 @@ public final class ChatMessage {
     public boolean isReplyToEncrypted() { return replyToEncrypted; }
     /** Row FAILED on the send pause specifically; only it wears the paused label. */
     public boolean isPausedRefusal() { return pausedRefusal; }
+    /** Disappearing deadline in epoch ms; null for non-expiring messages. */
+    @Nullable public Long getExpiresAtEpochMs() { return expiresAtEpochMs; }
+    /** True while a live disappearing countdown applies to this bubble. */
+    public boolean isExpiring() { return expiresAtEpochMs != null && deletedAtEpochMs == null; }
 
     @Override public boolean equals(Object other) {
         if (!(other instanceof ChatMessage that)) return false;
@@ -170,12 +193,13 @@ public final class ChatMessage {
                 && Objects.equals(editedAtEpochMs, that.editedAtEpochMs)
                 && Objects.equals(deletedAtEpochMs, that.deletedAtEpochMs)
                 && Objects.equals(mentions, that.mentions)
-                && mentionAll == that.mentionAll && pausedRefusal == that.pausedRefusal;
+                && mentionAll == that.mentionAll && pausedRefusal == that.pausedRefusal
+                && Objects.equals(expiresAtEpochMs, that.expiresAtEpochMs);
     }
     @Override public int hashCode() {
         return Objects.hash(id, conversationId, seq, senderId, senderDisplayName, type, content,
                 replyToId, replyToSenderName, replyToSnippet, createdAtEpochMs, clientMessageId,
                 status, mine, attachments, reactions, editedAtEpochMs, deletedAtEpochMs,
-                mentions, mentionAll, pausedRefusal);
+                mentions, mentionAll, pausedRefusal, expiresAtEpochMs);
     }
 }

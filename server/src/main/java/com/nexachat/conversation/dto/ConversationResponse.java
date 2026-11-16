@@ -15,6 +15,13 @@ public record ConversationResponse(
         List<ConversationMemberView> members,
         Instant createdAt,
         boolean aiOptOut,
-        boolean e2eeEnabled
+        boolean e2eeEnabled,
+        int disappearingSeconds
 ) {
+
+    /** Pre-disappearing shape for callers that predate the timer column. */
+    public ConversationResponse(UUID id, String type, List<ConversationMemberView> members,
+                                Instant createdAt, boolean aiOptOut, boolean e2eeEnabled) {
+        this(id, type, members, createdAt, aiOptOut, e2eeEnabled, 0);
+    }
 }

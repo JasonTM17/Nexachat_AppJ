@@ -236,6 +236,46 @@ public final class RoomMigrationTest {
     }
 
     @Test
+    public void v19ToV20MigrationAddsExpiryAndTimerColumns() throws Exception {
+        SupportSQLiteDatabase oldDb = helper.createDatabase(EXPORTED_DB, 17);
+        try {
+            oldDb.execSQL(
+                    "INSERT INTO conversations (id, type, title, lastMessageSeq, "
+                            + "lastMessageContent, lastMessageSenderName, lastMessageAt, "
+                            + "unreadCount, otherUserName, otherUserAvatar) "
+                            + "VALUES ('c-1', 'GROUP', 'Team', 7, 'hi', 'Lan', 100, 3, NULL, NULL)");
+            oldDb.execSQL(
+                    "INSERT INTO messages (id, conversationId, seq, senderId, "
+                            + "senderDisplayName, type, content, clientMessageId, replyToId, "
+                            + "createdAt, attachmentsJson) "
+                            + "VALUES ('m-1', 'c-1', 7, 'u-1', 'Lan', 'TEXT', 'hi', NULL, NULL, "
+                            + "100, NULL)");
+        } finally {
+            oldDb.close();
+        }
+
+        SupportSQLiteDatabase db = helper.runMigrationsAndValidate(
+                EXPORTED_DB, 20, true, AppDatabase.MIGRATION_17_18,
+                AppDatabase.MIGRATION_18_19, AppDatabase.MIGRATION_19_20);
+        try {
+            try (Cursor cursor = db.query("SELECT expiresAtEpochMs FROM messages WHERE id = 'm-1'")) {
+                assertTrue(cursor.moveToFirst());
+                assertTrue("legacy rows start without a deadline", cursor.isNull(0));
+            }
+            try (Cursor cursor =
+                    db.query("SELECT disappearingSeconds FROM conversations WHERE id = 'c-1'")) {
+                assertTrue(cursor.moveToFirst());
+                assertEquals("legacy rows default to timer off", 0, cursor.getInt(0));
+            }
+            db.execSQL("UPDATE messages SET expiresAtEpochMs = 1234 WHERE id = 'm-1'");
+            assertEquals(1234L,
+                    singleLong(db, "SELECT expiresAtEpochMs FROM messages WHERE id = 'm-1'"));
+        } finally {
+            db.close();
+        }
+    }
+
+    @Test
     public void v9SchemaCreatesFromExportedJson() throws Exception {
         helper.createDatabase(EXPORTED_DB, 9).close();
     }

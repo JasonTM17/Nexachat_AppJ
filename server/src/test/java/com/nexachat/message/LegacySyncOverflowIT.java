@@ -108,7 +108,7 @@ class LegacySyncOverflowIT {
                 SINCE.plusSeconds(1), null, List.of(), false, 0L, 1L);
         SyncResponse expected = new SyncResponse(List.of(new SyncResponse.ConversationDelta(
                 fixture.conversation(), List.of(), List.of(edited), fixture.recalls(), List.of(), fixture.maxSeq(),
-                false, null, false, false, null, false, false, null)), NOW);
+                false, null, false, false, null, false, false, null, null, null, null, null, null, null, 0)), NOW);
         assertThat(mapper.writeValueAsBytes(actual)).isEqualTo(mapper.writeValueAsBytes(expected));
     }
 

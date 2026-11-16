@@ -59,6 +59,8 @@ public final class ConversationSummary {
     private final boolean lastMessageEncrypted;
     /** Server type of the last message; SYSTEM lines localize through the event formatter. */
     @Nullable private final String lastMessageType;
+    /** Disappearing-message timer in seconds; 0 = off. */
+    private final int disappearingSeconds;
 
     public ConversationSummary(
             String id,
@@ -152,6 +154,44 @@ public final class ConversationSummary {
             boolean e2eeEnabled,
             boolean lastMessageEncrypted,
             @Nullable String lastMessageType) {
+        this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
+                lastMessageSeq, unreadCount, myLastReadSeq, otherUserName, otherUserAvatar,
+                avatarUrl, peerReadSeq, peerDeliveredSeq, myRole, otherUserId, lastMessageDeleted,
+                peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAtEpochMs,
+                labelIds, e2eeEnabled, lastMessageEncrypted, lastMessageType, 0);
+    }
+
+    public ConversationSummary(
+            String id,
+            String type,
+            @Nullable String title,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable Long lastMessageAtEpochMs,
+            long lastMessageSeq,
+            int unreadCount,
+            long myLastReadSeq,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            long peerReadSeq,
+            long peerDeliveredSeq,
+            @Nullable String myRole,
+            @Nullable String otherUserId,
+            boolean lastMessageDeleted,
+            @Nullable PeerPresence peerPresence,
+            boolean muted,
+            @Nullable Long mutedUntilEpochMs,
+            boolean archived,
+            boolean aiOptOut,
+            boolean pinned,
+            @Nullable Long pinnedAtEpochMs,
+            List<String> labelIds,
+            boolean e2eeEnabled,
+            boolean lastMessageEncrypted,
+            @Nullable String lastMessageType,
+            int disappearingSeconds) {
+        this.disappearingSeconds = disappearingSeconds;
         this.e2eeEnabled = e2eeEnabled;
         this.lastMessageEncrypted = lastMessageEncrypted;
         this.lastMessageType = lastMessageType;
@@ -336,6 +376,8 @@ public final class ConversationSummary {
     public boolean isE2eeEnabled() { return e2eeEnabled; }
     public boolean isLastMessageEncrypted() { return lastMessageEncrypted; }
     @Nullable public String getLastMessageType() { return lastMessageType; }
+    /** Disappearing-message timer in seconds; 0 = off. */
+    public int getDisappearingSeconds() { return disappearingSeconds; }
 
     /**
      * A timed mute expires lazily: the stored flag stays true while the expiry
@@ -415,7 +457,8 @@ public final class ConversationSummary {
                 && Objects.equals(otherUserId, that.otherUserId)
                 && Objects.equals(peerPresence, that.peerPresence)
                 && Objects.equals(mutedUntilEpochMs, that.mutedUntilEpochMs)
-                && Objects.equals(lastMessageType, that.lastMessageType);
+                && Objects.equals(lastMessageType, that.lastMessageType)
+                && disappearingSeconds == that.disappearingSeconds;
     }
 
     @Override
@@ -424,6 +467,7 @@ public final class ConversationSummary {
                 lastMessageAtEpochMs, lastMessageSeq, unreadCount, myLastReadSeq, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, peerDeliveredSeq, myRole, otherUserId,
                 lastMessageDeleted, peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut,
-                pinned, pinnedAtEpochMs, labelIds, lastMessageType, e2eeEnabled, lastMessageEncrypted);
+                pinned, pinnedAtEpochMs, labelIds, lastMessageType, e2eeEnabled, lastMessageEncrypted,
+                disappearingSeconds);
     }
 }

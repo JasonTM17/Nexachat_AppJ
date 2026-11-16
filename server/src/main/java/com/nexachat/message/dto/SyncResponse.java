@@ -58,7 +58,13 @@ public record SyncResponse(
             @JsonInclude(JsonInclude.Include.NON_NULL) Boolean changeHasMore,
             @JsonInclude(JsonInclude.Include.NON_NULL) Long changeUpperBound,
             @JsonInclude(JsonInclude.Include.NON_NULL) Boolean reset,
-            @JsonInclude(JsonInclude.Include.NON_NULL) Long generation
+            @JsonInclude(JsonInclude.Include.NON_NULL) Long generation,
+            /**
+             * The conversation's disappearing-message timer in seconds
+             * (0 = off), emitted whenever the member-flags row was loaded.
+             * {@code null} only when the flags batch missed the conversation.
+             */
+            @JsonInclude(JsonInclude.Include.NON_NULL) Integer disappearingSeconds
     ) {
         public ConversationDelta(UUID conversationId,
                                  List<MessageResponse> newMessages,
@@ -77,7 +83,7 @@ public record SyncResponse(
             this(conversationId, newMessages, editedMessages, deletedMessageIds,
                     reactionUpdates, maxSeq, hasMore, reactionCursor, reactionsFullRefresh,
                     muted, mutedUntil, archived, pinned, pinnedAt,
-                    null, null, null, null, null, null);
+                    null, null, null, null, null, null, null);
         }
     }
 }

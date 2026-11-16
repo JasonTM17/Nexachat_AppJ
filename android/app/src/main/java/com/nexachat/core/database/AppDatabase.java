@@ -28,7 +28,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             MessageTranslationEntity.class,
             StarredMessageEntity.class
         },
-        version = 19,
+        version = 20,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -320,6 +320,15 @@ public abstract class AppDatabase extends RoomDatabase {
                     + "`starredAt` INTEGER NOT NULL, PRIMARY KEY(`messageId`))");
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_message_stars_conversationId` "
                     + "ON `message_stars` (`conversationId`)");
+        }
+    };
+
+    /** Disappearing messages: per-row deadline and the conversation timer in seconds. */
+    public static final Migration MIGRATION_19_20 = new Migration(19, 20) {
+        @Override public void migrate(SupportSQLiteDatabase db) {
+            db.execSQL("ALTER TABLE `messages` ADD COLUMN `expiresAtEpochMs` INTEGER");
+            db.execSQL("ALTER TABLE `conversations` ADD COLUMN `disappearingSeconds` "
+                    + "INTEGER NOT NULL DEFAULT 0");
         }
     };
 

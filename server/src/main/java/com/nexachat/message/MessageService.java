@@ -45,6 +45,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
@@ -540,7 +541,7 @@ public class MessageService {
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Message not found"));
         requireMessageConversation(message, conversationId);
         requireMessageAuthor(message, userId);
-        if (message.getDeletedAt() != null) {
+        if (message.getDeletedAt() != null || isExpired(message)) {
             throw ApiException.of(ApiErrorCode.MESSAGE_DELETED, "Message was deleted");
         }
         if (message.getType() != Message.Type.TEXT) {
@@ -630,8 +631,21 @@ public class MessageService {
             throw ApiException.of(ApiErrorCode.RECALL_WINDOW_EXPIRED, "Message recall window has expired");
         }
 
+        softDeleteCascade(conversationId, message);
+    }
+
+    /**
+     * Shared soft-delete tail for {@link #delete} and {@link #expireMessage}:
+     * allocates the tombstone's change version under the already-held
+     * conversation lock, clears derived data (mentions, reactions, pins),
+     * emits {@code MESSAGE_DELETED} so online members and offline delta sync
+     * apply the removal identically, and refreshes the inbox preview when the
+     * deleted row was the conversation's last message.
+     */
+    private void softDeleteCascade(UUID conversationId, Message message) {
+        UUID messageId = message.getId();
         boolean wasLastMessage = isLastMessage(conversationId, messageId);
-        Instant deletedAt = recalledAt.truncatedTo(ChronoUnit.MICROS);
+        Instant deletedAt = clock.instant().truncatedTo(ChronoUnit.MICROS);
         message.setChangeVersion(allocateChangeVersion(conversationId));
         message.softDelete(deletedAt);
         if (mentionRepository != null) {
@@ -650,6 +664,42 @@ public class MessageService {
         if (wasLastMessage) {
             publishLastMessageChanged(conversationId, "MESSAGE_DELETED");
         }
+    }
+
+    /**
+     * Disappearing-message expiry — the scheduled purger's per-message unit
+     * of work. Runs in its own transaction so one failure cannot roll back
+     * the rest of the batch, and re-verifies the deadline under the
+     * conversation + message locks so a message is never deleted before its
+     * instant (e.g. if the timer was cleared between the scan and the lock).
+     * Deletion rides the same cascade as a user recall, so WebSocket
+     * propagation, delta sync, and derived-data cleanup are identical.
+     *
+     * @return true when the row was tombstoned by this call
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean expireMessage(UUID messageId) {
+        UUID conversationId = messageRepository.findConversationIdById(messageId).orElse(null);
+        if (conversationId == null) {
+            return false;
+        }
+        lockConversationForWrite(conversationId);
+        Message message = messageRepository.findByIdForUpdate(messageId).orElse(null);
+        if (message == null || message.getDeletedAt() != null) {
+            return false;
+        }
+        if (!isExpired(message)) {
+            return false;
+        }
+        softDeleteCascade(conversationId, message);
+        log.info("Expired message {} (seq={}) purged in {}", message.getId(), message.getSeq(), conversationId);
+        return true;
+    }
+
+    /** True when the message's disappearing deadline has passed. */
+    private boolean isExpired(Message message) {
+        Instant expiresAt = message.getExpiresAt();
+        return expiresAt != null && !expiresAt.isAfter(clock.instant());
     }
 
     @Transactional(readOnly = true)
@@ -954,7 +1004,10 @@ public class MessageService {
                     mutedUntil,
                     archived,
                     pinned,
-                    pinnedAt
+                    pinnedAt,
+                    null, null, null, null, null, null,
+                    flags == null ? null
+                            : flags.disappearingSeconds() == null ? 0 : flags.disappearingSeconds()
             ));
         }
 
@@ -1094,7 +1147,8 @@ public class MessageService {
                     reset ? false : changeHasMore,
                     fence.changeUpperBound(),
                     reset,
-                    fence.generation()));
+                    fence.generation(),
+                    flags.disappearingSeconds() == null ? 0 : flags.disappearingSeconds()));
         }
         return new SyncResponse(deltas, requestTime, 2);
     }
@@ -1279,7 +1333,8 @@ public class MessageService {
         eventPublisher.publishEvent(new ConversationUpdatedEvent(conversationId,
                 new ConversationUpdatePayload(conversationId, conversation.getTitle(),
                         conversation.getAvatarUrl(), change, memberRepository.findMembers(conversationId),
-                        conversation.isE2eeEnabled()),
+                        conversation.isE2eeEnabled(),
+                        conversation.getDisappearingSeconds() == null ? 0 : conversation.getDisappearingSeconds()),
                 List.of()));
     }
 
@@ -1302,7 +1357,7 @@ public class MessageService {
                 row.getSenderDisplayName(), Message.Type.valueOf(row.getType()), row.getContent(),
                 row.getClientMessageId(), row.getReplyToId(), row.getCreatedAt(),
                 row.getEditedAt(), row.getDeletedAt(), Boolean.TRUE.equals(row.getMentionAll()),
-                row.getChangeVersion(), row.getGeneration());
+                row.getChangeVersion(), row.getGeneration(), row.getExpiresAt());
     }
 
     private record MentionRange(int start, int end, MessageMentionResponse mention) {
@@ -1663,7 +1718,8 @@ public class MessageService {
                 row.createdAt(), row.editedAt(), row.deletedAt(), deleted ? List.of() : mentions,
                 !deleted && row.mentionAll(), row.changeVersion(), row.generation(),
                 e2ee == null ? null : e2ee.encryption(),
-                e2ee == null || deleted ? null : E2eeEnvelopes.parse(e2ee.e2eeEnvelopes()));
+                e2ee == null || deleted ? null : E2eeEnvelopes.parse(e2ee.e2eeEnvelopes()),
+                row.expiresAt());
     }
 
     /**
@@ -1711,7 +1767,9 @@ public class MessageService {
                 ? messageRepository.findAdmittedReplyRefsByIdIn(viewerId, replyToIds)
                 : messageRepository.findReplyRefsByIdIn(replyToIds);
         for (ReplyRefRow row : refs) {
-            boolean deleted = row.deletedAt() != null;
+            // An expired target previews as deleted even before the purge lands.
+            boolean deleted = row.deletedAt() != null
+                    || (row.expiresAt() != null && !row.expiresAt().isAfter(clock.instant()));
             boolean encrypted = row.encryption() != null;
             result.put(row.id(), new ReplyRefResponse(
                     row.id(), row.senderId(), row.senderDisplayName(), row.type().name(),

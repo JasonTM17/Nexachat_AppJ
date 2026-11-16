@@ -99,6 +99,10 @@ public interface ConversationDao {
     @Query("UPDATE conversations SET e2eeEnabled = :enabled WHERE id = :conversationId")
     Completable updateE2eeEnabled(String conversationId, boolean enabled);
 
+    /** Conversation disappearing timer in seconds; 0 clears it. */
+    @Query("UPDATE conversations SET disappearingSeconds = :seconds WHERE id = :conversationId")
+    Completable updateDisappearingSeconds(String conversationId, int seconds);
+
     @Query("UPDATE conversations SET unreadCount = unreadCount + :delta WHERE id = :conversationId")
     Completable incrementUnread(String conversationId, int delta);
 

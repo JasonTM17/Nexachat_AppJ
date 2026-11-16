@@ -18,6 +18,8 @@ public final class ConversationUpdateDto {
     @Nullable private final String change;
     @Nullable private final List<ConversationMemberDto> members;
     @Nullable private final Boolean e2eeEnabled;
+    /** Timer in seconds (0 = off); null when the server omits it (leave local state). */
+    @Nullable private Integer disappearingSeconds;
 
     public ConversationUpdateDto() {
         this(null, null, null, null, List.of());
@@ -52,6 +54,10 @@ public final class ConversationUpdateDto {
     @Nullable public String getAvatarUrl() { return avatarUrl; }
     @Nullable public String getChange() { return change; }
     @Nullable public Boolean getE2eeEnabled() { return e2eeEnabled; }
+    @Nullable public Integer getDisappearingSeconds() { return disappearingSeconds; }
+    public void setDisappearingSeconds(@Nullable Integer disappearingSeconds) {
+        this.disappearingSeconds = disappearingSeconds;
+    }
     @NonNull public List<ConversationMemberDto> getMembers() {
         return members == null ? List.of() : members;
     }

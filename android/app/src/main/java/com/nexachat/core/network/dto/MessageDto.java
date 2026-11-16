@@ -36,9 +36,13 @@ public final class MessageDto {
     @Nullable private final List<E2eeEnvelopeDto> e2eeEnvelopes;
     @Nullable private Long changeVersion;
     @Nullable private Long generation;
+    /** Disappearing-message deadline as ISO-8601; null for non-expiring rows. */
+    @Nullable private String expiresAt;
 
     @Nullable public Long getChangeVersion() { return changeVersion; }
     @Nullable public Long getGeneration() { return generation; }
+    @Nullable public String getExpiresAt() { return expiresAt; }
+    public void setExpiresAt(@Nullable String expiresAt) { this.expiresAt = expiresAt; }
 
     public MessageDto() {
         this(null, null, null, null, null, null, null, null, null, null, null, null,
@@ -220,6 +224,7 @@ public final class MessageDto {
     private MessageDto copyVersion(MessageDto copy) {
         copy.changeVersion = changeVersion;
         copy.generation = generation;
+        copy.expiresAt = expiresAt;
         return copy;
     }
 

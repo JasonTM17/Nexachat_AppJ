@@ -36,7 +36,8 @@ public record InboxConversationRow(
         boolean pinned,
         Instant pinnedAt,
         boolean e2eeEnabled,
-        Instant joinedAt
+        Instant joinedAt,
+        Integer disappearingSeconds
 ) {
 
     /** Pre-E2EE shape: non-encrypted conversation, member admitted before any message. */
@@ -45,6 +46,16 @@ public record InboxConversationRow(
                                 long lastReadSeq, boolean muted, Instant mutedUntil,
                                 boolean archived, boolean pinned, Instant pinnedAt) {
         this(id, type, title, avatarUrl, lastMessageId, lastMessageSeq, createdAt, lastReadSeq,
-                muted, mutedUntil, archived, pinned, pinnedAt, false, Instant.EPOCH);
+                muted, mutedUntil, archived, pinned, pinnedAt, false, Instant.EPOCH, null);
+    }
+
+    /** Pre-disappearing shape: no per-conversation expiry timer. */
+    public InboxConversationRow(UUID id, Conversation.Type type, String title, String avatarUrl,
+                                UUID lastMessageId, Long lastMessageSeq, Instant createdAt,
+                                long lastReadSeq, boolean muted, Instant mutedUntil,
+                                boolean archived, boolean pinned, Instant pinnedAt,
+                                boolean e2eeEnabled, Instant joinedAt) {
+        this(id, type, title, avatarUrl, lastMessageId, lastMessageSeq, createdAt, lastReadSeq,
+                muted, mutedUntil, archived, pinned, pinnedAt, e2eeEnabled, joinedAt, null);
     }
 }

@@ -32,6 +32,8 @@ public final class ConversationInboxDto {
     @Nullable private final List<String> labels;
     @Nullable private final Boolean e2eeEnabled;
     @Nullable private final Boolean lastMessageEncrypted;
+    /** Disappearing-message timer in seconds (0 = off); absent in legacy payloads. */
+    @Nullable private Integer disappearingSeconds;
 
     public ConversationInboxDto() {
         this(null, null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(), null,
@@ -360,6 +362,15 @@ public final class ConversationInboxDto {
     /** True when the last-message preview is a ciphertext the server did not read. */
     @Nullable public Boolean getLastMessageEncrypted() {
         return lastMessageEncrypted;
+    }
+
+    /** Conversation disappearing timer in seconds; null when absent or off. */
+    @Nullable public Integer getDisappearingSeconds() {
+        return disappearingSeconds;
+    }
+
+    public void setDisappearingSeconds(@Nullable Integer disappearingSeconds) {
+        this.disappearingSeconds = disappearingSeconds;
     }
 
     @Nullable

@@ -33,7 +33,8 @@ public record InboxEntry(
         Instant pinnedAt,
         List<UUID> labels,
         boolean lastMessageEncrypted,
-        boolean e2eeEnabled
+        boolean e2eeEnabled,
+        int disappearingSeconds
 ) {
 
     /** Backward-compatible constructor for code that builds the pre-label inbox shape. */
@@ -44,7 +45,19 @@ public record InboxEntry(
                       boolean pinned, Instant pinnedAt) {
         this(id, type, title, avatarUrl, members, lastMessage, unreadCount, lastReadSeq,
                 peerPresence, muted, mutedUntil, archived, aiOptOut, pinned, pinnedAt, List.of(),
-                false, false);
+                false, false, 0);
+    }
+
+    /** Pre-disappearing shape for callers that predate the timer column. */
+    public InboxEntry(UUID id, String type, String title, String avatarUrl,
+                      List<Member> members, LastMessage lastMessage, long unreadCount,
+                      long lastReadSeq, PeerPresence peerPresence, boolean muted,
+                      Instant mutedUntil, boolean archived, boolean aiOptOut,
+                      boolean pinned, Instant pinnedAt, List<UUID> labels,
+                      boolean lastMessageEncrypted, boolean e2eeEnabled) {
+        this(id, type, title, avatarUrl, members, lastMessage, unreadCount, lastReadSeq,
+                peerPresence, muted, mutedUntil, archived, aiOptOut, pinned, pinnedAt, labels,
+                lastMessageEncrypted, e2eeEnabled, 0);
     }
 
     /** Member as the client needs it for headers/avatars plus admin gating. */

@@ -21,8 +21,10 @@ import com.nexachat.core.network.dto.ConversationAiOptOutDto;
 import com.nexachat.core.network.dto.ConversationDto;
 import com.nexachat.core.network.dto.ConversationInboxDto;
 import com.nexachat.core.network.dto.ConversationMemberDto;
+import com.nexachat.core.network.dto.ConversationUpdateDto;
 import com.nexachat.core.network.dto.ConversationsPageDto;
 import com.nexachat.core.network.dto.CreateGroupRequest;
+import com.nexachat.core.network.dto.DisappearingRequest;
 import com.nexachat.core.network.dto.MuteRequest;
 import com.nexachat.core.network.dto.PeerPresenceDto;
 import com.nexachat.core.network.dto.SyncRequest;
@@ -580,6 +582,28 @@ public final class ConversationRepository implements AutoCloseable {
     }
 
     /**
+     * Sets or clears the conversation's disappearing-message timer. The server
+     * is the source of truth; the resolved seconds are written through to Room.
+     */
+    @NonNull
+    public Single<Result<Integer>> setDisappearing(
+            @NonNull String conversationId, int seconds) {
+        return operationTracker.track(call(settingsApi.setDisappearing(
+                        conversationId, new DisappearingRequest(seconds)))
+                .flatMap(result -> {
+                    if (result instanceof Result.Failure<?>) {
+                        return Single.<Result<Integer>>just(Result.cast(result));
+                    }
+                    ConversationUpdateDto updated = successValue(result);
+                    Integer resolved = updated == null ? null : updated.getDisappearingSeconds();
+                    int value = resolved == null ? Math.max(0, seconds) : Math.max(0, resolved);
+                    return conversationDao.updateDisappearingSeconds(conversationId, value)
+                            .andThen(Single.fromCallable(() -> new Result.Success<>(value)));
+                })
+                .subscribeOn(Schedulers.io()));
+    }
+
+    /**
      * Creates a GROUP and writes through the row so the new chat screen has a
      * title before the server broadcast lands. The create response omits the
      * title, so the requested value is kept as a fallback.
@@ -838,6 +862,12 @@ public final class ConversationRepository implements AutoCloseable {
                         .subscribeOn(Schedulers.io()).subscribe(
                                 () -> { }, RxJavaPlugins::onError);
             }
+        }
+        Integer disappearing = update.getDisappearingSeconds();
+        if (disappearing != null) {
+            conversationDao.updateDisappearingSeconds(conversationId, disappearing)
+                    .subscribeOn(Schedulers.io()).subscribe(
+                            () -> { }, RxJavaPlugins::onError);
         }
         return operationTracker.track(currentUserIdOptional().flatMap(myId -> {
             String ownerUserId = myId.orElse(null);
@@ -1683,7 +1713,8 @@ public final class ConversationRepository implements AutoCloseable {
                                 : row.isLastMessageEncrypted(),
                         keepNewerLocalActivity
                                 ? old.getLastMessageType()
-                                : row.getLastMessageType()));
+                                : row.getLastMessageType(),
+                        row.getDisappearingSeconds()));
             }
             return conversationDao.upsertAll(merged);
         }).subscribeOn(Schedulers.io());
@@ -1749,7 +1780,9 @@ public final class ConversationRepository implements AutoCloseable {
                 String.join(",", dto.getLabels()),
                 Boolean.TRUE.equals(dto.getE2eeEnabled()),
                 Boolean.TRUE.equals(dto.getLastMessageEncrypted()),
-                dto.resolvedLastType());
+                dto.resolvedLastType(),
+                dto.getDisappearingSeconds() == null ? 0
+                        : Math.max(0, dto.getDisappearingSeconds()));
     }
 
     private ConversationEntity toEntity(ConversationDto dto, String fallbackTitle) {
@@ -1827,7 +1860,8 @@ public final class ConversationRepository implements AutoCloseable {
                 row.getLabelIds(),
                 row.isE2eeEnabled(),
                 row.isLastMessageEncrypted(),
-                row.getLastMessageType());
+                row.getLastMessageType(),
+                row.getDisappearingSeconds());
     }
 
     private ConversationEntity withTitle(ConversationEntity row, String title) {

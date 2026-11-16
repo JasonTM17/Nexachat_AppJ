@@ -164,6 +164,10 @@ nexachat:
   reminders:
     # Integration tests drive the scheduler explicitly for determinism.
     enabled: false
+  disappearing:
+    # The expiry sweep is driven explicitly by the tests; a background sweep must not
+    # tombstone a backdated row before the test reaches it.
+    purge-interval-ms: 3600000
   jwt:
     # Fixed HS256 secret (>= 32 bytes) — ITs must not depend on env vars.
     secret: "it-only-secret-0123456789abcdef-not-for-prod"

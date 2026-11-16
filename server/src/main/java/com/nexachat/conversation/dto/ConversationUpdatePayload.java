@@ -19,11 +19,18 @@ public record ConversationUpdatePayload(
         String avatarUrl,
         String change,
         List<MemberResponse> members,
-        boolean e2eeEnabled
+        boolean e2eeEnabled,
+        int disappearingSeconds
 ) {
 
     public ConversationUpdatePayload(UUID conversationId, String title, String avatarUrl,
                                      String change, List<MemberResponse> members) {
-        this(conversationId, title, avatarUrl, change, members, false);
+        this(conversationId, title, avatarUrl, change, members, false, 0);
+    }
+
+    public ConversationUpdatePayload(UUID conversationId, String title, String avatarUrl,
+                                     String change, List<MemberResponse> members,
+                                     boolean e2eeEnabled) {
+        this(conversationId, title, avatarUrl, change, members, e2eeEnabled, 0);
     }
 }

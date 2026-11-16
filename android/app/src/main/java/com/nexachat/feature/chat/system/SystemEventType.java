@@ -14,5 +14,7 @@ public enum SystemEventType {
     GROUP_ADMIN_PROMOTED,
     E2EE_ENABLED,
     E2EE_DISABLED,
+    DISAPPEARING_SET,
+    DISAPPEARING_OFF,
     UNKNOWN
 }

@@ -162,7 +162,9 @@ public class ConversationService {
                         conversation.getId(), conversation.getType().name(), members,
                         conversation.getCreatedAt(),
                         aiOptOuts.isOptedOut(conversation.getId(), callerId),
-                        conversation.isE2eeEnabled()),
+                        conversation.isE2eeEnabled(),
+                        conversation.getDisappearingSeconds() == null
+                                ? 0 : conversation.getDisappearingSeconds()),
                 created);
     }
 

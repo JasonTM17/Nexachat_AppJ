@@ -120,6 +120,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     private static final int MENU_UNBLOCK_PEER = 14;
     private static final int MENU_REPORT = 15;
     private static final int MENU_STARRED = 16;
+    private static final int MENU_DISAPPEARING = 17;
     private final CompositeDisposable subscriptions = new CompositeDisposable();
     private FragmentChatBinding binding;
     private ChatViewModel viewModel;
@@ -1086,6 +1087,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         updateMentionPicker(input, binding.composerBar.messageInput.getSelectionStart());
         binding.composerBar.attachButton.setVisibility(editing == null ? View.VISIBLE : View.GONE);
         applyE2eeChrome();
+        applyDisappearingChrome();
         boolean hasText = input != null && !input.isBlank();
         updateComposerButtons(hasText || editing != null);
     }
@@ -1103,6 +1105,17 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         float alpha = e2ee ? 0.38f : 1f;
         binding.composerBar.attachButton.setAlpha(alpha);
         binding.composerBar.micButton.setAlpha(alpha);
+    }
+
+    /** Header hourglass chip shown while the conversation timer is on. */
+    private void applyDisappearingChrome() {
+        boolean on = state.isDisappearingEnabled();
+        binding.disappearingChip.setVisibility(on ? View.VISIBLE : View.GONE);
+        binding.disappearingChip.setContentDescription(on
+                ? getString(R.string.cd_disappearing_messages_on,
+                        DisappearingDurations.label(requireContext(),
+                                state.getDisappearingSeconds()))
+                : null);
     }
 
     private void applyLargeTypeToolbar() {
@@ -1625,6 +1638,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             labels.add(getString(R.string.cd_group_info));
             actions.add(MENU_INFO);
         }
+        if (!flags.group || (state != null && state.getCanPin())) {
+            labels.add(getString(R.string.disappearing_menu_title));
+            actions.add(MENU_DISAPPEARING);
+        }
         labels.add(getString(flags.muted ? R.string.unmute : R.string.mute_menu_title));
         actions.add(MENU_MUTE);
         labels.add(getString(flags.archived ? R.string.conversation_unarchive : R.string.conversation_archive));
@@ -1666,6 +1683,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             openGroupInfo();
         } else if (action == MENU_SUMMARY) {
             showSummary();
+        } else if (action == MENU_DISAPPEARING) {
+            showDisappearingPicker();
         } else if (action == MENU_MUTE) {
             if (flags.muted) {
                 viewModel.unmuteConversation();
@@ -1727,6 +1746,35 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                         ignored -> sharedInboxViewModel.setConversationArchived(archivedId, false))
                 .show();
         return true;
+    }
+
+    /** Single-choice timer picker; the server allow-list is the row order. */
+    private void showDisappearingPicker() {
+        int current = state == null ? 0 : state.getDisappearingSeconds();
+        if (state != null && state.isGroup() && !state.getCanPin()) {
+            // Group members who are not admins see the timer read-only; only
+            // admins may change it (the server enforces the same rule).
+            new MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(R.string.disappearing_menu_title)
+                    .setMessage(DisappearingDurations.label(requireContext(), current))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+            return;
+        }
+        int[] options = DisappearingDurations.OPTIONS_SECONDS;
+        CharSequence[] labels = new CharSequence[options.length];
+        int checked = 0;
+        for (int i = 0; i < options.length; i++) {
+            labels[i] = DisappearingDurations.label(requireContext(), options[i]);
+            if (options[i] == current) checked = i;
+        }
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.disappearing_menu_title)
+                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                    dialog.dismiss();
+                    viewModel.setDisappearing(options[which]);
+                })
+                .show();
     }
 
     private ConversationPreferenceMenu.Listener preferenceListener() {
