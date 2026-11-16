@@ -1333,6 +1333,39 @@ public final class ChatViewModel extends ViewModel {
                         error -> updateUiState(current -> current.withSendError(toApiError(error), null))));
     }
 
+    /**
+     * Shares a parsed location/contact payload as an ordinary TEXT message —
+     * same keyset refusal, outbox, sync and E2EE path as {@link #send()}.
+     * The composer draft is untouched; the pending reply target is consumed.
+     */
+    public void sendSharedContent(@NonNull SharedContent.Shared shared) {
+        UiState state = currentUiState();
+        KeysetPause pause = state.getKeysetPause();
+        if (pause != KeysetPause.NONE) {
+            updateUiState(current -> current.withError(new ApiError.Unknown(
+                    switch (pause) {
+                        case CHANGED -> MessageRepository.ERROR_E2EE_KEYSET_CHANGED;
+                        case INVALID -> MessageRepository.ERROR_E2EE_KEYSET_INVALID;
+                        default -> MessageRepository.ERROR_E2EE_DOWNGRADE_BLOCKED;
+                    })));
+            return;
+        }
+        ReplyTarget replyTarget = state.getReplyTarget();
+        String replyToId = replyTarget == null ? null : replyTarget.getMessageId();
+        updateUiState(current -> current.withReplyTarget(null));
+        io.reactivex.rxjava3.core.Completable send = messageRepository.send(
+                conversationId,
+                SharedContent.encode(shared),
+                replyToId,
+                MessageDto.TYPE_TEXT,
+                List.of());
+        disposables.add(send
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(() -> clearUiError(ErrorOperation.SEND, null, null),
+                        error -> updateUiState(current -> current.withSendError(toApiError(error), null))));
+    }
+
     /** Tap a FAILED bubble to requeue it in the outbox. */
     public void retryFailed(String clientMessageId) {
         if (currentUiState().getKeysetPause() != KeysetPause.NONE) {

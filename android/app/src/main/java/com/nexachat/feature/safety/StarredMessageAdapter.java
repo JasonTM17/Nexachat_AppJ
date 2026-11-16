@@ -10,6 +10,7 @@ import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.RecyclerView;
 import com.nexachat.R;
 import com.nexachat.core.network.dto.MessageDto;
+import com.nexachat.feature.chat.SharedContentUi;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -55,7 +56,7 @@ public final class StarredMessageAdapter
         String content = message.getContent();
         holder.snippet.setText(content == null || content.isBlank()
                 ? holder.itemView.getContext().getString(R.string.inbox_preview_file)
-                : content);
+                : SharedContentUi.previewText(holder.itemView.getContext(), content));
         holder.time.setText(formatTime(holder, row.starredAt()));
         holder.itemView.setOnClickListener(ignored -> listener.onOpen(row));
     }

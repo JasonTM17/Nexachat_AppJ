@@ -180,7 +180,8 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
                 && !message.isDeleted() && !undecryptable) {
             entries.add(new MessageActionEntry(getString(R.string.action_copy),
                     getString(R.string.action_copy_desc),
-                    () -> copy(context, message.getContent()), MessageActionKind.COPY));
+                    () -> copy(context, SharedContent.copyText(message.getContent())),
+                    MessageActionKind.COPY));
         }
         if (sent && message.getContent() != null && !message.getContent().isBlank()
                 && !message.isEncrypted()
@@ -191,9 +192,11 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
         }
         // Translate is offered on plain text only: encrypted and tombstone
         // content never reaches server-side AI, matching the server gate.
+        // Shared location/contact tokens are structured data, not prose.
         boolean translatable = sent && "TEXT".equals(message.getType())
                 && message.getContent() != null && !message.getContent().isBlank()
-                && !message.isEncrypted() && !undecryptable;
+                && !message.isEncrypted() && !undecryptable
+                && SharedContent.parse(message.getContent()) == null;
         if (translatable) {
             boolean translated = args.getBoolean(ARG_TRANSLATED, false);
             if (translated) {

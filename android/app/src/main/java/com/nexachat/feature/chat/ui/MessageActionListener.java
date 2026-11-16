@@ -2,6 +2,7 @@ package com.nexachat.feature.chat.ui;
 
 import androidx.annotation.NonNull;
 import com.nexachat.core.network.dto.AttachmentDto;
+import com.nexachat.feature.chat.SharedContent;
 
 /**
  * Tap and long-press callbacks from {@link com.nexachat.feature.chat.adapter.MessageListAdapter}.
@@ -21,4 +22,10 @@ public interface MessageActionListener {
     void onOpenFile(@NonNull String messageId, @NonNull AttachmentDto attachment);
 
     void onReactionTap(@NonNull String messageId, @NonNull String emoji);
+
+    void onOpenMap(@NonNull SharedContent.Location location);
+
+    void onMessageContact(@NonNull SharedContent.Contact contact);
+
+    void onAddContact(@NonNull SharedContent.Contact contact);
 }
