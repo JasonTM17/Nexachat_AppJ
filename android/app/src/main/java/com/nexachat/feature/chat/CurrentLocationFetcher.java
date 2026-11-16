@@ -68,9 +68,12 @@ public final class CurrentLocationFetcher {
             callback.onResult(best, Status.OK);
             return;
         }
-        String provider = providers.contains(LocationManager.GPS_PROVIDER)
-                ? LocationManager.GPS_PROVIDER
-                : providers.get(0);
+        // Network fixes arrive fast indoors, where a cold GPS would hit the timeout.
+        String provider = providers.contains(LocationManager.NETWORK_PROVIDER)
+                ? LocationManager.NETWORK_PROVIDER
+                : providers.contains(LocationManager.GPS_PROVIDER)
+                        ? LocationManager.GPS_PROVIDER
+                        : providers.get(0);
         requestSingleFix(context, manager, provider, callback);
     }
 

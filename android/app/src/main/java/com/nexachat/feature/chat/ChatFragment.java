@@ -2508,9 +2508,16 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     @Override public void onPickContact() {
         // ACTION_PICK on the phone row needs no contacts permission; the
         // returned grant covers only the row the user selected.
-        contactPicker.launch(new Intent(
-                Intent.ACTION_PICK,
-                ContactsContract.CommonDataKinds.Phone.CONTENT_URI));
+        try {
+            contactPicker.launch(new Intent(
+                    Intent.ACTION_PICK,
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI));
+        } catch (android.content.ActivityNotFoundException ignored) {
+            if (binding != null) {
+                Snackbar.make(binding.getRoot(), R.string.contact_pick_error,
+                        Snackbar.LENGTH_LONG).show();
+            }
+        }
     }
     @Override public void onShareLocationConfirmed(
             double latitude, double longitude, @Nullable String label) {
