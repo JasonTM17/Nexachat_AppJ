@@ -26,6 +26,7 @@ import com.nexachat.core.network.MessageApi;
 import com.nexachat.core.network.NetworkMonitor;
 import com.nexachat.core.network.SessionEvents;
 import com.nexachat.core.network.dto.AttachmentDto;
+import com.nexachat.core.network.dto.E2eeDeviceDtos.MemberDeviceDto;
 import com.nexachat.core.network.dto.EditMessageRequest;
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.core.network.dto.MessagePageDto;
@@ -59,6 +60,7 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -1187,7 +1189,74 @@ public final class MessageRepository {
                                 .checkBeforeEncrypt(ownerUserId, conversationId, transcript)
                                 .doOnSuccess(ignored -> keysetPauseNotified.remove(key, episode))
                                 .ignoreElement())
+                // A fresh INVALID only says the roster yields no direct
+                // transcript: a healed non-direct shape and an unusable
+                // roster share the code, so the shape verdict decides which
+                // one stands.
+                .onErrorResumeNext(error -> isKeysetInvalid(error)
+                        ? revalidateNonDirectShape(ownerUserId, conversationId, key, episode)
+                        : Completable.complete())
                 .onErrorComplete();
+    }
+
+    /**
+     * The second leg of an INVALID probe: {@code currentTranscript} found no
+     * direct transcript on the fresh snapshot, which conflates a roster that
+     * healed into a non-direct shape — a group, a collapsed membership —
+     * with one that is still unusable. The send path separates the two
+     * through the trust record, and the same basis applies here: a fully
+     * formed non-direct shape is checked through
+     * {@link KeysetTrustStore#checkUntrackedShape}, where an untracked pair
+     * lets the next send proceed and a tracked pair durably records
+     * CHANGED — either verdict ends the INVALID episode, so the marker is
+     * retired. A roster that still forms a direct shape, carries a
+     * malformed row, is disabled, or cannot be re-read keeps the marker:
+     * sends would refuse the same way or fail before any verdict exists.
+     */
+    private Completable revalidateNonDirectShape(String ownerUserId,
+            String conversationId, String key, String episode) {
+        if (e2eeSession == null) {
+            return Completable.complete();
+        }
+        return e2eeSession.e2eeState(conversationId)
+                .flatMapCompletable(state -> {
+                    if (!state.isEnabled() || !isNonDirectKeysetShape(state.getDevices())) {
+                        return Completable.complete();
+                    }
+                    return keysetTrustStore == null
+                            ? Completable.fromAction(() -> keysetPauseNotified.remove(key, episode))
+                            : keysetTrustStore
+                                    .checkUntrackedShape(ownerUserId, conversationId)
+                                    .flatMapCompletable(verdict -> Completable.fromAction(
+                                            () -> keysetPauseNotified.remove(key, episode)));
+                })
+                .onErrorComplete();
+    }
+
+    /**
+     * Whether the roster is a fully formed non-direct shape: every member
+     * row carries its fields yet the distinct users are not a pair — the
+     * healed-group or collapsed-membership case the send path resolves
+     * through the trust record. A roster with a malformed row is not
+     * non-direct here: a send would refuse it before any keyset verdict,
+     * so the episode stays closed.
+     */
+    private static boolean isNonDirectKeysetShape(List<MemberDeviceDto> devices) {
+        Set<String> users = new HashSet<>();
+        for (MemberDeviceDto device : devices) {
+            if (device == null || device.getUserId() == null
+                    || device.getDeviceId() == null || device.getPublicKey() == null) {
+                return false;
+            }
+            users.add(device.getUserId());
+        }
+        return users.size() != 2;
+    }
+
+    /** Whether the refusal is the unparsed-direct-transcript signal this probe disambiguates. */
+    private static boolean isKeysetInvalid(Throwable error) {
+        return error instanceof E2eeSession.E2eeException
+                && ERROR_E2EE_KEYSET_INVALID.equals(error.getMessage());
     }
 
     /**
