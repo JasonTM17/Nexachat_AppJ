@@ -398,6 +398,80 @@ public final class StompClientBearerAttemptTest {
     }
 
     @Test
+    public void outboundFramesAreRejectedUntilStompSessionOpens() {
+        TokenStore store = mock(TokenStore.class);
+        StompClient client = new StompClient(new OkHttpClient(), store);
+        AtomicReference<WebSocketListener> listenerRef = new AtomicReference<>();
+        List<String> sentFrames = new ArrayList<>();
+        WebSocket socket = mock(WebSocket.class);
+        when(socket.send(anyString())).thenAnswer(invocation -> {
+            sentFrames.add(invocation.getArgument(0));
+            return true;
+        });
+        client.setTestListenerCapture((listener, attemptId) -> listenerRef.set(listener));
+        client.setTestWebSocketFactoryForTests((listener, attemptId) -> socket);
+        client.connect("access").test();
+        listenerRef.get().onOpen(socket, mock(Response.class));
+        sentFrames.clear();
+
+        assertFalse(client.send("/app/x", "{}"));
+        assertFalse(client.isOpen());
+        assertTrue("a SEND must never reach the wire before CONNECTED", sentFrames.isEmpty());
+
+        listenerRef.get().onMessage(socket, StompCodec.encode(new StompFrame(StompCommand.CONNECTED)));
+
+        assertTrue(client.isOpen());
+        assertTrue(client.send("/app/x", "{}"));
+        assertEquals(1, sentFrames.size());
+    }
+
+    @Test
+    public void sendIsRejectedAcrossAttemptHandoff() {
+        TokenStore store = mock(TokenStore.class);
+        StompClient client = new StompClient(new OkHttpClient(), store);
+        Map<Long, WebSocketListener> listeners = new ConcurrentHashMap<>();
+        Map<Long, WebSocket> sockets = new ConcurrentHashMap<>();
+        Map<Long, List<String>> sentFrames = new ConcurrentHashMap<>();
+        client.setTestListenerCapture((listener, attemptId) -> listeners.put(attemptId, listener));
+        client.setTestWebSocketFactoryForTests((listener, attemptId) -> {
+            WebSocket socket = mock(WebSocket.class);
+            List<String> frames = new CopyOnWriteArrayList<>();
+            sentFrames.put(attemptId, frames);
+            when(socket.send(anyString())).thenAnswer(invocation -> {
+                frames.add(invocation.getArgument(0));
+                return true;
+            });
+            sockets.put(attemptId, socket);
+            return socket;
+        });
+        client.connect("account-a").test();
+        WebSocket socketA = sockets.get(1L);
+        WebSocketListener listenerA = listeners.get(1L);
+        listenerA.onOpen(socketA, mock(Response.class));
+        listenerA.onMessage(socketA, StompCodec.encode(new StompFrame(StompCommand.CONNECTED)));
+        assertTrue(client.isOpen());
+        assertTrue(client.send("/app/x", "{}"));
+        int socketAFramesBefore = sentFrames.get(1L).size();
+
+        client.connect("account-b").test();
+
+        assertFalse("the superseded socket must not report open", client.isOpen());
+        assertFalse("a SEND must never land on the superseded socket",
+                client.send("/app/x", "{}"));
+        assertEquals(socketAFramesBefore, sentFrames.get(1L).size());
+
+        WebSocket socketB = sockets.get(2L);
+        WebSocketListener listenerB = listeners.get(2L);
+        assertNotNull(socketB);
+        assertNotNull(listenerB);
+        listenerB.onOpen(socketB, mock(Response.class));
+        listenerB.onMessage(socketB, StompCodec.encode(new StompFrame(StompCommand.CONNECTED)));
+        assertTrue(client.isOpen());
+        assertTrue(client.send("/app/x", "{}"));
+        assertEquals(2, sentFrames.get(2L).size());
+    }
+
+    @Test
     public void nullBearerFallsBackToTokenStore() {
         TokenStore store = mock(TokenStore.class);
         when(store.readTokens()).thenReturn(Maybe.just(new Tokens("from-store", Long.MAX_VALUE, "r")));

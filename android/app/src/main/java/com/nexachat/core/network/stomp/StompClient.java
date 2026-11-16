@@ -472,6 +472,14 @@ public final class StompClient {
         if (bearerObserver != null) {
             bearerObserver.accept(token);
         }
+        synchronized (attemptSequenceLock) {
+            if (connectAttemptSeq.get() == attemptId) {
+                // A superseded attempt's socket must not answer send() or
+                // isOpen() while this attempt handshakes.
+                open = false;
+                socket = null;
+            }
+        }
         StompParser parser = new StompParser();
         Request request = new Request.Builder()
                 .url(wsUrl)
@@ -676,6 +684,9 @@ public final class StompClient {
     }
 
     private boolean sendFrame(@NonNull StompFrame frame) {
+        if (!open) {
+            return false;
+        }
         WebSocket active = socket;
         return active != null && active.send(StompCodec.encode(frame));
     }
