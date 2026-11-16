@@ -73,7 +73,8 @@ class GoogleSignInServiceTest {
         lenient().when(nonceService.consume(any(), any(), any(), any())).thenReturn(true);
         service = new GoogleSignInService(properties, verifier, nonceService, identityRepository,
                 userRepository, passwordEncoder, tokenService, responseFactory, rateLimitService,
-                transactionManagerProvider, eventPublisher);
+                transactionManagerProvider, eventPublisher,
+                org.mockito.Mockito.mock(com.nexachat.admin.AdminRoleBootstrap.class));
     }
 
     @Test
@@ -84,7 +85,8 @@ class GoogleSignInServiceTest {
         service = new GoogleSignInService(off, verifier, nonceService, identityRepository,
                 userRepository, passwordEncoder, tokenService,
                 new AuthResponseFactory(jwtService, new MessageRecallProperties()),
-                rateLimitService, transactionManagerProvider, eventPublisher);
+                rateLimitService, transactionManagerProvider, eventPublisher,
+                org.mockito.Mockito.mock(com.nexachat.admin.AdminRoleBootstrap.class));
         when(verifier.verify("token", "nonce")).thenReturn(
                 new GoogleIdTokenClaims(SUBJECT, EMAIL, true, "New User"));
         when(identityRepository.findByProviderAndSubject(UserIdentity.PROVIDER_GOOGLE, SUBJECT))

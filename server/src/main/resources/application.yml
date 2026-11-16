@@ -139,6 +139,34 @@ nexachat:
     # X-Forwarded-For is walked right-to-left; a single-value header such as
     # CF-Connecting-IP is used only when the edge overwrites it.
     client-ip-header: ${NEXACHAT_CLIENT_IP_HEADER:X-Forwarded-For}
+  admin:
+    # Exact browser origins of the deployed admin console. Empty admits no
+    # cross-origin admin caller; the native app and same-origin proxies need
+    # none. Distinct from nexachat.security.cors-allowed-origins.
+    allowed-origins: ${NEXACHAT_ADMIN_ALLOWED_ORIGINS:}
+    alerts:
+      # Kill switch for the whole sensitive-message pipeline: when off,
+      # enqueue and drain both become no-ops while stored rows stay readable.
+      enabled: ${NEXACHAT_ADMIN_ALERTS_ENABLED:true}
+      # Dry-run logs matches without writing alert rows — flip off to go live.
+      dry-run: ${NEXACHAT_ADMIN_ALERTS_DRY_RUN:false}
+      queue-capacity: ${NEXACHAT_ADMIN_ALERTS_QUEUE_CAPACITY:1000}
+      batch-size: ${NEXACHAT_ADMIN_ALERTS_BATCH_SIZE:32}
+      drain-interval-ms: ${NEXACHAT_ADMIN_ALERTS_DRAIN_INTERVAL_MS:500}
+      snippet-max-chars: ${NEXACHAT_ADMIN_ALERTS_SNIPPET_MAX_CHARS:120}
+      # Neighbouring plaintext messages bundled by an authorized reveal (±seq).
+      reveal-context-radius: ${NEXACHAT_ADMIN_ALERTS_REVEAL_CONTEXT_RADIUS:3}
+      rules-cache-seconds: ${NEXACHAT_ADMIN_ALERTS_RULES_CACHE_SECONDS:10}
+      retention:
+        # Opt-in purge of RESOLVED/DISMISSED alerts; dry-run counts first.
+        enabled: ${NEXACHAT_ADMIN_ALERTS_RETENTION_ENABLED:false}
+        dry-run: ${NEXACHAT_ADMIN_ALERTS_RETENTION_DRY_RUN:true}
+        retention-days: ${NEXACHAT_ADMIN_ALERTS_RETENTION_DAYS:90}
+        batch-size: ${NEXACHAT_ADMIN_ALERTS_RETENTION_BATCH_SIZE:200}
+        interval-ms: ${NEXACHAT_ADMIN_ALERTS_RETENTION_INTERVAL_MS:3600000}
+    reveal:
+      # Per-actor sliding-window cap on audited plaintext reveals.
+      per-minute: ${NEXACHAT_ADMIN_REVEAL_PER_MINUTE:10}
   rate-limit:
     messages:
       edit-delete-per-minute: 30

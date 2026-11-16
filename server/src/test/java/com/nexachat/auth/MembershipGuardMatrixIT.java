@@ -119,7 +119,7 @@ class MembershipGuardMatrixIT extends SecurityITBase {
                 // These routes resolve the target resource before any conversation
                 // id exists, so their "unknown target" case is an unknown message or
                 // attachment rather than an unknown conversation.
-                case "rest-017", "rest-081", "rest-091", "rest-019", "rest-037", "rest-111" -> unknownTarget;
+                case "rest-017", "rest-081", "rest-091", "rest-019", "rest-037", "rest-137" -> unknownTarget;
                 default -> unknownConversation;
             };
             assertCase(op, "unknown", f.outsider(), unknownProbe, op.unknown());
@@ -752,19 +752,19 @@ class MembershipGuardMatrixIT extends SecurityITBase {
                 "/api/v1/messages/{messageId}/reactions/{emoji}"));
 
         // Translation: message route resolves the message first, the rest resolve the conversation.
-        ops.put("rest-111", messageReaction("rest-111", "POST",
+        ops.put("rest-137", messageReaction("rest-137", "POST",
                 "/api/v1/messages/{messageId}/translate", Map.of("targetLang", "en")));
-        ops.put("rest-112", member("rest-112", "POST",
+        ops.put("rest-138", member("rest-138", "POST",
                 "/api/v1/conversations/{conversationId}/translate-batch",
                 Map.of("messageIds", List.of(UUID.randomUUID().toString()), "targetLang", "en")));
-        ops.put("rest-113", member("rest-113", "GET",
+        ops.put("rest-139", member("rest-139", "GET",
                 "/api/v1/conversations/{conversationId}/translation-glossary"));
-        ops.put("rest-114", member("rest-114", "PUT",
+        ops.put("rest-140", member("rest-140", "PUT",
                 "/api/v1/conversations/{conversationId}/translation-glossary",
                 Map.of("terms", List.of())));
-        ops.put("rest-115", member("rest-115", "GET",
+        ops.put("rest-141", member("rest-141", "GET",
                 "/api/v1/conversations/{conversationId}/translate-prefs"));
-        ops.put("rest-116", member("rest-116", "PUT",
+        ops.put("rest-142", member("rest-142", "PUT",
                 "/api/v1/conversations/{conversationId}/translate-prefs",
                 Map.of("autoTranslate", false)));
 

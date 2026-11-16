@@ -446,8 +446,12 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
     private boolean isAccessTokenRevoked(UUID userId, Instant issuedAt) {
         // CONNECT is a cold path (once per socket), so the authoritative value
         // is read straight from the database instead of the REST hot-path cache.
+        // A suspended account fails this check the same way a revoked one does.
         return userRepository.findAuthValidityById(userId)
                 .map(found -> {
+                    if (found.suspended()) {
+                        return true;
+                    }
                     Instant cutoff = found.tokensValidAfter();
                     return cutoff != null && !issuedAt.isAfter(cutoff);
                 })
