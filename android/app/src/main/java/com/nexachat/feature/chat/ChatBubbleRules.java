@@ -83,6 +83,22 @@ public final class ChatBubbleRules {
         return position == MessageGroupPosition.FIRST || position == MessageGroupPosition.MIDDLE ? 2 : 4;
     }
 
+    /**
+     * Corners of a bubble that render at the small "merged" radius instead of
+     * the main radius, in {@link android.graphics.drawable.GradientDrawable#setCornerRadii}
+     * pair order: [topLeft, topRight, bottomRight, bottomLeft]. The sender-side
+     * bottom corner always merges — on the run's last bubble that is the tail —
+     * and the sender-side top corner merges on every bubble but the run's
+     * first, so consecutive same-sender bubbles stack into one group.
+     */
+    public static boolean[] bubbleMergedCorners(MessageGroupPosition position, boolean tailOnRight) {
+        boolean[] merged = new boolean[4];
+        merged[tailOnRight ? 2 : 3] = true;
+        merged[tailOnRight ? 1 : 0] =
+                position == MessageGroupPosition.MIDDLE || position == MessageGroupPosition.LAST;
+        return merged;
+    }
+
     public static boolean isSeenReceiptVisible(
             boolean isGroup,
             boolean mine,

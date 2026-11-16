@@ -95,9 +95,9 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/incoming_decline"
-                    android:layout_width="72dp"
-                    android:layout_height="72dp"
-                    android:backgroundTint="@color/call_decline_background"
+                    android:layout_width="@dimen/call_end_size"
+                    android:layout_height="@dimen/call_end_size"
+                    app:backgroundTint="@color/call_decline_background"
                     android:contentDescription="@string/call_decline"
                     android:insetLeft="0dp"
                     android:insetTop="0dp"
@@ -133,9 +133,9 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/incoming_accept"
-                    android:layout_width="72dp"
-                    android:layout_height="72dp"
-                    android:backgroundTint="@color/call_accept_background"
+                    android:layout_width="@dimen/call_end_size"
+                    android:layout_height="@dimen/call_end_size"
+                    app:backgroundTint="@color/call_accept_background"
                     android:contentDescription="@string/call_accept"
                     android:insetLeft="0dp"
                     android:insetTop="0dp"

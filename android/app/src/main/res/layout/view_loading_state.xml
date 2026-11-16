@@ -9,7 +9,7 @@
         android:contentDescription="@string/loading_status"
         android:indeterminate="true"
         app:indicatorColor="?attr/colorPrimary"
-        app:indicatorSize="@dimen/icon_size" />
+        app:indicatorSize="@dimen/loading_indicator_size" />
     <TextView
         android:id="@+id/loadingLabel"
         android:layout_width="wrap_content"
