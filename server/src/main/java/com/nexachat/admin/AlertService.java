@@ -40,6 +40,7 @@ public class AlertService {
     private final ConversationRepository conversationRepository;
     private final JdbcTemplate jdbcTemplate;
     private final AdminProperties properties;
+    private static final int REVEAL_WINDOW_SWEEP_THRESHOLD = 256;
     private final Map<UUID, Deque<Instant>> revealWindows = new ConcurrentHashMap<>();
 
     public AlertService(AlertRepository alertRepository,
@@ -260,6 +261,17 @@ public class AlertService {
     private boolean consumeRevealToken(UUID actorId) {
         int limit = (int) Math.max(1, properties.reveal().perMinute());
         Instant cutoff = Instant.now().minusSeconds(60);
+        if (revealWindows.size() > REVEAL_WINDOW_SWEEP_THRESHOLD) {
+            // Idle staff accounts leave drained windows behind; drop them so the map stays small.
+            revealWindows.values().removeIf(idle -> {
+                synchronized (idle) {
+                    while (!idle.isEmpty() && idle.peekFirst().isBefore(cutoff)) {
+                        idle.pollFirst();
+                    }
+                    return idle.isEmpty();
+                }
+            });
+        }
         Deque<Instant> window = revealWindows.computeIfAbsent(actorId, key -> new ArrayDeque<>());
         synchronized (window) {
             while (!window.isEmpty() && window.peekFirst().isBefore(cutoff)) {
