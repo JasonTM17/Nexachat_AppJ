@@ -66,6 +66,22 @@ public final class ConversationPreviewHelper {
         return withGroupSender(conversation, preview);
     }
 
+    /** True when the conversation's last message is a missed-call log line. */
+    public static boolean isMissedCall(
+            @NonNull ConversationSummary conversation,
+            @Nullable String currentUserId
+    ) {
+        if (conversation.getLastMessageDeleted() || conversation.isLastMessageEncrypted()) {
+            return false;
+        }
+        String raw = conversation.getLastMessageContent();
+        if (raw == null || InboxPreviewKind.fromContent(raw) != InboxPreviewKind.CALL) {
+            return false;
+        }
+        return CallLogResourceResolver.fromSystemMessage(
+                raw, CallPreviewDirection.isOutgoing(raw, currentUserId)).isMissed();
+    }
+
     @NonNull
     public static InboxPreviewKind previewKind(@NonNull ConversationSummary conversation) {
         if (conversation.getLastMessageDeleted()) {

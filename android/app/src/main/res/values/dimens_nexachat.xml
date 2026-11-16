@@ -43,6 +43,8 @@
     <dimen name="avatar_xl">96dp</dimen>
     <dimen name="chat_toolbar_title_start_with_avatar">48dp</dimen>
     <dimen name="icon_size">24dp</dimen>
+    <dimen name="brand_mark_size">32dp</dimen>
+    <dimen name="splash_logo_size">160dp</dimen>
     <dimen name="icon_size_sm">20dp</dimen>
     <dimen name="icon_tile_size">40dp</dimen>
     <dimen name="metadata_icon_size">16dp</dimen>

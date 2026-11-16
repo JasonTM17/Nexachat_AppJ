@@ -159,11 +159,9 @@ public final class MessageBubbleBinder {
         if (mentionedMe) {
             int rowHighlight = resolveThemeColor(root.getContext(),
                     com.google.android.material.R.attr.colorSecondaryContainer);
-            root.setBackgroundColor(rowHighlight);
             bubble.setBackgroundTintList(ColorStateList.valueOf(rowHighlight));
-        } else {
-            root.setBackground(null);
         }
+        root.setBackground(null);
 
         wireGestures(root, message);
 
@@ -253,7 +251,7 @@ public final class MessageBubbleBinder {
     }
 
     private void applyBubbleShape(View bubble, MessageGroupPosition position, boolean mine) {
-        float radius = bubble.getResources().getDimension(R.dimen.corner_lg);
+        float radius = bubble.getResources().getDimension(R.dimen.corner_xl);
         float tailRadius = bubble.getResources().getDimension(R.dimen.corner_xs);
         boolean tailOnRight = mine != (bubble.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL);
         boolean[] merged = ChatBubbleRules.bubbleMergedCorners(position, tailOnRight);
@@ -972,9 +970,9 @@ public final class MessageBubbleBinder {
             view.setCheckable(false);
             view.setClickable(true);
             TextViewCompat.setTextAppearance(view, R.style.TextAppearance_NexaChat_LabelMedium);
-            view.setChipCornerRadius(root.getResources().getDimension(R.dimen.corner_md));
-            int minTouchPx = root.getResources().getDimensionPixelSize(R.dimen.min_touch_target);
-            view.setChipMinHeight(minTouchPx);
+            view.setChipCornerRadius(root.getResources().getDimension(R.dimen.corner_full));
+            // The chip draws at 32dp; the 48dp touch target is padded around it, not painted.
+            view.setChipMinHeight(root.getResources().getDimension(R.dimen.chip_min_height));
             view.setEnsureMinTouchTargetSize(true);
             view.setTextColor(resolveThemeColor(
                     root.getContext(),

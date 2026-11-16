@@ -257,16 +257,20 @@ public final class VoiceBubbleBinder {
             long position = Math.min(state.getPositionMs(), total);
             boolean playing = status == VoicePlaybackState.Status.PLAYING;
             playButton.setImageResource(playing ? R.drawable.ic_pause : R.drawable.ic_play_arrow);
-            int contentColor = MaterialColors.getColor(waveform,
-                    mine ? com.google.android.material.R.attr.colorOnPrimaryContainer
-                            : com.google.android.material.R.attr.colorPrimary,
-                    ContextCompat.getColor(waveform.getContext(), R.color.brand_indigo));
-            int unplayedBase = MaterialColors.getColor(waveform,
-                    mine ? com.google.android.material.R.attr.colorOnPrimaryContainer
-                            : com.google.android.material.R.attr.colorOnSurfaceVariant,
-                    ContextCompat.getColor(waveform.getContext(), R.color.colorOnSurfaceVariant));
+            // Own voice bubbles sit on the chosen chat colour, so they take its text colour.
+            int contentColor = mine
+                    ? ContextCompat.getColor(waveform.getContext(), R.color.chat_bubble_outgoing_text)
+                    : MaterialColors.getColor(waveform,
+                            com.google.android.material.R.attr.colorPrimary,
+                            ContextCompat.getColor(waveform.getContext(), R.color.brand_indigo));
+            int unplayedBase = mine
+                    ? contentColor
+                    : MaterialColors.getColor(waveform,
+                            com.google.android.material.R.attr.colorOnSurfaceVariant,
+                            ContextCompat.getColor(waveform.getContext(), R.color.colorOnSurfaceVariant));
             waveform.setColors(contentColor, ColorUtils.setAlphaComponent(
-                    unplayedBase, Math.round(Color.alpha(unplayedBase) * 0.4f)));
+                    unplayedBase, Math.round(Color.alpha(unplayedBase) * (mine ? 0.6f : 0.4f))));
+            duration.setTextColor(mine ? contentColor : unplayedBase);
             playButton.setImageTintList(ColorStateList.valueOf(contentColor));
             byte[] bars = state.getWaveform();
             waveform.setBars(bars);

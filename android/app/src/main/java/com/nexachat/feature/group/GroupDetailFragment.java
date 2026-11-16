@@ -144,7 +144,7 @@ public final class GroupDetailFragment extends Fragment {
         String title = state.getTitle().isBlank()
                 ? getString(R.string.group_detail_title)
                 : state.getTitle();
-        binding.toolbar.setTitle(title);
+        binding.toolbar.setTitle(R.string.group_detail_title);
         binding.groupTitle.setText(title);
         binding.groupAvatar.setName(title);
         binding.groupAvatar.setAvatarUrl(state.getGroupAvatar());
@@ -362,7 +362,8 @@ public final class GroupDetailFragment extends Fragment {
             LinearLayout container = new LinearLayout(requireContext());
             int pad = getResources().getDimensionPixelSize(R.dimen.dialog_padding);
             container.setPadding(pad, 0, pad, 0);
-            container.addView(inputLayout);
+            container.addView(inputLayout, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             renameDialog = new MaterialAlertDialogBuilder(requireContext())
                     .setTitle(R.string.action_rename_group)
                     .setView(container)

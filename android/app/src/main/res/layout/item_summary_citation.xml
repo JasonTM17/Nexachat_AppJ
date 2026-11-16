@@ -10,6 +10,6 @@
     android:checkable="false"
     android:textColor="?attr/colorOnPrimaryContainer"
     app:chipBackgroundColor="?attr/colorPrimaryContainer"
-    app:chipCornerRadius="@dimen/corner_lg"
+    app:chipCornerRadius="@dimen/corner_full"
     app:chipMinHeight="@dimen/min_touch_target"
     app:ensureMinTouchTargetSize="true" />

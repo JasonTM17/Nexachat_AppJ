@@ -168,11 +168,14 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             }
             applyTitleVerticalAlignment(hasPreviewLine);
             InboxRowTypography.applyUnreadWeight(preview, unread);
+            boolean missedCall = ConversationPreviewHelper.isMissedCall(conversation, currentUserId);
             int previewColor = resolveThemeColor(
                     itemView.getContext(),
-                    unread
-                            ? com.google.android.material.R.attr.colorOnSurface
-                            : com.google.android.material.R.attr.colorOnSurfaceVariant
+                    missedCall
+                            ? com.google.android.material.R.attr.colorError
+                            : unread
+                                    ? com.google.android.material.R.attr.colorOnSurface
+                                    : com.google.android.material.R.attr.colorOnSurfaceVariant
             );
             preview.setTextColor(previewColor);
             InboxPreviewKind previewKind = ConversationPreviewHelper.previewKind(conversation);
@@ -186,12 +189,13 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             } else if (previewKind == InboxPreviewKind.FILE) {
                 previewIcon = R.drawable.ic_description;
             } else if (previewKind == InboxPreviewKind.CALL) {
-                previewIcon = R.drawable.ic_call;
+                previewIcon = missedCall ? R.drawable.ic_call_missed : R.drawable.ic_call;
             }
             if (!hasPreviewLine || previewIcon == 0) {
                 previewTypeIcon.setVisibility(View.GONE);
             } else {
                 previewTypeIcon.setImageResource(previewIcon);
+                previewTypeIcon.setImageTintList(android.content.res.ColorStateList.valueOf(previewColor));
                 previewTypeIcon.setVisibility(View.VISIBLE);
             }
 
