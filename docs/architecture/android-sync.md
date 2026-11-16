@@ -1,6 +1,8 @@
 # Android sync checkpoints
 
-Room 14 stores message `changeVersion`/`generation` and one active cursor per
+The Android database is Room schema v17; the sync-v2 checkpoint columns and
+triggers described here landed in the 13→14 migration. Room stores message
+`changeVersion`/`generation` and one active cursor per
 account/conversation. The cursor primary key includes generation; a unique
 account/conversation index prevents retaining an older active generation.
 Migration 13→14 adds columns/table/indexes without rebuilding history or either
@@ -18,8 +20,10 @@ recall overflow, the server caps `serverTime` at the included change boundary;
 the Android fallback retries from the earliest returned server time across
 watermark batches after sequence and reaction cursors drain. Retry/page bounds
 leave pending work for the next sync.
-The V32 server is a separate delivery: client fixture evidence does not prove
-interoperation with the unmerged implementation.
+The server side shipped in Flyway V32 (`change_version`/`sync_generation`
+columns) and answers negotiated v2 requests by default; the fallback/downgrade
+paths above still apply whenever the server declines the negotiation
+(`nexachat.sync.change-cursors-enabled=false`) or a deployment predates V32.
 
 Each page applies rows, deletion/reply/pin cleanup, preferences and its message
 and reaction checkpoints in one Room transaction. Account identity and P01
@@ -50,7 +54,9 @@ share one session flight; disposing one subscriber leaves the shared drain alive
 
 Verification uses fixture JSON and the existing JUnit/Mockito/Room migration
 libraries. `RoomV14MigrationInstrumentedTest` covers populated 13→14, outboxes,
-cache invalidation and transaction fault/reopen behavior. Its actual device run
-belongs to phase 08, along with the installed APK upgrade, queued sends, restart,
-account switches, and live v2/legacy compatibility against the integrated server.
-Room 14 has no downgrade path; repairs ship in a higher-versionCode APK.
+cache invalidation and transaction fault/reopen behavior; it is an instrumented
+test that requires an emulator or device and does not run in CI (see
+`docs/quality/testing.md` and `CONTRIBUTING.md` for the invocation). Live
+v2/legacy compatibility against the integrated server is covered by the
+`SyncCursor*IT` integration tests under `server/src/test`.
+Room has no downgrade path; repairs ship in a higher-versionCode APK.

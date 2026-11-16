@@ -54,6 +54,7 @@ Boolean feature flags and `*.enabled` settings (for example `FCM_ENABLED`,
 | `NEXACHAT_GOOGLE_SIGNIN_ISSUER` | No (comma-separated exact ID-token `iss` allow-list; blank or empty fails startup) | `accounts.google.com,https://accounts.google.com` | `accounts.google.com,https://accounts.google.com` |
 | `NEXACHAT_GOOGLE_JWKS_URI` | No (Google's rotating public keys; override only for tests) | `https://www.googleapis.com/oauth2/v3/certs` | `https://www.googleapis.com/oauth2/v3/certs` |
 | `NEXACHAT_GOOGLE_NONCE_TTL_SECONDS` | No (single-use sign-in nonce lifetime) | `300` | `300` |
+| `NEXACHAT_E2EE_V1_ACTIVATION_ENABLED` | No (experimental gate for newly enabling E2EE in a direct chat; not a kill switch — see [docs/architecture/e2ee.md](../architecture/e2ee.md)) | `false` | `false` |
 | `FCM_ENABLED` | No (optional push notifications) | `false` | `false` (set `true` only with valid credentials) |
 | `FCM_PROJECT_ID` | Yes when `FCM_ENABLED=true` or the Firebase bridge is enabled | Empty | `your-firebase-project-id` |
 | `FCM_SERVICE_ACCOUNT_JSON` | Yes when `FCM_ENABLED=true` or the Firebase bridge is enabled | Empty | Inline service-account JSON or a path to the key file |
@@ -1045,10 +1046,14 @@ creates composite index `idx_refresh_user_id` on `refresh_tokens (user_id, id)`,
 `V31__reminder_claim_lease_wakeup_index.sql` adds the partial `idx_reminders_claim_lease`
 index for reminder scheduler wakeups,
 `V32__message_change_cursors.sql` adds bounded per-conversation change cursors and
-sync generation (quiesce writers before deploying on a live database), and
+sync generation (quiesce writers before deploying on a live database),
 `V33__google_signup.sql` allows Google-only accounts with nullable `password_hash`
-when verified email is the sign-in anchor.
-Ensure every migration file V1–V20, `V22`, and `V24`–`V33` is present in the
+when verified email is the sign-in anchor,
+`V34__e2ee_direct_chats.sql` adds the E2EE device registry, the DIRECT-only
+`e2ee_enabled` flag and message encryption columns, and
+`V35__backfill_unversioned_messages.sql` repairs rows left without a
+`change_version` by pre-V32 writes such as an old `demo/seed.sql`.
+Ensure every migration file V1–V20, `V22`, and `V24`–`V35` is present in the
 source tree before rebuilding the dev app container; the image packages the
 server migration resources used by Flyway at startup.
 
