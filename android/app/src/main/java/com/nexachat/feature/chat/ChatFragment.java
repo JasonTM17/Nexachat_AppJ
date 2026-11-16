@@ -565,8 +565,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                     return true;
 
                 case MotionEvent.ACTION_CANCEL:
-                    if (requireActivity().isChangingConfigurations()
-                            || !v.isAttachedToWindow()) {
+                    if (!v.isAttachedToWindow()
+                            || (getActivity() != null
+                                    && getActivity().isChangingConfigurations())) {
                         // Teardown cancels the held touch before the view dies;
                         // keep the ViewModel-owned capture running so the new
                         // view reattaches the HUD in tap-controlled mode.
@@ -610,6 +611,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             // The recorder never came up; drop it instead of holding the mic.
             viewModel.setVoiceRetainedForConfigChange(false);
             viewModel.releaseVoiceRecorder();
+            voiceRecorder = null;
         }
     }
 
@@ -1992,7 +1994,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             if (configChange) {
                 // View is being recreated (rotation, font, theme); the recorder
                 // and start executor live on the ViewModel and keep running.
-                viewModel.setVoiceRetainedForConfigChange(true);
+                // Only a capture that is running or starting needs its HUD back;
+                // an idle recorder just stays parked on the ViewModel.
+                if (voiceStartPending || viewModel.isVoiceRecordingActive()) {
+                    viewModel.setVoiceRetainedForConfigChange(true);
+                }
             } else {
                 viewModel.releaseVoiceRecorder();
             }

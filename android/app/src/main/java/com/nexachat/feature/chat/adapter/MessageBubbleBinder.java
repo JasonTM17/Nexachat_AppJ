@@ -35,6 +35,7 @@ import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.target.Target;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
+import com.google.android.material.progressindicator.CircularProgressIndicator;
 import com.nexachat.R;
 import com.nexachat.feature.chat.system.SystemEventFormatter;
 import com.nexachat.core.common.AppConfig;
@@ -821,7 +822,7 @@ public final class MessageBubbleBinder {
         if (systemMessage) {
             TextView time = metaInclude.findViewById(R.id.timeLabel);
             TextView edited = metaInclude.findViewById(R.id.editedLabel);
-            com.google.android.material.progressindicator.CircularProgressIndicator sending = metaInclude.findViewById(R.id.sendingProgress);
+            CircularProgressIndicator sending = metaInclude.findViewById(R.id.sendingProgress);
             ImageView deliveredIcon = metaInclude.findViewById(R.id.deliveryIcon);
             TextView deliveryText = metaInclude.findViewById(R.id.deliveryStatusText);
             int metaColor = resolveThemeColor(
@@ -866,7 +867,7 @@ public final class MessageBubbleBinder {
         }
         TextView edited = metaInclude.findViewById(R.id.editedLabel);
         TextView time = metaInclude.findViewById(R.id.timeLabel);
-        com.google.android.material.progressindicator.CircularProgressIndicator sending = metaInclude.findViewById(R.id.sendingProgress);
+        CircularProgressIndicator sending = metaInclude.findViewById(R.id.sendingProgress);
         ImageView deliveredIcon = metaInclude.findViewById(R.id.deliveryIcon);
         TextView deliveryText = metaInclude.findViewById(R.id.deliveryStatusText);
 
