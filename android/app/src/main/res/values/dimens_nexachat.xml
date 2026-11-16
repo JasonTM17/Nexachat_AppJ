@@ -11,11 +11,11 @@
     <dimen name="letter_rail_cell_min_height">24dp</dimen>
     <dimen name="letter_bubble_size">56dp</dimen>
     <dimen name="letter_bubble_margin_end">52dp</dimen>
-    <dimen name="corner_xs">4dp</dimen>
-    <dimen name="corner_sm">8dp</dimen>
-    <dimen name="corner_md">12dp</dimen>
-    <dimen name="corner_lg">16dp</dimen>
-    <dimen name="corner_xl">24dp</dimen>
+    <dimen name="corner_xs">2dp</dimen>
+    <dimen name="corner_sm">4dp</dimen>
+    <dimen name="corner_md">8dp</dimen>
+    <dimen name="corner_lg">12dp</dimen>
+    <dimen name="corner_xl">16dp</dimen>
     <dimen name="corner_full">999dp</dimen>
     <dimen name="elevation_level1">1dp</dimen>
     <dimen name="elevation_level2">3dp</dimen>

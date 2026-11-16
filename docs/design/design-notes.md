@@ -46,11 +46,13 @@ Strict 8pt grid baseline:
 - `elevation_level4`: `12dp` (dialogs, prominent overlays)
 
 ### 2.3 Shapes (dimens + bubble drawables)
-- FAB / cards: `corner_lg` (`16dp`)
-- Chat input pill: `corner_xl` (`24dp`)
-- Search bar pill: `28dp` in layout styles where used
-- Avatars: circular (`GradientDrawable.OVAL` in `AvatarView`)
-- Message bubbles: `18dp` main corners with a `4dp` tail on single/last rows; the tail follows sender direction and layout RTL.
+Corner scale (`dimens_nexachat.xml`): `corner_xs` `2dp`, `corner_sm` `4dp`, `corner_md` `8dp`, `corner_lg` `12dp`, `corner_xl` `16dp`, `corner_full` `999dp`.
+- Buttons and FABs: square `0dp` corners via `ShapeAppearance.NexaChat.Button` on every `Widget.NexaChat.Button*` style; layouts must not set `app:cornerRadius` on a `MaterialButton` (pinned by `ButtonShapeContractTest`; `CornerRadiusTokenContractTest` bans literal radii in drawables and layouts).
+- Cards: `corner_md` (`8dp`); sheets and dialogs: `corner_xl` (`16dp`) via `cardCornerRadius`.
+- Chat input field: `corner_full` pill (`bg_composer_field`); recording overlay: `corner_xl` (`bg_composer_pill`).
+- Search bar: `corner_full` pill (`bg_search_pill`).
+- Avatars: circular (`GradientDrawable.OVAL` in `AvatarView`).
+- Message bubbles: `corner_lg` (`12dp`) main corners with a `corner_xs` (`2dp`) tail on single/last rows; the tail follows sender direction and layout RTL.
 
 ---
 
@@ -91,7 +93,7 @@ Animations stay restrained (roughly 150ms fades/slides) and respect the system a
 | Screen | Before Polish | After Polish |
 |---|---|---|
 | **Inbox** | Two identical person icons on top bar; raw timestamp format; unstyled list rows; missing empty illustration. | Distinct Contacts (`ic_people`) vs Profile (`ic_account_circle`) icons; relative timestamps ("Vừa xong", "18:51", "Hôm qua"); bold unread preview with pill badge; custom vector `ic_empty_chat`. |
-| **Chat** | Monolithic identical rectangles for all bubbles; missing date headers; time overlapping bubble edge; square input field. | 78%-width message rows with sender/date/system-aware grouping, 18dp corners and a 4dp tail, localized date separators, legible inline receipts, image/video time scrims, and a floating rounded composer with a 150ms send/mic cross-fade. |
+| **Chat** | Monolithic identical rectangles for all bubbles; missing date headers; time overlapping bubble edge; square input field. | 78%-width message rows with sender/date/system-aware grouping, `corner_lg` (12dp) corners and a `corner_xs` (2dp) tail, localized date separators, legible inline receipts, image/video time scrims, and a floating rounded composer with a 150ms send/mic cross-fade. |
 | **Group Detail** | Alarming red "Admin" pill and red trash can icons on every row reading as constant danger. | Calm tonal `colorSecondaryContainer` chip for Admin; subtle `colorOnSurfaceVariant` `ic_person_remove` icon; destructive red reserved for "Leave Group" and confirmation dialogs. |
 | **Profile** | Unstyled flat card list; plain avatar; basic unaligned action buttons. | Grouped card sections ("Account", "Session") with `SectionHeaderView`; 80dp avatar with edit badge; unified `SettingsRowView` items with icons and chevrons. |
 | **Auth** | Flat white screen; text button labeled "Show" for password; keyboard occluding submit buttons. | Subtle vertical brand gradient; standard eye toggle drawables; IME actions Next/Done and soft-input resize. |
@@ -136,7 +138,7 @@ Presentation rules and helpers are pure Java throughout: `PresenceFormatter`, `S
 
 ## 10. Chat Screen Refresh Wave
 
-The refreshed chat screen uses the v2 semantic roles and the bundled Inter type styles. Normal bubbles are capped at `min(280dp, 80% of the row)`; at font scale 1.5 or larger the cap becomes `min(480dp, row width - 32dp)`. Bubbles use 16dp corners, with a 4dp lower-directional tail only on a single message or the last message of a run. Grouped row edges contribute 2dp each (4dp between messages); separate turns contribute 4dp each. Media timestamps use the opaque media-meta pair. Reply quotes sit on the primary container. The composer field uses the 24dp extra-large radius and a six-line input. Send and microphone actions cross-fade over 150ms with the standard easing and follow the system reduced-motion setting. Search, group info, and summary stay in the existing overflow menu; call stays on the bar for direct chats.
+The refreshed chat screen uses the v2 semantic roles and the bundled Inter type styles. Normal bubbles are capped at `min(280dp, 80% of the row)`; at font scale 1.5 or larger the cap becomes `min(480dp, row width - 32dp)`. Bubbles use `corner_lg` (12dp) corners, with a `corner_xs` (2dp) lower-directional tail only on a single message or the last message of a run. Grouped row edges contribute 2dp each (4dp between messages); separate turns contribute 4dp each. Media timestamps use the opaque media-meta pair. Reply quotes sit on the primary container. The composer field uses the `corner_full` pill and a six-line input. Send and microphone actions cross-fade over 150ms with the standard easing and follow the system reduced-motion setting. Search, group info, and summary stay in the existing overflow menu; call stays on the bar for direct chats.
 
 ---
 

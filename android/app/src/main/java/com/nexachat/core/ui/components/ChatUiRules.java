@@ -6,16 +6,14 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Pure UI presentation rules for chat message grouping, bubble corner radii,
- * date separators, and relative timestamps.
+ * Pure UI presentation rules for chat message grouping, date separators, and
+ * relative timestamps.
  *
  * <p>Overloads provide convenient defaults for Java callers.
  */
 public final class ChatUiRules {
 
     private static final long DEFAULT_MAX_GROUP_INTERVAL_MS = 5 * 60 * 1000L;
-    private static final float RADIUS_LARGE_DP = 16f;
-    private static final float RADIUS_SMALL_DP = 4f;
 
     private ChatUiRules() {
     }
@@ -49,29 +47,6 @@ public final class ChatUiRules {
             long maxGroupIntervalMs
     ) {
         return MessageGroupRules.resolveGroupPosition(messages, index, maxGroupIntervalMs);
-    }
-
-    /**
-     * Pure UI presentation rule: returns the asymmetric bubble corner radii (in dp)
-     * based on the message's grouping position and whether it is outgoing ({@code mine}).
-     *
-     * <p>The tail corner uses the small radius; the other three use the large radius.
-     */
-    public static BubbleCornerRadii resolveBubbleShape(
-            MessageGroupPosition position,
-            boolean mine
-    ) {
-        float large = RADIUS_LARGE_DP;
-        float small = RADIUS_SMALL_DP;
-        boolean directionalTail = position == MessageGroupPosition.SINGLE
-                || position == MessageGroupPosition.LAST;
-        if (!directionalTail) {
-            return new BubbleCornerRadii(large, large, large, large);
-        }
-        if (mine) {
-            return new BubbleCornerRadii(large, large, large, small);
-        }
-        return new BubbleCornerRadii(large, large, small, large);
     }
 
     /**
@@ -153,37 +128,5 @@ public final class ChatUiRules {
             Locale locale
     ) {
         return ChatTimeRules.resolveRelativeTimeLabel(epochMs, nowEpochMs, justNowLabel, yesterdayLabel, locale);
-    }
-
-    /**
-     * Corner radii (in dp) for a chat bubble. The tail corner carries the small radius;
-     * the remaining three corners carry the large radius.
-     */
-    public static final class BubbleCornerRadii {
-
-        public final float topStartDp;
-        public final float topEndDp;
-        public final float bottomStartDp;
-        public final float bottomEndDp;
-
-        public BubbleCornerRadii(
-                float topStartDp,
-                float topEndDp,
-                float bottomStartDp,
-                float bottomEndDp
-        ) {
-            this.topStartDp = topStartDp;
-            this.topEndDp = topEndDp;
-            this.bottomStartDp = bottomStartDp;
-            this.bottomEndDp = bottomEndDp;
-        }
-
-        @Override
-        public String toString() {
-            return "BubbleCornerRadii(topStartDp=" + topStartDp
-                    + ", topEndDp=" + topEndDp
-                    + ", bottomStartDp=" + bottomStartDp
-                    + ", bottomEndDp=" + bottomEndDp + ")";
-        }
     }
 }
