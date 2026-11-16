@@ -119,7 +119,7 @@ class MembershipGuardMatrixIT extends SecurityITBase {
                 // These routes resolve the target resource before any conversation
                 // id exists, so their "unknown target" case is an unknown message or
                 // attachment rather than an unknown conversation.
-                case "rest-017", "rest-081", "rest-091", "rest-019", "rest-037" -> unknownTarget;
+                case "rest-017", "rest-081", "rest-091", "rest-019", "rest-037", "rest-111" -> unknownTarget;
                 default -> unknownConversation;
             };
             assertCase(op, "unknown", f.outsider(), unknownProbe, op.unknown());
@@ -750,6 +750,23 @@ class MembershipGuardMatrixIT extends SecurityITBase {
                 "/api/v1/messages/{messageId}/reactions", Map.of("emoji", PROBE_EMOJI)));
         ops.put("rest-091", messageReaction("rest-091", "PUT",
                 "/api/v1/messages/{messageId}/reactions/{emoji}"));
+
+        // Translation: message route resolves the message first, the rest resolve the conversation.
+        ops.put("rest-111", messageReaction("rest-111", "POST",
+                "/api/v1/messages/{messageId}/translate", Map.of("targetLang", "en")));
+        ops.put("rest-112", member("rest-112", "POST",
+                "/api/v1/conversations/{conversationId}/translate-batch",
+                Map.of("messageIds", List.of(UUID.randomUUID().toString()), "targetLang", "en")));
+        ops.put("rest-113", member("rest-113", "GET",
+                "/api/v1/conversations/{conversationId}/translation-glossary"));
+        ops.put("rest-114", member("rest-114", "PUT",
+                "/api/v1/conversations/{conversationId}/translation-glossary",
+                Map.of("terms", List.of())));
+        ops.put("rest-115", member("rest-115", "GET",
+                "/api/v1/conversations/{conversationId}/translate-prefs"));
+        ops.put("rest-116", member("rest-116", "PUT",
+                "/api/v1/conversations/{conversationId}/translate-prefs",
+                Map.of("autoTranslate", false)));
 
         // Attachment and file reads resolve the stored object first, then the
         // owner-or-member rule of the bound message.
