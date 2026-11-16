@@ -69,7 +69,8 @@ public final class UserSearchFragment extends Fragment {
         binding.errorState.setOnRetry(viewModel::search);
         binding.emptyState.setMessage(getString(R.string.search_no_results));
         binding.emptyState.setIcon(R.drawable.ic_search_outline);
-        binding.searchLayout.setStartIconOnClickListener(v -> viewModel.search());
+        binding.clearSearchButton.setOnClickListener(v -> binding.searchInput.setText(""));
+        binding.searchSubmitButton.setOnClickListener(v -> viewModel.search());
         binding.searchInput.setOnEditorActionListener((v, action, event) -> {
             if (action == EditorInfo.IME_ACTION_SEARCH || action == EditorInfo.IME_ACTION_DONE) {
                 viewModel.search();
@@ -80,6 +81,8 @@ public final class UserSearchFragment extends Fragment {
         binding.searchInput.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                binding.clearSearchButton.setVisibility(
+                        s.length() > 0 ? View.VISIBLE : View.GONE);
                 if (!rendering) {
                     viewModel.onQueryChange(s.toString());
                 }

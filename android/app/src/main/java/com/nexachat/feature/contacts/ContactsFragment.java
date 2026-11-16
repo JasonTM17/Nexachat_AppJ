@@ -78,11 +78,20 @@ public final class ContactsFragment extends Fragment {
             }
         });
         binding.contactList.setLayoutManager(new LinearLayoutManager(requireContext()));
+        binding.contactList.addItemDecoration(new ContactLetterHeaderDecoration(adapter));
         binding.contactList.setAdapter(adapter);
         binding.toolbar.setNavigationOnClickListener(v -> NavHostFragment.findNavController(this).navigateUp());
         binding.searchButton.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.searchFragment));
-        binding.addContactFab.setOnClickListener(v -> showAddByPhoneDialog());
+        binding.searchPill.setOnClickListener(
+                v -> NavHostFragment.findNavController(this).navigate(R.id.searchFragment));
+        binding.addContactEntry.setTitle(getString(R.string.add_contact_title));
+        binding.addContactEntry.setLeadingIcon(R.drawable.ic_person_add);
+        binding.addContactEntry.setOnClickListener(v -> showAddByPhoneDialog());
+        binding.createGroupEntry.setTitle(getString(R.string.group_create_title));
+        binding.createGroupEntry.setLeadingIcon(R.drawable.ic_people);
+        binding.createGroupEntry.setOnClickListener(
+                v -> NavHostFragment.findNavController(this).navigate(R.id.groupCreateFragment));
         binding.errorState.setOnRetry(viewModel::loadContacts);
         binding.emptyState.setMessage(getString(R.string.contacts_empty));
         binding.emptyState.setIcon(R.drawable.ic_person_outline);
@@ -103,7 +112,7 @@ public final class ContactsFragment extends Fragment {
             return;
         }
         List<Contact> contacts = state.getContacts();
-        adapter.submitList(contacts);
+        adapter.submitContacts(contacts);
         boolean showLoading = state.isLoading() && !state.isContactsLoaded();
         ApiError error = state.getError();
         boolean showError = error != null && contacts.isEmpty();

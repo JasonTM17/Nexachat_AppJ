@@ -10,7 +10,8 @@
         android:id="@+id/appBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="?attr/colorSurface">
+        android:background="?attr/colorSurface"
+        app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
@@ -28,48 +29,98 @@
                 android:contentDescription="@string/search_title"
                 app:icon="@drawable/ic_search" />
         </com.google.android.material.appbar.MaterialToolbar>
+
+        <LinearLayout
+            android:id="@+id/contactsHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="@dimen/space_sm"
+            app:layout_scrollFlags="enterAlways|scroll">
+
+            <LinearLayout
+                android:id="@+id/searchPill"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="@dimen/space_md"
+                android:background="@drawable/bg_search_pill"
+                android:clickable="true"
+                android:clipToOutline="true"
+                android:contentDescription="@string/inbox_search_hint"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground"
+                android:gravity="center_vertical"
+                android:minHeight="@dimen/min_touch_target"
+                android:orientation="horizontal"
+                android:paddingHorizontal="@dimen/space_md">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_search"
+                    app:tint="?attr/colorOnSurfaceVariant" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/space_inset"
+                    android:layout_weight="1"
+                    android:text="@string/inbox_search_hint"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+            </LinearLayout>
+
+            <com.nexachat.core.ui.components.SettingsRowView
+                android:id="@+id/addContactEntry"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="@dimen/space_md"
+                android:layout_marginTop="@dimen/space_sm"
+                android:background="@drawable/bg_grouped_list_band"
+                android:clipToOutline="true"
+                android:foreground="?attr/selectableItemBackground" />
+
+            <com.nexachat.core.ui.components.SettingsRowView
+                android:id="@+id/createGroupEntry"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="@dimen/space_md"
+                android:layout_marginTop="@dimen/space_sm"
+                android:background="@drawable/bg_grouped_list_band"
+                android:clipToOutline="true"
+                android:foreground="?attr/selectableItemBackground" />
+        </LinearLayout>
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/contactList"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         android:layout_marginHorizontal="@dimen/space_md"
-        android:background="@drawable/bg_grouped_list_band"
-        android:clipToOutline="true"
         android:clipToPadding="false"
-        android:paddingTop="@dimen/space_sm"
-        android:paddingBottom="@dimen/fab_clearance"
+        android:paddingBottom="@dimen/space_lg"
         app:layout_behavior="@string/appbar_scrolling_view_behavior" />
-
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/addContactFab"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="@dimen/space_lg"
-        android:contentDescription="@string/action_add_contact"
-        app:backgroundTint="@color/brand_fill"
-        app:shapeAppearanceOverlay="@style/ShapeAppearance.NexaChat.Large"
-        app:srcCompat="@drawable/ic_add"
-        app:tint="@color/brand_on_fill" />
 
     <com.nexachat.core.ui.components.LoadingStateView
         android:id="@+id/loadingState"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:visibility="gone" />
+        android:visibility="gone"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior" />
 
     <com.nexachat.core.ui.components.ErrorStateView
         android:id="@+id/errorState"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:visibility="gone" />
+        android:visibility="gone"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior" />
 
     <com.nexachat.core.ui.components.EmptyStateView
         android:id="@+id/emptyState"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:visibility="gone" />
+        android:visibility="gone"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
