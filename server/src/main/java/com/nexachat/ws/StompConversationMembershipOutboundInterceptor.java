@@ -3,6 +3,8 @@ package com.nexachat.ws;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.conversation.ConversationMemberRepository;
+import com.nexachat.message.MessageRepository;
+import com.nexachat.user.UserBlockRepository;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
@@ -39,14 +41,20 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
     private static final ObjectMapper FRAME_READER = new ObjectMapper();
 
     private final ConversationMemberRepository memberRepository;
+    private final MessageRepository messageRepository;
+    private final UserBlockRepository blockRepository;
     private final SimpUserRegistry userRegistry;
     private final StompSessionRegistry sessionRegistry;
 
     public StompConversationMembershipOutboundInterceptor(
             ConversationMemberRepository memberRepository,
+            MessageRepository messageRepository,
+            UserBlockRepository blockRepository,
             @Lazy SimpUserRegistry userRegistry,
             StompSessionRegistry sessionRegistry) {
         this.memberRepository = memberRepository;
+        this.messageRepository = messageRepository;
+        this.blockRepository = blockRepository;
         this.userRegistry = userRegistry;
         this.sessionRegistry = sessionRegistry;
     }
@@ -80,6 +88,9 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
             return null;
         }
         if (!admittedToFrame(conversationId, userId, message.getPayload())) {
+            return null;
+        }
+        if (!visiblePastBlocks(userId, message.getPayload())) {
             return null;
         }
         Message<?> released = withoutUnadmittedQuote(conversationId, userId, message);
@@ -117,6 +128,72 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
         } catch (java.io.IOException | ClassCastException e) {
             // An unreadable frame was already admitted by creation time; drop it rather than
             // risk releasing a quote the recipient may not read.
+            return null;
+        }
+    }
+
+    /**
+     * V38 block gate, per recipient. Two frame families:
+     *
+     * <ul>
+     *   <li><b>Suppressed content:</b> any frame naming a peer-suppressed
+     *       message reaches only that message's sender (the durable flag is
+     *       probed by id, so edit/recall/pin/reaction frames about a hidden
+     *       row are dropped with it).</li>
+     *   <li><b>Activity signals:</b> {@code USER_TYPING}, {@code MESSAGE_READ}
+     *       and {@code MESSAGE_DELIVERED} carry the acting member's
+     *       {@code userId}; a block edge in either direction stops each side
+     *       seeing the other's activity — including inside shared groups.
+     *       The actor's own sessions always pass (a self-edge cannot exist).</li>
+     * </ul>
+     *
+     * Runs AFTER the membership gate so only members pay the probe cost.
+     */
+    private boolean visiblePastBlocks(UUID recipientId, Object payload) {
+        if (!(payload instanceof byte[] bytes)) {
+            return true;
+        }
+        final JsonNode root;
+        try {
+            root = FRAME_READER.readTree(bytes);
+        } catch (java.io.IOException e) {
+            return true;   // unreadable frames defer to the admission gate
+        }
+        JsonNode payloadNode = root.path("payload");
+        switch (root.path("eventType").asText("")) {
+            case "USER_TYPING", "MESSAGE_READ", "MESSAGE_DELIVERED" -> {
+                UUID actorId = parseUuid(payloadNode.path("userId"));
+                if (actorId == null || actorId.equals(recipientId)) {
+                    return true;
+                }
+                return !blockRepository.existsBetweenEitherDirection(actorId, recipientId);
+            }
+            case "MESSAGE_CREATED", "MESSAGE_UPDATED" -> {
+                UUID messageId = parseUuid(payloadNode.path("id"));
+                return messageId == null || reachesRecipient(messageId, recipientId);
+            }
+            case "MESSAGE_DELETED", "PIN_UPDATED", "REACTION_UPDATED" -> {
+                UUID messageId = parseUuid(payloadNode.path("messageId"));
+                return messageId == null || reachesRecipient(messageId, recipientId);
+            }
+            default -> {
+                return true;
+            }
+        }
+    }
+
+    /** A suppressed row's frames reach only its sender; every other message reaches everyone. */
+    private boolean reachesRecipient(UUID messageId, UUID recipientId) {
+        return messageRepository.findPeerSuppressedSenderId(messageId)
+                .map(senderId -> senderId.equals(recipientId))
+                .orElse(true);
+    }
+
+    @Nullable
+    private static UUID parseUuid(JsonNode node) {
+        try {
+            return node.isTextual() ? UUID.fromString(node.asText()) : null;
+        } catch (IllegalArgumentException e) {
             return null;
         }
     }

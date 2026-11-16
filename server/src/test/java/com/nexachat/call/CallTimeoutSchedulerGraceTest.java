@@ -90,7 +90,8 @@ class CallTimeoutSchedulerGraceTest {
                 mock(CallSystemMessageWriter.class),
                 mock(com.nexachat.user.UserRepository.class),
                 mock(org.springframework.context.ApplicationEventPublisher.class),
-                "stun:stun.l.google.com:19302"
+                "stun:stun.l.google.com:19302",
+                mock(com.nexachat.user.UserBlockRepository.class)
         );
 
         CallRestController controller = new CallRestController(callService);
@@ -127,7 +128,8 @@ class CallTimeoutSchedulerGraceTest {
                 mock(CallSystemMessageWriter.class),
                 mock(com.nexachat.user.UserRepository.class),
                 mock(org.springframework.context.ApplicationEventPublisher.class),
-                "stun:stun.l.google.com:19302"
+                "stun:stun.l.google.com:19302",
+                mock(com.nexachat.user.UserBlockRepository.class)
         );
 
         CallRestController controller = new CallRestController(callService);

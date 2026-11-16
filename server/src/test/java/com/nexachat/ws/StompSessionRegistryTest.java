@@ -153,7 +153,10 @@ class StompSessionRegistryTest {
 
             StompConversationMembershipOutboundInterceptor outbound =
                     new StompConversationMembershipOutboundInterceptor(
-                            mock(ConversationMemberRepository.class), mock(SimpUserRegistry.class), registry);
+                            mock(ConversationMemberRepository.class),
+                            mock(com.nexachat.message.MessageRepository.class),
+                            mock(com.nexachat.user.UserBlockRepository.class),
+                            mock(SimpUserRegistry.class), registry);
             assertThat(outbound.preSend(conversationFrame(sessionId), mock(MessageChannel.class)))
                     .as("a socket revoked while CONNECT validation was in flight must not receive topic frames")
                     .isNull();

@@ -31,6 +31,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -109,7 +110,7 @@ class MessageServiceTest {
     void send_happy_inserts_advancesAndPublishesEvent() {
         memberOk();
         MessageRow stored = row(42);
-        when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
+        when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(1);
         stubNewSendWithReadBack(stored);
 
@@ -124,7 +125,7 @@ class MessageServiceTest {
         assertThat(result.message().generation()).isEqualTo(1L);
 
         verify(messageRepository).insertIgnoringDuplicateKey(
-                conversationId, senderId, clientMessageId, "TEXT", "hello", null);
+                conversationId, senderId, clientMessageId, "TEXT", "hello", null, false);
         verify(conversationRepository).advanceLastMessage(conversationId, stored.id(), 42L);
         verify(conversationRepository).incrementChangeVersion(conversationId);
         verify(memberRepository).advanceReadWatermark(conversationId, senderId, 42L);
@@ -147,7 +148,7 @@ class MessageServiceTest {
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NOT_MEMBER);
         assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
         verify(messageRepository, never()).insertIgnoringDuplicateKey(
-                any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), anyBoolean());
     }
 
     @Test
@@ -158,7 +159,7 @@ class MessageServiceTest {
                         new SendMessageRequest(null, "TEXT", "x", null, List.of())));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
-        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any());
+        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any(), anyBoolean());
     }
 
     @Test
@@ -229,7 +230,7 @@ class MessageServiceTest {
         // before allocating a version or attempting another insert.
         verify(conversationRepository, never()).advanceLastMessage(any(), any(), anyLong());
         verify(conversationRepository, never()).incrementChangeVersion(any());
-        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any());
+        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any(), anyBoolean());
         ArgumentCaptor<MessageCreatedEvent> event = ArgumentCaptor.forClass(MessageCreatedEvent.class);
         verify(eventPublisher).publishEvent(event.capture());
         assertThat(event.getValue().message().id()).isEqualTo(winner.id());
@@ -319,7 +320,7 @@ class MessageServiceTest {
 
         // Contract failure happens before the insert — nothing to roll back.
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
-        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any());
+        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any(), anyBoolean());
     }
 
     @Test
@@ -331,7 +332,7 @@ class MessageServiceTest {
                             new SendMessageRequest(UUID.randomUUID(), type, null, null, List.of())));
             assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
         }
-        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any());
+        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any(), anyBoolean());
     }
 
     @Test
@@ -345,7 +346,7 @@ class MessageServiceTest {
                         new SendMessageRequest(clientMessageId, "FILE", null, null, ids)));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
-        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any());
+        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any(), anyBoolean());
     }
 
     @Test
@@ -358,7 +359,7 @@ class MessageServiceTest {
                                 "x".repeat(MessageService.MAX_CONTENT_LENGTH + 1), null, List.of())));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
-        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any());
+        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any(), anyBoolean());
     }
 
     @Test
@@ -367,7 +368,7 @@ class MessageServiceTest {
         MessageRow stored = row(42);
         MessageAttachment attachment = uploadAttachment(senderId, "image/png");
         UUID attachmentId = attachment.getId();
-        when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any()))
+        when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(1);
         when(messageRepository.findRowBySenderAndClientMessageId(senderId, clientMessageId))
                 .thenReturn(Optional.empty(), Optional.of(stored));
@@ -396,7 +397,7 @@ class MessageServiceTest {
                                 List.of(attachment.getId()))));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
-        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any());
+        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any(), anyBoolean());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
@@ -414,7 +415,7 @@ class MessageServiceTest {
                                 List.of(attachment.getId()))));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
-        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any());
+        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any(), anyBoolean());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
@@ -430,7 +431,7 @@ class MessageServiceTest {
                         new SendMessageRequest(clientMessageId, "IMAGE", null, null, List.of(pdf.getId()))));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
-        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any());
+        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any(), anyBoolean());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
@@ -445,7 +446,7 @@ class MessageServiceTest {
                         new SendMessageRequest(clientMessageId, "FILE", null, null, List.of(attachmentId))));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FILE_NOT_FOUND);
-        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any());
+        verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any(), anyBoolean());
         verify(eventPublisher, never()).publishEvent(any());
     }
 

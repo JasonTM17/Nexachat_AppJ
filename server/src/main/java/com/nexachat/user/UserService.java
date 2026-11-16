@@ -27,13 +27,16 @@ public class UserService {
     private final UserRepository userRepository;
     private final PhoneService phoneService;
     private final ContactRepository contactRepository;
+    private final UserBlockRepository blockRepository;
 
     public UserService(UserRepository userRepository,
                        PhoneService phoneService,
-                       ContactRepository contactRepository) {
+                       ContactRepository contactRepository,
+                       UserBlockRepository blockRepository) {
         this.userRepository = userRepository;
         this.phoneService = phoneService;
         this.contactRepository = contactRepository;
+        this.blockRepository = blockRepository;
     }
 
     @Transactional(readOnly = true)
@@ -100,7 +103,7 @@ public class UserService {
                 throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Phone number is not valid");
             }
             return userRepository.findByPhoneAndDeletedAtIsNull(e164)
-                    .map(user -> List.of(UserResponse.from(user)))
+                    .map(user -> List.of(scrubAvatar(UserResponse.from(user), callerId, user.getId())))
                     .orElseGet(List::of);
         }
 
@@ -108,7 +111,7 @@ public class UserService {
             String normalized = EmailOtpService.normalizeEmail(email);
             return userRepository.findActiveByVerifiedEmail(normalized)
                     .filter(user -> !user.getId().equals(callerId))
-                    .map(user -> List.of(UserResponse.from(user)))
+                    .map(user -> List.of(scrubAvatar(UserResponse.from(user), callerId, user.getId())))
                     .orElseGet(List::of);
         }
 
@@ -121,9 +124,31 @@ public class UserService {
         List<UUID> matchIds = matches.stream().map(User::getId).toList();
         Set<UUID> disclosePhoneFor = new HashSet<>(
                 contactRepository.findContactUserIdsAmong(callerId, matchIds));
+        Set<UUID> hiddenAvatars = blockRepository == null ? Set.of() : new HashSet<>(
+                blockRepository.findRelatedIdsEitherDirection(callerId, matchIds));
         return matches.stream()
-                .map(user -> UserResponse.forSearchResult(user, disclosePhoneFor.contains(user.getId())))
+                .map(user -> {
+                    UserResponse response = UserResponse.forSearchResult(
+                            user, disclosePhoneFor.contains(user.getId()));
+                    return hiddenAvatars.contains(user.getId())
+                            ? withoutAvatar(response)
+                            : response;
+                })
                 .toList();
+    }
+
+    /** V38: a block edge hides the avatar in both directions; everything else stays visible. */
+    private UserResponse scrubAvatar(UserResponse response, UUID viewerId, UUID targetId) {
+        if (blockRepository != null
+                && blockRepository.existsBetweenEitherDirection(viewerId, targetId)) {
+            return withoutAvatar(response);
+        }
+        return response;
+    }
+
+    private static UserResponse withoutAvatar(UserResponse response) {
+        return new UserResponse(response.id(), response.phone(), response.displayName(),
+                null, response.deleted(), response.passwordSet());
     }
 
     /** Escape LIKE metacharacters so user input stays a literal prefix. */

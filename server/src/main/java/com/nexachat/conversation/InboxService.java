@@ -11,6 +11,7 @@ import com.nexachat.message.dto.MessageRow;
 import com.nexachat.presence.PresenceService;
 import com.nexachat.summary.ConversationAiOptOuts;
 import com.nexachat.label.InboxLabelReader;
+import com.nexachat.user.UserBlockRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -60,14 +61,17 @@ public class InboxService {
     private final ConversationAiOptOuts aiOptOuts;
     private final InboxLabelReader labelReader;
     private final Clock clock;
+    private final UserBlockRepository blockRepository;
 
     @Autowired
     public InboxService(ConversationMemberRepository memberRepository,
                         MessageRepository messageRepository,
                         PresenceService presenceService,
                         ConversationAiOptOuts aiOptOuts,
-                        InboxLabelReader labelReader) {
-        this(memberRepository, messageRepository, presenceService, aiOptOuts, labelReader, Clock.systemUTC());
+                        InboxLabelReader labelReader,
+                        UserBlockRepository blockRepository) {
+        this(memberRepository, messageRepository, presenceService, aiOptOuts, labelReader,
+                Clock.systemUTC(), blockRepository);
     }
 
     InboxService(ConversationMemberRepository memberRepository,
@@ -75,7 +79,7 @@ public class InboxService {
                  PresenceService presenceService,
                  Clock clock) {
         this(memberRepository, messageRepository, presenceService, ConversationAiOptOuts.none(),
-                (userId, conversationIds) -> Map.of(), clock);
+                (userId, conversationIds) -> Map.of(), clock, null);
     }
 
     InboxService(ConversationMemberRepository memberRepository,
@@ -83,13 +87,15 @@ public class InboxService {
                  PresenceService presenceService,
                  ConversationAiOptOuts aiOptOuts,
                  InboxLabelReader labelReader,
-                 Clock clock) {
+                 Clock clock,
+                 UserBlockRepository blockRepository) {
         this.memberRepository = memberRepository;
         this.messageRepository = messageRepository;
         this.presenceService = presenceService;
         this.aiOptOuts = aiOptOuts;
         this.labelReader = labelReader;
         this.clock = clock;
+        this.blockRepository = blockRepository;
     }
 
     @Transactional(readOnly = true)
@@ -177,11 +183,18 @@ public class InboxService {
         }
         List<UUID> conversationIds = rows.stream().map(InboxConversationRow::id).toList();
 
-        Map<UUID, List<InboxEntry.Member>> membersByConversation =
-                memberRepository.findInboxMemberViews(conversationIds).stream()
-                        .collect(Collectors.groupingBy(
-                                InboxMemberView::conversationId,
-                                Collectors.mapping(InboxService::toMember, Collectors.toList())));
+        List<InboxMemberView> memberViews = memberRepository.findInboxMemberViews(conversationIds);
+        // V38: members with a block edge to the viewer show no avatar — same
+        // "profile hidden" treatment presence gets, applied where a 1:1 row
+        // makes the pair visible (direct peers and group member lists).
+        Set<UUID> hiddenAvatars = blockRepository == null ? Set.of()
+                : new java.util.HashSet<>(blockRepository.findRelatedIdsEitherDirection(
+                        userId, memberViews.stream().map(InboxMemberView::userId).toList()));
+        Map<UUID, List<InboxEntry.Member>> membersByConversation = memberViews.stream()
+                .collect(Collectors.groupingBy(
+                        InboxMemberView::conversationId,
+                        Collectors.mapping(view -> toMember(view, hiddenAvatars),
+                                Collectors.toList())));
 
         List<UUID> lastMessageIds = rows.stream()
                 .map(InboxConversationRow::lastMessageId)
@@ -298,9 +311,10 @@ public class InboxService {
         }
     }
 
-    private static InboxEntry.Member toMember(InboxMemberView view) {
+    private static InboxEntry.Member toMember(InboxMemberView view, Set<UUID> hiddenAvatars) {
         return new InboxEntry.Member(
-                view.userId(), view.displayName(), view.phone(), view.avatarUrl(),
+                view.userId(), view.displayName(), view.phone(),
+                hiddenAvatars.contains(view.userId()) ? null : view.avatarUrl(),
                 view.role().name());
     }
 

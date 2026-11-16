@@ -63,9 +63,11 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Modifying
     @Query(value = """
             INSERT INTO messages
-                (conversation_id, sender_id, client_message_id, type, content, reply_to_id, change_version, created_at, expires_at)
+                (conversation_id, sender_id, client_message_id, type, content, reply_to_id, peer_suppressed,
+                 change_version, created_at, expires_at)
             SELECT :conversationId, :senderId, :clientMessageId, :type,
-                   CAST(:content AS text), CAST(:replyToId AS uuid), c.change_version, s.stamp,
+                   CAST(:content AS text), CAST(:replyToId AS uuid), :peerSuppressed,
+                   c.change_version, s.stamp,
                    CASE WHEN c.disappearing_seconds > 0 AND :type <> 'SYSTEM'
                         THEN s.stamp + c.disappearing_seconds * INTERVAL '1 second' END
             FROM conversations c CROSS JOIN (SELECT clock_timestamp() AS stamp) s
@@ -77,15 +79,17 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
                                    @Param("clientMessageId") UUID clientMessageId,
                                    @Param("type") String type,
                                    @Param("content") String content,
-                                   @Param("replyToId") UUID replyToId);
+                                   @Param("replyToId") UUID replyToId,
+                                   @Param("peerSuppressed") boolean peerSuppressed);
 
     @Modifying
     @Query(value = """
             INSERT INTO messages
                 (conversation_id, sender_id, client_message_id, type, content, reply_to_id, mention_all,
-                 change_version, created_at, expires_at)
+                 peer_suppressed, change_version, created_at, expires_at)
             SELECT :conversationId, :senderId, :clientMessageId, :type,
-                   CAST(:content AS text), CAST(:replyToId AS uuid), :mentionAll, c.change_version, s.stamp,
+                   CAST(:content AS text), CAST(:replyToId AS uuid), :mentionAll, :peerSuppressed,
+                   c.change_version, s.stamp,
                    CASE WHEN c.disappearing_seconds > 0 AND :type <> 'SYSTEM'
                         THEN s.stamp + c.disappearing_seconds * INTERVAL '1 second' END
             FROM conversations c CROSS JOIN (SELECT clock_timestamp() AS stamp) s
@@ -98,16 +102,17 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
                                                  @Param("type") String type,
                                                  @Param("content") String content,
                                                  @Param("replyToId") UUID replyToId,
-                                                 @Param("mentionAll") boolean mentionAll);
+                                                 @Param("mentionAll") boolean mentionAll,
+                                                 @Param("peerSuppressed") boolean peerSuppressed);
 
     /** Same idempotent insert carrying the E2EE envelope array as JSONB. */
     @Modifying
     @Query(value = """
             INSERT INTO messages
                 (conversation_id, sender_id, client_message_id, type, content, reply_to_id,
-                 encryption, e2ee_envelopes, change_version, created_at, expires_at)
+                 peer_suppressed, encryption, e2ee_envelopes, change_version, created_at, expires_at)
             SELECT :conversationId, :senderId, :clientMessageId, :type,
-                   CAST(:content AS text), CAST(:replyToId AS uuid),
+                   CAST(:content AS text), CAST(:replyToId AS uuid), :peerSuppressed,
                    CAST(:encryption AS varchar), CAST(:envelopes AS jsonb),
                    c.change_version, s.stamp,
                    CASE WHEN c.disappearing_seconds > 0 AND :type <> 'SYSTEM'
@@ -123,7 +128,16 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
                                             @Param("content") String content,
                                             @Param("replyToId") UUID replyToId,
                                             @Param("encryption") String encryption,
-                                            @Param("envelopes") String envelopes);
+                                            @Param("envelopes") String envelopes,
+                                            @Param("peerSuppressed") boolean peerSuppressed);
+
+    /**
+     * Suppression probe for the per-recipient outbound gate: the sender id of
+     * a message whose {@code peer_suppressed} flag is set — the only durable
+     * answer to "must this frame stay hidden from everyone but the sender".
+     */
+    @Query("SELECT m.sender.id FROM Message m WHERE m.id = :messageId AND m.peerSuppressed = true")
+    Optional<UUID> findPeerSuppressedSenderId(@Param("messageId") UUID messageId);
 
     /**
      * Projection read-back after insert-or-skip: fetches the stored row plus
@@ -165,6 +179,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             WHERE m.conversation.id = :conversationId
               AND (:beforeSeq IS NULL OR m.seq < :beforeSeq)
               AND (m.deletedAt IS NOT NULL OR m.expiresAt IS NULL OR m.expiresAt > CURRENT_TIMESTAMP)
+              AND (m.peerSuppressed = false OR m.sender.id = :userId)
               AND EXISTS (SELECT 1 FROM ConversationMember member
                           WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
                             AND m.createdAt >= member.joinedAt)
@@ -184,6 +199,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.conversation.id = :conversationId AND m.seq > :afterSeq
               AND (m.deletedAt IS NOT NULL OR m.expiresAt IS NULL OR m.expiresAt > CURRENT_TIMESTAMP)
+              AND (m.peerSuppressed = false OR m.sender.id = :userId)
               AND EXISTS (SELECT 1 FROM ConversationMember member
                           WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
                             AND m.createdAt >= member.joinedAt)
@@ -202,6 +218,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             WHERE m.conversation.id = :conversationId
               AND m.changeVersion > :changeCursor AND m.changeVersion <= :changeUpperBound
               AND (m.deletedAt IS NOT NULL OR m.expiresAt IS NULL OR m.expiresAt > CURRENT_TIMESTAMP)
+              AND (m.peerSuppressed = false OR m.sender.id = :userId)
               AND EXISTS (SELECT 1 FROM ConversationMember member
                           WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
                             AND m.createdAt >= member.joinedAt)
@@ -221,6 +238,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             WHERE m.conversation.id = :conversationId AND m.seq <= :lastSeq
               AND m.editedAt > :since AND m.deletedAt IS NULL
               AND (m.expiresAt IS NULL OR m.expiresAt > CURRENT_TIMESTAMP)
+              AND (m.peerSuppressed = false OR m.sender.id = :userId)
               AND EXISTS (SELECT 1 FROM ConversationMember member
                           WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
                             AND m.createdAt >= member.joinedAt)
@@ -233,6 +251,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     @Query("""
             SELECT m.id FROM Message m
             WHERE m.conversation.id = :conversationId AND m.seq <= :lastSeq AND m.deletedAt > :since
+              AND (m.peerSuppressed = false OR m.sender.id = :userId)
               AND EXISTS (SELECT 1 FROM ConversationMember member
                           WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
                             AND m.createdAt >= member.joinedAt)
@@ -315,6 +334,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             WHERE m.conversation.id = :conversationId
               AND m.seq <= :lastSeq
               AND m.deletedAt > :since
+              AND (m.peerSuppressed = false OR m.sender.id = :userId)
               AND EXISTS (SELECT 1 FROM ConversationMember member
                           WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
                             AND m.createdAt >= member.joinedAt)
@@ -348,6 +368,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
               AND m.deleted_at IS NULL
               AND m.encryption IS NULL
               AND (m.expires_at IS NULL OR m.expires_at > now())
+              AND (m.peer_suppressed = false OR m.sender_id = :userId)
               AND (:beforeSeq IS NULL OR m.seq < :beforeSeq)
               AND EXISTS (SELECT 1 FROM conversation_members cm
                           WHERE cm.conversation_id = m.conversation_id AND cm.user_id = :userId
@@ -371,6 +392,27 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             WHERE m.id IN :ids
             """)
     List<MessageRow> findRowsByIdIn(@Param("ids") Collection<UUID> ids);
+
+    /**
+     * Starred-list hydration (V38): one IN query over the viewer's starred
+     * ids, filtered by the same read boundary as history — peer-suppressed
+     * rows only reach their sender, and a conversation the viewer left stops
+     * surfacing its starred rows.
+     */
+    @Query("""
+            SELECT new com.nexachat.message.dto.MessageRow(
+                       m.id, m.conversation.id, m.seq, u.id, u.displayName, m.type,
+                       m.content, m.clientMessageId, r.id, m.createdAt, m.editedAt, m.deletedAt,
+                       m.mentionAll, m.changeVersion, m.conversation.syncGeneration)
+            FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
+            WHERE m.id IN :ids
+              AND (m.peerSuppressed = false OR m.sender.id = :userId)
+              AND EXISTS (SELECT 1 FROM ConversationMember member
+                          WHERE member.conversation.id = m.conversation.id
+                            AND member.user.id = :userId)
+            """)
+    List<MessageRow> findStarredRowsByIdIn(@Param("ids") Collection<UUID> ids,
+                                           @Param("userId") UUID userId);
 
     /** Batch encryption sidecar for {@code MessageResponse} hydration. */
     @Query("""
@@ -414,6 +456,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
                        m.encryption, m.expiresAt)
             FROM Message m JOIN m.sender u
             WHERE m.id IN :ids
+              AND (m.peerSuppressed = false OR m.sender.id = :userId)
               AND EXISTS (SELECT 1 FROM ConversationMember member
                           WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
                             AND m.createdAt >= member.joinedAt)
@@ -430,6 +473,7 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
             FROM Message m JOIN m.sender u LEFT JOIN m.replyTo r
             WHERE m.id IN :ids
               AND (m.deletedAt IS NOT NULL OR m.expiresAt IS NULL OR m.expiresAt > CURRENT_TIMESTAMP)
+              AND (m.peerSuppressed = false OR m.sender.id = :userId)
               AND EXISTS (SELECT 1 FROM ConversationMember member
                           WHERE member.conversation.id = m.conversation.id AND member.user.id = :userId
                             AND m.createdAt >= member.joinedAt)

@@ -112,6 +112,12 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     @Query("SELECT m.user.id FROM ConversationMember m WHERE m.conversation.id = :conversationId")
     List<UUID> findMemberUserIds(@Param("conversationId") UUID conversationId);
 
+    /** Every member except {@code userId} — the direct-peer lookup (DIRECT ⇒ exactly one). */
+    @Query("SELECT m.user.id FROM ConversationMember m WHERE m.conversation.id = :conversationId"
+            + " AND m.user.id <> :userId")
+    List<UUID> findOtherMemberIds(@Param("conversationId") UUID conversationId,
+                                @Param("userId") UUID userId);
+
     /** Current conversation ids for privacy cleanup after an account's realtime bridges are revoked. */
     @Query("SELECT m.conversation.id FROM ConversationMember m WHERE m.user.id = :userId")
     List<UUID> findConversationIdsByUserId(@Param("userId") UUID userId);
@@ -457,6 +463,7 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
               AND msg.seq > m.lastReadSeq
               AND msg.deletedAt IS NULL
               AND (msg.expiresAt IS NULL OR msg.expiresAt > CURRENT_TIMESTAMP)
+              AND (msg.peerSuppressed = false OR msg.sender.id = :userId)
               AND msg.createdAt >= m.joinedAt
             GROUP BY m.conversation.id
             """)

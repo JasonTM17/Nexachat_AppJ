@@ -104,6 +104,15 @@ public class Message {
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
+    /**
+     * V38: durable "accepted but never delivered" marker for direct chats.
+     * TRUE means the sender's direct peer blocked them at send time, so every
+     * read model hides the row from anyone but the sender — and a later
+     * unblock does NOT retro-deliver it. Only ever set on DIRECT rows.
+     */
+    @Column(name = "peer_suppressed", nullable = false)
+    private boolean peerSuppressed;
+
     /** {@code 'E2EE_V1'} when the body is client-side ciphertext; NULL for plaintext. */
     @Column(name = "encryption", length = 10)
     private String encryption;
@@ -175,6 +184,10 @@ public class Message {
 
     public Instant getDeletedAt() {
         return deletedAt;
+    }
+
+    public boolean isPeerSuppressed() {
+        return peerSuppressed;
     }
 
     public String getEncryption() {

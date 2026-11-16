@@ -59,6 +59,14 @@
 -keep class com.nexachat.feature.archive.ArchivePage$Item { *; }
 -keep class com.nexachat.feature.archive.ArchivePage$Attachment { *; }
 -keep class com.nexachat.feature.archive.ArchivePage$Link { *; }
+-keep class com.nexachat.feature.safety.BlockStatusDto { *; }
+-keep class com.nexachat.feature.safety.BlockedPageDto { *; }
+-keep class com.nexachat.feature.safety.BlockedUserDto { *; }
+-keep class com.nexachat.feature.safety.ReportDto { *; }
+-keep class com.nexachat.feature.safety.ReportPageDto { *; }
+-keep class com.nexachat.feature.safety.ReportRequest { *; }
+-keep class com.nexachat.feature.safety.StarredMessageDto { *; }
+-keep class com.nexachat.feature.safety.StarredPageDto { *; }
 -keep class com.nexachat.call.core.CallFrameCodec$* { *; }
 -keepclassmembers class * {
     @com.squareup.moshi.Json <fields>;

@@ -37,6 +37,7 @@ import com.nexachat.message.dto.SendMessageRequest;
 import com.nexachat.message.dto.SyncRequest;
 import com.nexachat.message.dto.SyncResponse;
 import com.nexachat.message.dto.SyncFence;
+import com.nexachat.user.UserBlockRepository;
 import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -111,6 +112,7 @@ public class MessageService {
     private final ConversationRepository conversationRepository;
     private final ConversationMemberRepository memberRepository;
     private final UserRepository userRepository;
+    private final UserBlockRepository blockRepository;
     private final PinnedMessageRepository pinnedMessageRepository;
     private final StorageService storageService;
     private final ApplicationEventPublisher eventPublisher;
@@ -133,11 +135,12 @@ public class MessageService {
                           ApplicationEventPublisher eventPublisher,
                           SyncProperties syncProperties,
                           MessageRecallProperties recallProperties,
-                          org.springframework.beans.factory.ObjectProvider<E2eeDeviceService> e2eeDeviceService) {
+                          org.springframework.beans.factory.ObjectProvider<E2eeDeviceService> e2eeDeviceService,
+                          UserBlockRepository blockRepository) {
         this(messageRepository, mentionRepository, attachmentRepository, reactionRepository, reactionEventRepository,
                 conversationRepository, memberRepository, pinnedMessageRepository, storageService,
                 eventPublisher, syncProperties, Clock.systemUTC(), recallProperties, userRepository,
-                e2eeDeviceService);
+                e2eeDeviceService, blockRepository);
     }
 
     /** Compatibility constructor for isolated service tests that do not exercise mentions. */
@@ -222,6 +225,28 @@ public class MessageService {
                    MessageRecallProperties recallProperties,
                    UserRepository userRepository,
                    org.springframework.beans.factory.ObjectProvider<E2eeDeviceService> e2eeDeviceService) {
+        this(messageRepository, mentionRepository, attachmentRepository, reactionRepository,
+                reactionEventRepository, conversationRepository, memberRepository,
+                pinnedMessageRepository, storageService, eventPublisher, syncProperties, clock,
+                recallProperties, userRepository, e2eeDeviceService, null);
+    }
+
+    MessageService(MessageRepository messageRepository,
+                   MessageMentionRepository mentionRepository,
+                   MessageAttachmentRepository attachmentRepository,
+                   MessageReactionRepository reactionRepository,
+                   ReactionEventRepository reactionEventRepository,
+                   ConversationRepository conversationRepository,
+                   ConversationMemberRepository memberRepository,
+                   PinnedMessageRepository pinnedMessageRepository,
+                   StorageService storageService,
+                   ApplicationEventPublisher eventPublisher,
+                   SyncProperties syncProperties,
+                   Clock clock,
+                   MessageRecallProperties recallProperties,
+                   UserRepository userRepository,
+                   org.springframework.beans.factory.ObjectProvider<E2eeDeviceService> e2eeDeviceService,
+                   UserBlockRepository blockRepository) {
         this.e2eeDeviceService = e2eeDeviceService;
         this.messageRepository = messageRepository;
         this.mentionRepository = mentionRepository;
@@ -237,6 +262,7 @@ public class MessageService {
         this.syncProperties = syncProperties;
         this.clock = clock;
         this.recallProperties = recallProperties;
+        this.blockRepository = blockRepository;
     }
 
     /** Result of {@link #send}: the stored message plus whether this call created it. */
@@ -306,6 +332,22 @@ public class MessageService {
             return replayExisting(conversationId, retryAfterConversationLock.get());
         }
 
+        // V38 block policy (resolved once, after the dedup replay so retries of
+        // a pre-block send still honour the idempotency contract):
+        //  - caller blocked the peer ⇒ typed BLOCKED refusal: the caller
+        //    created the block, so telling them leaks nothing and the client
+        //    can offer "unblock to reply".
+        //  - peer blocked the caller ⇒ the row is stored peer_suppressed:
+        //    accepted (the blocked sender's request looks exactly like any
+        //    successful send — no block signal) yet never delivered. The flag
+        //    is durable: every read model hides the row from anyone but the
+        //    sender, and unblocking later does NOT retro-deliver it.
+        DirectBlockState blockState = resolveDirectBlockState(conversation, senderId);
+        if (blockState.callerBlockedPeer()) {
+            throw ApiException.of(ApiErrorCode.BLOCKED, "You blocked this user");
+        }
+        boolean peerSuppressed = blockState.peerBlockedCaller();
+
         String envelopesJson = validateE2eeSend(conversation, type, request);
         validateAttachmentsReady(senderId, type, attachmentIds, lockedAttachments);
         MentionState mentionState = validateMentions(conversationId, senderId, type, content,
@@ -316,13 +358,14 @@ public class MessageService {
         int inserted = envelopesJson != null
                 ? messageRepository.insertEncryptedIgnoringDuplicateKey(
                         conversationId, senderId, request.clientMessageId(), type.name(), content,
-                        replyToId, "E2EE_V1", envelopesJson)
+                        replyToId, "E2EE_V1", envelopesJson, peerSuppressed)
                 : mentionState.mentionAll()
                 ? messageRepository.insertIgnoringDuplicateKeyWithMentionAll(
                         conversationId, senderId, request.clientMessageId(), type.name(), content,
-                        replyToId, true)
+                        replyToId, true, peerSuppressed)
                 : messageRepository.insertIgnoringDuplicateKey(
-                        conversationId, senderId, request.clientMessageId(), type.name(), content, replyToId);
+                        conversationId, senderId, request.clientMessageId(), type.name(), content,
+                        replyToId, peerSuppressed);
         boolean created = inserted == 1;
 
         // The row is guaranteed to exist now: ours if inserted, the winner's if deduped.
@@ -342,7 +385,15 @@ public class MessageService {
             if (!mentionState.mentions().isEmpty()) {
                 requireMentionRepository().replace(row.id(), conversationId, mentionState.mentions());
             }
-            conversationRepository.advanceLastMessage(conversationId, row.id(), row.seq());
+            // last_message_* is ONE shared pointer for every member — pointing
+            // it at a suppressed row would leak the blocked sender's content
+            // into the blocker's inbox preview. Never advance it for
+            // suppressed sends (the sender's own preview simply lags one
+            // message, which a blocked sender cannot distinguish from an
+            // ordinary out-of-order update).
+            if (!peerSuppressed) {
+                conversationRepository.advanceLastMessage(conversationId, row.id(), row.seq());
+            }
             // You have trivially "read" what you sent — keep your own unread at 0.
             memberRepository.advanceReadWatermark(conversationId, senderId, row.seq());
             bindAttachments(row.id(), lockedAttachments);
@@ -725,7 +776,8 @@ public class MessageService {
         UUID clientMessageId = UUID.randomUUID();
         allocateChangeVersion(conversationId);
         messageRepository.insertIgnoringDuplicateKey(
-                conversationId, actingUserId, clientMessageId, Message.Type.SYSTEM.name(), content, null);
+                conversationId, actingUserId, clientMessageId, Message.Type.SYSTEM.name(), content,
+                null, false);
         MessageRow row = messageRepository
                 .findRowBySenderAndClientMessageId(actingUserId, clientMessageId)
                 .orElseThrow(() -> ApiException.of(
@@ -1161,6 +1213,39 @@ public class MessageService {
     }
 
     /**
+     * Per-send block snapshot for DIRECT conversations (V38): the two
+     * directional edges answer different questions —
+     * {@code callerBlockedPeer} ⇒ the caller chose the block and may be told
+     * ({@code BLOCKED}); {@code peerBlockedCaller} ⇒ the send is stored
+     * {@code peer_suppressed} so it looks accepted to the blocked caller yet
+     * never reaches the peer.
+     */
+    private record DirectBlockState(boolean callerBlockedPeer, boolean peerBlockedCaller) {
+        private static final DirectBlockState NONE = new DirectBlockState(false, false);
+    }
+
+    /**
+     * Reads both block edges for the (immutable) DIRECT peer pair. GROUP
+     * conversations never suppress sends — group visibility is unchanged by
+     * blocking (shared space), only notifications/filtering apply. The
+     * repository may be {@code null} under the legacy unit-test constructors;
+     * production wiring always injects it.
+     */
+    private DirectBlockState resolveDirectBlockState(Conversation conversation, UUID senderId) {
+        if (blockRepository == null || conversation.getType() != Conversation.Type.DIRECT) {
+            return DirectBlockState.NONE;
+        }
+        List<UUID> peers = memberRepository.findOtherMemberIds(conversation.getId(), senderId);
+        if (peers.isEmpty()) {
+            return DirectBlockState.NONE;   // peer account deleted — tombstone chat
+        }
+        UUID peerId = peers.get(0);
+        return new DirectBlockState(
+                blockRepository.existsByBlocker_IdAndBlocked_Id(senderId, peerId),
+                blockRepository.existsByBlocker_IdAndBlocked_Id(peerId, senderId));
+    }
+
+    /**
      * {@code FOR NO KEY UPDATE} on every member's {@code users} row, in UUID
      * order — the same lock mode and rows device registration serializes on
      * ({@code E2eeDeviceService.register} holds it for its whole transaction,
@@ -1411,6 +1496,12 @@ public class MessageService {
                     "replyToId belongs to a different conversation");
         }
         if (!memberRepository.existsAdmittedAt(conversationId, senderId, target.getCreatedAt())) {
+            throw ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Reply target not found");
+        }
+        // A suppressed row is invisible to everyone but its sender: quoting it
+        // by a guessed id must fail exactly like quoting a nonexistent row,
+        // or the reply preview would smuggle the hidden content back.
+        if (target.isPeerSuppressed() && !target.getSender().getId().equals(senderId)) {
             throw ApiException.of(ApiErrorCode.MESSAGE_NOT_FOUND, "Reply target not found");
         }
         return replyToId;

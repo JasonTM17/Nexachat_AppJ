@@ -74,7 +74,10 @@ class StompSessionExpiryTest {
         when(members.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
 
         StompConversationMembershipOutboundInterceptor outbound =
-                new StompConversationMembershipOutboundInterceptor(members, userRegistry, registry);
+                new StompConversationMembershipOutboundInterceptor(members,
+                        mock(com.nexachat.message.MessageRepository.class),
+                        mock(com.nexachat.user.UserBlockRepository.class),
+                        userRegistry, registry);
 
         // The token is still valid at bind time.
         assertThat(registry.isAuthenticatedSession(sessionId)).isTrue();

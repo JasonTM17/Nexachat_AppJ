@@ -5,8 +5,10 @@ import com.nexachat.call.CallRingingEvent;
 import com.nexachat.call.CallSession;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.message.MessageCreatedEvent;
+import com.nexachat.message.MessageRepository;
 import com.nexachat.presence.PresenceSessionState;
 import com.nexachat.user.User;
+import com.nexachat.user.UserBlockRepository;
 import com.nexachat.user.UserRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -26,6 +28,8 @@ public class NotificationEventListener {
 
     private final FcmPushService fcmPushService;
     private final ConversationMemberRepository memberRepository;
+    private final MessageRepository messageRepository;
+    private final UserBlockRepository blockRepository;
     private final PresenceSessionState presenceState;
     private final CallRegistry callRegistry;
     private final UserRepository userRepository;
@@ -34,6 +38,8 @@ public class NotificationEventListener {
 
     public NotificationEventListener(FcmPushService fcmPushService,
                                      ConversationMemberRepository memberRepository,
+                                     MessageRepository messageRepository,
+                                     UserBlockRepository blockRepository,
                                      PresenceSessionState presenceState,
                                      CallRegistry callRegistry,
                                      UserRepository userRepository,
@@ -41,6 +47,8 @@ public class NotificationEventListener {
                                      Clock clock) {
         this.fcmPushService = fcmPushService;
         this.memberRepository = memberRepository;
+        this.messageRepository = messageRepository;
+        this.blockRepository = blockRepository;
         this.presenceState = presenceState;
         this.callRegistry = callRegistry;
         this.userRepository = userRepository;
@@ -72,6 +80,11 @@ public class NotificationEventListener {
         if (event.replay()) {
             return;
         }
+        // V38: a peer-suppressed send is never delivered — the only member it
+        // could notify is its own sender, whom the loop below always skips.
+        if (messageRepository.findPeerSuppressedSenderId(event.message().id()).isPresent()) {
+            return;
+        }
         UUID conversationId = event.conversationId();
         UUID senderId = event.message().senderId();
         UUID subjectUserId = event.subjectUserId();
@@ -84,6 +97,11 @@ public class NotificationEventListener {
         if (subjectUserId != null) {
             recipientIds.add(subjectUserId);
         }
+        // V38: a member who blocked the sender never gets a push for their
+        // messages — in shared groups the message stays visible in history
+        // but the blocker's devices stay silent.
+        recipientIds.removeAll(new HashSet<>(
+                blockRepository.findBlockerIdsBlocking(senderId, recipientIds)));
         Set<UUID> mutedMemberIds = new HashSet<>(
                 memberRepository.findMutedMemberIds(conversationId, clock.instant()));
         Set<UUID> mentionedMemberIds = new HashSet<>();

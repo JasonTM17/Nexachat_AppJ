@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="block_user">Chặn</string>
+    <string name="unblock_user">Bỏ chặn</string>
+    <string name="block_user_dialog_title">Chặn %1$s?</string>
+    <string name="block_user_dialog_body">Liên hệ bị chặn không thể gọi hoặc nhắn trực tiếp cho bạn.</string>
+    <string name="user_blocked_snackbar">Đã chặn</string>
+    <string name="user_unblocked_snackbar">Đã bỏ chặn</string>
+    <string name="blocked_users_title">Người dùng bị chặn</string>
+    <string name="blocked_users_empty">Không có người dùng bị chặn</string>
+    <string name="blocked_composer_banner">Bạn đã chặn liên hệ này</string>
+    <string name="action_star">Đánh dấu</string>
+    <string name="action_unstar">Bỏ đánh dấu</string>
+    <string name="action_star_desc">Lưu để xem nhanh</string>
+    <string name="action_unstar_desc">Xóa khỏi đánh dấu</string>
+    <string name="action_report">Báo cáo</string>
+    <string name="action_report_desc">Báo cáo tin nhắn này</string>
+    <string name="starred_messages_title">Tin nhắn đánh dấu</string>
+    <string name="starred_messages_empty">Chưa có tin nhắn đánh dấu</string>
+    <string name="report_title">Báo cáo</string>
+    <string name="report_reason_spam">Thư rác</string>
+    <string name="report_reason_harassment">Quấy rối</string>
+    <string name="report_reason_violence">Bạo lực</string>
+    <string name="report_reason_sexual">Nội dung nhạy cảm</string>
+    <string name="report_reason_scam">Lừa đảo</string>
+    <string name="report_reason_other">Khác</string>
+    <string name="report_details_hint">Chi tiết (tùy chọn)</string>
+    <string name="report_submit">Gửi báo cáo</string>
+    <string name="report_sent_snackbar">Đã gửi báo cáo</string>
+    <string name="report_error_snackbar">Gửi báo cáo thất bại</string>
+    <string name="report_rate_limited">Quá nhiều báo cáo — thử lại sau</string>
+    <string name="safety_error_generic">Có lỗi xảy ra</string>
+    <string name="cd_starred_message">Tin nhắn đánh dấu</string>
+    <string name="cd_unblock">Bỏ chặn</string>
+</resources>

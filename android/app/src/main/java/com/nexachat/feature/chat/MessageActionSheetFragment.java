@@ -39,6 +39,7 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
     private static final String ARG_MESSAGE_ID = "messageId";
     private static final String ARG_CAN_PIN = "canPin";
     private static final String ARG_PINNED = "pinned";
+    private static final String ARG_STARRED = "starred";
     private static final String ARG_DELETE_ACTION = "deleteAction";
     private static final String ARG_TRANSLATED = "translated";
 
@@ -58,13 +59,15 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
         void delete(@NonNull ChatMessage message, @NonNull RecallWindowRules.DeleteAction action);
         void react(@NonNull ChatMessage message, @NonNull String emoji);
         void pin(@NonNull ChatMessage message);
+        void star(@NonNull ChatMessage message);
+        void report(@NonNull ChatMessage message);
         void forward(@NonNull ChatMessage message);
         void translate(@NonNull ChatMessage message);
         void showOriginal(@NonNull ChatMessage message);
     }
 
     private enum MessageActionKind {
-        REPLY, COPY, FORWARD, PIN, EDIT, DELETE, TRANSLATE, SHOW_ORIGINAL
+        REPLY, COPY, FORWARD, PIN, STAR, EDIT, REPORT, DELETE, TRANSLATE, SHOW_ORIGINAL
     }
 
     private static final class MessageActionEntry {
@@ -89,10 +92,11 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
             boolean canPin,
             boolean pinned,
             @NonNull RecallWindowRules.DeleteAction deleteAction) {
-        return newInstance(messageId, canPin, pinned, deleteAction, false);
+        return newInstance(messageId, canPin, pinned, false, deleteAction, false);
     }
 
     /**
+     * @param starred whether the caller already starred the message
      * @param translated whether a translation is currently visible for the
      *                   message — the sheet offers "Show original" then.
      */
@@ -101,6 +105,7 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
             @NonNull String messageId,
             boolean canPin,
             boolean pinned,
+            boolean starred,
             @NonNull RecallWindowRules.DeleteAction deleteAction,
             boolean translated) {
         MessageActionSheetFragment sheet = new MessageActionSheetFragment();
@@ -108,6 +113,7 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
         args.putString(ARG_MESSAGE_ID, messageId);
         args.putBoolean(ARG_CAN_PIN, canPin);
         args.putBoolean(ARG_PINNED, pinned);
+        args.putBoolean(ARG_STARRED, starred);
         args.putString(ARG_DELETE_ACTION, deleteAction.name());
         args.putBoolean(ARG_TRANSLATED, translated);
         sheet.setArguments(args);
@@ -205,6 +211,18 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
                     getString(pinned ? R.string.action_unpin_desc : R.string.action_pin_desc),
                     () -> callbacks.pin(message), MessageActionKind.PIN));
         }
+        if (sent && !message.isDeleted()) {
+            boolean starred = args.getBoolean(ARG_STARRED);
+            entries.add(new MessageActionEntry(
+                    getString(starred ? R.string.action_unstar : R.string.action_star),
+                    getString(starred ? R.string.action_unstar_desc : R.string.action_star_desc),
+                    () -> callbacks.star(message), MessageActionKind.STAR));
+        }
+        if (sent) {
+            entries.add(new MessageActionEntry(getString(R.string.action_report),
+                    getString(R.string.action_report_desc),
+                    () -> callbacks.report(message), MessageActionKind.REPORT));
+        }
         if (message.getMine() && sent && !message.isEncrypted()
                 && "TEXT".equals(message.getType())) {
             entries.add(new MessageActionEntry(getString(R.string.action_edit),
@@ -299,7 +317,14 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
             }
             case FORWARD -> iconRes = R.drawable.ic_forward;
             case PIN -> iconRes = R.drawable.ic_push_pin;
+            case STAR -> iconRes = R.drawable.ic_star_outline;
+            case REPORT -> {
+                iconRes = R.drawable.ic_flag;
+                iconAttr = com.google.android.material.R.attr.colorOnSurfaceVariant;
+            }
             case EDIT -> iconRes = R.drawable.ic_edit;
+            case TRANSLATE -> iconRes = R.drawable.ic_language;
+            case SHOW_ORIGINAL -> iconRes = R.drawable.ic_visibility;
             case DELETE -> {
                 iconRes = R.drawable.ic_delete;
                 tileBg = R.drawable.bg_settings_tile_error;

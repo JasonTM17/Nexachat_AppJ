@@ -42,7 +42,9 @@ class PresenceServiceTest {
 
     @BeforeEach
     void setUp() {
-        presenceService = new PresenceService(userRepository, memberRepository, sessionState, eventPublisher);
+        presenceService = new PresenceService(userRepository, memberRepository,
+                org.mockito.Mockito.mock(com.nexachat.user.UserBlockRepository.class),
+                sessionState, eventPublisher);
     }
 
     @Test

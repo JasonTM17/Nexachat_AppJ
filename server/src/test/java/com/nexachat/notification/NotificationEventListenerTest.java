@@ -57,7 +57,10 @@ class NotificationEventListenerTest {
     @BeforeEach
     void setUp() {
         listener = new NotificationEventListener(
-                fcmPushService, memberRepository, presenceState, callRegistry, userRepository,
+                fcmPushService, memberRepository,
+                mock(com.nexachat.message.MessageRepository.class),
+                mock(com.nexachat.user.UserBlockRepository.class),
+                presenceState, callRegistry, userRepository,
                 tokenRepository, Clock.fixed(Instant.parse("2026-11-11T12:00:00Z"), ZoneOffset.UTC));
     }
 

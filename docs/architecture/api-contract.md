@@ -55,6 +55,7 @@ Android client can consume the API but no dedicated screen is merged into
 | Direct-chat E2EE (v1, rollout-gated) | V34 | Shipped — `feature/encryption` device/safety screens; activation needs server flag + Android `-Pe2eeV1ActivationEnabled=true` (debug/localSmoke only) | `E2eeFlowIT`, `E2eeConversationServiceTest`, `E2eeActivationPolicyIT`, `E2eePropertiesTest`, Android `E2eeCryptoTest`, `E2eeSessionTest`, `EncryptionViewModelTest`, `EncryptionReleasePolicyTest` |
 | Author message recall window | No migration (V21 reserved, unused) | Shipped — chat overflow recall with `RECALL_WINDOW_EXPIRED` handling | `MessageRecallPropertiesTest`, `MessageFeatureFlowIT`, Android `ChatInteractionsViews` / `ChatViewModel` recall flow |
 | Muted-conversation push policy | No migration | n/a | `FcmPushServiceTest`, `SystemMessageTest` |
+| User blocking, abuse reports, starred messages | V38 | Shipped — profile/chat overflow block + report entries, blocked-users and starred-messages screens, message action-sheet star/report | `UserBlockServiceTest`, `DirectBlockSendTest`, `ReportServiceTest`, `StarServiceTest`, `V38MigrationTest`, `StompConversationMembershipOutboundInterceptorTest` block-gate cases |
 
 ## Migration history
 
@@ -95,6 +96,7 @@ Android client can consume the API but no dedicated screen is merged into
 | V33 | `V33__google_signup.sql` | Nullable `password_hash`; active users must have phone, password, or verified email. |
 | V34 | `V34__e2ee_direct_chats.sql` | `e2ee_devices` public-key registry, `conversations.e2ee_enabled` (DIRECT only) and message ciphertext/envelope columns. |
 | V35 | `V35__backfill_unversioned_messages.sql` | Backfills `change_version` on rows inserted outside the sync-v2 contract and raises each conversation's cursor. |
+| V38 | `V38__safety_block_report_stars.sql` | `user_blocks` directed edges, `reports` abuse filings with OPEN-dedupe, per-user `message_stars`, and `messages.peer_suppressed` for accepted-but-never-delivered sends. |
 
 ## Operational notes
 
@@ -234,6 +236,7 @@ These keys are Spring properties; override them with the matching
 | `ATTACHMENT_NOT_FOUND` | 404 | Attachment record does not exist |
 | `PIN_LIMIT` | 409 | Conversation already has the maximum 3 pinned messages |
 | `CONVERSATION_PIN_LIMIT` | 409 | User already pinned the maximum 5 conversations |
+| `BLOCKED` | 403 | The caller blocked the target — sending a direct message, calling, or approving that user's join request requires unblocking first. The blocked side never receives this code |
 | `IDEMPOTENCY_KEY_REUSED` | 409 | Same `Idempotency-Key` reused for a different endpoint or payload |
 | `MIME_NOT_ALLOWED` | 415 | Uploaded bytes failed the magic-byte sniff |
 | `FILE_TOO_LARGE` | 413 | Upload exceeds the configured max size |
@@ -1063,6 +1066,26 @@ Pin limit serializes under a `FOR UPDATE` lock on the conversation row.
 `PUT`/`DELETE` reactions are the safe verbs for an offline outbox retry: a
 replayed add/remove never inverts state. The `Idempotency-Key` header applies
 to all five mutating endpoints (see [Idempotency and retries](#idempotency-and-retries)).
+
+## Safety — blocks `/api/v1/users`, reports `/api/v1/reports`, stars `/api/v1/messages`
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `POST /users/{id}/block` | Bearer | — | `204` empty — idempotent | `VALIDATION_FAILED` 400 (self) · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 (missing or deleted target) |
+| `DELETE /users/{id}/block` | Bearer | — | `204` empty — idempotent | `UNAUTHORIZED` 401 |
+| `GET /users/{id}/block` | Bearer | — | `200` `{"blocked": bool}` — per-peer probe for the chat composer | `UNAUTHORIZED` 401 |
+| `GET /users/blocked` | Bearer | `?limit=` (≤100, default 50), `?cursor=` | `200` `BlockedPageResponse {items: BlockedUserView[], nextCursor}` newest first | `VALIDATION_FAILED` 400 (bad cursor) · `UNAUTHORIZED` 401 |
+| `POST /reports` | Bearer | `{targetType: USER\|MESSAGE\|CONVERSATION, targetId, reason: SPAM\|HARASSMENT\|VIOLENCE\|SEXUAL\|SCAM\|OTHER, details? ≤500, messageSnapshot? ≤500}` | `201` `ReportResponse` on a new filing; `200` with the existing row when an OPEN report on the same target already exists | `VALIDATION_FAILED` 400 (also self-report) · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 · `MESSAGE_NOT_FOUND` 404 · `CONVERSATION_NOT_FOUND` 404 · `NOT_MEMBER` 403 · `RATE_LIMITED` 429 (20/hour per user, `Retry-After` set) |
+| `GET /reports/mine` | Bearer | `?limit=` (≤100, default 50), `?cursor=` | `200` `ReportPageResponse {items: ReportResponse[], nextCursor}` newest first | `VALIDATION_FAILED` 400 (bad cursor) · `UNAUTHORIZED` 401 |
+| `PUT /messages/{id}/star` | Bearer member | — | `204` empty — idempotent | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 (not a member, or message predates admission) · `MESSAGE_NOT_FOUND` 404 |
+| `DELETE /messages/{id}/star` | Bearer | — | `204` empty — idempotent | `UNAUTHORIZED` 401 |
+| `GET /messages/starred` | Bearer | `?limit=` (≤100, default 50), `?cursor=` | `200` `StarredPageResponse {items: StarredMessageView[], nextCursor}` newest star first | `VALIDATION_FAILED` 400 (bad cursor) · `UNAUTHORIZED` 401 |
+
+`BlockedUserView` = `{userId, displayName, phone, avatarUrl, blockedAt}`.
+`ReportResponse` = `{id, targetType, targetId, reason, details, messageSnapshot, status, createdAt}`; `status` ∈ `OPEN | REVIEWED | DISMISSED`.
+`StarredMessageView` = `{starredAt, message: MessageResponse}`.
+
+Blocking is directed and invisible to the blocked side: nothing notifies them, and enforcement reads the `user_blocks` edges at each fan-out point — direct sends from a blocked user are accepted but stored `peer_suppressed` (the row never reaches the peer, never advances the shared inbox pointer, and unblocking does not retro-deliver it), calls refuse either direction, group creation/member adds/invite joins skip or refuse silently, presence and typing hide in both directions, push fan-out drops members who blocked the sender, and avatars are nulled on contact/inbox/member surfaces. A `MESSAGE` report on a peer-suppressed row is `MESSAGE_NOT_FOUND` to anyone but its sender. For a plaintext message the server copies ≤500 chars of content as the evidence snapshot and ignores `messageSnapshot`; for an E2EE message the reporter's `messageSnapshot` is stored and flagged reporter-provided. Stars are per-user (unlike pins) and re-check membership at both write and read time — leaving a conversation hides its starred rows without deleting the stars.
 
 ## Files — `/api/v1/files`
 
