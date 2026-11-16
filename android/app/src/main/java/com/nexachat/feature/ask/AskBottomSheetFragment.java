@@ -8,8 +8,6 @@ import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.Window;
-import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
@@ -17,7 +15,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
-import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.nexachat.R;
@@ -29,7 +26,7 @@ import javax.inject.Inject;
 
 /** Bottom sheet for asking one question about the current conversation. */
 @AndroidEntryPoint
-public final class AskBottomSheetFragment extends com.google.android.material.bottomsheet.BottomSheetDialogFragment {
+public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBottomSheetFragment {
     public interface Listener {
         void onJumpToMessage(@NonNull AskCitationJump target);
     }
@@ -292,13 +289,6 @@ public final class AskBottomSheetFragment extends com.google.android.material.bo
     public void onStart() {
         super.onStart();
         Dialog dialog = getDialog();
-        if (dialog == null) {
-            return;
-        }
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        }
         if (dialog instanceof BottomSheetDialog bottomSheetDialog) {
             FrameLayout bottomSheet = bottomSheetDialog.findViewById(
                     com.google.android.material.R.id.design_bottom_sheet);
@@ -307,10 +297,6 @@ public final class AskBottomSheetFragment extends com.google.android.material.bo
                 params.height = (int) (getResources().getDisplayMetrics().heightPixels * 0.9f);
                 bottomSheet.setLayoutParams(params);
                 bottomSheet.setBackgroundResource(android.R.color.transparent);
-                BottomSheetBehavior<FrameLayout> behavior =
-                        BottomSheetBehavior.from(bottomSheet);
-                behavior.setSkipCollapsed(true);
-                behavior.setState(BottomSheetBehavior.STATE_EXPANDED);
             }
         }
     }

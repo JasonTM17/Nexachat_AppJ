@@ -73,7 +73,7 @@ public final class GroupAddMemberEmptyStateTest {
     }
 
     private static Path locateSource() {
-        String name = "GroupDetailFragment.java";
+        String name = "AddMemberSheetFragment.java";
         Path[] candidates = new Path[] {
                 Path.of("src/main/java/com/nexachat/feature/group", name),
                 Path.of("app/src/main/java/com/nexachat/feature/group", name),

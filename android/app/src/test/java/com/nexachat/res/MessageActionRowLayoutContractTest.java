@@ -30,7 +30,7 @@ public final class MessageActionRowLayoutContractTest {
     public void rowKeepsMinimumTouchHeightAndGrowsWithLabel() throws Exception {
         Element root = loadRoot("item_message_action_row.xml");
         assertEquals("wrap_content", root.getAttributeNS(ANDROID, "layout_height"));
-        assertEquals("@dimen/min_touch_target", root.getAttributeNS(ANDROID, "minHeight"));
+        assertEquals("@dimen/sheet_action_row_min_height", root.getAttributeNS(ANDROID, "minHeight"));
         Element column = findById("item_message_action_row.xml", "actionTextColumn");
         assertEquals("0dp", column.getAttributeNS(ANDROID, "layout_width"));
         assertEquals("1", column.getAttributeNS(ANDROID, "layout_weight"));

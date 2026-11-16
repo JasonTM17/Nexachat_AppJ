@@ -1,55 +1,47 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:fillViewport="true">
+    android:background="@drawable/bg_sheet_surface"
+    android:orientation="vertical"
+    android:paddingBottom="@dimen/space_md">
+
+    <include layout="@layout/include_sheet_handle" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingBottom="@dimen/space_md">
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="@dimen/space_md"
+        android:paddingEnd="@dimen/space_xs">
 
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="32dp"
-            android:layout_height="4dp"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginTop="@dimen/space_sm"
-            android:layout_marginBottom="@dimen/space_sm"
-            android:importantForAccessibility="no"
-            app:cardBackgroundColor="?attr/colorSurfaceContainerHighest"
-            app:cardCornerRadius="@dimen/corner_full"
-            app:cardElevation="0dp"
-            app:strokeWidth="0dp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
+        <TextView
+            android:id="@+id/reminderEditorTitle"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingStart="@dimen/space_md"
-            android:paddingEnd="@dimen/space_xs">
+            android:layout_weight="1"
+            android:textAppearance="?attr/textAppearanceTitleLarge"
+            android:textColor="?attr/colorOnSurface"
+            android:textStyle="bold" />
 
-            <TextView
-                android:id="@+id/reminderEditorTitle"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:textAppearance="?attr/textAppearanceTitleLarge"
-                android:textColor="?attr/colorOnSurface"
-                android:textStyle="bold" />
+        <ImageButton
+            android:id="@+id/reminderEditorClose"
+            android:layout_width="@dimen/min_touch_target"
+            android:layout_height="@dimen/min_touch_target"
+            android:background="?attr/selectableItemBackground"
+            android:contentDescription="@string/cd_close"
+            android:padding="12dp"
+            android:src="@drawable/ic_close"
+            app:tint="?attr/colorOnSurfaceVariant" />
+    </LinearLayout>
 
-            <ImageButton
-                android:id="@+id/reminderEditorClose"
-                android:layout_width="@dimen/min_touch_target"
-                android:layout_height="@dimen/min_touch_target"
-                android:background="?attr/selectableItemBackground"
-                android:contentDescription="@string/cd_close"
-                android:padding="12dp"
-                android:src="@drawable/ic_close"
-                app:tint="?attr/colorOnSurfaceVariant" />
-        </LinearLayout>
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -109,34 +101,37 @@
                 android:accessibilityLiveRegion="polite"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_sm"
+                android:paddingBottom="@dimen/space_sm"
                 android:textAppearance="?attr/textAppearanceBodyMedium"
                 android:textColor="?attr/colorError"
                 android:visibility="gone" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_md"
-                android:orientation="horizontal">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/reminderEditorCancel"
-                    style="@style/Widget.NexaChat.Button.Text"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:minHeight="@dimen/min_touch_target"
-                    android:text="@string/action_cancel" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/reminderEditorSave"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="@dimen/space_sm"
-                    android:layout_weight="1"
-                    android:minHeight="@dimen/min_touch_target"
-                    android:text="@string/reminder_editor_save" />
-            </LinearLayout>
         </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+    <LinearLayout
+        android:id="@+id/reminderEditorActions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_sm"
+        android:orientation="horizontal"
+        android:paddingHorizontal="@dimen/space_md">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/reminderEditorCancel"
+            style="@style/Widget.NexaChat.Button.Text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minHeight="@dimen/min_touch_target"
+            android:text="@string/action_cancel" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/reminderEditorSave"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_sm"
+            android:layout_weight="1"
+            android:minHeight="@dimen/min_touch_target"
+            android:text="@string/reminder_editor_save" />
     </LinearLayout>
-</androidx.core.widget.NestedScrollView>
+</LinearLayout>

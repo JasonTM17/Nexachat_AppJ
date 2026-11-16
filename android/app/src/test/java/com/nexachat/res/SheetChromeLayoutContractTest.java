@@ -1,6 +1,7 @@
 package com.nexachat.res;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
@@ -12,15 +13,17 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
 /**
- * Sheet chrome contract: drag handles are rounded pills on the
- * surface-container-highest step, and sheet surfaces/cards carry a tonal fill
- * with no stroke and no elevation.
+ * Sheet chrome contract: sheets share the drag-handle include and the
+ * surface drawable, and sheet surfaces/cards carry a tonal fill with no
+ * stroke and no elevation.
  */
 public final class SheetChromeLayoutContractTest {
 
     private static final String NS_ANDROID = "http://schemas.android.com/apk/res/android";
     private static final String NS_APP = "http://schemas.android.com/apk/res-auto";
     private static final String CARD = "com.google.android.material.card.MaterialCardView";
+    private static final String HANDLE_INCLUDE = "@layout/include_sheet_handle";
+    private static final String SHEET_SURFACE = "@drawable/bg_sheet_surface";
 
     private File resDir;
 
@@ -46,12 +49,12 @@ public final class SheetChromeLayoutContractTest {
         String[] layouts = {
                 "layout/bottom_sheet_summary.xml",
                 "layout/bottom_sheet_ask_chat.xml",
-                "layout/bottom_sheet_attachment_picker.xml",
                 "layout/bottom_sheet_group_add_member.xml",
                 "layout/sheet_attachment_picker.xml",
                 "layout/sheet_create_poll.xml",
                 "layout/sheet_reminder_editor.xml",
-                "layout/dialog_forward.xml"
+                "layout/dialog_forward.xml",
+                "layout/sheet_message_actions.xml"
         };
         for (String relative : layouts) {
             Element handle = findHandle(parse(new File(resDir, relative)));
@@ -66,11 +69,31 @@ public final class SheetChromeLayoutContractTest {
     }
 
     @Test
+    public void scaffoldSheetsShareTheHandleInclude() throws Exception {
+        String[] layouts = {
+                "layout/bottom_sheet_summary.xml",
+                "layout/bottom_sheet_ask_chat.xml",
+                "layout/bottom_sheet_group_add_member.xml",
+                "layout/sheet_attachment_picker.xml",
+                "layout/sheet_reminder_editor.xml",
+                "layout/dialog_forward.xml",
+                "layout/sheet_message_actions.xml"
+        };
+        for (String relative : layouts) {
+            assertTrue(relative + " must include the shared drag handle",
+                    findHandleInclude(parse(new File(resDir, relative))) != null);
+        }
+    }
+
+    @Test
     public void sheetSurfacesAndCardsStayTonalAndStrokeless() throws Exception {
-        assertTonalStrokelessCard("layout/bottom_sheet_attachment_picker.xml", "attachmentSheetRoot", true);
-        assertTonalStrokelessCard("layout/bottom_sheet_group_add_member.xml", "addMemberSheetRoot", true);
-        assertTonalStrokelessCard("layout/sheet_attachment_picker.xml", null, true);
-        assertTonalStrokelessCard("layout/dialog_forward.xml", "forwardDialogRoot", true);
+        assertSheetSurface("layout/bottom_sheet_group_add_member.xml", "addMemberSheetRoot");
+        assertSheetSurface("layout/sheet_attachment_picker.xml", null);
+        assertSheetSurface("layout/dialog_forward.xml", "forwardDialogRoot");
+        assertSheetSurface("layout/bottom_sheet_summary.xml", "summarySheetRoot");
+        assertSheetSurface("layout/bottom_sheet_ask_chat.xml", "askSheetRoot");
+        assertSheetSurface("layout/sheet_reminder_editor.xml", null);
+        assertSheetSurface("layout/sheet_message_actions.xml", null);
         assertTonalStrokelessCard("layout/bottom_sheet_ask_chat.xml", "askAnswerCard", false);
         assertTonalStrokelessCard("layout/item_archive_row.xml", "archiveRowCard", false);
         assertTonalStrokelessCard("layout/item_archive_media.xml", "archiveMediaCard", false);
@@ -78,25 +101,27 @@ public final class SheetChromeLayoutContractTest {
 
     @Test
     public void sheetSurfacesUseTheLowestContainerStep() throws Exception {
-        Element summary = parse(new File(resDir, "layout/bottom_sheet_summary.xml")).getDocumentElement();
-        assertEquals("?attr/colorSurfaceContainerLowest", android(summary, "background"));
-
-        Document askSheet = parse(new File(resDir, "drawable/bg_ask_sheet.xml"));
-        Element solid = (Element) askSheet.getElementsByTagName("solid").item(0);
+        Document surface = parse(new File(resDir, "drawable/bg_sheet_surface.xml"));
+        Element solid = (Element) surface.getElementsByTagName("solid").item(0);
+        assertNotNull(solid);
         assertEquals("?attr/colorSurfaceContainerLowest", android(solid, "color"));
+        assertEquals("sheet surface must not draw a stroke",
+                0, surface.getElementsByTagName("stroke").getLength());
+        Element corners = (Element) surface.getElementsByTagName("corners").item(0);
+        assertNotNull(corners);
+        assertEquals("@dimen/corner_xl", android(corners, "topLeftRadius"));
+        assertEquals("@dimen/corner_xl", android(corners, "topRightRadius"));
 
-        assertEquals("?attr/colorSurfaceContainerLowest",
-                app(card("layout/bottom_sheet_attachment_picker.xml", "attachmentSheetRoot"), "cardBackgroundColor"));
-        assertEquals("?attr/colorSurfaceContainerLowest",
-                app(card("layout/bottom_sheet_group_add_member.xml", "addMemberSheetRoot"), "cardBackgroundColor"));
-        assertEquals("?attr/colorSurfaceContainerLowest",
-                app(card("layout/sheet_attachment_picker.xml", null), "cardBackgroundColor"));
-        assertEquals("?attr/colorSurfaceContainerLowest",
-                app(card("layout/dialog_forward.xml", "forwardDialogRoot"), "cardBackgroundColor"));
         assertEquals("?attr/colorSurfaceContainerLowest",
                 app(card("layout/item_archive_row.xml", "archiveRowCard"), "cardBackgroundColor"));
         assertEquals("?attr/colorSurfaceContainerLowest",
                 app(card("layout/item_archive_media.xml", "archiveMediaCard"), "cardBackgroundColor"));
+    }
+
+    /** Root carries the shared sheet surface drawable instead of an ad-hoc fill. */
+    private void assertSheetSurface(String relative, String id) throws Exception {
+        Element root = card(relative, id);
+        assertEquals(relative + " surface", SHEET_SURFACE, android(root, "background"));
     }
 
     private void assertTonalStrokelessCard(String relative, String id, boolean rootCard) throws Exception {
@@ -123,12 +148,37 @@ public final class SheetChromeLayoutContractTest {
         throw new AssertionError("Missing @" + id + " in " + relative);
     }
 
-    /** The drag handle is the only card in a sheet marked not important for accessibility. */
-    private static Element findHandle(Document doc) {
+    /**
+     * The drag handle is either a card in the sheet marked not important for
+     * accessibility or the shared handle include resolved to its card.
+     */
+    private Element findHandle(Document doc) throws Exception {
+        Element inline = findInlineHandle(doc);
+        if (inline != null) {
+            return inline;
+        }
+        if (findHandleInclude(doc) != null) {
+            return findInlineHandle(parse(new File(resDir, "layout/include_sheet_handle.xml")));
+        }
+        return null;
+    }
+
+    private static Element findInlineHandle(Document doc) {
         NodeList nodes = doc.getElementsByTagName(CARD);
         for (int i = 0; i < nodes.getLength(); i++) {
             Element node = (Element) nodes.item(i);
             if ("no".equals(android(node, "importantForAccessibility"))) {
+                return node;
+            }
+        }
+        return null;
+    }
+
+    private static Element findHandleInclude(Document doc) {
+        NodeList nodes = doc.getElementsByTagName("include");
+        for (int i = 0; i < nodes.getLength(); i++) {
+            Element node = (Element) nodes.item(i);
+            if (HANDLE_INCLUDE.equals(node.getAttribute("layout"))) {
                 return node;
             }
         }

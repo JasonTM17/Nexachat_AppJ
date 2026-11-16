@@ -43,19 +43,15 @@ public final class ChatActionSheetLayoutContractTest {
     @Test
     public void sheetHandleIsARoundedTonalPill() throws Exception {
         Document sheet = parse("src/main/res/layout/sheet_message_actions.xml");
-        Element handle = firstChildView(sheet);
-        assertEquals("@dimen/sheet_handle_width", handle.getAttributeNS(ANDROID, "layout_width"));
-        assertEquals("@dimen/sheet_handle_height", handle.getAttributeNS(ANDROID, "layout_height"));
-        assertEquals("@drawable/bg_sheet_handle", handle.getAttributeNS(ANDROID, "background"));
+        Element include = handleInclude(sheet);
+        assertEquals("@layout/include_sheet_handle", include.getAttribute("layout"));
 
-        Document drawable = parse("src/main/res/drawable/bg_sheet_handle.xml");
-        Element corners = (Element) drawable.getElementsByTagName("corners").item(0);
-        Element solid = (Element) drawable.getElementsByTagName("solid").item(0);
-        assertNotNull(corners);
-        assertNotNull(solid);
-        assertEquals("@dimen/corner_full", corners.getAttributeNS(ANDROID, "radius"));
-        assertEquals("?attr/colorSurfaceContainerHighest", solid.getAttributeNS(ANDROID, "color"));
-        assertEquals(0, drawable.getElementsByTagName("stroke").getLength());
+        Document handle = parse("src/main/res/layout/include_sheet_handle.xml");
+        Element card = handle.getDocumentElement();
+        assertEquals("@dimen/sheet_handle_width", card.getAttributeNS(ANDROID, "layout_width"));
+        assertEquals("@dimen/sheet_handle_height", card.getAttributeNS(ANDROID, "layout_height"));
+        assertEquals("center_horizontal", card.getAttributeNS(ANDROID, "layout_gravity"));
+        assertEquals("no", card.getAttributeNS(ANDROID, "importantForAccessibility"));
     }
 
     @Test
@@ -87,9 +83,9 @@ public final class ChatActionSheetLayoutContractTest {
 
     @Test
     public void reactionTilesUseSquareRipples() throws Exception {
-        String source = readSource("feature/chat/ChatInteractionsViews.java");
+        String source = readSource("feature/chat/MessageActionSheetFragment.java");
         int start = source.indexOf("private static void populateReactionButtons(");
-        int end = source.indexOf("private static void confirmDelete(", start);
+        int end = source.indexOf("private void confirmDelete(", start);
         assertTrue("reaction tile builder must exist", start >= 0 && end > start);
         String loop = source.substring(start, end);
         assertTrue("each emoji must sit on the bounded square ripple tile",
@@ -141,7 +137,7 @@ public final class ChatActionSheetLayoutContractTest {
 
     @Test
     public void deleteActionKeepsErrorTintedTileAndLabel() throws Exception {
-        String source = readSource("feature/chat/ChatInteractionsViews.java");
+        String source = readSource("feature/chat/MessageActionSheetFragment.java");
         int start = source.indexOf("case DELETE ->");
         int end = source.indexOf("default ->", start);
         assertTrue("delete action branch must exist", start >= 0 && end > start);
@@ -173,9 +169,9 @@ public final class ChatActionSheetLayoutContractTest {
         assertEquals("1", caption.getAttributeNS(ANDROID, "maxLines"));
         assertEquals("end", caption.getAttributeNS(ANDROID, "ellipsize"));
 
-        String source = readSource("feature/chat/ChatInteractionsViews.java");
+        String source = readSource("feature/chat/MessageActionSheetFragment.java");
         int start = source.indexOf("private static void bindMessageActionRow(");
-        int end = source.indexOf("private static HorizontalScrollView reactionRow(", start);
+        int end = source.indexOf("private static void populateReactionButtons(", start);
         assertTrue("action row binder must exist", start >= 0 && end > start);
         String body = source.substring(start, end);
         assertTrue("binder must fill the caption from the entry",
@@ -214,10 +210,15 @@ public final class ChatActionSheetLayoutContractTest {
                 replyRoot.getAttributeNS(ANDROID, "background"));
     }
 
-    private static Element firstChildView(Document document) {
-        NodeList nodes = document.getDocumentElement().getElementsByTagName("View");
-        assertTrue("sheet must declare a handle view", nodes.getLength() > 0);
-        return (Element) nodes.item(0);
+    private static Element handleInclude(Document document) {
+        NodeList nodes = document.getElementsByTagName("include");
+        for (int i = 0; i < nodes.getLength(); i++) {
+            Element node = (Element) nodes.item(i);
+            if ("@layout/include_sheet_handle".equals(node.getAttribute("layout"))) {
+                return node;
+            }
+        }
+        throw new AssertionError("sheet must include the shared drag handle");
     }
 
     private static Document parse(String path) throws Exception {

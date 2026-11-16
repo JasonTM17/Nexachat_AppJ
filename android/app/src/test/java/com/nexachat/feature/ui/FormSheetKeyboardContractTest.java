@@ -18,7 +18,12 @@ public final class FormSheetKeyboardContractTest {
         assertTrue(poll.contains("ImeInsets.applyBottomPadding"));
         assertTrue(poll.contains("STATE_EXPANDED"));
         assertTrue(reminder.contains("ImeInsets.applyBottomPadding"));
-        assertTrue(reminder.contains("STATE_EXPANDED"));
+        // The reminder sheet inherits expand/resize/max-width from the shared scaffold.
+        assertTrue(reminder.contains("NexaBottomSheetFragment"));
+        String scaffold = read("com/nexachat/feature/ui/NexaBottomSheetFragment.java");
+        assertTrue(scaffold.contains("STATE_EXPANDED"));
+        assertTrue(scaffold.contains("SOFT_INPUT_ADJUST_RESIZE"));
+        assertTrue(scaffold.contains("sheet_max_width"));
     }
 
     @Test
