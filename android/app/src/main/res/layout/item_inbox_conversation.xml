@@ -77,6 +77,12 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="@id/preview">
 
+        <com.nexachat.feature.streak.StreakBadge
+            android:id="@+id/streakBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="6dp" />
+
         <ImageView
             android:id="@+id/pinIndicator"
             android:layout_width="16dp"

@@ -13,6 +13,8 @@ public final class UserSettingsDto {
     @Nullable private final Boolean showPresence;
     @Nullable private final Boolean showSeen;
     @Nullable private final String translateTargetLang;
+    /** Additive field; absent on servers that predate streaks. */
+    @Nullable private final Boolean streakReminders;
 
     public UserSettingsDto() {
         this(null, null, null);
@@ -28,9 +30,20 @@ public final class UserSettingsDto {
 
     public UserSettingsDto(@Nullable Boolean showPresence, @Nullable Boolean showSeen,
             @Nullable String translateTargetLang) {
+        this(showPresence, showSeen, translateTargetLang, null);
+    }
+
+    public UserSettingsDto(@Nullable Boolean showPresence, @Nullable Boolean showSeen,
+            @Nullable String translateTargetLang, @Nullable Boolean streakReminders) {
         this.showPresence = showPresence;
         this.showSeen = showSeen;
         this.translateTargetLang = translateTargetLang;
+        this.streakReminders = streakReminders;
+    }
+
+    @Nullable
+    public Boolean getStreakReminders() {
+        return streakReminders;
     }
 
     @Nullable

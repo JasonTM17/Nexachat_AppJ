@@ -91,4 +91,7 @@
     <color name="nexa_media_video_placeholder">#FF1D1B20</color>
     <color name="nexa_call_surface">#FF1D1920</color>
     <color name="nexa_call_surface_end">#FF302333</color>
+    <color name="streak_flame">#FFFFB867</color>
+    <color name="streak_container">#FF5B3600</color>
+    <color name="streak_on_container">#FFFFDDB8</color>
 </resources>

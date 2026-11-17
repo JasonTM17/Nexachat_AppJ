@@ -147,7 +147,7 @@ public final class SettingsRepositoryTest {
     }
 
     @Test
-    public void refreshShowPresenceLoadsServerFlagOnceSessionExists() throws Exception {
+    public void refreshSettingsLoadsServerFlagOnceSessionExists() throws Exception {
         build(new HashMap<>());
         Call<UserSettingsDto> settingsCall = mock(Call.class);
         when(userApi.getSettings()).thenReturn(settingsCall);
@@ -169,7 +169,7 @@ public final class SettingsRepositoryTest {
         Call<UserSettingsDto> settingsCall = mock(Call.class);
         when(userApi.getSettings()).thenReturn(settingsCall);
         when(settingsCall.execute()).thenReturn(Response.success(new UserSettingsDto(false)));
-        await(repository.refreshShowPresence().test());
+        await(repository.refreshSettings().test());
         assertEquals(false, repository.getShowPresence().blockingFirst());
 
         sessionSignals.onNext(SessionEvents.Event.LoggedOut.INSTANCE);
@@ -206,7 +206,7 @@ public final class SettingsRepositoryTest {
     }
 
     @Test
-    public void refreshShowPresenceLoadsServerSeenFlagOnceSessionExists() throws Exception {
+    public void refreshSettingsLoadsServerSeenFlagOnceSessionExists() throws Exception {
         build(new HashMap<>());
         Call<UserSettingsDto> settingsCall = mock(Call.class);
         when(userApi.getSettings()).thenReturn(settingsCall);
@@ -228,7 +228,7 @@ public final class SettingsRepositoryTest {
         Call<UserSettingsDto> settingsCall = mock(Call.class);
         when(userApi.getSettings()).thenReturn(settingsCall);
         when(settingsCall.execute()).thenReturn(Response.success(new UserSettingsDto(true, false)));
-        await(repository.refreshShowPresence().test());
+        await(repository.refreshSettings().test());
         assertEquals(false, repository.getShowSeen().blockingFirst());
 
         sessionSignals.onNext(SessionEvents.Event.LoggedOut.INSTANCE);

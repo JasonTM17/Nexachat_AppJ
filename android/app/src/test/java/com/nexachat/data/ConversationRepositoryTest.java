@@ -2185,6 +2185,17 @@ public final class ConversationRepositoryTest {
         }
 
         @Override
+        public Completable updateStreak(String conversationId, int count, boolean atRisk) {
+            return Completable.fromAction(() -> {
+                ConversationEntity row = rows.get(conversationId);
+                if (row != null) {
+                    rows.put(conversationId, row.withStreak(count, atRisk));
+                }
+                publish();
+            });
+        }
+
+        @Override
         public Completable clearInbox() {
             return Completable.fromAction(() -> {
                 rows.values().removeIf(row -> !row.isArchived());

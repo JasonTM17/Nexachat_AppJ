@@ -50,6 +50,10 @@ public final class SettingsRepository implements AutoCloseable {
     private final BehaviorProcessor<Boolean> mutableShowSeen =
             BehaviorProcessor.createDefault(Boolean.TRUE);
     private final Flowable<Boolean> showSeen = mutableShowSeen.hide().distinctUntilChanged();
+    private final BehaviorProcessor<Boolean> mutableStreakReminders =
+            BehaviorProcessor.createDefault(Boolean.FALSE);
+    private final Flowable<Boolean> streakReminders =
+            mutableStreakReminders.hide().distinctUntilChanged();
     private final BehaviorProcessor<String> mutableTranslateTargetLang =
             BehaviorProcessor.create();
     private final Flowable<String> translateTargetLang =
@@ -78,12 +82,13 @@ public final class SettingsRepository implements AutoCloseable {
                 .subscribe(
                         hasSession -> {
                             if (hasSession) {
-                                subscriptions.add(refreshShowPresence().subscribe(
+                                subscriptions.add(refreshSettings().subscribe(
                                         ignored -> { },
                                         ignored -> { }));
                             } else {
                                 mutableShowPresence.onNext(Boolean.TRUE);
                                 mutableShowSeen.onNext(Boolean.TRUE);
+                                mutableStreakReminders.onNext(Boolean.FALSE);
                             }
                         },
                         ignored -> { });
@@ -93,6 +98,7 @@ public final class SettingsRepository implements AutoCloseable {
                     if (event instanceof SessionEvents.Event.LoggedOut) {
                         mutableShowPresence.onNext(Boolean.TRUE);
                         mutableShowSeen.onNext(Boolean.TRUE);
+                        mutableStreakReminders.onNext(Boolean.FALSE);
                     }
                 },
                 ignored -> { }));
@@ -116,6 +122,12 @@ public final class SettingsRepository implements AutoCloseable {
     @NonNull
     public Flowable<Boolean> getShowSeen() {
         return showSeen;
+    }
+
+    /** Daily streak reminder push opt-in; off until the server says otherwise. */
+    @NonNull
+    public Flowable<Boolean> getStreakReminders() {
+        return streakReminders;
     }
 
     /**
@@ -160,7 +172,7 @@ public final class SettingsRepository implements AutoCloseable {
     }
 
     @NonNull
-    public Single<Result<Unit>> refreshShowPresence() {
+    public Single<Result<Unit>> refreshSettings() {
         return Single.defer(() -> ApiResult.safeApiCall(userApi.getSettings())
                 .map(result -> {
                     if (result instanceof ApiResult.Success<?> success) {
@@ -170,6 +182,9 @@ public final class SettingsRepository implements AutoCloseable {
                         }
                         if (settings.getShowSeen() != null) {
                             mutableShowSeen.onNext(settings.getShowSeen());
+                        }
+                        if (settings.getStreakReminders() != null) {
+                            mutableStreakReminders.onNext(settings.getStreakReminders());
                         }
                         mutableTranslateTargetLang.onNext(
                                 langOrEmpty(settings.getTranslateTargetLang()));
@@ -224,6 +239,32 @@ public final class SettingsRepository implements AutoCloseable {
                             return new Result.Success<Unit>(Unit.INSTANCE);
                         }
                         mutableShowSeen.onNext(previous);
+                        return Result.<Unit>cast(settingsFailure(result));
+                    });
+        });
+    }
+
+    /** Optimistic: the stream flips at once and rolls back when the server rejects the change. */
+    @NonNull
+    public Single<Result<Unit>> setStreakReminders(boolean value) {
+        return Single.defer(() -> {
+            boolean previous = Boolean.TRUE.equals(mutableStreakReminders.getValue());
+            if (previous == value) {
+                return Single.<Result<Unit>>just(new Result.Success<>(Unit.INSTANCE));
+            }
+
+            mutableStreakReminders.onNext(value);
+            return ApiResult.safeApiCall(
+                            userApi.updateSettings(UpdateUserSettingsRequest.streakReminders(value)))
+                    .map(result -> {
+                        if (result instanceof ApiResult.Success<?> success) {
+                            UserSettingsDto settings = (UserSettingsDto) success.getBody();
+                            if (settings != null && settings.getStreakReminders() != null) {
+                                mutableStreakReminders.onNext(settings.getStreakReminders());
+                            }
+                            return new Result.Success<Unit>(Unit.INSTANCE);
+                        }
+                        mutableStreakReminders.onNext(previous);
                         return Result.<Unit>cast(settingsFailure(result));
                     });
         });

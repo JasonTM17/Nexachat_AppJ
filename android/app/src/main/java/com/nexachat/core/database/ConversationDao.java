@@ -103,6 +103,11 @@ public interface ConversationDao {
     @Query("UPDATE conversations SET disappearingSeconds = :seconds WHERE id = :conversationId")
     Completable updateDisappearingSeconds(String conversationId, int seconds);
 
+    /** Streak badge cache for one direct row; the next inbox refresh overwrites it. */
+    @Query("UPDATE conversations SET streakCount = :count, streakAtRisk = :atRisk "
+            + "WHERE id = :conversationId")
+    Completable updateStreak(String conversationId, int count, boolean atRisk);
+
     @Query("UPDATE conversations SET unreadCount = unreadCount + :delta WHERE id = :conversationId")
     Completable incrementUnread(String conversationId, int delta);
 

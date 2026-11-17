@@ -41,6 +41,10 @@ import com.nexachat.databinding.FragmentProfileBinding;
 import com.nexachat.feature.auth.ApiErrorText;
 import com.nexachat.feature.auth.AuthFieldValidators;
 import com.nexachat.feature.ui.FormDialogs;
+import com.nexachat.feature.streak.StreakDto;
+import com.nexachat.feature.streak.StreakMilestoneSheet;
+import com.nexachat.feature.streak.StreakSettingsViewModel;
+import com.nexachat.feature.streak.StreakViewModel;
 import com.nexachat.summary.AiConsentRepository;
 import dagger.hilt.android.AndroidEntryPoint;
 import javax.inject.Inject;
@@ -62,6 +66,10 @@ public final class ProfileFragment extends Fragment {
     private ProfileViewModel viewModel;
     private LinkedAccountsViewModel linkedAccountsViewModel;
     private AppSettingsViewModel settingsViewModel;
+    private StreakViewModel streakViewModel;
+    private StreakSettingsViewModel streakSettingsViewModel;
+    /** True while the reminder switch shows a stored value, so it is not saved back. */
+    private boolean syncingStreakReminders;
     private ActivityResultLauncher<String> avatarPicker;
     private ActivityResultLauncher<String> notificationPermissionRequest;
 
@@ -92,6 +100,8 @@ public final class ProfileFragment extends Fragment {
         viewModel = new ViewModelProvider(this).get(ProfileViewModel.class);
         linkedAccountsViewModel = new ViewModelProvider(this).get(LinkedAccountsViewModel.class);
         settingsViewModel = new ViewModelProvider(requireActivity()).get(AppSettingsViewModel.class);
+        streakViewModel = new ViewModelProvider(this).get(StreakViewModel.class);
+        streakSettingsViewModel = new ViewModelProvider(this).get(StreakSettingsViewModel.class);
         binding.profileToolbar.setTitle(R.string.profile_title);
         binding.profileToolbar.setNavigationOnClickListener(v -> NavHostFragment.findNavController(this).navigateUp());
         binding.profileAvatar.setOnClickListener(v -> avatarPicker.launch("image/*"));
@@ -175,6 +185,7 @@ public final class ProfileFragment extends Fragment {
         binding.notificationRow.setTitle(getString(R.string.settings_notifications));
         binding.notificationRow.setLeadingIcon(R.drawable.ic_chat_bubble_outline);
         binding.notificationRow.setOnClickListener(v -> openNotificationSettings());
+        bindStreak();
         consentRepository.refresh();
         consentRepository.aiSummaryConsent().observe(getViewLifecycleOwner(), enabled -> {
             syncingAiConsent = true;
@@ -250,6 +261,61 @@ public final class ProfileFragment extends Fragment {
     @Override public void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putBoolean(STATE_GOOGLE_PASSWORD_DIALOG, googlePasswordDialogShowing);
+    }
+
+    private void bindStreak() {
+        binding.streakRow.setTitle(getString(R.string.streak_title));
+        binding.streakRow.setLeadingIconUntinted(R.drawable.ic_streak_flame);
+        binding.streakRow.setShowChevron(false);
+        renderStreakRow(null);
+        binding.streakReminders.setSaveEnabled(false);
+        binding.streakRemindersRow.setOnClickListener(v -> binding.streakReminders.toggle());
+        binding.streakReminders.setOnCheckedChangeListener((button, checked) -> {
+            if (!syncingStreakReminders) streakSettingsViewModel.setReminders(checked);
+        });
+        StreakMilestoneSheet.bind(this, streakViewModel);
+        streakViewModel.getCheckInStreak().observe(getViewLifecycleOwner(), this::renderStreakRow);
+        streakViewModel.loadMine();
+        streakSettingsViewModel.refresh();
+        streakSettingsViewModel.getReminders().observe(getViewLifecycleOwner(), value -> {
+            syncingStreakReminders = true;
+            binding.streakReminders.setChecked(Boolean.TRUE.equals(value));
+            syncingStreakReminders = false;
+        });
+        streakSettingsViewModel.getUpdateFailed().observe(getViewLifecycleOwner(), failed -> {
+            if (Boolean.TRUE.equals(failed)) {
+                Snackbar.make(binding.getRoot(),
+                        R.string.streak_reminders_update_failed, Snackbar.LENGTH_SHORT).show();
+                streakSettingsViewModel.onUpdateFailureShown();
+            }
+        });
+    }
+
+    private void renderStreakRow(@Nullable StreakDto loaded) {
+        if (binding == null) return;
+        StreakDto streak = loaded == null ? null : loaded.checkInView();
+        int count = streak == null ? 0 : streak.getCount();
+        if (count <= 0) {
+            binding.streakRow.setTrailingValue(null);
+            binding.streakRow.setSubtitle(null);
+            binding.streakRow.setContentDescription(getString(R.string.streak_title));
+            return;
+        }
+        String days = getResources().getQuantityString(R.plurals.streak_days, count, count);
+        binding.streakRow.setTrailingValue(days);
+        StringBuilder detail = new StringBuilder();
+        if (streak.getBestCount() > 0) {
+            detail.append(getString(R.string.streak_best, streak.getBestCount()));
+        }
+        if (streak.isAtRisk()) {
+            if (detail.length() > 0) detail.append(" \u00b7 ");
+            detail.append(getString(R.string.streak_at_risk));
+        }
+        binding.streakRow.setSubtitle(detail.length() == 0 ? null : detail.toString());
+        StringBuilder description = new StringBuilder(getString(R.string.streak_title))
+                .append(", ").append(days);
+        if (detail.length() > 0) description.append(", ").append(detail);
+        binding.streakRow.setContentDescription(description);
     }
 
     private void openNotificationSettings() {
@@ -887,6 +953,14 @@ public final class ProfileFragment extends Fragment {
         layout.addView(input);
         return layout;
     }
+
+    @Override public void onPause() {
+        if (streakViewModel != null) {
+            streakViewModel.onScreenHidden();
+        }
+        super.onPause();
+    }
+
     @Override public void onDestroyView() {
         if (passwordDialog != null) {
             passwordDialog.dismiss();

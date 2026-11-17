@@ -48,7 +48,11 @@ import com.nexachat.feature.label.LabelUiState;
 import com.nexachat.feature.label.LabelViewModel;
 import com.nexachat.feature.profile.AppSettingsViewModel;
 import com.nexachat.feature.profile.ProfileViewModel;
+import com.nexachat.feature.streak.StreakCheckInCoordinator;
+import com.nexachat.feature.streak.StreakMilestoneSheet;
+import com.nexachat.feature.streak.StreakViewModel;
 import dagger.hilt.android.AndroidEntryPoint;
+import javax.inject.Inject;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -68,6 +72,8 @@ public final class InboxFragment extends Fragment {
     private LabelViewModel labelViewModel;
     private AppSettingsViewModel settingsViewModel;
     private ProfileViewModel profileViewModel;
+    private StreakViewModel streakViewModel;
+    @Inject StreakCheckInCoordinator streakCheckIn;
     private ConversationListAdapter adapter;
     private LinearLayoutManager layoutManager;
     @Nullable private RecyclerView.OnScrollListener paginationScrollListener;
@@ -107,6 +113,12 @@ public final class InboxFragment extends Fragment {
         ensureSessionIdentity();
         binding.inboxContactsButton.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.contactsFragment));
+        binding.inboxPublicButton.setOnClickListener(
+                v -> NavHostFragment.findNavController(this).navigate(R.id.publicFeedFragment));
+        streakViewModel = new ViewModelProvider(this).get(StreakViewModel.class);
+        StreakMilestoneSheet.bind(this, streakViewModel);
+        streakCheckIn.onAppForeground();
+        streakViewModel.loadMine();
         binding.moreButton.setOnClickListener(this::showInboxMenu);
         layoutManager = new LinearLayoutManager(requireContext());
         binding.conversationList.setLayoutManager(layoutManager);
@@ -945,6 +957,14 @@ public final class InboxFragment extends Fragment {
             return ContextCompat.getColor(context, value.resourceId);
         }
         return value.data;
+    }
+
+    @Override
+    public void onPause() {
+        if (streakViewModel != null) {
+            streakViewModel.onScreenHidden();
+        }
+        super.onPause();
     }
 
     @Override

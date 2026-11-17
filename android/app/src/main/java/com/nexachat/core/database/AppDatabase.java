@@ -28,7 +28,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             MessageTranslationEntity.class,
             StarredMessageEntity.class
         },
-        version = 20,
+        version = 21,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -328,6 +328,16 @@ public abstract class AppDatabase extends RoomDatabase {
         @Override public void migrate(SupportSQLiteDatabase db) {
             db.execSQL("ALTER TABLE `messages` ADD COLUMN `expiresAtEpochMs` INTEGER");
             db.execSQL("ALTER TABLE `conversations` ADD COLUMN `disappearingSeconds` "
+                    + "INTEGER NOT NULL DEFAULT 0");
+        }
+    };
+
+    /** Direct-chat streak badge columns on the inbox row; absent server fields stay 0. */
+    public static final Migration MIGRATION_20_21 = new Migration(20, 21) {
+        @Override public void migrate(SupportSQLiteDatabase db) {
+            db.execSQL("ALTER TABLE `conversations` ADD COLUMN `streakCount` "
+                    + "INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE `conversations` ADD COLUMN `streakAtRisk` "
                     + "INTEGER NOT NULL DEFAULT 0");
         }
     };

@@ -346,4 +346,8 @@
         <item name="android:popupBackground">@drawable/bg_popup_menu</item>
         <item name="android:popupElevation">@dimen/space_sm</item>
     </style>
+
+    <style name="TextAppearance.NexaChat.StreakBadge" parent="TextAppearance.NexaChat.LabelMedium">
+        <item name="android:textStyle">bold</item>
+    </style>
 </resources>

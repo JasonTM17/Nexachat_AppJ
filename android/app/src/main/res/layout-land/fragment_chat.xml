@@ -32,6 +32,15 @@
         app:layout_constraintStart_toStartOf="@id/chatToolbar"
         app:layout_constraintTop_toTopOf="@id/chatToolbar" />
 
+    <com.nexachat.feature.streak.StreakBadge
+        android:id="@+id/chatStreakBadge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="@dimen/space_xs"
+        app:layout_constraintBottom_toBottomOf="@id/chatToolbar"
+        app:layout_constraintEnd_toStartOf="@id/e2eeLock"
+        app:layout_constraintTop_toTopOf="@id/chatToolbar" />
+
     <ImageView
         android:id="@+id/e2eeLock"
         android:layout_width="20dp"

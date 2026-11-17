@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="streak_title">Streak</string>
+    <string name="streak_best">Best %1$d</string>
+    <string name="streak_at_risk">At risk</string>
+    <plurals name="streak_days">
+        <item quantity="one">%d day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
+    <plurals name="streak_badge_cd">
+        <item quantity="one">Streak: %d day</item>
+        <item quantity="other">Streak: %d days</item>
+    </plurals>
+    <plurals name="streak_badge_at_risk_cd">
+        <item quantity="one">Streak: %d day, at risk</item>
+        <item quantity="other">Streak: %d days, at risk</item>
+    </plurals>
+    <plurals name="streak_milestone_title">
+        <item quantity="one">%d-day streak</item>
+        <item quantity="other">%d-day streak</item>
+    </plurals>
+    <string name="streak_milestone_line">Keep it going</string>
+    <string name="streak_milestone_done">Done</string>
+    <string name="streak_reminders_title">Streak reminders</string>
+    <string name="streak_reminders_update_failed">Couldn\'t update. Try again</string>
+    <string name="cd_streak_reminders">Streak reminders switch</string>
+    <string name="streak_notification_title">Streak at risk</string>
+    <string name="streak_notification_text">Keep your %1$d-day streak with %2$s</string>
+    <string name="streak_notification_text_generic">Keep your streak going</string>
+</resources>
