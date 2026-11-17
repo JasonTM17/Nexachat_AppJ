@@ -97,6 +97,23 @@ public class CallActivity extends ComponentActivity {
     private boolean renderersInitialized;
     private boolean localVideoBound;
     private boolean remoteVideoBound;
+    private final RemoteVideoFlow remoteFlow = new RemoteVideoFlow();
+    private boolean remoteFlowShowing;
+    private final org.webrtc.VideoSink remoteFlowSink = frame -> {
+        if (remoteFlow.onFrame(android.os.SystemClock.elapsedRealtime())) {
+            mainHandler.post(() -> {
+                if (!isFinishing() && !isDestroyed()) renderCurrent();
+            });
+        }
+    };
+    private final Runnable remoteFlowWatcher = new Runnable() {
+        @Override public void run() {
+            if (!remoteVideoBound) return;
+            boolean flowing = remoteFlow.isFlowing(android.os.SystemClock.elapsedRealtime());
+            if (flowing != remoteFlowShowing) renderCurrent();
+            mainHandler.postDelayed(this, 500L);
+        }
+    };
     private Object localVideoTrack;
     private Object remoteVideoTrack;
     private CallMediaType requestedMediaType = CallMediaType.AUDIO;
@@ -169,6 +186,10 @@ public class CallActivity extends ComponentActivity {
         super.onStart();
         if (launchDecision == CallActivityLaunchPolicy.Decision.FINISH || isFinishing()) return;
         startFirebaseCallStatusDisplay();
+        if (remoteVideoBound) {
+            mainHandler.removeCallbacks(remoteFlowWatcher);
+            mainHandler.postDelayed(remoteFlowWatcher, 500L);
+        }
         listener = new CallManager.CallListener() {
             @Override public void onCallChanged(CallSession session) {
                 currentSession = session;
@@ -249,6 +270,7 @@ public class CallActivity extends ComponentActivity {
             firebaseStatusEvents = null;
         }
         firebaseCallStatusDisplaySession.stop();
+        mainHandler.removeCallbacks(remoteFlowWatcher);
         callManager.setCallVideoListener(null);
         if (listener != null) {
             callManager.removeListener(listener);
@@ -370,6 +392,10 @@ public class CallActivity extends ComponentActivity {
         hangUpButton.setOnClickListener(view -> callManager.hangUp());
     }
 
+    private void renderCurrent() {
+        render(currentSession);
+    }
+
     private void render(CallSession session) {
         if (peerName == null) return;
         if (session == null || session.getState() == CallState.IDLE) {
@@ -450,7 +476,8 @@ public class CallActivity extends ComponentActivity {
         speakerButton.setContentDescription(getString(
                 session.isSpeakerOn() ? R.string.call_earpiece : R.string.call_speaker));
         boolean videoCall = session.getMediaType() == CallMediaType.VIDEO;
-        boolean remoteShowing = videoCall && remoteVideoBound && isLive;
+        remoteFlowShowing = remoteFlow.isFlowing(android.os.SystemClock.elapsedRealtime());
+        boolean remoteShowing = videoCall && remoteVideoBound && isLive && remoteFlowShowing;
         if (remoteVideoView != null) {
             remoteVideoView.setVisibility(remoteShowing ? View.VISIBLE : View.GONE);
         }
@@ -817,14 +844,19 @@ public class CallActivity extends ComponentActivity {
     private void onRemoteVideoTrack(@Nullable Object track) {
         if (remoteVideoBound && remoteVideoTrack instanceof org.webrtc.VideoTrack) {
             ((org.webrtc.VideoTrack) remoteVideoTrack).removeSink(remoteVideoView);
+            ((org.webrtc.VideoTrack) remoteVideoTrack).removeSink(remoteFlowSink);
             remoteVideoBound = false;
         }
+        remoteFlow.reset();
+        mainHandler.removeCallbacks(remoteFlowWatcher);
         remoteVideoTrack = track;
         if (track instanceof org.webrtc.VideoTrack) {
             ensureVideoRenderers();
             if (renderersInitialized) {
                 ((org.webrtc.VideoTrack) track).addSink(remoteVideoView);
+                ((org.webrtc.VideoTrack) track).addSink(remoteFlowSink);
                 remoteVideoBound = true;
+                mainHandler.postDelayed(remoteFlowWatcher, 500L);
             }
         }
         render(currentSession);
@@ -854,7 +886,10 @@ public class CallActivity extends ComponentActivity {
         if (remoteVideoBound && remoteVideoTrack instanceof org.webrtc.VideoTrack
                 && remoteVideoView != null) {
             ((org.webrtc.VideoTrack) remoteVideoTrack).removeSink(remoteVideoView);
+            ((org.webrtc.VideoTrack) remoteVideoTrack).removeSink(remoteFlowSink);
         }
+        mainHandler.removeCallbacks(remoteFlowWatcher);
+        remoteFlow.reset();
         localVideoBound = false;
         remoteVideoBound = false;
         localVideoTrack = null;
