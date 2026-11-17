@@ -137,17 +137,19 @@ public class CallTimeoutScheduler {
 
     /**
      * Defers the disconnect check until presence has processed the event.
-     * When the user is in a ringing or active call, applies a configurable disconnect grace window
-     * (default 15s) to protect against transient socket drops and network roaming (Wi-Fi <-> LTE/5G).
-     * A reconnect inside the window cancels the pending failure.
+     * When the user is currently in an ACTIVE call, applies a configurable disconnect grace window
+     * (default 15s) to protect against transient network roaming disconnects (Wi-Fi <-> LTE/5G).
+     * A ringing call gets no grace: the app ends a ringing call locally when its socket drops and
+     * does not tell the server, so a grace window would leave a ghost ring for the callee and block
+     * the caller from calling again until the ring timeout.
      */
     public void checkDisconnectedUser(UUID userId, Runnable cleanup) {
         long delayMillis = 50L;
         java.util.Optional<CallSession> active = registry.activeCallForUser(userId);
-        if (active.isPresent() && active.get().state() != CallState.ENDED) {
+        if (active.isPresent() && active.get().state() == CallState.ACTIVE) {
             delayMillis = disconnectGraceMs;
-            log.info("Scheduling {}ms disconnect grace window for user {} in {} call {}",
-                    delayMillis, userId, active.get().state(), active.get().callId());
+            log.info("Scheduling {}ms disconnect grace window for user {} in active call {}",
+                    delayMillis, userId, active.get().callId());
         }
         ScheduledFuture<?> previous = scheduledDisconnects.remove(userId);
         if (previous != null) {
