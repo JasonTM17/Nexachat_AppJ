@@ -28,15 +28,27 @@ public class UserService {
     private final PhoneService phoneService;
     private final ContactRepository contactRepository;
     private final UserBlockRepository blockRepository;
+    private final java.util.Set<String> operatorPhones;
 
     public UserService(UserRepository userRepository,
                        PhoneService phoneService,
                        ContactRepository contactRepository,
-                       UserBlockRepository blockRepository) {
+                       UserBlockRepository blockRepository,
+                       com.nexachat.config.SecurityProperties securityProperties) {
         this.userRepository = userRepository;
         this.phoneService = phoneService;
         this.contactRepository = contactRepository;
         this.blockRepository = blockRepository;
+        this.operatorPhones = securityProperties.adminPhones().stream()
+                .map(configured -> {
+                    try {
+                        return phoneService.toE164(configured);
+                    } catch (IllegalArgumentException e) {
+                        throw new IllegalStateException(
+                                "nexachat.security.admin-phones must contain valid E.164 numbers", e);
+                    }
+                })
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     @Transactional(readOnly = true)
@@ -64,6 +76,10 @@ public class UserService {
         User user = ActiveUserSupport.requireActiveForUpdate(userRepository, userId);
         if (phone.equals(user.getPhone())) {
             return user;
+        }
+        // A linked number is not verified, so a number that grants operator access must never be claimable.
+        if (operatorPhones.contains(phone)) {
+            throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");
         }
         if (userRepository.existsByPhoneAndDeletedAtIsNull(phone)) {
             throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");

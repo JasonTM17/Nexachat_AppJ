@@ -116,12 +116,6 @@ public class SignupEmailOtpService {
                 + " WHERE id = ? AND consumed_at IS NULL", Timestamp.from(clock.instant()), otpId);
     }
 
-    /** Equalizes work for a request that sends no mail. */
-    public void performDummyWork() {
-        codeHasher.hash(UUID.nameUUIDFromBytes("nexachat-otp-dummy-user".getBytes(StandardCharsets.UTF_8)),
-                OtpPurpose.REGISTER_EMAIL, codeHasher.newCode());
-    }
-
     public void dummyCompare(String code) {
         codeHasher.dummyCompare(OtpPurpose.REGISTER_EMAIL, code);
     }

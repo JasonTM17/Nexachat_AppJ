@@ -151,3 +151,7 @@ PUT	/api/v1/conversations/{conversationId}/translation-glossary	CONVERSATION_MEM
 GET	/api/v1/conversations/{conversationId}/translate-prefs	CONVERSATION_MEMBER	conversation_member	rest-141
 PUT	/api/v1/conversations/{conversationId}/translate-prefs	CONVERSATION_MEMBER	conversation_member	rest-142
 PUT	/api/v1/conversations/{conversationId}/disappearing	DIRECT_MEMBER_OR_GROUP_ADMIN	direct_member_or_group_admin	rest-152
+POST	/api/v1/auth/register/email-code	PUBLIC_AUTH	public_auth	rest-153
+POST	/api/v1/auth/register/email	PUBLIC_AUTH	public_auth	rest-154
+PUT	/api/v1/users/me/phone	AUTHENTICATED	authenticated_self	rest-155
+DELETE	/api/v1/users/me/phone	AUTHENTICATED	authenticated_self	rest-156

@@ -36,6 +36,8 @@ class UserServiceTest {
     private PhoneService phoneService;
     @Mock
     private ContactRepository contactRepository;
+    @Mock
+    private com.nexachat.config.SecurityProperties securityProperties;
 
     @InjectMocks
     private UserService userService;

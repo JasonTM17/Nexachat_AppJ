@@ -41,10 +41,10 @@ public class EmailSignupService {
     }
 
     public void requestCode(String rawEmail) {
+        String email = EmailOtpService.normalizeEmail(rawEmail);
         if (!mailSender.isAvailable()) {
             throw ApiException.of(ApiErrorCode.MAIL_UNAVAILABLE, "Email service is unavailable");
         }
-        String email = EmailOtpService.normalizeEmail(rawEmail);
         if (userRepository.existsByEmailAndEmailVerifiedAtIsNotNullAndDeletedAtIsNull(email)) {
             throw ApiException.of(ApiErrorCode.EMAIL_ALREADY_IN_USE, "Email is already registered");
         }

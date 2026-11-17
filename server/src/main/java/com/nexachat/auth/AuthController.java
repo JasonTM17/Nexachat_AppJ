@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -52,9 +53,9 @@ public class AuthController {
     /** Mails a one-time code to the address; the account is created by {@code /register/email}. */
     @PostMapping("/register/email-code")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public java.util.Map<String, Object> requestEmailCode(@Valid @RequestBody EmailCodeRequest request) {
+    public Map<String, Object> requestEmailCode(@Valid @RequestBody EmailCodeRequest request) {
         emailSignupService.requestCode(request.email());
-        return java.util.Map.of();
+        return Map.of();
     }
 
     @PostMapping("/register/email")

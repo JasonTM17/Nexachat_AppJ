@@ -182,6 +182,33 @@ class EmailSignupFlowTest extends SecurityITBase {
     }
 
     @Test
+    void anOperatorPhoneCannotBeLinked() throws Exception {
+        String token = registerWithEmail(email());
+
+        mockMvc.perform(put("/api/v1/users/me/phone")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("phone", ADMIN_PHONE))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("PHONE_EXISTS"));
+    }
+
+    @Test
+    void fiveWrongCodesKillTheCode() throws Exception {
+        String email = email();
+        String code = requestCode(email);
+        String wrong = "000000".equals(code) ? "111111" : "000000";
+        for (int attempt = 0; attempt < 5; attempt++) {
+            postJson("/api/v1/auth/register/email", registration(email, wrong, "Minh"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        postJson("/api/v1/auth/register/email", registration(email, code, "Minh"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_OR_EXPIRED_CODE"));
+    }
+
+    @Test
     void aPhoneOnlyAccountCannotDropItsPhone() throws Exception {
         Registered user = register("+84905551773");
 

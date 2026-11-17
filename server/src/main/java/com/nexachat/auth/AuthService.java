@@ -30,6 +30,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
@@ -70,7 +71,7 @@ public class AuthService {
     private final ObjectProvider<com.nexachat.e2ee.E2eeDeviceService> e2eeDeviceService;
     private final AdminRoleBootstrap adminRoleBootstrap;
     private final SignupEmailOtpService signupEmailOtp;
-    private final java.time.Clock clock;
+    private final Clock clock;
 
     /** Well-formed bcrypt used to equalize login timing for unknown accounts and malformed phones. */
     private final String dummyHash;
@@ -94,7 +95,7 @@ public class AuthService {
                        ObjectProvider<com.nexachat.e2ee.E2eeDeviceService> e2eeDeviceService,
                        AdminRoleBootstrap adminRoleBootstrap,
                        SignupEmailOtpService signupEmailOtp,
-                       java.time.Clock clock) {
+                       Clock clock) {
         this.userRepository = userRepository;
         this.entityManager = entityManager;
         this.phoneService = phoneService;
