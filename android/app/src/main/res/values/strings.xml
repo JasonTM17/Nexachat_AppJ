@@ -658,6 +658,7 @@
     <string name="forgot_password_change_phone">Change</string>
     <string name="auth_password_policy_hint">At least 8 characters, max 72 bytes</string>
     <string name="cd_forgot_phone">Email or phone number for password reset</string>
+    <string name="cd_forgot_change_identifier">Change email or phone number</string>
     <string name="cd_forgot_otp">Password reset verification code</string>
     <!-- Recovery email (brief 306) -->
     <string name="recovery_email_title">Recovery email</string>
