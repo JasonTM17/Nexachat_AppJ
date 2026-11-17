@@ -114,8 +114,14 @@ public final class ButtonShapeContractTest {
             assertEquals(dir + " materialButtonStyle",
                     "@style/Widget.NexaChat.Button", item(theme, "materialButtonStyle"));
             assertEquals(dir + " materialAlertDialogTheme",
-                    "@style/ThemeOverlay.NexaChat.MaterialAlertDialog",
+                    "@style/ThemeOverlay.NexaChat.Call.MaterialAlertDialog",
                     item(theme, "materialAlertDialogTheme"));
+            Element overlay = style(parse(dir + "/styles_call.xml"),
+                    "ThemeOverlay.NexaChat.Call.MaterialAlertDialog");
+            assertEquals(dir + " call dialog overlay parent",
+                    "ThemeOverlay.NexaChat.MaterialAlertDialog", overlay.getAttribute("parent"));
+            assertEquals(dir + " call dialog action color",
+                    "@color/call_dialog_action", item(overlay, "colorPrimary"));
             assertEquals(dir + " snackbarButtonStyle",
                     "@style/Widget.NexaChat.Button.Text.Snackbar",
                     item(theme, "snackbarButtonStyle"));
