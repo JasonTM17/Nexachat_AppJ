@@ -6,6 +6,11 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Android: the caller's call screen no longer closes a second or two after
+  opening when you call again after an earlier call ended; the previous
+  call's finished state is ignored instead of closing the new call's screen.
+
 ## [1.2.15] - 2026-11-17
 
 Android APK release; no server changes. See
