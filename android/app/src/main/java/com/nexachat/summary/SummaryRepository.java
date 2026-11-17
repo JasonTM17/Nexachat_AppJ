@@ -1,6 +1,9 @@
 package com.nexachat.summary;
 
 import java.io.IOException;
+import java.time.DateTimeException;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -13,7 +16,13 @@ import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
 
-/** Summary API boundary with typed errors and a process-local five-minute cache. */
+/**
+ * Summary API boundary with typed errors and a process-local five-minute cache.
+ *
+ * <p>The cache key names the conversation, the scope, the LAST_N count, the device zone and,
+ * for TODAY, the local date the result belongs to. A summary is therefore never replayed for a
+ * different scope, day or zone, and losing membership or changing AI consent drops the cache.
+ */
 public final class SummaryRepository {
     static final long CACHE_TTL_MILLIS = 5 * 60 * 1000L;
     private static final int MAX_CACHE_ENTRIES = 100;
@@ -39,7 +48,7 @@ public final class SummaryRepository {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(callback, "callback");
 
-        CacheKey key = new CacheKey(conversationId, request.getScope());
+        CacheKey key = keyFor(conversationId, request);
         if (!request.isRefresh()) {
             SummaryResponse cached = findCached(key);
             if (cached != null) {
@@ -68,8 +77,13 @@ public final class SummaryRepository {
                     callback.onSuccess(response.body());
                     return;
                 }
-                callback.onError(SummaryErrorMapper.fromHttp(
-                        response.code(), readBody(response.errorBody())));
+                SummaryError error = SummaryErrorMapper.fromHttp(
+                        response.code(), readBody(response.errorBody()));
+                if (error == SummaryError.NOT_MEMBER) {
+                    // Access is gone: nothing cached for this conversation may be shown again.
+                    clearCache();
+                }
+                callback.onError(error);
             }
 
             @Override
@@ -85,16 +99,41 @@ public final class SummaryRepository {
     /** Returns a still-valid cached response only when its id matches saved UI state. */
     public Optional<SummaryResponse> findCachedById(
             String conversationId,
-            SummaryScope scope,
+            SummaryRequest request,
             String summaryId) {
-        if (conversationId == null || scope == null || summaryId == null) {
+        if (conversationId == null || request == null || summaryId == null) {
             return Optional.empty();
         }
-        SummaryResponse response = findCached(new CacheKey(conversationId, scope));
+        SummaryResponse response = findCached(keyFor(conversationId, request));
         if (response == null || !summaryId.equals(response.getSummaryId())) {
             return Optional.empty();
         }
         return Optional.of(response);
+    }
+
+    /** Drops every cached summary; used when AI consent changes. */
+    public void clearCache() {
+        synchronized (cache) {
+            cache.clear();
+        }
+    }
+
+    private CacheKey keyFor(String conversationId, SummaryRequest request) {
+        String zone = request.getTimeZone();
+        String localDate = request.getScope() == SummaryScope.TODAY ? localDate(zone) : null;
+        return new CacheKey(conversationId, request.getScope(), request.getLimit(), zone, localDate);
+    }
+
+    private String localDate(String zone) {
+        long now = clock.getAsLong();
+        try {
+            ZoneId zoneId = zone == null || zone.trim().isEmpty()
+                    ? ZoneId.systemDefault()
+                    : ZoneId.of(zone);
+            return Instant.ofEpochMilli(now).atZone(zoneId).toLocalDate().toString();
+        } catch (DateTimeException invalidZone) {
+            return Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate().toString();
+        }
     }
 
     private SummaryResponse findCached(CacheKey key) {
@@ -167,10 +206,21 @@ public final class SummaryRepository {
     private static final class CacheKey {
         private final String conversationId;
         private final SummaryScope scope;
+        private final Integer limit;
+        private final String timeZone;
+        private final String localDate;
 
-        private CacheKey(String conversationId, SummaryScope scope) {
+        private CacheKey(
+                String conversationId,
+                SummaryScope scope,
+                Integer limit,
+                String timeZone,
+                String localDate) {
             this.conversationId = conversationId;
             this.scope = scope;
+            this.limit = limit;
+            this.timeZone = timeZone;
+            this.localDate = localDate;
         }
 
         @Override
@@ -182,12 +232,16 @@ public final class SummaryRepository {
                 return false;
             }
             CacheKey that = (CacheKey) other;
-            return conversationId.equals(that.conversationId) && scope == that.scope;
+            return conversationId.equals(that.conversationId)
+                    && scope == that.scope
+                    && Objects.equals(limit, that.limit)
+                    && Objects.equals(timeZone, that.timeZone)
+                    && Objects.equals(localDate, that.localDate);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(conversationId, scope);
+            return Objects.hash(conversationId, scope, limit, timeZone, localDate);
         }
     }
 

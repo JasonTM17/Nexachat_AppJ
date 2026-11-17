@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 
 import com.squareup.moshi.Moshi;
 import java.io.IOException;
+import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -39,6 +40,7 @@ public final class SummaryRepositoryTest {
             assertTrue(requestBody.get().contains("\"limit\":25"));
             assertTrue(requestBody.get().contains("\"language\":\"EN\""));
             assertTrue(requestBody.get().contains("\"refresh\":false"));
+            assertTrue(requestBody.get().contains("\"timeZone\":"));
             assertEquals("conversation-1", result.response.get().getConversationId());
             assertEquals("Overview", result.response.get().getOverview());
             assertEquals("message-1", result.response.get().getKeyPoints().get(0).getMessageIds().get(0));
@@ -100,21 +102,18 @@ public final class SummaryRepositoryTest {
             SummaryTestServer.respond(exchange, 200, responseJson("summary-" + call, false));
         })) {
             SummaryRepository repository = new SummaryRepository(api(server.baseUrl()), now::get);
-            ResultCapture original = request(repository, "conversation-1",
-                    new SummaryRequest(SummaryScope.UNREAD, null, SummaryLanguage.AUTO, false));
+            ResultCapture original = request(repository, "conversation-1", unread());
             assertEquals("summary-1", original.response.get().getSummaryId());
             assertFalse(original.response.get().isCached());
 
             now.addAndGet(EXPECTED_CACHE_TTL_MILLIS - 1L);
-            ResultCapture cached = request(repository, "conversation-1",
-                    new SummaryRequest(SummaryScope.UNREAD, null, SummaryLanguage.AUTO, false));
+            ResultCapture cached = request(repository, "conversation-1", unread());
             assertEquals("summary-1", cached.response.get().getSummaryId());
             assertTrue(cached.response.get().isCached());
             assertEquals(1, calls.get());
 
             now.incrementAndGet();
-            ResultCapture expired = request(repository, "conversation-1",
-                    new SummaryRequest(SummaryScope.UNREAD, null, SummaryLanguage.AUTO, false));
+            ResultCapture expired = request(repository, "conversation-1", unread());
             assertEquals("summary-2", expired.response.get().getSummaryId());
             assertFalse(expired.response.get().isCached());
             assertEquals(2, calls.get());
@@ -130,16 +129,13 @@ public final class SummaryRepositoryTest {
         })) {
             SummaryRepository repository = new SummaryRepository(api(server.baseUrl()));
 
-            assertEquals("summary-1", request(repository, "conversation-1",
-                    new SummaryRequest(SummaryScope.UNREAD, null, SummaryLanguage.AUTO, false))
+            assertEquals("summary-1", request(repository, "conversation-1", unread())
                     .response.get().getSummaryId());
-            assertEquals("summary-1", request(repository, "conversation-1",
-                    new SummaryRequest(SummaryScope.UNREAD, null, SummaryLanguage.AUTO, false))
+            assertEquals("summary-1", request(repository, "conversation-1", unread())
                     .response.get().getSummaryId());
             assertEquals(1, calls.get());
 
-            assertEquals("summary-2", request(repository, "conversation-2",
-                    new SummaryRequest(SummaryScope.UNREAD, null, SummaryLanguage.AUTO, false))
+            assertEquals("summary-2", request(repository, "conversation-2", unread())
                     .response.get().getSummaryId());
             assertEquals("summary-3", request(repository, "conversation-1",
                     new SummaryRequest(SummaryScope.TODAY, null, SummaryLanguage.AUTO, false))
@@ -149,27 +145,118 @@ public final class SummaryRepositoryTest {
     }
 
     @Test
+    public void cacheIsKeyedByCountZoneAndLocalDay() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        // 23:58 in Vietnam; four minutes later the local day has changed but the entry is young.
+        AtomicLong now = new AtomicLong(Instant.parse("2026-11-17T16:58:00Z").toEpochMilli());
+        try (SummaryTestServer server = new SummaryTestServer(exchange -> {
+            int call = calls.incrementAndGet();
+            SummaryTestServer.respond(exchange, 200, responseJson("summary-" + call, false));
+        })) {
+            SummaryRepository repository = new SummaryRepository(api(server.baseUrl()), now::get);
+
+            request(repository, "conversation-1", lastN(20, "Asia/Ho_Chi_Minh"));
+            request(repository, "conversation-1", lastN(20, "Asia/Ho_Chi_Minh"));
+            assertEquals(1, calls.get());
+
+            request(repository, "conversation-1", lastN(50, "Asia/Ho_Chi_Minh"));
+            assertEquals(2, calls.get());
+
+            request(repository, "conversation-1", today("Asia/Ho_Chi_Minh"));
+            request(repository, "conversation-1", today("Asia/Ho_Chi_Minh"));
+            assertEquals(3, calls.get());
+
+            // Same local day, different zone id: the key names the zone, so it is not replayed.
+            request(repository, "conversation-1", today("+07:00"));
+            assertEquals(4, calls.get());
+
+            now.addAndGet(TimeUnit.MINUTES.toMillis(4));
+            request(repository, "conversation-1", today("Asia/Ho_Chi_Minh"));
+            assertEquals(5, calls.get());
+        }
+    }
+
+    @Test
+    public void losingMembershipDropsEveryCachedSummary() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        try (SummaryTestServer server = new SummaryTestServer(exchange -> {
+            int call = calls.incrementAndGet();
+            if (call == 2) {
+                SummaryTestServer.respond(exchange, 403,
+                        "{\"error\":{\"code\":\"NOT_MEMBER\",\"message\":\"synthetic\"}}");
+            } else {
+                SummaryTestServer.respond(exchange, 200, responseJson("summary-" + call, false));
+            }
+        })) {
+            SummaryRepository repository = new SummaryRepository(api(server.baseUrl()));
+            request(repository, "conversation-1", unread());
+            assertEquals(1, calls.get());
+
+            ResultCapture denied = request(repository, "conversation-1",
+                    new SummaryRequest(SummaryScope.UNREAD, null, SummaryLanguage.AUTO, true));
+            assertEquals(SummaryError.NOT_MEMBER, denied.error.get());
+
+            // The entry cached before access was lost must not be replayed.
+            ResultCapture after = request(repository, "conversation-1", unread());
+            assertEquals("summary-3", after.response.get().getSummaryId());
+            assertEquals(3, calls.get());
+        }
+    }
+
+    @Test
+    public void clearCacheForcesTheNextRequestToTheNetwork() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        try (SummaryTestServer server = new SummaryTestServer(exchange -> {
+            int call = calls.incrementAndGet();
+            SummaryTestServer.respond(exchange, 200, responseJson("summary-" + call, false));
+        })) {
+            SummaryRepository repository = new SummaryRepository(api(server.baseUrl()));
+            request(repository, "conversation-1", unread());
+            request(repository, "conversation-1", unread());
+            assertEquals(1, calls.get());
+
+            repository.clearCache();
+
+            assertEquals("summary-2", request(repository, "conversation-1", unread())
+                    .response.get().getSummaryId());
+            assertEquals(2, calls.get());
+        }
+    }
+
+    @Test
     public void findCachedByIdReturnsOnlyTheSavedSummary() throws Exception {
         try (SummaryTestServer server = new SummaryTestServer(exchange ->
                 SummaryTestServer.respond(exchange, 200, responseJson("summary-1", false)))) {
             SummaryRepository repository = new SummaryRepository(api(server.baseUrl()));
-            request(repository, "conversation-1",
-                    new SummaryRequest(SummaryScope.UNREAD, null, SummaryLanguage.AUTO, false));
+            request(repository, "conversation-1", unread());
 
-            assertTrue(repository.findCachedById("conversation-1", SummaryScope.UNREAD, "summary-1")
+            assertTrue(repository.findCachedById("conversation-1", unread(), "summary-1")
                     .isPresent());
-            assertFalse(repository.findCachedById("conversation-1", SummaryScope.UNREAD, "summary-2")
+            assertFalse(repository.findCachedById("conversation-1", unread(), "summary-2")
                     .isPresent());
-            assertFalse(repository.findCachedById("conversation-2", SummaryScope.UNREAD, "summary-1")
+            assertFalse(repository.findCachedById("conversation-2", unread(), "summary-1")
                     .isPresent());
+            assertFalse(repository.findCachedById("conversation-1", lastN(20, "Asia/Ho_Chi_Minh"),
+                    "summary-1").isPresent());
         }
+    }
+
+    private static SummaryRequest unread() {
+        return new SummaryRequest(SummaryScope.UNREAD, null, SummaryLanguage.AUTO, false);
+    }
+
+    private static SummaryRequest lastN(int limit, String zone) {
+        return new SummaryRequest(SummaryScope.LAST_N, limit, SummaryLanguage.AUTO, false, zone);
+    }
+
+    private static SummaryRequest today(String zone) {
+        return new SummaryRequest(SummaryScope.TODAY, null, SummaryLanguage.AUTO, false, zone);
     }
 
     private static SummaryError requestError(SummaryRepository repository) throws InterruptedException {
         CountDownLatch completed = new CountDownLatch(1);
         AtomicReference<SummaryError> error = new AtomicReference<>();
-        repository.request("conversation-1",
-                new SummaryRequest(SummaryScope.UNREAD, null, SummaryLanguage.AUTO, false),
+        repository.request("conversation-1", unread(),
                 new SummaryRepository.Callback() {
                     @Override
                     public void onSuccess(SummaryResponse response) {
@@ -211,13 +298,35 @@ public final class SummaryRepositoryTest {
     }
 
     static String responseJson(String summaryId, boolean cached) {
-        return "{\"summaryId\":\"" + summaryId + "\",\"conversationId\":\"conversation-1\","
-                + "\"fromSeq\":1,\"toSeq\":4,\"messageCount\":4,\"language\":\"VI\","
-                + "\"generatedBy\":\"LOCAL\",\"model\":null,\"fallbackReason\":null,"
-                + "\"cached\":" + cached + ",\"createdAt\":\"2026-11-05T10:00:00Z\","
-                + "\"overview\":\"Overview\",\"keyPoints\":[{\"text\":\"Point\","
-                + "\"messageIds\":[\"message-1\"]}],\"decisions\":[],\"actionItems\":[],"
-                + "\"questions\":[],\"topics\":[\"topic\"],\"participants\":[]}";
+        return responseJson(summaryId, cached, null, null, null);
+    }
+
+    static String responseJson(
+            String summaryId,
+            boolean cached,
+            String scope,
+            Integer limit,
+            String periodJson) {
+        StringBuilder json = new StringBuilder()
+                .append("{\"summaryId\":\"").append(summaryId).append("\",")
+                .append("\"conversationId\":\"conversation-1\",")
+                .append("\"fromSeq\":1,\"toSeq\":4,\"messageCount\":4,\"language\":\"VI\",")
+                .append("\"generatedBy\":\"LOCAL\",\"model\":null,\"fallbackReason\":null,")
+                .append("\"cached\":").append(cached).append(',')
+                .append("\"createdAt\":\"2026-11-05T10:00:00Z\",")
+                .append("\"overview\":\"Overview\",\"keyPoints\":[{\"text\":\"Point\",")
+                .append("\"messageIds\":[\"message-1\"]}],\"decisions\":[],\"actionItems\":[],")
+                .append("\"questions\":[],\"topics\":[\"topic\"],\"participants\":[]");
+        if (scope != null) {
+            json.append(",\"scope\":\"").append(scope).append('"');
+        }
+        if (limit != null) {
+            json.append(",\"limit\":").append(limit);
+        }
+        if (periodJson != null) {
+            json.append(",\"period\":").append(periodJson);
+        }
+        return json.append('}').toString();
     }
 
     private static final class ResultCapture implements SummaryRepository.Callback {

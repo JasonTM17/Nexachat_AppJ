@@ -12,8 +12,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -56,16 +54,22 @@ public class SummaryWindowService {
         Long afterSeq = request.scope() == SummaryScope.UNREAD ? member.getLastReadSeq() : null;
         Instant fromInclusive = null;
         Instant toExclusive = null;
+        SummaryPeriod period = null;
         if (request.scope() == SummaryScope.TODAY) {
-            LocalDate utcDate = LocalDate.now(clock.withZone(ZoneOffset.UTC));
-            fromInclusive = utcDate.atStartOfDay(ZoneOffset.UTC).toInstant();
-            toExclusive = utcDate.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+            // The device's local day (Vietnam when the client sends no zone). UNREAD and LAST_N
+            // never read the zone: the read marker and the count define them.
+            period = SummaryPeriods.today(clock.instant(), request.timeZone());
+            fromInclusive = period.start();
+            toExclusive = period.end();
         }
 
         List<SummaryMessage> messages = windowRepository.findWindow(
                 conversationId, request, afterSeq, fromInclusive, toExclusive, member.getJoinedAt());
+        SummaryConsentRepository.ConsentSnapshot consent = consentRepository.snapshot(userId);
         return new SummaryReadContext(
                 new SummaryWindow(conversationId, 0, 0, messages),
-                consentRepository.isConsented(userId));
+                consent.consented(),
+                consent.epoch(),
+                period);
     }
 }

@@ -2,6 +2,7 @@ package com.nexachat.summary;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -31,6 +32,36 @@ public final class SummaryModelsTest {
         assertEquals(List.of(), response.getQuestions());
         assertEquals(List.of(), response.getTopics());
         assertEquals(List.of(), response.getParticipants());
+    }
+
+
+    @Test
+    public void responseModelParsesScopeCountAndLocalDay() throws Exception {
+        String json = "{\"summaryId\":\"summary-1\",\"conversationId\":\"conversation-1\","
+                + "\"scope\":\"TODAY\",\"period\":{\"date\":\"2026-11-17\","
+                + "\"timeZone\":\"Asia/Ho_Chi_Minh\",\"start\":\"2026-11-16T17:00:00Z\","
+                + "\"end\":\"2026-11-17T17:00:00Z\",\"timeZoneDefaulted\":true}}";
+
+        SummaryResponse response = new Moshi.Builder().build()
+                .adapter(SummaryResponse.class)
+                .fromJson(json);
+
+        assertNotNull(response);
+        assertEquals(SummaryScope.TODAY, response.getScope());
+        assertNull(response.getLimit());
+        assertNotNull(response.getPeriod());
+        assertEquals("2026-11-17", response.getPeriod().getDate());
+        assertEquals("Asia/Ho_Chi_Minh", response.getPeriod().getTimeZone());
+        assertTrue(response.getPeriod().isTimeZoneDefaulted());
+    }
+
+    @Test
+    public void requestModelCarriesTheDeviceZone() throws Exception {
+        SummaryRequest request = new SummaryRequest(
+                SummaryScope.TODAY, null, SummaryLanguage.AUTO, false, "Asia/Tokyo");
+        String json = new Moshi.Builder().build().adapter(SummaryRequest.class).toJson(request);
+
+        assertTrue(json.contains("\"timeZone\":\"Asia/Tokyo\""));
     }
 
     @Test

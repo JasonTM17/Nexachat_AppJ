@@ -22,10 +22,13 @@ public final class SummaryResponse {
     private final List<SummaryItem> questions;
     private final List<String> topics;
     private final List<SummaryParticipant> participants;
+    private final SummaryScope scope;
+    private final Integer limit;
+    private final SummaryPeriod period;
 
     SummaryResponse() {
         this(null, null, 0L, 0L, 0, SummaryLanguage.AUTO, null, null, null,
-                false, null, null, null, null, null, null, null, null);
+                false, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     public SummaryResponse(
@@ -47,6 +50,33 @@ public final class SummaryResponse {
             List<SummaryItem> questions,
             List<String> topics,
             List<SummaryParticipant> participants) {
+        this(summaryId, conversationId, fromSeq, toSeq, messageCount, language, generatedBy, model,
+                fallbackReason, cached, createdAt, overview, keyPoints, decisions, actionItems,
+                questions, topics, participants, null, null, null);
+    }
+
+    public SummaryResponse(
+            String summaryId,
+            String conversationId,
+            long fromSeq,
+            long toSeq,
+            int messageCount,
+            SummaryLanguage language,
+            String generatedBy,
+            String model,
+            String fallbackReason,
+            boolean cached,
+            String createdAt,
+            String overview,
+            List<SummaryItem> keyPoints,
+            List<SummaryItem> decisions,
+            List<SummaryActionItem> actionItems,
+            List<SummaryItem> questions,
+            List<String> topics,
+            List<SummaryParticipant> participants,
+            SummaryScope scope,
+            Integer limit,
+            SummaryPeriod period) {
         this.summaryId = summaryId;
         this.conversationId = conversationId;
         this.fromSeq = fromSeq;
@@ -65,6 +95,9 @@ public final class SummaryResponse {
         this.questions = SummaryLists.immutableCopy(questions);
         this.topics = SummaryLists.immutableCopy(topics);
         this.participants = SummaryLists.immutableCopy(participants);
+        this.scope = scope;
+        this.limit = limit;
+        this.period = period;
     }
 
     public String getSummaryId() {
@@ -139,9 +172,25 @@ public final class SummaryResponse {
         return SummaryLists.immutableCopy(participants);
     }
 
+    /** Scope the server actually summarised; null only for responses from older servers. */
+    public SummaryScope getScope() {
+        return scope;
+    }
+
+    /** The N of a LAST_N summary; null for every other scope. */
+    public Integer getLimit() {
+        return limit;
+    }
+
+    /** The local day of a TODAY summary; null for every other scope. */
+    public SummaryPeriod getPeriod() {
+        return period;
+    }
+
     public SummaryResponse asCached() {
         return new SummaryResponse(summaryId, conversationId, fromSeq, toSeq, messageCount,
                 language, generatedBy, model, fallbackReason, true, createdAt, overview,
-                keyPoints, decisions, actionItems, questions, topics, participants);
+                keyPoints, decisions, actionItems, questions, topics, participants,
+                scope, limit, period);
     }
 }

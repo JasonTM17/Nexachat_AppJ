@@ -24,7 +24,10 @@ public record SummaryResponse(
         List<SummaryActionItem> actionItems,
         List<SummaryItem> questions,
         List<String> topics,
-        List<SummaryParticipant> participants) {
+        List<SummaryParticipant> participants,
+        SummaryScope scope,
+        Integer limit,
+        SummaryPeriod period) {
 
     public SummaryResponse {
         keyPoints = immutable(keyPoints);
@@ -41,7 +44,9 @@ public record SummaryResponse(
             SummaryGeneration generated,
             boolean cached,
             boolean contextOmitted,
-            Instant createdAt) {
+            Instant createdAt,
+            SummaryRequest request,
+            SummaryPeriod period) {
         SummaryContent content = generated.content();
         return new SummaryResponse(
                 summaryId,
@@ -63,13 +68,17 @@ public record SummaryResponse(
                 content.actionItems(),
                 content.questions(),
                 content.topics(),
-                content.participants());
+                content.participants(),
+                request.scope(),
+                request.scope() == SummaryScope.LAST_N ? request.limit() : null,
+                period);
     }
 
     public SummaryResponse asCached() {
         return new SummaryResponse(summaryId, conversationId, fromSeq, toSeq, messageCount,
                 language, generatedBy, model, provider, fallbackReason, true, contextOmitted, createdAt,
-                overview, keyPoints, decisions, actionItems, questions, topics, participants);
+                overview, keyPoints, decisions, actionItems, questions, topics, participants,
+                scope, limit, period);
     }
 
     private static <T> List<T> immutable(List<T> values) {
