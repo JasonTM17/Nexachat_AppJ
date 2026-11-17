@@ -35,6 +35,13 @@ describe('api', () => {
     });
   });
 
+  it('resolves undefined for 204 and for an empty 200 body', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(null, { status: 204 })));
+    await expect(api('/x', { method: 'POST' })).resolves.toBeUndefined();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response('', { status: 200 })));
+    await expect(api('/x', { method: 'POST' })).resolves.toBeUndefined();
+  });
+
   it('refreshes once on 401 then retries', async () => {
     tokenStore.set('old', 'good-refresh');
     const fetchMock = vi
