@@ -51,7 +51,7 @@ class CallTimeoutSchedulerGraceTest {
     }
 
     @Test
-    void checkDisconnectedUserSchedules15sGraceForRingingCall() {
+    void checkDisconnectedUserCleansARingingCallQuicklyWithoutGrace() {
         UUID userId = UUID.randomUUID();
         UUID peerId = UUID.randomUUID();
 
@@ -68,7 +68,7 @@ class CallTimeoutSchedulerGraceTest {
         scheduler.checkDisconnectedUser(userId, () -> {});
 
         assertThat(executor.tasks).hasSize(1);
-        assertThat(executor.delays.get(0)).isEqualTo(15_000L);
+        assertThat(executor.delays.get(0)).isEqualTo(50L);
     }
 
     @Test
