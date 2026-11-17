@@ -8,22 +8,14 @@ import org.junit.Test;
 public final class ProfileSignInMethodRulesTest {
 
     @Test
-    public void phoneRowVisibleWhenNumberPresent() {
-        assertTrue(ProfileSignInMethodRules.phoneRowVisible("+84 912 345 678"));
+    public void phoneDividerShownWhenGoogleRowVisible() {
+        assertTrue(ProfileSignInMethodRules.phoneDividerVisible(true));
     }
 
     @Test
-    public void phoneRowHiddenWhenMissingOrBlank() {
-        assertFalse(ProfileSignInMethodRules.phoneRowVisible(null));
-        assertFalse(ProfileSignInMethodRules.phoneRowVisible(""));
-        assertFalse(ProfileSignInMethodRules.phoneRowVisible("   "));
-    }
-
-    @Test
-    public void phoneDividerOnlyBetweenTwoVisibleRows() {
-        assertTrue(ProfileSignInMethodRules.phoneDividerVisible(true, "+84912345678"));
-        assertFalse(ProfileSignInMethodRules.phoneDividerVisible(false, "+84912345678"));
-        assertFalse(ProfileSignInMethodRules.phoneDividerVisible(true, null));
-        assertFalse(ProfileSignInMethodRules.phoneDividerVisible(true, " "));
+    public void phoneDividerHiddenWithoutGoogleRow() {
+        // With the Google row gone the phone row follows the recovery-email
+        // row directly; a divider there would float under the card edge.
+        assertFalse(ProfileSignInMethodRules.phoneDividerVisible(false));
     }
 }

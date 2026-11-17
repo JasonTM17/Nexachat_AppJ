@@ -8,6 +8,7 @@ import com.nexachat.core.network.dto.ContactEnvelopeDto;
 import com.nexachat.core.network.dto.DeleteAccountRequest;
 import com.nexachat.core.network.dto.DirectConversationRequest;
 import com.nexachat.core.network.dto.DirectConversationResponse;
+import com.nexachat.core.network.dto.LinkPhoneRequest;
 import com.nexachat.core.network.dto.UpdateContactRequest;
 import com.nexachat.core.network.dto.SetRecoveryEmailRequest;
 import com.nexachat.core.network.dto.UpdateProfileRequest;
@@ -79,6 +80,14 @@ public interface UserApi {
 
     @DELETE("api/v1/users/me/email")
     Call<Void> removeRecoveryEmail();
+
+    /** Adds or replaces the account phone; the number is not verified by SMS. */
+    @PUT("api/v1/users/me/phone")
+    Call<UserDto> linkPhone(@Body LinkPhoneRequest body);
+
+    /** Removes the account phone; fails with LAST_SIGN_IN_METHOD when it is the only way in. */
+    @DELETE("api/v1/users/me/phone")
+    Call<UserDto> removePhone();
 
     @GET("api/v1/contacts")
     Call<List<ContactDto>> getContacts();
