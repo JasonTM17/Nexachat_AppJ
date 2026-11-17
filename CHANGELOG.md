@@ -6,6 +6,15 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Register and sign in with an email address: a code mailed to the address proves
+  ownership before the account is created, and the account needs no phone number.
+- Reset a password with the account's verified email.
+- Add or remove an optional phone number on an account
+  (`PUT`/`DELETE /users/me/phone`); the number is not verified by SMS.
+- `NEXACHAT_ADMIN_EMAILS` grants admin access to verified emails, like
+  `NEXACHAT_ADMIN_PHONES` does for phone numbers.
+
 ## [1.2.13] - 2026-11-17
 
 Android APK release that finishes the video calls from `v1.2.12`; no server

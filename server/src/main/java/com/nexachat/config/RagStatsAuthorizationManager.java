@@ -34,6 +34,7 @@ public class RagStatsAuthorizationManager implements AuthorizationManager<Reques
 
     private final UserRepository userRepository;
     private final Set<String> adminPhones;
+    private final Set<String> adminEmails;
 
     public RagStatsAuthorizationManager(UserRepository userRepository, SecurityProperties properties) {
         this.userRepository = userRepository;
@@ -47,8 +48,18 @@ public class RagStatsAuthorizationManager implements AuthorizationManager<Reques
                     }
                 })
                 .collect(Collectors.toUnmodifiableSet());
-        if (adminPhones.isEmpty()) {
-            log.warn("No admin phones configured: operator endpoints are denied to every caller");
+        this.adminEmails = properties.adminEmails().stream()
+                .map(email -> {
+                    try {
+                        return com.nexachat.recovery.EmailOtpService.normalizeEmail(email);
+                    } catch (RuntimeException e) {
+                        throw new IllegalStateException(
+                                "nexachat.security.admin-emails must contain valid email addresses", e);
+                    }
+                })
+                .collect(Collectors.toUnmodifiableSet());
+        if (adminPhones.isEmpty() && adminEmails.isEmpty()) {
+            log.warn("No admin phones or emails configured: operator endpoints are denied to every caller");
         }
     }
 
@@ -60,8 +71,8 @@ public class RagStatsAuthorizationManager implements AuthorizationManager<Reques
             return new AuthorizationDecision(false);
         }
         boolean admin = userRepository.findById(principal.userId())
-                .map(User::getPhone)
-                .map(adminPhones::contains)
+                .map(user -> (user.getPhone() != null && adminPhones.contains(user.getPhone()))
+                        || (user.hasVerifiedEmail() && adminEmails.contains(user.getEmail())))
                 .orElse(false);
         if (!admin) {
             log.warn("Denied an operator endpoint to a non-admin caller");

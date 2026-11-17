@@ -22,7 +22,8 @@ public class PasswordResetController {
     @PostMapping("/request")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public Map<String, Object> request(@RequestBody(required = false) RequestRecoveryCode request) {
-        recoveryService.requestPasswordReset(request == null ? null : request.phone());
+        recoveryService.requestPasswordReset(
+                request == null ? null : request.phone(), request == null ? null : request.email());
         return Map.of();
     }
 
@@ -31,6 +32,7 @@ public class PasswordResetController {
     public void confirm(@RequestBody(required = false) ConfirmPasswordReset request) {
         recoveryService.confirmPasswordReset(
                 request == null ? null : request.phone(),
+                request == null ? null : request.email(),
                 request == null ? null : request.code(),
                 request == null ? null : request.newPassword());
     }

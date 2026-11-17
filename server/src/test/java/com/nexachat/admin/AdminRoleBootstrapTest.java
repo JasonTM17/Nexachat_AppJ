@@ -53,6 +53,35 @@ class AdminRoleBootstrapTest {
         verify(validityCache, never()).evict(any());
     }
 
+    @Test
+    void aConfiguredVerifiedEmailPromotesAnAccountWithoutAPhone() {
+        User user = User.createEmailAccount("Owner", "owner@example.com", "x".repeat(60),
+                java.time.Instant.parse("2026-11-17T00:00:00Z"));
+        ReflectionTestUtils.setField(user, "id", UUID.randomUUID());
+
+        bootstrapWithEmails("Owner@Example.com").promoteIfConfigured(user);
+
+        assertThat(user.getRole()).isEqualTo(User.Role.ADMIN);
+        verify(validityCache).evict(user.getId());
+    }
+
+    @Test
+    void anUnverifiedEmailNeverPromotes() {
+        User user = User.createEmailAccount("Owner", "owner@example.com", "x".repeat(60), null);
+        ReflectionTestUtils.setField(user, "id", UUID.randomUUID());
+
+        bootstrapWithEmails("owner@example.com").promoteIfConfigured(user);
+
+        assertThat(user.getRole()).isNotEqualTo(User.Role.ADMIN);
+        verify(validityCache, never()).evict(any());
+    }
+
+    private AdminRoleBootstrap bootstrapWithEmails(String... emails) {
+        return new AdminRoleBootstrap(userRepository, new JdbcTemplate(),
+                new SecurityProperties(List.of(), List.of(), List.of(), null, List.of(emails)),
+                validityCache);
+    }
+
     private AdminRoleBootstrap bootstrap(String... phones) {
         return new AdminRoleBootstrap(userRepository, new JdbcTemplate(),
                 new SecurityProperties(List.of(), List.of(phones), List.of(), null),

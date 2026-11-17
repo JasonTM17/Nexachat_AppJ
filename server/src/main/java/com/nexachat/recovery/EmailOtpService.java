@@ -168,7 +168,7 @@ public class EmailOtpService {
     @Transactional
     public boolean consume(User user, OtpPurpose purpose, String code) {
         String email = switch (purpose) {
-            case VERIFY_EMAIL -> null;
+            case VERIFY_EMAIL, REGISTER_EMAIL -> null;
             case DELETE_ACCOUNT, RESET_PASSWORD -> user.hasVerifiedEmail() ? user.getEmail() : null;
         };
         if (email == null) {

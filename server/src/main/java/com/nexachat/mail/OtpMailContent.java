@@ -9,16 +9,19 @@ record OtpMailContent(String subject, String text, String html) {
             case VERIFY_EMAIL -> "NexaChat recovery email verification / Xác minh email khôi phục NexaChat";
             case DELETE_ACCOUNT -> "NexaChat account deletion code / Mã xóa tài khoản NexaChat";
             case RESET_PASSWORD -> "NexaChat password reset code / Mã đặt lại mật khẩu NexaChat";
+            case REGISTER_EMAIL -> "NexaChat sign-up code / Mã đăng ký NexaChat";
         };
         String englishAction = switch (purpose) {
             case VERIFY_EMAIL -> "verify your recovery email";
             case DELETE_ACCOUNT -> "delete your NexaChat account";
             case RESET_PASSWORD -> "reset your NexaChat password";
+            case REGISTER_EMAIL -> "create your NexaChat account";
         };
         String vietnameseAction = switch (purpose) {
             case VERIFY_EMAIL -> "xác minh email khôi phục";
             case DELETE_ACCOUNT -> "xóa tài khoản NexaChat";
             case RESET_PASSWORD -> "đặt lại mật khẩu NexaChat";
+            case REGISTER_EMAIL -> "tạo tài khoản NexaChat";
         };
         String text = "NexaChat security code: " + code + "\n"
                 + "Use this code to " + englishAction + ". It expires in 10 minutes.\n\n"

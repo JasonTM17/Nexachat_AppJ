@@ -3,5 +3,6 @@ package com.nexachat.recovery;
 public enum OtpPurpose {
     VERIFY_EMAIL,
     DELETE_ACCOUNT,
-    RESET_PASSWORD
+    RESET_PASSWORD,
+    REGISTER_EMAIL
 }

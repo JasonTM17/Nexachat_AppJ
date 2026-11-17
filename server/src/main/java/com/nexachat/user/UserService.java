@@ -28,15 +28,30 @@ public class UserService {
     private final PhoneService phoneService;
     private final ContactRepository contactRepository;
     private final UserBlockRepository blockRepository;
+    private final java.util.Set<String> operatorPhones;
+    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     public UserService(UserRepository userRepository,
                        PhoneService phoneService,
                        ContactRepository contactRepository,
-                       UserBlockRepository blockRepository) {
+                       UserBlockRepository blockRepository,
+                       com.nexachat.config.SecurityProperties securityProperties,
+                       org.springframework.security.crypto.password.PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.phoneService = phoneService;
         this.contactRepository = contactRepository;
         this.blockRepository = blockRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.operatorPhones = securityProperties.adminPhones().stream()
+                .map(configured -> {
+                    try {
+                        return phoneService.toE164(configured);
+                    } catch (IllegalArgumentException e) {
+                        throw new IllegalStateException(
+                                "nexachat.security.admin-phones must contain valid E.164 numbers", e);
+                    }
+                })
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     @Transactional(readOnly = true)
@@ -46,6 +61,67 @@ public class UserService {
         if (user.getDeletedAt() != null) {
             throw ApiException.of(ApiErrorCode.USER_NOT_FOUND, "User not found");
         }
+        return user;
+    }
+
+    /**
+     * Adds or replaces the account's optional phone number. The number is not
+     * verified by SMS: it only lets people find the account by phone. Replacing
+     * a phone that is already linked needs the current password, like the other
+     * changes to how a person signs in.
+     */
+    @Transactional
+    public User linkPhone(UUID userId, String rawPhone, String currentPassword) {
+        String phone;
+        try {
+            phone = phoneService.toE164(rawPhone);
+        } catch (IllegalArgumentException e) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Phone number is not valid");
+        }
+        User user = ActiveUserSupport.requireActiveForUpdate(userRepository, userId);
+        if (phone.equals(user.getPhone())) {
+            return user;
+        }
+        requirePasswordToReplacePhone(user, currentPassword);
+        // A linked number is not verified, so a number that grants operator access must never be claimable.
+        if (operatorPhones.contains(phone)) {
+            throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");
+        }
+        if (userRepository.existsByPhoneAndDeletedAtIsNull(phone)) {
+            throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");
+        }
+        user.changePhone(phone);
+        try {
+            userRepository.saveAndFlush(user);
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");
+        }
+        return user;
+    }
+
+    private void requirePasswordToReplacePhone(User user, String currentPassword) {
+        String hash = user.getPasswordHash();
+        if (user.getPhone() == null || hash == null || hash.isBlank()) {
+            return;
+        }
+        if (currentPassword == null || !passwordEncoder.matches(currentPassword, hash)) {
+            throw ApiException.of(ApiErrorCode.WRONG_PASSWORD, "Current password is incorrect");
+        }
+    }
+
+    /** Removes the phone number; a verified email must remain as the way to sign in. */
+    @Transactional
+    public User removePhone(UUID userId) {
+        User user = ActiveUserSupport.requireActiveForUpdate(userRepository, userId);
+        if (user.getPhone() == null) {
+            return user;
+        }
+        if (!user.hasVerifiedEmail()) {
+            throw ApiException.of(ApiErrorCode.LAST_SIGN_IN_METHOD,
+                    "The last sign-in method cannot be removed");
+        }
+        user.removePhone();
+        userRepository.save(user);
         return user;
     }
 

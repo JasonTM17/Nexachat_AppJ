@@ -36,6 +36,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -76,6 +77,8 @@ class AuthServiceTest {
     private ObjectProvider<E2eeDeviceService> e2eeDeviceService;
     @Mock
     private com.nexachat.admin.AdminRoleBootstrap adminRoleBootstrap;
+    @Mock
+    private com.nexachat.recovery.SignupEmailOtpService signupEmailOtp;
 
     private AuthService authService;
 
@@ -107,13 +110,60 @@ class AuthServiceTest {
                 tokenService, accessTokenRevocationService, rateLimitService,
                 new AuthResponseFactory(jwtService, new MessageRecallProperties()),
                 (boundary, operation, userId, tokenId) -> { }, eventPublisher, transactionManagerProvider,
-                revocationFence, e2eeDeviceService, adminRoleBootstrap);
+                revocationFence, e2eeDeviceService, adminRoleBootstrap,
+                signupEmailOtp, java.time.Clock.fixed(java.time.Instant.parse("2026-11-17T00:00:00Z"), java.time.ZoneOffset.UTC));
     }
 
     private static User userWithId(String phone, String passwordHash, String displayName) {
         User user = User.create(phone, passwordHash, displayName);
         ReflectionTestUtils.setField(user, "id", UUID.randomUUID());
         return user;
+    }
+
+    // ------------------------------------------------------------- register by email
+
+    @Test
+    void registerWithEmail_validCode_createsVerifiedEmailAccount() {
+        when(userRepository.existsByEmailAndEmailVerifiedAtIsNotNullAndDeletedAtIsNull("minh@example.com"))
+                .thenReturn(false);
+        when(signupEmailOtp.consume("minh@example.com", "123456")).thenReturn(true);
+
+        AuthResponse response = authService.registerWithEmail(
+                new com.nexachat.auth.dto.EmailRegisterRequest(
+                        " Minh@Example.com ", "123456", "password123", " Minh "), "ua");
+
+        assertThat(response.accessToken()).isNotBlank();
+        org.mockito.ArgumentCaptor<User> saved = org.mockito.ArgumentCaptor.forClass(User.class);
+        verify(userRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getEmail()).isEqualTo("minh@example.com");
+        assertThat(saved.getValue().hasVerifiedEmail()).isTrue();
+        assertThat(saved.getValue().getPhone()).isNull();
+        assertThat(saved.getValue().getDisplayName()).isEqualTo("Minh");
+    }
+
+    @Test
+    void registerWithEmail_wrongCode_isRejectedWithoutCreatingAnAccount() {
+        when(signupEmailOtp.consume("minh@example.com", "000000")).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.registerWithEmail(
+                new com.nexachat.auth.dto.EmailRegisterRequest(
+                        "minh@example.com", "000000", "password123", "Minh"), "ua"))
+                .isInstanceOf(ApiException.class)
+                .extracting("code").isEqualTo(ApiErrorCode.INVALID_OR_EXPIRED_CODE);
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void registerWithEmail_emailAlreadyVerifiedElsewhere_looksLikeABadCode() {
+        when(userRepository.existsByEmailAndEmailVerifiedAtIsNotNullAndDeletedAtIsNull("minh@example.com"))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> authService.registerWithEmail(
+                new com.nexachat.auth.dto.EmailRegisterRequest(
+                        "minh@example.com", "123456", "password123", "Minh"), "ua"))
+                .isInstanceOf(ApiException.class)
+                .extracting("code").isEqualTo(ApiErrorCode.INVALID_OR_EXPIRED_CODE);
+        verify(signupEmailOtp, never()).consume(anyString(), anyString());
     }
 
     // ------------------------------------------------------------- register
