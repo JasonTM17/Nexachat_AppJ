@@ -1145,7 +1145,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         });
         viewModel.getEditSession().observe(getViewLifecycleOwner(), ignored -> render());
         viewModel.getStarredIds().observe(getViewLifecycleOwner(), next -> {
+            Set<String> previous = starredIds;
             starredIds = next == null ? Set.of() : next;
+            if (!previous.equals(starredIds) && adapter != null && !searchOpen) {
+                ChatViewModel.UiState current = viewModel.getUiState().getValue();
+                if (current != null) submitMessages(current.getMessages());
+            }
         });
         viewModel.getPeerBlocked().observe(getViewLifecycleOwner(), next -> {
             peerBlocked = Boolean.TRUE.equals(next);
@@ -1558,7 +1563,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                 new DateSeparatorLabels(getString(R.string.time_today), getString(R.string.time_yesterday)),
                 System.currentTimeMillis(),
                 dividerIndex,
-                dividerCount);
+                dividerCount,
+                starredIds);
         cacheUnreadDividerAdapterPositions(rows, messages, localReadSeq);
         String stableAnchor = anchorId;
         int stableAnchorOffset = anchorOffset;

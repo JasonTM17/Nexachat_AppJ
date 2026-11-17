@@ -635,6 +635,7 @@
     <string name="disappearing_duration_90d">90 days</string>
     <string name="cd_disappearing_messages_on">Disappearing messages on, %1$s</string>
     <string name="cd_disappearing_bubble">Disappearing message</string>
+    <string name="system_notice_with_time" translatable="false">%1$s · %2$s</string>
 
     <!-- Forgot password (brief 306 E4) -->
     <string name="action_forgot_password">Forgot password?</string>

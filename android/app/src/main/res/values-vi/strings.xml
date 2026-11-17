@@ -628,6 +628,7 @@
     <string name="disappearing_duration_90d">90 ngày</string>
     <string name="cd_disappearing_messages_on">Tin nhắn tự xóa đang bật, %1$s</string>
     <string name="cd_disappearing_bubble">Tin nhắn tự xóa</string>
+    <string name="system_notice_with_time" translatable="false">%1$s · %2$s</string>
 
     <!-- Forgot password (brief 306 E4) -->
     <string name="action_forgot_password">Quên mật khẩu?</string>

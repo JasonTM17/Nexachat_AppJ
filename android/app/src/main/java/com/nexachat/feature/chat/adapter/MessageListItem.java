@@ -32,6 +32,7 @@ public final class MessageListItem {
     private final boolean seenReceipt;
     private final boolean deliveredReceipt;
     private final boolean pulsing;
+    private final boolean starred;
 
     private MessageListItem(
             @NonNull Kind kind,
@@ -43,7 +44,8 @@ public final class MessageListItem {
             boolean showSenderName,
             boolean seenReceipt,
             boolean deliveredReceipt,
-            boolean pulsing
+            boolean pulsing,
+            boolean starred
     ) {
         this.kind = kind;
         this.stableId = stableId;
@@ -55,6 +57,7 @@ public final class MessageListItem {
         this.seenReceipt = seenReceipt;
         this.deliveredReceipt = deliveredReceipt;
         this.pulsing = pulsing;
+        this.starred = starred;
     }
 
     public static MessageListItem dateSeparator(@NonNull String label, long epochMs) {
@@ -66,6 +69,7 @@ public final class MessageListItem {
                 0,
                 null,
                 null,
+                false,
                 false,
                 false,
                 false,
@@ -84,6 +88,7 @@ public final class MessageListItem {
                 false,
                 false,
                 false,
+                false,
                 false
         );
     }
@@ -96,6 +101,18 @@ public final class MessageListItem {
             boolean deliveredReceipt,
             boolean pulsing
     ) {
+        return message(message, groupPosition, showSenderName, seenReceipt, deliveredReceipt, pulsing, false);
+    }
+
+    public static MessageListItem message(
+            @NonNull ChatMessage message,
+            @NonNull MessageGroupPosition groupPosition,
+            boolean showSenderName,
+            boolean seenReceipt,
+            boolean deliveredReceipt,
+            boolean pulsing,
+            boolean starred
+    ) {
         return new MessageListItem(
                 Kind.MESSAGE,
                 message.getId(),
@@ -106,7 +123,8 @@ public final class MessageListItem {
                 showSenderName,
                 seenReceipt,
                 deliveredReceipt,
-                pulsing
+                pulsing,
+                starred
         );
     }
 
@@ -165,6 +183,10 @@ public final class MessageListItem {
         return pulsing;
     }
 
+    public boolean isStarred() {
+        return starred;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (!(o instanceof MessageListItem item)) {
@@ -179,7 +201,8 @@ public final class MessageListItem {
                 && showSenderName == item.showSenderName
                 && seenReceipt == item.seenReceipt
                 && deliveredReceipt == item.deliveredReceipt
-                && pulsing == item.pulsing;
+                && pulsing == item.pulsing
+                && starred == item.starred;
     }
 
     @Override
@@ -194,7 +217,8 @@ public final class MessageListItem {
                 showSenderName,
                 seenReceipt,
                 deliveredReceipt,
-                pulsing
+                pulsing,
+                starred
         );
     }
 }
