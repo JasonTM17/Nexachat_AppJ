@@ -107,8 +107,8 @@ public final class ForgotPasswordViewModel extends ViewModel {
         if (state.isSending() || state.isCodeRequested()) {
             return;
         }
-        String phone = AuthFieldValidators.normalizeE164(state.getPhone());
-        if (!AuthFieldValidators.isE164(phone)) {
+        String phone = AuthFieldValidators.normalizeLoginIdentifier(state.getPhone());
+        if (!AuthFieldValidators.isLoginIdentifier(phone)) {
             updateState(current -> current.withPhoneInvalid(true));
             return;
         }

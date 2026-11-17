@@ -46,6 +46,29 @@ public final class PasswordResetRepositoryTest {
   }
 
   @Test
+  public void requestResetByEmailSendsTheNormalizedEmailAndNoPhone() {
+    TestAuthApi api = new TestAuthApi();
+    PasswordResetRepository repository = new PasswordResetRepository(api);
+    Result<Unit> result = repository.requestResetCode(" Minh@Example.com ").blockingGet();
+    assertTrue(result instanceof Result.Success<?>);
+    assertEquals("minh@example.com", api.lastRequestEmail);
+    assertEquals(null, api.lastRequestPhone);
+  }
+
+  @Test
+  public void confirmResetByEmailSendsTheEmailAndNoPhone() {
+    TestAuthApi api = new TestAuthApi();
+    PasswordResetRepository repository = new PasswordResetRepository(api);
+    Result<Unit> result = repository
+            .confirmReset("Minh@Example.com", " 123456 ", "newpass12")
+            .blockingGet();
+    assertTrue(result instanceof Result.Success<?>);
+    assertEquals(
+            PasswordResetConfirmRequest.byEmail("minh@example.com", "123456", "newpass12"),
+            api.lastConfirm);
+  }
+
+  @Test
   public void confirmResetMapsInvalidCode() {
     TestAuthApi api = new TestAuthApi();
     api.confirm = FakeCall.errorVoid(
@@ -78,10 +101,23 @@ public final class PasswordResetRepositoryTest {
     Call<Void> request = FakeCall.successVoid(202);
     Call<Void> confirm = FakeCall.successVoid(204);
     String lastRequestPhone;
+    String lastRequestEmail;
+    PasswordResetConfirmRequest lastConfirm;
 
     @Override
     public Call<com.nexachat.core.network.dto.AuthResponse> register(
             com.nexachat.core.network.dto.RegisterRequest body) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Call<Void> requestEmailSignupCode(com.nexachat.core.network.dto.EmailCodeRequest body) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Call<com.nexachat.core.network.dto.AuthResponse> registerWithEmail(
+            com.nexachat.core.network.dto.EmailRegisterRequest body) {
       throw new UnsupportedOperationException();
     }
 
@@ -122,11 +158,13 @@ public final class PasswordResetRepositoryTest {
     @Override
     public Call<Void> requestPasswordReset(PasswordResetRequest body) {
       lastRequestPhone = body.getPhone();
+      lastRequestEmail = body.getEmail();
       return request;
     }
 
     @Override
     public Call<Void> confirmPasswordReset(PasswordResetConfirmRequest body) {
+      lastConfirm = body;
       return confirm;
     }
 

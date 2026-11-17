@@ -8,6 +8,7 @@ import com.nexachat.core.auth.GoogleSignInException;
 import com.nexachat.core.auth.GoogleSignInFlow;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.common.Unit;
 import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.core.network.dto.GoogleNonceResponse;
 import com.nexachat.core.network.dto.UserDto;
@@ -192,6 +193,187 @@ public final class AuthViewModelTest {
 
         assertEquals(List.of(AuthViewModel.Event.LoggedIn), events);
         verify(repository, times(1)).register("0912345678", "secret123", "Minh");
+    }
+
+    // ------------------------------------------------------------ email sign-up
+
+    @Test
+    public void requestSignupCodeShowsTheCodeStep() {
+        when(repository.requestEmailSignupCode(anyString()))
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+        fillSignupForm();
+
+        viewModel.requestSignupCode();
+
+        verify(repository).requestEmailSignupCode("minh@example.com");
+        assertTrue(viewModel.getEmailSignup().getValue().isCodeSent());
+        assertFalse(viewModel.getUiState().getValue().getLoading());
+        assertEquals(null, viewModel.getUiState().getValue().getError());
+    }
+
+    @Test
+    public void requestSignupCodeWithABadEmailIsBlockedBeforeTheRepository() {
+        viewModel.onDisplayNameChange("Minh");
+        viewModel.onEmailChange("not an email");
+        viewModel.onPasswordChange("secret123");
+
+        viewModel.requestSignupCode();
+
+        assertTrue(viewModel.getEmailSignup().getValue().getEmailError());
+        assertFalse(viewModel.getEmailSignup().getValue().isCodeSent());
+        verify(repository, never()).requestEmailSignupCode(anyString());
+    }
+
+    @Test
+    public void requestSignupCodeWithAShortPasswordIsBlocked() {
+        viewModel.onDisplayNameChange("Minh");
+        viewModel.onEmailChange("minh@example.com");
+        viewModel.onPasswordChange("short");
+
+        viewModel.requestSignupCode();
+
+        assertTrue(viewModel.getUiState().getValue().getPasswordError());
+        verify(repository, never()).requestEmailSignupCode(anyString());
+    }
+
+    @Test
+    public void anEmailThatIsAlreadyRegisteredStaysOnTheFormWithTheError() {
+        when(repository.requestEmailSignupCode(anyString()))
+                .thenReturn(Single.just(Result.failure(ApiError.EmailAlreadyInUse.INSTANCE)));
+        fillSignupForm();
+
+        viewModel.requestSignupCode();
+
+        assertFalse(viewModel.getEmailSignup().getValue().isCodeSent());
+        assertEquals(ApiError.EmailAlreadyInUse.INSTANCE, viewModel.getUiState().getValue().getError());
+    }
+
+    @Test
+    public void registerWithEmailSendsTheCodeAndEmitsLoggedIn() {
+        when(repository.requestEmailSignupCode(anyString()))
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+        when(repository.registerWithEmail(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(Single.just(new Result.Success<>(authResponse)));
+        List<AuthViewModel.Event> events = observeEvents();
+        fillSignupForm();
+        viewModel.requestSignupCode();
+        viewModel.onSignupCodeChange("12 34 56");
+
+        viewModel.registerWithEmail();
+
+        verify(repository).registerWithEmail("minh@example.com", "123456", "secret123", "Minh");
+        assertEquals(List.of(AuthViewModel.Event.LoggedIn), events);
+    }
+
+    @Test
+    public void anIncompleteCodeIsNotSubmitted() {
+        when(repository.requestEmailSignupCode(anyString()))
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+        fillSignupForm();
+        viewModel.requestSignupCode();
+        viewModel.onSignupCodeChange("123");
+
+        viewModel.registerWithEmail();
+
+        assertTrue(viewModel.getEmailSignup().getValue().getCodeError());
+        verify(repository, never())
+                .registerWithEmail(anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    public void aWrongCodeMarksTheCodeFieldWithoutABannerOrNavigation() {
+        when(repository.requestEmailSignupCode(anyString()))
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+        when(repository.registerWithEmail(anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(Single.just(Result.failure(ApiError.InvalidOrExpiredCode.INSTANCE)));
+        List<AuthViewModel.Event> events = observeEvents();
+        fillSignupForm();
+        viewModel.requestSignupCode();
+        viewModel.onSignupCodeChange("000000");
+
+        viewModel.registerWithEmail();
+
+        assertTrue(viewModel.getEmailSignup().getValue().getCodeError());
+        assertEquals(null, viewModel.getUiState().getValue().getError());
+        assertTrue(events.isEmpty());
+    }
+
+    @Test
+    public void resendWaitsForTheCooldownThenSendsAgain() {
+        MutableClock clock = new MutableClock(1_000_000L);
+        AuthViewModel timed = new AuthViewModel(repository,
+                new GoogleSignInFlow(repository, new FakeGoogleSignInClient(true, "id-token")),
+                new SavedStateHandle(), clock);
+        when(repository.requestEmailSignupCode(anyString()))
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+        timed.onDisplayNameChange("Minh");
+        timed.onEmailChange("minh@example.com");
+        timed.onPasswordChange("secret123");
+        timed.requestSignupCode();
+        assertEquals(60, timed.getEmailSignup().getValue().resendSecondsRemaining(clock.millis()));
+
+        timed.resendSignupCode();
+        verify(repository, times(1)).requestEmailSignupCode(anyString());
+
+        clock.advance(60_000L);
+        assertEquals(0, timed.getEmailSignup().getValue().resendSecondsRemaining(clock.millis()));
+        timed.resendSignupCode();
+        verify(repository, times(2)).requestEmailSignupCode(anyString());
+    }
+
+    @Test
+    public void changingTheEmailReturnsToTheForm() {
+        when(repository.requestEmailSignupCode(anyString()))
+                .thenReturn(Single.just(new Result.Success<>(Unit.INSTANCE)));
+        fillSignupForm();
+        viewModel.requestSignupCode();
+
+        viewModel.changeSignupEmail();
+
+        assertFalse(viewModel.getEmailSignup().getValue().isCodeSent());
+        assertEquals("minh@example.com", viewModel.getEmailSignup().getValue().getEmail());
+    }
+
+    @Test
+    public void signupStateStringDoesNotExposeTheCode() {
+        AuthViewModel.EmailSignupState state = new AuthViewModel.EmailSignupState()
+                .withCodeSent(0L).withCode("918273");
+
+        assertFalse(state.toString().contains("918273"));
+    }
+
+    private void fillSignupForm() {
+        viewModel.onDisplayNameChange("Minh");
+        viewModel.onEmailChange(" Minh@Example.com ".trim().toLowerCase());
+        viewModel.onPasswordChange("secret123");
+    }
+
+    private static final class MutableClock extends java.time.Clock {
+        private long millis;
+
+        MutableClock(long millis) {
+            this.millis = millis;
+        }
+
+        void advance(long deltaMs) {
+            millis += deltaMs;
+        }
+
+        @Override public java.time.ZoneId getZone() {
+            return java.time.ZoneOffset.UTC;
+        }
+
+        @Override public java.time.Clock withZone(java.time.ZoneId zone) {
+            return this;
+        }
+
+        @Override public java.time.Instant instant() {
+            return java.time.Instant.ofEpochMilli(millis);
+        }
+
+        @Override public long millis() {
+            return millis;
+        }
     }
 
     @Test

@@ -2,6 +2,8 @@ package com.nexachat.core.network;
 
 import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.core.network.dto.ChangePasswordRequest;
+import com.nexachat.core.network.dto.EmailCodeRequest;
+import com.nexachat.core.network.dto.EmailRegisterRequest;
 import com.nexachat.core.network.dto.GoogleLinkRequest;
 import com.nexachat.core.network.dto.GoogleNonceResponse;
 import com.nexachat.core.network.dto.GoogleSignInRequest;
@@ -30,6 +32,8 @@ public interface AuthApi {
 
     Set<String> PUBLIC_PATHS = Collections.unmodifiableSet(new LinkedHashSet<>(Arrays.asList(
             "/api/v1/auth/register",
+            "/api/v1/auth/register/email-code",
+            "/api/v1/auth/register/email",
             "/api/v1/auth/login",
             "/api/v1/auth/refresh",
             "/api/v1/auth/password-reset/request",
@@ -40,6 +44,12 @@ public interface AuthApi {
 
     @POST("api/v1/auth/register")
     Call<AuthResponse> register(@Body RegisterRequest body);
+
+    @POST("api/v1/auth/register/email-code")
+    Call<Void> requestEmailSignupCode(@Body EmailCodeRequest body);
+
+    @POST("api/v1/auth/register/email")
+    Call<AuthResponse> registerWithEmail(@Body EmailRegisterRequest body);
 
     @POST("api/v1/auth/login")
     Call<AuthResponse> login(@Body LoginRequest body);

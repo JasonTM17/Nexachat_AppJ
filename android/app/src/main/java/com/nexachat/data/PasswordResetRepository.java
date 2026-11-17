@@ -28,17 +28,33 @@ public final class PasswordResetRepository {
     }
 
     @NonNull
-    public Single<Result<Unit>> requestResetCode(@NonNull String phone) {
-        String normalized = PhoneNormalizer.toE164(phone);
+    public Single<Result<Unit>> requestResetCode(@NonNull String identifier) {
+        if (isEmail(identifier)) {
+            return callAccepted(authApi.requestPasswordReset(
+                    PasswordResetRequest.byEmail(normalizeEmail(identifier))));
+        }
+        String normalized = PhoneNormalizer.toE164(identifier);
         return callAccepted(authApi.requestPasswordReset(new PasswordResetRequest(normalized)));
     }
 
     @NonNull
     public Single<Result<Unit>> confirmReset(
-            @NonNull String phone, @NonNull String code, @NonNull String newPassword) {
-        String normalized = PhoneNormalizer.toE164(phone);
+            @NonNull String identifier, @NonNull String code, @NonNull String newPassword) {
+        if (isEmail(identifier)) {
+            return callNoContent(authApi.confirmPasswordReset(PasswordResetConfirmRequest.byEmail(
+                    normalizeEmail(identifier), code.trim(), newPassword)));
+        }
+        String normalized = PhoneNormalizer.toE164(identifier);
         return callNoContent(authApi.confirmPasswordReset(
                 new PasswordResetConfirmRequest(normalized, code.trim(), newPassword)));
+    }
+
+    private static boolean isEmail(@NonNull String identifier) {
+        return identifier.contains("@");
+    }
+
+    private static String normalizeEmail(@NonNull String identifier) {
+        return identifier.trim().toLowerCase(java.util.Locale.ROOT);
     }
 
     private Single<Result<Unit>> callAccepted(@NonNull Call<Void> call) {

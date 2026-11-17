@@ -16,6 +16,10 @@ import com.nexachat.R;
 import com.nexachat.databinding.FragmentRegisterBinding;
 import dagger.hilt.android.AndroidEntryPoint;
 
+/**
+ * Sign-up with an email address in two steps: the form (name, email, password) sends a code to the
+ * address, and entering that code creates the account.
+ */
 @AndroidEntryPoint
 public final class RegisterFragment extends Fragment {
     private FragmentRegisterBinding binding;
@@ -25,6 +29,7 @@ public final class RegisterFragment extends Fragment {
     private String confirmation = "";
     private boolean confirmChecked;
     @Nullable private String returnInviteToken;
+    private final Runnable resendTick = this::renderSignup;
 
     @Nullable @Override public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle state) {
         binding = FragmentRegisterBinding.inflate(inflater, container, false);
@@ -36,12 +41,16 @@ public final class RegisterFragment extends Fragment {
         viewModel = new ViewModelProvider(this).get(AuthViewModel.class);
         returnInviteToken = AuthNav.returnInviteToken(getArguments());
         binding.nameInput.addTextChangedListener(watcher(viewModel::onDisplayNameChange));
-        binding.phoneInput.addTextChangedListener(watcher(viewModel::onPhoneChange));
+        binding.emailInput.addTextChangedListener(watcher(viewModel::onEmailChange));
         binding.passwordInput.addTextChangedListener(watcher(viewModel::onPasswordChange));
+        binding.codeInput.addTextChangedListener(watcher(viewModel::onSignupCodeChange));
         binding.confirmPasswordInput.setText(confirmation);
         binding.confirmPasswordInput.addTextChangedListener(watcher(s -> { confirmation = s; render(viewModel.getUiState().getValue()); }));
         binding.confirmPasswordInput.setOnEditorActionListener((v, action, event) -> { if (action == EditorInfo.IME_ACTION_DONE) { submit(); return true; } return false; });
+        binding.codeInput.setOnEditorActionListener((v, action, event) -> { if (action == EditorInfo.IME_ACTION_DONE) { viewModel.registerWithEmail(); return true; } return false; });
         binding.registerButton.setOnClickListener(v -> submit());
+        binding.resendCodeButton.setOnClickListener(v -> viewModel.resendSignupCode());
+        binding.changeEmailButton.setOnClickListener(v -> viewModel.changeSignupEmail());
         int googleVisibility = viewModel.isGoogleSignInAvailable() ? View.VISIBLE : View.GONE;
         binding.googleSignIn.setVisibility(googleVisibility);
         binding.authOrDivider.getRoot().setVisibility(googleVisibility);
@@ -65,6 +74,7 @@ public final class RegisterFragment extends Fragment {
                     getString(AuthLoadingOverlay.contentDescriptionResId()));
         }
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
+        viewModel.getEmailSignup().observe(getViewLifecycleOwner(), signup -> renderSignup());
         viewModel.getServerStarting().observe(getViewLifecycleOwner(), starting -> {
             serverStarting = Boolean.TRUE.equals(starting);
             AuthViewModel.UiState current = viewModel.getUiState().getValue();
@@ -96,14 +106,19 @@ public final class RegisterFragment extends Fragment {
     }
 
     private void submit() {
+        AuthViewModel.EmailSignupState signup = viewModel.getEmailSignup().getValue();
+        if (signup != null && signup.isCodeSent()) {
+            viewModel.registerWithEmail();
+            return;
+        }
         confirmChecked = true;
-        String phone = AuthFieldValidators.normalizeE164(binding.phoneInput.getText().toString());
-        binding.phoneLayout.setError(AuthFieldValidators.isE164(phone) ? null : getString(R.string.error_phone_invalid));
-        if (!AuthFieldValidators.isE164(phone)) return;
-        viewModel.onPhoneChange(phone);
-        AuthViewModel.UiState s = viewModel.getUiState().getValue(); render(s);
-        if (AuthFieldValidators.passwordsMatch(s.getPassword(), confirmation)) viewModel.register();
-        else binding.confirmPasswordLayout.setError(getString(R.string.error_password_mismatch));
+        AuthViewModel.UiState s = viewModel.getUiState().getValue();
+        if (!AuthFieldValidators.passwordsMatch(s.getPassword(), confirmation)) {
+            render(s);
+            binding.confirmPasswordLayout.setError(getString(R.string.error_password_mismatch));
+            return;
+        }
+        viewModel.requestSignupCode();
     }
 
     private TextWatcher watcher(java.util.function.Consumer<String> change) { return new TextWatcher() {
@@ -124,12 +139,11 @@ public final class RegisterFragment extends Fragment {
     }
 
     private void render(AuthViewModel.UiState s) {
+        if (binding == null || s == null) return;
         rendering = true;
         if (!binding.nameInput.getText().toString().equals(s.getDisplayName())) binding.nameInput.setText(s.getDisplayName());
-        if (!binding.phoneInput.getText().toString().equals(s.getPhone())) binding.phoneInput.setText(s.getPhone());
         if (!binding.passwordInput.getText().toString().equals(s.getPassword())) binding.passwordInput.setText(s.getPassword());
         binding.nameLayout.setError(displayNameErrorText(s.getDisplayNameProblem()));
-        binding.phoneLayout.setError(s.getPhoneError() ? getString(R.string.error_phone_required) : null);
         binding.passwordLayout.setError(s.getPasswordError() ? getString(R.string.error_password_short) : null);
         boolean mismatch = confirmChecked && !AuthFieldValidators.passwordsMatch(s.getPassword(), confirmation);
         binding.confirmPasswordLayout.setError(mismatch ? getString(R.string.error_password_mismatch) : null);
@@ -143,17 +157,61 @@ public final class RegisterFragment extends Fragment {
         }
         boolean notLoading = !s.getLoading();
         binding.nameInput.setEnabled(notLoading);
-        binding.phoneInput.setEnabled(notLoading);
+        binding.emailInput.setEnabled(notLoading);
         binding.passwordInput.setEnabled(notLoading);
         binding.confirmPasswordInput.setEnabled(notLoading);
+        binding.codeInput.setEnabled(notLoading);
         binding.registerButton.setEnabled(notLoading);
         binding.googleSignIn.setEnabled(notLoading);
         binding.authModeLogin.setEnabled(notLoading);
+        binding.changeEmailButton.setEnabled(notLoading);
         binding.loadingState.setLabel(
                 s.getLoading() && serverStarting ? getString(R.string.server_starting) : null);
         binding.loadingState.setVisibility(s.getLoading() ? View.VISIBLE : View.GONE);
         rendering = false;
+        renderSignup();
     }
+
+    /** Switches between the form and the code step, and keeps the resend countdown current. */
+    private void renderSignup() {
+        if (binding == null) return;
+        AuthViewModel.EmailSignupState signup = viewModel.getEmailSignup().getValue();
+        AuthViewModel.UiState s = viewModel.getUiState().getValue();
+        if (signup == null || s == null) return;
+        rendering = true;
+        if (!binding.emailInput.getText().toString().equals(signup.getEmail())) binding.emailInput.setText(signup.getEmail());
+        binding.emailLayout.setError(signup.getEmailError() ? getString(R.string.recovery_email_invalid) : null);
+        if (!binding.codeInput.getText().toString().equals(signup.getCode())) {
+            binding.codeInput.setText(signup.getCode());
+            binding.codeInput.setSelection(signup.getCode().length());
+        }
+        binding.codeLayout.setError(signup.getCodeError() ? getString(R.string.forgot_password_code_invalid) : null);
+        boolean codeStep = signup.isCodeSent();
+        boolean googleAvailable = viewModel.isGoogleSignInAvailable();
+        int formVisibility = codeStep ? View.GONE : View.VISIBLE;
+        binding.formFields.setVisibility(formVisibility);
+        binding.googleSignIn.setVisibility(googleAvailable ? formVisibility : View.GONE);
+        binding.authOrDivider.getRoot().setVisibility(googleAvailable ? formVisibility : View.GONE);
+        binding.codeGroup.setVisibility(codeStep ? View.VISIBLE : View.GONE);
+        binding.codeActions.setVisibility(codeStep ? View.VISIBLE : View.GONE);
+        binding.registerButton.setText(codeStep ? R.string.action_create_account : R.string.signup_send_code);
+        if (codeStep) {
+            binding.codeSentText.setText(getString(R.string.recovery_email_otp_sent_to, signup.getEmail().trim()));
+            int seconds = signup.resendSecondsRemaining(System.currentTimeMillis());
+            binding.resendCodeButton.setEnabled(seconds == 0 && !s.getLoading());
+            binding.resendCodeButton.setText(seconds == 0
+                    ? getString(R.string.recovery_email_resend)
+                    : getString(R.string.recovery_email_resend_countdown, seconds));
+            binding.getRoot().removeCallbacks(resendTick);
+            if (seconds > 0) binding.getRoot().postDelayed(resendTick, 1000L);
+        }
+        rendering = false;
+    }
+
     @Override public void onSaveInstanceState(@NonNull Bundle out) { super.onSaveInstanceState(out); out.putBoolean("confirmChecked", confirmChecked); }
-    @Override public void onDestroyView() { super.onDestroyView(); binding = null; }
+    @Override public void onDestroyView() {
+        if (binding != null) binding.getRoot().removeCallbacks(resendTick);
+        super.onDestroyView();
+        binding = null;
+    }
 }
