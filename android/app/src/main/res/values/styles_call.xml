@@ -10,6 +10,9 @@
         <item name="android:colorBackground">@color/nexa_call_surface</item>
         <item name="android:fontFamily">@font/inter</item>
         <item name="colorSurface">@color/nexa_call_surface</item>
+        <item name="colorSurfaceContainer">@color/nexa_call_surface_end</item>
+        <item name="colorSurfaceContainerHigh">@color/nexa_call_surface_end</item>
+        <item name="colorSurfaceContainerHighest">@color/nexa_call_surface_end</item>
         <item name="colorOnSurface">@color/call_text_primary</item>
         <item name="colorOnSurfaceVariant">@color/call_text_secondary</item>
         <item name="colorPrimary">@color/call_avatar_background</item>
@@ -23,7 +26,12 @@
         <item name="buttonBarPositiveButtonStyle">@style/Widget.NexaChat.Button.Text.Dialog</item>
         <item name="buttonBarNegativeButtonStyle">@style/Widget.NexaChat.Button.Text.Dialog.Flush</item>
         <item name="buttonBarNeutralButtonStyle">@style/Widget.NexaChat.Button.Text.Dialog</item>
-        <item name="materialAlertDialogTheme">@style/ThemeOverlay.NexaChat.MaterialAlertDialog</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.NexaChat.Call.MaterialAlertDialog</item>
         <item name="snackbarButtonStyle">@style/Widget.NexaChat.Button.Text.Snackbar</item>
+    </style>
+
+    <!-- The call scene is always dark; dialog actions use a light plum so they stay legible. -->
+    <style name="ThemeOverlay.NexaChat.Call.MaterialAlertDialog" parent="ThemeOverlay.NexaChat.MaterialAlertDialog">
+        <item name="colorPrimary">@color/call_dialog_action</item>
     </style>
 </resources>

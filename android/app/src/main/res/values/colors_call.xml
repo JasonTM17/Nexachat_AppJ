@@ -32,4 +32,5 @@
     <color name="call_control_background">#FF514655</color>
     <color name="call_pulse_ring_stroke">#40F4B2E2</color>
     <color name="call_pulse_ring_fill">#1AF4B2E2</color>
+    <color name="call_dialog_action">#FFF4B2E2</color>
 </resources>
