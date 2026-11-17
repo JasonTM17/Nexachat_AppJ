@@ -101,7 +101,9 @@ public class CallActivity extends ComponentActivity {
     private boolean remoteFlowShowing;
     private final org.webrtc.VideoSink remoteFlowSink = frame -> {
         if (remoteFlow.onFrame(android.os.SystemClock.elapsedRealtime())) {
-            mainHandler.post(this::renderCurrent);
+            mainHandler.post(() -> {
+                if (!isFinishing() && !isDestroyed()) renderCurrent();
+            });
         }
     };
     private final Runnable remoteFlowWatcher = new Runnable() {
@@ -184,6 +186,10 @@ public class CallActivity extends ComponentActivity {
         super.onStart();
         if (launchDecision == CallActivityLaunchPolicy.Decision.FINISH || isFinishing()) return;
         startFirebaseCallStatusDisplay();
+        if (remoteVideoBound) {
+            mainHandler.removeCallbacks(remoteFlowWatcher);
+            mainHandler.postDelayed(remoteFlowWatcher, 500L);
+        }
         listener = new CallManager.CallListener() {
             @Override public void onCallChanged(CallSession session) {
                 currentSession = session;
@@ -264,6 +270,7 @@ public class CallActivity extends ComponentActivity {
             firebaseStatusEvents = null;
         }
         firebaseCallStatusDisplaySession.stop();
+        mainHandler.removeCallbacks(remoteFlowWatcher);
         callManager.setCallVideoListener(null);
         if (listener != null) {
             callManager.removeListener(listener);
