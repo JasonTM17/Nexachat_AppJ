@@ -8,8 +8,8 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [1.2.13] - 2026-11-17
 
-Android APK release that finishes the video calls from `v1.2.12`; no server
-changes. See [docs/release-notes/v1.2.13.md](docs/release-notes/v1.2.13.md).
+Android APK release that finishes the video calls from `v1.2.12`, with a
+small server update. See [docs/release-notes/v1.2.13.md](docs/release-notes/v1.2.13.md).
 
 ### Changed
 - The call screen shows the other person's avatar when their camera stops
@@ -19,9 +19,14 @@ changes. See [docs/release-notes/v1.2.13.md](docs/release-notes/v1.2.13.md).
 - The star on own messages is dimmed to match the timestamp.
 - Dialogs on the call screens use a dark surface with legible text and actions.
 - The hang up button is centered below the call controls.
+- A peer that sends only black frames is shown as the avatar.
+- Answering a video call as voice no longer receives the caller's video.
+- A ringing call is no longer failed when the caller's socket drops for
+  under 15 seconds; the disconnect grace window now covers ringing calls.
 
 ### Known issues
-- A peer that keeps sending black frames is still shown as video.
+- A callee that goes fully offline while ringing is reported as failed after about
+  15 seconds instead of immediately.
 
 ## [1.2.12] - 2026-11-17
 
