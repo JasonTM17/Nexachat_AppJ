@@ -6,6 +6,28 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.12] - 2026-11-17
+
+Android APK release with a server update: video calls and a polish of how
+calls and starred messages show up in chat. See
+[docs/release-notes/v1.2.12.md](docs/release-notes/v1.2.12.md).
+
+### Added
+- Video calls with camera on/off, front/back camera switch and an
+  answer-as-voice fallback; the camera permission is requested only for a
+  video call and no camera hardware is required (`V40` `call_media_type`,
+  call signaling carries `mediaType`).
+- Video call rows in the chat and the conversation list.
+
+### Changed
+- Call notices in a chat show their time on the same line as the label.
+- Starred messages show a star beside the time and refresh as soon as they
+  are starred or unstarred.
+
+### Known issues
+- Clients older than `v1.2.12` show a video call row as a failed call (chat
+  line and inbox preview only); the call connects as a voice call.
+
 ## [1.2.11] - 2026-11-17
 
 Android APK release with a server update: message translation, block and
