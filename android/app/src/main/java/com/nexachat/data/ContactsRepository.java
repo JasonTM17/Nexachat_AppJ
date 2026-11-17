@@ -12,6 +12,7 @@ import com.nexachat.core.network.UserApi;
 import com.nexachat.core.network.dto.AddContactRequest;
 import com.nexachat.core.network.dto.ContactDto;
 import com.nexachat.core.network.dto.DirectConversationRequest;
+import com.nexachat.core.network.dto.LinkPhoneRequest;
 import com.nexachat.core.network.dto.UpdateContactRequest;
 import com.nexachat.core.network.dto.UpdateProfileRequest;
 import com.nexachat.core.network.dto.UserDto;
@@ -114,6 +115,28 @@ public final class ContactsRepository {
     @NonNull
     public Single<Result<UserDto>> updateDisplayName(@NonNull String displayName) {
         return call(userApi.updateMe(new UpdateProfileRequest(displayName.trim())));
+    }
+
+    /**
+     * Adds or replaces the account phone. {@code phone} arrives already
+     * normalized to E.164; the server revalidates and answers
+     * {@code PHONE_EXISTS} when another account owns it. {@code password} is
+     * the current account password required to replace a linked phone
+     * ({@code WRONG_PASSWORD} on mismatch); pass {@code null} for a first
+     * link or an account without a password.
+     */
+    @NonNull
+    public Single<Result<UserDto>> linkPhone(@NonNull String phone, @Nullable String password) {
+        return call(userApi.linkPhone(new LinkPhoneRequest(phone, password)));
+    }
+
+    /**
+     * Removes the account phone. The server refuses with
+     * {@code LAST_SIGN_IN_METHOD} when the phone is the only sign-in method.
+     */
+    @NonNull
+    public Single<Result<UserDto>> removePhone() {
+        return call(userApi.removePhone());
     }
 
     @NonNull

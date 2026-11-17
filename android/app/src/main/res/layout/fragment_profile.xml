@@ -749,15 +749,13 @@
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
                     android:layout_marginStart="56dp"
-                    android:background="?attr/colorSurfaceContainerHighest"
-                    android:visibility="gone" />
+                    android:background="?attr/colorSurfaceContainerHighest" />
 
                 <com.nexachat.core.ui.components.SettingsRowView
                     android:id="@+id/signInMethodPhoneRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:minHeight="@dimen/min_touch_target"
-                    android:visibility="gone" />
+                    android:minHeight="@dimen/min_touch_target" />
 
                 <TextView
                     android:id="@+id/signInMethodsError"

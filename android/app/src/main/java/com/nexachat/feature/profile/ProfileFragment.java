@@ -39,6 +39,7 @@ import com.nexachat.data.ChatColor;
 import com.nexachat.data.ThemeMode;
 import com.nexachat.databinding.FragmentProfileBinding;
 import com.nexachat.feature.auth.ApiErrorText;
+import com.nexachat.feature.auth.AuthFieldValidators;
 import com.nexachat.feature.ui.FormDialogs;
 import com.nexachat.summary.AiConsentRepository;
 import dagger.hilt.android.AndroidEntryPoint;
@@ -71,6 +72,10 @@ public final class ProfileFragment extends Fragment {
     @Nullable private TextView passwordDialogError;
     @Nullable private AlertDialog googleDialog;
     private boolean googlePasswordDialogShowing;
+    @Nullable private AlertDialog phoneDialog;
+    @Nullable private TextView phoneDialogError;
+    @Nullable private TextInputLayout phoneDialogInputLayout;
+    @Nullable private TextInputLayout phoneDialogPasswordLayout;
 
     public ProfileFragment() {
         avatarPicker = registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> { if (uri != null && viewModel != null) viewModel.uploadAvatar(uri); });
@@ -202,7 +207,10 @@ public final class ProfileFragment extends Fragment {
         binding.googleAccountRow.setOnClickListener(v -> onGoogleAccountClicked());
         binding.signInMethodPhoneRow.setTitle(getString(R.string.sign_in_method_phone));
         binding.signInMethodPhoneRow.setLeadingIcon(R.drawable.ic_call);
-        binding.signInMethodPhoneRow.setShowChevron(false);
+        binding.signInMethodPhoneRow.setOnClickListener(v -> {
+            viewModel.openPhoneDialog();
+            showPhoneDialog();
+        });
         binding.errorState.setOnRetry(() -> viewModel.load());
         binding.profileLoadRetry.setOnClickListener(v -> viewModel.load());
         linkedAccountsViewModel.getUiState().observe(getViewLifecycleOwner(), this::renderLinkedAccounts);
@@ -343,6 +351,44 @@ public final class ProfileFragment extends Fragment {
             passwordDialog.getButton(AlertDialog.BUTTON_POSITIVE)
                     .setEnabled(!state.isPasswordSaving());
         }
+        if (state.isShowPhoneDialog() && phoneDialog == null) {
+            showPhoneDialog();
+        } else if (phoneDialog != null && !state.isShowPhoneDialog()) {
+            phoneDialog.dismiss();
+        }
+        if (phoneDialogError != null) {
+            ApiError phoneError = state.getPhoneError();
+            // A rejected current password is flagged on its field, not on the banner.
+            boolean onPasswordField = phoneDialogPasswordLayout != null
+                    && phoneError instanceof ApiError.WrongPassword;
+            phoneDialogError.setVisibility(
+                    phoneError == null || onPasswordField ? View.GONE : View.VISIBLE);
+            if (phoneError != null && !onPasswordField) {
+                phoneDialogError.setText(phoneDialogErrorText(phoneError));
+            }
+        }
+        if (phoneDialogInputLayout != null) {
+            phoneDialogInputLayout.setError(state.isPhoneInvalid()
+                    ? getString(R.string.error_phone_invalid) : null);
+        }
+        if (phoneDialogPasswordLayout != null) {
+            ApiError phoneError = state.getPhoneError();
+            CharSequence passwordFieldError = null;
+            if (state.isPhonePasswordMissing()) {
+                passwordFieldError = getString(R.string.error_current_password_required);
+            } else if (phoneError instanceof ApiError.WrongPassword) {
+                passwordFieldError = ApiErrorText.text(requireContext(), phoneError);
+            }
+            phoneDialogPasswordLayout.setError(passwordFieldError);
+        }
+        if (phoneDialog != null && phoneDialog.isShowing()) {
+            phoneDialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                    .setEnabled(!state.isPhoneSaving() && state.canSubmitPhone());
+            android.widget.Button removeButton = phoneDialog.getButton(AlertDialog.BUTTON_NEUTRAL);
+            if (removeButton != null) {
+                removeButton.setEnabled(!state.isPhoneSaving());
+            }
+        }
         if (state.isPasswordChanged()) { viewModel.consumePasswordChanged(); new MaterialAlertDialogBuilder(requireContext()).setMessage(R.string.profile_password_changed).setPositiveButton(android.R.string.ok, null).show(); }
         if (state.getAvatarError() != null) viewModel.consumeAvatarError();
         // Sign-in rows combine linked-account config with the loaded profile; re-render
@@ -362,16 +408,12 @@ public final class ProfileFragment extends Fragment {
         UserDto me = viewModel.getUiState().getValue() != null
                 ? viewModel.getUiState().getValue().getUser() : null;
         String accountPhone = me != null ? me.getPhone() : null;
-        boolean phoneVisible = ProfileSignInMethodRules.phoneRowVisible(accountPhone);
-        binding.signInMethodPhoneRow.setVisibility(phoneVisible ? View.VISIBLE : View.GONE);
-        binding.signInMethodPhoneDivider.setVisibility(
-                ProfileSignInMethodRules.phoneDividerVisible(googleVisible, accountPhone)
-                        ? View.VISIBLE : View.GONE);
-        if (phoneVisible) {
-            binding.signInMethodPhoneRow.setSubtitle(accountPhone);
-            binding.signInMethodPhoneRow.setContentDescription(
-                    getString(R.string.sign_in_method_phone) + ", " + accountPhone);
-        }
+        boolean hasPhone = accountPhone != null && !accountPhone.isBlank();
+        binding.signInMethodPhoneRow.setSubtitle(
+                hasPhone ? accountPhone : getString(R.string.action_add));
+        binding.signInMethodPhoneRow.setContentDescription(
+                getString(R.string.sign_in_method_phone) + ", "
+                        + (hasPhone ? accountPhone : getString(R.string.action_add)));
 
         if (googleVisible) {
             binding.googleAccountRow.setEnabled(!state.isLoading());
@@ -632,6 +674,172 @@ public final class ProfileFragment extends Fragment {
         });
         dialog.show();
     }
+
+    private void showPhoneDialog() {
+        ProfileViewModel.UiState current = viewModel.getUiState().getValue();
+        if (phoneDialog != null || current == null || !current.isShowPhoneDialog()) {
+            return;
+        }
+        LinearLayout form = new LinearLayout(requireContext());
+        form.setOrientation(LinearLayout.VERTICAL);
+        int pad = getResources().getDimensionPixelSize(R.dimen.space_md);
+        int spaceSm = getResources().getDimensionPixelSize(R.dimen.space_sm);
+        form.setPadding(pad, spaceSm, pad, 0);
+
+        TextInputLayout phoneLayout = new TextInputLayout(
+                FormDialogs.dialogContext(requireContext()),
+                null,
+                com.google.android.material.R.attr.textInputStyle);
+        phoneLayout.setHint(getString(R.string.sign_in_method_phone));
+        phoneLayout.setStartIconDrawable(R.drawable.ic_call);
+        phoneLayout.setStartIconTintList(ColorStateList.valueOf(MaterialColors.getColor(
+                phoneLayout, com.google.android.material.R.attr.colorOnSurfaceVariant)));
+        phoneLayout.setPlaceholderText(getString(R.string.auth_phone_placeholder));
+        TextInputEditText input = new TextInputEditText(phoneLayout.getContext());
+        input.setSaveEnabled(false);
+        input.setSingleLine(true);
+        Typeface bodyTypeface = input.getTypeface();
+        input.setInputType(InputType.TYPE_CLASS_PHONE);
+        input.setTypeface(bodyTypeface);
+        input.setAutofillHints(View.AUTOFILL_HINT_PHONE);
+        input.setImeOptions(current.isPhonePasswordRequired()
+                ? EditorInfo.IME_ACTION_NEXT : EditorInfo.IME_ACTION_DONE);
+        phoneLayout.addView(input);
+        form.addView(phoneLayout, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // Replacing a linked phone re-authenticates with the current password;
+        // first links and passwordless accounts never see this field.
+        final TextInputLayout passwordLayout = current.isPhonePasswordRequired()
+                ? passwordInputLayout(R.string.auth_current_password_label) : null;
+        final TextInputEditText passwordInput = passwordLayout != null
+                ? (TextInputEditText) passwordLayout.getEditText() : null;
+        if (passwordLayout != null && passwordInput != null) {
+            passwordInput.setImeOptions(EditorInfo.IME_ACTION_DONE);
+            LinearLayout.LayoutParams passwordLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            passwordLp.topMargin = spaceSm;
+            form.addView(passwordLayout, passwordLp);
+        }
+
+        TextView errorLine = new TextView(requireContext());
+        errorLine.setVisibility(View.GONE);
+        errorLine.setBackgroundResource(R.drawable.bg_auth_inline_error);
+        int inset = getResources().getDimensionPixelSize(R.dimen.space_inset);
+        errorLine.setPadding(inset, inset, inset, inset);
+        errorLine.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_error_outline, 0, 0, 0);
+        androidx.core.widget.TextViewCompat.setCompoundDrawableTintList(
+                errorLine, ColorStateList.valueOf(MaterialColors.getColor(
+                        errorLine, com.google.android.material.R.attr.colorError)));
+        errorLine.setCompoundDrawablePadding(spaceSm);
+        errorLine.setTextColor(MaterialColors.getColor(
+                errorLine, com.google.android.material.R.attr.colorOnErrorContainer));
+        android.util.TypedValue body = new android.util.TypedValue();
+        requireContext().getTheme().resolveAttribute(
+                com.google.android.material.R.attr.textAppearanceBodyMedium, body, true);
+        androidx.core.widget.TextViewCompat.setTextAppearance(errorLine, body.resourceId);
+        ViewCompat.setAccessibilityLiveRegion(
+                errorLine, ViewCompat.ACCESSIBILITY_LIVE_REGION_POLITE);
+        LinearLayout.LayoutParams errorLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        errorLp.topMargin = spaceSm;
+        form.addView(errorLine, errorLp);
+
+        UserDto me = current.getUser();
+        boolean hasPhone = me != null && me.getPhone() != null && !me.getPhone().isBlank();
+        MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.sign_in_method_phone)
+                .setView(FormDialogs.scrollableBody(form))
+                .setNegativeButton(R.string.action_cancel, (d, w) -> viewModel.dismissPhoneDialog())
+                .setPositiveButton(R.string.action_save, null)
+                .setOnCancelListener(d -> viewModel.dismissPhoneDialog());
+        if (hasPhone) {
+            builder.setNeutralButton(R.string.profile_phone_remove, null);
+        }
+        AlertDialog dialog = builder.create();
+        phoneDialog = dialog;
+        phoneDialogError = errorLine;
+        phoneDialogInputLayout = phoneLayout;
+        phoneDialogPasswordLayout = passwordLayout;
+        dialog.setOnDismissListener(d -> {
+            phoneDialog = null;
+            phoneDialogError = null;
+            phoneDialogInputLayout = null;
+            phoneDialogPasswordLayout = null;
+        });
+        input.setText(current.getPhoneInput());
+        input.addTextChangedListener(new SimpleTextWatcher(viewModel::onPhoneInputChange));
+        if (passwordInput != null) {
+            passwordInput.setText(current.getPhonePassword());
+            passwordInput.addTextChangedListener(
+                    new SimpleTextWatcher(viewModel::onPhonePasswordChange));
+        }
+        dialog.setOnShowListener(ignored -> {
+            FormDialogs.resizeAboveIme(dialog);
+            android.widget.Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            positive.setOnClickListener(v -> {
+                String value = input.getText() == null ? "" : input.getText().toString();
+                String normalized = AuthFieldValidators.normalizeE164(value);
+                if (!AuthFieldValidators.isE164(normalized)) {
+                    phoneLayout.setError(getString(R.string.error_phone_invalid));
+                    return;
+                }
+                phoneLayout.setError(null);
+                errorLine.setVisibility(View.GONE);
+                viewModel.onPhoneInputChange(value);
+                viewModel.submitPhoneChange();
+            });
+            android.widget.Button remove = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
+            if (remove != null) {
+                remove.setOnClickListener(v -> showRemovePhoneConfirm());
+            }
+            input.setOnEditorActionListener((v, actionId, event) -> {
+                if (actionId == EditorInfo.IME_ACTION_DONE) {
+                    positive.performClick();
+                    return true;
+                }
+                return false;
+            });
+            if (passwordInput != null) {
+                passwordInput.setOnEditorActionListener((v, actionId, event) -> {
+                    if (actionId == EditorInfo.IME_ACTION_DONE) {
+                        positive.performClick();
+                        return true;
+                    }
+                    return false;
+                });
+            }
+        });
+        dialog.show();
+    }
+
+    private void showRemovePhoneConfirm() {
+        FormDialogs.markDestructive(new MaterialAlertDialogBuilder(requireContext())
+                .setMessage(R.string.profile_phone_remove_confirm)
+                .setNegativeButton(R.string.action_cancel, null)
+                .setPositiveButton(R.string.action_remove, (d, w) -> viewModel.removePhone())
+                .show());
+    }
+
+    /**
+     * The shared {@link ApiErrorText} table keeps the Google-unlink wording for
+     * {@code LAST_SIGN_IN_METHOD}; inside the phone dialog the same code means
+     * the number is the only way in, and {@code VALIDATION_FAILED} means the
+     * server rejected the number's shape.
+     */
+    private CharSequence phoneDialogErrorText(@NonNull ApiError error) {
+        if (error instanceof ApiError.Unknown unknown) {
+            if ("LAST_SIGN_IN_METHOD".equals(unknown.getCode())) {
+                return getText(R.string.error_phone_last_sign_in_method);
+            }
+            if ("VALIDATION_FAILED".equals(unknown.getCode())) {
+                return getText(R.string.error_phone_invalid);
+            }
+        }
+        return ApiErrorText.text(requireContext(), error);
+    }
+
     private void onAiConsentToggled(CompoundButton button, boolean checked) {
         if (syncingAiConsent) {
             return;
@@ -685,6 +893,9 @@ public final class ProfileFragment extends Fragment {
         }
         if (googleDialog != null) {
             googleDialog.dismiss();
+        }
+        if (phoneDialog != null) {
+            phoneDialog.dismiss();
         }
         binding = null;
         super.onDestroyView();

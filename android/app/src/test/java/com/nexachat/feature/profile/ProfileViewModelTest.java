@@ -26,6 +26,8 @@ import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -322,12 +324,14 @@ public final class ProfileViewModelTest {
         ProfileViewModel.UiState state = new ProfileViewModel.UiState()
                 .withOldPassword("old-marker")
                 .withNewPassword("new-marker")
-                .withConfirmPassword("confirm-marker");
+                .withConfirmPassword("confirm-marker")
+                .withPhonePassword("phone-marker");
 
         String description = state.toString();
         assertFalse(description.contains("old-marker"));
         assertFalse(description.contains("new-marker"));
         assertFalse(description.contains("confirm-marker"));
+        assertFalse(description.contains("phone-marker"));
     }
 
     @Test
@@ -462,6 +466,266 @@ public final class ProfileViewModelTest {
         viewModel.setShowSeen(false);
 
         assertEquals(ApiError.RateLimited.INSTANCE, viewModel.getUiState().getValue().getSaveError());
+    }
+
+    @Test
+    public void openPhoneDialogPrefillsTheCurrentNumber() {
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me));
+
+        viewModel.openPhoneDialog();
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertTrue(state.isShowPhoneDialog());
+        assertEquals(me.getPhone(), state.getPhoneInput());
+        assertEquals("", state.getPhonePassword());
+        assertFalse(state.isPhoneInvalid());
+        assertFalse(state.isPhonePasswordMissing());
+        assertNull(state.getPhoneError());
+    }
+
+    @Test
+    public void openPhoneDialogStartsEmptyWithoutANumber() {
+        UserDto emailOnly = new UserDto("me-1", null, "Son", null, "a@b.c", true, false);
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(emailOnly));
+
+        viewModel.openPhoneDialog();
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertTrue(state.isShowPhoneDialog());
+        assertEquals("", state.getPhoneInput());
+    }
+
+    @Test
+    public void unloadedProfileCannotOpenPhoneDialog() {
+        ProfileViewModel viewModel = createViewModel(
+                Result.failure(new ApiError.Network("down")));
+
+        viewModel.openPhoneDialog();
+
+        assertFalse(viewModel.getUiState().getValue().isShowPhoneDialog());
+    }
+
+    @Test
+    public void dismissingPhoneDialogClearsEnteredNumber() {
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me));
+        viewModel.openPhoneDialog();
+        viewModel.onPhoneInputChange("+84999999999");
+        viewModel.onPhonePasswordChange("current-pass-1");
+
+        viewModel.dismissPhoneDialog();
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertFalse(state.isShowPhoneDialog());
+        assertEquals("", state.getPhoneInput());
+        assertEquals("", state.getPhonePassword());
+    }
+
+    @Test
+    public void firstPhoneLinkSendsNoPassword() {
+        UserDto noPhone = new UserDto("me-1", null, "Son", null);
+        UserDto linked = new UserDto("me-1", "+84901234567", "Son", null);
+        when(contactsRepository.linkPhone(anyString(), any()))
+                .thenReturn(Single.just(new Result.Success<>(linked)));
+
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(noPhone));
+        viewModel.openPhoneDialog();
+        assertFalse(viewModel.getUiState().getValue().isPhonePasswordRequired());
+        viewModel.onPhoneInputChange("+84 901 234 567");
+        viewModel.submitPhoneChange();
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertEquals(linked, state.getUser());
+        assertFalse(state.isShowPhoneDialog());
+        verify(contactsRepository, times(1)).linkPhone(eq("+84901234567"), isNull());
+    }
+
+    @Test
+    public void submitPhoneChangeSendsNormalizedNumberAndUpdatesUser() {
+        UserDto linked = new UserDto("me-1", "+84901234567", "Son", null);
+        when(contactsRepository.linkPhone(anyString(), any()))
+                .thenReturn(Single.just(new Result.Success<>(linked)));
+
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me));
+        viewModel.openPhoneDialog();
+        assertTrue(viewModel.getUiState().getValue().isPhonePasswordRequired());
+        viewModel.onPhoneInputChange("+84 901 234 567");
+        viewModel.onPhonePasswordChange("current-pass-1");
+        viewModel.submitPhoneChange();
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertEquals(linked, state.getUser());
+        assertFalse(state.isShowPhoneDialog());
+        assertFalse(state.isPhoneSaving());
+        assertNull(state.getPhoneError());
+        verify(contactsRepository, times(1)).linkPhone("+84901234567", "current-pass-1");
+    }
+
+    @Test
+    public void replacingPhoneWithoutPasswordIsBlockedBeforeRepository() {
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me));
+        viewModel.openPhoneDialog();
+        viewModel.onPhoneInputChange("+84901234567");
+        viewModel.submitPhoneChange();
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertTrue(state.isPhonePasswordMissing());
+        assertTrue(state.isShowPhoneDialog());
+        assertFalse(state.isPhoneSaving());
+        assertFalse(state.canSubmitPhone());
+        verify(contactsRepository, never()).linkPhone(anyString(), any());
+    }
+
+    @Test
+    public void invalidPhoneInputIsBlockedBeforeRepository() {
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me));
+        viewModel.openPhoneDialog();
+        viewModel.onPhoneInputChange("0901 234 567");
+        viewModel.submitPhoneChange();
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertTrue(state.isPhoneInvalid());
+        assertTrue(state.isShowPhoneDialog());
+        verify(contactsRepository, never()).linkPhone(anyString(), any());
+    }
+
+    @Test
+    public void phoneInvalidFlagClearsWhenTheNumberIsEdited() {
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me));
+        viewModel.openPhoneDialog();
+        viewModel.onPhoneInputChange("not a number");
+        viewModel.submitPhoneChange();
+        assertTrue(viewModel.getUiState().getValue().isPhoneInvalid());
+
+        viewModel.onPhoneInputChange("+84901234567");
+
+        assertFalse(viewModel.getUiState().getValue().isPhoneInvalid());
+    }
+
+    @Test
+    public void linkPhoneFailureKeepsDialogOpenWithError() {
+        when(contactsRepository.linkPhone(anyString(), any())).thenReturn(Single.just(
+                Result.failure(ApiError.PhoneExists.INSTANCE)));
+
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me));
+        viewModel.openPhoneDialog();
+        viewModel.onPhoneInputChange("+84901234567");
+        viewModel.onPhonePasswordChange("current-pass-1");
+        viewModel.submitPhoneChange();
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertTrue(state.isShowPhoneDialog());
+        assertEquals(ApiError.PhoneExists.INSTANCE, state.getPhoneError());
+        assertFalse(state.isPhoneSaving());
+    }
+
+    @Test
+    public void wrongPasswordKeepsPhoneDialogOpenAndRetainsTheTypedSecret() {
+        when(contactsRepository.linkPhone(anyString(), any())).thenReturn(Single.just(
+                Result.failure(ApiError.WrongPassword.INSTANCE)));
+
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me));
+        viewModel.openPhoneDialog();
+        viewModel.onPhoneInputChange("+84901234567");
+        viewModel.onPhonePasswordChange("current-pass-1");
+        viewModel.submitPhoneChange();
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertTrue(state.isShowPhoneDialog());
+        assertEquals(ApiError.WrongPassword.INSTANCE, state.getPhoneError());
+        assertEquals("+84901234567", state.getPhoneInput());
+        assertEquals("current-pass-1", state.getPhonePassword());
+        assertFalse(state.isPhoneSaving());
+    }
+
+    @Test
+    public void accountWithoutPasswordNeverAsksForOneOnReplace() {
+        UserDto noPassword = new UserDto(
+                "me-1", "+84900000000", "Son", null, "a@b.c", true, false);
+        UserDto linked = new UserDto("me-1", "+84901234567", "Son", null, "a@b.c", true, false);
+        when(contactsRepository.linkPhone(anyString(), any()))
+                .thenReturn(Single.just(new Result.Success<>(linked)));
+
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(noPassword));
+        viewModel.openPhoneDialog();
+        assertFalse(viewModel.getUiState().getValue().isPhonePasswordRequired());
+        assertTrue(viewModel.getUiState().getValue().canSubmitPhone());
+        viewModel.onPhoneInputChange("+84901234567");
+        viewModel.submitPhoneChange();
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertEquals(linked, state.getUser());
+        assertFalse(state.isShowPhoneDialog());
+        verify(contactsRepository, times(1)).linkPhone(eq("+84901234567"), isNull());
+    }
+
+    @Test
+    public void secondPhoneSubmitWhileSavingIsIgnored() {
+        SingleSubject<Result<UserDto>> pending = SingleSubject.create();
+        when(contactsRepository.linkPhone(anyString(), any())).thenReturn(pending);
+
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me));
+        viewModel.openPhoneDialog();
+        viewModel.onPhoneInputChange("+84901234567");
+        viewModel.onPhonePasswordChange("current-pass-1");
+        viewModel.submitPhoneChange();
+        viewModel.onPhoneInputChange("+84988888777");
+        viewModel.submitPhoneChange();
+
+        verify(contactsRepository, times(1)).linkPhone("+84901234567", "current-pass-1");
+    }
+
+    @Test
+    public void removePhoneSuccessUpdatesUserAndClosesDialog() {
+        UserDto phoneless = new UserDto("me-1", null, "Son", null);
+        when(contactsRepository.removePhone())
+                .thenReturn(Single.just(new Result.Success<>(phoneless)));
+
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me));
+        viewModel.openPhoneDialog();
+        viewModel.removePhone();
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertEquals(phoneless, state.getUser());
+        assertNull(state.getUser().getPhone());
+        assertFalse(state.isShowPhoneDialog());
+        assertFalse(state.isPhoneSaving());
+        verify(contactsRepository, times(1)).removePhone();
+    }
+
+    @Test
+    public void removePhoneFailureKeepsDialogOpenWithError() {
+        ApiError lastMethod = new ApiError.Unknown("LAST_SIGN_IN_METHOD", 409);
+        when(contactsRepository.removePhone()).thenReturn(Single.just(
+                Result.failure(lastMethod)));
+
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me));
+        viewModel.openPhoneDialog();
+        viewModel.removePhone();
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertTrue(state.isShowPhoneDialog());
+        assertEquals(lastMethod, state.getPhoneError());
+        assertFalse(state.isPhoneSaving());
+    }
+
+    @Test
+    public void latePhoneSaveAfterSignOutDoesNotRecacheThePreviousUser() {
+        SessionEvents sessionEvents = new SessionEvents();
+        ProfileViewModel viewModel = createViewModel(new Result.Success<>(me), sessionEvents);
+        SingleSubject<Result<UserDto>> pendingSave = SingleSubject.create();
+        when(contactsRepository.linkPhone(anyString(), any())).thenReturn(pendingSave);
+        viewModel.openPhoneDialog();
+        viewModel.onPhoneInputChange("+84901234567");
+        viewModel.onPhonePasswordChange("current-pass-1");
+        viewModel.submitPhoneChange();
+
+        sessionEvents.emitLoggedOut();
+        pendingSave.onSuccess(new Result.Success<>(
+                new UserDto("me-1", "+84901234567", "Son", null)));
+
+        ProfileViewModel.UiState state = viewModel.getUiState().getValue();
+        assertNull(state.getUser());
+        assertFalse(state.isPhoneSaving());
     }
 
     private static void openAndFillPassword(
