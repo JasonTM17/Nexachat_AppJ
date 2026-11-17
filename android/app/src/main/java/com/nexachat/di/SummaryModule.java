@@ -53,8 +53,9 @@ public final class SummaryModule {
     @Singleton
     public static AiConsentRepository provideAiConsentRepository(
             AiConsentApi api,
-            @Named("summary_main") Executor mainExecutor) {
-        return new AiConsentRepository(api, mainExecutor);
+            @Named("summary_main") Executor mainExecutor,
+            SummaryRepository summaryRepository) {
+        return new AiConsentRepository(api, mainExecutor, summaryRepository);
     }
 
     @Provides

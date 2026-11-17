@@ -3,6 +3,7 @@ package com.nexachat.feature.summary;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.graphics.Rect;
 import android.view.ContextThemeWrapper;
 import android.os.Bundle;
 import android.view.HapticFeedbackConstants;
@@ -14,10 +15,8 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import android.widget.LinearLayout;
-import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.core.content.ContextCompat;
 import androidx.lifecycle.ViewModelProvider;
 import com.nexachat.feature.ui.NexaBottomSheetFragment;
 import com.google.android.material.chip.Chip;
@@ -28,6 +27,8 @@ import com.nexachat.core.ui.SummaryUiRules;
 import com.nexachat.databinding.BottomSheetSummaryBinding;
 import com.nexachat.summary.AiConsentRepository;
 import com.nexachat.summary.SummaryError;
+import com.nexachat.summary.SummaryHeaderText;
+import com.nexachat.summary.SummaryPeriod;
 import com.nexachat.summary.SummaryResponse;
 import com.nexachat.summary.SummaryScope;
 import com.nexachat.summary.SummaryTextFormatter;
@@ -61,6 +62,7 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
     private static final String ARG_MESSAGE_SEQS = "summary_message_seqs";
     private static final String ARG_MESSAGE_SENDERS = "summary_message_senders";
     private static final String ARG_MESSAGE_TIMES = "summary_message_times";
+    private static final int[] LAST_N_CHOICES = {20, 50, 100};
 
     @Inject
     AiConsentRepository consentRepository;
@@ -77,8 +79,7 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
     private final Set<String> localMessageIds = new HashSet<>();
     private boolean preferAiMode;
     private boolean userOverrodeMode;
-    private boolean userSelectedScope;
-    private boolean autoFallbackPending = true;
+    private int selectedLimit = SummaryViewModel.DEFAULT_LAST_N;
 
     @NonNull
     public static SummaryBottomSheetFragment newInstance(@NonNull String conversationId) {
@@ -130,6 +131,7 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         viewModel = new ViewModelProvider(this).get(SummaryViewModel.class);
         consentRepository.refresh();
         setupScopeChips();
+        setupLimitChips();
         setupModeChips();
         setupActions();
         applyFooterInsets();
@@ -143,12 +145,35 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
             updateModeSelection();
         });
         viewModel.state().observe(getViewLifecycleOwner(), this::render);
-        requestScope(SummaryScope.UNREAD);
+        SummaryUiState restored = viewModel.state().getValue();
+        if (restored != null && restored.getLimit() != null) {
+            selectedLimit = restored.getLimit();
+        }
+        if (restored == null || restored.getStatus() == SummaryUiState.Status.IDLE) {
+            // A rotation keeps the chosen scope; only a fresh sheet starts on unread.
+            requestScope(
+                    restored == null ? SummaryScope.UNREAD : restored.getScope(),
+                    restored == null ? null : restored.getLimit());
+        }
     }
 
-    private void requestScope(@NonNull SummaryScope scope) {
-        Integer limit = scope == SummaryScope.LAST_N ? 50 : null;
-        viewModel.request(scope, limit);
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (viewModel != null) {
+            // A sheet left open across midnight or a zone change must not keep yesterday's day.
+            viewModel.revalidate();
+        }
+    }
+
+    private void requestScope(@NonNull SummaryScope scope, @Nullable Integer limit) {
+        Integer effective = scope == SummaryScope.LAST_N
+                ? (limit == null ? selectedLimit : limit)
+                : null;
+        if (effective != null) {
+            selectedLimit = effective;
+        }
+        viewModel.request(scope, effective);
     }
 
     private void readCitationArgs() {
@@ -187,15 +212,9 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         group.removeAllViews();
         Context context = requireContext();
         for (SummaryScope scope : SummaryScope.values()) {
-            Chip chip = new Chip(
-                    new ContextThemeWrapper(context, R.style.Widget_NexaChat_Chip_Filter),
-                    null,
-                    R.style.Widget_NexaChat_Chip_Filter);
+            Chip chip = filterChip(context);
             chip.setTag(scope);
-            chip.setCheckable(true);
-            chip.setCheckedIconVisible(false);
             chip.setText(scopeLabel(scope));
-            com.nexachat.feature.inbox.InboxFilterChipColourRules.apply(chip, context);
             chip.setOnClickListener(v -> {
                 if (!(v.getTag() instanceof SummaryScope selected)) {
                     return;
@@ -204,11 +223,44 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
                 if (current != null && current.getScope() == selected) {
                     return;
                 }
-                userSelectedScope = true;
-                requestScope(selected);
+                requestScope(selected, selected == SummaryScope.LAST_N ? selectedLimit : null);
             });
             group.addView(chip);
         }
+    }
+
+    private void setupLimitChips() {
+        if (binding == null) {
+            return;
+        }
+        ChipGroup group = binding.summaryLimitChips;
+        group.removeAllViews();
+        Context context = requireContext();
+        for (int choice : LAST_N_CHOICES) {
+            Chip chip = filterChip(context);
+            chip.setTag(choice);
+            chip.setText(String.valueOf(choice));
+            chip.setContentDescription(getString(R.string.summary_scope_last_n_format, choice));
+            chip.setOnClickListener(v -> {
+                if (!(v.getTag() instanceof Integer count)) {
+                    return;
+                }
+                requestScope(SummaryScope.LAST_N, count);
+            });
+            group.addView(chip);
+        }
+    }
+
+    @NonNull
+    private Chip filterChip(@NonNull Context context) {
+        Chip chip = new Chip(
+                new ContextThemeWrapper(context, R.style.Widget_NexaChat_Chip_Filter),
+                null,
+                R.style.Widget_NexaChat_Chip_Filter);
+        chip.setCheckable(true);
+        chip.setCheckedIconVisible(false);
+        com.nexachat.feature.inbox.InboxFilterChipColourRules.apply(chip, context);
+        return chip;
     }
 
     private void setupModeChips() {
@@ -362,8 +414,8 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         if (binding == null || state == null) {
             return;
         }
-        updateScopeSelection(state.getScope());
-        renderEngineBadge(state.getSummary());
+        updateScopeSelection(state.getScope(), state.getLimit());
+        syncModeFromResponse(state.getSummary());
         boolean loading = state.getStatus() == SummaryUiState.Status.LOADING
                 || (state.getStatus() == SummaryUiState.Status.IDLE
                 && !SummaryUiRules.restoredSummaryMissing(state.getStatus(), state.getLastSummaryId()));
@@ -374,29 +426,19 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         binding.summarySkeleton.getRoot().setVisibility(loading ? View.VISIBLE : View.GONE);
         binding.summaryError.getRoot().setVisibility(error ? View.VISIBLE : View.GONE);
         binding.summaryContent.setVisibility(ready ? View.VISIBLE : View.GONE);
+        binding.summaryResultHeader.setVisibility(
+                ready && state.getSummary() != null ? View.VISIBLE : View.GONE);
 
         if (error) {
             SummaryError err = state.getStatus() == SummaryUiState.Status.ERROR
                     ? state.getError()
                     : SummaryError.UNKNOWN;
-            // One automatic retry on a broader scope when the initial unread request
-            // has nothing to summarize; explicit user picks keep the error view.
-            if (autoFallbackPending && !userSelectedScope
-                    && SummaryUiRules.shouldFallbackFromUnread(state.getScope(), err)) {
-                autoFallbackPending = false;
-                requestScope(SummaryScope.LAST_N);
-                return;
-            }
-            Runnable recentAction = SummaryUiRules.shouldFallbackFromUnread(state.getScope(), err)
-                    ? () -> {
-                        userSelectedScope = true;
-                        requestScope(SummaryScope.LAST_N);
-                    }
-                    : null;
+            // A short scope is reported as-is: the user picks another scope, nothing widens itself.
             SummaryErrorViewHelper.bind(
-                    binding.summaryError.getRoot(), err, viewModel::retry, recentAction);
+                    binding.summaryError.getRoot(), err, viewModel::retry, this::focusScopeChips);
         }
         if (ready && state.getSummary() != null) {
+            binding.summaryResultHeader.setText(resultHeader(state.getSummary()));
             SummarySheetContentBinder binder = new SummarySheetContentBinder(
                     requireContext(),
                     messageSeqMap,
@@ -415,6 +457,27 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         binding.summaryShare.setEnabled(footer.shareEnabled);
     }
 
+    @NonNull
+    private String resultHeader(@NonNull SummaryResponse summary) {
+        SummaryScope scope = summary.getScope() == null ? SummaryScope.UNREAD : summary.getScope();
+        String scopeLabel = scope == SummaryScope.LAST_N
+                ? getString(R.string.summary_scope_last_n_format,
+                        summary.getLimit() == null ? selectedLimit : summary.getLimit())
+                : scopeLabel(scope);
+        SummaryPeriod period = summary.getPeriod();
+        String dateLabel = period == null
+                ? null
+                : SummaryHeaderText.dateLabel(period.getDate(), Locale.getDefault());
+        String zone = period == null ? null : period.getTimeZone();
+        String processor = null;
+        if (SummaryUiRules.shouldShowEngineBadge(summary.getGeneratedBy())) {
+            processor = getString(SummaryUiRules.isLlmGenerated(summary.getGeneratedBy())
+                    ? R.string.summary_badge_ai
+                    : R.string.summary_badge_local);
+        }
+        return SummaryHeaderText.format(scopeLabel, dateLabel, zone, processor);
+    }
+
     private void handleCitationClick(@NonNull String messageId) {
         dismissSheet();
         if (citationListener != null) {
@@ -424,44 +487,57 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         }
     }
 
-    private void renderEngineBadge(@Nullable SummaryResponse summary) {
-        if (binding == null) {
+    private void syncModeFromResponse(@Nullable SummaryResponse summary) {
+        if (binding == null || summary == null || userOverrodeMode
+                || !SummaryUiRules.shouldShowEngineBadge(summary.getGeneratedBy())) {
             return;
         }
-        String generatedBy = summary == null ? null : summary.getGeneratedBy();
-        if (!SummaryUiRules.shouldShowEngineBadge(generatedBy)) {
-            binding.summaryBadgeAi.setVisibility(View.GONE);
-            binding.summaryBadgeLocal.setVisibility(View.GONE);
-            return;
-        }
-        boolean llmGenerated = SummaryUiRules.isLlmGenerated(generatedBy);
-        if (!userOverrodeMode) {
-            preferAiMode = llmGenerated;
-            updateModeSelection();
-        }
-        if (llmGenerated) {
-            binding.summaryBadgeAi.setVisibility(View.VISIBLE);
-            binding.summaryBadgeLocal.setVisibility(View.GONE);
-            binding.summaryBadgeAi.setBackgroundColor(
-                    ContextCompat.getColor(requireContext(), R.color.brand_indigo_container));
-        } else {
-            binding.summaryBadgeLocal.setVisibility(View.VISIBLE);
-            binding.summaryBadgeAi.setVisibility(View.GONE);
-        }
+        preferAiMode = SummaryUiRules.isLlmGenerated(summary.getGeneratedBy());
+        updateModeSelection();
     }
 
-    private void updateScopeSelection(@NonNull SummaryScope selected) {
+    private void updateScopeSelection(@NonNull SummaryScope selected, @Nullable Integer limit) {
         if (binding == null) {
             return;
+        }
+        if (limit != null) {
+            selectedLimit = limit;
         }
         ChipGroup group = binding.summaryScopeChips;
         for (int i = 0; i < group.getChildCount(); i++) {
             View child = group.getChildAt(i);
             if (child instanceof Chip chip && chip.getTag() == selected) {
                 chip.setChecked(true);
-                return;
+                break;
             }
         }
+        binding.summaryLimitRow.setVisibility(
+                selected == SummaryScope.LAST_N ? View.VISIBLE : View.GONE);
+        ChipGroup limits = binding.summaryLimitChips;
+        for (int i = 0; i < limits.getChildCount(); i++) {
+            View child = limits.getChildAt(i);
+            if (child instanceof Chip chip && chip.getTag() instanceof Integer count) {
+                chip.setChecked(count == selectedLimit);
+            }
+        }
+    }
+
+    private void focusScopeChips() {
+        if (binding == null) {
+            return;
+        }
+        ChipGroup group = binding.summaryScopeChips;
+        View target = group;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child instanceof Chip chip && chip.isChecked()) {
+                target = chip;
+                break;
+            }
+        }
+        target.requestFocus();
+        target.requestRectangleOnScreen(
+                new Rect(0, 0, target.getWidth(), target.getHeight()), true);
     }
 
     @NonNull
