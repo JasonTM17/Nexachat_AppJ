@@ -135,6 +135,8 @@ public class CallActivity extends ComponentActivity {
     private PendingOperation pendingOperation = PendingOperation.NONE;
     private boolean startRequested;
     private String requestedCallId;
+    /** Terminal call the manager still held when this outgoing screen opened. */
+    @Nullable private String callIdBeforeLaunch;
     private CallActivityLaunchPolicy.Decision launchDecision;
     private boolean callErrorDialogShown;
     private PowerManager.WakeLock proximityWakeLock;
@@ -181,6 +183,10 @@ public class CallActivity extends ComponentActivity {
             finish();
             return;
         }
+        if (launchDecision == CallActivityLaunchPolicy.Decision.START_OUTGOING
+                && managerSession != null && managerSession.getState() == CallState.ENDED) {
+            callIdBeforeLaunch = managerSession.getCallId();
+        }
         currentSession = launchDecision == CallActivityLaunchPolicy.Decision.ATTACH_TO_LIVE_CALL
                 ? managerSession : null;
         startRequested = currentSession != null;
@@ -202,6 +208,7 @@ public class CallActivity extends ComponentActivity {
         }
         listener = new CallManager.CallListener() {
             @Override public void onCallChanged(CallSession session) {
+                if (CallActivityLaunchPolicy.isStaleEnded(callIdBeforeLaunch, session)) return;
                 currentSession = session;
                 firebaseCallStatusDisplaySession.onCallChanged(session);
                 render(session);
@@ -252,11 +259,11 @@ public class CallActivity extends ComponentActivity {
                 launchDecision = CallActivityLaunchPolicy.Decision.ATTACH_TO_LIVE_CALL;
                 currentSession = latestSession;
                 startRequested = true;
-            } else if (startRequested && latestSession != null
-                    && latestSession.getState() == CallState.ENDED) {
-                currentSession = latestSession;
             } else {
-                currentSession = null;
+                // The manager still holds the previous call's ENDED session until the new
+                // call is published; adopting it would close this screen after 1.6 s.
+                currentSession = CallActivityLaunchPolicy.endedSessionToAdopt(
+                        startRequested, callIdBeforeLaunch, latestSession);
             }
         }
         render(currentSession);
