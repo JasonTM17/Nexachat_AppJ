@@ -712,7 +712,7 @@
     <string name="error_google_not_available">Google sign-in isn\'t available right now.</string>
     <string name="error_google_developer_error">Google sign-in isn\'t set up correctly on this device. Sign in with your phone number instead.</string>
     <string name="error_last_sign_in_method">Set a password before removing this sign-in method.</string>
-    <string name="error_phone_last_sign_in_method">Add an email before removing your phone number.</string>
+    <string name="error_phone_last_sign_in_method">Add and verify an email before removing your phone number.</string>
     <string name="error_no_password_set">This account does not have a password.</string>
     <!-- Google signup auth -->
     <string name="auth_or_divider">or</string>

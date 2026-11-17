@@ -705,7 +705,7 @@
     <string name="error_google_not_available">Đăng nhập Google hiện không khả dụng.</string>
     <string name="error_google_developer_error">Đăng nhập Google chưa được thiết lập đúng trên thiết bị này. Hãy đăng nhập bằng số điện thoại.</string>
     <string name="error_last_sign_in_method">Hãy đặt mật khẩu trước khi gỡ phương thức đăng nhập này.</string>
-    <string name="error_phone_last_sign_in_method">Hãy thêm email trước khi gỡ số điện thoại.</string>
+    <string name="error_phone_last_sign_in_method">Hãy thêm và xác minh email trước khi gỡ số điện thoại.</string>
     <string name="error_no_password_set">Tài khoản này chưa có mật khẩu.</string>
     <!-- Google signup auth -->
     <string name="auth_or_divider">hoặc</string>

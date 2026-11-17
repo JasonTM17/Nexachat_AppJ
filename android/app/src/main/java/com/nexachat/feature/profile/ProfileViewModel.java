@@ -306,6 +306,7 @@ public final class ProfileViewModel extends ViewModel {
                                         ? current.withPhoneSaving(false)
                                                 .withShowPhoneDialog(false)
                                                 .withPhoneInput("")
+                                                .withPhonePassword("")
                                                 .withUser((UserDto) success.getValue())
                                         : current.withPhoneSaving(false).withPhoneError(
                                                 ((Result.Failure<?>) result).getError())),

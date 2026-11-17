@@ -409,9 +409,6 @@ public final class ProfileFragment extends Fragment {
                 ? viewModel.getUiState().getValue().getUser() : null;
         String accountPhone = me != null ? me.getPhone() : null;
         boolean hasPhone = accountPhone != null && !accountPhone.isBlank();
-        binding.signInMethodPhoneDivider.setVisibility(
-                ProfileSignInMethodRules.phoneDividerVisible(googleVisible)
-                        ? View.VISIBLE : View.GONE);
         binding.signInMethodPhoneRow.setSubtitle(
                 hasPhone ? accountPhone : getString(R.string.action_add));
         binding.signInMethodPhoneRow.setContentDescription(
