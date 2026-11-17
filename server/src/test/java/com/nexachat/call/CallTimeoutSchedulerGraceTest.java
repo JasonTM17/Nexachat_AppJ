@@ -51,6 +51,27 @@ class CallTimeoutSchedulerGraceTest {
     }
 
     @Test
+    void checkDisconnectedUserSchedules15sGraceForRingingCall() {
+        UUID userId = UUID.randomUUID();
+        UUID peerId = UUID.randomUUID();
+
+        CallSession ringingSession = CallSession.ringing(
+                UUID.randomUUID(), UUID.randomUUID(), userId, peerId, NOW);
+
+        CallRegistry registry = mock(CallRegistry.class);
+        when(registry.activeCallForUser(userId)).thenReturn(Optional.of(ringingSession));
+
+        CallService service = mock(CallService.class);
+        RecordingScheduler executor = new RecordingScheduler();
+        CallTimeoutScheduler scheduler = new CallTimeoutScheduler(service, registry, 45_000, executor);
+
+        scheduler.checkDisconnectedUser(userId, () -> {});
+
+        assertThat(executor.tasks).hasSize(1);
+        assertThat(executor.delays.get(0)).isEqualTo(15_000L);
+    }
+
+    @Test
     void checkDisconnectedUserSchedules50msDelayWhenNotActive() {
         UUID userId = UUID.randomUUID();
 
