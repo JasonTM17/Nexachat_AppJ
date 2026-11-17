@@ -10,6 +10,7 @@ import com.nexachat.call.service.CallNotificationObserver;
 import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.network.stomp.RealtimeSession;
 import com.nexachat.core.realtime.ephemeral.EphemeralStateRouter;
+import com.nexachat.feature.streak.StreakCheckInCoordinator;
 import dagger.hilt.android.HiltAndroidApp;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.logging.Level;
@@ -36,6 +37,9 @@ public final class NexaChatApp extends Application {
     @Inject
     CallManager callManager;
 
+    @Inject
+    StreakCheckInCoordinator streakCheckIn;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -54,6 +58,7 @@ public final class NexaChatApp extends Application {
             public void onStart(@NonNull LifecycleOwner owner) {
                 realtimeSession.onAppForeground();
                 ephemeralStateRouter.onAppForeground();
+                streakCheckIn.onAppForeground();
             }
 
             @Override
