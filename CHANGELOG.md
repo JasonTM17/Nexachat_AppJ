@@ -6,6 +6,13 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.14] - 2026-11-17
+
+Android APK release with a server update that is already deployed: sign up and
+sign in with an email address, an optional phone number, and rebranded
+security-code emails. See
+[docs/release-notes/v1.2.14.md](docs/release-notes/v1.2.14.md).
+
 ### Added
 - Register and sign in with an email address: a code mailed to the address proves
   ownership before the account is created, and the account needs no phone number.
