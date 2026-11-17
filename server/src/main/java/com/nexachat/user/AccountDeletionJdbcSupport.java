@@ -78,6 +78,31 @@ class AccountDeletionJdbcSupport {
     }
 
     /**
+     * Soft-deletes the account's public feed content and drops its reactions.
+     *
+     * <p>The rows stay for the retention job, which purges them together with
+     * their stored images once the window has passed. Until then the feed's
+     * visibility predicate already hides them, because it requires a live
+     * author. Reactions are removed outright: they are the account's own
+     * personal data and carry no content anyone else needs.</p>
+     */
+    void softDeleteFeedContent(UUID userId) {
+        JdbcTemplate jdbcTemplate = jdbc();
+        if (jdbcTemplate == null) {
+            return;
+        }
+        jdbcTemplate.update("""
+                UPDATE public_posts SET deleted_at = now()
+                WHERE author_id = ? AND deleted_at IS NULL
+                """, userId);
+        jdbcTemplate.update("""
+                UPDATE public_comments SET deleted_at = now()
+                WHERE author_id = ? AND deleted_at IS NULL
+                """, userId);
+        jdbcTemplate.update("DELETE FROM public_post_reactions WHERE user_id = ?", userId);
+    }
+
+    /**
      * Deletes uploads that were never bound to a message and returns the
      * storage keys whose rows this call actually removed.
      *

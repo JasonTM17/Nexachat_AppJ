@@ -168,6 +168,7 @@ public class AccountDeletionService {
         jdbcSupport.deleteLabels(userId);
         jdbcSupport.deleteGoogleIdentityData(userId);
         jdbcSupport.deleteEmailOtps(userId);
+        jdbcSupport.softDeleteFeedContent(userId);
 
         tokenService.revokeAllForUser(userId);
         var e2eeDevices = e2eeDeviceService.getIfAvailable();

@@ -279,6 +279,10 @@ nexachat:
         enabled: ${NEXACHAT_RETENTION_RAG_LIMITS_ENABLED:false}
         minute-retention-days: ${NEXACHAT_RETENTION_RAG_LIMITS_MINUTE_DAYS:1}
         day-retention-days: ${NEXACHAT_RETENTION_RAG_LIMITS_DAY_DAYS:2}
+      public-feed:
+        enabled: ${NEXACHAT_RETENTION_PUBLIC_FEED_ENABLED:false}
+        retention-days: ${NEXACHAT_RETENTION_PUBLIC_FEED_RETENTION_DAYS:30}
+        unbound-hours: ${NEXACHAT_RETENTION_PUBLIC_FEED_UNBOUND_HOURS:24}
   presence:
     disconnect-coalesce-ms: 5000
   summary:

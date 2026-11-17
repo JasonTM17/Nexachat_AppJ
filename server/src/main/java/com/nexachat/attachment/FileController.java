@@ -4,7 +4,9 @@ import com.nexachat.common.MagicBytes;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.feed.FeedImageAccess;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -74,10 +76,20 @@ public class FileController {
 
     private final StorageService storageService;
     private final AttachmentService attachmentService;
+    private FeedImageAccess feedImageAccess;
 
     public FileController(StorageService storageService, AttachmentService attachmentService) {
         this.storageService = storageService;
         this.attachmentService = attachmentService;
+    }
+
+    /**
+     * Optional so the attachment slice keeps working without the feed; when the
+     * feed is present its images get the feed's own visibility rule.
+     */
+    @Autowired(required = false)
+    public void setFeedImageAccess(FeedImageAccess feedImageAccess) {
+        this.feedImageAccess = feedImageAccess;
     }
 
     @GetMapping("/api/v1/files/**")
@@ -89,6 +101,10 @@ public class FileController {
         String storageKey = extractKey(request);
         // Member-check fires only for keys bound to a message attachment row.
         attachmentService.assertStorageKeyReadable(storageKey, principal.userId());
+        // Feed images carry their own rule; other keys are unaffected.
+        if (feedImageAccess != null) {
+            feedImageAccess.assertStorageKeyReadable(storageKey, principal.userId());
+        }
 
         String rangeHeader = request.getHeader(HttpHeaders.RANGE);
         if (rangeHeader != null && !rangeHeader.isBlank()) {

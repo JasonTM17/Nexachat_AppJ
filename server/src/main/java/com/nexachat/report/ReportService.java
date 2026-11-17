@@ -5,6 +5,7 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
+import com.nexachat.feed.FeedReportTargets;
 import com.nexachat.message.Message;
 import com.nexachat.message.MessageRepository;
 import com.nexachat.report.dto.CreateReportRequest;
@@ -14,6 +15,7 @@ import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -59,6 +61,12 @@ public class ReportService {
     private record Cursor(Instant createdAt, UUID id) {
     }
 
+    /** Evidence copy for the report row; {@code body} null when there is none. */
+    private record Snapshot(String body, boolean reporterProvided) {
+
+        static final Snapshot NONE = new Snapshot(null, false);
+    }
+
     /** Outcome of {@link #submit}: the report plus whether this call created it. */
     public record Result(ReportResponse report, boolean created) {
     }
@@ -70,6 +78,7 @@ public class ReportService {
     private final ConversationMemberRepository memberRepository;
     private final RateLimitService rateLimitService;
     private final Clock clock;
+    private final FeedReportTargets feedTargets;
 
     public ReportService(ReportRepository reportRepository,
                          UserRepository userRepository,
@@ -78,6 +87,19 @@ public class ReportService {
                          ConversationMemberRepository memberRepository,
                          RateLimitService rateLimitService,
                          Clock clock) {
+        this(reportRepository, userRepository, messageRepository, conversationRepository,
+                memberRepository, rateLimitService, clock, null);
+    }
+
+    @Autowired
+    public ReportService(ReportRepository reportRepository,
+                         UserRepository userRepository,
+                         MessageRepository messageRepository,
+                         ConversationRepository conversationRepository,
+                         ConversationMemberRepository memberRepository,
+                         RateLimitService rateLimitService,
+                         Clock clock,
+                         FeedReportTargets feedTargets) {
         this.reportRepository = reportRepository;
         this.userRepository = userRepository;
         this.messageRepository = messageRepository;
@@ -85,6 +107,7 @@ public class ReportService {
         this.memberRepository = memberRepository;
         this.rateLimitService = rateLimitService;
         this.clock = clock;
+        this.feedTargets = feedTargets;
     }
 
     /**
@@ -100,7 +123,7 @@ public class ReportService {
                     Map.of("retryAfterSeconds", consumption.retryAfterSeconds()));
         }
 
-        Message message = switch (request.targetType()) {
+        Snapshot snapshot = switch (request.targetType()) {
             case USER -> {
                 if (userId.equals(request.targetId())) {
                     throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Cannot report yourself");
@@ -109,9 +132,9 @@ public class ReportService {
                         .filter(u -> u.getDeletedAt() == null)
                         .orElseThrow(() -> ApiException.of(
                                 ApiErrorCode.USER_NOT_FOUND, "User not found"));
-                yield null;
+                yield Snapshot.NONE;
             }
-            case MESSAGE -> validateMessageTarget(userId, request.targetId());
+            case MESSAGE -> messageSnapshot(validateMessageTarget(userId, request.targetId()), request);
             case CONVERSATION -> {
                 if (!conversationRepository.existsById(request.targetId())) {
                     throw ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND,
@@ -122,8 +145,14 @@ public class ReportService {
                     throw ApiException.of(ApiErrorCode.NOT_MEMBER,
                             "Not a member of this conversation");
                 }
-                yield null;
+                yield Snapshot.NONE;
             }
+            case POST -> feedSnapshot(feedTargets == null ? Optional.empty()
+                    : feedTargets.visiblePostBody(userId, request.targetId()),
+                    ApiErrorCode.POST_NOT_FOUND);
+            case COMMENT -> feedSnapshot(feedTargets == null ? Optional.empty()
+                    : feedTargets.visibleCommentBody(userId, request.targetId()),
+                    ApiErrorCode.COMMENT_NOT_FOUND);
         };
 
         Optional<Report> open = reportRepository.findOpen(
@@ -132,25 +161,13 @@ public class ReportService {
             return new Result(ReportResponse.from(open.get()), false);
         }
 
-        String snapshot = null;
-        boolean reporterProvided = false;
-        if (message != null) {
-            if (message.getEncryption() == null) {
-                // Server-readable: copy the evidence itself — the reporter's
-                // own snapshot field is ignored so it cannot be forged.
-                snapshot = truncate(message.getContent());
-            } else {
-                snapshot = truncate(request.messageSnapshot());
-                reporterProvided = snapshot != null;
-            }
-        }
         String details = normalizeOptional(request.details());
 
         try {
             Report report = reportRepository.saveAndFlush(Report.create(
                     userRepository.getReferenceById(userId), request.targetType(),
-                    request.targetId(), request.reason(), details, snapshot,
-                    reporterProvided, clock.instant()));
+                    request.targetId(), request.reason(), details, snapshot.body(),
+                    snapshot.reporterProvided(), clock.instant()));
             log.info("Report {} filed by {} on {} {}", report.getId(), userId,
                     request.targetType(), request.targetId());
             return new Result(ReportResponse.from(report), true);
@@ -175,6 +192,28 @@ public class ReportService {
             throw ApiException.of(ApiErrorCode.NOT_MEMBER, "Not a member of this conversation");
         }
         return message;
+    }
+
+    /**
+     * Evidence copy for a message target. A server-readable message is copied
+     * from the row itself — the reporter's own snapshot field is ignored so it
+     * cannot be forged; an E2EE one can only carry what the reporter typed.
+     */
+    private static Snapshot messageSnapshot(Message message, CreateReportRequest request) {
+        if (message.getEncryption() == null) {
+            return new Snapshot(truncate(message.getContent()), false);
+        }
+        String provided = truncate(request.messageSnapshot());
+        return new Snapshot(provided, provided != null);
+    }
+
+    /**
+     * Evidence copy for a feed target. The body is always server-readable, so
+     * it is copied from the row; a target the reporter cannot see is reported
+     * as missing, the same boundary every feed read applies.
+     */
+    private static Snapshot feedSnapshot(Optional<String> body, ApiErrorCode notFound) {
+        return new Snapshot(truncate(body.orElseThrow(() -> ApiException.of(notFound))), false);
     }
 
     /** Newest-first keyset page of the reporter's own filings. */

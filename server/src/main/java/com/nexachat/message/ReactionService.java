@@ -1,5 +1,6 @@
 package com.nexachat.message;
 
+import com.nexachat.common.ReactionEmoji;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.ConversationMemberRepository;
@@ -15,7 +16,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -50,7 +50,7 @@ public class ReactionService {
     private static final Logger log = LoggerFactory.getLogger(ReactionService.class);
 
     /** {@code message_reactions.emoji} is {@code VARCHAR(16)}. */
-    static final int MAX_EMOJI_LENGTH = 16;
+    static final int MAX_EMOJI_LENGTH = ReactionEmoji.MAX_LENGTH;
 
     private final MessageRepository messageRepository;
     private final MessageReactionRepository reactionRepository;
@@ -216,20 +216,8 @@ public class ReactionService {
                 .toList();
     }
 
-    /**
-     * Trims and bounds the emoji to the column width (16 chars, counted as
-     * code points so multi-code-unit emoji like flags and ZWJ sequences are
-     * measured the way PostgreSQL measures {@code VARCHAR(16)}).
-     */
+    /** The shared message/feed emoji rule. */
     private static String normalizeEmoji(String raw) {
-        if (raw == null || raw.isBlank()) {
-            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "emoji is required");
-        }
-        String emoji = Normalizer.normalize(raw.trim(), Normalizer.Form.NFC);
-        if (emoji.isEmpty() || emoji.codePointCount(0, emoji.length()) > MAX_EMOJI_LENGTH) {
-            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
-                    "emoji must be 1-" + MAX_EMOJI_LENGTH + " characters");
-        }
-        return emoji;
+        return ReactionEmoji.normalize(raw);
     }
 }

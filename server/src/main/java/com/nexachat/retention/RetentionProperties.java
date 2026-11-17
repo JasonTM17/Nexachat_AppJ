@@ -53,6 +53,7 @@ public class RetentionProperties {
             case SUMMARY_LIMITS -> jobs.summaryLimits.isEnabled();
             case RAG_CACHE -> jobs.ragCache.isEnabled();
             case RAG_LIMITS -> jobs.ragLimits.isEnabled();
+            case PUBLIC_FEED -> jobs.publicFeed.isEnabled();
         };
     }
 
@@ -129,6 +130,7 @@ public class RetentionProperties {
         @Valid @NotNull private Limits summaryLimits = new Limits();
         @Valid @NotNull private SwitchJob ragCache = new SwitchJob();
         @Valid @NotNull private Limits ragLimits = new Limits();
+        @Valid @NotNull private PublicFeed publicFeed = new PublicFeed();
 
         public DaysJob getJoinRequests() { return joinRequests; }
         public void setJoinRequests(DaysJob value) { joinRequests = value; }
@@ -162,6 +164,8 @@ public class RetentionProperties {
         public void setRagCache(SwitchJob value) { ragCache = value; }
         public Limits getRagLimits() { return ragLimits; }
         public void setRagLimits(Limits value) { ragLimits = value; }
+        public PublicFeed getPublicFeed() { return publicFeed; }
+        public void setPublicFeed(PublicFeed value) { publicFeed = value; }
     }
 
     public static class SwitchJob {
@@ -229,5 +233,18 @@ public class RetentionProperties {
         public void setMinuteRetentionDays(int value) { minuteRetentionDays = value; }
         public int getDayRetentionDays() { return dayRetentionDays; }
         public void setDayRetentionDays(int value) { dayRetentionDays = value; }
+    }
+
+    /** Feed rows already invisible to readers, plus uploads never bound to a post. */
+    public static class PublicFeed extends SwitchJob {
+        @Min(1) @Max(3_650)
+        private int retentionDays = 30;
+        @Min(1) @Max(8_760)
+        private int unboundHours = 24;
+
+        public int getRetentionDays() { return retentionDays; }
+        public void setRetentionDays(int retentionDays) { this.retentionDays = retentionDays; }
+        public int getUnboundHours() { return unboundHours; }
+        public void setUnboundHours(int unboundHours) { this.unboundHours = unboundHours; }
     }
 }
