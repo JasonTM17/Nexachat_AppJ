@@ -85,9 +85,18 @@ public class SettingsRowView extends LinearLayout {
             subtitleView.setMaxLines(large ? Integer.MAX_VALUE : 2);
             subtitleView.setEllipsize(large ? null : android.text.TextUtils.TruncateAt.END);
         }
-        int minHeightRes = subtitleView != null && subtitleView.getVisibility() == VISIBLE
-                ? R.dimen.list_item_two_line_min_height : R.dimen.list_item_min_height;
-        setMinimumHeight(getResources().getDimensionPixelSize(minHeightRes));
+        applyMinHeight();
+    }
+
+    /** A subtitle or a stacked trailing value is a second text line. */
+    private void applyMinHeight() {
+        boolean twoLine = valueStacked
+                || (subtitleView != null && subtitleView.getVisibility() == VISIBLE);
+        int minHeight = getResources().getDimensionPixelSize(
+                twoLine ? R.dimen.list_item_two_line_min_height : R.dimen.list_item_min_height);
+        setMinimumHeight(minHeight);
+        // The inner row carries the ripple and centres its content, so it must fill the height.
+        rowContent.setMinimumHeight(minHeight);
     }
 
     public void setTrailingValue(@Nullable CharSequence value) {
@@ -249,12 +258,14 @@ public class SettingsRowView extends LinearLayout {
     }
 
     private void applyInlineValueStyle() {
+        applyMinHeight();
         valueView.setMaxWidth(getResources().getDimensionPixelSize(R.dimen.value_max_width));
         valueView.setMaxLines(1);
         valueView.setEllipsize(android.text.TextUtils.TruncateAt.END);
     }
 
     private void applyStackedValueStyle() {
+        applyMinHeight();
         valueView.setMaxWidth(Integer.MAX_VALUE);
         valueView.setMaxLines(2);
         valueView.setEllipsize(android.text.TextUtils.TruncateAt.END);
