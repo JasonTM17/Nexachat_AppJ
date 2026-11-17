@@ -149,6 +149,85 @@ class CallServiceTest {
     }
 
     @Test
+    void inviteEchoesMediaTypeOnSessionDeliveryAndPersistedRecord() {
+        UUID callId = UUID.randomUUID();
+        service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.INVITE, callId, null, null, CallMediaType.VIDEO));
+
+        assertThat(registry.find(callId).orElseThrow().mediaType()).isEqualTo(CallMediaType.VIDEO);
+        org.mockito.ArgumentCaptor<CallRecord> saved =
+                org.mockito.ArgumentCaptor.forClass(CallRecord.class);
+        verify(recordRepository).save(saved.capture());
+        assertThat(saved.getValue().getMediaType()).isEqualTo(CallMediaType.VIDEO);
+        org.mockito.ArgumentCaptor<CallDelivery> delivery =
+                org.mockito.ArgumentCaptor.forClass(CallDelivery.class);
+        verify(eventPublisher).publishEvent(delivery.capture());
+        assertThat(delivery.getValue().recipientId()).isEqualTo(calleeId);
+        assertThat(delivery.getValue().event().eventType()).isEqualTo("CALL_INVITE");
+        assertThat(delivery.getValue().event().payload().mediaType()).isEqualTo("VIDEO");
+    }
+
+    @Test
+    void inviteWithoutMediaTypeDefaultsToAudio() {
+        UUID callId = UUID.randomUUID();
+        service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.INVITE, callId, null, null));
+
+        assertThat(registry.find(callId).orElseThrow().mediaType()).isEqualTo(CallMediaType.AUDIO);
+        org.mockito.ArgumentCaptor<CallRecord> saved =
+                org.mockito.ArgumentCaptor.forClass(CallRecord.class);
+        verify(recordRepository).save(saved.capture());
+        assertThat(saved.getValue().getMediaType()).isEqualTo(CallMediaType.AUDIO);
+        org.mockito.ArgumentCaptor<CallDelivery> delivery =
+                org.mockito.ArgumentCaptor.forClass(CallDelivery.class);
+        verify(eventPublisher).publishEvent(delivery.capture());
+        assertThat(delivery.getValue().event().payload().mediaType()).isEqualTo("AUDIO");
+    }
+
+    @Test
+    void rejectsMediaTypeOnNonInviteFrames() {
+        UUID callId = UUID.randomUUID();
+        service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.INVITE, callId, null, null));
+        service.signal(conversationId, calleeId,
+                new CallSignal(CallSignal.Type.ACCEPT, callId, null, null));
+
+        assertThatThrownBy(() -> service.signal(conversationId, calleeId,
+                new CallSignal(CallSignal.Type.ACCEPT, callId, null, null, CallMediaType.VIDEO)))
+                .isInstanceOf(CallException.class)
+                .extracting("code").isEqualTo(CallException.Code.VALIDATION_FAILED);
+        assertThatThrownBy(() -> service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.SDP, callId,
+                        new CallSignal.Sdp("offer", "v=0"), null, CallMediaType.AUDIO)))
+                .isInstanceOf(CallException.class)
+                .extracting("code").isEqualTo(CallException.Code.VALIDATION_FAILED);
+        assertThatThrownBy(() -> service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.END, callId, null, null, CallMediaType.VIDEO)))
+                .isInstanceOf(CallException.class)
+                .extracting("code").isEqualTo(CallException.Code.VALIDATION_FAILED);
+        assertThat(registry.find(callId).orElseThrow().state()).isEqualTo(CallState.ACTIVE);
+    }
+
+    @Test
+    void mediaTypeSurvivesAcceptAndTerminalTransitions() {
+        UUID callId = UUID.randomUUID();
+        service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.INVITE, callId, null, null, CallMediaType.VIDEO));
+        service.signal(conversationId, calleeId,
+                new CallSignal(CallSignal.Type.ACCEPT, callId, null, null));
+        service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.END, callId, null, null));
+
+        CallSession ended = registry.find(callId).orElseThrow();
+        assertThat(ended.state()).isEqualTo(CallState.ENDED);
+        assertThat(ended.mediaType()).isEqualTo(CallMediaType.VIDEO);
+        org.mockito.ArgumentCaptor<CallSession> written =
+                org.mockito.ArgumentCaptor.forClass(CallSession.class);
+        verify(systemMessageWriter).write(written.capture());
+        assertThat(written.getValue().mediaType()).isEqualTo(CallMediaType.VIDEO);
+    }
+
+    @Test
     void rollsBackInvitationAndReservationWhenCallRecordSaveFails() {
         UUID callId = UUID.randomUUID();
         when(recordRepository.save(any(CallRecord.class)))

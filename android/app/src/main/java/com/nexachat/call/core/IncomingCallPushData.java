@@ -10,6 +10,7 @@ public final class IncomingCallPushData {
     private final String recipientId;
     private final long ringExpiresAtMs;
     private final long sessionEpoch;
+    private final CallMediaType mediaType;
 
     public IncomingCallPushData(
             String callId,
@@ -20,6 +21,20 @@ public final class IncomingCallPushData {
             String recipientId,
             long ringExpiresAtMs,
             long sessionEpoch) {
+        this(callId, conversationId, callerId, callerName, serverTs, recipientId,
+                ringExpiresAtMs, sessionEpoch, CallMediaType.AUDIO);
+    }
+
+    public IncomingCallPushData(
+            String callId,
+            String conversationId,
+            String callerId,
+            String callerName,
+            long serverTs,
+            String recipientId,
+            long ringExpiresAtMs,
+            long sessionEpoch,
+            CallMediaType mediaType) {
         this.callId = callId;
         this.conversationId = conversationId;
         this.callerId = callerId;
@@ -28,6 +43,7 @@ public final class IncomingCallPushData {
         this.recipientId = recipientId;
         this.ringExpiresAtMs = ringExpiresAtMs;
         this.sessionEpoch = sessionEpoch;
+        this.mediaType = CallMediaType.orAudio(mediaType);
     }
 
     public String getCallId() { return callId; }
@@ -38,6 +54,7 @@ public final class IncomingCallPushData {
     public String getRecipientId() { return recipientId; }
     public long getRingExpiresAtMs() { return ringExpiresAtMs; }
     public long getSessionEpoch() { return sessionEpoch; }
+    public CallMediaType getMediaType() { return mediaType; }
 
     public boolean isValidAt(long nowMs) {
         return hasText(callId)

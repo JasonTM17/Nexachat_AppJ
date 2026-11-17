@@ -154,7 +154,7 @@ public class NotificationEventListener {
                         session.conversationId(),
                         session.callerId(),
                         callerName,
-                        "AUDIO",
+                        session.mediaType().name(),
                         timestamp
                 );
             }

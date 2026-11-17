@@ -6,6 +6,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 import com.nexachat.call.core.CallManager;
+import com.nexachat.call.core.CallMediaType;
 import com.nexachat.call.core.CallSession;
 import com.nexachat.call.core.IncomingCallPushData;
 import com.nexachat.call.service.CallNotifications;
@@ -59,7 +60,8 @@ public final class FcmMessageProcessor {
                 long serverTs,
                 String recipientId,
                 long ringExpiresAtMs,
-                long sessionEpoch);
+                long sessionEpoch,
+                CallMediaType callType);
     }
 
     private final CallManager callManager;
@@ -133,7 +135,7 @@ public final class FcmMessageProcessor {
 
     private static IncomingCallLauncher defaultLauncher(Context appContext) {
         return (callId, conversationId, callerId, callerName, serverTs,
-                recipientId, ringExpiresAtMs, sessionEpoch) -> {
+                recipientId, ringExpiresAtMs, sessionEpoch, callType) -> {
             try {
                 IncomingCallPushData pushData = new IncomingCallPushData(
                         callId,
@@ -143,7 +145,8 @@ public final class FcmMessageProcessor {
                         serverTs,
                         recipientId,
                         ringExpiresAtMs,
-                        sessionEpoch);
+                        sessionEpoch,
+                        callType);
                 Intent intent = new Intent(appContext, IncomingCallActivity.class);
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
                 intent.setAction(CallNotificationActionRouter.ACTION_OPEN);
@@ -261,6 +264,7 @@ public final class FcmMessageProcessor {
         final long callStartedAtMs = serverTs;
         final String callCallerId = callerId;
         final String callCallerName = callerName;
+        final CallMediaType callType = CallMediaType.parse(data.get("callType"));
         Disposable credentialWait = currentSessionCredential()
                 .subscribeOn(ioScheduler).subscribe(credential -> {
             String currentUserId = TimeAndJwt.userIdFromJwt(credential.accessToken, moshi);
@@ -277,6 +281,7 @@ public final class FcmMessageProcessor {
                             recipientId,
                             credential.sessionEpoch,
                             ringExpiresAtMs,
+                            callType,
                             () -> tokenRefresher.isSessionCurrent(credential.sessionEpoch))
                     .subscribeOn(ioScheduler)
                     .subscribe(session -> tokenRefresher.runIfSessionCurrent(
@@ -293,7 +298,8 @@ public final class FcmMessageProcessor {
                                         pushData.getServerTs(),
                                         pushData.getRecipientId(),
                                         pushData.getRingExpiresAtMs(),
-                                        pushData.getSessionEpoch());
+                                        pushData.getSessionEpoch(),
+                                        pushData.getMediaType());
                                 try {
                                     CallNotifications.showIncoming(context, session, pushData);
                                 } catch (Throwable ignored) {

@@ -20,6 +20,7 @@ import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.annotation.Nullable;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import com.nexachat.R;
@@ -30,6 +31,7 @@ import com.nexachat.call.core.CallManager;
 import com.nexachat.call.core.CallMediaEngine;
 import com.nexachat.call.core.CallSession;
 import com.nexachat.call.core.CallState;
+import com.nexachat.call.core.CallMediaType;
 import com.nexachat.call.media.CallMediaEngineProvider;
 import com.nexachat.call.service.CallForegroundService;
 import com.nexachat.call.ui.CallPermissionHelper.Decision;
@@ -46,6 +48,9 @@ import javax.inject.Inject;
 public class CallActivity extends ComponentActivity {
     private static final int REQUEST_MICROPHONE = 7210;
     private static final int REQUEST_NOTIFICATIONS = 7211;
+    private static final int REQUEST_CAMERA = 7212;
+    private static final String PREFS = "call_permissions";
+    private static final String PREF_CAMERA_REQUESTED = "call.cameraRequested";
     private static final long ENDED_SCREEN_MS = 1600L;
     /** Upper bound so a missed release can never hold the screen off forever. */
     private static final long PROXIMITY_WAKE_LOCK_TIMEOUT_MS =
@@ -82,6 +87,20 @@ public class CallActivity extends ComponentActivity {
     private TextView muteLabel;
     private TextView speakerLabel;
     private TextView hangUpLabel;
+    private View avatarWrap;
+    private org.webrtc.SurfaceViewRenderer remoteVideoView;
+    private org.webrtc.SurfaceViewRenderer localVideoView;
+    private View localPreviewCard;
+    private Button cameraButton;
+    private Button switchCameraButton;
+    private TextView cameraLabel;
+    private boolean renderersInitialized;
+    private boolean localVideoBound;
+    private boolean remoteVideoBound;
+    private Object localVideoTrack;
+    private Object remoteVideoTrack;
+    private CallMediaType requestedMediaType = CallMediaType.AUDIO;
+    private boolean deviceHasCamera = true;
     private CallSession currentSession;
     private CallManager.CallListener listener;
     private FirebaseCallStatusDisplaySession firebaseCallStatusDisplaySession;
@@ -107,6 +126,9 @@ public class CallActivity extends ComponentActivity {
                 ignored -> mainHandler.post(() -> {
                     if (!isFinishing() && !isDestroyed()) render(currentSession);
                 }));
+        deviceHasCamera = getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY);
+        requestedMediaType = CallMediaType.parse(
+                getIntent().getStringExtra(CallLauncher.EXTRA_MEDIA_TYPE));
         if (savedInstanceState != null) {
             pendingOperation = PendingOperation.values()[Math.max(0, Math.min(
                     PendingOperation.values().length - 1,
@@ -166,6 +188,15 @@ public class CallActivity extends ComponentActivity {
             }
         };
         callManager.addListener(listener);
+        callManager.setCallVideoListener(new CallManager.CallVideoListener() {
+            @Override public void onLocalVideoTrack(@Nullable Object videoTrack) {
+                CallActivity.this.onLocalVideoTrack(videoTrack);
+            }
+
+            @Override public void onRemoteVideoTrack(@Nullable Object videoTrack) {
+                CallActivity.this.onRemoteVideoTrack(videoTrack);
+            }
+        });
         CallSession latestSession = callManager.session().getValue();
         if (launchDecision == CallActivityLaunchPolicy.Decision.ATTACH_TO_LIVE_CALL) {
             if (!CallActivityLaunchPolicy.matchesLiveCall(
@@ -218,6 +249,7 @@ public class CallActivity extends ComponentActivity {
             firebaseStatusEvents = null;
         }
         firebaseCallStatusDisplaySession.stop();
+        callManager.setCallVideoListener(null);
         if (listener != null) {
             callManager.removeListener(listener);
             listener = null;
@@ -242,6 +274,7 @@ public class CallActivity extends ComponentActivity {
             pulseAnimator = null;
         }
         releaseProximityWakeLock();
+        releaseVideoRenderers();
         super.onDestroy();
     }
 
@@ -259,9 +292,17 @@ public class CallActivity extends ComponentActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_MICROPHONE) {
             if (granted(grantResults)) {
-                requestNotificationPermissionThenContinue();
+                requestCameraThenNotifications();
             } else {
                 denyPendingOperation();
+            }
+        } else if (requestCode == REQUEST_CAMERA) {
+            if (granted(grantResults)) {
+                requestNotificationPermissionThenContinue();
+            } else {
+                boolean rationale = ActivityCompat.shouldShowRequestPermissionRationale(
+                        this, Manifest.permission.CAMERA);
+                showCameraFallbackDialog(!rationale);
             }
         } else if (requestCode == REQUEST_NOTIFICATIONS) {
             if (!granted(grantResults)) {
@@ -284,6 +325,13 @@ public class CallActivity extends ComponentActivity {
         muteLabel = findViewById(R.id.call_mute_label);
         speakerLabel = findViewById(R.id.call_speaker_label);
         hangUpLabel = findViewById(R.id.call_hang_up_label);
+        avatarWrap = findViewById(R.id.call_avatar_wrap);
+        remoteVideoView = findViewById(R.id.call_remote_video);
+        localVideoView = findViewById(R.id.call_local_video);
+        localPreviewCard = findViewById(R.id.call_local_preview);
+        cameraButton = findViewById(R.id.call_camera);
+        switchCameraButton = findViewById(R.id.call_camera_switch);
+        cameraLabel = findViewById(R.id.call_camera_label);
     }
 
     private void startFirebaseCallStatusDisplay() {
@@ -309,6 +357,16 @@ public class CallActivity extends ComponentActivity {
         speakerButton.setOnClickListener(view -> {
             if (currentSession != null) callManager.setSpeaker(!currentSession.isSpeakerOn());
         });
+        if (cameraButton != null) {
+            cameraButton.setOnClickListener(view -> {
+                if (currentSession != null) {
+                    callManager.setCameraEnabled(!currentSession.isCameraOn());
+                }
+            });
+        }
+        if (switchCameraButton != null) {
+            switchCameraButton.setOnClickListener(view -> callManager.switchCamera());
+        }
         hangUpButton.setOnClickListener(view -> callManager.hangUp());
     }
 
@@ -333,6 +391,7 @@ public class CallActivity extends ComponentActivity {
                 || session.getState() == CallState.CONNECTING
                 || session.getState() == CallState.RECONNECTING_NETWORK;
         updatePulseAnimation(isLive);
+        if (!isLive) detachVideoSinks();
 
         String name = session.getPeerDisplayName();
         if (name == null || name.trim().isEmpty()) name = getString(R.string.call_peer_fallback);
@@ -357,9 +416,10 @@ public class CallActivity extends ComponentActivity {
         } else {
             mainHandler.removeCallbacks(timerTick);
         }
-        muteButton.setVisibility(model.isShowMute() ? View.VISIBLE : View.GONE);
-        speakerButton.setVisibility(model.isShowSpeaker() ? View.VISIBLE : View.GONE);
-        hangUpButton.setVisibility(model.isShowHangUp() ? View.VISIBLE : View.GONE);
+        // Hide the whole weighted column so the visible controls stay evenly spaced.
+        setControlVisible(muteButton, model.isShowMute());
+        setControlVisible(speakerButton, model.isShowSpeaker());
+        setControlVisible(hangUpButton, model.isShowHangUp());
         if (muteLabel != null) {
             muteLabel.setVisibility(model.isShowMute() ? View.VISIBLE : View.GONE);
             muteLabel.setText(session.isMuted() ? R.string.call_unmute : R.string.call_mute);
@@ -383,15 +443,61 @@ public class CallActivity extends ComponentActivity {
                     .setIconResource(session.isSpeakerOn() ? R.drawable.ic_volume_down : R.drawable.ic_volume_up);
         }
         if (model.getHangUpLabelRes() != 0) {
-            hangUpButton.setText(model.getHangUpLabelRes());
             hangUpButton.setContentDescription(getString(model.getHangUpLabelRes()));
         }
-        muteButton.setText(session.isMuted() ? R.string.call_unmute : R.string.call_mute);
         muteButton.setContentDescription(getString(
                 session.isMuted() ? R.string.call_unmute : R.string.call_mute));
-        speakerButton.setText(session.isSpeakerOn() ? R.string.call_earpiece : R.string.call_speaker);
         speakerButton.setContentDescription(getString(
                 session.isSpeakerOn() ? R.string.call_earpiece : R.string.call_speaker));
+        boolean videoCall = session.getMediaType() == CallMediaType.VIDEO;
+        boolean remoteShowing = videoCall && remoteVideoBound && isLive;
+        if (remoteVideoView != null) {
+            remoteVideoView.setVisibility(remoteShowing ? View.VISIBLE : View.GONE);
+        }
+        if (avatarWrap != null) {
+            avatarWrap.setVisibility(remoteShowing ? View.GONE : View.VISIBLE);
+        }
+        boolean showLocalPreview = videoCall && localVideoBound && session.isCameraOn();
+        if (localPreviewCard != null) {
+            localPreviewCard.setVisibility(showLocalPreview ? View.VISIBLE : View.GONE);
+        }
+        boolean showCameraControls = videoCall && isLive && deviceHasCamera;
+        if (cameraButton != null) {
+            // Hide the whole weighted column, not just the button, so voice calls keep their spacing.
+            setControlVisible(cameraButton, showCameraControls);
+            int cameraIcon = session.isCameraOn() ? R.drawable.ic_videocam : R.drawable.ic_videocam_off;
+            int cameraLabelRes = session.isCameraOn() ? R.string.call_camera_off : R.string.call_camera_on;
+            if (cameraButton instanceof com.google.android.material.button.MaterialButton) {
+                ((com.google.android.material.button.MaterialButton) cameraButton)
+                        .setIconResource(cameraIcon);
+            }
+            cameraButton.setContentDescription(getString(cameraLabelRes));
+        }
+        if (switchCameraButton != null) {
+            setControlVisible(switchCameraButton, showCameraControls);
+            View switchLabel = findViewById(R.id.call_camera_switch_label);
+            if (switchLabel != null) {
+                switchLabel.setVisibility(showCameraControls ? View.VISIBLE : View.GONE);
+            }
+        }
+        if (cameraLabel != null) {
+            cameraLabel.setVisibility(showCameraControls ? View.VISIBLE : View.GONE);
+            cameraLabel.setText(session.isCameraOn() ? R.string.call_camera_off : R.string.call_camera_on);
+        }
+    }
+
+    /** Shows or hides a control together with its column (button and label). */
+    private static void setControlVisible(View button, boolean visible) {
+        int visibility = visible ? View.VISIBLE : View.GONE;
+        button.setVisibility(visibility);
+        View column = (View) button.getParent();
+        column.setVisibility(visibility);
+        if (column instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) column;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                group.getChildAt(i).setVisibility(visibility);
+            }
+        }
     }
 
     private void updatePulseAnimation(boolean isLive) {
@@ -464,7 +570,7 @@ public class CallActivity extends ComponentActivity {
                 this, Manifest.permission.RECORD_AUDIO);
         Decision decision = CallPermissionHelper.microphoneDecision(granted, rationale);
         if (decision == Decision.GRANTED) {
-            requestNotificationPermissionThenContinue();
+            requestCameraThenNotifications();
         } else if (decision == Decision.SHOW_RATIONALE) {
             new MaterialAlertDialogBuilder(this)
                     .setMessage(R.string.call_mic_rationale)
@@ -481,6 +587,85 @@ public class CallActivity extends ComponentActivity {
     private void requestMicrophonePermission() {
         ActivityCompat.requestPermissions(
                 this, new String[] {Manifest.permission.RECORD_AUDIO}, REQUEST_MICROPHONE);
+    }
+
+    /** Camera is optional: voice flow unchanged; video requests CAMERA then falls back to voice. */
+    private void requestCameraThenNotifications() {
+        if (pendingOperation != PendingOperation.START_OUTGOING
+                || requestedMediaType != CallMediaType.VIDEO
+                || !deviceHasCamera) {
+            requestNotificationPermissionThenContinue();
+            return;
+        }
+        boolean granted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+                == PackageManager.PERMISSION_GRANTED;
+        boolean rationale = ActivityCompat.shouldShowRequestPermissionRationale(
+                this, Manifest.permission.CAMERA);
+        Decision decision = CallPermissionHelper.cameraDecision(
+                granted, rationale, cameraRequestedBefore());
+        if (decision == Decision.GRANTED) {
+            requestNotificationPermissionThenContinue();
+        } else if (decision == Decision.SHOW_RATIONALE) {
+            new MaterialAlertDialogBuilder(this)
+                    .setMessage(R.string.call_camera_rationale)
+                    .setPositiveButton(R.string.call_permission_continue,
+                            (dialog, which) -> requestCameraPermission())
+                    .setNegativeButton(R.string.call_permission_cancel,
+                            (dialog, which) -> cancelPendingOperation())
+                    .show();
+        } else if (decision == Decision.OPEN_SETTINGS) {
+            showCameraFallbackDialog(true);
+        } else {
+            requestCameraPermission();
+        }
+    }
+
+    private void requestCameraPermission() {
+        markCameraRequested();
+        ActivityCompat.requestPermissions(
+                this, new String[] {Manifest.permission.CAMERA}, REQUEST_CAMERA);
+    }
+
+    /** Denied camera demotes the requested video call to voice or closes the screen. */
+    private void showCameraFallbackDialog(boolean permanentDeny) {
+        if (isFinishing()) return;
+        MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(this)
+                .setMessage(R.string.call_camera_permission_needed)
+                .setPositiveButton(R.string.call_start_as_voice, (dialog, which) -> {
+                    requestedMediaType = CallMediaType.AUDIO;
+                    requestNotificationPermissionThenContinue();
+                })
+                .setNegativeButton(R.string.call_permission_cancel,
+                        (dialog, which) -> cancelPendingOperation());
+        if (permanentDeny) {
+            builder.setNeutralButton(R.string.call_open_settings,
+                    (dialog, which) -> openAppSettings());
+        }
+        builder.show();
+    }
+
+    private void cancelPendingOperation() {
+        pendingOperation = PendingOperation.NONE;
+        finish();
+    }
+
+    private boolean cameraRequestedBefore() {
+        return getSharedPreferences(PREFS, MODE_PRIVATE)
+                .getBoolean(PREF_CAMERA_REQUESTED, false);
+    }
+
+    private void markCameraRequested() {
+        getSharedPreferences(PREFS, MODE_PRIVATE)
+                .edit().putBoolean(PREF_CAMERA_REQUESTED, true).apply();
+    }
+
+    private void openAppSettings() {
+        Intent settings = new Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", getPackageName(), null));
+        try {
+            startActivity(settings);
+        } catch (ActivityNotFoundException ignored) { }
     }
 
     @SuppressLint("InlinedApi")
@@ -520,13 +705,15 @@ public class CallActivity extends ComponentActivity {
         if (operation == PendingOperation.START_OUTGOING) {
             if (startRequested) return;
             startRequested = true;
-            CallForegroundService.startForCall(this);
+            CallForegroundService.startForCall(this, requestedMediaType == CallMediaType.VIDEO);
             callManager.startOutgoing(
                     getIntent().getStringExtra(CallLauncher.EXTRA_CONVERSATION_ID),
                     getIntent().getStringExtra(CallLauncher.EXTRA_PEER_USER_ID),
-                    getIntent().getStringExtra(CallLauncher.EXTRA_PEER_NAME));
+                    getIntent().getStringExtra(CallLauncher.EXTRA_PEER_NAME),
+                    requestedMediaType);
         } else if (operation == PendingOperation.ACCEPT_INCOMING && currentSession != null) {
-            CallForegroundService.startForCall(this);
+            CallForegroundService.startForCall(this,
+                    currentSession.getMediaType() == CallMediaType.VIDEO);
             callManager.accept(currentSession.getCallId());
         }
     }
@@ -577,7 +764,9 @@ public class CallActivity extends ComponentActivity {
 
     private void updateProximityWakeLock() {
         if (currentSession != null && currentSession.getState() == CallState.ACTIVE
-                && !currentSession.isSpeakerOn() && isResumed()) {
+                && !currentSession.isSpeakerOn()
+                && currentSession.getMediaType() != CallMediaType.VIDEO
+                && isResumed()) {
             acquireProximityWakeLock();
         } else {
             releaseProximityWakeLock();
@@ -607,6 +796,76 @@ public class CallActivity extends ComponentActivity {
             proximityWakeLock.release();
         }
         proximityWakeLock = null;
+    }
+
+    private void onLocalVideoTrack(@Nullable Object track) {
+        if (localVideoBound && localVideoTrack instanceof org.webrtc.VideoTrack) {
+            ((org.webrtc.VideoTrack) localVideoTrack).removeSink(localVideoView);
+            localVideoBound = false;
+        }
+        localVideoTrack = track;
+        if (track instanceof org.webrtc.VideoTrack) {
+            ensureVideoRenderers();
+            if (renderersInitialized) {
+                ((org.webrtc.VideoTrack) track).addSink(localVideoView);
+                localVideoBound = true;
+            }
+        }
+        render(currentSession);
+    }
+
+    private void onRemoteVideoTrack(@Nullable Object track) {
+        if (remoteVideoBound && remoteVideoTrack instanceof org.webrtc.VideoTrack) {
+            ((org.webrtc.VideoTrack) remoteVideoTrack).removeSink(remoteVideoView);
+            remoteVideoBound = false;
+        }
+        remoteVideoTrack = track;
+        if (track instanceof org.webrtc.VideoTrack) {
+            ensureVideoRenderers();
+            if (renderersInitialized) {
+                ((org.webrtc.VideoTrack) track).addSink(remoteVideoView);
+                remoteVideoBound = true;
+            }
+        }
+        render(currentSession);
+    }
+
+    private void ensureVideoRenderers() {
+        if (renderersInitialized || remoteVideoView == null || localVideoView == null) return;
+        CallMediaEngine engine = CallMediaEngineProvider.get(getApplicationContext());
+        Object eglContext = engine == null ? null : engine.videoEglContext();
+        if (!(eglContext instanceof org.webrtc.EglBase.Context)) return;
+        org.webrtc.EglBase.Context sharedContext = (org.webrtc.EglBase.Context) eglContext;
+        remoteVideoView.init(sharedContext, null);
+        remoteVideoView.setScalingType(org.webrtc.RendererCommon.ScalingType.SCALE_ASPECT_FILL);
+        localVideoView.init(sharedContext, null);
+        // SurfaceView needs an explicit overlay z-order to float above the remote surface.
+        localVideoView.setZOrderMediaOverlay(true);
+        localVideoView.setMirror(true);
+        localVideoView.setScalingType(org.webrtc.RendererCommon.ScalingType.SCALE_ASPECT_FILL);
+        renderersInitialized = true;
+    }
+
+    private void detachVideoSinks() {
+        if (localVideoBound && localVideoTrack instanceof org.webrtc.VideoTrack
+                && localVideoView != null) {
+            ((org.webrtc.VideoTrack) localVideoTrack).removeSink(localVideoView);
+        }
+        if (remoteVideoBound && remoteVideoTrack instanceof org.webrtc.VideoTrack
+                && remoteVideoView != null) {
+            ((org.webrtc.VideoTrack) remoteVideoTrack).removeSink(remoteVideoView);
+        }
+        localVideoBound = false;
+        remoteVideoBound = false;
+        localVideoTrack = null;
+        remoteVideoTrack = null;
+    }
+
+    private void releaseVideoRenderers() {
+        detachVideoSinks();
+        if (remoteVideoView != null) remoteVideoView.release();
+        if (localVideoView != null) localVideoView.release();
+        renderersInitialized = false;
     }
 
     private static boolean granted(int[] grantResults) {

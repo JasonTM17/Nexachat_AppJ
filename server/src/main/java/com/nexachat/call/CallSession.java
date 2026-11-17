@@ -14,7 +14,8 @@ public record CallSession(
         Instant startedAt,
         Instant answeredAt,
         Instant endedAt,
-        Long durationSeconds) {
+        Long durationSeconds,
+        CallMediaType mediaType) {
 
     public CallSession {
         Objects.requireNonNull(callId, "callId");
@@ -23,6 +24,7 @@ public record CallSession(
         Objects.requireNonNull(calleeId, "calleeId");
         Objects.requireNonNull(state, "state");
         Objects.requireNonNull(startedAt, "startedAt");
+        Objects.requireNonNull(mediaType, "mediaType");
         if (callerId.equals(calleeId)) {
             throw new IllegalArgumentException("Call participants must be different");
         }
@@ -38,10 +40,23 @@ public record CallSession(
         }
     }
 
+    // Sessions built before the media type existed are voice calls.
+    public CallSession(UUID callId, UUID conversationId, UUID callerId, UUID calleeId,
+                       CallState state, CallEndReason endReason, Instant startedAt,
+                       Instant answeredAt, Instant endedAt, Long durationSeconds) {
+        this(callId, conversationId, callerId, calleeId, state, endReason,
+                startedAt, answeredAt, endedAt, durationSeconds, CallMediaType.AUDIO);
+    }
+
     public static CallSession ringing(UUID callId, UUID conversationId, UUID callerId,
                                       UUID calleeId, Instant startedAt) {
+        return ringing(callId, conversationId, callerId, calleeId, CallMediaType.AUDIO, startedAt);
+    }
+
+    public static CallSession ringing(UUID callId, UUID conversationId, UUID callerId,
+                                      UUID calleeId, CallMediaType mediaType, Instant startedAt) {
         return new CallSession(callId, conversationId, callerId, calleeId,
-                CallState.RINGING, null, startedAt, null, null, null);
+                CallState.RINGING, null, startedAt, null, null, null, mediaType);
     }
 
     public UUID peerOf(UUID userId) {

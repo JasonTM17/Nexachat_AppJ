@@ -6,8 +6,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
@@ -18,6 +20,14 @@
          not be filtered out on devices without GPS/network location. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Video calls use the camera only when the user starts or answers one;
+         voice-only devices must still install. -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.camera.autofocus"
+        android:required="false" />
     <uses-feature
         android:name="android.hardware.location"
         android:required="false" />
@@ -95,7 +105,7 @@
         <service
             android:name=".call.service.CallForegroundService"
             android:exported="false"
-            android:foregroundServiceType="microphone|phoneCall"
+            android:foregroundServiceType="microphone|phoneCall|camera"
             tools:ignore="ForegroundServicePermission" />
 
         <service

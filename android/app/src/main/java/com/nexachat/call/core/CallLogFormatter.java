@@ -12,6 +12,14 @@ public final class CallLogFormatter {
     public static final String NEUTRAL_COMPLETED_KEY = "call_log_neutral_completed";
     public static final String OUTGOING_COMPLETED_KEY = "call_log_outgoing_completed";
     public static final String INCOMING_COMPLETED_KEY = "call_log_incoming_completed";
+    public static final String VIDEO_MISSED_KEY = "call_log_video_missed";
+    public static final String VIDEO_DECLINED_KEY = "call_log_video_declined";
+    public static final String VIDEO_CANCELLED_KEY = "call_log_video_cancelled";
+    public static final String VIDEO_BUSY_KEY = "call_log_video_busy";
+    public static final String VIDEO_FAILED_KEY = "call_log_video_failed";
+    public static final String VIDEO_NEUTRAL_COMPLETED_KEY = "call_log_video_neutral_completed";
+    public static final String VIDEO_OUTGOING_COMPLETED_KEY = "call_log_video_outgoing_completed";
+    public static final String VIDEO_INCOMING_COMPLETED_KEY = "call_log_video_incoming_completed";
 
     public static final class FormattedCallLog {
         private final String resourceKey;
@@ -47,41 +55,56 @@ public final class CallLogFormatter {
             CallEndReason reason,
             long durationSeconds,
             CallSession.Direction direction) {
-        if (reason == null) return new FormattedCallLog(FAILED_KEY);
+        return format(reason, durationSeconds, direction, CallMediaType.AUDIO);
+    }
+
+    public static FormattedCallLog format(
+            CallEndReason reason,
+            long durationSeconds,
+            CallSession.Direction direction,
+            CallMediaType mediaType) {
+        boolean video = mediaType == CallMediaType.VIDEO;
+        String failedKey = video ? VIDEO_FAILED_KEY : FAILED_KEY;
+        if (reason == null) return new FormattedCallLog(failedKey);
         switch (reason) {
             case MISSED:
-                return new FormattedCallLog(MISSED_KEY);
+                return new FormattedCallLog(video ? VIDEO_MISSED_KEY : MISSED_KEY);
             case REJECTED:
-                return new FormattedCallLog(DECLINED_KEY);
+                return new FormattedCallLog(video ? VIDEO_DECLINED_KEY : DECLINED_KEY);
             case CANCELLED:
-                return new FormattedCallLog(CANCELLED_KEY);
+                return new FormattedCallLog(video ? VIDEO_CANCELLED_KEY : CANCELLED_KEY);
             case BUSY:
-                return new FormattedCallLog(BUSY_KEY);
+                return new FormattedCallLog(video ? VIDEO_BUSY_KEY : BUSY_KEY);
             case FAILED:
-                return new FormattedCallLog(FAILED_KEY);
+                return new FormattedCallLog(failedKey);
             case COMPLETED:
                 String key = direction == CallSession.Direction.OUTGOING
-                        ? OUTGOING_COMPLETED_KEY
-                        : INCOMING_COMPLETED_KEY;
+                        ? (video ? VIDEO_OUTGOING_COMPLETED_KEY : OUTGOING_COMPLETED_KEY)
+                        : (video ? VIDEO_INCOMING_COMPLETED_KEY : INCOMING_COMPLETED_KEY);
                 return new FormattedCallLog(key, formatDuration(durationSeconds));
             default:
-                return new FormattedCallLog(FAILED_KEY);
+                return new FormattedCallLog(failedKey);
         }
     }
 
-    /** Parses stable {@code CALL|REASON|seconds[|callerUserId]} system-message content. */
+    /**
+     * Parses stable {@code CALL|REASON|seconds[|callerUserId][|mediaType]}
+     * system-message content. A fifth {@code VIDEO} part marks a video call;
+     * its absence or any other value keeps the audio wording.
+     */
     public static FormattedCallLog fromSystemMessage(
             String content,
             CallSession.Direction direction) {
         if (content == null) return new FormattedCallLog(FAILED_KEY);
         String[] parts = content.split("\\|", -1);
-        if ((parts.length != 3 && parts.length != 4) || !"CALL".equals(parts[0])) {
+        if (parts.length < 3 || parts.length > 5 || !"CALL".equals(parts[0])) {
             return new FormattedCallLog(FAILED_KEY);
         }
-        String callerUserId = parts.length == 4 ? parts[3] : null;
-        if (parts.length == 4 && callerUserId.trim().isEmpty()) {
+        String callerUserId = parts.length >= 4 ? parts[3] : null;
+        if (parts.length >= 4 && callerUserId.trim().isEmpty()) {
             return new FormattedCallLog(FAILED_KEY);
         }
+        CallMediaType mediaType = parts.length == 5 ? CallMediaType.parse(parts[4]) : CallMediaType.AUDIO;
         CallEndReason reason;
         long duration;
         try {
@@ -91,9 +114,13 @@ public final class CallLogFormatter {
             return new FormattedCallLog(FAILED_KEY);
         }
         if (callerUserId == null && reason == CallEndReason.COMPLETED) {
-            return new FormattedCallLog(NEUTRAL_COMPLETED_KEY, formatDuration(duration));
+            return new FormattedCallLog(
+                    mediaType == CallMediaType.VIDEO
+                            ? VIDEO_NEUTRAL_COMPLETED_KEY
+                            : NEUTRAL_COMPLETED_KEY,
+                    formatDuration(duration));
         }
-        FormattedCallLog formatted = format(reason, duration, direction);
+        FormattedCallLog formatted = format(reason, duration, direction, mediaType);
         return new FormattedCallLog(formatted.resourceKey, callerUserId, formatted.args);
     }
 

@@ -12,11 +12,13 @@ public record CallHistoryItem(
         Instant startedAt,
         Instant answeredAt,
         Instant endedAt,
-        Long durationSeconds) {
+        Long durationSeconds,
+        String mediaType) {
 
     public static CallHistoryItem from(CallRecord record) {
         return new CallHistoryItem(record.getCallId(), record.getCallerId(), record.getCalleeId(),
                 record.getState().name(), record.getEndReason() == null ? null : record.getEndReason().name(),
-                record.getStartedAt(), record.getAnsweredAt(), record.getEndedAt(), record.getDurationSeconds());
+                record.getStartedAt(), record.getAnsweredAt(), record.getEndedAt(), record.getDurationSeconds(),
+                record.getMediaType() == null ? null : record.getMediaType().name());
     }
 }

@@ -3,6 +3,7 @@ package com.nexachat.call.ui;
 import android.content.Intent;
 import androidx.annotation.Nullable;
 import com.nexachat.call.CallLauncher;
+import com.nexachat.call.core.CallMediaType;
 import com.nexachat.call.core.IncomingCallPushData;
 
 /** Encodes the immutable fields needed to restore an incoming-call notification action. */
@@ -19,6 +20,7 @@ public final class IncomingCallIntentCodec {
         intent.putExtra(IncomingCallActivity.EXTRA_RECIPIENT_ID, data.getRecipientId());
         intent.putExtra(IncomingCallActivity.EXTRA_RING_EXPIRES_AT, data.getRingExpiresAtMs());
         intent.putExtra(IncomingCallActivity.EXTRA_SESSION_EPOCH, data.getSessionEpoch());
+        intent.putExtra(CallLauncher.EXTRA_MEDIA_TYPE, data.getMediaType().name());
     }
 
     @Nullable
@@ -42,7 +44,8 @@ public final class IncomingCallIntentCodec {
                     intent.getLongExtra(IncomingCallActivity.EXTRA_SERVER_TS, 0L),
                     intent.getStringExtra(IncomingCallActivity.EXTRA_RECIPIENT_ID),
                     intent.getLongExtra(IncomingCallActivity.EXTRA_RING_EXPIRES_AT, 0L),
-                    intent.getLongExtra(IncomingCallActivity.EXTRA_SESSION_EPOCH, -1L));
+                    intent.getLongExtra(IncomingCallActivity.EXTRA_SESSION_EPOCH, -1L),
+                    CallMediaType.parse(intent.getStringExtra(CallLauncher.EXTRA_MEDIA_TYPE)));
         } catch (RuntimeException malformedIntent) {
             return null;
         }

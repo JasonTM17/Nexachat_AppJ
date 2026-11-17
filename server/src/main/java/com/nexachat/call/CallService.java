@@ -117,7 +117,7 @@ public class CallService {
         }
         consume(callerId, "invite", 20);
         CallRegistry.Invitation invitation = registry.invite(signal.callId(), conversationId,
-                callerId, calleeId, registry.now());
+                callerId, calleeId, CallMediaType.orAudio(signal.mediaType()), registry.now());
         recordRollback(() -> registry.rollback(invitation));
         CallSession call = invitation.session();
         if (invitation.busy()) {
@@ -305,7 +305,7 @@ public class CallService {
         CallEvent.Payload payload = new CallEvent.Payload(
                 signal == null ? null : signal.type().name(), call.callId(),
                 signal == null ? null : signal.sdp(), signal == null ? null : signal.candidate(),
-                reason == null ? null : reason.name(), durationSeconds);
+                reason == null ? null : reason.name(), durationSeconds, call.mediaType().name());
         return new CallEvent(eventType, call.callId(), call.conversationId(), fromUserId,
                 registry.now(), payload);
     }
@@ -444,6 +444,10 @@ public class CallService {
     private static void validateEnvelope(CallSignal signal) {
         if (signal == null || signal.type() == null || signal.callId() == null) {
             throw CallException.validation("type and callId are required");
+        }
+        // The media type describes the offer; on any other frame it is meaningless.
+        if (signal.type() != CallSignal.Type.INVITE && signal.mediaType() != null) {
+            throw CallException.validation("mediaType is only allowed on INVITE");
         }
         if (signal.type() == CallSignal.Type.INVITE) {
             if (signal.sdp() != null || signal.candidate() != null) {

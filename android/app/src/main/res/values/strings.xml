@@ -343,6 +343,7 @@
     <string name="cd_search_in_chat">Search in chat</string>
     <string name="cd_clear_search">Clear search</string>
     <string name="cd_call">Call</string>
+    <string name="cd_video_call">Video call</string>
 
     <!-- Forward Picker -->
     <string name="forward_title">Forward message</string>

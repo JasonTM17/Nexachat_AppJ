@@ -1,18 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/bg_call_gradient"
-    android:fillViewport="true"
     android:fitsSystemWindows="true">
+
+    <!-- Full-screen remote video (voice calls keep it hidden) -->
+    <org.webrtc.SurfaceViewRenderer
+        android:id="@+id/call_remote_video"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no"
+        android:visibility="gone" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_horizontal"
         android:orientation="vertical"
-        android:paddingHorizontal="24dp"
+        android:paddingHorizontal="16dp"
         android:paddingVertical="32dp">
 
         <View
@@ -22,6 +34,7 @@
 
         <!-- 120dp Avatar with soft pulse ring -->
         <FrameLayout
+            android:id="@+id/call_avatar_wrap"
             android:layout_width="204dp"
             android:layout_height="204dp"
             android:layout_gravity="center_horizontal">
@@ -89,7 +102,7 @@
             android:layout_height="0dp"
             android:layout_weight="1.5" />
 
-        <!-- Square action controls (64dp mute, 64dp speaker, 72dp red end) -->
+        <!-- Square action controls (60dp mute/speaker/camera/switch, 72dp red end) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -171,6 +184,83 @@
                     android:textColor="@color/call_text_muted" />
             </LinearLayout>
 
+            <!-- Camera Column (video calls only) -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/call_camera"
+                    android:layout_width="@dimen/call_control_size"
+                    android:layout_height="@dimen/call_control_size"
+                    app:backgroundTint="@color/call_control_background"
+                    android:contentDescription="@string/call_camera_off"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
+                    android:padding="0dp"
+                    android:textColor="@android:color/transparent"
+                    android:visibility="gone"
+                    app:icon="@drawable/ic_videocam"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="28dp"
+                    app:iconTint="@color/call_icon_on_control" />
+
+                <TextView
+                    android:id="@+id/call_camera_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:importantForAccessibility="no"
+                    android:text="@string/call_camera_off"
+                    android:textAppearance="?attr/textAppearanceLabelMedium"
+                    android:textColor="@color/call_text_muted"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <!-- Camera Switch Column (video calls only) -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/call_camera_switch"
+                    android:layout_width="@dimen/call_control_size"
+                    android:layout_height="@dimen/call_control_size"
+                    app:backgroundTint="@color/call_control_background"
+                    android:contentDescription="@string/call_switch_camera"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
+                    android:padding="0dp"
+                    android:textColor="@android:color/transparent"
+                    android:visibility="gone"
+                    app:icon="@drawable/ic_switch_camera"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="28dp"
+                    app:iconTint="@color/call_icon_on_control" />
+                <TextView
+                    android:id="@+id/call_camera_switch_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:importantForAccessibility="no"
+                    android:text="@string/call_switch_camera_short"
+                    android:textAppearance="?attr/textAppearanceLabelMedium"
+                    android:textColor="@color/call_text_muted"
+                    android:visibility="gone" />
+            </LinearLayout>
+
             <!-- End Call Column -->
             <LinearLayout
                 android:layout_width="0dp"
@@ -209,4 +299,25 @@
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>
-</ScrollView>
+    </ScrollView>
+
+    <!-- Floating local camera preview (top-end, video calls only) -->
+    <FrameLayout
+        android:id="@+id/call_local_preview"
+        android:layout_width="96dp"
+        android:layout_height="128dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="24dp"
+        android:layout_marginEnd="20dp"
+        android:background="@drawable/bg_call_local_preview"
+        android:clipToOutline="true"
+        android:importantForAccessibility="no"
+        android:visibility="gone">
+
+        <org.webrtc.SurfaceViewRenderer
+            android:id="@+id/call_local_video"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no" />
+    </FrameLayout>
+</FrameLayout>

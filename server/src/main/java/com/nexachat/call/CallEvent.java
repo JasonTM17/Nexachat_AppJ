@@ -17,6 +17,7 @@ public record CallEvent(
             CallSignal.Sdp sdp,
             CallSignal.Candidate candidate,
             String reason,
-            Long durationSeconds) {
+            Long durationSeconds,
+            String mediaType) {
     }
 }

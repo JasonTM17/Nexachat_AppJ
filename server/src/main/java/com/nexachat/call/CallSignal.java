@@ -6,7 +6,13 @@ import jakarta.validation.constraints.NotNull;
 import java.util.UUID;
 
 public record CallSignal(@NotNull Type type, @NotNull UUID callId,
-                         @Valid Sdp sdp, @Valid Candidate candidate) {
+                         @Valid Sdp sdp, @Valid Candidate candidate, CallMediaType mediaType) {
+
+    // Frames from clients that predate the mediaType field still deserialize
+    // through this shape; a null mediaType means AUDIO on INVITE.
+    public CallSignal(Type type, UUID callId, Sdp sdp, Candidate candidate) {
+        this(type, callId, sdp, candidate, null);
+    }
 
     public enum Type {
         INVITE,

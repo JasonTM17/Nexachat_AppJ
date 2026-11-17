@@ -188,6 +188,90 @@ class CallFlowIT {
     }
 
     @Test
+    void videoInviteFlowsThroughEventsHistoryAndSystemMessage() throws Exception {
+        UUID conversationId = openDirect(alice, bob);
+        long beforeSeq = latestSeq(getMessages(conversationId, alice, null));
+        Connection caller = connect(alice);
+        Connection callee = connect(bob);
+        UUID callId = UUID.randomUUID();
+
+        send(caller, conversationId, new CallSignal(CallSignal.Type.INVITE, callId, null, null,
+                CallMediaType.VIDEO));
+        JsonNode invite = awaitEvent(callee, "CALL_INVITE");
+        assertThat(invite.path("payload").path("mediaType").asText()).isEqualTo("VIDEO");
+
+        send(callee, conversationId, new CallSignal(CallSignal.Type.ACCEPT, callId, null, null));
+        assertThat(awaitEvent(caller, "CALL_ACCEPTED").path("payload").path("mediaType").asText())
+                .isEqualTo("VIDEO");
+        awaitEvent(callee, "CALL_ACCEPTED");
+
+        send(caller, conversationId, new CallSignal(CallSignal.Type.END, callId, null, null));
+        awaitEvent(caller, "CALL_ENDED");
+        awaitEvent(callee, "CALL_ENDED");
+
+        JsonNode history = getJson("/api/v1/conversations/" + conversationId + "/calls", alice);
+        JsonNode completed = callHistoryItem(history, callId);
+        assertThat(completed.get("mediaType").asText()).isEqualTo("VIDEO");
+        assertThat(completed.get("endReason").asText()).isEqualTo("COMPLETED");
+        long durationSeconds = completed.get("durationSeconds").asLong();
+
+        assertThat(callLinesAfter(conversationId, alice, beforeSeq)).singleElement()
+                .satisfies(message -> assertThat(message.path("content").asText())
+                        .isEqualTo("CALL|COMPLETED|" + durationSeconds + "|" + alice.id() + "|VIDEO"));
+    }
+
+    @Test
+    void inviteWithoutMediaTypeStaysAnAudioCallEndToEnd() throws Exception {
+        UUID conversationId = openDirect(alice, bob);
+        long beforeSeq = latestSeq(getMessages(conversationId, alice, null));
+        Connection caller = connect(alice);
+        Connection callee = connect(bob);
+        UUID callId = UUID.randomUUID();
+
+        // A pre-mediaType client sends no mediaType member at all.
+        send(caller, conversationId, Map.of("type", "INVITE", "callId", callId.toString()));
+        JsonNode invite = awaitEvent(callee, "CALL_INVITE");
+        assertThat(invite.path("payload").path("mediaType").asText()).isEqualTo("AUDIO");
+
+        send(callee, conversationId, new CallSignal(CallSignal.Type.REJECT, callId, null, null));
+        awaitEvent(caller, "CALL_REJECTED");
+        awaitEvent(callee, "CALL_REJECTED");
+
+        JsonNode history = getJson("/api/v1/conversations/" + conversationId + "/calls", alice);
+        assertThat(callHistoryItem(history, callId).get("mediaType").asText()).isEqualTo("AUDIO");
+        assertThat(callLinesAfter(conversationId, alice, beforeSeq)).singleElement()
+                .satisfies(message -> assertThat(message.path("content").asText())
+                        .isEqualTo("CALL|REJECTED|0|" + alice.id()));
+    }
+
+    @Test
+    void unknownAndMisplacedMediaTypeFailValidation() throws Exception {
+        UUID conversationId = openDirect(alice, bob);
+        Connection caller = connect(alice);
+        Connection callee = connect(bob);
+        UUID callId = UUID.randomUUID();
+
+        send(caller, conversationId, Map.of("type", "INVITE", "callId", callId.toString(),
+                "mediaType", "HOLOGRAM"));
+        assertThat(awaitError(caller.errors()).code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(callee.calls().poll(250, TimeUnit.MILLISECONDS)).isNull();
+
+        send(caller, conversationId, new CallSignal(CallSignal.Type.INVITE, callId, null, null,
+                CallMediaType.VIDEO));
+        awaitEvent(callee, "CALL_INVITE");
+        send(caller, conversationId, Map.of("type", "CANCEL", "callId", callId.toString(),
+                "mediaType", "AUDIO"));
+        assertThat(awaitError(caller.errors()).code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(callee.calls().poll(250, TimeUnit.MILLISECONDS)).isNull();
+
+        // Release the still-ringing call; the shared alice↔bob conversation must not
+        // absorb a ring-timeout CALL|FAILED record while other tests are mid-flight.
+        send(caller, conversationId, new CallSignal(CallSignal.Type.CANCEL, callId, null, null));
+        awaitEvent(caller, "CALL_CANCELLED");
+        awaitEvent(callee, "CALL_CANCELLED");
+    }
+
+    @Test
     void busyInviteAndRejectedCallProduceTheExpectedTerminalFrames() throws Exception {
         UUID aliceBob = openDirect(alice, bob);
         UUID carolBob = openDirect(carol, bob);
@@ -311,8 +395,11 @@ class CallFlowIT {
 
         send(thirdParty, conversationId, new CallSignal(CallSignal.Type.END, callId, null, null));
         assertThat(awaitError(thirdParty.errors()).code()).isEqualTo("NOT_MEMBER");
-        send(caller, conversationId, new CallSignal(CallSignal.Type.SDP, callId,
-                new CallSignal.Sdp("offer", "x".repeat(16 * 1024 + 1)), null));
+        // Serialized as a sparse Map so the frame stays under the transport's
+        // text-message ceiling; a record shape would add null members (~30
+        // bytes) and trip CloseStatus 1009 before validation runs.
+        send(caller, conversationId, Map.of("type", "SDP", "callId", callId.toString(),
+                "sdp", Map.of("type", "offer", "description", "x".repeat(16 * 1024 + 1))));
         assertThat(awaitError(caller.errors()).code()).isEqualTo("VALIDATION_FAILED");
         send(caller, conversationId, new CallSignal(null, UUID.randomUUID(), null, null));
         assertThat(awaitError(caller.errors()).code()).isEqualTo("VALIDATION_FAILED");
@@ -418,7 +505,7 @@ class CallFlowIT {
                         || actual.startsWith(brokerDestination + "-user")));
     }
 
-    private static void send(Connection connection, UUID conversationId, CallSignal signal) {
+    private static void send(Connection connection, UUID conversationId, Object signal) {
         StompHeaders headers = new StompHeaders();
         headers.setDestination("/app/calls/" + conversationId + "/signal");
         headers.setContentType(MimeTypeUtils.APPLICATION_JSON);

@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import com.nexachat.R;
 import com.nexachat.call.CallLauncher;
+import com.nexachat.call.core.CallMediaType;
 import com.nexachat.call.core.CallSession;
 import com.nexachat.call.core.CallState;
 import com.nexachat.call.core.IncomingCallPushData;
@@ -80,7 +81,10 @@ public final class CallNotifications {
 
         String peerName = displayName(appContext, session);
         CallNotificationPrivacyPolicy.Content copy = CallNotificationPrivacyPolicy.incoming(
-                peerName, appContext.getString(R.string.call_notification_incoming));
+                peerName, appContext.getString(
+                        session.getMediaType() == CallMediaType.VIDEO
+                                ? R.string.call_notification_incoming_video
+                                : R.string.call_notification_incoming));
         NotificationCompat.Builder builder = new NotificationCompat.Builder(appContext, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(copy.getPrivateTitle())
@@ -116,8 +120,12 @@ public final class CallNotifications {
         String peerName = session == null ? appContext.getString(R.string.call_peer_fallback)
                 : displayName(appContext, session);
         String status = statusFor(appContext, session);
+        boolean video = session != null
+                && session.getMediaType() == CallMediaType.VIDEO;
         CallNotificationPrivacyPolicy.Content copy = CallNotificationPrivacyPolicy.ongoing(
-                peerName, status, appContext.getString(R.string.call_notification_ongoing));
+                peerName, status, appContext.getString(
+                        video ? R.string.call_notification_ongoing_video
+                                : R.string.call_notification_ongoing));
         Intent openIntent = new Intent(appContext, CallActivity.class)
                 .putExtra(CallLauncher.EXTRA_CONVERSATION_ID,
                         session == null ? null : session.getConversationId())
@@ -254,11 +262,16 @@ public final class CallNotifications {
 
     private static String statusFor(Context context, CallSession session) {
         if (session == null) return context.getString(R.string.call_notification_ongoing);
+        boolean video = session.getMediaType() == CallMediaType.VIDEO;
         switch (session.getState()) {
             case OUTGOING_RINGING: return context.getString(R.string.call_state_calling);
             case CONNECTING: return context.getString(R.string.call_state_connecting);
-            case ACTIVE: return context.getString(R.string.call_state_connected);
-            default: return context.getString(R.string.call_notification_ongoing);
+            case ACTIVE: return context.getString(video
+                    ? R.string.call_state_connected_video
+                    : R.string.call_state_connected);
+            default: return context.getString(video
+                    ? R.string.call_notification_ongoing_video
+                    : R.string.call_notification_ongoing);
         }
     }
 

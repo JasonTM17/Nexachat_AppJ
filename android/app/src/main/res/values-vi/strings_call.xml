@@ -47,4 +47,25 @@
     <string name="call_log_neutral_completed">Cuộc gọi thoại · %1$s</string>
     <string name="call_log_outgoing_completed">Cuộc gọi thoại đi · %1$s</string>
     <string name="call_log_incoming_completed">Cuộc gọi thoại đến · %1$s</string>
+    <string name="call_state_incoming_video">Cuộc gọi video đến</string>
+    <string name="call_state_connected_video">Cuộc gọi video</string>
+    <string name="call_camera_off">Tắt camera</string>
+    <string name="call_camera_on">Bật camera</string>
+    <string name="call_switch_camera">Đổi camera</string>
+    <string name="call_switch_camera_short">Lật</string>
+    <string name="call_camera_rationale">Cần quyền camera để gọi video. Bạn cũng có thể trả lời bằng thoại.</string>
+    <string name="call_camera_permission_needed">Hãy cấp quyền camera để gọi video, hoặc tiếp tục bằng thoại.</string>
+    <string name="call_answer_as_voice">Trả lời bằng thoại</string>
+    <string name="call_start_as_voice">Gọi thoại thay thế</string>
+    <string name="call_open_settings">Cài đặt</string>
+    <string name="call_notification_incoming_video">Cuộc gọi video đến</string>
+    <string name="call_notification_ongoing_video">Đang gọi video</string>
+    <string name="call_log_video_missed">Cuộc gọi video nhỡ</string>
+    <string name="call_log_video_declined">Cuộc gọi video bị từ chối</string>
+    <string name="call_log_video_cancelled">Cuộc gọi video đã hủy</string>
+    <string name="call_log_video_busy">Người nhận đang bận</string>
+    <string name="call_log_video_failed">Cuộc gọi video thất bại</string>
+    <string name="call_log_video_neutral_completed">Cuộc gọi video · %1$s</string>
+    <string name="call_log_video_outgoing_completed">Cuộc gọi video đi · %1$s</string>
+    <string name="call_log_video_incoming_completed">Cuộc gọi video đến · %1$s</string>
 </resources>

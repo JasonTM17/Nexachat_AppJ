@@ -521,6 +521,154 @@ public final class CallManagerTest {
         assertEquals(0, media.stopCount);
     }
 
+
+    @Test
+    public void outgoingVideoCallPublishesVideoSessionAndMarkedInvite() {
+        manager.startOutgoing("conversation-1", "peer-1", "Peer", CallMediaType.VIDEO);
+        scheduler.runCurrent();
+
+        assertEquals(CallState.OUTGOING_RINGING, session().getState());
+        assertEquals(CallMediaType.VIDEO, session().getMediaType());
+        assertTrue(session().isCameraOn());
+        CallSignal invite = signaling.lastSignal();
+        assertEquals(CallSignal.Type.INVITE, invite.getType());
+        assertEquals(CallMediaType.VIDEO, invite.getMediaType());
+    }
+
+    @Test
+    public void outgoingAudioInviteCarriesAudioMediaType() {
+        manager.startOutgoing("conversation-1", "peer-1", "Peer");
+        scheduler.runCurrent();
+
+        assertEquals(CallMediaType.AUDIO, session().getMediaType());
+        assertEquals(CallMediaType.AUDIO, signaling.lastSignal().getMediaType());
+    }
+
+    @Test
+    public void incomingVideoInviteMarksSessionAndAcceptKeepsVideo() {
+        signaling.emit(videoInvite("call-video", "conversation-1", "peer-1"));
+        scheduler.runCurrent();
+        assertEquals(CallState.INCOMING_RINGING, session().getState());
+        assertEquals(CallMediaType.VIDEO, session().getMediaType());
+        assertTrue(session().isCameraOn());
+
+        manager.accept("call-video");
+        scheduler.runCurrent();
+
+        assertEquals(CallState.CONNECTING, session().getState());
+        assertEquals(CallMediaType.VIDEO, session().getMediaType());
+        assertEquals(CallMediaType.VIDEO, media.lastMediaType);
+    }
+
+    @Test
+    public void acceptAsVoiceDowngradesAVideoOfferToAudio() {
+        signaling.emit(videoInvite("call-video", "conversation-1", "peer-1"));
+        scheduler.runCurrent();
+
+        manager.acceptAsVoice("call-video");
+        scheduler.runCurrent();
+
+        assertEquals(CallState.CONNECTING, session().getState());
+        assertEquals(CallMediaType.AUDIO, session().getMediaType());
+        assertFalse(session().isCameraOn());
+        assertEquals(CallMediaType.AUDIO, media.lastMediaType);
+    }
+
+    @Test
+    public void inviteWithoutMediaTypeStaysAnAudioCall() {
+        signaling.emit(invite("call-in", "conversation-1", "peer-1"));
+        scheduler.runCurrent();
+
+        assertEquals(CallMediaType.AUDIO, session().getMediaType());
+        assertFalse(session().isCameraOn());
+    }
+
+    @Test
+    public void videoPushAdmissionRebuildsMediaAwarePayload() {
+        long deadline = nowMs + 20L;
+        Maybe<CallSession> admission = manager.admitIncomingPush(
+                "call-video-push", "conversation-1", "peer-1", "Peer",
+                nowMs, "user-me", 1L, deadline, CallMediaType.VIDEO, () -> true);
+        TestObserver<CallSession> observer = admission.test();
+        scheduler.runCurrent();
+        observer.assertValueCount(1);
+
+        assertEquals(CallMediaType.VIDEO, session().getMediaType());
+        IncomingCallPushData payload = manager.currentIncomingPushData("call-video-push");
+        assertEquals(CallMediaType.VIDEO, payload.getMediaType());
+    }
+
+    @Test
+    public void signalingInviteCorrectsStalePushMediaType() {
+        long deadline = nowMs + 20L;
+        manager.admitIncomingPush(
+                "call-media-fix", "conversation-1", "peer-1", "Peer",
+                nowMs, "user-me", 1L, deadline, CallMediaType.AUDIO, () -> true).test();
+        scheduler.runCurrent();
+        assertEquals(CallMediaType.AUDIO, session().getMediaType());
+
+        signaling.emit(videoInvite("call-media-fix", "conversation-1", "peer-1"));
+        scheduler.runCurrent();
+
+        assertEquals(CallState.INCOMING_RINGING, session().getState());
+        assertEquals(CallMediaType.VIDEO, session().getMediaType());
+        assertTrue(session().isCameraOn());
+    }
+
+    @Test
+    public void cameraToggleOnlyAppliesToVideoCalls() {
+        startOutgoing();
+        scheduler.runCurrent();
+        media.cameraEnabled = null; // attach already pushed the initial flag
+        manager.setCameraEnabled(false);
+        scheduler.runCurrent();
+        assertFalse(session().isCameraOn());
+        assertNull(media.cameraEnabled);
+
+        restartManager();
+        manager.startOutgoing("conversation-1", "peer-1", "Peer", CallMediaType.VIDEO);
+        scheduler.runCurrent();
+        manager.setCameraEnabled(false);
+        scheduler.runCurrent();
+
+        assertFalse(session().isCameraOn());
+        assertEquals(Boolean.FALSE, media.cameraEnabled);
+        manager.switchCamera();
+        scheduler.runCurrent();
+        assertEquals(1, media.switchCount);
+    }
+
+    @Test
+    public void bindingAVideoUiListenerAsksTheEngineToReplayTracks() {
+        manager.startOutgoing("conversation-1", "peer-1", "Peer", CallMediaType.VIDEO);
+        scheduler.runCurrent();
+        signaling.emit(event(CallEvent.Type.CALL_ACCEPTED, "call-1", null));
+        scheduler.runCurrent();
+
+        manager.setCallVideoListener(new CallManager.CallVideoListener() {
+            @Override public void onLocalVideoTrack(Object track) { }
+            @Override public void onRemoteVideoTrack(Object track) { }
+        });
+        scheduler.runCurrent();
+
+        assertEquals(1, media.replayCount);
+    }
+
+    @Test
+    public void bindingAnAudioUiListenerDoesNotReplayTracks() {
+        startOutgoing();
+        signaling.emit(event(CallEvent.Type.CALL_ACCEPTED, "call-1", null));
+        scheduler.runCurrent();
+
+        manager.setCallVideoListener(new CallManager.CallVideoListener() {
+            @Override public void onLocalVideoTrack(Object track) { }
+            @Override public void onRemoteVideoTrack(Object track) { }
+        });
+        scheduler.runCurrent();
+
+        assertEquals(0, media.replayCount);
+    }
+
     private void startOutgoing() {
         manager.startOutgoing("conversation-1", "peer-1", "Peer");
         scheduler.runCurrent();
@@ -600,6 +748,13 @@ public final class CallManagerTest {
     private static CallEvent invite(String callId, String conversationId, String fromUserId) {
         return new CallEvent(CallEvent.Type.CALL_INVITE, "CALL_INVITE", callId,
                 conversationId, fromUserId, null, null, null, null, null);
+    }
+
+    private static CallEvent videoInvite(String callId, String conversationId, String fromUserId) {
+        return new CallEvent(CallEvent.Type.CALL_INVITE, "CALL_INVITE", callId,
+                conversationId, fromUserId, null,
+                CallSignal.control(CallSignal.Type.INVITE, callId, CallMediaType.VIDEO),
+                null, null, null);
     }
 
     private static CallEvent error(String callId, String conversationId, String errorCode) {
@@ -746,8 +901,12 @@ public final class CallManagerTest {
     private static final class FakeMediaEngine implements CallMediaEngine {
         int startCount;
         int stopCount;
+        int switchCount;
+        int replayCount;
         boolean lastCaller;
         Listener listener;
+        CallMediaType lastMediaType;
+        Boolean cameraEnabled;
         final List<CallSignal> remoteSignals = new ArrayList<>();
 
         @Override
@@ -755,6 +914,28 @@ public final class CallManagerTest {
             startCount++;
             lastCaller = isCaller;
             this.listener = listener;
+        }
+
+        @Override
+        public void start(boolean isCaller, CallMediaType mediaType,
+                          IceConfig config, Listener listener) {
+            lastMediaType = mediaType;
+            start(isCaller, config, listener);
+        }
+
+        @Override
+        public void setCameraEnabled(boolean enabled) {
+            cameraEnabled = enabled;
+        }
+
+        @Override
+        public void switchCamera() {
+            switchCount++;
+        }
+
+        @Override
+        public void replayVideoTracks() {
+            replayCount++;
         }
 
         @Override

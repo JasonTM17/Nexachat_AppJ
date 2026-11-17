@@ -2,6 +2,7 @@ package com.nexachat.call.ui;
 
 import com.nexachat.R;
 import com.nexachat.call.core.CallEndReason;
+import com.nexachat.call.core.CallMediaType;
 import com.nexachat.call.core.CallSession;
 import com.nexachat.call.core.CallState;
 import com.nexachat.call.ui.FirebaseCallStatusDisplayAdapter.CallStatusDisplay;
@@ -39,18 +40,21 @@ public final class CallUiModelMapper {
 
     private static CallUiModel mapAuthoritative(CallSession session) {
         if (session == null) return ended(R.string.call_state_ended);
+        boolean video = session.getMediaType() == CallMediaType.VIDEO;
         switch (session.getState()) {
             case OUTGOING_RINGING:
                 return model(R.string.call_state_calling, 0,
                         R.string.call_cancel, false, false, false, true);
             case INCOMING_RINGING:
-                return model(R.string.call_state_incoming, 0,
+                return model(video ? R.string.call_state_incoming_video
+                                : R.string.call_state_incoming, 0,
                         R.string.call_decline, false, false, false, true);
             case CONNECTING:
                 return model(R.string.call_state_connecting, 0,
                         R.string.call_hang_up, false, true, true, true);
             case ACTIVE:
-                return model(R.string.call_state_connected, 0,
+                return model(video ? R.string.call_state_connected_video
+                                : R.string.call_state_connected, 0,
                         R.string.call_hang_up, true, true, true, true);
             case ENDED:
                 return ended(titleFor(session.getEndReason()));

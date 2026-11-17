@@ -64,7 +64,7 @@ public final class IncomingCallPushAdmissionTest {
                 new Tokens(jwt("user-me"), NOW + 60_000L, "refresh")));
         when(callManager.admitIncomingPush(
                         anyString(), anyString(), anyString(), anyString(), anyLong(),
-                        anyString(), anyLong(), anyLong(), any(BooleanSupplier.class)))
+                        anyString(), anyLong(), anyLong(), any(CallMediaType.class), any(BooleanSupplier.class)))
                 .thenReturn(Maybe.just(session));
     }
 
@@ -76,7 +76,7 @@ public final class IncomingCallPushAdmissionTest {
         verify(callManager).admitIncomingPush(
                 eq("call-100"), eq("conv-200"), eq("user-alice"), eq("Alice"),
                 eq(NOW - 1_000L), eq("user-me"), eq(SESSION_EPOCH),
-                eq(RING_EXPIRES_AT), any(BooleanSupplier.class));
+                eq(RING_EXPIRES_AT), any(CallMediaType.class), any(BooleanSupplier.class));
     }
 
     @Test
@@ -88,7 +88,7 @@ public final class IncomingCallPushAdmissionTest {
         verify(tokenStore, never()).readTokens();
         verify(callManager, never()).admitIncomingPush(
                 anyString(), anyString(), anyString(), anyString(), anyLong(),
-                anyString(), anyLong(), anyLong(), any(BooleanSupplier.class));
+                anyString(), anyLong(), anyLong(), any(CallMediaType.class), any(BooleanSupplier.class));
     }
 
     @Test
@@ -100,7 +100,7 @@ public final class IncomingCallPushAdmissionTest {
 
         verify(callManager, never()).admitIncomingPush(
                 anyString(), anyString(), anyString(), anyString(), anyLong(),
-                anyString(), anyLong(), anyLong(), any(BooleanSupplier.class));
+                anyString(), anyLong(), anyLong(), any(CallMediaType.class), any(BooleanSupplier.class));
     }
 
     @Test
@@ -114,7 +114,7 @@ public final class IncomingCallPushAdmissionTest {
         verify(tokenStore, never()).readTokens();
         verify(callManager, never()).admitIncomingPush(
                 anyString(), anyString(), anyString(), anyString(), anyLong(),
-                anyString(), anyLong(), anyLong(), any(BooleanSupplier.class));
+                anyString(), anyLong(), anyLong(), any(CallMediaType.class), any(BooleanSupplier.class));
     }
 
     @Test
@@ -127,7 +127,7 @@ public final class IncomingCallPushAdmissionTest {
         verify(tokenStore, never()).readTokens();
         verify(callManager, never()).admitIncomingPush(
                 anyString(), anyString(), anyString(), anyString(), anyLong(),
-                anyString(), anyLong(), anyLong(), any(BooleanSupplier.class));
+                anyString(), anyLong(), anyLong(), any(CallMediaType.class), any(BooleanSupplier.class));
     }
 
     @Test
@@ -170,7 +170,7 @@ public final class IncomingCallPushAdmissionTest {
         verify(callManager).admitIncomingPush(
                 eq("call-100"), eq("conv-200"), eq("user-alice"), eq("Alice"),
                 eq(NOW - 1_000L), eq("user-me"), eq(SESSION_EPOCH),
-                eq(RING_EXPIRES_AT), any(BooleanSupplier.class));
+                eq(RING_EXPIRES_AT), any(CallMediaType.class), any(BooleanSupplier.class));
         verify(callManager).reject("call-100");
     }
 

@@ -19,6 +19,7 @@
     <color name="call_avatar_fg_6">#FFFFFCFF</color>
     <color name="call_avatar_bg_7">#FF654779</color>
     <color name="call_avatar_fg_7">#FFFFFCFF</color>
+    <color name="call_preview_background">#FF000000</color>
     <color name="call_accept_background">#FF246B57</color>
     <color name="call_decline_background">#FFB3261E</color>
     <color name="call_end_background">#FFB3261E</color>
