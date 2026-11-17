@@ -6,6 +6,16 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.15] - 2026-11-17
+
+Android APK release; no server changes. See
+[docs/release-notes/v1.2.15.md](docs/release-notes/v1.2.15.md).
+
+### Changed
+- Sign-in, account creation and the Profile phone dialog accept a Vietnamese
+  national number such as `0905 123 456` and send it as `+84905123456`.
+  Other leading-zero numbers still need the international `+` form.
+
 ## [1.2.14] - 2026-11-17
 
 Android APK release with a server update that is already deployed: sign up and
@@ -991,7 +1001,8 @@ First tagged release (`v1.0.0`).
 - Architecture diagrams, REST/STOMP contracts, security notes, operations
   guide and UI design documentation.
 
-[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.14...HEAD
+[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.15...HEAD
+[1.2.15]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.14...v1.2.15
 [1.2.14]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.13...v1.2.14
 [1.2.13]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.12...v1.2.13
 [1.2.12]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.11...v1.2.12

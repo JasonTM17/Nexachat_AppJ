@@ -3,13 +3,13 @@
 ## Supported versions / Phiên bản được hỗ trợ
 
 Only the latest release receives security fixes. The latest release in this
-repository is `v1.2.14`; earlier releases are unsupported. / Chỉ bản phát hành
-mới nhất được nhận bản vá bảo mật. Bản mới nhất trong kho mã này là `v1.2.14`;
+repository is `v1.2.15`; earlier releases are unsupported. / Chỉ bản phát hành
+mới nhất được nhận bản vá bảo mật. Bản mới nhất trong kho mã này là `v1.2.15`;
 các bản cũ hơn không còn được hỗ trợ.
 
 | Version / Phiên bản | Support / Hỗ trợ |
 |---|---|
-| Latest release (`v1.2.14`) | Supported / Có hỗ trợ |
+| Latest release (`v1.2.15`) | Supported / Có hỗ trợ |
 | Earlier releases / Các bản cũ hơn | Unsupported; upgrade to the latest release / Không hỗ trợ; hãy nâng cấp lên bản mới nhất |
 
 ## Report a vulnerability / Báo cáo lỗ hổng
