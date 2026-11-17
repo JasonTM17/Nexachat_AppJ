@@ -18,7 +18,7 @@ import com.nexachat.R;
 import com.nexachat.core.ui.components.AvatarView;
 import com.nexachat.core.ui.components.ChatUiRules;
 import com.nexachat.data.ConversationSummary;
-import com.nexachat.feature.inbox.CallPreviewDirection;
+import com.nexachat.feature.inbox.CallPreviewIcon;
 import com.nexachat.feature.inbox.InboxBadgeRules;
 import com.nexachat.feature.inbox.InboxRowPreviewRules;
 import com.nexachat.feature.inbox.InboxRowTypography;
@@ -190,11 +190,8 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             } else if (previewKind == InboxPreviewKind.FILE) {
                 previewIcon = R.drawable.ic_description;
             } else if (previewKind == InboxPreviewKind.CALL) {
-                previewIcon = missedCall
-                        ? R.drawable.ic_call_missed
-                        : CallPreviewDirection.isVideoCall(conversation.getLastMessageContent())
-                                ? R.drawable.ic_videocam
-                                : R.drawable.ic_call;
+                previewIcon = CallPreviewIcon.forCall(
+                        conversation.getLastMessageContent(), missedCall);
             }
             if (!hasPreviewLine || previewIcon == 0) {
                 previewTypeIcon.setVisibility(View.GONE);
