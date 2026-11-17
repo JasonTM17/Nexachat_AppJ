@@ -169,6 +169,31 @@ class EmailSignupFlowTest extends SecurityITBase {
     }
 
     @Test
+    void replacingALinkedPhoneNeedsTheCurrentPassword() throws Exception {
+        String token = registerWithEmail(email());
+        mockMvc.perform(put("/api/v1/users/me/phone")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("phone", "0905551781"))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/v1/users/me/phone")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("phone", "0905551782"))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("WRONG_PASSWORD"));
+
+        mockMvc.perform(put("/api/v1/users/me/phone")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("phone", "0905551782", "password", PASSWORD))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.phone").value("+84905551782"));
+    }
+
+    @Test
     void aPhoneAlreadyInUseCannotBeLinked() throws Exception {
         register("+84905551772");
         String token = registerWithEmail(email());

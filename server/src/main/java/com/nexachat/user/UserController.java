@@ -80,7 +80,7 @@ public class UserController {
     @PutMapping("/me/phone")
     public MyProfileResponse linkPhone(@AuthenticationPrincipal JwtPrincipal principal,
                                        @Valid @RequestBody LinkPhoneRequest request) {
-        return MyProfileResponse.from(userService.linkPhone(requireUserId(principal), request.phone()));
+        return MyProfileResponse.from(userService.linkPhone(requireUserId(principal), request.phone(), request.password()));
     }
 
     @DeleteMapping("/me/phone")

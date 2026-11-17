@@ -38,6 +38,8 @@ class UserServiceTest {
     private ContactRepository contactRepository;
     @Mock
     private com.nexachat.config.SecurityProperties securityProperties;
+    @Mock
+    private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     @InjectMocks
     private UserService userService;

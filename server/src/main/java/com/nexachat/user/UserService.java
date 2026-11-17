@@ -29,16 +29,19 @@ public class UserService {
     private final ContactRepository contactRepository;
     private final UserBlockRepository blockRepository;
     private final java.util.Set<String> operatorPhones;
+    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     public UserService(UserRepository userRepository,
                        PhoneService phoneService,
                        ContactRepository contactRepository,
                        UserBlockRepository blockRepository,
-                       com.nexachat.config.SecurityProperties securityProperties) {
+                       com.nexachat.config.SecurityProperties securityProperties,
+                       org.springframework.security.crypto.password.PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.phoneService = phoneService;
         this.contactRepository = contactRepository;
         this.blockRepository = blockRepository;
+        this.passwordEncoder = passwordEncoder;
         this.operatorPhones = securityProperties.adminPhones().stream()
                 .map(configured -> {
                     try {
@@ -63,10 +66,12 @@ public class UserService {
 
     /**
      * Adds or replaces the account's optional phone number. The number is not
-     * verified by SMS: it only lets people find the account by phone.
+     * verified by SMS: it only lets people find the account by phone. Replacing
+     * a phone that is already linked needs the current password, like the other
+     * changes to how a person signs in.
      */
     @Transactional
-    public User linkPhone(UUID userId, String rawPhone) {
+    public User linkPhone(UUID userId, String rawPhone, String currentPassword) {
         String phone;
         try {
             phone = phoneService.toE164(rawPhone);
@@ -77,6 +82,7 @@ public class UserService {
         if (phone.equals(user.getPhone())) {
             return user;
         }
+        requirePasswordToReplacePhone(user, currentPassword);
         // A linked number is not verified, so a number that grants operator access must never be claimable.
         if (operatorPhones.contains(phone)) {
             throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");
@@ -91,6 +97,16 @@ public class UserService {
             throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");
         }
         return user;
+    }
+
+    private void requirePasswordToReplacePhone(User user, String currentPassword) {
+        String hash = user.getPasswordHash();
+        if (user.getPhone() == null || hash == null || hash.isBlank()) {
+            return;
+        }
+        if (currentPassword == null || !passwordEncoder.matches(currentPassword, hash)) {
+            throw ApiException.of(ApiErrorCode.WRONG_PASSWORD, "Current password is incorrect");
+        }
     }
 
     /** Removes the phone number; a verified email must remain as the way to sign in. */
