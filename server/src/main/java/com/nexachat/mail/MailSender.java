@@ -1,10 +1,9 @@
 package com.nexachat.mail;
 
-import com.nexachat.recovery.OtpPurpose;
-
 public interface MailSender {
 
     boolean isAvailable();
 
-    void sendOtp(String recipient, OtpPurpose purpose, String code);
+    /** Delivers the message or throws; a thrown error makes the caller withdraw the code. */
+    void sendOtp(OtpEmail email);
 }

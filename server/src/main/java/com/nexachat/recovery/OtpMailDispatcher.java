@@ -1,12 +1,15 @@
 package com.nexachat.recovery;
 
 import com.nexachat.mail.MailSender;
+import com.nexachat.mail.OtpEmail;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Component;
 
+import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Consumer;
@@ -53,6 +56,8 @@ public class OtpMailDispatcher {
     private void dispatch(OtpPurpose purpose,
                           Supplier<Optional<OtpMail>> prepareRequest,
                           Consumer<OtpMail> onFailure) {
+        // The message is written in the language of the request, which the worker thread no longer sees.
+        Locale locale = LocaleContextHolder.getLocale();
         try {
             taskExecutor.execute(() -> {
                 Optional<OtpMail> mail;
@@ -67,16 +72,17 @@ public class OtpMailDispatcher {
                     log.warn("OTP mail delivery is unavailable");
                     return;
                 }
-                mail.ifPresent(value -> deliver(value, onFailure));
+                mail.ifPresent(value -> deliver(value, locale, onFailure));
             });
         } catch (RejectedExecutionException exception) {
             log.warn("OTP request queue is unavailable");
         }
     }
 
-    private void deliver(OtpMail mail, Consumer<OtpMail> onFailure) {
+    private void deliver(OtpMail mail, Locale locale, Consumer<OtpMail> onFailure) {
         try {
-            mailSender.sendOtp(mail.recipient(), mail.purpose(), mail.code());
+            mailSender.sendOtp(new OtpEmail(mail.recipient(), mail.purpose(), mail.code(), locale,
+                    "otp-" + mail.otpId()));
         } catch (RuntimeException exception) {
             failDelivery(mail, onFailure);
             log.warn("OTP mail delivery failed for purpose {}", mail.purpose());

@@ -1,6 +1,5 @@
 package com.nexachat.mail;
 
-import com.nexachat.recovery.OtpPurpose;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import org.springframework.mail.MailException;
@@ -29,18 +28,20 @@ public final class SmtpMailSender implements MailSender {
     }
 
     @Override
-    public void sendOtp(String recipient, OtpPurpose purpose, String code) {
+    public void sendOtp(OtpEmail email) {
         if (!isAvailable()) {
             throw new IllegalStateException("SMTP mail is not configured");
         }
-        OtpMailContent content = OtpMailContent.forCode(purpose, code);
+        OtpMailContent content = OtpMailContent.forCode(email.purpose(), email.code(), email.locale());
         MimeMessage message = javaMailSender.createMimeMessage();
         try {
             MimeMessageHelper helper = new MimeMessageHelper(message, true, StandardCharsets.UTF_8.name());
             helper.setFrom(properties.smtp().from());
-            helper.setTo(recipient);
+            helper.setTo(email.recipient());
             helper.setSubject(content.subject());
             helper.setText(content.text(), content.html());
+            message.setHeader("Auto-Submitted", "auto-generated");
+            message.setHeader("X-Auto-Response-Suppress", "All");
             javaMailSender.send(message);
         } catch (MessagingException | MailException ex) {
             throw new IllegalStateException("SMTP delivery failed", ex);

@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import com.nexachat.mail.MailSender;
+import com.nexachat.mail.OtpEmail;
 import com.nexachat.recovery.OtpPurpose;
 
 import java.util.Map;
@@ -143,6 +144,7 @@ class AccountRecoveryFlowTest extends SecurityITBase {
         private final AtomicReference<SendBarrier> nextBarrier = new AtomicReference<>();
         private volatile boolean available = true;
         private volatile SentOtp lastAttempted;
+        private volatile OtpEmail lastEmail;
 
         @Override
         public boolean isAvailable() {
@@ -150,9 +152,10 @@ class AccountRecoveryFlowTest extends SecurityITBase {
         }
 
         @Override
-        public void sendOtp(String recipient, OtpPurpose purpose, String code) {
-            SentOtp attempt = new SentOtp(recipient, purpose, code);
+        public void sendOtp(OtpEmail email) {
+            SentOtp attempt = new SentOtp(email.recipient(), email.purpose(), email.code());
             lastAttempted = attempt;
+            lastEmail = email;
             SendBarrier barrier = nextBarrier.getAndSet(null);
             if (barrier != null) {
                 barrier.entered().countDown();
@@ -167,6 +170,10 @@ class AccountRecoveryFlowTest extends SecurityITBase {
                 throw new IllegalStateException("synthetic-provider-response-secret");
             }
             sent.add(attempt);
+        }
+
+        OtpEmail lastEmail() {
+            return lastEmail;
         }
 
         List<SentOtp> messages() {
