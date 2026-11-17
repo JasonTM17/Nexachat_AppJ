@@ -65,7 +65,7 @@ class AuthorizationFieldAllowlistIT extends SecurityITBase {
         assertKeys(inboxGroup, Set.of("id", "type", "title", "avatarUrl", "members", "lastMessage",
                 "unreadCount", "lastReadSeq", "peerPresence", "muted", "mutedUntil", "archived",
                 "aiOptOut", "pinned", "pinnedAt", "labels", "e2eeEnabled", "lastMessageEncrypted",
-                "disappearingSeconds"));
+                "disappearingSeconds", "streakCount", "streakAtRisk"));
         for (JsonNode inboxMember : inboxGroup.path("members")) {
             assertKeys(inboxMember, Set.of("userId", "displayName", "phone", "avatarUrl", "role"));
         }

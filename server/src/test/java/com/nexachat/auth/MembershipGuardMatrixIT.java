@@ -620,6 +620,11 @@ class MembershipGuardMatrixIT extends SecurityITBase {
                 "/api/v1/conversations/{conversationId}/pins"));
         ops.put("rest-035", member("rest-035", "GET",
                 "/api/v1/conversations/{conversationId}/reminders"));
+        // The streak read resolves membership first, so an unknown conversation
+        // and a non-member conversation are the same answer.
+        ops.put("rest-159", new Op("rest-159", "GET",
+                "/api/v1/conversations/{conversationId}/streak", null, null, null,
+                NOT_MEMBER, NOT_MEMBER, NOT_MEMBER, null, null));
         ops.put("rest-063", member("rest-063", "POST",
                 "/api/v1/conversations/{conversationId}/ask",
                 Map.of("question", "membership probe")));
