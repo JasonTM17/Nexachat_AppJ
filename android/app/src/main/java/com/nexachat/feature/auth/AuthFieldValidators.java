@@ -2,6 +2,8 @@ package com.nexachat.feature.auth;
 
 import androidx.annotation.NonNull;
 
+import com.nexachat.core.common.PhoneNormalizer;
+
 import java.util.Locale;
 
 /** Small, UI-independent helpers shared by the Java authentication forms. */
@@ -11,13 +13,17 @@ public final class AuthFieldValidators {
     /**
      * Normalizes common phone punctuation and applies the server's E.164 shape: {@code 00}
      * becomes {@code +}, and a bare international digit string gains a {@code +} prefix.
-     * Numbers with a leading {@code 0} are national and stay untouched (and invalid):
-     * no default country is ever guessed.
+     * A Vietnamese national number (leading {@code 0}, e.g. {@code 0905 123 456}) becomes
+     * {@code +84…}; any other leading-{@code 0} number stays untouched (and invalid).
      */
     @NonNull public static String normalizeE164(@NonNull String input) {
         String value = input.trim().replaceAll("[\\s().-]", "");
         if (value.startsWith("00")) value = "+" + value.substring(2);
         if (value.matches("[1-9][0-9]{7,14}")) value = "+" + value;
+        if (value.matches("0[1-9][0-9]{7,9}")) {
+            String national = PhoneNormalizer.toE164(value);
+            if (national.startsWith("+84")) value = national;
+        }
         return value;
     }
 

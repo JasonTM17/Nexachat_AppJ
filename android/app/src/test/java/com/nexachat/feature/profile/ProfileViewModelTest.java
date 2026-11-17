@@ -579,7 +579,7 @@ public final class ProfileViewModelTest {
     public void invalidPhoneInputIsBlockedBeforeRepository() {
         ProfileViewModel viewModel = createViewModel(new Result.Success<>(me));
         viewModel.openPhoneDialog();
-        viewModel.onPhoneInputChange("0901 234 567");
+        viewModel.onPhoneInputChange("0901 234");
         viewModel.submitPhoneChange();
 
         ProfileViewModel.UiState state = viewModel.getUiState().getValue();
