@@ -103,7 +103,7 @@ public final class ForgotPasswordFragment extends Fragment {
             binding.forgotPhoneInput.setText(state.getPhone());
         }
         binding.forgotPhoneLayout.setError(state.isPhoneInvalid()
-                ? getString(R.string.error_phone_invalid)
+                ? getString(R.string.error_login_identifier_invalid)
                 : null);
         binding.forgotPhoneInput.setEnabled(!state.isCodeRequested() && !state.isSending());
 

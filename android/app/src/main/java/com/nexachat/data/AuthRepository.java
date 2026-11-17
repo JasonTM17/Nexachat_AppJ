@@ -18,6 +18,8 @@ import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.core.network.dto.ChangePasswordRequest;
 import com.nexachat.core.network.dto.DeleteAccountRequest;
+import com.nexachat.core.network.dto.EmailCodeRequest;
+import com.nexachat.core.network.dto.EmailRegisterRequest;
 import com.nexachat.core.network.dto.GoogleLinkRequest;
 import com.nexachat.core.network.dto.GoogleNonceResponse;
 import com.nexachat.core.network.dto.GoogleSignInRequest;
@@ -259,6 +261,29 @@ public final class AuthRepository {
             @NonNull String displayName) {
         RegisterRequest request = registerRequest(phone, password, displayName);
         return Single.defer(() -> persistOnSuccess(authCall(authApi.register(request))));
+    }
+
+    /** Mails a one-time code to the address; the account is created by {@link #registerWithEmail}. */
+    @NonNull
+    public Single<Result<Unit>> requestEmailSignupCode(@NonNull String email) {
+        EmailCodeRequest request = new EmailCodeRequest(email.trim().toLowerCase(java.util.Locale.ROOT));
+        return Single.defer(() -> withServerReady(
+                () -> authCallUnit(authApi.requestEmailSignupCode(request))));
+    }
+
+    @NonNull
+    public Single<Result<AuthResponse>> registerWithEmail(
+            @NonNull String email,
+            @NonNull String code,
+            @NonNull String password,
+            @NonNull String displayName) {
+        EmailRegisterRequest request = new EmailRegisterRequest(
+                email.trim().toLowerCase(java.util.Locale.ROOT),
+                code.trim(),
+                password,
+                WhitespaceTrim.trim(displayName));
+        return Single.defer(() -> withServerReady(
+                () -> persistOnSuccess(authCall(authApi.registerWithEmail(request)))));
     }
 
     @NonNull

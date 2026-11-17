@@ -9,10 +9,12 @@ import androidx.lifecycle.ViewModel;
 import com.nexachat.core.auth.GoogleSignInFlow;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.common.Unit;
 import com.nexachat.core.network.dto.AuthResponse;
 import com.nexachat.data.AuthRepository;
 import com.nexachat.data.AuthSessionResult;
 import dagger.hilt.android.lifecycle.HiltViewModel;
+import java.time.Clock;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.UnaryOperator;
@@ -42,12 +44,25 @@ public final class AuthViewModel extends ViewModel {
     private final MutableLiveData<Boolean> serverStarting = new MutableLiveData<>(false);
     private final OneShotLiveData<Event> events = new OneShotLiveData<>();
     private UiState currentState = mutableUiState.getValue();
+    private final MutableLiveData<EmailSignupState> mutableEmailSignup =
+            new MutableLiveData<>(new EmailSignupState());
+    private EmailSignupState emailSignupState = mutableEmailSignup.getValue();
+    private final Clock clock;
 
     @Inject
     public AuthViewModel(
             AuthRepository authRepository,
             GoogleSignInFlow googleSignInFlow,
             SavedStateHandle savedState) {
+        this(authRepository, googleSignInFlow, savedState, Clock.systemUTC());
+    }
+
+    AuthViewModel(
+            AuthRepository authRepository,
+            GoogleSignInFlow googleSignInFlow,
+            SavedStateHandle savedState,
+            Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock");
         this.authRepository = Objects.requireNonNull(authRepository, "authRepository");
         this.googleSignInFlow = Objects.requireNonNull(googleSignInFlow, "googleSignInFlow");
         this.savedState = Objects.requireNonNull(savedState, "savedState");
@@ -154,6 +169,106 @@ public final class AuthViewModel extends ViewModel {
         updateState(state -> state.withPhone(value));
     }
 
+    public LiveData<EmailSignupState> getEmailSignup() {
+        return mutableEmailSignup;
+    }
+
+    public void onEmailChange(@NonNull String value) {
+        updateEmailSignup(state -> state.withEmail(value));
+    }
+
+    public void onSignupCodeChange(@NonNull String value) {
+        updateEmailSignup(state -> state.withCode(PasswordResetOtpSanitizer.sanitize(value)));
+    }
+
+    /**
+     * First step of email sign-up: checks the form, then mails a code to the address.
+     * The account is created only when {@link #registerWithEmail} presents that code.
+     */
+    public void requestSignupCode() {
+        UiState state = currentState();
+        EmailSignupState signup = emailSignup();
+        String email = signup.getEmail().trim();
+        boolean emailInvalid = !AuthFieldValidators.isEmail(email);
+        boolean passwordInvalid = state.getPassword().length() < MIN_PASSWORD_LENGTH;
+        CompleteProfileDisplayNameRules.Problem nameProblem =
+                CompleteProfileDisplayNameRules.problem(state.getDisplayName());
+        if (emailInvalid || passwordInvalid || nameProblem != null) {
+            updateEmailSignup(current -> current.withEmailError(emailInvalid));
+            updateState(current -> current.withRegisterValidation(
+                    false, passwordInvalid, nameProblem));
+            return;
+        }
+        if (state.getLoading()) {
+            return;
+        }
+        updateState(current -> current.withLoading(true, null));
+        disposables.add(authRepository.requestEmailSignupCode(email)
+                .subscribeOn(Schedulers.io())
+                .subscribe(this::finishCodeRequest, this::failLoading));
+    }
+
+    public void resendSignupCode() {
+        EmailSignupState signup = emailSignup();
+        if (!signup.isCodeSent() || currentState().getLoading()
+                || signup.resendSecondsRemaining(clock.millis()) > 0) {
+            return;
+        }
+        updateState(current -> current.withLoading(true, null));
+        disposables.add(authRepository.requestEmailSignupCode(signup.getEmail().trim())
+                .subscribeOn(Schedulers.io())
+                .subscribe(this::finishCodeRequest, this::failLoading));
+    }
+
+    /** Back to the form so a mistyped address can be corrected. */
+    public void changeSignupEmail() {
+        updateEmailSignup(current -> current.backToForm());
+        updateState(current -> current.withLoading(false, null));
+    }
+
+    public void registerWithEmail() {
+        UiState state = currentState();
+        EmailSignupState signup = emailSignup();
+        if (!signup.isCodeSent() || state.getLoading()) {
+            return;
+        }
+        if (!PasswordResetOtpSanitizer.isComplete(signup.getCode())) {
+            updateEmailSignup(current -> current.withCodeError(true));
+            return;
+        }
+        String displayName = CompleteProfileDisplayNameRules.normalize(state.getDisplayName());
+        updateState(current -> current.withLoading(true, null));
+        disposables.add(authRepository.registerWithEmail(
+                        signup.getEmail().trim(), signup.getCode(), state.getPassword(), displayName)
+                .subscribeOn(Schedulers.io())
+                .subscribe(this::finishEmailRegister, this::failLoading));
+    }
+
+    private void finishCodeRequest(Result<Unit> result) {
+        if (result instanceof Result.Success<?>) {
+            long until = clock.millis() + EmailSignupState.RESEND_COOLDOWN_MS;
+            updateEmailSignup(current -> current.withCodeSent(until));
+            updateState(current -> current.withLoading(false, null));
+            return;
+        }
+        ApiError error = ((Result.Failure<?>) result).getError();
+        updateState(current -> current.withLoading(false, error));
+    }
+
+    private void finishEmailRegister(Result<AuthResponse> result) {
+        if (result instanceof Result.Failure<?> failure
+                && failure.getError() instanceof ApiError.InvalidOrExpiredCode) {
+            updateEmailSignup(current -> current.withCodeError(true));
+            updateState(current -> current.withLoading(false, null));
+            return;
+        }
+        finishSubmit(result);
+    }
+
+    private void failLoading(Throwable error) {
+        updateState(state -> state.withLoading(false, new ApiError.Network(error.getMessage())));
+    }
+
     public void onPasswordChange(@NonNull String value) {
         updateState(state -> state.withPassword(value));
     }
@@ -229,6 +344,15 @@ public final class AuthViewModel extends ViewModel {
         return currentState;
     }
 
+    private synchronized EmailSignupState emailSignup() {
+        return emailSignupState;
+    }
+
+    private synchronized void updateEmailSignup(UnaryOperator<EmailSignupState> reducer) {
+        emailSignupState = Objects.requireNonNull(reducer.apply(emailSignupState), "state");
+        mutableEmailSignup.postValue(emailSignupState);
+    }
+
     private synchronized void updateState(UnaryOperator<UiState> reducer) {
         currentState = Objects.requireNonNull(reducer.apply(currentState), "state");
         mutableUiState.postValue(currentState);
@@ -248,6 +372,113 @@ public final class AuthViewModel extends ViewModel {
             }
         }
         return true;
+    }
+
+    /** State of the email sign-up steps: the address, the mailed code and the resend cooldown. */
+    public static final class EmailSignupState {
+        static final long RESEND_COOLDOWN_MS = 60_000L;
+
+        @NonNull private final String email;
+        @NonNull private final String code;
+        private final boolean codeSent;
+        private final boolean emailError;
+        private final boolean codeError;
+        private final long resendAtMs;
+
+        public EmailSignupState() {
+            this("", "", false, false, false, 0L);
+        }
+
+        private EmailSignupState(
+                @NonNull String email,
+                @NonNull String code,
+                boolean codeSent,
+                boolean emailError,
+                boolean codeError,
+                long resendAtMs) {
+            this.email = email;
+            this.code = code;
+            this.codeSent = codeSent;
+            this.emailError = emailError;
+            this.codeError = codeError;
+            this.resendAtMs = resendAtMs;
+        }
+
+        @NonNull public String getEmail() {
+            return email;
+        }
+
+        @NonNull public String getCode() {
+            return code;
+        }
+
+        public boolean isCodeSent() {
+            return codeSent;
+        }
+
+        public boolean getEmailError() {
+            return emailError;
+        }
+
+        public boolean getCodeError() {
+            return codeError;
+        }
+
+        /** Whole seconds until another code may be requested; zero when it may be requested now. */
+        public int resendSecondsRemaining(long nowMs) {
+            long remaining = resendAtMs - nowMs;
+            return remaining <= 0 ? 0 : (int) ((remaining + 999) / 1000);
+        }
+
+        EmailSignupState withEmail(@NonNull String value) {
+            return new EmailSignupState(value, code, codeSent, false, codeError, resendAtMs);
+        }
+
+        EmailSignupState withCode(@NonNull String value) {
+            return new EmailSignupState(email, value, codeSent, emailError, false, resendAtMs);
+        }
+
+        EmailSignupState withEmailError(boolean value) {
+            return new EmailSignupState(email, code, codeSent, value, codeError, resendAtMs);
+        }
+
+        EmailSignupState withCodeError(boolean value) {
+            return new EmailSignupState(email, code, codeSent, emailError, value, resendAtMs);
+        }
+
+        EmailSignupState withCodeSent(long resendAt) {
+            return new EmailSignupState(email, "", true, false, false, resendAt);
+        }
+
+        EmailSignupState backToForm() {
+            return new EmailSignupState(email, "", false, false, false, 0L);
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (!(other instanceof EmailSignupState that)) {
+                return false;
+            }
+            return codeSent == that.codeSent
+                    && emailError == that.emailError
+                    && codeError == that.codeError
+                    && resendAtMs == that.resendAtMs
+                    && email.equals(that.email)
+                    && code.equals(that.code);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(email, code, codeSent, emailError, codeError, resendAtMs);
+        }
+
+        @Override
+        public String toString() {
+            return "EmailSignupState(email=" + email
+                    + ", code=<redacted>, codeSent=" + codeSent
+                    + ", emailError=" + emailError
+                    + ", codeError=" + codeError + ")";
+        }
     }
 
     /** One-shot navigation events after authentication succeeds. */

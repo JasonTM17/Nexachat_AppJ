@@ -71,9 +71,8 @@ public final class LoginFragment extends Fragment {
         binding.forgotPasswordAction.setOnClickListener(v -> {
             String typed = binding.phoneInput.getText() == null
                     ? "" : binding.phoneInput.getText().toString();
-            String phone = typed.contains("@") ? "" : typed;
             Bundle args = new Bundle();
-            args.putString(ForgotPasswordViewModel.ARG_PREFILL_PHONE, phone);
+            args.putString(ForgotPasswordViewModel.ARG_PREFILL_PHONE, typed);
             NavHostFragment.findNavController(this).navigate(R.id.forgotPasswordFragment, args);
         });
         getParentFragmentManager().setFragmentResultListener(

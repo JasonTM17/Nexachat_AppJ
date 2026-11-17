@@ -185,7 +185,7 @@ public final class NewScreensAccessibilityUnitTest {
         assertEquals("Mã 6 chữ số", map.get("recovery_email_otp_label"));
         assertEquals("Mã không đúng hoặc đã hết hạn", map.get("recovery_email_code_invalid"));
         assertEquals("Mã không đúng hoặc đã hết hạn", map.get("forgot_password_code_invalid"));
-        assertEquals("Đổi số điện thoại", map.get("forgot_password_change_phone"));
+        assertEquals("Đổi", map.get("forgot_password_change_phone"));
         assertEquals("Hãy đặt mật khẩu trước khi gỡ phương thức đăng nhập này.", map.get("error_last_sign_in_method"));
     }
 }

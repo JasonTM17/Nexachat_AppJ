@@ -6,6 +6,11 @@
 
     <!-- Auth -->
     <string name="auth_login_identifier_label">Email or phone number</string>
+    <string name="auth_email_label">Email address</string>
+    <string name="auth_email_placeholder" translatable="false">name@example.com</string>
+    <string name="signup_send_code">Send code</string>
+    <string name="signup_change_email">Change email</string>
+    <string name="cd_signup_code">Sign-up verification code</string>
     <string name="error_login_identifier_required">Enter your email or phone number</string>
     <string name="error_login_identifier_invalid">Enter a valid email or international phone number</string>
     <string name="auth_phone_label">Phone number</string>
@@ -642,7 +647,7 @@
     <string name="action_forgot_password">Forgot password?</string>
     <string name="forgot_password_title">Reset password</string>
     <string name="forgot_password_send_code">Send code</string>
-    <string name="forgot_password_neutral_sent">If this number has a verified recovery email, we sent a code</string>
+    <string name="forgot_password_neutral_sent">If this account has a verified recovery email, we sent a code</string>
     <string name="forgot_password_code_label">Verification code</string>
     <string name="forgot_password_submit">Reset password</string>
     <string name="forgot_password_resend">Resend code</string>
@@ -650,9 +655,10 @@
     <string name="forgot_password_code_invalid">Code is wrong or expired</string>
     <string name="forgot_password_changed">Password changed. Sign in again.</string>
     <string name="forgot_password_password_too_long">Password must be at most 72 bytes</string>
-    <string name="forgot_password_change_phone">Change number</string>
+    <string name="forgot_password_change_phone">Change</string>
     <string name="auth_password_policy_hint">At least 8 characters, max 72 bytes</string>
-    <string name="cd_forgot_phone">Phone number for password reset</string>
+    <string name="cd_forgot_phone">Email or phone number for password reset</string>
+    <string name="cd_forgot_change_identifier">Change email or phone number</string>
     <string name="cd_forgot_otp">Password reset verification code</string>
     <!-- Recovery email (brief 306) -->
     <string name="recovery_email_title">Recovery email</string>
