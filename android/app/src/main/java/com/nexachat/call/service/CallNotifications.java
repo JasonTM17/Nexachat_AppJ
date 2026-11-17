@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import com.nexachat.R;
 import com.nexachat.call.CallLauncher;
+import com.nexachat.call.core.CallMediaType;
 import com.nexachat.call.core.CallSession;
 import com.nexachat.call.core.CallState;
 import com.nexachat.call.core.IncomingCallPushData;
@@ -81,7 +82,7 @@ public final class CallNotifications {
         String peerName = displayName(appContext, session);
         CallNotificationPrivacyPolicy.Content copy = CallNotificationPrivacyPolicy.incoming(
                 peerName, appContext.getString(
-                        session.getMediaType() == com.nexachat.call.core.CallMediaType.VIDEO
+                        session.getMediaType() == CallMediaType.VIDEO
                                 ? R.string.call_notification_incoming_video
                                 : R.string.call_notification_incoming));
         NotificationCompat.Builder builder = new NotificationCompat.Builder(appContext, CHANNEL_ID)
@@ -120,7 +121,7 @@ public final class CallNotifications {
                 : displayName(appContext, session);
         String status = statusFor(appContext, session);
         boolean video = session != null
-                && session.getMediaType() == com.nexachat.call.core.CallMediaType.VIDEO;
+                && session.getMediaType() == CallMediaType.VIDEO;
         CallNotificationPrivacyPolicy.Content copy = CallNotificationPrivacyPolicy.ongoing(
                 peerName, status, appContext.getString(
                         video ? R.string.call_notification_ongoing_video
@@ -261,7 +262,7 @@ public final class CallNotifications {
 
     private static String statusFor(Context context, CallSession session) {
         if (session == null) return context.getString(R.string.call_notification_ongoing);
-        boolean video = session.getMediaType() == com.nexachat.call.core.CallMediaType.VIDEO;
+        boolean video = session.getMediaType() == CallMediaType.VIDEO;
         switch (session.getState()) {
             case OUTGOING_RINGING: return context.getString(R.string.call_state_calling);
             case CONNECTING: return context.getString(R.string.call_state_connecting);

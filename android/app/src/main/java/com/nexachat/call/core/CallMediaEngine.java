@@ -15,6 +15,9 @@ public interface CallMediaEngine {
          */
         default void onLocalVideoTrack(Object videoTrack) {}
         default void onRemoteVideoTrack(Object videoTrack) {}
+
+        /** The camera stopped working mid-call; the session must stop claiming it is on. */
+        default void onCameraUnavailable() {}
     }
 
     void start(boolean isCaller, IceConfig iceConfig, Listener listener);

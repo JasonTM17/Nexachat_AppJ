@@ -57,6 +57,7 @@ public class IncomingCallActivity extends ComponentActivity {
     private static final String PREFS = "call_permissions";
     private static final String PREF_CAMERA_REQUESTED = "call.cameraRequested";
     private static final String STATE_PENDING_ACCEPT = "call.pendingAccept";
+    private static final String STATE_ACCEPT_AS_VOICE = "call.acceptAsVoice";
     private static final long ENDED_SCREEN_MS = 1600L;
 
     @Inject CallManager callManager;
@@ -88,6 +89,8 @@ public class IncomingCallActivity extends ComponentActivity {
         pendingAccept = savedInstanceState != null
                 && IncomingCallPermissionState.pendingAcceptAfterRecreation(
                         savedInstanceState.getBoolean(STATE_PENDING_ACCEPT, false));
+        acceptAsVoiceOnly = savedInstanceState != null
+                && savedInstanceState.getBoolean(STATE_ACCEPT_AS_VOICE, false);
         setShowOnLockScreen();
         setContentView(R.layout.activity_incoming_call);
         initials = findViewById(R.id.incoming_initials);
@@ -223,6 +226,7 @@ public class IncomingCallActivity extends ComponentActivity {
 
     @Override protected void onSaveInstanceState(Bundle outState) {
         outState.putBoolean(STATE_PENDING_ACCEPT, pendingAccept);
+        outState.putBoolean(STATE_ACCEPT_AS_VOICE, acceptAsVoiceOnly);
         super.onSaveInstanceState(outState);
     }
 

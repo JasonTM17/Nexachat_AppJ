@@ -355,7 +355,7 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
                     MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO,
                     new RtpTransceiver.RtpTransceiverInit(
                             RtpTransceiver.RtpTransceiverDirection.RECV_ONLY));
-            cameraOn = false;
+            markCameraUnavailable();
             return;
         }
         surfaceTextureHelper = SurfaceTextureHelper.create(
@@ -388,16 +388,14 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
                     @Override public void onCameraError(String errorDescription) {
                         mediaExecutor.execute(() -> {
                             if (!isActive(callGeneration)) return;
-                            cameraOn = false;
-                            if (localVideoTrack != null) localVideoTrack.setEnabled(false);
+                            markCameraUnavailable();
                         });
                     }
 
                     @Override public void onCameraDisconnected() {
                         mediaExecutor.execute(() -> {
                             if (!isActive(callGeneration)) return;
-                            cameraOn = false;
-                            if (localVideoTrack != null) localVideoTrack.setEnabled(false);
+                            markCameraUnavailable();
                         });
                     }
 
@@ -431,9 +429,16 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
             videoCapturer.startCapture(
                     VIDEO_CAPTURE_WIDTH, VIDEO_CAPTURE_HEIGHT, VIDEO_CAPTURE_FPS);
         } catch (RuntimeException captureFailure) {
-            cameraOn = false;
-            if (localVideoTrack != null) localVideoTrack.setEnabled(false);
+            markCameraUnavailable();
         }
+    }
+
+    /** Runs on mediaExecutor: turns the camera off and tells the session it is gone. */
+    private void markCameraUnavailable() {
+        cameraOn = false;
+        if (localVideoTrack != null) localVideoTrack.setEnabled(false);
+        Listener current = listener;
+        if (current != null) current.onCameraUnavailable();
     }
 
     /** Runs on mediaExecutor. */

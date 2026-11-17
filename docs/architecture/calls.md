@@ -24,7 +24,11 @@ Each terminal call writes one `SYSTEM` conversation message through the server's
 existing system-message path. Its `content` is the stable, non-localized value
 `CALL|<END_REASON>|<durationSeconds>|<callerUserId>` (for example,
 `CALL|COMPLETED|18|<callerUserId>` or `CALL|MISSED|0|<callerUserId>`); video
-calls append `|VIDEO` as a fifth part, which audio-era clients ignore. The
+calls append `|VIDEO` as a fifth part. Clients released before video calls do
+not understand a five-part token: they show such a row as a failed call and
+read its direction wrongly in the inbox preview. This only happens when an
+updated client calls a client that has not updated yet, and it affects the
+chat line only; signaling and the voice fallback are unaffected. The
 caller remains the system message sender. Android renders the token as a
 localized call-log line and compares the caller ID with the signed-in user to
 choose outgoing or incoming wording. Older three-part rows have no caller ID:

@@ -1231,8 +1231,9 @@ call has ended; otherwise it is omitted/null. `mediaType` is `AUDIO` or
 
 Each terminal call also writes one `SYSTEM` chat message
 `CALL|<END_REASON>|<durationSeconds>|<callerUserId>`; video calls append a
-fifth part `|VIDEO` that audio-era clients ignore (older rows may omit the
-caller id); see [`docs/architecture/calls.md`](calls.md#design-note).
+fifth part `|VIDEO`. Clients released before video calls render a five-part
+row as a failed call (chat line and inbox preview only); older rows may omit
+the caller id; see [`docs/architecture/calls.md`](calls.md#design-note).
 
 **Fast-path offer (`GET /calls/{callId}/offer`).** The registry may hold one
 SDP offer per ringing/active `callId` for REST retrieval (intended for FCM wake /

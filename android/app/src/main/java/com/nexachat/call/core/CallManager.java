@@ -932,6 +932,18 @@ public final class CallManager implements AutoCloseable {
                 }
 
                 @Override
+                public void onCameraUnavailable() {
+                    scheduler.execute(() -> {
+                        if (!matches(startedCallId)
+                                || !isCallInProgress(currentSession.getState())
+                                || currentSession.getMediaType() != CallMediaType.VIDEO
+                                || !currentSession.isCameraOn()) return;
+                        currentSession = currentSession.withMedia(CallMediaType.VIDEO, false);
+                        publishSession();
+                    });
+                }
+
+                @Override
                 public void onLocalVideoTrack(Object videoTrack) {
                     postToMain(() -> {
                         CallVideoListener listener = videoListener;
