@@ -181,6 +181,7 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
                         remoteDescriptionSet = true;
                         flushRemoteIce();
                         if (remoteDescription.type == SessionDescription.Type.OFFER) {
+                            stopIncomingVideoForVoiceAnswer();
                             createDescription(callGeneration, false);
                         }
                     });
@@ -195,6 +196,24 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
                 }
             }, remoteDescription);
         });
+    }
+
+    /**
+     * Answering a video call as voice leaves the offer's video section in the answer as receive-only,
+     * so the caller would keep streaming video that is never shown. Mark it inactive instead.
+     * Runs on mediaExecutor; a failure here never fails the call.
+     */
+    private void stopIncomingVideoForVoiceAnswer() {
+        if (peerConnection == null || activeMediaType == CallMediaType.VIDEO) return;
+        try {
+            for (RtpTransceiver transceiver : peerConnection.getTransceivers()) {
+                if (transceiver.getMediaType() == MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO) {
+                    transceiver.setDirection(RtpTransceiver.RtpTransceiverDirection.INACTIVE);
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // Keep the audio call; the extra video stream is only wasted bandwidth.
+        }
     }
 
     @Override
