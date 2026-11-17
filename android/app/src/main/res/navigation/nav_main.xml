@@ -151,6 +151,25 @@
         android:label="@string/starred_messages_title" />
 
     <fragment
+        android:id="@+id/publicFeedFragment"
+        android:name="com.nexachat.feature.feed.PublicFeedFragment"
+        android:label="@string/feed_title" />
+
+    <fragment
+        android:id="@+id/postComposeFragment"
+        android:name="com.nexachat.feature.feed.PostComposeFragment"
+        android:label="@string/feed_compose_title" />
+
+    <fragment
+        android:id="@+id/postDetailFragment"
+        android:name="com.nexachat.feature.feed.PostDetailFragment"
+        android:label="@string/feed_title">
+        <argument
+            android:name="postId"
+            app:argType="string" />
+    </fragment>
+
+    <fragment
         android:id="@+id/groupBoardFragment"
         android:name="com.nexachat.feature.groupboard.GroupBoardFragment"
         android:label="@string/group_board_title">
