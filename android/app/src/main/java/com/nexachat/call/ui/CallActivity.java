@@ -99,8 +99,18 @@ public class CallActivity extends ComponentActivity {
     private boolean remoteVideoBound;
     private final RemoteVideoFlow remoteFlow = new RemoteVideoFlow();
     private boolean remoteFlowShowing;
+    private static final long BLACK_CHECK_MS = 1000L;
+    private volatile boolean remoteFrameBlack;
+    private volatile long remoteBlackCheckMs;
     private final org.webrtc.VideoSink remoteFlowSink = frame -> {
-        if (remoteFlow.onFrame(android.os.SystemClock.elapsedRealtime())) {
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (now - remoteBlackCheckMs >= BLACK_CHECK_MS) {
+            remoteBlackCheckMs = now;
+            remoteFrameBlack = BlackFrameDetector.isBlack(frame);
+        }
+        // A peer that keeps sending black frames after turning its camera off counts as stopped.
+        if (remoteFrameBlack) return;
+        if (remoteFlow.onFrame(now)) {
             mainHandler.post(() -> {
                 if (!isFinishing() && !isDestroyed()) renderCurrent();
             });
@@ -848,6 +858,8 @@ public class CallActivity extends ComponentActivity {
             remoteVideoBound = false;
         }
         remoteFlow.reset();
+        remoteFrameBlack = false;
+        remoteBlackCheckMs = 0L;
         mainHandler.removeCallbacks(remoteFlowWatcher);
         remoteVideoTrack = track;
         if (track instanceof org.webrtc.VideoTrack) {
@@ -890,6 +902,8 @@ public class CallActivity extends ComponentActivity {
         }
         mainHandler.removeCallbacks(remoteFlowWatcher);
         remoteFlow.reset();
+        remoteFrameBlack = false;
+        remoteBlackCheckMs = 0L;
         localVideoBound = false;
         remoteVideoBound = false;
         localVideoTrack = null;
