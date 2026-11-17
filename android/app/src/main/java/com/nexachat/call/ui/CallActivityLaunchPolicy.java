@@ -35,6 +35,32 @@ public final class CallActivityLaunchPolicy {
         return Decision.START_OUTGOING;
     }
 
+    /**
+     * Returns the ENDED session a screen that started an outgoing call may adopt, or null.
+     * {@code callIdBeforeLaunch} is the id of the terminal call the manager still held when
+     * the screen opened.
+     */
+    public static CallSession endedSessionToAdopt(
+            boolean startRequested, String callIdBeforeLaunch, CallSession latestSession) {
+        if (startRequested && latestSession != null
+                && latestSession.getState() == CallState.ENDED
+                && !isStaleEnded(callIdBeforeLaunch, latestSession)) {
+            return latestSession;
+        }
+        return null;
+    }
+
+    /**
+     * Whether an ENDED update is the previous call's terminal state, not this launch's. The
+     * manager keeps that state after a call ends, so a redial would otherwise show it and close.
+     */
+    public static boolean isStaleEnded(String callIdBeforeLaunch, CallSession session) {
+        return callIdBeforeLaunch != null
+                && session != null
+                && session.getState() == CallState.ENDED
+                && callIdBeforeLaunch.equals(session.getCallId());
+    }
+
     public static boolean isLive(CallSession session) {
         if (session == null) return false;
         CallState state = session.getState();
