@@ -6,6 +6,19 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Choose what a conversation summary covers: unread messages, the last 20, 50 or
+  100 messages, or today. Today follows the device time zone and covers exactly
+  the local calendar day.
+- The summary names the scope, the day and zone it covers, and whether the local
+  engine or the external AI wrote it.
+
+### Changed
+- A scope with fewer than five messages reports how many it found and offers
+  another scope instead of quietly widening the range.
+- Cached summaries are keyed by scope, count, day, zone and AI consent, and a
+  cached result is replayed only while its citations still resolve.
+
 ## [1.2.15] - 2026-11-17
 
 Android APK release; no server changes. See
