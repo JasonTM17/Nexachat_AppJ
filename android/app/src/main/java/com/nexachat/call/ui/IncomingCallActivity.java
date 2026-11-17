@@ -514,7 +514,7 @@ public class IncomingCallActivity extends ComponentActivity {
                 currentSession.getPeerUserId(),
                 currentSession.getPeerDisplayName(),
                 getIntent().getStringExtra(CallLauncher.EXTRA_PEER_PHONE),
-                currentSession.getMediaType());
+                acceptAsVoiceOnly ? CallMediaType.AUDIO : currentSession.getMediaType());
         finish();
     }
 
