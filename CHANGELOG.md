@@ -6,6 +6,13 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.14] - 2026-11-17
+
+Android APK release with a server update that is already deployed: sign up and
+sign in with an email address, an optional phone number, and rebranded
+security-code emails. See
+[docs/release-notes/v1.2.14.md](docs/release-notes/v1.2.14.md).
+
 ### Added
 - Register and sign in with an email address: a code mailed to the address proves
   ownership before the account is created, and the account needs no phone number.
@@ -984,7 +991,10 @@ First tagged release (`v1.0.0`).
 - Architecture diagrams, REST/STOMP contracts, security notes, operations
   guide and UI design documentation.
 
-[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.11...HEAD
+[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.14...HEAD
+[1.2.14]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.13...v1.2.14
+[1.2.13]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.12...v1.2.13
+[1.2.12]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.11...v1.2.12
 [1.2.11]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.10...v1.2.11
 [1.2.10]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.9...v1.2.10
 [1.2.9]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.8...v1.2.9
