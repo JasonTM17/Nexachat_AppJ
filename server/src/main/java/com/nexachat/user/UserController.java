@@ -5,6 +5,7 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.user.dto.DeleteAccountRequest;
 import com.nexachat.user.dto.EmailVerificationResponse;
+import com.nexachat.user.dto.LinkPhoneRequest;
 import com.nexachat.user.dto.MyProfileResponse;
 import com.nexachat.user.dto.RecoveryEmailRequest;
 import com.nexachat.user.dto.UpdateProfileRequest;
@@ -74,6 +75,17 @@ public class UserController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public void requestDeletionCode(@AuthenticationPrincipal JwtPrincipal principal) {
         emailRecoveryService.requestDeletionCode(requireUserId(principal));
+    }
+
+    @PutMapping("/me/phone")
+    public MyProfileResponse linkPhone(@AuthenticationPrincipal JwtPrincipal principal,
+                                       @Valid @RequestBody LinkPhoneRequest request) {
+        return MyProfileResponse.from(userService.linkPhone(requireUserId(principal), request.phone()));
+    }
+
+    @DeleteMapping("/me/phone")
+    public MyProfileResponse removePhone(@AuthenticationPrincipal JwtPrincipal principal) {
+        return MyProfileResponse.from(userService.removePhone(requireUserId(principal)));
     }
 
     @PutMapping("/me/email")

@@ -144,6 +144,17 @@ public class User {
         return user;
     }
 
+    /** Email sign-up path: no phone; the address was verified with a mailed code. */
+    public static User createEmailAccount(String displayName, String normalizedEmail,
+                                          String passwordHash, Instant emailVerifiedAt) {
+        User user = new User();
+        user.displayName = displayName;
+        user.passwordHash = passwordHash;
+        user.email = normalizedEmail;
+        user.emailVerifiedAt = emailVerifiedAt;
+        return user;
+    }
+
     @PrePersist
     void onPrePersist() {
         if (createdAt == null) {
@@ -265,6 +276,14 @@ public class User {
     /** True when this row has a password hash, including the deletion tombstone. */
     public boolean hasPassword() {
         return passwordHash != null && !passwordHash.isBlank();
+    }
+
+    public void changePhone(String phone) {
+        this.phone = phone;
+    }
+
+    public void removePhone() {
+        this.phone = null;
     }
 
     public void changeEmail(String email) {

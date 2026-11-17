@@ -1,6 +1,8 @@
 package com.nexachat.auth;
 
 import com.nexachat.auth.dto.AuthResponse;
+import com.nexachat.auth.dto.EmailCodeRequest;
+import com.nexachat.auth.dto.EmailRegisterRequest;
 import com.nexachat.auth.dto.ChangePasswordRequest;
 import com.nexachat.auth.dto.LoginRequest;
 import com.nexachat.auth.dto.LogoutRequest;
@@ -9,6 +11,7 @@ import com.nexachat.auth.dto.RegisterRequest;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.recovery.EmailSignupService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -32,9 +35,11 @@ import java.util.UUID;
 public class AuthController {
 
     private final AuthService authService;
+    private final EmailSignupService emailSignupService;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, EmailSignupService emailSignupService) {
         this.authService = authService;
+        this.emailSignupService = emailSignupService;
     }
 
     @PostMapping("/register")
@@ -42,6 +47,21 @@ public class AuthController {
     public AuthResponse register(@Valid @RequestBody RegisterRequest request,
                                  @RequestHeader(name = "User-Agent", required = false) String userAgent) {
         return authService.register(request, userAgent);
+    }
+
+    /** Mails a one-time code to the address; the account is created by {@code /register/email}. */
+    @PostMapping("/register/email-code")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public java.util.Map<String, Object> requestEmailCode(@Valid @RequestBody EmailCodeRequest request) {
+        emailSignupService.requestCode(request.email());
+        return java.util.Map.of();
+    }
+
+    @PostMapping("/register/email")
+    @ResponseStatus(HttpStatus.CREATED)
+    public AuthResponse registerWithEmail(@Valid @RequestBody EmailRegisterRequest request,
+                                          @RequestHeader(name = "User-Agent", required = false) String userAgent) {
+        return authService.registerWithEmail(request, userAgent);
     }
 
     @PostMapping("/login")

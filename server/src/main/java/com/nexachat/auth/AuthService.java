@@ -1,6 +1,7 @@
 package com.nexachat.auth;
 
 import com.nexachat.auth.dto.AuthResponse;
+import com.nexachat.auth.dto.EmailRegisterRequest;
 import com.nexachat.auth.dto.ChangePasswordRequest;
 import com.nexachat.auth.dto.LoginRequest;
 import com.nexachat.auth.dto.RefreshRequest;
@@ -10,6 +11,7 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.common.error.ConstraintNames;
 import com.nexachat.recovery.EmailOtpService;
+import com.nexachat.recovery.SignupEmailOtpService;
 import com.nexachat.user.PhoneService;
 import com.nexachat.user.User;
 import com.nexachat.user.UserAccountCreatedEvent;
@@ -67,6 +69,8 @@ public class AuthService {
     private final StompRevocationFence revocationFence;
     private final ObjectProvider<com.nexachat.e2ee.E2eeDeviceService> e2eeDeviceService;
     private final AdminRoleBootstrap adminRoleBootstrap;
+    private final SignupEmailOtpService signupEmailOtp;
+    private final java.time.Clock clock;
 
     /** Well-formed bcrypt used to equalize login timing for unknown accounts and malformed phones. */
     private final String dummyHash;
@@ -88,7 +92,9 @@ public class AuthService {
                        ObjectProvider<PlatformTransactionManager> transactionManagerProvider,
                        StompRevocationFence revocationFence,
                        ObjectProvider<com.nexachat.e2ee.E2eeDeviceService> e2eeDeviceService,
-                       AdminRoleBootstrap adminRoleBootstrap) {
+                       AdminRoleBootstrap adminRoleBootstrap,
+                       SignupEmailOtpService signupEmailOtp,
+                       java.time.Clock clock) {
         this.userRepository = userRepository;
         this.entityManager = entityManager;
         this.phoneService = phoneService;
@@ -103,6 +109,8 @@ public class AuthService {
         this.revocationFence = revocationFence;
         this.e2eeDeviceService = e2eeDeviceService;
         this.adminRoleBootstrap = adminRoleBootstrap;
+        this.signupEmailOtp = signupEmailOtp;
+        this.clock = clock;
         // Computed once at startup (~one bcrypt round), guaranteed to be a valid hash.
         this.dummyHash = passwordEncoder.encode("nexachat-timing-equalization");
     }
@@ -132,6 +140,37 @@ public class AuthService {
         }
         eventPublisher.publishEvent(new UserAccountCreatedEvent(user.getId()));
         log.info("Registered new account");
+        return issueSession(user, deviceLabel);
+    }
+
+    /**
+     * Creates an account from an email address whose ownership was just proven
+     * with a mailed code. The address becomes the verified sign-in identifier;
+     * no phone number is needed.
+     */
+    @Transactional
+    public AuthResponse registerWithEmail(EmailRegisterRequest request, String deviceLabel) {
+        final String email = EmailOtpService.normalizeEmail(request.email());
+        PasswordPolicy.requireRegisterable(request.password());
+        enforceCredentialRateLimit("register-email", "email|" + email);
+
+        if (userRepository.existsByEmailAndEmailVerifiedAtIsNotNullAndDeletedAtIsNull(email)) {
+            signupEmailOtp.dummyCompare(request.code());
+            throw ApiException.of(ApiErrorCode.INVALID_OR_EXPIRED_CODE, "Code is invalid or expired");
+        }
+        if (!signupEmailOtp.consume(email, request.code())) {
+            throw ApiException.of(ApiErrorCode.INVALID_OR_EXPIRED_CODE, "Code is invalid or expired");
+        }
+        User user = User.createEmailAccount(request.displayName().trim(), email,
+                passwordEncoder.encode(request.password()), clock.instant());
+        try {
+            user = userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException e) {
+            log.info("Email register hit unique constraint {}", ConstraintNames.of(e));
+            throw ApiException.of(ApiErrorCode.EMAIL_ALREADY_IN_USE, "Email is already registered");
+        }
+        eventPublisher.publishEvent(new UserAccountCreatedEvent(user.getId()));
+        log.info("Registered new account with email");
         return issueSession(user, deviceLabel);
     }
 

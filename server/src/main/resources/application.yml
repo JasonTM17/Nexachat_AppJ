@@ -128,6 +128,7 @@ nexachat:
     cors-allowed-origins: ${NEXACHAT_CORS_ALLOWED_ORIGINS:}
     # E.164 numbers allowed to read operator telemetry (/api/v1/rag/stats).
     admin-phones: ${NEXACHAT_ADMIN_PHONES:}
+    admin-emails: ${NEXACHAT_ADMIN_EMAILS:}
     # JSON request bodies above this size are rejected with 413.
     max-json-body-bytes: ${NEXACHAT_MAX_JSON_BODY_BYTES:1048576}
     # How long the JWT filter caches a user's access-token cutoff. Never

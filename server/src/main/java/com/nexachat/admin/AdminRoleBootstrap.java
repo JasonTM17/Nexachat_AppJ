@@ -3,6 +3,7 @@ package com.nexachat.admin;
 import com.nexachat.auth.AccessTokenValidityCache;
 import com.nexachat.common.PhoneNormalizer;
 import com.nexachat.config.SecurityProperties;
+import com.nexachat.recovery.EmailOtpService;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
@@ -18,7 +19,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Bootstraps staff accounts from {@code nexachat.security.admin-phones}.
+ * Bootstraps staff accounts from {@code nexachat.security.admin-phones} and
+ * {@code nexachat.security.admin-emails} (a verified email, for accounts without a phone).
  *
  * <p>The phone allow-list is the operator escape hatch that predates the
  * role column: any existing or newly registered account whose phone is
@@ -38,6 +40,7 @@ public class AdminRoleBootstrap {
     private final NamedParameterJdbcTemplate jdbc;
     private final AccessTokenValidityCache validityCache;
     private final Set<String> adminPhones;
+    private final Set<String> adminEmails;
 
     public AdminRoleBootstrap(UserRepository userRepository,
                               org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
@@ -56,6 +59,16 @@ public class AdminRoleBootstrap {
                     }
                 })
                 .collect(Collectors.toUnmodifiableSet());
+        this.adminEmails = properties.adminEmails().stream()
+                .map(email -> {
+                    try {
+                        return EmailOtpService.normalizeEmail(email);
+                    } catch (RuntimeException e) {
+                        throw new IllegalStateException(
+                                "nexachat.security.admin-emails must contain valid email addresses", e);
+                    }
+                })
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     /**
@@ -64,13 +77,16 @@ public class AdminRoleBootstrap {
      */
     @EventListener(ApplicationReadyEvent.class)
     public void promoteConfiguredAdminsOnStartup() {
-        if (adminPhones.isEmpty()) {
+        if (adminPhones.isEmpty() && adminEmails.isEmpty()) {
             return;
         }
         int promoted = jdbc.update("""
                 UPDATE users SET role = 'ADMIN'
-                WHERE phone IN (:phones) AND role <> 'ADMIN' AND deleted_at IS NULL
-                """, new MapSqlParameterSource("phones", adminPhones));
+                WHERE (phone IN (:phones) OR (email IN (:emails) AND email_verified_at IS NOT NULL))
+                  AND role <> 'ADMIN' AND deleted_at IS NULL
+                """, new MapSqlParameterSource()
+                .addValue("phones", adminPhones.isEmpty() ? Set.of("") : adminPhones)
+                .addValue("emails", adminEmails.isEmpty() ? Set.of("") : adminEmails));
         if (promoted > 0) {
             log.info("Bootstrapped {} configured admin account(s) to ADMIN role", promoted);
         }
@@ -85,7 +101,9 @@ public class AdminRoleBootstrap {
     @Transactional
     public void promoteIfConfigured(User user) {
         String phone = user.getPhone();
-        if (phone == null || !adminPhones.contains(phone) || user.getRole() == User.Role.ADMIN) {
+        boolean configured = (phone != null && adminPhones.contains(phone))
+                || (user.hasVerifiedEmail() && adminEmails.contains(user.getEmail()));
+        if (!configured || user.getRole() == User.Role.ADMIN) {
             return;
         }
         user.changeRole(User.Role.ADMIN);

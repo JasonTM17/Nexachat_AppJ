@@ -50,6 +50,50 @@ public class UserService {
     }
 
     /**
+     * Adds or replaces the account's optional phone number. The number is not
+     * verified by SMS: it only lets people find the account by phone.
+     */
+    @Transactional
+    public User linkPhone(UUID userId, String rawPhone) {
+        String phone;
+        try {
+            phone = phoneService.toE164(rawPhone);
+        } catch (IllegalArgumentException e) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Phone number is not valid");
+        }
+        User user = ActiveUserSupport.requireActiveForUpdate(userRepository, userId);
+        if (phone.equals(user.getPhone())) {
+            return user;
+        }
+        if (userRepository.existsByPhoneAndDeletedAtIsNull(phone)) {
+            throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");
+        }
+        user.changePhone(phone);
+        try {
+            userRepository.saveAndFlush(user);
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            throw ApiException.of(ApiErrorCode.PHONE_EXISTS, "Phone number is already registered");
+        }
+        return user;
+    }
+
+    /** Removes the phone number; a verified email must remain as the way to sign in. */
+    @Transactional
+    public User removePhone(UUID userId) {
+        User user = ActiveUserSupport.requireActiveForUpdate(userRepository, userId);
+        if (user.getPhone() == null) {
+            return user;
+        }
+        if (!user.hasVerifiedEmail()) {
+            throw ApiException.of(ApiErrorCode.LAST_SIGN_IN_METHOD,
+                    "The last sign-in method cannot be removed");
+        }
+        user.removePhone();
+        userRepository.save(user);
+        return user;
+    }
+
+    /**
      * PATCH /users/me semantics: {@code null} displayName = no change;
      * a provided value is trimmed and must be non-blank (and ≤60 via DTO validation).
      */

@@ -166,7 +166,8 @@ These keys are Spring properties; override them with the matching
 
 - **Base URL:** `http://localhost:8080` · **Path prefix:** `/api/v1`
 - **Auth:** JWT access token in the `Authorization: Bearer <accessToken>`
-  header. Public (no token): `POST /auth/register`, `POST /auth/login`,
+  header. Public (no token): `POST /auth/register`, `POST /auth/register/email-code`,
+  `POST /auth/register/email`, `POST /auth/login`,
   `POST /auth/refresh`, `POST /auth/password-reset/request`,
   `POST /auth/password-reset/confirm`, `POST /account-deletion/request`,
   `POST /account-deletion/confirm`, `POST /auth/google`,
@@ -431,8 +432,10 @@ Each item of `attachments` is an `AttachmentResponse` =
 | `POST /auth/logout` | Bearer | `{refreshToken}` | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `POST /auth/logout-all` | Bearer | — | `204` empty | `UNAUTHORIZED` 401 |
 | `PATCH /auth/password` | Bearer | `{oldPassword, newPassword, refreshToken?}` — pass `refreshToken` to keep that session alive | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `NO_PASSWORD_SET` 409 (Google-only accounts) · `USER_NOT_FOUND` 404 · `RATE_LIMITED` 429 (10/5 min per user, shared with `DELETE /users/me`) |
-| `POST /auth/password-reset/request` | Public | `{phone}` | `202` `{}` for every phone; sends a code only to an account with a verified recovery email | `RATE_LIMITED` 429 |
-| `POST /auth/password-reset/confirm` | Public | `{phone, code, newPassword}` — `newPassword` follows `PasswordPolicy` | `204` empty | `INVALID_OR_EXPIRED_CODE` 400 · `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 |
+| `POST /auth/register/email-code` | Public | `{email}` — normalized to lowercase and trimmed | `202` `{}`; mails a six-digit code valid for 10 minutes, one per address per 60 seconds | `VALIDATION_FAILED` 400 · `EMAIL_ALREADY_IN_USE` 409 · `MAIL_UNAVAILABLE` 503 · `RATE_LIMITED` 429 |
+| `POST /auth/register/email` | Public | `{email, code, password, displayName}` — same password and name rules as `/auth/register` | `201` `AuthResponse`; the account has a verified email and no phone | `INVALID_OR_EXPIRED_CODE` 400 · `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 |
+| `POST /auth/password-reset/request` | Public | `{email}` for an account with a verified email, or `{phone}` | `202` `{}` for every value; sends a code only to an account with a verified recovery email | `RATE_LIMITED` 429 |
+| `POST /auth/password-reset/confirm` | Public | `{email or phone, code, newPassword}` — `newPassword` follows `PasswordPolicy` | `204` empty | `INVALID_OR_EXPIRED_CODE` 400 · `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 |
 | `POST /auth/google/nonce` | Public | — | `200` `{nonce, expiresInSeconds}` | `NOT_FOUND` 404 when Google sign-in is disabled · `RATE_LIMITED` 429 (30/5 min per IP, only while enabled) |
 | `POST /auth/google` | Public | `{idToken, nonce}` | `200` `AuthResponse` when the `sub` is already linked; `201` `AuthResponse` with `newAccount:true` when signup created the account | `VALIDATION_FAILED` 400 · `GOOGLE_SIGN_IN_FAILED` 401 · `GOOGLE_ACCOUNT_NOT_LINKED` 404 (unknown `sub` while signup is off) · `GOOGLE_EMAIL_IN_USE` 409 · `RATE_LIMITED` 429 |
 | `GET /auth/identities` | Bearer | — | `200` `{identities: [{provider, email, linkedAt}]}` | `UNAUTHORIZED` 401 · `NOT_FOUND` 404 when disabled |
@@ -494,6 +497,8 @@ account hash (it still pays one dummy bcrypt compare for timing).
 | `PATCH /users/me` | Bearer | `{displayName?}` — absent/null keeps current name, blank is rejected; ≤60 chars | `200` `UserResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `DELETE /users/me` | Bearer | `{password?, code?}` — an account with a password hash requires `password` (`code` is ignored); an account without a password hash requires `code` | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `WRONG_PASSWORD` 401 · `INVALID_OR_EXPIRED_CODE` 400 · `TOKEN_INVALID` 401 (retry with the same access token after a successful delete) · `RATE_LIMITED` 429 (10/5 min per user, shared with `PATCH /auth/password`) · `USER_NOT_FOUND` 404 (only when the handler runs for an already-deleted row without a rejected token) |
 | `POST /users/me/deletion-code` | Bearer | no body | `202` empty; sends a `DELETE_ACCOUNT` code to the caller's own verified email | `UNAUTHORIZED` 401 · `PASSWORD_REQUIRED` 409 · `INVALID_OR_EXPIRED_CODE` 400 (no verified email) · `MAIL_UNAVAILABLE` 503 · `RATE_LIMITED` 429 (60s resend cooldown, 10/5 min per user, 5/5 min per email, 30/5 min per IP) |
+| `PUT /users/me/phone` | Bearer | `{phone}` — local or international format, stored as E.164; not verified by SMS | `200` `MyProfileResponse` | `VALIDATION_FAILED` 400 · `PHONE_EXISTS` 409 · `RATE_LIMITED` 429 |
+| `DELETE /users/me/phone` | Bearer | — | `200` `MyProfileResponse`; needs a verified email | `LAST_SIGN_IN_METHOD` 409 |
 | `PUT /users/me/email` | Bearer | `{email}` — normalized to lowercase and trimmed; sends a verification code | `202` empty | `VALIDATION_FAILED` 400 · `EMAIL_ALREADY_IN_USE` 409 · `MAIL_UNAVAILABLE` 503 · `RATE_LIMITED` 429 |
 | `POST /users/me/email/verify` | Bearer | `{code}` — six-digit code | `200` `{email, verified:true}` | `INVALID_OR_EXPIRED_CODE` 400 · `EMAIL_ALREADY_IN_USE` 409 |
 | `DELETE /users/me/email` | Bearer | — | `204` empty | `UNAUTHORIZED` 401 |

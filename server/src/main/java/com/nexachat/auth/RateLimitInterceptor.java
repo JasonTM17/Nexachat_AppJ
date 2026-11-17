@@ -45,6 +45,10 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     private static final List<Rule> RULES = List.of(
             new Rule(HttpMethod.POST, "login", "/api/v1/auth/login", 10, Duration.ofMinutes(5)),
             new Rule(HttpMethod.POST, "register", "/api/v1/auth/register", 10, Duration.ofMinutes(5)),
+            new Rule(HttpMethod.POST, "register-email-code", "/api/v1/auth/register/email-code",
+                    10, Duration.ofMinutes(5)),
+            new Rule(HttpMethod.POST, "register-email", "/api/v1/auth/register/email",
+                    10, Duration.ofMinutes(5)),
             new Rule(HttpMethod.POST, "refresh", "/api/v1/auth/refresh", 30, Duration.ofMinutes(5)),
             new Rule(HttpMethod.POST, "account-deletion-request", "/api/v1/account-deletion/request",
                     30, Duration.ofMinutes(5)),
@@ -54,6 +58,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
                     30, Duration.ofMinutes(5)),
             new Rule(HttpMethod.POST, "password-reset-confirm", "/api/v1/auth/password-reset/confirm",
                     30, Duration.ofMinutes(5)),
+            new Rule(HttpMethod.PUT, "link-phone", "/api/v1/users/me/phone", 30, Duration.ofMinutes(5)),
             new Rule(HttpMethod.PUT, "recovery-email-request", "/api/v1/users/me/email",
                     30, Duration.ofMinutes(5)),
             new Rule(HttpMethod.POST, "recovery-email-confirm", "/api/v1/users/me/email/verify",

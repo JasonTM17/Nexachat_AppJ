@@ -44,6 +44,12 @@ public class OtpMailDispatcher {
         dispatch(OtpPurpose.VERIFY_EMAIL, prepareRequest, onFailure);
     }
 
+    /** Delivers a sign-up code off the request thread; a failed delivery withdraws the code. */
+    public void dispatchSignupVerification(Supplier<Optional<OtpMail>> prepareRequest,
+                                           Consumer<OtpMail> onFailure) {
+        dispatch(OtpPurpose.REGISTER_EMAIL, prepareRequest, onFailure);
+    }
+
     private void dispatch(OtpPurpose purpose,
                           Supplier<Optional<OtpMail>> prepareRequest,
                           Consumer<OtpMail> onFailure) {

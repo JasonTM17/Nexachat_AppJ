@@ -43,6 +43,7 @@ Boolean feature flags and `*.enabled` settings (for example `FCM_ENABLED`,
 | `MAIL_FROM` | No (sender address when SMTP is selected) | Empty | `NexaChat <mail@example.com>` |
 | `RESEND_API_KEY` | No (when Resend is selected; deployment secret store) | Empty | Not shown |
 | `RESEND_FROM` | No (sender on a verified domain when Resend is selected) | Empty | `NexaChat <no-reply@example.com>` |
+| `NEXACHAT_ADMIN_EMAILS` | No (comma-separated verified emails with the same admin access as `NEXACHAT_ADMIN_PHONES`) | Empty | `owner@example.com` |
 | `NEXACHAT_ADMIN_PHONES` | No (comma-separated admin E.164 phones allowed to read `/api/v1/rag/stats`) | Empty | `+84900000001` |
 | `NEXACHAT_MAX_JSON_BODY_BYTES` | No (ceiling for JSON request bodies) | `1048576` (1 MiB) | `1048576` |
 | `NEXACHAT_VALIDITY_CACHE_TTL_SECONDS` | No (TTL for token revocation cutoff cache) | `60` | `60` |

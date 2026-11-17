@@ -62,7 +62,11 @@ public class AccountRecoveryService {
     }
 
     public void requestPasswordReset(String rawPhone) {
-        requestCode(rawPhone, OtpPurpose.RESET_PASSWORD);
+        requestPasswordReset(rawPhone, null);
+    }
+
+    public void requestPasswordReset(String rawPhone, String rawEmail) {
+        requestCode(subject(rawPhone, rawEmail), OtpPurpose.RESET_PASSWORD);
     }
 
     @Transactional
@@ -95,27 +99,32 @@ public class AccountRecoveryService {
 
     @Transactional
     public void confirmPasswordReset(String rawPhone, String code, String newPassword) {
+        confirmPasswordReset(rawPhone, null, code, newPassword);
+    }
+
+    @Transactional
+    public void confirmPasswordReset(String rawPhone, String rawEmail, String code, String newPassword) {
         PasswordPolicy.requireRegisterable(newPassword);
-        String phone = normalizeOrNull(rawPhone);
-        if (phone == null) {
+        Subject subject = subject(rawPhone, rawEmail);
+        if (subject == null) {
             otpService.dummyCompare(OtpPurpose.RESET_PASSWORD, code);
             throw invalidCode();
         }
-        boolean phoneBudgetAvailable = consumePhoneLimit("confirm", OtpPurpose.RESET_PASSWORD, phone);
-        boolean accountBudgetAvailable = consumeAccountPhoneLimit("confirm", phone,
+        boolean phoneBudgetAvailable = consumePhoneLimit("confirm", OtpPurpose.RESET_PASSWORD, subject.key());
+        boolean accountBudgetAvailable = consumeAccountPhoneLimit("confirm", subject.key(),
                 CONFIRM_ACCOUNT_CAPACITY);
         if (!phoneBudgetAvailable || !accountBudgetAvailable) {
             otpService.dummyCompare(OtpPurpose.RESET_PASSWORD, code);
             throw invalidCode();
         }
-        User user = userRepository.findByPhoneAndDeletedAtIsNull(phone).orElse(null);
+        User user = subject.find(userRepository).orElse(null);
         if (user == null) {
             otpService.dummyCompare(OtpPurpose.RESET_PASSWORD, code);
             throw invalidCode();
         }
         revocationFence.holdWriteUntilTransactionCompletion(user.getId());
         User locked = userRepository.findByIdForUpdate(user.getId()).orElse(null);
-        if (locked == null || locked.getDeletedAt() != null || !phone.equals(locked.getPhone())
+        if (locked == null || locked.getDeletedAt() != null || !subject.stillOwnedBy(locked)
                 || !otpService.consume(locked, OtpPurpose.RESET_PASSWORD, code)) {
             throw invalidCode();
         }
@@ -123,28 +132,31 @@ public class AccountRecoveryService {
     }
 
     private void requestCode(String rawPhone, OtpPurpose purpose) {
-        String phone = normalizeOrNull(rawPhone);
+        requestCode(subject(rawPhone, null), purpose);
+    }
+
+    private void requestCode(Subject subject, OtpPurpose purpose) {
         boolean budgetAvailable = true;
-        if (phone != null) {
-            boolean phoneBudgetAvailable = consumePhoneLimit("request", purpose, phone);
-            boolean accountBudgetAvailable = consumeAccountPhoneLimit("request", phone,
+        if (subject != null) {
+            boolean phoneBudgetAvailable = consumePhoneLimit("request", purpose, subject.key());
+            boolean accountBudgetAvailable = consumeAccountPhoneLimit("request", subject.key(),
                     REQUEST_ACCOUNT_CAPACITY);
             budgetAvailable = phoneBudgetAvailable && accountBudgetAvailable;
         }
         boolean finalBudgetAvailable = budgetAvailable;
         mailDispatcher.dispatchPublicRequest(purpose,
-                () -> preparePublicRequest(phone, purpose, finalBudgetAvailable),
+                () -> preparePublicRequest(subject, purpose, finalBudgetAvailable),
                 mail -> otpService.cancel(mail.otpId()));
     }
 
-    private Optional<OtpMail> preparePublicRequest(String phone, OtpPurpose purpose, boolean budgetAvailable) {
+    private Optional<OtpMail> preparePublicRequest(Subject subject, OtpPurpose purpose, boolean budgetAvailable) {
         if (!budgetAvailable) {
             otpService.performDummyWork(purpose);
             return Optional.empty();
         }
         Optional<OtpMail> delivery = Optional.empty();
-        if (phone != null && mailSender.isAvailable()) {
-            User user = userRepository.findByPhoneAndDeletedAtIsNull(phone).orElse(null);
+        if (subject != null && mailSender.isAvailable()) {
+            User user = subject.find(userRepository).orElse(null);
             if (user != null) {
                 delivery = otpService.issueForPublicRequest(user.getId(), purpose);
             }
@@ -153,6 +165,41 @@ public class AccountRecoveryService {
             otpService.performDummyWork(purpose);
         }
         return delivery;
+    }
+
+    /**
+     * The account a public recovery request names: a verified email wins when sent,
+     * otherwise the phone. Null when neither normalizes.
+     */
+    private Subject subject(String rawPhone, String rawEmail) {
+        if (rawEmail != null && !rawEmail.isBlank()) {
+            try {
+                return new Subject(null, EmailOtpService.normalizeEmail(rawEmail));
+            } catch (ApiException exception) {
+                return null;
+            }
+        }
+        String phone = normalizeOrNull(rawPhone);
+        return phone == null ? null : new Subject(phone, null);
+    }
+
+    private record Subject(String phone, String email) {
+
+        String key() {
+            return phone != null ? phone : "email|" + email;
+        }
+
+        Optional<User> find(UserRepository users) {
+            return phone != null
+                    ? users.findByPhoneAndDeletedAtIsNull(phone)
+                    : users.findActiveByVerifiedEmail(email);
+        }
+
+        boolean stillOwnedBy(User user) {
+            return phone != null
+                    ? phone.equals(user.getPhone())
+                    : email.equals(user.getEmail()) && user.hasVerifiedEmail();
+        }
     }
 
     private String normalizeOrNull(String rawPhone) {
