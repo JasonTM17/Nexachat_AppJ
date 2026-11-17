@@ -7,7 +7,7 @@
     <string name="feed_compose_add_image">Thêm ảnh</string>
     <string name="feed_compose_remove_image">Bỏ ảnh</string>
     <string name="feed_compose_submit">Đăng</string>
-    <string name="feed_compose_counter">%1$d/%2$d</string>
+    <string name="feed_compose_counter" translatable="false">%1$d/%2$d</string>
     <string name="feed_empty">Chưa có bài viết nào</string>
     <string name="feed_error">Không tải được bảng tin</string>
     <string name="feed_notice_title">Bài viết ở đây là công khai</string>
@@ -32,8 +32,8 @@
     <string name="feed_comment_failed">Không gửi được. Hãy thử lại</string>
     <string name="feed_image_failed">Không tải được ảnh lên</string>
     <string name="feed_rate_limited">Bạn đăng quá nhiều. Hãy thử lại sau</string>
-    <string name="feed_reaction_pill">%1$s %2$d</string>
-    <string name="feed_comment_cd">%1$s: %2$s</string>
+    <string name="feed_reaction_pill" translatable="false">%1$s %2$d</string>
+    <string name="feed_comment_cd" translatable="false">%1$s: %2$s</string>
     <plurals name="feed_comment_count">
         <item quantity="other">%d bình luận</item>
     </plurals>
