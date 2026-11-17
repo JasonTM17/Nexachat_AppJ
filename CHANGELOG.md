@@ -6,6 +6,21 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.13] - 2026-11-17
+
+Android APK release that finishes the video calls from `v1.2.12`; no server
+changes. See [docs/release-notes/v1.2.13.md](docs/release-notes/v1.2.13.md).
+
+### Changed
+- The call screen shows the other person's avatar when their camera stops
+  sending video and when no frame has arrived yet, and shows the video
+  again when frames resume.
+- A missed video call has its own icon in the conversation list.
+- The star on own messages is dimmed to match the timestamp.
+
+### Known issues
+- A peer that keeps sending black frames is still shown as video.
+
 ## [1.2.12] - 2026-11-17
 
 Android APK release with a server update: video calls and a polish of how
