@@ -36,7 +36,8 @@ public final class AiConsentRepositoryTest {
                 SummaryTestServer.respond(exchange, 200,
                         "{\"showPresence\":true,\"aiSummaryConsent\":false}");
             })) {
-                AiConsentRepository repository = new AiConsentRepository(consentApi(server.baseUrl()));
+                AiConsentRepository repository = new AiConsentRepository(consentApi(server.baseUrl()),
+                        new SummaryRepository(SummaryRepositoryTest.api(server.baseUrl())));
                 assertFalse(repository.aiSummaryConsent().getValue());
 
                 repository.refresh();
@@ -67,7 +68,8 @@ public final class AiConsentRepositoryTest {
                 SummaryTestServer.respond(exchange, 500,
                         "{\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"synthetic\"}}");
             })) {
-                AiConsentRepository repository = new AiConsentRepository(consentApi(server.baseUrl()));
+                AiConsentRepository repository = new AiConsentRepository(consentApi(server.baseUrl()),
+                        new SummaryRepository(SummaryRepositoryTest.api(server.baseUrl())));
                 repository.refresh();
                 awaitValue(repository, true);
 
