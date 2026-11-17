@@ -31,9 +31,17 @@ public final class AuthFieldValidatorsTest {
     }
 
     @Test
+    public void normalizeE164_completesVietnameseNationalNumbers() {
+        assertEquals("+84901234567", AuthFieldValidators.normalizeE164("0901234567"));
+        assertEquals("+84905123456", AuthFieldValidators.normalizeE164(" 0905 123.456 "));
+        assertTrue(AuthFieldValidators.isLoginIdentifier(AuthFieldValidators.normalizeLoginIdentifier("0901234567")));
+    }
+
+    @Test
     public void normalizeE164_leavesLeadingZeroAndOutOfRangeDigitsAlone() {
-        // Numbers that look national stay invalid: the form never guesses a default country.
-        assertEquals("0901234567", AuthFieldValidators.normalizeE164("0901234567"));
+        // Only Vietnamese national numbers are completed; anything else that looks national stays invalid.
+        assertEquals("0123456789012", AuthFieldValidators.normalizeE164("0123456789012"));
+        // Only Vietnamese national numbers are completed; anything else that looks national stays invalid.
         assertEquals("01234567", AuthFieldValidators.normalizeE164("01234567"));
         assertEquals("1234567", AuthFieldValidators.normalizeE164("1234567"));
         assertEquals("1234567890123456", AuthFieldValidators.normalizeE164("1234567890123456"));
