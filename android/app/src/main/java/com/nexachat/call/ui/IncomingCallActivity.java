@@ -502,7 +502,8 @@ public class IncomingCallActivity extends ComponentActivity {
         resolving = true;
         ringtonePlayer.stop();
         CallNotifications.clearIncoming(this);
-        CallForegroundService.startForCall(this);
+        CallForegroundService.startForCall(this,
+                !acceptAsVoiceOnly && currentSession.getMediaType() == CallMediaType.VIDEO);
         if (acceptAsVoiceOnly && currentSession.getMediaType() == CallMediaType.VIDEO) {
             callManager.acceptAsVoice(currentSession.getCallId());
         } else {

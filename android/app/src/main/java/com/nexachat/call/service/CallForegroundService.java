@@ -10,7 +10,6 @@ import android.os.IBinder;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import com.nexachat.call.core.CallManager;
-import com.nexachat.call.core.CallMediaType;
 import com.nexachat.call.core.CallSession;
 import com.nexachat.call.core.CallState;
 import com.nexachat.call.core.IncomingCallPushAdmission;
@@ -27,6 +26,8 @@ import javax.inject.Inject;
 public class CallForegroundService extends Service {
     public static final String ACTION_START = "com.nexachat.call.START";
     public static final String ACTION_STOP = "com.nexachat.call.STOP";
+    /** Set when the call about to start needs the camera foreground-service type. */
+    static final String EXTRA_VIDEO = "com.nexachat.call.VIDEO";
 
     @Inject CallManager callManager;
     @Inject IncomingCallPushAdmission incomingCallPushAdmission;
@@ -36,7 +37,17 @@ public class CallForegroundService extends Service {
     private final CompositeDisposable pendingIntents = new CompositeDisposable();
 
     public static void startForCall(Context context) {
-        Intent intent = new Intent(context, CallForegroundService.class).setAction(ACTION_START);
+        startForCall(context, false);
+    }
+
+    /**
+     * The type is fixed when the service enters the foreground, which for an outgoing call is
+     * before the session exists, so the caller states whether the camera will be used.
+     */
+    public static void startForCall(Context context, boolean video) {
+        Intent intent = new Intent(context, CallForegroundService.class)
+                .setAction(ACTION_START)
+                .putExtra(EXTRA_VIDEO, video);
         ContextCompat.startForegroundService(context, intent);
     }
 
@@ -111,7 +122,7 @@ public class CallForegroundService extends Service {
             return START_NOT_STICKY;
         }
 
-        startForegroundForCurrentCall();
+        startForegroundForCurrentCall(intent != null && intent.getBooleanExtra(EXTRA_VIDEO, false));
         CallSession session = callManager.session().getValue();
         if (session != null) onSessionChanged(session);
         return START_NOT_STICKY;
@@ -132,7 +143,7 @@ public class CallForegroundService extends Service {
     }
 
     @SuppressLint("InlinedApi")
-    private void startForegroundForCurrentCall() {
+    private void startForegroundForCurrentCall(boolean video) {
         if (foregroundStarted) return;
         CallSession session = callManager.session().getValue();
         android.app.Notification notification = CallNotifications.buildOngoing(this, session);
@@ -140,8 +151,7 @@ public class CallForegroundService extends Service {
             int foregroundType = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
             // API 34 throws when the camera type is declared without CAMERA granted;
             // a voice fallback still keeps the microphone type.
-            boolean videoWithCamera = session != null
-                    && session.getMediaType() == CallMediaType.VIDEO
+            boolean videoWithCamera = video
                     && ContextCompat.checkSelfPermission(
                             this, android.Manifest.permission.CAMERA)
                             == android.content.pm.PackageManager.PERMISSION_GRANTED;

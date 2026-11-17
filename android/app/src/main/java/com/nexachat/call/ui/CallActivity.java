@@ -705,14 +705,15 @@ public class CallActivity extends ComponentActivity {
         if (operation == PendingOperation.START_OUTGOING) {
             if (startRequested) return;
             startRequested = true;
-            CallForegroundService.startForCall(this);
+            CallForegroundService.startForCall(this, requestedMediaType == CallMediaType.VIDEO);
             callManager.startOutgoing(
                     getIntent().getStringExtra(CallLauncher.EXTRA_CONVERSATION_ID),
                     getIntent().getStringExtra(CallLauncher.EXTRA_PEER_USER_ID),
                     getIntent().getStringExtra(CallLauncher.EXTRA_PEER_NAME),
                     requestedMediaType);
         } else if (operation == PendingOperation.ACCEPT_INCOMING && currentSession != null) {
-            CallForegroundService.startForCall(this);
+            CallForegroundService.startForCall(this,
+                    currentSession.getMediaType() == CallMediaType.VIDEO);
             callManager.accept(currentSession.getCallId());
         }
     }
