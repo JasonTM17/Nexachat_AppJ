@@ -5,21 +5,28 @@ import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.SavedStateHandle;
 import androidx.lifecycle.ViewModel;
 import dagger.hilt.android.lifecycle.HiltViewModel;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.Objects;
+import java.util.TimeZone;
 import java.util.concurrent.Executor;
+import java.util.function.LongSupplier;
 import javax.inject.Inject;
 import javax.inject.Named;
 
-/** Rotation-safe request state; only the selected scope and summary id are saved. */
+/** Rotation-safe request state; only the selected scope, count and summary id are saved. */
 @HiltViewModel
 public final class SummaryViewModel extends ViewModel {
     public static final String ARG_CONVERSATION_ID = "conversationId";
+    public static final int DEFAULT_LAST_N = 50;
     private static final String KEY_SCOPE = "summary_scope";
+    private static final String KEY_LIMIT = "summary_limit";
     private static final String KEY_SUMMARY_ID = "summary_last_id";
 
     private final SavedStateHandle savedStateHandle;
     private final SummaryRepository repository;
     private final Executor mainExecutor;
+    private final LongSupplier clock;
     private final MutableLiveData<SummaryUiState> state;
 
     private SummaryScope lastScope;
@@ -32,15 +39,25 @@ public final class SummaryViewModel extends ViewModel {
             SavedStateHandle savedStateHandle,
             SummaryRepository repository,
             @Named("summary_main") Executor mainExecutor) {
-        this.savedStateHandle = Objects.requireNonNull(savedStateHandle, "savedStateHandle");
-        this.repository = Objects.requireNonNull(repository, "repository");
-        this.mainExecutor = Objects.requireNonNull(mainExecutor, "mainExecutor");
-        this.lastScope = restoredScope();
-        this.state = new MutableLiveData<>(restoreState());
+        this(savedStateHandle, repository, mainExecutor, System::currentTimeMillis);
     }
 
     SummaryViewModel(SavedStateHandle savedStateHandle, SummaryRepository repository) {
-        this(savedStateHandle, repository, Runnable::run);
+        this(savedStateHandle, repository, Runnable::run, System::currentTimeMillis);
+    }
+
+    SummaryViewModel(
+            SavedStateHandle savedStateHandle,
+            SummaryRepository repository,
+            Executor mainExecutor,
+            LongSupplier clock) {
+        this.savedStateHandle = Objects.requireNonNull(savedStateHandle, "savedStateHandle");
+        this.repository = Objects.requireNonNull(repository, "repository");
+        this.mainExecutor = Objects.requireNonNull(mainExecutor, "mainExecutor");
+        this.clock = Objects.requireNonNull(clock, "clock");
+        this.lastScope = restoredScope();
+        this.lastLimit = restoredLimit(this.lastScope);
+        this.state = new MutableLiveData<>(restoreState());
     }
 
     public LiveData<SummaryUiState> state() {
@@ -65,12 +82,34 @@ public final class SummaryViewModel extends ViewModel {
         }
     }
 
+    /**
+     * Re-requests a TODAY summary whose day or zone no longer matches the device, so a sheet
+     * left open across midnight or a zone change never shows yesterday's result.
+     */
+    public void revalidate() {
+        SummaryUiState current = state.getValue();
+        if (current == null
+                || current.getStatus() != SummaryUiState.Status.READY
+                || current.getSummary() == null) {
+            return;
+        }
+        SummaryResponse summary = current.getSummary();
+        SummaryPeriod period = summary.getPeriod();
+        if (summary.getScope() != SummaryScope.TODAY || period == null) {
+            return;
+        }
+        String zone = TimeZone.getDefault().getID();
+        if (!zone.equals(period.getTimeZone()) || !today(zone).equals(period.getDate())) {
+            start(current.getScope(), current.getLimit(), false);
+        }
+    }
+
     public void dismiss() {
         requestGeneration++;
         cancelActiveRequest();
         savedStateHandle.remove(KEY_SUMMARY_ID);
         SummaryScope scope = lastScope == null ? restoredScope() : lastScope;
-        publish(requestGeneration, SummaryUiState.idle(scope, null));
+        publish(requestGeneration, SummaryUiState.idle(scope, lastLimit, null));
     }
 
     @Override
@@ -87,27 +126,37 @@ public final class SummaryViewModel extends ViewModel {
         lastScope = scope;
         lastLimit = limit;
         savedStateHandle.set(KEY_SCOPE, scope.name());
+        if (limit == null) {
+            savedStateHandle.remove(KEY_LIMIT);
+        } else {
+            savedStateHandle.set(KEY_LIMIT, limit);
+        }
 
         String conversationId = savedStateHandle.get(ARG_CONVERSATION_ID);
         String lastSummaryId = savedStateHandle.get(KEY_SUMMARY_ID);
         if (conversationId == null || conversationId.trim().isEmpty()) {
-            publish(token, SummaryUiState.error(scope, SummaryError.UNKNOWN, lastSummaryId));
+            publish(token, SummaryUiState.error(scope, limit, SummaryError.UNKNOWN, lastSummaryId));
             return;
         }
 
-        publish(token, SummaryUiState.loading(scope, lastSummaryId));
-        SummaryRequest request = new SummaryRequest(scope, limit, SummaryLanguage.AUTO, refresh);
+        publish(token, SummaryUiState.loading(scope, limit, lastSummaryId));
+        SummaryRequest request = requestFor(scope, limit, refresh);
         activeRequest = repository.request(conversationId, request, new SummaryRepository.Callback() {
             @Override
             public void onSuccess(SummaryResponse response) {
-                publish(token, SummaryUiState.ready(scope, response));
+                publish(token, SummaryUiState.ready(scope, limit, response));
             }
 
             @Override
             public void onError(SummaryError error) {
-                publish(token, SummaryUiState.error(scope, error, lastSummaryId));
+                publish(token, SummaryUiState.error(scope, limit, error, lastSummaryId));
             }
         });
+    }
+
+    private SummaryRequest requestFor(SummaryScope scope, Integer limit, boolean refresh) {
+        return new SummaryRequest(scope, limit, SummaryLanguage.AUTO, refresh,
+                TimeZone.getDefault().getID());
     }
 
     private void publish(long token, SummaryUiState nextState) {
@@ -128,9 +177,10 @@ public final class SummaryViewModel extends ViewModel {
         String conversationId = savedStateHandle.get(ARG_CONVERSATION_ID);
         String summaryId = savedStateHandle.get(KEY_SUMMARY_ID);
         SummaryScope scope = restoredScope();
-        return repository.findCachedById(conversationId, scope, summaryId)
-                .map(summary -> SummaryUiState.ready(scope, summary))
-                .orElseGet(() -> SummaryUiState.idle(scope, summaryId));
+        Integer limit = restoredLimit(scope);
+        return repository.findCachedById(conversationId, requestFor(scope, limit, false), summaryId)
+                .map(summary -> SummaryUiState.ready(scope, limit, summary))
+                .orElseGet(() -> SummaryUiState.idle(scope, limit, summaryId));
     }
 
     private SummaryScope restoredScope() {
@@ -143,6 +193,21 @@ public final class SummaryViewModel extends ViewModel {
         } catch (IllegalArgumentException ignored) {
             return SummaryScope.UNREAD;
         }
+    }
+
+    private Integer restoredLimit(SummaryScope scope) {
+        if (scope != SummaryScope.LAST_N) {
+            return null;
+        }
+        Integer saved = savedStateHandle.get(KEY_LIMIT);
+        return saved == null ? DEFAULT_LAST_N : saved;
+    }
+
+    private String today(String zone) {
+        return Instant.ofEpochMilli(clock.getAsLong())
+                .atZone(ZoneId.of(zone))
+                .toLocalDate()
+                .toString();
     }
 
     private void cancelActiveRequest() {

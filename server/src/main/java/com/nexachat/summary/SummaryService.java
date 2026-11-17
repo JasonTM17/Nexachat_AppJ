@@ -50,25 +50,34 @@ public class SummaryService {
     }
 
     public SummaryResponse summarize(UUID conversationId, UUID userId, SummaryRequest request) {
+        // Reject a garbage zone before it costs a rate-limit token.
+        SummaryPeriods.resolveZone(request.timeZone());
         rateLimiter.consume(userId);
         SummaryReadContext readContext = windowService.load(conversationId, userId, request);
         SummaryWindow window = readContext.window();
         if (window.messageCount() < MIN_MESSAGES) {
-            throw new SummaryTooFewMessagesException();
+            // Never widen the range to make up the numbers: report what the chosen scope holds.
+            throw new SummaryTooFewMessagesException(
+                    request.scope(), window.messageCount(), MIN_MESSAGES, readContext.period());
         }
 
         Set<UUID> optedOut = aiOptOuts.optedOutUserIds(conversationId);
-        String contentHash = contentHash(window);
         PreparedSummaryProvider prepared = providerSelector.prepare(readContext.aiSummaryConsent(), window, request.refresh());
+        // The key names the scope, the resolved day and zone, every included message and, for
+        // external AI, the consent generation, so a result is never replayed under other access.
+        String contentHash = contentHash(window, request, readContext.period(),
+                "LLM".equals(prepared.cacheProvider()) ? readContext.consentEpoch() : -1L);
         if (!request.refresh()) {
             var cached = cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
                     contentHash, prepared.cacheProvider(), request.language());
             if (cached.isPresent()) {
                 SummaryCacheEntry entry = cached.get();
-                if (replayAllowed(entry, window, optedOut)) {
+                if (citationsWithinWindow(entry.payload().content(), window)
+                        && replayAllowed(entry, window, optedOut)) {
                     SummaryGeneration generation = forRequest(entry.payload().toGeneration(), prepared, null);
                     return SummaryResponse.create(entry.id(), window, generation,
-                            true, contextOmitted(generation, window, optedOut), entry.createdAt());
+                            true, contextOmitted(generation, window, optedOut), entry.createdAt(),
+                            request, readContext.period());
                 }
                 // A previous external summary cites a message whose author has
                 // since opted out. It must never be replayed; remove it and
@@ -79,25 +88,30 @@ public class SummaryService {
         }
 
         SummaryGeneration generated = providerSelector.generate(prepared, window, request.language());
+        // The row is stored under the engine that actually answered, so its key carries the
+        // consent generation only when that engine was the external one.
+        String storeHash = contentHash(window, request, readContext.period(),
+                "LLM".equals(generated.generatedBy()) ? readContext.consentEpoch() : -1L);
         SummaryCacheEntry entry;
         boolean cached;
         if (request.refresh()) {
-            entry = cacheRepository.replace(userId, conversationId, window, contentHash, generated.generatedBy(),
+            entry = cacheRepository.replace(userId, conversationId, window, storeHash, generated.generatedBy(),
                     request.language(), generated);
             cached = false;
         } else {
             SummaryCacheRepository.SavedSummary saved = cacheRepository.saveIfAbsent(
-                    userId, conversationId, window, contentHash, generated.generatedBy(), request.language(),
+                    userId, conversationId, window, storeHash, generated.generatedBy(), request.language(),
                     generated);
             entry = saved.entry();
             cached = !saved.inserted();
-            if (cached && !replayAllowed(entry, window, optedOut)) {
+            if (cached && !(citationsWithinWindow(entry.payload().content(), window)
+                    && replayAllowed(entry, window, optedOut))) {
                 // A concurrent fill that started before the opt-out won the
                 // insert. It must not be replayed: drop it and store this
                 // request's own generation under the same cache key.
                 cacheRepository.delete(conversationId, entry.fromSeq(), entry.toSeq(),
                         entry.contentHash(), entry.cacheProvider(), entry.requestedLanguage());
-                entry = cacheRepository.replace(userId, conversationId, window, contentHash,
+                entry = cacheRepository.replace(userId, conversationId, window, storeHash,
                         generated.generatedBy(), request.language(), generated);
                 cached = false;
             }
@@ -105,7 +119,8 @@ public class SummaryService {
         SummaryGeneration responseGeneration = forRequest(
                 entry.payload().toGeneration(), prepared, generated);
         return SummaryResponse.create(entry.id(), window, responseGeneration, cached,
-                contextOmitted(responseGeneration, window, optedOut), entry.createdAt());
+                contextOmitted(responseGeneration, window, optedOut), entry.createdAt(),
+                request, readContext.period());
     }
 
     private static SummaryGeneration forRequest(
@@ -196,9 +211,42 @@ public class SummaryService {
         return citations;
     }
 
+    /** True when every citation and listed participant refers to a message in the live window. */
+    static boolean citationsWithinWindow(SummaryContent content, SummaryWindow window) {
+        Set<UUID> ids = new java.util.HashSet<>();
+        Set<UUID> senders = new java.util.HashSet<>();
+        for (SummaryMessage message : window.messages()) {
+            ids.add(message.id());
+            senders.add(message.senderId());
+        }
+        for (List<UUID> messageIds : citations(content)) {
+            if (messageIds == null || messageIds.isEmpty() || !ids.containsAll(messageIds)) {
+                return false;
+            }
+        }
+        for (SummaryParticipant participant : content.participants()) {
+            if (!senders.contains(participant.userId())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     static String contentHash(SummaryWindow window) {
+        return contentHash(window, null, null, -1L);
+    }
+
+    static String contentHash(SummaryWindow window, SummaryRequest request, SummaryPeriod period, long consentEpoch) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            if (request != null) {
+                updateHashField(digest, request.scope().name());
+                updateHashField(digest, request.scope() == SummaryScope.LAST_N && request.limit() != null
+                        ? request.limit().toString() : null);
+                updateHashField(digest, period == null ? null : period.date().toString());
+                updateHashField(digest, period == null ? null : period.timeZone());
+                updateHashField(digest, Long.toString(consentEpoch));
+            }
             updateHashField(digest, Integer.toString(window.messages().size()));
             for (SummaryMessage message : window.messages()) {
                 updateHashField(digest, message.id() == null ? null : message.id().toString());

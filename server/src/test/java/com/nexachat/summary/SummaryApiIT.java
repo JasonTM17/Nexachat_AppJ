@@ -230,7 +230,7 @@ class SummaryApiIT {
     }
 
     @Test
-    void todayScopeUsesUtcMidnightAsItsInclusiveBoundary() {
+    void todayScopeInAnExplicitUtcZoneUsesUtcMidnightAsItsInclusiveBoundary() {
         Instant start = LocalDate.now(ZoneOffset.UTC).atStartOfDay(ZoneOffset.UTC).toInstant();
         TestMessage before = addMessage(caller.getId(), "Before UTC day", "TEXT",
                 start.minus(1, ChronoUnit.MICROS), null);
@@ -240,7 +240,7 @@ class SummaryApiIT {
         addMessage(peer.getId(), "At next UTC midnight", "TEXT", start.plus(1, ChronoUnit.DAYS), null);
 
         SummaryWindow window = windowService.load(conversationId, caller.getId(),
-                new SummaryRequest(SummaryScope.TODAY, null, SummaryLanguage.EN, false)).window();
+                new SummaryRequest(SummaryScope.TODAY, null, SummaryLanguage.EN, false, "UTC")).window();
 
         assertThat(window.messages()).extracting(SummaryMessage::id)
                 .containsExactly(atStart.id(), beforeEnd.id());

@@ -16,23 +16,27 @@ import retrofit2.Response;
 public final class AiConsentRepository {
     private final AiConsentApi api;
     private final Executor mainExecutor;
+    private final SummaryRepository summaryRepository;
     private final MutableLiveData<Boolean> consent = new MutableLiveData<>(false);
     private final MutableLiveData<SummaryError> lastError = new MutableLiveData<>();
 
     private volatile boolean confirmedConsent;
+    private volatile boolean lastPublishedConsent;
     private volatile long generation;
     private volatile Call<AiSummaryConsentResponse> activeCall;
 
     @Inject
     public AiConsentRepository(
             AiConsentApi api,
-            @Named("summary_main") Executor mainExecutor) {
+            @Named("summary_main") Executor mainExecutor,
+            SummaryRepository summaryRepository) {
         this.api = Objects.requireNonNull(api, "api");
         this.mainExecutor = Objects.requireNonNull(mainExecutor, "mainExecutor");
+        this.summaryRepository = Objects.requireNonNull(summaryRepository, "summaryRepository");
     }
 
-    AiConsentRepository(AiConsentApi api) {
-        this(api, Runnable::run);
+    AiConsentRepository(AiConsentApi api, SummaryRepository summaryRepository) {
+        this(api, Runnable::run, summaryRepository);
     }
 
     public LiveData<Boolean> aiSummaryConsent() {
@@ -143,6 +147,12 @@ public final class AiConsentRepository {
         mainExecutor.execute(() -> {
             if (token != generation) {
                 return;
+            }
+            if (value != lastPublishedConsent) {
+                // A different consent generation means cached summaries were produced under
+                // other terms; drop them so the next request is answered fresh.
+                lastPublishedConsent = value;
+                summaryRepository.clearCache();
             }
             consent.setValue(value);
             lastError.setValue(error);

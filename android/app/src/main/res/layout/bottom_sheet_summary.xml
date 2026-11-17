@@ -59,31 +59,6 @@
                         android:textStyle="bold" />
                 </LinearLayout>
 
-                <TextView
-                    android:id="@+id/summaryBadgeAi"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:paddingHorizontal="6dp"
-                    android:paddingVertical="2dp"
-                    android:text="@string/summary_badge_ai"
-                    android:textAppearance="?attr/textAppearanceLabelSmall"
-                    android:textStyle="bold"
-                    android:visibility="gone" />
-
-                <TextView
-                    android:id="@+id/summaryBadgeLocal"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    app:drawableStartCompat="@drawable/ic_lock"
-                    app:drawableTint="?attr/colorOnSurfaceVariant"
-                    android:drawablePadding="4dp"
-                    android:paddingHorizontal="6dp"
-                    android:paddingVertical="2dp"
-                    android:text="@string/summary_badge_local"
-                    android:textAppearance="?attr/textAppearanceLabelSmall"
-                    android:visibility="gone" />
             </LinearLayout>
 
             <ImageButton
@@ -179,11 +154,30 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_xs"
             android:paddingHorizontal="@dimen/space_md"
-            android:paddingVertical="@dimen/space_sm"
+            android:paddingTop="@dimen/space_sm"
+            android:paddingBottom="@dimen/space_xs"
             android:scrollbars="none">
 
             <com.google.android.material.chip.ChipGroup
                 android:id="@+id/summaryScopeChips"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:chipSpacingHorizontal="@dimen/space_xs"
+                app:selectionRequired="true"
+                app:singleSelection="true" />
+        </HorizontalScrollView>
+
+        <HorizontalScrollView
+            android:id="@+id/summaryLimitRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="@dimen/space_md"
+            android:paddingBottom="@dimen/space_sm"
+            android:scrollbars="none"
+            android:visibility="gone">
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/summaryLimitChips"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 app:chipSpacingHorizontal="@dimen/space_xs"
@@ -197,6 +191,16 @@
             android:layout_marginTop="@dimen/space_xs"
             android:layout_marginBottom="@dimen/space_sm"
             android:background="?attr/colorSurfaceContainerHighest" />
+
+        <TextView
+            android:id="@+id/summaryResultHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="@dimen/space_md"
+            android:paddingBottom="@dimen/space_xs"
+            android:textAppearance="?attr/textAppearanceLabelMedium"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:visibility="gone" />
 
         <include
             android:id="@+id/summarySkeleton"
