@@ -11,6 +11,7 @@ import androidx.work.WorkerParameters;
 public final class NotificationWorkRequest {
     public static final String TYPE_MESSAGE = "MESSAGE";
     public static final String TYPE_REMINDER = "REMINDER";
+    public static final String TYPE_STREAK_REMINDER = "STREAK_REMINDER";
 
     private static final String KEY_TYPE = "type";
     private static final String KEY_RECIPIENT = "recipientId";
@@ -71,6 +72,15 @@ public final class NotificationWorkRequest {
                 conversationId, null, 0L, reminderId, occurrence);
     }
 
+    @NonNull
+    public static NotificationWorkRequest streakReminder(
+            @NonNull String recipientId,
+            long sessionEpoch,
+            @NonNull String conversationId) {
+        return new NotificationWorkRequest(TYPE_STREAK_REMINDER, recipientId, sessionEpoch,
+                conversationId, null, 0L, null, null);
+    }
+
     @Nullable
     public static NotificationWorkRequest fromData(@Nullable Data data) {
         if (data == null) return null;
@@ -113,7 +123,7 @@ public final class NotificationWorkRequest {
         if (TYPE_REMINDER.equals(type)) {
             return hasText(reminderId) && isOccurrenceKey(occurrence);
         }
-        return false;
+        return TYPE_STREAK_REMINDER.equals(type);
     }
 
     @NonNull
@@ -147,9 +157,13 @@ public final class NotificationWorkRequest {
 
     @NonNull
     public String uniqueWorkName() {
-        return TYPE_MESSAGE.equals(type)
-                ? "msg:" + recipientId + ":" + sessionEpoch + ":" + messageId
-                : "rem:" + recipientId + ":" + sessionEpoch + ":" + reminderId + ":" + occurrence;
+        if (TYPE_MESSAGE.equals(type)) {
+            return "msg:" + recipientId + ":" + sessionEpoch + ":" + messageId;
+        }
+        if (TYPE_STREAK_REMINDER.equals(type)) {
+            return "streak:" + recipientId + ":" + sessionEpoch + ":" + conversationId;
+        }
+        return "rem:" + recipientId + ":" + sessionEpoch + ":" + reminderId + ":" + occurrence;
     }
 
     @NonNull

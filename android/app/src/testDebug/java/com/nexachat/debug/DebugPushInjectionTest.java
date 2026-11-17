@@ -28,6 +28,7 @@ import com.nexachat.notification.ForegroundConversationTracker;
 import com.nexachat.notification.NotificationAdmission;
 import com.nexachat.notification.NotificationWorkRequest;
 import com.nexachat.notification.NotificationWorkScheduler;
+import com.nexachat.notification.StreakNotifications;
 import com.squareup.moshi.Moshi;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Maybe;
@@ -122,6 +123,7 @@ public final class DebugPushInjectionTest {
                 notificationAdmission,
                 notificationWorkScheduler,
                 foreground,
+                mock(StreakNotifications.class),
                 Schedulers.trampoline(),
                 clock::get);
     }

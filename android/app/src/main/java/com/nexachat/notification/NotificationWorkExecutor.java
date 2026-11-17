@@ -43,6 +43,11 @@ public final class NotificationWorkExecutor {
     @NonNull
     public Single<Outcome> execute(@NonNull NotificationWorkRequest request) {
         if (!request.isValid()) return Single.just(Outcome.FAILURE);
+        if (NotificationWorkRequest.TYPE_STREAK_REMINDER.equals(request.getType())) {
+            // Streak reminders are posted directly by the push handler; they
+            // carry no fetchable event and must never reach the reminder path.
+            return Single.just(Outcome.SUCCESS);
+        }
         if (foreground.isForegroundConversation(request.getConversationId())) {
             return Single.just(Outcome.SUCCESS);
         }
