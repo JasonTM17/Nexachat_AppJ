@@ -26,4 +26,17 @@ class SummaryRequestTest {
         assertThat(request.language()).isEqualTo(SummaryLanguage.AUTO);
         assertThat(request.refresh()).isFalse();
     }
+
+    @Test
+    void timeZoneIsOptionalAndOldBodiesStillParse() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+
+        SummaryRequest old = mapper.readValue("{\"scope\":\"TODAY\"}", SummaryRequest.class);
+        SummaryRequest current = mapper.readValue(
+                "{\"scope\":\"TODAY\",\"timeZone\":\"Asia/Tokyo\"}", SummaryRequest.class);
+
+        assertThat(old.timeZone()).isNull();
+        assertThat(current.timeZone()).isEqualTo("Asia/Tokyo");
+        assertThat(validator.validate(current)).isEmpty();
+    }
 }

@@ -59,26 +59,26 @@ class SummaryCacheWinnerOptOutTest {
                 SummaryLanguage.EN, "LLM", null, null);
         SummaryCacheEntry unsafeWinner = new SummaryCacheEntry(
                 UUID.randomUUID(), window.fromSeq(), window.toSeq(),
-                SummaryService.contentHash(window), "LLM", SummaryLanguage.EN,
+                scopedHash(request), "LLM", SummaryLanguage.EN,
                 SummaryCachePayload.from(unsafe), Instant.EPOCH, Instant.EPOCH.plusSeconds(3600));
         SummaryCacheEntry safeReplacement = new SummaryCacheEntry(
                 UUID.randomUUID(), window.fromSeq(), window.toSeq(),
-                SummaryService.contentHash(window), "LLM", SummaryLanguage.EN,
+                scopedHash(request), "LLM", SummaryLanguage.EN,
                 SummaryCachePayload.from(safe), Instant.EPOCH, Instant.EPOCH.plusSeconds(3600));
 
         when(windowService.load(conversationId, userId, request))
-                .thenReturn(new SummaryReadContext(window, true));
+                .thenReturn(new SummaryReadContext(window, true, 0L, null));
         when(aiOptOuts.optedOutUserIds(conversationId)).thenReturn(Set.of(optedOutSender));
         when(providerSelector.prepare(anyBoolean(), any(), anyBoolean())).thenReturn(prepared);
         when(cacheRepository.findValid(eq(conversationId), eq(window.fromSeq()), eq(window.toSeq()),
-                eq(SummaryService.contentHash(window)), eq("LLM"), eq(SummaryLanguage.EN)))
+                eq(scopedHash(request)), eq("LLM"), eq(SummaryLanguage.EN)))
                 .thenReturn(Optional.empty());
         when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(safe);
         when(cacheRepository.saveIfAbsent(eq(userId), eq(conversationId), eq(window),
-                eq(SummaryService.contentHash(window)), eq("LLM"), eq(SummaryLanguage.EN), eq(safe)))
+                eq(scopedHash(request)), eq("LLM"), eq(SummaryLanguage.EN), eq(safe)))
                 .thenReturn(new SummaryCacheRepository.SavedSummary(unsafeWinner, false));
         when(cacheRepository.replace(eq(userId), eq(conversationId), eq(window),
-                eq(SummaryService.contentHash(window)), eq("LLM"), eq(SummaryLanguage.EN), eq(safe)))
+                eq(scopedHash(request)), eq("LLM"), eq(SummaryLanguage.EN), eq(safe)))
                 .thenReturn(safeReplacement);
 
         SummaryService service = new SummaryService(
@@ -88,6 +88,10 @@ class SummaryCacheWinnerOptOutTest {
         assertThat(response.overview())
                 .as("a cache row that fails replayAllowed must never be returned")
                 .doesNotContain("alpha-bravo");
+    }
+
+    private String scopedHash(SummaryRequest request) {
+        return SummaryService.contentHash(window, request, null, 0L);
     }
 
     private SummaryWindow window() {

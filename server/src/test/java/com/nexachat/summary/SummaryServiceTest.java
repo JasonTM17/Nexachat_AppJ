@@ -71,7 +71,7 @@ class SummaryServiceTest {
         SummaryWindow shortWindow = window(conversationId, 4);
         SummaryRequest request = request(false);
         when(windowService.load(conversationId, userId, request))
-                .thenReturn(new SummaryReadContext(shortWindow, false));
+                .thenReturn(new SummaryReadContext(shortWindow, false, 0L, null));
 
         assertThatThrownBy(() -> service.summarize(conversationId, userId, request))
                 .isInstanceOf(SummaryTooFewMessagesException.class);
@@ -85,10 +85,10 @@ class SummaryServiceTest {
         SummaryGeneration generated = generation("LLM", "Fresh output", null);
         SummaryCacheEntry entry = cacheEntry(generated, "LLM");
         when(windowService.load(conversationId, userId, request))
-                .thenReturn(new SummaryReadContext(window, true));
+                .thenReturn(new SummaryReadContext(window, true, 0L, null));
         when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
         when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(generated);
-        when(cacheRepository.replace(eq(userId), eq(conversationId), eq(window), eq(SummaryService.contentHash(window)),
+        when(cacheRepository.replace(eq(userId), eq(conversationId), eq(window), eq(hash("LLM")),
                 eq("LLM"), eq(SummaryLanguage.EN), eq(generated))).thenReturn(entry);
 
         SummaryResponse response = service.summarize(conversationId, userId, request);
@@ -109,10 +109,10 @@ class SummaryServiceTest {
         SummaryGeneration previouslyGenerated = generation("LOCAL", "Stored output", null);
         SummaryCacheEntry entry = cacheEntry(previouslyGenerated, "LOCAL");
         when(windowService.load(conversationId, userId, request))
-                .thenReturn(new SummaryReadContext(window, false));
+                .thenReturn(new SummaryReadContext(window, false, 0L, null));
         when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(false), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
         when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
-                SummaryService.contentHash(window), "LOCAL", SummaryLanguage.EN))
+                hash("LOCAL"), "LOCAL", SummaryLanguage.EN))
                 .thenReturn(Optional.of(entry));
 
         SummaryResponse response = service.summarize(conversationId, userId, request);
@@ -131,13 +131,13 @@ class SummaryServiceTest {
         SummaryGeneration generated = generation("LOCAL", "Fallback output", SummaryFallbackReason.LLM_TIMEOUT);
         SummaryCacheEntry entry = cacheEntry(generated, "LOCAL");
         when(windowService.load(conversationId, userId, request))
-                .thenReturn(new SummaryReadContext(window, true));
+                .thenReturn(new SummaryReadContext(window, true, 0L, null));
         when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
         when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
-                SummaryService.contentHash(window), "LLM", SummaryLanguage.EN))
+                hash("LLM"), "LLM", SummaryLanguage.EN))
                 .thenReturn(Optional.empty());
         when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(generated);
-        when(cacheRepository.saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(SummaryService.contentHash(window)),
+        when(cacheRepository.saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(hash("LOCAL")),
                 eq("LOCAL"), eq(SummaryLanguage.EN), eq(generated)))
                 .thenReturn(new SummaryCacheRepository.SavedSummary(entry, true));
 
@@ -146,7 +146,148 @@ class SummaryServiceTest {
         assertThat(response.generatedBy()).isEqualTo("LOCAL");
         assertThat(response.fallbackReason()).isEqualTo("LLM_TIMEOUT");
         verify(cacheRepository).saveIfAbsent(eq(userId), eq(conversationId), eq(window),
-                eq(SummaryService.contentHash(window)), eq("LOCAL"), eq(SummaryLanguage.EN), eq(generated));
+                eq(hash("LOCAL")), eq("LOCAL"), eq(SummaryLanguage.EN), eq(generated));
+    }
+
+    @Test
+    void invalidTimeZoneIsRejectedBeforeAnyRateLimitTokenIsSpent() {
+        SummaryRequest request = new SummaryRequest(SummaryScope.TODAY, null, SummaryLanguage.EN, false, "Mars/Phobos");
+
+        assertThatThrownBy(() -> service.summarize(conversationId, userId, request))
+                .isInstanceOf(SummaryInvalidTimeZoneException.class);
+        verify(rateLimiter, never()).consume(userId);
+        verify(windowService, never()).load(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void notEnoughMessagesReportsTheChosenScopeAndCountWithoutWidening() {
+        SummaryPeriod period = SummaryPeriods.today(Instant.parse("2026-11-17T05:00:00Z"), null);
+        SummaryRequest request = new SummaryRequest(SummaryScope.TODAY, null, SummaryLanguage.EN, false, null);
+        when(windowService.load(conversationId, userId, request))
+                .thenReturn(new SummaryReadContext(window(conversationId, 3), false, 0L, period));
+
+        assertThatThrownBy(() -> service.summarize(conversationId, userId, request))
+                .isInstanceOfSatisfying(SummaryTooFewMessagesException.class, ex -> {
+                    assertThat(ex.scope()).isEqualTo(SummaryScope.TODAY);
+                    assertThat(ex.available()).isEqualTo(3);
+                    assertThat(ex.required()).isEqualTo(5);
+                    assertThat(ex.period()).isEqualTo(period);
+                });
+        // Exactly one window read: the service never retries with a broader range.
+        verify(windowService, org.mockito.Mockito.times(1)).load(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void contentHashNamesScopeCountDayZoneAndConsentGeneration() {
+        SummaryPeriod today = SummaryPeriods.today(Instant.parse("2026-11-17T05:00:00Z"), "Asia/Ho_Chi_Minh");
+        SummaryPeriod nextDay = SummaryPeriods.today(Instant.parse("2026-11-18T05:00:00Z"), "Asia/Ho_Chi_Minh");
+        SummaryPeriod otherZone = SummaryPeriods.today(Instant.parse("2026-11-17T05:00:00Z"), "UTC");
+        SummaryRequest todayRequest = new SummaryRequest(SummaryScope.TODAY, null, SummaryLanguage.EN, false);
+        SummaryRequest lastN50 = new SummaryRequest(SummaryScope.LAST_N, 50, SummaryLanguage.EN, false);
+        SummaryRequest lastN20 = new SummaryRequest(SummaryScope.LAST_N, 20, SummaryLanguage.EN, false);
+        SummaryRequest unread = new SummaryRequest(SummaryScope.UNREAD, null, SummaryLanguage.EN, false);
+
+        String base = SummaryService.contentHash(window, todayRequest, today, 1L);
+
+        assertThat(base).isEqualTo(SummaryService.contentHash(window, todayRequest, today, 1L));
+        assertThat(base).isNotEqualTo(SummaryService.contentHash(window, todayRequest, nextDay, 1L));
+        assertThat(base).isNotEqualTo(SummaryService.contentHash(window, todayRequest, otherZone, 1L));
+        assertThat(base).isNotEqualTo(SummaryService.contentHash(window, todayRequest, today, 2L));
+        assertThat(base).isNotEqualTo(SummaryService.contentHash(window, unread, null, 1L));
+        assertThat(SummaryService.contentHash(window, lastN50, null, 1L))
+                .isNotEqualTo(SummaryService.contentHash(window, lastN20, null, 1L))
+                .isNotEqualTo(SummaryService.contentHash(window, unread, null, 1L));
+    }
+
+    @Test
+    void cachedSummaryCitingAMessageOutsideTheWindowIsNeverReplayed() {
+        SummaryRequest request = request(false);
+        PreparedSummaryProvider prepared = new PreparedSummaryProvider(new StubProvider("LOCAL"), "LOCAL", null);
+        UUID inside = window.messages().get(0).id();
+        SummaryGeneration poisoned = new SummaryGeneration(
+                new SummaryContent("Poisoned", List.of(new SummaryItem("Cites a stranger", List.of(UUID.randomUUID()))),
+                        List.of(), List.of(), List.of(), List.of(), List.of()),
+                SummaryLanguage.EN, "LOCAL", null, null);
+        SummaryGeneration fresh = new SummaryGeneration(
+                new SummaryContent("Fresh", List.of(new SummaryItem("Cites inside", List.of(inside))),
+                        List.of(), List.of(), List.of(), List.of(), List.of()),
+                SummaryLanguage.EN, "LOCAL", null, null);
+        when(windowService.load(conversationId, userId, request))
+                .thenReturn(new SummaryReadContext(window, false, 0L, null));
+        when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(false), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
+        when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
+                hash("LOCAL"), "LOCAL", SummaryLanguage.EN)).thenReturn(Optional.of(cacheEntry(poisoned, "LOCAL")));
+        when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(fresh);
+        when(cacheRepository.saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(hash("LOCAL")),
+                eq("LOCAL"), eq(SummaryLanguage.EN), eq(fresh)))
+                .thenReturn(new SummaryCacheRepository.SavedSummary(cacheEntry(fresh, "LOCAL"), true));
+
+        SummaryResponse response = service.summarize(conversationId, userId, request);
+
+        assertThat(response.overview()).isEqualTo("Fresh");
+        assertThat(response.cached()).isFalse();
+        verify(cacheRepository).delete(conversationId, window.fromSeq(), window.toSeq(), hash("LOCAL"), "LOCAL",
+                SummaryLanguage.EN);
+    }
+
+    @Test
+    void responseNamesScopePeriodAndTheProcessorThatActuallyRan() {
+        SummaryPeriod period = SummaryPeriods.today(Instant.parse("2026-11-17T05:00:00Z"), null);
+        SummaryRequest request = new SummaryRequest(SummaryScope.TODAY, null, SummaryLanguage.EN, false, null);
+        PreparedSummaryProvider prepared = new PreparedSummaryProvider(new StubProvider("LLM"), "LLM", null);
+        // The external provider failed, so the local engine answered: the label must say so.
+        SummaryGeneration generated = generation("LOCAL", "Local answer", SummaryFallbackReason.LLM_TIMEOUT);
+        SummaryReadContext context = new SummaryReadContext(window, true, 4L, period);
+        String hash = SummaryService.contentHash(window, request, period, 4L);
+        when(windowService.load(conversationId, userId, request)).thenReturn(context);
+        when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
+        when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(), hash, "LLM",
+                SummaryLanguage.EN)).thenReturn(Optional.empty());
+        when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(generated);
+        String localHash = SummaryService.contentHash(window, request, period, -1L);
+        when(cacheRepository.saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(localHash), eq("LOCAL"),
+                eq(SummaryLanguage.EN), eq(generated)))
+                .thenReturn(new SummaryCacheRepository.SavedSummary(cacheEntry(generated, "LOCAL"), true));
+
+        SummaryResponse response = service.summarize(conversationId, userId, request);
+
+        assertThat(response.scope()).isEqualTo(SummaryScope.TODAY);
+        assertThat(response.limit()).isNull();
+        assertThat(response.period()).isEqualTo(period);
+        assertThat(response.generatedBy()).isEqualTo("LOCAL");
+        assertThat(response.fallbackReason()).isEqualTo("LLM_TIMEOUT");
+    }
+
+    @Test
+    void lastNResponseEchoesTheRequestedCountAndNoPeriod() {
+        SummaryRequest request = new SummaryRequest(SummaryScope.LAST_N, 20, SummaryLanguage.EN, false);
+        PreparedSummaryProvider prepared = new PreparedSummaryProvider(new StubProvider("LOCAL"), "LOCAL", null);
+        SummaryGeneration generated = generation("LOCAL", "Local", null);
+        String hash = SummaryService.contentHash(window, request, null, -1L);
+        when(windowService.load(conversationId, userId, request)).thenReturn(new SummaryReadContext(window, false, 0L, null));
+        when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(false), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
+        when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(), hash, "LOCAL",
+                SummaryLanguage.EN)).thenReturn(Optional.empty());
+        when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(generated);
+        when(cacheRepository.saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(hash), eq("LOCAL"),
+                eq(SummaryLanguage.EN), eq(generated)))
+                .thenReturn(new SummaryCacheRepository.SavedSummary(cacheEntry(generated, "LOCAL"), true));
+
+        SummaryResponse response = service.summarize(conversationId, userId, request);
+
+        assertThat(response.scope()).isEqualTo(SummaryScope.LAST_N);
+        assertThat(response.limit()).isEqualTo(20);
+        assertThat(response.period()).isNull();
+    }
+
+    private String hash(String provider) {
+        return SummaryService.contentHash(window, request(false), null, "LLM".equals(provider) ? 0L : -1L);
     }
 
     private SummaryRequest request(boolean refresh) {
@@ -155,7 +296,7 @@ class SummaryServiceTest {
 
     private SummaryCacheEntry cacheEntry(SummaryGeneration generation, String provider) {
         return new SummaryCacheEntry(UUID.randomUUID(), window.fromSeq(), window.toSeq(),
-                SummaryService.contentHash(window), provider, SummaryLanguage.EN,
+                hash(provider), provider, SummaryLanguage.EN,
                 SummaryCachePayload.from(generation), Instant.EPOCH, Instant.EPOCH.plusSeconds(86400));
     }
 
