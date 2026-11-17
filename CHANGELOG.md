@@ -12,6 +12,17 @@ All notable changes to NexaChat are documented here. The format follows
   the local calendar day.
 - The summary names the scope, the day and zone it covers, and whether the local
   engine or the external AI wrote it.
+- Chat streaks: a direct-chat streak counts the days both members messaged,
+  and a per-user check-in streak counts days the app was opened and used.
+  Streaks survive one missed day per week and can send an opt-in daily reminder
+  push (`streakReminders` setting). The inbox shows the current count and an
+  at-risk flag; days are measured in the server's configured streak zone.
+- Public feed: a plaintext feed of posts with optional images, comments and
+  emoji reactions visible to every signed-in account. Authors can delete their
+  own posts and comments; posts and comments can be reported for abuse.
+- Admin console: a `/feed` moderation page lists feed reports and lets staff
+  hide/unhide posts and comments (reason required) and resolve reports as
+  reviewed or dismissed.
 
 ### Changed
 - A scope with fewer than five messages reports how many it found and offers

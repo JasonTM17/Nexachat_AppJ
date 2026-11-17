@@ -9,8 +9,10 @@ quick start remain in [README.md](../README.md).
 |---|---|
 | [architecture/architecture.md](architecture/architecture.md) | Modular monolith layout, Flyway migrations, sync cursors, and sequence diagrams. |
 | [architecture/api-contract.md](architecture/api-contract.md) | REST `/api/v1` route inventory, feature matrix, and migration history. |
+| [architecture/streaks.md](architecture/streaks.md) | Chat streaks: data model, day boundary and grace rules, reminder push. |
+| [architecture/public-feed.md](architecture/public-feed.md) | Public feed: plaintext posts/comments/reactions, visibility predicate, moderation lifecycle. |
 | [architecture/websocket-protocol.md](architecture/websocket-protocol.md) | STOMP destinations, envelopes, delivery guarantees, and rate limits. |
-| [architecture/android-sync.md](architecture/android-sync.md) | Android sync v2 checkpoints (Room schema v17), negotiation, and the legacy fallback boundary. |
+| [architecture/android-sync.md](architecture/android-sync.md) | Android sync v2 checkpoints (Room schema v21), negotiation, and the legacy fallback boundary. |
 | [architecture/calls.md](architecture/calls.md) | WebRTC call signaling, STOMP events, and Android call UI. |
 | [architecture/e2ee.md](architecture/e2ee.md) | Optional E2EE for direct chats: on-device keys, ciphertext-only storage, and v1 limits. |
 | [architecture/firebase-realtime.md](architecture/firebase-realtime.md) | Optional Firebase RTDB presence/typing bridge (STOMP default). |

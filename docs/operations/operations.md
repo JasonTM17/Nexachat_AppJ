@@ -249,6 +249,13 @@ schedulers and retention windows are:
 | `nexachat.sync.reaction-retention-days` | `30` | Reaction-event retention horizon for delta sync; purged only when `NEXACHAT_RETENTION_REACTION_EVENTS_ENABLED=true` (see [Data retention and cleanup](#data-retention-and-cleanup)). |
 | `nexachat.sync.max-reaction-updates` | `200` | Reaction events scanned per conversation per delta request. |
 | `nexachat.group.max-members` | `100` | Group capacity enforced on invite joins and approvals. |
+| `nexachat.streaks.enabled` | `true` | Master switch for recording streak progress from sends and check-ins. |
+| `nexachat.streaks.reminders-enabled` | `true` | Runs the daily `STREAK_REMINDER` push job (`StreakReminderJob`). |
+| `nexachat.streaks.zone` | `UTC` | IANA zone streak days are measured in; invalid ids fail startup. |
+| `nexachat.streaks.reminder-hour` | `20` | Local hour (0–23, in `nexachat.streaks.zone`) the reminder goes out at. |
+| `nexachat.streaks.reminder-min-count` | `3` | Smallest chain length that triggers a reminder push. |
+| `nexachat.retention.jobs.public-feed.retention-days` | `30` | Soft-deleted feed posts/comments are hard-purged after this many days; opt-in (`nexachat.retention.jobs.public-feed.enabled`, default `false`). |
+| `nexachat.retention.jobs.public-feed.unbound-hours` | `24` | Uploaded feed images never bound to a post are purged after this many hours. |
 
 Reminder delivery is at-least-once: a crash after FCM accepts a push but before
 the database advance can produce a duplicate. Completed one-off reminders stay in
