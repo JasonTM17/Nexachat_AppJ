@@ -15,6 +15,12 @@ All notable changes to NexaChat are documented here. The format follows
 - `NEXACHAT_ADMIN_EMAILS` grants admin access to verified emails, like
   `NEXACHAT_ADMIN_PHONES` does for phone numbers.
 
+### Changed
+- Security-code emails use a branded responsive layout and are written in one
+  language, chosen from the request's `Accept-Language` (Vietnamese or English).
+- Resend delivery retries once after a rate limit, server error or network
+  failure, sends an idempotency key per code, and logs the failure status.
+
 ## [1.2.13] - 2026-11-17
 
 Android APK release that finishes the video calls from `v1.2.12`; no server

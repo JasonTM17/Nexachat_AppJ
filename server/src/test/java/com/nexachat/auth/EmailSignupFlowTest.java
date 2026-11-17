@@ -13,6 +13,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -191,6 +192,21 @@ class EmailSignupFlowTest extends SecurityITBase {
                                 Map.of("phone", "0905551782", "password", PASSWORD))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.phone").value("+84905551782"));
+    }
+
+    @Test
+    void theCodeMailFollowsTheLanguageOfTheRequest() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/register/email-code")
+                        .header(HttpHeaders.ACCEPT_LANGUAGE, "vi-VN,vi;q=0.9")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("email", email()))))
+                .andExpect(status().isAccepted());
+        assertThat(mailSender.take()).isNotNull();
+        assertThat(mailSender.lastEmail().locale().getLanguage()).isEqualTo("vi");
+        assertThat(mailSender.lastEmail().idempotencyKey()).startsWith("otp-");
+
+        requestCode(email());
+        assertThat(mailSender.lastEmail().locale().getLanguage()).isEqualTo("en");
     }
 
     @Test

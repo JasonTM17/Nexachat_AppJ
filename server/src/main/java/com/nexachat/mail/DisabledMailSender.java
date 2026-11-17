@@ -1,7 +1,5 @@
 package com.nexachat.mail;
 
-import com.nexachat.recovery.OtpPurpose;
-
 public final class DisabledMailSender implements MailSender {
 
     @Override
@@ -10,7 +8,7 @@ public final class DisabledMailSender implements MailSender {
     }
 
     @Override
-    public void sendOtp(String recipient, OtpPurpose purpose, String code) {
+    public void sendOtp(OtpEmail email) {
         throw new IllegalStateException("Mail delivery is disabled");
     }
 }

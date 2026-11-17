@@ -105,8 +105,12 @@ Recovery-email delivery is disabled when `NEXACHAT_MAIL_PROVIDER` is empty.
 Authenticated add/change-email requests then return `503 MAIL_UNAVAILABLE`; the
 public password-reset and account-deletion request endpoints keep their neutral
 `202 {}` response and send no message. Select `smtp` or `resend` to enable one
-provider. Delivery uses five-second connect/read timeouts and does not retry a
-provider failure.
+provider. Each security code goes out as one message written in the language of
+the request (`Accept-Language`: Vietnamese for `vi`, English otherwise). Resend
+delivery uses a five-second connect and eight-second read timeout, sends an
+`Idempotency-Key` per code, and retries once after a rate limit, a server error
+or a network failure; a rejected message is not retried. A failed delivery
+withdraws the code, and logs carry only the status and Resend's error name.
 Actuator readiness does not probe the SMTP/Resend provider; delivery failures
 are handled by the recovery endpoints and generic application logs.
 

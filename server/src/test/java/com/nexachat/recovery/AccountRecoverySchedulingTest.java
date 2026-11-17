@@ -5,6 +5,7 @@ import com.nexachat.auth.RateLimitService;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.mail.MailSender;
+import com.nexachat.mail.OtpEmail;
 import com.nexachat.user.AccountDeletionService;
 import com.nexachat.user.EmailRecoveryService;
 import com.nexachat.user.PhoneService;
@@ -83,8 +84,7 @@ class AccountRecoverySchedulingTest {
         executor.runNext();
 
         verify(otpService).beginEmailVerification(userId, email);
-        verify(mailSender, never()).sendOtp(org.mockito.ArgumentMatchers.anyString(),
-                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyString());
+        verify(mailSender, never()).sendOtp(org.mockito.ArgumentMatchers.any(OtpEmail.class));
     }
 
     @Test
@@ -114,7 +114,9 @@ class AccountRecoverySchedulingTest {
         verify(otpService, times(5)).beginEmailVerification(
                 org.mockito.ArgumentMatchers.any(UUID.class), org.mockito.ArgumentMatchers.eq(email));
         verify(otpService, never()).beginEmailVerification(overLimitUser, email);
-        verify(mailSender, times(5)).sendOtp(email, OtpPurpose.VERIFY_EMAIL, "123456");
+        verify(mailSender, times(5)).sendOtp(org.mockito.ArgumentMatchers.argThat(sent ->
+                sent.recipient().equals(email) && sent.purpose() == OtpPurpose.VERIFY_EMAIL
+                        && sent.code().equals("123456") && sent.idempotencyKey().startsWith("otp-")));
     }
 
     private static final class QueuedTaskExecutor implements TaskExecutor {
