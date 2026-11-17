@@ -164,6 +164,9 @@ nexachat:
   reminders:
     # Integration tests drive the scheduler explicitly for determinism.
     enabled: false
+  streaks:
+    # The streak reminder job is invoked directly by its tests.
+    reminders-enabled: false
   disappearing:
     # The expiry sweep is driven explicitly by the tests; a background sweep must not
     # tombstone a backdated row before the test reaches it.

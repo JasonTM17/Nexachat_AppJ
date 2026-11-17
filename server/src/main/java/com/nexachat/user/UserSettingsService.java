@@ -5,7 +5,9 @@ import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.presence.PresenceSessionState;
 import com.nexachat.presence.UserPresenceChangedEvent;
+import com.nexachat.streak.StreakService;
 import com.nexachat.user.dto.UserSettingsResponse;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +22,8 @@ public class UserSettingsService {
     private final UserBlockRepository blockRepository;
     private final PresenceSessionState sessionState;
     private final ApplicationEventPublisher eventPublisher;
+    /** Optional: absent in database-less test profiles and legacy unit-test wiring. */
+    private StreakService streakService;
 
     public UserSettingsService(UserRepository userRepository,
                                ConversationMemberRepository memberRepository,
@@ -31,6 +35,11 @@ public class UserSettingsService {
         this.blockRepository = blockRepository;
         this.sessionState = sessionState;
         this.eventPublisher = eventPublisher;
+    }
+
+    @Autowired(required = false)
+    void setStreakService(StreakService streakService) {
+        this.streakService = streakService;
     }
 
     @Transactional(readOnly = true)
@@ -59,6 +68,18 @@ public class UserSettingsService {
             Boolean showSeen,
             Boolean aiSummaryConsent,
             String translateTargetLang) {
+        return updateSettings(userId, showPresence, showSeen, aiSummaryConsent,
+                translateTargetLang, null);
+    }
+
+    @Transactional
+    public UserSettingsResponse updateSettings(
+            UUID userId,
+            Boolean showPresence,
+            Boolean showSeen,
+            Boolean aiSummaryConsent,
+            String translateTargetLang,
+            Boolean streakReminders) {
         User user = findUserForUpdate(userId);
         if (showPresence != null) {
             boolean changed = user.isShowPresence() != showPresence;
@@ -99,6 +120,9 @@ public class UserSettingsService {
             user.changeTranslateTargetLang(lang == null ? null
                     : com.nexachat.translate.TranslationLanguage.of(lang).orElseThrow().code());
         }
+        if (streakReminders != null && streakService != null) {
+            streakService.setReminderEnabled(userId, streakReminders);
+        }
         return toResponse(user);
     }
 
@@ -112,8 +136,10 @@ public class UserSettingsService {
         return ActiveUserSupport.requireActiveForUpdate(userRepository, userId);
     }
 
-    private static UserSettingsResponse toResponse(User user) {
+    private UserSettingsResponse toResponse(User user) {
+        boolean streakReminders = streakService != null
+                && streakService.reminderEnabled(user.getId());
         return new UserSettingsResponse(user.isShowPresence(), user.isShowSeen(),
-                user.isAiSummaryConsent(), user.getTranslateTargetLang());
+                user.isAiSummaryConsent(), user.getTranslateTargetLang(), streakReminders);
     }
 }

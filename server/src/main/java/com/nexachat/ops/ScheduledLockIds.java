@@ -7,6 +7,7 @@ public final class ScheduledLockIds {
     public static final long AVATAR_ORPHAN_SWEEP = 2_530_020L;
     public static final long RETENTION_SWEEP = 2_530_030L;
     public static final long DISAPPEARING_SWEEP = 2_530_040L;
+    public static final long STREAK_REMINDER = 2_530_050L;
 
     private ScheduledLockIds() {
     }
