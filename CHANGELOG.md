@@ -18,6 +18,7 @@ changes. See [docs/release-notes/v1.2.13.md](docs/release-notes/v1.2.13.md).
 - A missed video call has its own icon in the conversation list.
 - The star on own messages is dimmed to match the timestamp.
 - Dialogs on the call screens use a dark surface with legible text and actions.
+- The hang up button is centered below the call controls.
 
 ### Known issues
 - A peer that keeps sending black frames is still shown as video.
