@@ -211,7 +211,9 @@ public final class ProfileViewModel extends ViewModel {
         updateState(state -> state
                 .withShowPhoneDialog(true)
                 .withPhoneInput(phone == null ? "" : phone)
+                .withPhonePassword("")
                 .withPhoneInvalid(false)
+                .withPhonePasswordMissing(false)
                 .withPhoneError(null));
     }
 
@@ -219,7 +221,9 @@ public final class ProfileViewModel extends ViewModel {
         updateState(state -> state
                 .withShowPhoneDialog(false)
                 .withPhoneInput("")
+                .withPhonePassword("")
                 .withPhoneInvalid(false)
+                .withPhonePasswordMissing(false)
                 .withPhoneError(null));
     }
 
@@ -231,10 +235,20 @@ public final class ProfileViewModel extends ViewModel {
                 .withPhoneError(null));
     }
 
+    public void onPhonePasswordChange(String value) {
+        Objects.requireNonNull(value, "value");
+        updateState(state -> state
+                .withPhonePassword(value)
+                .withPhonePasswordMissing(false)
+                .withPhoneError(null));
+    }
+
     /**
      * Validates the typed number exactly like Register ({@code normalizeE164}
      * then {@code isE164}) before issuing the link call; an invalid input
-     * flags the field and never reaches the repository.
+     * flags the field and never reaches the repository. Replacing a linked
+     * phone additionally requires the current password — a blank one flags
+     * its field and blocks the call just like an invalid number.
      */
     public void submitPhoneChange() {
         UiState state = currentState();
@@ -246,10 +260,19 @@ public final class ProfileViewModel extends ViewModel {
             updateState(current -> current.withPhoneInvalid(true));
             return;
         }
+        String password = null;
+        if (state.isPhonePasswordRequired()) {
+            if (state.getPhonePassword().isBlank()) {
+                updateState(current -> current.withPhonePasswordMissing(true));
+                return;
+            }
+            password = state.getPhonePassword();
+        }
         long generation = currentSessionGeneration();
         updateStateIfCurrent(generation,
-                current -> current.withPhoneSaving(true).withPhoneError(null));
-        disposables.add(contactsRepository.linkPhone(normalized)
+                current -> current.withPhoneSaving(true).withPhoneError(null)
+                        .withPhonePasswordMissing(false));
+        disposables.add(contactsRepository.linkPhone(normalized, password)
                 .subscribeOn(Schedulers.io())
                 .subscribe(
                         result -> updateStateIfCurrent(generation, current ->
@@ -257,6 +280,7 @@ public final class ProfileViewModel extends ViewModel {
                                         ? current.withPhoneSaving(false)
                                                 .withShowPhoneDialog(false)
                                                 .withPhoneInput("")
+                                                .withPhonePassword("")
                                                 .withUser((UserDto) success.getValue())
                                         : current.withPhoneSaving(false).withPhoneError(
                                                 ((Result.Failure<?>) result).getError())),
@@ -469,7 +493,9 @@ public final class ProfileViewModel extends ViewModel {
         @Nullable private final ApiError avatarError;
         private final boolean showPhoneDialog;
         private final String phoneInput;
+        private final String phonePassword;
         private final boolean phoneInvalid;
+        private final boolean phonePasswordMissing;
         private final boolean phoneSaving;
         @Nullable private final ApiError phoneError;
 
@@ -499,7 +525,9 @@ public final class ProfileViewModel extends ViewModel {
             avatarError = builder.avatarError;
             showPhoneDialog = builder.showPhoneDialog;
             phoneInput = Objects.requireNonNull(builder.phoneInput, "phoneInput");
+            phonePassword = Objects.requireNonNull(builder.phonePassword, "phonePassword");
             phoneInvalid = builder.phoneInvalid;
+            phonePasswordMissing = builder.phonePasswordMissing;
             phoneSaving = builder.phoneSaving;
             phoneError = builder.phoneError;
         }
@@ -543,11 +571,34 @@ public final class ProfileViewModel extends ViewModel {
         public boolean isShowPhoneDialog() { return showPhoneDialog; }
         public boolean getShowPhoneDialog() { return showPhoneDialog; }
         public String getPhoneInput() { return phoneInput; }
+        public String getPhonePassword() { return phonePassword; }
         public boolean isPhoneInvalid() { return phoneInvalid; }
         public boolean getPhoneInvalid() { return phoneInvalid; }
+        public boolean isPhonePasswordMissing() { return phonePasswordMissing; }
+        public boolean getPhonePasswordMissing() { return phonePasswordMissing; }
         public boolean isPhoneSaving() { return phoneSaving; }
         public boolean getPhoneSaving() { return phoneSaving; }
         @Nullable public ApiError getPhoneError() { return phoneError; }
+
+        /**
+         * Replacing an already-linked phone re-authenticates with the current
+         * account password; first links and accounts without a password
+         * (Google-only sign-in) never ask for one.
+         */
+        public boolean isPhonePasswordRequired() {
+            return user != null
+                    && user.isPasswordSet()
+                    && user.getPhone() != null
+                    && !user.getPhone().isBlank();
+        }
+
+        /** Save stays disabled until the number is valid and a required password is non-blank. */
+        public boolean canSubmitPhone() {
+            if (!AuthFieldValidators.isE164(AuthFieldValidators.normalizeE164(phoneInput))) {
+                return false;
+            }
+            return !isPhonePasswordRequired() || !phonePassword.isBlank();
+        }
 
         public UiState withLoading(boolean value) {
             return change(builder -> builder.loading = value);
@@ -633,8 +684,16 @@ public final class ProfileViewModel extends ViewModel {
             return change(builder -> builder.phoneInput = value);
         }
 
+        public UiState withPhonePassword(String value) {
+            return change(builder -> builder.phonePassword = value);
+        }
+
         public UiState withPhoneInvalid(boolean value) {
             return change(builder -> builder.phoneInvalid = value);
+        }
+
+        public UiState withPhonePasswordMissing(boolean value) {
+            return change(builder -> builder.phonePasswordMissing = value);
         }
 
         public UiState withPhoneSaving(boolean value) {
@@ -662,6 +721,7 @@ public final class ProfileViewModel extends ViewModel {
                     && avatarUploading == that.avatarUploading
                     && showPhoneDialog == that.showPhoneDialog
                     && phoneInvalid == that.phoneInvalid
+                    && phonePasswordMissing == that.phonePasswordMissing
                     && phoneSaving == that.phoneSaving
                     && Objects.equals(user, that.user)
                     && Objects.equals(error, that.error)
@@ -673,6 +733,7 @@ public final class ProfileViewModel extends ViewModel {
                     && Objects.equals(passwordError, that.passwordError)
                     && Objects.equals(avatarError, that.avatarError)
                     && phoneInput.equals(that.phoneInput)
+                    && phonePassword.equals(that.phonePassword)
                     && Objects.equals(phoneError, that.phoneError);
         }
 
@@ -700,7 +761,9 @@ public final class ProfileViewModel extends ViewModel {
                     avatarError,
                     showPhoneDialog,
                     phoneInput,
+                    phonePassword,
                     phoneInvalid,
+                    phonePasswordMissing,
                     phoneSaving,
                     phoneError);
         }
@@ -728,7 +791,9 @@ public final class ProfileViewModel extends ViewModel {
                     + ", avatarError=" + avatarError
                     + ", showPhoneDialog=" + showPhoneDialog
                     + ", phoneInput=" + phoneInput
+                    + ", phonePassword=<redacted>"
                     + ", phoneInvalid=" + phoneInvalid
+                    + ", phonePasswordMissing=" + phonePasswordMissing
                     + ", phoneSaving=" + phoneSaving
                     + ", phoneError=" + phoneError + ")";
         }
@@ -755,7 +820,9 @@ public final class ProfileViewModel extends ViewModel {
             @Nullable private ApiError avatarError;
             private boolean showPhoneDialog;
             private String phoneInput = "";
+            private String phonePassword = "";
             private boolean phoneInvalid;
+            private boolean phonePasswordMissing;
             private boolean phoneSaving;
             @Nullable private ApiError phoneError;
 
@@ -783,7 +850,9 @@ public final class ProfileViewModel extends ViewModel {
                 avatarError = source.avatarError;
                 showPhoneDialog = source.showPhoneDialog;
                 phoneInput = source.phoneInput;
+                phonePassword = source.phonePassword;
                 phoneInvalid = source.phoneInvalid;
+                phonePasswordMissing = source.phonePasswordMissing;
                 phoneSaving = source.phoneSaving;
                 phoneError = source.phoneError;
             }

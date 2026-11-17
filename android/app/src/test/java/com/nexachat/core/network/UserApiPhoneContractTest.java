@@ -2,6 +2,7 @@ package com.nexachat.core.network;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import com.nexachat.core.network.dto.LinkPhoneRequest;
 import com.nexachat.core.network.dto.UserDto;
@@ -58,6 +59,36 @@ public final class UserApiPhoneContractTest {
         assertEquals("/api/v1/users/me/phone", request.getPath());
         assertEquals("{\"phone\":\"+84901234567\"}", request.getBody().readUtf8());
         assertEquals("+84901234567", response.body().getPhone());
+    }
+
+    @Test
+    public void linkPhoneWithPasswordSerializesThePasswordField() throws Exception {
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setBody(PROFILE_JSON));
+
+        Response<UserDto> response =
+                userApi.linkPhone(new LinkPhoneRequest("+84901234567", "current-pass")).execute();
+
+        assertEquals(200, response.code());
+        RecordedRequest request = server.takeRequest();
+        assertEquals("PUT", request.getMethod());
+        assertEquals("/api/v1/users/me/phone", request.getPath());
+        String body = request.getBody().readUtf8();
+        assertTrue(body.contains("\"phone\":\"+84901234567\""));
+        assertTrue(body.contains("\"password\":\"current-pass\""));
+    }
+
+    @Test
+    public void linkPhoneWithoutPasswordOmitsTheField() throws Exception {
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setBody(PROFILE_JSON));
+
+        userApi.linkPhone(new LinkPhoneRequest("+84901234567", null)).execute();
+
+        RecordedRequest request = server.takeRequest();
+        assertEquals("{\"phone\":\"+84901234567\"}", request.getBody().readUtf8());
     }
 
     @Test

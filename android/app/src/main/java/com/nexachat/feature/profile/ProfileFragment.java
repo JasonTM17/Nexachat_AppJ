@@ -75,6 +75,7 @@ public final class ProfileFragment extends Fragment {
     @Nullable private AlertDialog phoneDialog;
     @Nullable private TextView phoneDialogError;
     @Nullable private TextInputLayout phoneDialogInputLayout;
+    @Nullable private TextInputLayout phoneDialogPasswordLayout;
 
     public ProfileFragment() {
         avatarPicker = registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> { if (uri != null && viewModel != null) viewModel.uploadAvatar(uri); });
@@ -357,8 +358,12 @@ public final class ProfileFragment extends Fragment {
         }
         if (phoneDialogError != null) {
             ApiError phoneError = state.getPhoneError();
-            phoneDialogError.setVisibility(phoneError == null ? View.GONE : View.VISIBLE);
-            if (phoneError != null) {
+            // A rejected current password is flagged on its field, not on the banner.
+            boolean onPasswordField = phoneDialogPasswordLayout != null
+                    && phoneError instanceof ApiError.WrongPassword;
+            phoneDialogError.setVisibility(
+                    phoneError == null || onPasswordField ? View.GONE : View.VISIBLE);
+            if (phoneError != null && !onPasswordField) {
                 phoneDialogError.setText(phoneDialogErrorText(phoneError));
             }
         }
@@ -366,9 +371,19 @@ public final class ProfileFragment extends Fragment {
             phoneDialogInputLayout.setError(state.isPhoneInvalid()
                     ? getString(R.string.error_phone_invalid) : null);
         }
+        if (phoneDialogPasswordLayout != null) {
+            ApiError phoneError = state.getPhoneError();
+            CharSequence passwordFieldError = null;
+            if (state.isPhonePasswordMissing()) {
+                passwordFieldError = getString(R.string.error_current_password_required);
+            } else if (phoneError instanceof ApiError.WrongPassword) {
+                passwordFieldError = ApiErrorText.text(requireContext(), phoneError);
+            }
+            phoneDialogPasswordLayout.setError(passwordFieldError);
+        }
         if (phoneDialog != null && phoneDialog.isShowing()) {
             phoneDialog.getButton(AlertDialog.BUTTON_POSITIVE)
-                    .setEnabled(!state.isPhoneSaving());
+                    .setEnabled(!state.isPhoneSaving() && state.canSubmitPhone());
             android.widget.Button removeButton = phoneDialog.getButton(AlertDialog.BUTTON_NEUTRAL);
             if (removeButton != null) {
                 removeButton.setEnabled(!state.isPhoneSaving());
@@ -690,10 +705,26 @@ public final class ProfileFragment extends Fragment {
         input.setInputType(InputType.TYPE_CLASS_PHONE);
         input.setTypeface(bodyTypeface);
         input.setAutofillHints(View.AUTOFILL_HINT_PHONE);
-        input.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        input.setImeOptions(current.isPhonePasswordRequired()
+                ? EditorInfo.IME_ACTION_NEXT : EditorInfo.IME_ACTION_DONE);
         phoneLayout.addView(input);
         form.addView(phoneLayout, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // Replacing a linked phone re-authenticates with the current password;
+        // first links and passwordless accounts never see this field.
+        final TextInputLayout passwordLayout = current.isPhonePasswordRequired()
+                ? passwordInputLayout(R.string.auth_current_password_label) : null;
+        final TextInputEditText passwordInput = passwordLayout != null
+                ? (TextInputEditText) passwordLayout.getEditText() : null;
+        if (passwordLayout != null && passwordInput != null) {
+            passwordInput.setImeOptions(EditorInfo.IME_ACTION_DONE);
+            LinearLayout.LayoutParams passwordLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            passwordLp.topMargin = spaceSm;
+            form.addView(passwordLayout, passwordLp);
+        }
 
         TextView errorLine = new TextView(requireContext());
         errorLine.setVisibility(View.GONE);
@@ -733,13 +764,20 @@ public final class ProfileFragment extends Fragment {
         phoneDialog = dialog;
         phoneDialogError = errorLine;
         phoneDialogInputLayout = phoneLayout;
+        phoneDialogPasswordLayout = passwordLayout;
         dialog.setOnDismissListener(d -> {
             phoneDialog = null;
             phoneDialogError = null;
             phoneDialogInputLayout = null;
+            phoneDialogPasswordLayout = null;
         });
         input.setText(current.getPhoneInput());
         input.addTextChangedListener(new SimpleTextWatcher(viewModel::onPhoneInputChange));
+        if (passwordInput != null) {
+            passwordInput.setText(current.getPhonePassword());
+            passwordInput.addTextChangedListener(
+                    new SimpleTextWatcher(viewModel::onPhonePasswordChange));
+        }
         dialog.setOnShowListener(ignored -> {
             FormDialogs.resizeAboveIme(dialog);
             android.widget.Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
@@ -766,6 +804,15 @@ public final class ProfileFragment extends Fragment {
                 }
                 return false;
             });
+            if (passwordInput != null) {
+                passwordInput.setOnEditorActionListener((v, actionId, event) -> {
+                    if (actionId == EditorInfo.IME_ACTION_DONE) {
+                        positive.performClick();
+                        return true;
+                    }
+                    return false;
+                });
+            }
         });
         dialog.show();
     }

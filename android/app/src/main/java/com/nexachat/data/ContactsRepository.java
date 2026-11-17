@@ -120,11 +120,14 @@ public final class ContactsRepository {
     /**
      * Adds or replaces the account phone. {@code phone} arrives already
      * normalized to E.164; the server revalidates and answers
-     * {@code PHONE_EXISTS} when another account owns it.
+     * {@code PHONE_EXISTS} when another account owns it. {@code password} is
+     * the current account password required to replace a linked phone
+     * ({@code WRONG_PASSWORD} on mismatch); pass {@code null} for a first
+     * link or an account without a password.
      */
     @NonNull
-    public Single<Result<UserDto>> linkPhone(@NonNull String phone) {
-        return call(userApi.linkPhone(new LinkPhoneRequest(phone)));
+    public Single<Result<UserDto>> linkPhone(@NonNull String phone, @Nullable String password) {
+        return call(userApi.linkPhone(new LinkPhoneRequest(phone, password)));
     }
 
     /**
