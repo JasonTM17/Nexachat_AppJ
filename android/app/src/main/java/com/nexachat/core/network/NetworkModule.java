@@ -48,6 +48,7 @@ public final class NetworkModule {
                 .writeTimeout(60, TimeUnit.SECONDS)
                 .cache(MediaCacheConfig.createOkHttpCache(context.getCacheDir()))
                 .addInterceptor(new MediaCacheRequestInterceptor())
+                .addInterceptor(new AcceptLanguageInterceptor())
                 .addInterceptor(authInterceptor)
                 .addInterceptor(new AiRequestTimeoutInterceptor())
                 .addNetworkInterceptor(new MediaCacheResponseInterceptor())
