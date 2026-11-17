@@ -47,7 +47,8 @@ public final class MessageListDiffCallback extends DiffUtil.ItemCallback<Message
                 && oldItem.shouldShowSenderName() == newItem.shouldShowSenderName()
                 && oldItem.isSeenReceipt() == newItem.isSeenReceipt()
                 && oldItem.isDeliveredReceipt() == newItem.isDeliveredReceipt()
-                && oldItem.isPulsing() == newItem.isPulsing();
+                && oldItem.isPulsing() == newItem.isPulsing()
+                && oldItem.isStarred() == newItem.isStarred();
     }
 
     private static boolean contentEquals(ChatMessage left, ChatMessage right) {

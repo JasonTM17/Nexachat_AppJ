@@ -38,6 +38,27 @@ public final class MessageListMapperTest {
     }
 
     @Test
+    public void marksOnlyStarredMessages() {
+        long day = 1_704_067_200_000L;
+        ChatMessage plain = msg("plain", 1L, day, false);
+        ChatMessage saved = msg("saved", 2L, day, false);
+        List<MessageListItem> rows = MessageListMapper.buildDisplayItems(
+                Arrays.asList(plain, saved),
+                false,
+                0L,
+                0L,
+                null,
+                new DateSeparatorLabels("Today", "Yesterday"),
+                day,
+                -1,
+                0,
+                Collections.singleton("saved"));
+        assertEquals(3, rows.size());
+        assertEquals(false, rows.get(1).isStarred());
+        assertEquals(true, rows.get(2).isStarred());
+    }
+
+    @Test
     public void insertsUnreadDividerAfterDateSeparatorOnNewDay() {
         long day1 = 1_704_067_200_000L;
         long day2 = day1 + 86_400_000L;

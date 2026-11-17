@@ -10,6 +10,7 @@ import com.nexachat.feature.chat.ChatBubbleRules;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Expands chronological {@link ChatMessage} rows into adapter items including date separators.
@@ -63,6 +64,24 @@ public final class MessageListMapper {
             int unreadDividerBeforeMessageIndex,
             int unreadDividerCount
     ) {
+        return buildDisplayItems(
+                chronological, isGroup, peerReadSeq, peerDeliveredSeq, pulsingMessageId, dateLabels,
+                nowEpochMs, unreadDividerBeforeMessageIndex, unreadDividerCount, Collections.emptySet());
+    }
+
+    @NonNull
+    public static List<MessageListItem> buildDisplayItems(
+            @NonNull List<ChatMessage> chronological,
+            boolean isGroup,
+            long peerReadSeq,
+            long peerDeliveredSeq,
+            @Nullable String pulsingMessageId,
+            @NonNull DateSeparatorLabels dateLabels,
+            long nowEpochMs,
+            int unreadDividerBeforeMessageIndex,
+            int unreadDividerCount,
+            @NonNull Set<String> starredIds
+    ) {
         if (chronological.isEmpty()) {
             return Collections.emptyList();
         }
@@ -104,7 +123,9 @@ public final class MessageListMapper {
                     peerDeliveredSeq
             );
             boolean pulsing = pulsingMessageId != null && pulsingMessageId.equals(message.getId());
-            rows.add(MessageListItem.message(message, groupPosition, showSender, seen, delivered, pulsing));
+            boolean starred = starredIds.contains(message.getId());
+            rows.add(MessageListItem.message(
+                    message, groupPosition, showSender, seen, delivered, pulsing, starred));
         }
         return rows;
     }

@@ -308,7 +308,8 @@ public final class MessageBubbleBinder {
         bindTranslation(root, message);
         applyMessageTextColors(root, message, item.isPulsing());
         applyMentionHighlights(root, message, mentionedMe);
-        bindMetaRow(root, message, item.isSeenReceipt(), item.isDeliveredReceipt(), item.isPulsing());
+        bindMetaRow(root, message, item.isSeenReceipt(), item.isDeliveredReceipt(), item.isPulsing(),
+                item.isStarred());
         bindReactions(root, message);
         applyMediaOnlyFrame(root, bubble, message, mentionedMe);
     }
@@ -632,8 +633,11 @@ public final class MessageBubbleBinder {
             if (systemLabel != null) {
                 systemLabel.setVisibility(View.VISIBLE);
                 String raw = message.getContent() != null ? message.getContent() : "";
-                systemLabel.setText(SystemEventFormatter.format(
-                        root.getContext(), raw, message.getMine()));
+                // The time rides on the notice's own line so the chip stays one row tall.
+                systemLabel.setText(root.getContext().getString(
+                        R.string.system_notice_with_time,
+                        SystemEventFormatter.format(root.getContext(), raw, message.getMine()),
+                        timeFormat.format(new Date(message.getCreatedAtEpochMs()))));
             }
             return;
         }
@@ -1027,7 +1031,8 @@ public final class MessageBubbleBinder {
             ChatMessage message,
             boolean seen,
             boolean delivered,
-            boolean pulsing
+            boolean pulsing,
+            boolean starred
     ) {
         View metaInclude = root.findViewById(R.id.bubbleMeta);
         if (metaInclude == null) {
@@ -1043,6 +1048,7 @@ public final class MessageBubbleBinder {
         boolean mediaMeta = contentKind == MessageContentKind.IMAGE
                 || contentKind == MessageContentKind.VIDEO;
         if (systemMessage) {
+            metaInclude.setVisibility(View.GONE);
             TextView time = metaInclude.findViewById(R.id.timeLabel);
             TextView edited = metaInclude.findViewById(R.id.editedLabel);
             CircularProgressIndicator sending = metaInclude.findViewById(R.id.sendingProgress);
@@ -1098,6 +1104,7 @@ public final class MessageBubbleBinder {
         ImageView deliveredIcon = metaInclude.findViewById(R.id.deliveryIcon);
         TextView deliveryText = metaInclude.findViewById(R.id.deliveryStatusText);
         ImageView timer = metaInclude.findViewById(R.id.timerIcon);
+        ImageView star = metaInclude.findViewById(R.id.starIcon);
 
         boolean isMine = message.getMine();
         int metaColor;
@@ -1121,6 +1128,10 @@ public final class MessageBubbleBinder {
                 && message.getStatus() != DeliveryStatus.FAILED
                 && !tombstone;
         float metaLabelAlpha = quietOutgoingMeta ? 0.75f : 1.0f;
+        if (star != null) {
+            star.setVisibility(starred && !tombstone ? View.VISIBLE : View.GONE);
+            star.setImageTintList(ColorStateList.valueOf(metaColor));
+        }
 
         if (edited != null) {
             boolean showEdited = MessageUiRules.isEdited(

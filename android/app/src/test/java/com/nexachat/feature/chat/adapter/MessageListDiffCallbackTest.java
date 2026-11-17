@@ -47,6 +47,16 @@ public final class MessageListDiffCallbackTest {
     }
 
     @Test
+    public void starredFlagChangeDetected() {
+        ChatMessage msg = baseMessage("same");
+        MessageListItem plain = MessageListItem.message(
+                msg, MessageGroupPosition.SINGLE, false, false, false, false, false);
+        MessageListItem starred = MessageListItem.message(
+                msg, MessageGroupPosition.SINGLE, false, false, false, false, true);
+        assertFalse(callback.areContentsTheSame(plain, starred));
+    }
+
+    @Test
     public void identicalMessagesHaveSameContents() {
         assertContentsSame(spec().build(), spec().build());
     }
