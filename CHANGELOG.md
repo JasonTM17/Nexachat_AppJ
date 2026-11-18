@@ -84,6 +84,21 @@ All notable changes to NexaChat are documented here. The format follows
   not-found instead of revealing the post exists.
 - Feed image uploads with negative or implausibly large dimensions are
   rejected.
+- Streak reminders are skipped, not lost, when every device token on the
+  account now belongs to a newer sign-in; the reminder still goes out on a
+  later day once the user has a token of their own.
+- Rejected feed requests no longer use up the posting, commenting or
+  reaction allowance: an invalid post, comment or reaction does not count
+  against the per-minute limit.
+- Hiding or showing a comment from the admin console now moves the post's
+  comment count, and hiding a comment its author already deleted no longer
+  counts it twice.
+- Reporting a comment on a post you cannot see — deleted, hidden, or whose
+  author deleted their account or blocked you — is refused with not-found
+  instead of being accepted.
+- Retention removes feed images that no post references anymore, deleting
+  the stored file before its database row and keeping the row until the
+  file is actually gone.
 
 ## [1.2.15] - 2026-11-17
 

@@ -94,7 +94,10 @@ return the last stored state while it is off.
 accounts whose chain is at least `nexachat.streaks.reminder-min-count`
 (default `3`) and who opted in via the `streakReminders` user setting
 (`PATCH /users/me/settings`, default `false`). `reminder_sent_day` on
-`user_streaks` dedupes the send.
+`user_streaks` dedupes the send. A user whose every device token now belongs
+to a newer registrant on another account keeps the day unclaimed: the
+reminder is skipped, not consumed, and goes out on a later day once the user
+owns a token again.
 
 ```mermaid
 flowchart LR
