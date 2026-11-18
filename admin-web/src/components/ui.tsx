@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useI18n } from '../i18n';
 
 export function Loading() {
@@ -134,9 +134,11 @@ export function ConfirmDialog({
 }) {
   const { t } = useI18n();
   const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const [reasonError, setReasonError] = useState(false);
   const submit = () => {
     const reason = reasonRef.current?.value.trim() ?? '';
     if (requireReason && !reason) {
+      setReasonError(true);
       reasonRef.current?.focus();
       return;
     }
@@ -164,7 +166,16 @@ export function ConfirmDialog({
               ref={reasonRef}
               maxLength={maxReasonLength}
               autoFocus
+              required={requireReason !== false}
+              aria-invalid={reasonError || undefined}
+              aria-describedby={reasonError ? 'confirm-reason-error' : undefined}
+              onInput={() => reasonError && setReasonError(false)}
             />
+            {reasonError && (
+              <div className="form-error" id="confirm-reason-error" role="alert">
+                {t('common.reason.required')}
+              </div>
+            )}
           </div>
         )}
         <div className="dialog-actions">
