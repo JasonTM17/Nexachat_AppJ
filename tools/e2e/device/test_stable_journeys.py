@@ -446,6 +446,98 @@ class WiringDecisionTest(unittest.TestCase):
         self.assertFalse(any("broadcast" in command or "force-stop" in command for command in flat))
         self.assertTrue(any("am kill" in command for command in flat))
 
+    def test_call_executor_uses_notification_surface_on_heads_up_only_builds(self):
+        # API 34+: the call row lives only in `dumpsys notification`; the
+        # IncomingCallActivity is non-exported so `am start` cannot stand in
+        # for a user tap, and the heads-up peek collapses before uiautomator
+        # catches it. The harness falls back to the DUMP-gated decline hook,
+        # which fires the notification's own decline PendingIntent — the same
+        # CallForegroundService -> CallManager.reject path as a user tap.
+        row = journeys.ROW_BY_ID["calls-injected-notification"]
+        adb_calls = []
+        state = {"declined": False}
+
+        class Adb:
+            serial = "emulator-5554"
+
+            def command(self, *args, **kwargs):
+                adb_calls.append(args)
+                joined = " ".join(str(arg) for arg in args)
+                if "pidof" in args:
+                    return ""
+                if "DECLINE_INCOMING_CALL" in joined:
+                    state["declined"] = True
+                    return ""
+                if "dumpsys" in args and "notification" in args:
+                    if state["declined"]:
+                        return ""
+                    return (
+                        "NotificationRecord key=0|com.nexachat.debug|4701|null|1000\n"
+                        "android.title=String (Incoming voice call)\n"
+                        '"Accept" "Decline"\n'
+                    )
+                if "dumpsys" in args and "activity" in args:
+                    return "com.nexachat.call.ui.IncomingCallActivity"
+                return ""
+
+        class Patch:
+            @staticmethod
+            def ui_nodes(device, timeout=8):
+                return []  # peek never lands inside a uiautomator dump
+
+        class Device:
+            def tap_node(self, node):
+                if node.text in {"Decline", "Từ chối"}:
+                    state["declined"] = True
+
+        class Api:
+            USER_A = {"phone": "+84900000001"}
+            USER_C = {"phone": "+84900000002"}
+
+            @staticmethod
+            def direct_conversation(client, token, phone):
+                return 200, {"id": "conv-200"}
+
+        class Response:
+            def __init__(self, body):
+                self.status = 200
+                self._body = body
+
+            def json(self):
+                return self._body
+
+        class Client:
+            def get(self, path, token=None, params=None, headers=None):
+                return Response({"items": []})
+
+        def session(api, recorder, phone):
+            if phone.endswith("0001"):
+                return {"accessToken": "tok-an", "user": {"id": "user-an", "phone": phone}}
+            return {"accessToken": "tok-binh", "user": {"id": "user-binh", "phone": phone}}
+
+        import inject_push
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session), \
+                mock.patch.object(inject_push, "main", return_value=0):
+            result = journeys.run_calls_injected_notification(row, {
+                "serial": "emulator-5554",
+                "base_url": "http://127.0.0.1:18093",
+                "row": row,
+                "adb": Adb(),
+                "device": Device(),
+                "helpers": (Api(), None, Patch()),
+                "client": Client(),
+                "ui_timeout": 1,
+            })
+        self.assertEqual(result["label"], "INJECTED")
+        self.assertEqual(result["incoming_surface"], "notification")
+        self.assertTrue(state["declined"])
+        flat = [" ".join(str(arg) for arg in args) for args in adb_calls]
+        self.assertFalse(any(
+            "am start" in command and "IncomingCallActivity" in command
+            for command in flat))
+        self.assertTrue(any("DECLINE_INCOMING_CALL" in command for command in flat))
+
     def test_message_executor_uses_inject_push_for_both_kinds(self):
         row = journeys.ROW_BY_ID["injected-notifications"]
         adb_calls = []
@@ -456,6 +548,11 @@ class WiringDecisionTest(unittest.TestCase):
             def command(self, *args, **kwargs):
                 adb_calls.append(args)
                 if "notification" in args:
+                    cleared = any(
+                        "CLEAR_NOTIFICATIONS" in str(arg)
+                        for call in adb_calls for arg in call)
+                    if cleared:
+                        return ""
                     return (
                         "NotificationRecord key=0|com.nexachat.debug|7|null|1000\n"
                         "You have a new message\nA reminder is due\n"
@@ -526,7 +623,10 @@ class WiringDecisionTest(unittest.TestCase):
         kinds = [argv[argv.index(kind)] for argv in injected for kind in ("message", "reminder") if kind in argv]
         self.assertEqual(kinds, ["message", "reminder"])
         self.assertTrue(all(argv[1] == "emulator-5554" for argv in injected))
-        self.assertFalse(any("broadcast" in args for args in adb_calls))
+        # Injection must route through inject_push, never a raw INJECT_PUSH
+        # broadcast; the debug CLEAR_NOTIFICATIONS cleanup broadcast is allowed.
+        self.assertFalse(any(
+            "INJECT_PUSH" in str(args) for args in adb_calls))
 
     def test_otp_flow_blocks_on_expiry_and_stops_the_sink(self):
         row = journeys.ROW_BY_ID["otp-forgot-password"]

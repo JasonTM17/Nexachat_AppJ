@@ -120,6 +120,24 @@ public final class CallNotifications {
         return notifySafely(appContext, INCOMING_NOTIFICATION_ID, builder.build());
     }
 
+    /**
+     * Resolves the same service {@link PendingIntent} record the incoming-call
+     * notification wires to its Decline action (identical request code and
+     * intent), so a caller can fire the real decline path — {@link
+     * CallForegroundService} handles {@code ACTION_DECLINE} the same way it
+     * would after the user's tap. Service pending intents are exempt from
+     * background-activity-launch restrictions; the activity content intent is
+     * not, which is why this accessor exists only for the decline action.
+     */
+    public static PendingIntent incomingDeclinePendingIntent(
+            Context context, CallSession session, @Nullable IncomingCallPushData pushData) {
+        Context appContext = context.getApplicationContext();
+        return PendingIntent.getService(
+                appContext, requestCode(session, CallNotificationActionRouter.ACTION_DECLINE),
+                serviceIntent(appContext, CallNotificationActionRouter.ACTION_DECLINE, session, pushData),
+                pendingIntentFlags());
+    }
+
     public static void clearIncoming(Context context) {
         if (context == null) return;
         NotificationManagerCompat.from(context.getApplicationContext())

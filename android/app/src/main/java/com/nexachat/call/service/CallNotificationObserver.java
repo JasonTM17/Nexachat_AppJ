@@ -40,17 +40,14 @@ public final class CallNotificationObserver implements CallManager.CallListener 
     @Override
     public void onCallChanged(CallSession session) {
         if (session != null && session.getState() == CallState.INCOMING_RINGING) {
-            if (isAppForeground()) {
-                CallNotifications.clearIncoming(appContext);
+            IncomingCallPushData pushData = callManager.currentIncomingPushData(session.getCallId());
+            boolean posted = CallNotifications.showIncoming(appContext, session, pushData);
+            if (posted) {
+                activityFallbackCallId = null;
+            }
+            if (isAppForeground()
+                    || CallNotificationFallbackPolicy.shouldAttemptActivityFallback(posted)) {
                 openIncomingActivityOnce(session);
-            } else {
-                IncomingCallPushData pushData = callManager.currentIncomingPushData(session.getCallId());
-                boolean posted = CallNotifications.showIncoming(appContext, session, pushData);
-                if (posted) {
-                    activityFallbackCallId = null;
-                } else if (CallNotificationFallbackPolicy.shouldAttemptActivityFallback(posted)) {
-                    openIncomingActivityOnce(session);
-                }
             }
         } else {
             activityFallbackCallId = null;
