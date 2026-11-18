@@ -124,8 +124,10 @@ Server events are delivered to the authenticated participant's own
 Fields that do not apply to an event are null/omitted according to the server's
 Jackson configuration. End reasons and duration appear on terminal events.
 Malformed frames and call failures use the existing
-`/user/queue/errors` envelope, for example `{"code":"CALL_NOT_FOUND"}`.
-Errors include `VALIDATION_FAILED`, `NOT_MEMBER`, `RATE_LIMITED`,
+`/user/queue/errors` envelope, correlated to the rejected signal —
+for example
+`{"code":"CALL_NOT_FOUND","callId":"…","conversationId":"…"}`.
+Errors include `VALIDATION_FAILED`, `NOT_MEMBER`, `BLOCKED`, `RATE_LIMITED`,
 `CALL_NOT_FOUND`, and `CALL_STATE_INVALID`. A non-member's call SEND is denied
 by the STOMP authorization interceptor before it reaches the controller.
 
