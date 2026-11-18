@@ -176,48 +176,57 @@ export default function AlertsPage() {
   return (
     <>
       <div className="filters">
-        <select
-          className="select"
-          aria-label={t('alerts.col.status')}
-          value={status}
-          onChange={(e) => {
-            setStatus(e.target.value);
-            setPage(0);
-          }}
-        >
-          <option value="">{t('common.all')}</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>{t(statusKey(s))}</option>
-          ))}
-        </select>
-        <select
-          className="select"
-          aria-label={t('alerts.col.severity')}
-          value={severity}
-          onChange={(e) => {
-            setSeverity(e.target.value);
-            setPage(0);
-          }}
-        >
-          <option value="">{t('common.all')}</option>
-          {SEVERITIES.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-        <select
-          className="select"
-          aria-label={t('alerts.col.category')}
-          value={category}
-          onChange={(e) => {
-            setCategory(e.target.value);
-            setPage(0);
-          }}
-        >
-          <option value="">{t('common.all')}</option>
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
+        <label className="filter-field">
+          <span>{t('alerts.col.status')}</span>
+          <select
+            className="select"
+            aria-label={t('alerts.col.status')}
+            value={status}
+            onChange={(e) => {
+              setStatus(e.target.value);
+              setPage(0);
+            }}
+          >
+            <option value="">{t('common.all')}</option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>{t(statusKey(s))}</option>
+            ))}
+          </select>
+        </label>
+        <label className="filter-field">
+          <span>{t('alerts.col.severity')}</span>
+          <select
+            className="select"
+            aria-label={t('alerts.col.severity')}
+            value={severity}
+            onChange={(e) => {
+              setSeverity(e.target.value);
+              setPage(0);
+            }}
+          >
+            <option value="">{t('common.all')}</option>
+            {SEVERITIES.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </label>
+        <label className="filter-field">
+          <span>{t('alerts.col.category')}</span>
+          <select
+            className="select"
+            aria-label={t('alerts.col.category')}
+            value={category}
+            onChange={(e) => {
+              setCategory(e.target.value);
+              setPage(0);
+            }}
+          >
+            <option value="">{t('common.all')}</option>
+            {CATEGORIES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </label>
         {checked.size > 0 && (
           <button className="btn danger sm" onClick={() => setPending({ kind: 'bulk' })}>
             {t('alerts.action.dismissBulk')} ({checked.size})
@@ -230,19 +239,30 @@ export default function AlertsPage() {
       ) : !data ? (
         <Loading />
       ) : data.items.length === 0 ? (
-        <Empty />
+        <Empty
+          onClearFilters={
+            status !== 'OPEN' || severity || category
+              ? () => {
+                  setStatus('OPEN');
+                  setSeverity('');
+                  setCategory('');
+                  setPage(0);
+                }
+              : undefined
+          }
+        />
       ) : (
         <>
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th aria-label="select" />
+                  <th className="col-lo" aria-label="select" />
                   <th>{t('alerts.col.severity')}</th>
-                  <th>{t('alerts.col.category')}</th>
+                  <th className="col-lo">{t('alerts.col.category')}</th>
                   <th>{t('alerts.col.snippet')}</th>
                   <th>{t('alerts.col.status')}</th>
-                  <th>{t('alerts.col.created')}</th>
+                  <th className="col-lo">{t('alerts.col.created')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -253,19 +273,21 @@ export default function AlertsPage() {
                     onClick={() => openDetail(a.id)}
                     onKeyDown={(e) => e.key === 'Enter' && openDetail(a.id)}
                   >
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        className="checkbox"
-                        aria-label={`select ${a.id}`}
-                        checked={checked.has(a.id)}
-                        onChange={() => toggle(a.id)}
-                      />
+                    <td className="col-lo" onClick={(e) => e.stopPropagation()}>
+                      <label className="check-hit">
+                        <input
+                          type="checkbox"
+                          className="checkbox"
+                          aria-label={`select ${a.id}`}
+                          checked={checked.has(a.id)}
+                          onChange={() => toggle(a.id)}
+                        />
+                      </label>
                     </td>
                     <td>
                       <Chip tone={a.severity.toLowerCase()}>{a.severity}</Chip>
                     </td>
-                    <td>{a.category}</td>
+                    <td className="col-lo">{a.category}</td>
                     <td className="truncate">
                       {a.snippetTombstoned ? (
                         <span className="muted">{t('alerts.tombstoned')}</span>
@@ -279,7 +301,7 @@ export default function AlertsPage() {
                         {t(statusKey(a.status))}
                       </Chip>
                     </td>
-                    <td>{fmtTime(a.createdAt)}</td>
+                    <td className="col-lo">{fmtTime(a.createdAt)}</td>
                   </tr>
                 ))}
               </tbody>
