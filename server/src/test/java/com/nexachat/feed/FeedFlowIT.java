@@ -373,6 +373,54 @@ class FeedFlowIT extends FeatureItSupport {
                 .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
     }
 
+    @Test
+    void reportingACommentOnAPostWhoseAuthorBlockedTheReporterIsNotFound() throws Exception {
+        Actor author = newUser("Blocking Post Author");
+        Actor commenter = newUser("Third Party Commenter");
+        Actor reporter = newUser("Blocked Reporter");
+        UUID postId = createPostId(author, "author's post");
+        JsonNode comment = json(postAs(commenter, "/api/v1/feed/posts/" + postId + "/comments",
+                Map.of("body", "third party comment", "clientCommentId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated()));
+        postAs(author, "/api/v1/users/" + reporter.id() + "/block", null)
+                .andExpect(status().is2xxSuccessful());
+
+        getAs(reporter, "/api/v1/feed/posts/" + postId + "/comments")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
+
+        postAs(reporter, "/api/v1/reports", Map.of(
+                "targetType", "COMMENT",
+                "targetId", comment.get("id").asText(),
+                "reason", "SPAM"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("COMMENT_NOT_FOUND"));
+    }
+
+    @Test
+    void reportingACommentOnAPostByADeletedAuthorIsNotFound() throws Exception {
+        Actor author = newUser("Deleted Post Author");
+        Actor commenter = newUser("Surviving Commenter");
+        Actor reporter = newUser("Late Reporter");
+        UUID postId = createPostId(author, "doomed post");
+        JsonNode comment = json(postAs(commenter, "/api/v1/feed/posts/" + postId + "/comments",
+                Map.of("body", "comment on a doomed post",
+                        "clientCommentId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated()));
+        jdbcTemplate.update("UPDATE users SET deleted_at = now() WHERE id = ?", author.id());
+
+        getAs(reporter, "/api/v1/feed/posts/" + postId + "/comments")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
+
+        postAs(reporter, "/api/v1/reports", Map.of(
+                "targetType", "COMMENT",
+                "targetId", comment.get("id").asText(),
+                "reason", "SPAM"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("COMMENT_NOT_FOUND"));
+    }
+
     // ------------------------------------------------------------------ images
 
     @Test
