@@ -113,8 +113,18 @@ public final class StreakRules {
         int count = alive ? state.count() : 0;
         boolean atRisk = alive && state.lastDay() != null && state.lastDay().isBefore(today);
         return new View(count, state.bestCount(), alive ? state.startedOn() : null, state.lastDay(),
-                today, atRisk, alive && freezeAvailable(state.freezeUsedOn(), today), milestone(count),
+                today, atRisk, graceAvailable(state, alive), milestone(count),
                 today.equals(state.dayA()), today.equals(state.dayB()));
+    }
+
+    /**
+     * Whether the next missed day could still be bridged. A freeze is consumed
+     * on the completing send, which lands on {@code lastDay + 2} (the day after
+     * the miss), so availability is judged there — not on {@code today}.
+     */
+    private static boolean graceAvailable(State state, boolean alive) {
+        return alive && state.lastDay() != null
+                && freezeAvailable(state.freezeUsedOn(), state.lastDay().plusDays(2));
     }
 
     /** A chain is alive while it can still be extended without restarting. */
