@@ -112,6 +112,7 @@ Android client can consume the API but no dedicated screen is merged into
 | V41 | `V41__signup_email_otps.sql` | Signup verification OTP storage for email-confirmed registration. |
 | V42 | `V42__chat_streaks.sql` | `conversation_streaks` (one row per DIRECT pair) and `user_streaks` (app check-in streak) with weekly grace day and reminder bookkeeping. |
 | V43 | `V43__public_feed.sql` | `public_posts`, `public_comments`, `public_post_reactions`, `public_images`; extends `reports.target_type` with `POST`/`COMMENT`. |
+| V44 | `V44__streak_contiguous_run_floors.sql` | Per-side contiguous-run floor columns (`low_cont`/`high_cont`, `open_cont`/`sent_cont`) on the streak tables so late-arriving records can still complete a streak day. |
 
 ## Operational notes
 
