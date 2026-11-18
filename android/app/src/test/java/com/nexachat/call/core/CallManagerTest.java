@@ -669,6 +669,213 @@ public final class CallManagerTest {
         assertEquals(0, media.replayCount);
     }
 
+    @Test
+    public void mediaFailureAfterAcceptSendsExactlyOneEndToTheServer() {
+        startOutgoing();
+        signaling.emit(event(CallEvent.Type.CALL_ACCEPTED, "call-1", null));
+        scheduler.runCurrent();
+        assertEquals(CallState.CONNECTING, session().getState());
+
+        media.listener.onFailed("ice disconnected");
+        scheduler.runCurrent();
+
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(CallEndReason.FAILED, session().getEndReason());
+        assertEquals(1, countSignals(CallSignal.Type.END));
+        assertEquals(2, signaling.sent.size());
+
+        signaling.emit(event(CallEvent.Type.CALL_ENDED, "call-1", "COMPLETED"));
+        scheduler.runCurrent();
+
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(1, countSignals(CallSignal.Type.END));
+        assertEquals(2, signaling.sent.size());
+    }
+
+    @Test
+    public void localSignalingFailureWhileOutgoingRingingSendsExactlyOneCancel() {
+        startOutgoing();
+        signaling.disconnect();
+        scheduler.runCurrent();
+
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(CallEndReason.FAILED, session().getEndReason());
+        assertEquals(1, countSignals(CallSignal.Type.CANCEL));
+        assertEquals(2, signaling.sent.size());
+    }
+
+    @Test
+    public void ringTimeoutWhileOutgoingRingingSendsExactlyOneCancel() {
+        startOutgoing();
+        scheduler.advanceBy(50L);
+
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(CallEndReason.MISSED, session().getEndReason());
+        assertEquals(1, countSignals(CallSignal.Type.CANCEL));
+        assertEquals(2, signaling.sent.size());
+    }
+
+    @Test
+    public void serverInitiatedEndedSendsNoTerminalSignalBack() {
+        startOutgoing();
+        signaling.emit(event(CallEvent.Type.CALL_ENDED, "call-1", "COMPLETED"));
+        scheduler.runCurrent();
+
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(CallEndReason.COMPLETED, session().getEndReason());
+        assertEquals(1, signaling.sent.size());
+        assertEquals(CallSignal.Type.INVITE, signaling.lastSignal().getType());
+    }
+
+    @Test
+    public void acceptSendFailureWhileIncomingRingingSendsExactlyOneReject() {
+        signaling.emit(invite("call-in", "conversation-1", "peer-1"));
+        scheduler.runCurrent();
+        signaling.connected = false;
+        manager.accept("call-in");
+        scheduler.runCurrent();
+
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(CallEndReason.FAILED, session().getEndReason());
+        assertEquals(1, countSignals(CallSignal.Type.REJECT));
+    }
+
+    @Test
+    public void mediaFailureOnIncomingCallAfterAcceptSendsExactlyOneEnd() {
+        signaling.emit(invite("call-in", "conversation-1", "peer-1"));
+        scheduler.runCurrent();
+        manager.accept("call-in");
+        scheduler.runCurrent();
+        assertEquals(CallState.CONNECTING, session().getState());
+
+        media.listener.onFailed("could not complete the call");
+        scheduler.runCurrent();
+
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(CallEndReason.FAILED, session().getEndReason());
+        assertEquals(1, countSignals(CallSignal.Type.END));
+        assertEquals(2, signaling.sent.size());
+    }
+
+    @Test
+    public void throwingTerminalSignalSendStillEndsTheCallLocally() {
+        startOutgoing();
+        signaling.emit(event(CallEvent.Type.CALL_ACCEPTED, "call-1", null));
+        scheduler.runCurrent();
+        signaling.throwOnSend = true;
+
+        media.listener.onFailed("ice failed");
+        scheduler.runCurrent();
+
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(CallEndReason.FAILED, session().getEndReason());
+        assertEquals(1, media.stopCount);
+    }
+
+    @Test
+    public void pushGraceTimerEndsPendingIncomingAsMissedWithExactlyOneReject() {
+        long deadline = nowMs + 20L;
+        TestObserver<CallSession> admission = admitPush("call-grace", deadline, () -> true);
+        scheduler.runCurrent();
+        admission.assertValueCount(1);
+        assertEquals(CallState.PENDING_INCOMING, session().getState());
+
+        scheduler.advanceBy(15_000L);
+
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(CallEndReason.MISSED, session().getEndReason());
+        assertEquals(1, countSignals(CallSignal.Type.REJECT));
+        assertEquals(0, countSignals(CallSignal.Type.CANCEL));
+        assertEquals(1, signaling.sent.size());
+    }
+
+    @Test
+    public void hangUpWhilePendingIncomingSendsExactlyOneReject() {
+        TestObserver<CallSession> admission = admitPush(
+                "call-pending-hangup", nowMs + 20_000L, () -> true);
+        scheduler.runCurrent();
+        admission.assertValueCount(1);
+        assertEquals(CallState.PENDING_INCOMING, session().getState());
+
+        manager.hangUp();
+        scheduler.runCurrent();
+
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(CallEndReason.REJECTED, session().getEndReason());
+        assertEquals(1, countSignals(CallSignal.Type.REJECT));
+        assertEquals(0, countSignals(CallSignal.Type.END));
+        assertEquals(1, signaling.sent.size());
+    }
+
+    @Test
+    public void hangUpWhileActiveSendsExactlyOneEnd() {
+        startOutgoing();
+        signaling.emit(event(CallEvent.Type.CALL_ACCEPTED, "call-1", null));
+        scheduler.runCurrent();
+        media.listener.onConnected();
+        scheduler.runCurrent();
+        assertEquals(CallState.ACTIVE, session().getState());
+
+        manager.hangUp();
+        scheduler.runCurrent();
+
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(CallEndReason.COMPLETED, session().getEndReason());
+        assertEquals(1, countSignals(CallSignal.Type.END));
+        assertEquals(2, signaling.sent.size());
+    }
+
+    @Test
+    public void hangUpWhileOutgoingRingingSendsExactlyOneCancel() {
+        startOutgoing();
+
+        manager.hangUp();
+        scheduler.runCurrent();
+
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(CallEndReason.CANCELLED, session().getEndReason());
+        assertEquals(1, countSignals(CallSignal.Type.CANCEL));
+        assertEquals(2, signaling.sent.size());
+    }
+
+    @Test
+    public void serverInviteDuringPendingIncomingRejectsTheIncomingCallInsteadOfCancelling() {
+        TestObserver<CallSession> admission = admitPush(
+                "call-glare", nowMs + 20_000L, () -> true);
+        scheduler.runCurrent();
+        admission.assertValueCount(1);
+        assertEquals(CallState.PENDING_INCOMING, session().getState());
+
+        signaling.emit(invite("server-winner", "conversation-2", "peer-2"));
+        scheduler.runCurrent();
+
+        assertEquals(CallState.INCOMING_RINGING, session().getState());
+        assertEquals("server-winner", session().getCallId());
+        assertEquals(1, countSignals(CallSignal.Type.REJECT));
+        assertEquals(0, countSignals(CallSignal.Type.CANCEL));
+        assertEquals(1, signaling.sent.size());
+    }
+
+    @Test
+    public void failedInviteSendEndsTheCallWithoutAnyTerminalSignal() {
+        signaling.connected = false;
+
+        manager.startOutgoing("conversation-1", "peer-1", "Peer");
+        scheduler.runCurrent();
+
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(CallEndReason.FAILED, session().getEndReason());
+        assertEquals(1, signaling.sent.size());
+        assertEquals(CallSignal.Type.INVITE, signaling.lastSignal().getType());
+        assertEquals(0, countSignals(CallSignal.Type.CANCEL));
+        assertEquals(0, countSignals(CallSignal.Type.REJECT));
+        assertEquals(0, countSignals(CallSignal.Type.END));
+    }
+
+    private long countSignals(CallSignal.Type type) {
+        return signaling.sent.stream().filter(signal -> signal.getType() == type).count();
+    }
+
     private void startOutgoing() {
         manager.startOutgoing("conversation-1", "peer-1", "Peer");
         scheduler.runCurrent();
@@ -839,6 +1046,7 @@ public final class CallManagerTest {
         final List<CallSignal> sent = new ArrayList<>();
         Listener listener;
         boolean connected = true;
+        boolean throwOnSend;
 
         @Override
         public void start(Listener listener) {
@@ -850,6 +1058,7 @@ public final class CallManagerTest {
 
         @Override
         public boolean send(String conversationId, CallSignal signal) {
+            if (throwOnSend) throw new RuntimeException("transport down");
             sent.add(signal);
             return connected;
         }
