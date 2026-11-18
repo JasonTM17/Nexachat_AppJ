@@ -632,6 +632,11 @@ def test_no_external_urls():
         for f in files:
             ext = os.path.splitext(f)[1].lower()
             if ext in (".html", ".css", ".js"):
+                # site/admin/ is the committed Vite SPA bundle — machine-generated
+                # strings (React docs links, SVG namespaces, the API base URL)
+                # are governed by the dedicated /admin(*) CSP, not this rule.
+                if os.path.relpath(os.path.join(root, f), SITE_DIR).split(os.sep)[0] == "admin":
+                    continue
                 scanned += 1
                 path = os.path.join(root, f)
                 rel_path = os.path.relpath(path, SITE_DIR)
@@ -708,6 +713,13 @@ def test_no_inline_scripts_and_styles():
     for root, _, files in os.walk(SITE_DIR):
         for f in files:
             if f.endswith(".html"):
+                rel_check = os.path.relpath(os.path.join(root, f), SITE_DIR)
+                # site/admin/ is the committed Vite SPA bundle — its dedicated
+                # /admin(*) CSP allows style-src 'unsafe-inline' (React inline
+                # style props + the pre-paint <style> in index.html), so the
+                # marketing site's no-inline rule does not apply there.
+                if rel_check.split(os.sep)[0] == "admin":
+                    continue
                 scanned += 1
                 path = os.path.join(root, f)
                 rel_path = os.path.relpath(path, SITE_DIR)

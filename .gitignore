@@ -84,5 +84,3 @@ desktop.ini
 # ---- Local-only capture evidence ----
 docs/evidence/
 
-# Vercel buildCommand output — admin SPA built into site/admin/ at deploy time
-site/admin/
