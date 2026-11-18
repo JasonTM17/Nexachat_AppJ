@@ -196,6 +196,28 @@ class ReportServiceTest {
     }
 
     @Test
+    void submit_messageTarget_plaintext_snapshotNeverEndsInLoneSurrogate() {
+        UUID senderId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        // 499 chars + one surrogate-pair emoji: char index 499 is the high
+        // surrogate, so a naive substring(0, 500) would store a lone half.
+        String content = "x".repeat(499) + "\uD83C\uDF89" + "tail";
+        Message message = message(senderId, conversationId, null, content);
+        when(messageRepository.findById(targetId)).thenReturn(Optional.of(message));
+        when(memberRepository.existsAdmittedAt(eq(conversationId), eq(reporterId), any()))
+                .thenReturn(true);
+
+        ReportService.Result result = reportService.submit(
+                reporterId, new CreateReportRequest(
+                        Report.TargetType.MESSAGE, targetId, Report.Reason.HARASSMENT,
+                        "details", null));
+
+        String snapshot = result.report().messageSnapshot();
+        assertThat(snapshot).isEqualTo("x".repeat(499));
+        assertThat(snapshot.codePoints().count()).isEqualTo(499);
+    }
+
+    @Test
     void submit_messageTarget_encrypted_usesReporterSnapshot() {
         UUID senderId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();

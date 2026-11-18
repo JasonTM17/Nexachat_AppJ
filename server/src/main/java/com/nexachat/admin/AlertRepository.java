@@ -8,6 +8,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -104,11 +106,11 @@ public class AlertRepository {
         }
         if (from != null) {
             where.append(" AND a.created_at >= ?");
-            params.add(from);
+            params.add(utc(from));
         }
         if (to != null) {
             where.append(" AND a.created_at <= ?");
-            params.add(to);
+            params.add(utc(to));
         }
         Long total = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM message_alerts a" + where, Long.class, params.toArray());
@@ -206,22 +208,33 @@ public class AlertRepository {
                 """, conversationId, senderId);
     }
 
-    /** Deletes a bounded batch of closed alerts older than the cutoff. */
+    /**
+     * Deletes a bounded batch of closed alerts whose close time is older than
+     * the cutoff. Close time keys on {@code resolved_at} — every close path
+     * stamps it — falling back to {@code updated_at} (the last mutation, for a
+     * closed row almost always the close write) and finally {@code created_at}
+     * for legacy rows missing the stamp. Keying on {@code created_at} alone
+     * would delete an old alert the moment it is resolved, losing evidence
+     * staff just produced.
+     */
     public int purgeClosed(Instant cutoff, int batchSize) {
         return jdbcTemplate.update("""
                 DELETE FROM message_alerts WHERE id IN (
                     SELECT id FROM message_alerts
-                    WHERE status IN ('RESOLVED', 'DISMISSED') AND created_at <= ?
-                    ORDER BY created_at LIMIT ?
+                    WHERE status IN ('RESOLVED', 'DISMISSED')
+                      AND COALESCE(resolved_at, updated_at, created_at) <= ?
+                    ORDER BY COALESCE(resolved_at, updated_at, created_at) LIMIT ?
                 )
-                """, cutoff, batchSize);
+                """, utc(cutoff), batchSize);
     }
 
+    /** Dry-run counterpart of {@link #purgeClosed}: same close-time filter. */
     public long countClosedOlderThan(Instant cutoff) {
         Long value = jdbcTemplate.queryForObject("""
                 SELECT count(*) FROM message_alerts
-                WHERE status IN ('RESOLVED', 'DISMISSED') AND created_at <= ?
-                """, Long.class, cutoff);
+                WHERE status IN ('RESOLVED', 'DISMISSED')
+                  AND COALESCE(resolved_at, updated_at, created_at) <= ?
+                """, Long.class, utc(cutoff));
         return value == null ? 0 : value;
     }
 
@@ -268,5 +281,14 @@ public class AlertRepository {
     private static Instant instant(ResultSet rs, String column) throws SQLException {
         Timestamp ts = rs.getTimestamp(column);
         return ts == null ? null : ts.toInstant();
+    }
+
+    /**
+     * pgjdbc cannot bind {@link Instant} ({@code setObject} throws "can't infer
+     * the SQL type"); {@link OffsetDateTime} binds as a typed timestamptz
+     * literal and keeps the exact instant under any session timezone.
+     */
+    private static OffsetDateTime utc(Instant instant) {
+        return instant == null ? null : instant.atOffset(ZoneOffset.UTC);
     }
 }

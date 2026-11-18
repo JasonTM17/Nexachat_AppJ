@@ -93,6 +93,25 @@ class CallRegistryTest {
         assertThat(registry.activeCallForUser(CALLEE)).isEmpty();
     }
 
+    @Test
+    void rolledBackInviteReleasesItsSavedOffer() {
+        CallRegistry registry = registry(45_000);
+        UUID callId = UUID.randomUUID();
+        CallRegistry.Invitation invitation = registry.invite(
+                callId, CONVERSATION, CALLER, CALLEE, START);
+        registry.saveOffer(callId, new CallSignal.Sdp("offer", "sdp-payload"));
+        assertThat(registry.findOffer(callId)).isPresent();
+
+        // The mutation scope replays this when a later INVITE step fails; the
+        // orphaned offer must leave with the call row.
+        registry.rollback(invitation);
+
+        assertThat(registry.find(callId)).isEmpty();
+        assertThat(registry.findOffer(callId)).isEmpty();
+        assertThat(registry.activeCallForUser(CALLER)).isEmpty();
+        assertThat(registry.activeCallForUser(CALLEE)).isEmpty();
+    }
+
     private static final class MutableClock extends Clock {
         private final AtomicReference<Instant> instant;
         private final ZoneId zone;

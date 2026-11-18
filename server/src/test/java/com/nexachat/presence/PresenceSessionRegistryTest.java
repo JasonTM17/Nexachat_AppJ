@@ -13,7 +13,9 @@ import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.web.socket.messaging.SessionConnectedEvent;
 
+import java.lang.reflect.Field;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -109,5 +111,47 @@ class PresenceSessionRegistryTest {
         verify(offlineFuture).cancel(false);
         verify(presenceService).connected(userId);
         verify(presenceService, never()).disconnected(any(), any());
+    }
+
+    @Test
+    void registryDropsTheUserEntryOnceTheCoalescedOfflinePublishes() throws Exception {
+        Instant lastSeenAt = Instant.parse("2026-11-05T12:02:00Z");
+        when(presenceService.recordLastSeen(userId)).thenReturn(lastSeenAt);
+
+        registry.connect("session-a", userId);
+        registry.disconnect("session-a");
+        ArgumentCaptor<Runnable> task = ArgumentCaptor.forClass(Runnable.class);
+        verify(scheduler).schedule(task.capture(), eq(5_000L), eq(TimeUnit.MILLISECONDS));
+
+        assertThat(sessionsByUser()).containsKey(userId);
+        task.getValue().run();
+        assertThat(sessionsByUser()).doesNotContainKey(userId);
+        verify(presenceService).disconnected(userId, lastSeenAt);
+    }
+
+    @Test
+    void staleOfflineTaskCannotEvictTheEntryAReconnectReused() throws Exception {
+        when(presenceService.recordLastSeen(userId)).thenReturn(Instant.parse("2026-11-05T12:03:00Z"));
+
+        registry.connect("session-a", userId);
+        registry.disconnect("session-a");
+        ArgumentCaptor<Runnable> task = ArgumentCaptor.forClass(Runnable.class);
+        verify(scheduler).schedule(task.capture(), eq(5_000L), eq(TimeUnit.MILLISECONDS));
+
+        // A reconnect inside the coalesce window reuses the live entry; running
+        // the cancelled task afterwards must neither publish offline nor evict it.
+        registry.connect("session-b", userId);
+        task.getValue().run();
+
+        assertThat(sessionsByUser()).containsKey(userId);
+        assertThat(sessionState.isOnline(userId)).isTrue();
+        verify(presenceService, never()).disconnected(any(), any());
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<UUID, ?> sessionsByUser() throws Exception {
+        Field field = PresenceSessionRegistry.class.getDeclaredField("sessionsByUser");
+        field.setAccessible(true);
+        return (Map<UUID, ?>) field.get(registry);
     }
 }
