@@ -3,6 +3,7 @@ package com.nexachat.streak;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.nexachat.notification.MockFcmGateway;
 import com.nexachat.testutil.FeatureItSupport;
+import com.nexachat.streak.StreakRules.Side;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -44,6 +45,8 @@ class StreakFlowIT extends FeatureItSupport {
     private MockFcmGateway fcmGateway;
     @Autowired
     private StreakProperties streakProperties;
+    @Autowired
+    private StreakStore streakStore;
 
     private static LocalDate today() {
         return LocalDate.now(ZoneOffset.UTC);
@@ -404,7 +407,127 @@ class StreakFlowIT extends FeatureItSupport {
         assertThat(fcmGateway.getSentPushes()).isEmpty();
     }
 
+    @Test
+    void aCrossMidnightRaceRecoversThroughTheStoreAndLegacyRowsWithoutFloorsBehaveAsBefore()
+            throws Exception {
+        // The race end to end: each record goes through the real store with
+        // its own streak day, in the order the conversation lock can produce
+        // around midnight (A's day-2 record stored before B's day-1 record).
+        Actor alice = newUser("Alice");
+        Actor bob = newUser("Bob");
+        UUID conversationId = openDirect(alice, bob);
+        LocalDate day0 = today().minusDays(2);
+        LocalDate day1 = today().minusDays(1);
+        LocalDate day2 = today();
+
+        recordChain(conversationId, alice, bob, alice, day0);
+        recordChain(conversationId, alice, bob, bob, day0);
+        recordChain(conversationId, alice, bob, alice, day1);
+        recordChain(conversationId, alice, bob, alice, day2);
+        recordChain(conversationId, alice, bob, bob, day1);    // stale: behind A's day 2
+        recordChain(conversationId, alice, bob, bob, day2);
+
+        JsonNode streak = streakOf(alice, conversationId);
+        assertThat(streak.get("count").asInt()).isEqualTo(3);
+        assertThat(streak.get("bestCount").asInt()).isEqualTo(3);
+        assertThat(streak.get("startedOn").asText()).isEqualTo(day0.toString());
+        assertThat(streak.get("lastDay").asText()).isEqualTo(day2.toString());
+        assertThat(streak.get("freezeAvailable").asBoolean()).isTrue();
+        // The contiguous-run floors persist: the run starts on day 0 for both
+        // sides of the recovered chain.
+        assertThat(chainFloor(conversationId, "low_cont")).isEqualTo(day0);
+        assertThat(chainFloor(conversationId, "high_cont")).isEqualTo(day0);
+
+        // A row written before the floor columns existed keeps its behavior:
+        // the day still completes once both pointers reach it and a stale
+        // replay changes nothing.
+        Actor carol = newUser("Carol");
+        Actor dan = newUser("Dan");
+        UUID legacyId = openDirect(carol, dan);
+        LocalDate yesterday = today().minusDays(1);
+        insertChain(legacyId, carol, dan, 1, yesterday);
+        assertThat(chainFloor(legacyId, "low_cont")).isNull();
+        assertThat(chainFloor(legacyId, "high_cont")).isNull();
+
+        recordChain(legacyId, carol, dan, carol, today());
+        assertThat(streakOf(carol, legacyId).get("count").asInt()).isEqualTo(1);
+
+        recordChain(legacyId, carol, dan, dan, today());
+        JsonNode legacy = streakOf(carol, legacyId);
+        assertThat(legacy.get("count").asInt()).isEqualTo(2);
+        assertThat(legacy.get("lastDay").asText()).isEqualTo(today().toString());
+        assertThat(legacy.get("freezeAvailable").asBoolean()).isTrue();
+
+        recordChain(legacyId, carol, dan, dan, yesterday);
+        assertThat(streakOf(carol, legacyId).get("count").asInt()).isEqualTo(2);
+    }
+
+    @Test
+    void theReminderJobLeavesTheDayUnclaimedWhenNoOwnedTokenRemains() throws Exception {
+        Actor alice = newUser("Alice");
+        Actor bob = newUser("Bob");
+        UUID conversationId = openDirect(alice, bob);
+        insertChain(conversationId, alice, bob, 5, today().minusDays(1));
+        patchAs(alice, "/api/v1/users/me/settings", Map.of("streakReminders", true))
+                .andExpect(status().isOk());
+        // One physical device, registered by Alice first and by Bob later: the
+        // token belongs to the newer registrant, so Alice owns nothing to push to.
+        String sharedToken = "shared-device-" + UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO user_device_tokens
+                    (id, user_id, token, platform, created_at, updated_at, last_used_at)
+                VALUES (?, ?, ?, 'ANDROID', now() - interval '2 hours',
+                        now() - interval '2 hours', now())
+                """, UUID.randomUUID(), alice.id(), sharedToken);
+        jdbcTemplate.update("""
+                INSERT INTO user_device_tokens
+                    (id, user_id, token, platform, created_at, updated_at, last_used_at)
+                VALUES (?, ?, ?, 'ANDROID', now() - interval '1 hour', now(), now())
+                """, UUID.randomUUID(), bob.id(), sharedToken);
+        fcmGateway.clear();
+
+        Instant reminderHour = today().atTime(streakProperties.getReminderHour(), 0)
+                .toInstant(ZoneOffset.UTC);
+        assertThat(reminderJob.runAt(reminderHour)).isZero();
+        assertThat(fcmGateway.getSentPushes()).isEmpty();
+        assertThat(reminderSentDay(alice.id())).isNull();
+
+        // A token only Alice owns makes the same day remind her after all.
+        postAs(alice, "/api/v1/devices/token",
+                Map.of("token", "alice-own-" + UUID.randomUUID(), "platform", "ANDROID"))
+                .andExpect(status().is2xxSuccessful());
+        assertThat(reminderJob.runAt(reminderHour)).isEqualTo(1);
+        assertThat(reminderSentDay(alice.id())).isEqualTo(today());
+        assertThat(fcmGateway.getSentPushes().stream()
+                .filter(push -> "STREAK_REMINDER".equals(push.data().get("type")))).hasSize(1);
+    }
+
     // ------------------------------------------------------------------ helpers
+
+    /** Writes one side of a chain through the store with an explicit day. */
+    private void recordChain(UUID conversationId, Actor a, Actor b, Actor sender, LocalDate day) {
+        boolean aFirst = a.id().toString().compareTo(b.id().toString()) < 0;
+        UUID low = aFirst ? a.id() : b.id();
+        UUID high = aFirst ? b.id() : a.id();
+        Side side = sender.id().equals(low) ? Side.A : Side.B;
+        streakStore.applyChain(conversationId, low, high, side, day);
+    }
+
+    /** The stored contiguous-run floor of one side's column. */
+    private LocalDate chainFloor(UUID conversationId, String column) {
+        return jdbcTemplate.queryForObject(
+                "SELECT " + column + " FROM conversation_streaks WHERE conversation_id = ?",
+                LocalDate.class, conversationId);
+    }
+
+    private LocalDate reminderSentDay(UUID userId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT reminder_sent_day FROM user_streaks WHERE user_id = ?",
+                (rs, rowNum) -> {
+                    java.sql.Date day = rs.getDate(1);
+                    return day == null ? null : day.toLocalDate();
+                }, userId);
+    }
 
     private void putDevice(Actor actor, UUID deviceId) throws Exception {
         byte[] key = new byte[32];

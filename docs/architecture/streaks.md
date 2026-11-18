@@ -6,7 +6,7 @@ both opened the app and sent a message (the per-user *check-in streak*).
 The Android app shows the count on inbox entries and in the conversation;
 `docs/architecture/api-contract.md` lists the routes.
 
-## Data model (V42)
+## Data model (V42, V44)
 
 ```mermaid
 erDiagram
@@ -19,6 +19,8 @@ erDiagram
         uuid user_high_id FK
         date low_day
         date high_day
+        date low_cont
+        date high_cont
         date last_day
         int count
         int best_count
@@ -29,6 +31,8 @@ erDiagram
         uuid user_id PK
         date open_day
         date sent_day
+        date open_cont
+        date sent_cont
         date last_day
         int count
         int best_count
@@ -46,6 +50,15 @@ side sent on; `last_day` is the last day *both* had sent, which is what `count`
 is measured against. `user_streaks` is the app-wide check-in streak:
 `open_day`/`sent_day` feed the same engine.
 
+The `*_cont` columns (added in V44) hold each side's *contiguous-run floor*:
+the first day of the side's current unbroken run of sends, so every day in
+`[cont, day]` was provably sent by that side. They exist because records do
+not arrive in day order — a member's send can straddle local midnight while
+the peer's message from the day before is still waiting on the conversation
+lock. The migration backfills each floor conservatively as the side's current
+pointer (a run is only known to be contiguous from there), and a NULL floor
+reads as "unknown" and behaves exactly as the pointer did before V44.
+
 ## Day boundary and grace rules
 
 Days are measured in `nexachat.streaks.zone` (default `UTC`), a single
@@ -55,6 +68,13 @@ one day boundary regardless of where they are.
 - A send records the sender's side for the streak day it lands in.
 - When both sides of a pair have sent on the same day and that day is
   `last_day + 1`, `count` increments; same-day repeats are no-ops.
+- A day completes when it lies after `last_day`, at or before the older of the
+  two stored side days, and at or above both sides' contiguous-run floors —
+  so a day one member's record skipped over still completes once the peer's
+  (late) record for it lands, while a day one side genuinely never sent never
+  does. Records older than a side's stored day cannot move its pointer —
+  except a record landing just below that side's run floor, which lowers the
+  floor to the day it proves — and replays stay idempotent.
 - Missing one day consumes the chain's single grace day
   (`freeze_used_on`) once per rolling week — the streak stays alive and
   `atRisk` stays true until the second missed day.
@@ -74,7 +94,10 @@ return the last stored state while it is off.
 accounts whose chain is at least `nexachat.streaks.reminder-min-count`
 (default `3`) and who opted in via the `streakReminders` user setting
 (`PATCH /users/me/settings`, default `false`). `reminder_sent_day` on
-`user_streaks` dedupes the send.
+`user_streaks` dedupes the send. A user whose every device token now belongs
+to a newer registrant on another account keeps the day unclaimed: the
+reminder is skipped, not consumed, and goes out on a later day once the user
+owns a token again.
 
 ```mermaid
 flowchart LR

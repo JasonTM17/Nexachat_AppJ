@@ -116,6 +116,7 @@ public class CallService {
             throw CallException.notMember();
         }
         consume(callerId, "invite", 20);
+        endStaleActiveCall(callerId, signal.callId());
         CallRegistry.Invitation invitation = registry.invite(signal.callId(), conversationId,
                 callerId, calleeId, CallMediaType.orAudio(signal.mediaType()), registry.now());
         recordRollback(() -> registry.rollback(invitation));
@@ -132,6 +133,26 @@ public class CallService {
         }
         eventPublisher.publishEvent(new CallRingingEvent(call.callId()));
         deliver(call.calleeId(), event("CALL_INVITE", call, call.callerId(), signal, null, null));
+    }
+
+    /**
+     * A client holds at most one call, so a user who sends a new INVITE is no longer in an
+     * earlier ACTIVE media call (for example one whose media setup failed and was never
+     * ended). Ends that call as FAILED through the same path as a disconnect so both
+     * participants are released and notified. A RINGING call is left alone: the ring
+     * timeout frees it and a duplicate invite stays refused.
+     */
+    private void endStaleActiveCall(UUID callerId, UUID newCallId) {
+        boolean stale = registry.activeCallForUser(callerId)
+                .filter(call -> call.state() == CallState.ACTIVE && !call.callId().equals(newCallId))
+                .isPresent();
+        if (!stale) {
+            return;
+        }
+        registry.failForUser(callerId, registry.now()).ifPresent(transition -> {
+            recordRollback(() -> registry.rollback(transition));
+            finish(transition.session(), "CALL_ENDED", callerId);
+        });
     }
 
     private void accept(UUID conversationId, UUID actorId, CallSignal signal) {
@@ -261,6 +282,11 @@ public class CallService {
                 .orElseThrow(CallException::notFound);
         if (session.peerOf(userId) == null) {
             throw CallException.notMember();
+        }
+        // The offer exists for the push-wake fast path while the call rings;
+        // fetching it for an answered or ended call is meaningless.
+        if (session.state() != CallState.RINGING) {
+            throw CallException.notFound();
         }
         CallSignal.Sdp sdp = registry.findOffer(callId)
                 .orElseThrow(CallException::notFound);
@@ -450,8 +476,16 @@ public class CallService {
             throw CallException.validation("mediaType is only allowed on INVITE");
         }
         if (signal.type() == CallSignal.Type.INVITE) {
-            if (signal.sdp() != null || signal.candidate() != null) {
-                throw CallException.validation("INVITE cannot include SDP or ICE data");
+            // An INVITE may carry the SDP offer for the push-wake fast path
+            // (GET /calls/{id}/offer); ICE candidates still travel as ICE frames.
+            if (signal.candidate() != null) {
+                throw CallException.validation("INVITE cannot include ICE data");
+            }
+            if (signal.sdp() != null && (signal.sdp().type() == null
+                    || !"offer".equals(signal.sdp().type())
+                    || signal.sdp().description() == null || signal.sdp().description().isBlank()
+                    || exceedsUtf8Limit(signal.sdp().description(), SDP_LIMIT))) {
+                throw CallException.validation("Invalid or oversized SDP payload");
             }
         } else if (signal.type() == CallSignal.Type.SDP && signal.candidate() != null) {
             throw CallException.validation("SDP cannot include an ICE candidate");

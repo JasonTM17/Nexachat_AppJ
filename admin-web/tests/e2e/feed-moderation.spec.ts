@@ -179,7 +179,7 @@ test.describe('feed moderation', () => {
     await expect(post.getByRole('cell', { name: 'Post', exact: true })).toBeVisible();
     await expect(post.getByRole('cell', { name: 'Mai', exact: true })).toBeVisible();
     await expect(post.getByText('SPAM', { exact: true })).toBeVisible();
-    await expect(post.getByText('Visible', { exact: true })).toBeVisible();
+    await expect(post.getByRole('cell', { name: 'Visible', exact: true })).toBeVisible();
     await expect(post.getByRole('button', { name: 'Hide', exact: true })).toBeVisible();
     await expect(post.getByRole('button', { name: 'Dismiss' })).toBeVisible();
     await expect(post.getByRole('button', { name: 'Mark reviewed' })).toBeVisible();
@@ -190,9 +190,29 @@ test.describe('feed moderation', () => {
     await expect(comment.getByText('HARASSMENT', { exact: true })).toBeVisible();
 
     const hidden = row(page, HIDDEN_TEXT);
-    await expect(hidden.getByText('Hidden', { exact: true })).toBeVisible();
+    await expect(hidden.getByRole('cell', { name: 'Hidden', exact: true })).toBeVisible();
     await expect(hidden.getByRole('button', { name: 'Unhide' })).toBeVisible();
     await expect(hidden.getByRole('button', { name: 'Hide', exact: true })).toHaveCount(0);
+  });
+
+  test('narrow queue keeps the deleted state with the report content', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 700 });
+    const deletedText = 'Deleted comment was reported';
+    await mockAdmin(page, {
+      reports: [report({
+        id: 'r-deleted',
+        targetId: 'c-deleted',
+        targetType: 'COMMENT',
+        messageSnapshot: deletedText,
+        targetDeleted: true,
+      })],
+    });
+    await page.goto('/feed');
+
+    const deleted = row(page, deletedText);
+    const content = deleted.getByRole('cell', { name: /Deleted.*Deleted comment was reported/ });
+    await expect(content).toBeVisible();
+    await expect(deleted.getByRole('button', { name: 'Mark reviewed' })).toBeVisible();
   });
 
   test('long snapshot expands to show details and collapses again', async ({ page }) => {
@@ -240,7 +260,7 @@ test.describe('feed moderation', () => {
     await dialog.getByRole('button', { name: 'Cancel' }).click();
 
     await expect(dialog).toHaveCount(0);
-    await expect(post.getByText('Visible', { exact: true })).toBeVisible();
+    await expect(post.getByRole('cell', { name: 'Visible', exact: true })).toBeVisible();
     expect(mock.calls).toEqual([]);
   });
 
@@ -260,7 +280,7 @@ test.describe('feed moderation', () => {
 
     await expect(dialog).toHaveCount(0);
     const post = row(page, SPAM_TEXT);
-    await expect(post.getByText('Hidden', { exact: true })).toBeVisible();
+    await expect(post.getByRole('cell', { name: 'Hidden', exact: true })).toBeVisible();
     await expect(post.getByRole('button', { name: 'Unhide' })).toBeVisible();
     expect(mock.calls).toEqual([
       { method: 'POST', path: '/api/v1/admin/feed/posts/p-spam/hide', body: { reason: 'Spam ad' } },
@@ -276,7 +296,9 @@ test.describe('feed moderation', () => {
     await dialog.getByLabel(/Reason/).fill('Abuse');
     await dialog.getByRole('button', { name: 'Confirm' }).click();
 
-    await expect(row(page, ABUSE_TEXT).getByText('Hidden', { exact: true })).toBeVisible();
+    await expect(
+      row(page, ABUSE_TEXT).getByRole('cell', { name: 'Hidden', exact: true }),
+    ).toBeVisible();
     expect(mock.calls).toEqual([
       {
         method: 'POST',
@@ -293,7 +315,7 @@ test.describe('feed moderation', () => {
     await row(page, HIDDEN_TEXT).getByRole('button', { name: 'Unhide' }).click();
 
     const hidden = row(page, HIDDEN_TEXT);
-    await expect(hidden.getByText('Visible', { exact: true })).toBeVisible();
+    await expect(hidden.getByRole('cell', { name: 'Visible', exact: true })).toBeVisible();
     await expect(hidden.getByRole('button', { name: 'Hide', exact: true })).toBeVisible();
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
     expect(mock.calls).toEqual([
@@ -420,10 +442,12 @@ test.describe('feed moderation', () => {
 
     const post = row(page, SPAM_TEXT);
     await expect(post.getByRole('cell', { name: 'Bài viết', exact: true })).toBeVisible();
-    await expect(post.getByText('Hiển thị', { exact: true })).toBeVisible();
+    await expect(post.getByRole('cell', { name: 'Hiển thị', exact: true })).toBeVisible();
     await expect(row(page, ABUSE_TEXT).getByRole('cell', { name: 'Bình luận', exact: true }))
       .toBeVisible();
-    await expect(row(page, HIDDEN_TEXT).getByText('Đã ẩn', { exact: true })).toBeVisible();
+    await expect(
+      row(page, HIDDEN_TEXT).getByRole('cell', { name: 'Đã ẩn', exact: true }),
+    ).toBeVisible();
 
     await post.getByRole('button', { name: 'Ẩn', exact: true }).click();
     const dialog = page.getByRole('alertdialog', { name: 'Ẩn bài viết' });

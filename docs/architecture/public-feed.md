@@ -93,7 +93,7 @@ indistinguishable from a missing one.
 flowchart TB
     U[POST /feed/images] -->|unbound image| I{bound within<br/>unbound-hours?}
     I -->|yes: imageId on POST /feed/posts| P[live post]
-    I -->|no| X[retention purge]
+    I -->|no| X[retention sweep]
     P --> C[comments / reactions]
     P -->|author DELETE| D[soft-deleted]
     P -->|staff hide| H[hidden]
@@ -102,6 +102,9 @@ flowchart TB
     C -->|staff hide| H
     D -->|after retention-days| X
     H -->|after retention-days| X
+    P -->|crash between post delete<br/>and image delete| O[bound image,<br/>no post references it]
+    O -->|after unbound-hours| X
+    X -->|stored object deleted first,<br/>row only when the object is gone| GONE[row + object gone]
     P & C -->|POST /reports| R[OPEN report → admin queue]
     R -->|resolve REVIEWED/DISMISSED| RD[closed]
 ```
@@ -110,9 +113,12 @@ flowchart TB
   stores an unbound image owned by the uploader; `imageId` on
   `POST /feed/posts` binds it (one image per post). An uploader may keep at
   most 20 unbound images; beyond that, uploads answer `RATE_LIMITED`.
-  Images never bound are purged after
-  `nexachat.retention.jobs.public-feed.unbound-hours` (default `24`) — once
-  the retention sweep is enabled.
+  Images that no post references — never bound, or left bound by a crash
+  between the post delete and the image delete — are swept after
+  `nexachat.retention.jobs.public-feed.unbound-hours` (default `24`) once
+  the retention sweep is enabled. The stored object is deleted before its
+  row, and a row whose object delete failed is kept so the next run retries;
+  an already-missing object still lets the row go.
 - **Soft delete** stamps `deleted_at`; **hide** stamps `hidden_at` (staff
   only, with a mandatory `reason` ≤500 chars, audit-logged).
 - **Hard purge** is the opt-in `nexachat.retention.jobs.public-feed` retention
@@ -120,6 +126,10 @@ flowchart TB
   longer than `retention-days` (default `30`) are removed. Enable it with
   `nexachat.retention.jobs.public-feed.enabled=true` (requires the global
   `nexachat.retention.enabled` as well); until then nothing is swept.
+- **`commentCount`** on a post counts its visible comments (not deleted, not
+  hidden): creating a comment raises it, the author's delete lowers it, and
+  staff hide/unhide moves it — a comment that is both deleted and hidden is
+  never counted twice.
 
 ## Rate limits and abuse
 

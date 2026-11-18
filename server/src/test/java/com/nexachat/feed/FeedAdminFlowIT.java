@@ -120,6 +120,69 @@ class FeedAdminFlowIT extends FeatureItSupport {
     }
 
     @Test
+    void hidingAndUnhidingACommentMovesThePostCommentCountOnlyOnChange() throws Exception {
+        Actor author = newUser("Count Host");
+        Actor moderator = withRole(newUser("Count Moderator"), "MODERATOR");
+        UUID postId = createPost(author, "count me");
+        UUID first = createComment(author, postId, "one");
+        createComment(author, postId, "two");
+
+        assertThat(commentCount(postId)).isEqualTo(2);
+
+        postAs(moderator, "/api/v1/admin/feed/comments/" + first + "/hide",
+                Map.of("reason", "spam"))
+                .andExpect(status().isNoContent());
+        assertThat(commentCount(postId)).isEqualTo(1);
+        assertThat(json(getAs(author, "/api/v1/feed/posts/" + postId).andExpect(status().isOk()))
+                .get("commentCount").asInt()).isEqualTo(1);
+
+        postAs(moderator, "/api/v1/admin/feed/comments/" + first + "/hide",
+                Map.of("reason", "spam"))
+                .andExpect(status().isNoContent());
+        assertThat(commentCount(postId)).isEqualTo(1);
+        assertThat(auditRows("FEED_COMMENT_HIDE", first)).isEqualTo(1);
+
+        postAs(moderator, "/api/v1/admin/feed/comments/" + first + "/unhide", null)
+                .andExpect(status().isNoContent());
+        assertThat(commentCount(postId)).isEqualTo(2);
+
+        postAs(moderator, "/api/v1/admin/feed/comments/" + first + "/unhide", null)
+                .andExpect(status().isNoContent());
+        assertThat(commentCount(postId)).isEqualTo(2);
+        assertThat(auditRows("FEED_COMMENT_UNHIDE", first)).isEqualTo(1);
+    }
+
+    @Test
+    void hidingACommentItsAuthorDeletedIsANoOpAndKeepsTheCount() throws Exception {
+        Actor author = newUser("Deleting Comment Author");
+        Actor moderator = withRole(newUser("Late Hide Moderator"), "MODERATOR");
+        UUID postId = createPost(author, "thread with a deleted comment");
+        UUID deleted = createComment(author, postId, "delete me first");
+        createComment(author, postId, "still visible");
+        assertThat(commentCount(postId)).isEqualTo(2);
+
+        deleteAs(author, "/api/v1/feed/comments/" + deleted).andExpect(status().isNoContent());
+        assertThat(commentCount(postId)).isEqualTo(1);
+
+        // The author's delete already moved the count, so a staff hide of the
+        // deleted comment must be a no-op and may not decrement again.
+        postAs(moderator, "/api/v1/admin/feed/comments/" + deleted + "/hide",
+                Map.of("reason", "spam"))
+                .andExpect(status().isNoContent());
+        assertThat(commentCount(postId)).isEqualTo(1);
+        assertThat(auditRows("FEED_COMMENT_HIDE", deleted)).isZero();
+
+        postAs(moderator, "/api/v1/admin/feed/comments/" + deleted + "/unhide", null)
+                .andExpect(status().isNoContent());
+        assertThat(commentCount(postId)).isEqualTo(1);
+        assertThat(auditRows("FEED_COMMENT_UNHIDE", deleted)).isZero();
+    }
+
+    private int commentCount(UUID postId) {
+        return countRows("SELECT comment_count FROM public_posts WHERE id = ?", postId);
+    }
+
+    @Test
     void hideIsIdempotentAndKeepsOneAuditRow() throws Exception {
         Actor author = newUser("Idempotent Author");
         Actor moderator = withRole(newUser("Idempotent Moderator"), "MODERATOR");

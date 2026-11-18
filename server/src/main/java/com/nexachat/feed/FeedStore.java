@@ -400,14 +400,25 @@ class FeedStore {
 
     // ------------------------------------------------------- report snapshots
 
-    /** The body of a comment the reporter can see, including its post's visibility. */
+    /**
+     * The body of a comment the reporter can see. The parent post must be
+     * visible to the reporter too — not deleted or hidden, its author alive
+     * and not blocked in either direction — matching what the comment list
+     * shows.
+     */
     Optional<String> visibleCommentBody(UUID viewerId, UUID commentId) {
         return Optional.ofNullable(named.query(COMMENT_COLUMNS + COMMENT_VISIBLE + """
                           AND c.id = :commentId
                           AND EXISTS (
                                 SELECT 1 FROM public_posts p
+                                JOIN users pu ON pu.id = p.author_id
                                 WHERE p.id = c.post_id
-                                  AND p.deleted_at IS NULL AND p.hidden_at IS NULL)
+                                  AND p.deleted_at IS NULL AND p.hidden_at IS NULL
+                                  AND pu.deleted_at IS NULL
+                                  AND NOT EXISTS (
+                                        SELECT 1 FROM user_blocks b
+                                        WHERE (b.blocker_id = :viewer AND b.blocked_id = p.author_id)
+                                           OR (b.blocker_id = p.author_id AND b.blocked_id = :viewer)))
                         """,
                 new MapSqlParameterSource("viewer", viewerId).addValue("commentId", commentId),
                 single(commentMapper()))).map(CommentRow::body);

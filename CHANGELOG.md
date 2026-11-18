@@ -7,6 +7,8 @@ All notable changes to NexaChat are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Website: a new bilingual landing page for nexachat.io.vn with the main
+  features, app screenshots and a download button.
 - Choose what a conversation summary covers: unread messages, the last 20, 50 or
   100 messages, or today. Today follows the device time zone and covers exactly
   the local calendar day.
@@ -25,12 +27,25 @@ All notable changes to NexaChat are documented here. The format follows
   reviewed or dismissed.
 
 ### Changed
+- Admin console: light and dark themes apply on every page including sign-in,
+  tables stay usable on a phone (low-priority columns hide, actions stay
+  reachable), controls are at least 44 px tall, filters have visible labels,
+  empty and error states offer a next step, and a degraded service shows as
+  degraded instead of down.
 - A scope with fewer than five messages reports how many it found and offers
   another scope instead of quietly widening the range.
 - Cached summaries are keyed by scope, count, day, zone and AI consent, and a
   cached result is replayed only while its citations still resolve.
 
 ### Fixed
+- Calling someone again after an earlier call whose media setup failed no longer
+  answers busy: the server ends that stale call and starts the new one.
+- Android: when a call fails or times out on your phone (media setup failure,
+  ring timeout, lost connection), the server is now told, so the other side
+  stops ringing or is hung up instead of waiting for the server timeout.
+- Android: if the incoming-call screen has to close early while the call is
+  still ringing, the incoming-call notification stays visible instead of the
+  phone ringing with nothing on screen.
 - Android: asking for a summary in an end-to-end encrypted chat now says that
   summaries are not available there instead of showing a generic error, and the
   unread-messages banner no longer offers a summary in those chats.
@@ -38,6 +53,9 @@ All notable changes to NexaChat are documented here. The format follows
   requested once more with the server's default zone instead of failing, and a
   summary the server resolved in its own zone is kept when the sheet is reopened
   instead of being requested again every time.
+- Summary requests made at the same time for the same window no longer each
+  call the external AI; a summary that fell back to the built-in engine is
+  reused briefly instead of retrying the external AI on every tap.
 - Android: the caller's call screen no longer closes a second or two after
   opening when you call again after an earlier call ended; the previous
   call's finished state is ignored instead of closing the new call's screen.
@@ -59,10 +77,30 @@ All notable changes to NexaChat are documented here. The format follows
 - The streak card now correctly shows when a grace day would still save a
   missed day, and the check-in streak read keeps working if its bookkeeping
   write fails.
+- A streak no longer loses a day when one member's send crosses local
+  midnight and is stored ahead of the other member's message from the day
+  before — days now complete from both members' recorded runs even when the
+  records arrive out of order, while days only one member skipped still
+  never count.
 - Deleting someone else's feed post or comment after they blocked you answers
   not-found instead of revealing the post exists.
 - Feed image uploads with negative or implausibly large dimensions are
   rejected.
+- Streak reminders are skipped, not lost, when every device token on the
+  account now belongs to a newer sign-in; the reminder still goes out on a
+  later day once the user has a token of their own.
+- Rejected feed requests no longer use up the posting, commenting or
+  reaction allowance: an invalid post, comment or reaction does not count
+  against the per-minute limit.
+- Hiding or showing a comment from the admin console now moves the post's
+  comment count, and hiding a comment its author already deleted no longer
+  counts it twice.
+- Reporting a comment on a post you cannot see — deleted, hidden, or whose
+  author deleted their account or blocked you — is refused with not-found
+  instead of being accepted.
+- Retention removes feed images that no post references anymore, deleting
+  the stored file before its database row and keeping the row until the
+  file is actually gone.
 
 ## [1.2.15] - 2026-11-17
 

@@ -109,20 +109,23 @@ export default function FeedPage() {
   return (
     <>
       <div className="filters">
-        <select
-          className="select"
-          aria-label={t('feed.status')}
-          value={status}
-          onChange={(e) => {
-            setStatus(e.target.value as FeedReportStatus);
-            setPage(0);
-            setData(null);
-          }}
-        >
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>{t(STATUS_KEY[s])}</option>
-          ))}
-        </select>
+        <label className="filter-field">
+          <span>{t('feed.status')}</span>
+          <select
+            className="select"
+            aria-label={t('feed.status')}
+            value={status}
+            onChange={(e) => {
+              setStatus(e.target.value as FeedReportStatus);
+              setPage(0);
+              setData(null);
+            }}
+          >
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>{t(STATUS_KEY[s])}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {actionFailed && <ErrorBlock />}
@@ -132,26 +135,36 @@ export default function FeedPage() {
       ) : !data ? (
         <Loading />
       ) : data.items.length === 0 ? (
-        <Empty />
+        <Empty
+          onClearFilters={
+            status !== 'OPEN'
+              ? () => {
+                  setStatus('OPEN');
+                  setPage(0);
+                }
+              : undefined
+          }
+        />
       ) : (
         <>
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>{t('feed.col.type')}</th>
+                  <th className="col-lo">{t('feed.col.type')}</th>
                   <th>{t('feed.col.content')}</th>
-                  <th>{t('feed.col.reason')}</th>
-                  <th>{t('feed.col.author')}</th>
-                  <th>{t('feed.col.state')}</th>
-                  <th>{t('feed.col.reported')}</th>
-                  <th>{t('feed.col.actions')}</th>
+                  <th className="col-lo">{t('feed.col.reason')}</th>
+                  <th className="col-lo">{t('feed.col.author')}</th>
+                  <th className="col-lo">{t('feed.col.state')}</th>
+                  <th className="col-lo">{t('feed.col.reported')}</th>
+                  <th className="col-actions">{t('feed.col.actions')}</th>
                 </tr>
               </thead>
               <tbody>
                 {data.items.map((r) => {
                   const open = expanded.has(r.id);
-                  const text = r.messageSnapshot ?? r.targetBody ?? '—';
+                  const body = r.messageSnapshot ?? r.targetBody;
+                  const text = body ?? '—';
                   const targetState: FeedTargetState = r.targetDeleted
                     ? 'DELETED'
                     : r.targetHidden
@@ -159,17 +172,20 @@ export default function FeedPage() {
                       : 'VISIBLE';
                   return (
                     <tr key={r.id}>
-                      <td>
+                      <td className="col-lo">
                         {t(r.targetType === 'POST' ? 'feed.type.post' : 'feed.type.comment')}
                       </td>
                       <td>
+                        <div className="feed-mobile-state">
+                          <Chip tone={STATE_TONE[targetState]}>{t(STATE_KEY[targetState])}</Chip>
+                        </div>
                         <div className={open ? 'snippet' : 'truncate'}>{text}</div>
-                        {open && r.details && (
+                        {((open && r.details) || (!body && r.details)) && (
                           <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
                             {r.details}
                           </div>
                         )}
-                        {(text.length > 60 || r.details) && (
+                        {body && (text.length > 60 || r.details) && (
                           <button
                             className="btn ghost sm"
                             aria-expanded={open}
@@ -179,17 +195,17 @@ export default function FeedPage() {
                           </button>
                         )}
                       </td>
-                      <td>
+                      <td className="col-lo">
                         <Chip>{r.reason}</Chip>
                       </td>
-                      <td>{r.authorName ?? r.authorId ?? '—'}</td>
-                      <td>
+                      <td className="col-lo">{r.authorName ?? r.authorId ?? '—'}</td>
+                      <td className="col-lo">
                         <Chip tone={STATE_TONE[targetState]}>
                           {t(STATE_KEY[targetState])}
                         </Chip>
                       </td>
-                      <td>{fmtTime(r.createdAt)}</td>
-                      <td>
+                      <td className="col-lo">{fmtTime(r.createdAt)}</td>
+                      <td className="col-actions">
                         <div className="action-row">
                           {targetState === 'VISIBLE' && (
                             <button
