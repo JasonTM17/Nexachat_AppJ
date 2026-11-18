@@ -53,6 +53,7 @@
                     app:tint="?attr/colorOnSurfaceVariant" />
 
                 <TextView
+                    android:importantForAccessibility="no"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="@dimen/space_inset"
