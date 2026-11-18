@@ -66,6 +66,32 @@ export function Chip({
   );
 }
 
+// Layers register here on mount so the document-level Escape handler can close
+// only the topmost one (e.g. a ConfirmDialog over a Drawer must not dismiss both).
+const modalStack: { close: () => void }[] = [];
+
+function useEscapeToClose(open: boolean, close: () => void) {
+  useEffect(() => {
+    if (!open) return;
+    const layer = { close };
+    modalStack.push(layer);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const top = modalStack[modalStack.length - 1];
+      if (top !== layer) return;
+      e.stopPropagation();
+      modalStack.pop();
+      close();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      const i = modalStack.indexOf(layer);
+      if (i !== -1) modalStack.splice(i, 1);
+    };
+  }, [open, close]);
+}
+
 export function Drawer({
   title,
   sub,
@@ -79,14 +105,10 @@ export function Drawer({
 }) {
   const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
+  useEscapeToClose(true, onClose);
   useEffect(() => {
     ref.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []);
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
@@ -145,12 +167,9 @@ export function ConfirmDialog({
     onConfirm(reason);
   };
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onCancel]);
+    reasonRef.current?.focus();
+  }, []);
+  useEscapeToClose(true, onCancel);
   return (
     <div className="dialog-backdrop">
       <div className="dialog" role="alertdialog" aria-modal="true" aria-label={title}>
