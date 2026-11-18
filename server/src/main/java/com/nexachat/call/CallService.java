@@ -262,6 +262,11 @@ public class CallService {
         if (session.peerOf(userId) == null) {
             throw CallException.notMember();
         }
+        // The offer exists for the push-wake fast path while the call rings;
+        // fetching it for an answered or ended call is meaningless.
+        if (session.state() != CallState.RINGING) {
+            throw CallException.notFound();
+        }
         CallSignal.Sdp sdp = registry.findOffer(callId)
                 .orElseThrow(CallException::notFound);
         return new CallOfferResponse(callId, sdp, iceConfig);
