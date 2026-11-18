@@ -1,5 +1,12 @@
 {
   "name": "nexachat-site",
+  "git": {
+    "deploymentEnabled": {
+      "main": true,
+      "*": false,
+      "**": false
+    }
+  },
   "ignoreCommand": "bash -c 'p=$VERCEL_GIT_PREVIOUS_SHA; [ -n \"$p\" ] && git cat-file -e \"$p^{commit}\" 2>/dev/null || exit 1; git diff --quiet \"$p\" \"${VERCEL_GIT_COMMIT_SHA:-HEAD}\" -- . 2>/dev/null && exit 0; exit 1'",
   "rewrites": [
     {
