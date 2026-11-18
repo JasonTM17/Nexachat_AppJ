@@ -75,6 +75,29 @@ class AdminRouteAuthorizationIT extends SecurityITBase {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("NOT_ADMIN"));
 
+        // A plain user never reaches the service-level role split: the staff
+        // filter rejects every admin mutation with the same FORBIDDEN the
+        // reads return.
+        Registered outsider = register(ItPhoneRanges.phoneFor(AdminRouteAuthorizationIT.class, "+84907000111"));
+        patchWithAuth("/api/v1/admin/users/" + target.userId() + "/role",
+                Map.of("role", "MODERATOR", "reason", "outsider probe"), outsider.accessToken())
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+        postJson("/api/v1/admin/users/" + target.userId() + "/suspend",
+                Map.of("reason", "outsider probe"), outsider.accessToken())
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+        postJson("/api/v1/admin/users/" + target.userId() + "/actions",
+                Map.of("reason", "outsider probe"), outsider.accessToken())
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+        postJson("/api/v1/admin/rules",
+                Map.of("name", "outsider rule", "category", "CUSTOM", "severity", "LOW",
+                        "patternType", "KEYWORD", "pattern", "probe"),
+                outsider.accessToken())
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+
         // The configured admin performs both.
         patchWithAuth("/api/v1/admin/users/" + target.userId() + "/role",
                 Map.of("role", "MODERATOR", "reason", "promote probe"), admin.accessToken())
@@ -93,6 +116,27 @@ class AdminRouteAuthorizationIT extends SecurityITBase {
                     .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
         }
+        // Mutations are bearer-gated at the same filter.
+        String userId = UUID.randomUUID().toString();
+        mockMvc.perform(MockMvcRequestBuilders
+                        .patch("/api/v1/admin/users/" + userId + "/role")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"MODERATOR\",\"reason\":\"anon probe\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
+        mockMvc.perform(MockMvcRequestBuilders
+                        .post("/api/v1/admin/users/" + userId + "/suspend")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"anon probe\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
+        mockMvc.perform(MockMvcRequestBuilders
+                        .post("/api/v1/admin/rules")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"anon\",\"category\":\"CUSTOM\",\"severity\":\"LOW\","
+                                + "\"patternType\":\"KEYWORD\",\"pattern\":\"probe\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("UNAUTHORIZED"));
     }
 
     @Test
