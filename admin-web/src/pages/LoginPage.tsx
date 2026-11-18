@@ -9,7 +9,7 @@ export default function LoginPage() {
   const { t, lang, setLang } = useI18n();
   const { signIn } = useSession();
   const navigate = useNavigate();
-  const [phone, setPhone] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -19,7 +19,7 @@ export default function LoginPage() {
     setError('');
     setBusy(true);
     try {
-      await signIn(phone.trim(), password);
+      await signIn(identifier.trim(), password);
       navigate('/overview', { replace: true });
     } catch (err) {
       let key: StringKey = 'login.error.invalid';
@@ -56,14 +56,14 @@ export default function LoginPage() {
             </div>
           )}
           <div className="field">
-            <label htmlFor="phone">{t('login.phone')}</label>
+            <label htmlFor="identifier">{t('login.phone')}</label>
             <input
-              id="phone"
+              id="identifier"
               className="input"
-              type="tel"
+              type="text"
               autoComplete="username"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
               required
               autoFocus
             />
