@@ -27,14 +27,22 @@ public final class AuthenticatedOkHttpModelLoader implements ModelLoader<String,
 
     private final OkHttpClient client;
     private final HttpUrl apiBaseUrl;
+    private final long maxFetchBytes;
 
     public AuthenticatedOkHttpModelLoader(@NonNull OkHttpClient client) {
         this(client, HttpUrl.get(AppConfig.API_BASE_URL));
     }
 
     AuthenticatedOkHttpModelLoader(@NonNull OkHttpClient client, @NonNull HttpUrl apiBaseUrl) {
+        this(client, apiBaseUrl, MediaCacheConfig.MAX_MEDIA_FETCH_BYTES);
+    }
+
+    /** Test hook: same loader with a smaller fetch ceiling. */
+    AuthenticatedOkHttpModelLoader(
+            @NonNull OkHttpClient client, @NonNull HttpUrl apiBaseUrl, long maxFetchBytes) {
         this.client = Objects.requireNonNull(client, "client");
         this.apiBaseUrl = Objects.requireNonNull(apiBaseUrl, "apiBaseUrl");
+        this.maxFetchBytes = maxFetchBytes;
     }
 
     @Override
@@ -56,7 +64,7 @@ public final class AuthenticatedOkHttpModelLoader implements ModelLoader<String,
         if (!handles(model)) {
             return null;
         }
-        return new LoadData<>(new ObjectKey(model), new Fetcher(client, model));
+        return new LoadData<>(new ObjectKey(model), new Fetcher(client, model, maxFetchBytes));
     }
 
     public static final class Factory implements ModelLoaderFactory<String, InputStream> {
@@ -79,13 +87,15 @@ public final class AuthenticatedOkHttpModelLoader implements ModelLoader<String,
     private static final class Fetcher implements DataFetcher<InputStream> {
         private final OkHttpClient client;
         private final String model;
+        private final long maxFetchBytes;
         private volatile Call call;
         private volatile Response response;
         private volatile boolean cancelled;
 
-        private Fetcher(OkHttpClient client, String model) {
+        private Fetcher(OkHttpClient client, String model, long maxFetchBytes) {
             this.client = client;
             this.model = model;
+            this.maxFetchBytes = maxFetchBytes;
         }
 
         @Override
@@ -122,8 +132,18 @@ public final class AuthenticatedOkHttpModelLoader implements ModelLoader<String,
                         callback.onLoadFailed(new IOException("media response has no body"));
                         return;
                     }
+                    long declared = body.contentLength();
+                    if (declared > maxFetchBytes) {
+                        // Reject before streaming: a declared oversize body is hostile.
+                        result.close();
+                        callback.onLoadFailed(new IOException(
+                                "media response too large: " + declared + " > " + maxFetchBytes));
+                        return;
+                    }
                     response = result;
-                    callback.onDataReady(body.byteStream());
+                    // Content-Length may be absent (-1) or lie low; the counted
+                    // stream aborts past the ceiling, surfacing as a load failure.
+                    callback.onDataReady(new BoundedInputStream(body.byteStream(), maxFetchBytes));
                 }
             });
         }
