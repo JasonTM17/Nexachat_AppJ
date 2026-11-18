@@ -777,21 +777,19 @@ def _assert_device_account_an(ui: Any, patch: Any, evidence_dir: Path, fresh_log
     if patch.login_form_visible(nodes):
         patch.sign_in_as_device_account(ui, evidence_dir)
         nodes = patch.ui_nodes(ui, timeout=15)
-    profile = next((node for node in nodes if patch.text_matches(node, ("Profile", "Hồ sơ"))), None)
-    if profile is not None:
-        ui.tap_node(profile)
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            nodes = patch.ui_nodes(ui, timeout=8)
-            if any(node.text.strip() == "An" for node in nodes):
-                break
-            time.sleep(0.4)
-    if not any(node.text.strip() == "An" for node in nodes):
-        raise EnvironmentFailure("the device session could not be verified as seeded account An")
-    chats = next((node for node in nodes if patch.text_matches(node, ("Chats", "Tin nhắn"))), None)
-    if chats is not None:
-        ui.tap_node(chats)
-        time.sleep(0.5)
+    profile = patch.node_by_id(nodes, "inboxUserAvatar")
+    if profile is None:
+        raise EnvironmentFailure("the inbox profile entry point was not visible")
+    ui.tap_node(profile)
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        nodes = patch.ui_nodes(ui, timeout=8)
+        name = patch.node_by_id(nodes, "profileName")
+        if name is not None and name.text.strip() == "An":
+            ui.key("KEYCODE_BACK")
+            return
+        time.sleep(0.4)
+    raise EnvironmentFailure("the device session could not be verified as seeded account An")
 
 
 def run_auth_login(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
@@ -844,7 +842,18 @@ def run_chat_send_receive(row: JourneyRow, context: dict[str, Any]) -> dict[str,
     result: dict[str, Any] = {}
     primary_error: Exception | None = None
     try:
-        composer = patch.find_chat_composer(patch.ui_nodes(ui, timeout=15))
+        composer: Any = None
+        composer_error: Exception | None = None
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            try:
+                composer = patch.find_chat_composer(patch.ui_nodes(ui, timeout=10))
+                break
+            except Exception as error:
+                composer_error = error
+                time.sleep(0.8)
+        if composer is None:
+            raise composer_error or EnvironmentFailure("chat composer was not visible")
         ui.tap_node(composer)
         ui.type_text(outbound)
         nodes = patch.ui_nodes(ui, timeout=10)
@@ -875,11 +884,19 @@ def run_chat_send_receive(row: JourneyRow, context: dict[str, Any]) -> dict[str,
             created.append((an, outbound_id))
         events = list(reader.events(2.0))
         context["stomp_events"].extend(events)
+        # A member receives MESSAGE_CREATED on both the conversation topic and
+        # their /user/queue/inbox push by design: assert the single message id
+        # arrived on the topic itself rather than counting raw frames.
         observed = [event for event in events
                     if event.get("eventType") == "MESSAGE_CREATED"
                     and (event.get("payload") or {}).get("content") == outbound]
-        if len(observed) != 1:
-            raise ProductFailure("Binh STOMP did not observe exactly one MESSAGE_CREATED for the device message")
+        on_topic = [event for event in observed
+                    if str(event.get("_destination", "")).endswith(
+                        "/topic/conversations." + conversation_id)]
+        if not on_topic:
+            raise ProductFailure("Binh STOMP did not observe the device message on the conversation topic")
+        if len({(event.get("payload") or {}).get("id") for event in observed}) != 1:
+            raise ProductFailure("Binh STOMP observed more than one message id for the device message")
 
         try:
             inbound_message = api.send_text(recorder, binh["accessToken"], conversation_id, inbound)
