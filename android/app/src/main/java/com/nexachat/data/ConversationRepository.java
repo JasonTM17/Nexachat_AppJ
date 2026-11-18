@@ -236,6 +236,8 @@ public final class ConversationRepository implements AutoCloseable {
         this.preferenceNetwork = new ConversationPreferenceNetworkQueue(
                 this::callVoid,
                 new ConversationPreferenceNetworkQueue.OutcomeHandler() {
+                    // The queue drains caller intents; this handler resolves
+                    // each completed flight against lane ordering and Room.
                     @Override
                     @NonNull
                     public Single<Result<Void>> onArchiveNetworkComplete(
@@ -265,7 +267,8 @@ public final class ConversationRepository implements AutoCloseable {
                             @NonNull Result<Void> result) {
                         return resolvePinNetwork(conversationId, version, result);
                     }
-                });
+                },
+                preferenceLanes);
         watchPushTriggers();
     }
 
@@ -1443,8 +1446,16 @@ public final class ConversationRepository implements AutoCloseable {
                             .andThen(preferenceNetwork.submitArchive(
                                     conversationId, ticket, archived, callForArchived));
                 })
-                .switchIfEmpty(Single.just(Result.failure(
-                        new ApiError.Unknown("CONVERSATION_NOT_FOUND"))));
+                .switchIfEmpty(Single.defer(() -> {
+                    // The begun ticket never reached the queue; settle it so
+                    // the lane's inFlight count cannot latch.
+                    preferenceLanes.finish(
+                            conversationId,
+                            ConversationPreferenceLanes.Kind.ARCHIVE,
+                            ticket.version);
+                    return Single.just(Result.failure(
+                            new ApiError.Unknown("CONVERSATION_NOT_FOUND")));
+                }));
     }
 
     @NonNull
@@ -1465,8 +1476,16 @@ public final class ConversationRepository implements AutoCloseable {
                             .andThen(preferenceNetwork.submitMute(
                                     conversationId, ticket, desired, callForState));
                 })
-                .switchIfEmpty(Single.just(Result.failure(
-                        new ApiError.Unknown("CONVERSATION_NOT_FOUND"))));
+                .switchIfEmpty(Single.defer(() -> {
+                    // The begun ticket never reached the queue; settle it so
+                    // the lane's inFlight count cannot latch.
+                    preferenceLanes.finish(
+                            conversationId,
+                            ConversationPreferenceLanes.Kind.MUTE,
+                            ticket.version);
+                    return Single.just(Result.failure(
+                            new ApiError.Unknown("CONVERSATION_NOT_FOUND")));
+                }));
     }
 
     @NonNull
@@ -1488,8 +1507,16 @@ public final class ConversationRepository implements AutoCloseable {
                             .andThen(preferenceNetwork.submitPin(
                                     conversationId, ticket, desired, callForState));
                 })
-                .switchIfEmpty(Single.just(Result.failure(
-                        new ApiError.Unknown("CONVERSATION_NOT_FOUND"))));
+                .switchIfEmpty(Single.defer(() -> {
+                    // The begun ticket never reached the queue; settle it so
+                    // the lane's inFlight count cannot latch.
+                    preferenceLanes.finish(
+                            conversationId,
+                            ConversationPreferenceLanes.Kind.PIN,
+                            ticket.version);
+                    return Single.just(Result.failure(
+                            new ApiError.Unknown("CONVERSATION_NOT_FOUND")));
+                }));
     }
 
     @NonNull
