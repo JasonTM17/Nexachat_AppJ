@@ -240,6 +240,30 @@ class UserServiceTest {
     }
 
     @Test
+    void search_email_disclosesPhoneOnlyForContacts() {
+        UUID callerId = UUID.randomUUID();
+        User contact = userWithId("Lan Contact");
+        contact.changeEmail("contact@example.com");
+        User stranger = userWithId("Lan Stranger");
+        stranger.changeEmail("stranger@example.com");
+        when(userRepository.findActiveByVerifiedEmail("contact@example.com"))
+                .thenReturn(Optional.of(contact));
+        when(userRepository.findActiveByVerifiedEmail("stranger@example.com"))
+                .thenReturn(Optional.of(stranger));
+        when(contactRepository.findContactUserIdsAmong(eq(callerId), any()))
+                .thenReturn(List.of(contact.getId()));
+
+        List<UserResponse> contactHit = userService.search(callerId, null, "contact@example.com", null);
+        List<UserResponse> strangerHit = userService.search(callerId, null, "stranger@example.com", null);
+
+        assertThat(contactHit).hasSize(1);
+        assertThat(contactHit.get(0).phone()).isEqualTo(contact.getPhone());
+        assertThat(strangerHit).hasSize(1);
+        assertThat(strangerHit.get(0).id()).isEqualTo(stranger.getId());
+        assertThat(strangerHit.get(0).phone()).isNull();
+    }
+
+    @Test
     void search_threeParams_throwsValidationFailed() {
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> userService.search(UUID.randomUUID(), "+84912345678", "x@example.com", "Lan"));

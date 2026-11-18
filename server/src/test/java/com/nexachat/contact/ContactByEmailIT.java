@@ -110,7 +110,10 @@ class ContactByEmailIT {
                         .header("Authorization", "Bearer " + alice.accessToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].id").value(bob.id().toString()));
+                .andExpect(jsonPath("$[0].id").value(bob.id().toString()))
+                // Bob is not in Alice's contacts yet: the email lookup must not
+                // disclose his phone number.
+                .andExpect(jsonPath("$[0].phone").doesNotExist());
 
         mockMvc.perform(get("/api/v1/users/search")
                         .param("email", bobVerifiedEmail)
@@ -167,6 +170,14 @@ class ContactByEmailIT {
                                 "email", "  " + bobVerifiedEmail.toUpperCase() + "  "))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.contactUserId").value(bob.id().toString()));
+
+        // Once Bob is a contact, the same email lookup may disclose his phone.
+        mockMvc.perform(get("/api/v1/users/search")
+                        .param("email", bobVerifiedEmail)
+                        .header("Authorization", "Bearer " + alice.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].phone").value(bob.phone()));
 
         mockMvc.perform(post("/api/v1/contacts")
                         .header("Authorization", "Bearer " + alice.accessToken())
