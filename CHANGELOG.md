@@ -33,6 +33,8 @@ All notable changes to NexaChat are documented here. The format follows
   cached result is replayed only while its citations still resolve.
 
 ### Fixed
+- Calling someone again after an earlier call whose media setup failed no longer
+  answers busy: the server ends that stale call and starts the new one.
 - Android: asking for a summary in an end-to-end encrypted chat now says that
   summaries are not available there instead of showing a generic error, and the
   unread-messages banner no longer offers a summary in those chats.
