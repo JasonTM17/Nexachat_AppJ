@@ -337,6 +337,23 @@ class SummaryApiIT {
     }
 
     @Test
+    void unreadWatermarkBeyondTheNewestMessageReportsAnEmptyScope() throws Exception {
+        addUsableMessages(5);
+        Long newestSeq = jdbcTemplate.queryForObject(
+                "SELECT MAX(seq) FROM messages WHERE conversation_id = ?", Long.class, conversationId);
+        jdbcTemplate.update("UPDATE conversation_members SET last_read_seq = ? "
+                        + "WHERE conversation_id = ? AND user_id = ?",
+                newestSeq + 100, conversationId, caller.getId());
+
+        postSummary(caller, requestBody("UNREAD", null, false))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("TOO_FEW_MESSAGES"))
+                .andExpect(jsonPath("$.error.details.scope").value("UNREAD"))
+                .andExpect(jsonPath("$.error.details.available").value(0))
+                .andExpect(jsonPath("$.error.details.required").value(5));
+    }
+
+    @Test
     void consentDefaultsToFalseAndCanBeReadFromItsPersistedColumn() {
         assertThat(consentRepository.isConsented(caller.getId())).isFalse();
         jdbcTemplate.update("UPDATE users SET ai_summary_consent = TRUE WHERE id = ?", caller.getId());
