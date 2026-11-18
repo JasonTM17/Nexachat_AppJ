@@ -113,6 +113,13 @@ All notable changes to NexaChat are documented here. The format follows
 - Retention removes feed images that no post references anymore, deleting
   the stored file before its database row and keeping the row until the
   file is actually gone.
+- Android: upgrading an existing install to the at-rest-encrypted database
+  no longer leaves the app unable to open its history. The plaintext file is
+  now converted through a staging file created up front (the library cannot
+  attach a database file that does not exist yet), the export and schema
+  pragmas run through the query path the library accepts, and the Room open
+  uses the same raw-key form the migration attaches with — verified on a
+  real device, including a plaintext database carrying rows.
 
 ## [1.2.15] - 2026-11-17
 
