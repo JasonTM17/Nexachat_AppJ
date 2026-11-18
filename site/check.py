@@ -1602,7 +1602,7 @@ def test_vercel_ignore_command(vercel_data):
     else:
         log_pass("vercel.json defines repo-owned ignoreCommand using VERCEL_GIT_PREVIOUS_SHA and cat-file")
 
-    sh_script = os.path.join(REPO_DIR, "tools", "test-vercel-ignore-command.sh")
+    sh_script = os.path.join(REPO_DIR, "tools", "release", "test-vercel-ignore-command.sh")
     if os.path.isfile(sh_script):
         bash_path = shutil.which("bash")
         if bash_path:
