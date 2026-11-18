@@ -1,6 +1,7 @@
 package com.nexachat.core.database;
 
 import android.content.Context;
+import android.database.Cursor;
 import androidx.annotation.NonNull;
 import androidx.sqlite.db.SupportSQLiteOpenHelper;
 import java.io.File;
@@ -10,16 +11,15 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import net.sqlcipher.Cursor;
-import net.sqlcipher.database.SQLiteDatabase;
-import net.sqlcipher.database.SupportFactory;
+import net.zetetic.database.sqlcipher.SQLiteDatabase;
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory;
 
 /**
  * SQLCipher at-rest encryption for the Room database (security audit F-01: decrypted
  * message text previously sat in a plaintext SQLite file).
  *
  * <p><b>Fresh installs</b> need no special handling: Room opens through
- * {@link SupportFactory} with the sealed passphrase, so SQLCipher creates
+ * {@link SupportOpenHelperFactory} with the sealed passphrase, so SQLCipher creates
  * {@link #DB_NAME} encrypted from the first write.
  *
  * <p><b>Upgrades</b>: an existing plaintext database is detected by its 16-byte
@@ -50,7 +50,9 @@ public final class DatabaseEncryption {
 
     /** Loads the SQLCipher native library. Idempotent; must precede any SQLCipher call. */
     public static void loadNativeLibs(@NonNull Context context) {
-        SQLiteDatabase.loadLibs(context);
+        // sqlcipher-android bundles libsqlcipher.so in the AAR and no longer provides
+        // SQLiteDatabase.loadLibs(); the app loads it explicitly.
+        System.loadLibrary("sqlcipher");
     }
 
     /**
@@ -61,7 +63,7 @@ public final class DatabaseEncryption {
      */
     public static SupportSQLiteOpenHelper.Factory encryptedFactory(
             @NonNull Context context, @NonNull byte[] passphrase) {
-        SupportFactory delegate = new SupportFactory(passphrase);
+        SupportOpenHelperFactory delegate = new SupportOpenHelperFactory(passphrase);
         return configuration -> {
             if (DB_NAME.equals(configuration.name)) {
                 loadNativeLibs(context);
@@ -89,8 +91,11 @@ public final class DatabaseEncryption {
         SQLiteDatabase plain = null;
         try {
             // No key: SQLCipher reads a plaintext file as-is when no PRAGMA key is set.
+            // (The 4-arg openDatabase overload is gone in sqlcipher-android; the 6-arg
+            // form treats a null password as an empty key, i.e. still no PRAGMA key.)
             plain = SQLiteDatabase.openDatabase(
-                    dbFile.getAbsolutePath(), (String) null, null, SQLiteDatabase.OPEN_READWRITE);
+                    dbFile.getAbsolutePath(), (String) null, null, SQLiteDatabase.OPEN_READWRITE,
+                    null, null);
             checkpointWal(plain);
             // Raw key form: x'<64 hex chars>' — the 32-byte passphrase used directly.
             plain.execSQL("ATTACH DATABASE '" + tmp.getAbsolutePath() + "' AS " + ATTACHED_NAME
