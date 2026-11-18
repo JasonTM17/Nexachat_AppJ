@@ -6,7 +6,7 @@ import { ApiException } from '../api';
 import type { StringKey } from '../i18n';
 
 export default function LoginPage() {
-  const { t } = useI18n();
+  const { t, lang, setLang } = useI18n();
   const { signIn } = useSession();
   const navigate = useNavigate();
   const [phone, setPhone] = useState('');
@@ -36,7 +36,18 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <div className="card login-card">
-        <h1>{t('app.name')}</h1>
+        <div className="login-head">
+          <h1>{t('app.name')}</h1>
+          <select
+            className="select"
+            aria-label={t('lang.label')}
+            value={lang}
+            onChange={(e) => setLang(e.target.value as 'en' | 'vi')}
+          >
+            <option value="en">EN</option>
+            <option value="vi">VI</option>
+          </select>
+        </div>
         <div className="sub">{t('login.title')}</div>
         <form onSubmit={submit}>
           {error && (
