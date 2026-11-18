@@ -153,7 +153,8 @@ public final class GroupDetailFragment extends Fragment {
             binding.groupAvatar.setOnClickListener(v -> avatarPicker.launch("image/*"));
             binding.groupTitle.setOnClickListener(v -> viewModel.openRename());
             binding.groupAvatar.setContentDescription(getString(R.string.group_change_avatar));
-            binding.groupTitle.setContentDescription(getString(R.string.action_rename_group));
+            binding.groupTitle.setContentDescription(
+                    title + ", " + getString(R.string.action_rename_group));
         } else {
             binding.groupAvatar.setOnClickListener(null);
             binding.groupTitle.setOnClickListener(null);

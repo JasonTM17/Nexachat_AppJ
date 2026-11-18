@@ -84,7 +84,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
             android:layout_marginTop="@dimen/space_md"
-            android:contentDescription="@string/voice_status_loading"
+            android:contentDescription="@string/loading_status"
             android:indeterminate="true"
             android:visibility="gone"
             app:indicatorColor="?attr/colorPrimary" />
