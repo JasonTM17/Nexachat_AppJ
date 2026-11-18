@@ -288,7 +288,10 @@ export default function AlertsPage() {
                       <Chip tone={a.severity.toLowerCase()}>{a.severity}</Chip>
                     </td>
                     <td className="col-lo">{a.category}</td>
-                    <td className="truncate">
+                    <td
+                      className="truncate"
+                      title={a.snippetTombstoned ? undefined : (a.snippet ?? undefined)}
+                    >
                       {a.snippetTombstoned ? (
                         <span className="muted">{t('alerts.tombstoned')}</span>
                       ) : (

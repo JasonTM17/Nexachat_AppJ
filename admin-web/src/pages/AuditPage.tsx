@@ -131,7 +131,9 @@ export default function AuditPage() {
                         <div className="muted mono" style={{ fontSize: 11 }}>{e.targetId}</div>
                       )}
                     </td>
-                    <td className="truncate col-lo">{e.reason ?? '—'}</td>
+                    <td className="truncate col-lo" title={e.reason ?? undefined}>
+                      {e.reason ?? '—'}
+                    </td>
                     <td
                       className="muted mono col-lo"
                       style={{ fontSize: 11, maxWidth: 240 }}
