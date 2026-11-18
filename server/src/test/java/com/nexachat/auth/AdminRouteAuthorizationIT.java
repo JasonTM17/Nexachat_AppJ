@@ -132,6 +132,43 @@ class AdminRouteAuthorizationIT extends SecurityITBase {
     }
 
     @Test
+    void unsuspendedAccountSignsInImmediately() throws Exception {
+        Registered admin = register(ADMIN_PHONE);
+        Registered target = register(ItPhoneRanges.phoneFor(AdminRouteAuthorizationIT.class, "+84907000110"));
+
+        postJson("/api/v1/admin/users/" + target.userId() + "/suspend",
+                Map.of("reason", "validity cache probe"), admin.accessToken())
+                .andExpect(status().isNoContent());
+
+        // A request while suspended fills the validity cache with the
+        // suspended answer; unsuspend must not let it linger for the TTL.
+        getWithAuth("/api/v1/users/me", target.accessToken())
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("ACCOUNT_SUSPENDED"));
+
+        postJson("/api/v1/admin/users/" + target.userId() + "/unsuspend",
+                Map.of("reason", "validity cache probe"), admin.accessToken())
+                .andExpect(status().isNoContent());
+
+        // Suspend stamps the access-token cutoff at second resolution and a
+        // token whose iat is not after it fails closed, so a login inside the
+        // same wall-clock second mints an instantly-revoked token. Wait past
+        // the second boundary before signing in.
+        Thread.sleep(1100);
+
+        var login = postJson("/api/v1/auth/login",
+                Map.of("phone", phoneOf(target.userId()), "password", "secret123"))
+                .andExpect(status().isOk())
+                .andReturn();
+        String freshToken = objectMapper
+                .readTree(login.getResponse().getContentAsString())
+                .path("accessToken").asText();
+
+        getWithAuth("/api/v1/users/me", freshToken)
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void staffCannotActDestructivelyOnThemselves() throws Exception {
         Registered admin = register(ADMIN_PHONE);
 

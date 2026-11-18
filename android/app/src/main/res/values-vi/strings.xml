@@ -222,6 +222,7 @@
     <string name="cd_attach">Đính kèm</string>
     <string name="cd_remove_attachment">Xóa tệp đính kèm</string>
     <string name="cd_open_attachment">Mở tệp đính kèm</string>
+    <string name="cd_play_video">Phát video</string>
     <string name="cd_sent">Đã gửi</string>
     <string name="cd_delivered">Đã nhận</string>
     <string name="cd_read">Đã xem</string>
