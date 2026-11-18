@@ -119,8 +119,7 @@ public final class RoomMigrationTest {
         }
 
         AppDatabase migrated = TestDatabases.plaintextFile(context, EXPORTED_DB)
-                .addMigrations(AppDatabase.MIGRATION_13_14)
-                .addMigrations(AppDatabase.MIGRATION_13_14)
+                .addMigrations(AppDatabase.ALL_MIGRATIONS)
                 .allowMainThreadQueries()
                 .build();
         try {
@@ -152,8 +151,7 @@ public final class RoomMigrationTest {
         migratedSchema.close();
 
         AppDatabase migrated = TestDatabases.plaintextFile(context, EXPORTED_DB)
-                .addMigrations(AppDatabase.MIGRATION_13_14)
-                .addMigrations(AppDatabase.MIGRATION_13_14)
+                .addMigrations(AppDatabase.ALL_MIGRATIONS)
                 .allowMainThreadQueries()
                 .build();
         try {
@@ -241,8 +239,11 @@ public final class RoomMigrationTest {
             oldDb.execSQL(
                     "INSERT INTO conversations (id, type, title, lastMessageSeq, "
                             + "lastMessageContent, lastMessageSenderName, lastMessageAt, "
-                            + "unreadCount, otherUserName, otherUserAvatar) "
-                            + "VALUES ('c-1', 'GROUP', 'Team', 7, 'hi', 'Lan', 100, 3, NULL, NULL)");
+                            + "unreadCount, otherUserName, otherUserAvatar, "
+                            + "peerReadSeq, lastMessageDeleted, peerDeliveredSeq, muted, "
+                            + "archived, aiOptOut, pinned) "
+                            + "VALUES ('c-1', 'GROUP', 'Team', 7, 'hi', 'Lan', 100, 3, NULL, NULL, "
+                            + "0, 0, 0, 0, 0, 0, 0)");
             oldDb.execSQL(
                     "INSERT INTO messages (id, conversationId, seq, senderId, "
                             + "senderDisplayName, type, content, clientMessageId, replyToId, "
@@ -475,19 +476,7 @@ public final class RoomMigrationTest {
     /** Opens the legacy file through Room with the production migrations. */
     private SupportSQLiteDatabase openMigrated() {
         return TestDatabases.plaintextFile(context, LEGACY_DB)
-                .addMigrations(
-                        AppDatabase.MIGRATION_1_2,
-                        AppDatabase.MIGRATION_2_3,
-                        AppDatabase.MIGRATION_3_4,
-                        AppDatabase.MIGRATION_4_5,
-                        AppDatabase.MIGRATION_5_6,
-                        AppDatabase.MIGRATION_6_7,
-                        AppDatabase.MIGRATION_7_8,
-                        AppDatabase.MIGRATION_8_9,
-                        AppDatabase.MIGRATION_9_10,
-                        AppDatabase.MIGRATION_10_11,
-                        AppDatabase.MIGRATION_11_12,
-                        AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14)
+                .addMigrations(AppDatabase.ALL_MIGRATIONS)
                 .allowMainThreadQueries()
                 .build()
                 .getOpenHelper()
