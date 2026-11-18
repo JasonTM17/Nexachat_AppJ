@@ -52,6 +52,9 @@ MESSAGES = [
 ]
 
 def main():
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     client = Client()
     print("Signing in Minh Khoa and Bao Chau...")
     s_khoa = login(client, "+84900000202")

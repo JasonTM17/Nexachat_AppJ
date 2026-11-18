@@ -6,6 +6,11 @@ import { SessionProvider } from './auth';
 import { I18nProvider } from './i18n';
 import './styles.css';
 
+// Stamp the persisted theme before the first render so every route, including
+// login outside the app shell, uses it; Layout keeps it in sync on toggle.
+document.documentElement.dataset.theme =
+  localStorage.getItem('admin.theme') === 'dark' ? 'dark' : 'light';
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>

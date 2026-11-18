@@ -1,6 +1,10 @@
 package com.nexachat.summary;
 
+import com.nexachat.common.error.ApiErrorCode;
+import com.nexachat.common.error.ApiException;
+import com.nexachat.summary.llm.CircuitBreaker;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
@@ -8,24 +12,67 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Clock;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Service
 @Profile("!test")
 public class SummaryService {
 
     private static final int MIN_MESSAGES = 5;
+    /**
+     * The default wait bound is the sum of the default per-tier budgets
+     * (cloud 30 s + local server 60 s + cloud fallback 30 s): one generation
+     * can spend every tier sequentially, so a waiter that has waited this
+     * long knows its winner will not finish either.
+     */
+    private static final long DEFAULT_SINGLE_FLIGHT_WAIT_MS = 120_000;
+    /**
+     * How many times a waiter re-enters the flight map before it answers on
+     * its own. Each round is one leadership attempt plus one wait bounded by
+     * what remains of the shared wait deadline, so waiters follow a failing
+     * or slow leader through a bounded number of replacements instead of all
+     * calling the provider at once. This cap is only a secondary bound: the
+     * end-to-end wait deadline usually ends re-coalescing first.
+     */
+    private static final int SINGLE_FLIGHT_ROUNDS = 3;
+    /**
+     * Fallback reasons that record a provider failure. Only these make a stored
+     * local row replayable to a consented request prepared for the external
+     * tier; consent or policy downgrades and routing downgrades must not pin
+     * a stale local answer to them.
+     */
+    private static final Set<SummaryFallbackReason> PROVIDER_FAILURE_FALLBACKS = Set.of(
+            SummaryFallbackReason.LLM_TIMEOUT,
+            SummaryFallbackReason.LLM_HTTP_ERROR,
+            SummaryFallbackReason.LLM_BAD_OUTPUT);
 
     private final SummaryRateLimiter rateLimiter;
     private final SummaryWindowService windowService;
     private final SummaryProviderSelector providerSelector;
     private final SummaryCacheRepository cacheRepository;
     private final ConversationAiOptOuts aiOptOuts;
+    /**
+     * In-process single-flight sessions, keyed by the cache tuple. The server
+     * runs a single node, so this map spans every summary request the node
+     * serves. A waiter parks on the current leader's future for at most what
+     * remains of its one end-to-end wait budget before it stops re-coalescing
+     * and answers on its own.
+     */
+    private final ConcurrentHashMap<String, CompletableFuture<Void>> singleFlights = new ConcurrentHashMap<>();
+    private final Clock clock;
+    private final long singleFlightWaitMs;
 
     public SummaryService(
             SummaryRateLimiter rateLimiter,
@@ -35,18 +82,59 @@ public class SummaryService {
         this(rateLimiter, windowService, providerSelector, cacheRepository, ConversationAiOptOuts.none());
     }
 
-    @Autowired
     public SummaryService(
             SummaryRateLimiter rateLimiter,
             SummaryWindowService windowService,
             SummaryProviderSelector providerSelector,
             SummaryCacheRepository cacheRepository,
             ConversationAiOptOuts aiOptOuts) {
+        this(rateLimiter, windowService, providerSelector, cacheRepository, aiOptOuts,
+                DEFAULT_SINGLE_FLIGHT_WAIT_MS);
+    }
+
+    public SummaryService(
+            SummaryRateLimiter rateLimiter,
+            SummaryWindowService windowService,
+            SummaryProviderSelector providerSelector,
+            SummaryCacheRepository cacheRepository,
+            ConversationAiOptOuts aiOptOuts,
+            long singleFlightWaitMs) {
+        this(rateLimiter, windowService, providerSelector, cacheRepository, aiOptOuts,
+                Clock.systemUTC(), singleFlightWaitMs);
+    }
+
+    public SummaryService(
+            SummaryRateLimiter rateLimiter,
+            SummaryWindowService windowService,
+            SummaryProviderSelector providerSelector,
+            SummaryCacheRepository cacheRepository,
+            ConversationAiOptOuts aiOptOuts,
+            Clock clock,
+            long singleFlightWaitMs) {
         this.rateLimiter = rateLimiter;
         this.windowService = windowService;
         this.providerSelector = providerSelector;
         this.cacheRepository = cacheRepository;
         this.aiOptOuts = aiOptOuts;
+        this.clock = clock;
+        this.singleFlightWaitMs = singleFlightWaitMs;
+    }
+
+    @Autowired
+    public SummaryService(
+            SummaryRateLimiter rateLimiter,
+            SummaryWindowService windowService,
+            SummaryProviderSelector providerSelector,
+            SummaryCacheRepository cacheRepository,
+            ConversationAiOptOuts aiOptOuts,
+            Clock clock,
+            @Value("${nexachat.summary.llm.timeout-ms:30000}") long llmTimeoutMs,
+            @Value("${nexachat.summary.llm.local-timeout-ms:60000}") long localLlmTimeoutMs,
+            @Value("${nexachat.summary.llm-fallback.timeout-ms:30000}") long llmFallbackTimeoutMs) {
+        // One generation can spend the primary, fallback and local-server budgets
+        // sequentially, so the wait bound is their sum, not one tier's timeout.
+        this(rateLimiter, windowService, providerSelector, cacheRepository, aiOptOuts, clock,
+                llmTimeoutMs + localLlmTimeoutMs + llmFallbackTimeoutMs);
     }
 
     public SummaryResponse summarize(UUID conversationId, UUID userId, SummaryRequest request) {
@@ -63,31 +151,218 @@ public class SummaryService {
 
         Set<UUID> optedOut = aiOptOuts.optedOutUserIds(conversationId);
         PreparedSummaryProvider prepared = providerSelector.prepare(readContext.aiSummaryConsent(), window, request.refresh());
-        // The key names the scope, the resolved day and zone, every included message and, for
-        // external AI, the consent generation, so a result is never replayed under other access.
-        String contentHash = contentHash(window, request, readContext.period(),
-                "LLM".equals(prepared.cacheProvider()) ? readContext.consentEpoch() : -1L);
-        if (!request.refresh()) {
-            var cached = cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
-                    contentHash, prepared.cacheProvider(), request.language());
-            if (cached.isPresent()) {
-                SummaryCacheEntry entry = cached.get();
-                if (citationsWithinWindow(entry.payload().content(), window)
-                        && replayAllowed(entry, window, optedOut)) {
-                    SummaryGeneration generation = forRequest(entry.payload().toGeneration(), prepared, null);
-                    return SummaryResponse.create(entry.id(), window, generation,
-                            true, contextOmitted(generation, window, optedOut), entry.createdAt(),
-                            request, readContext.period());
+        if (request.refresh()) {
+            // An explicit refresh always regenerates: it neither replays nor waits on a flight.
+            SummaryGeneration generated = providerSelector.generate(prepared, window, request.language());
+            return generateAndStore(userId, conversationId, window, request, readContext, prepared, generated, optedOut);
+        }
+        String flightKey = flightKey(conversationId, window, request, readContext.period(), prepared,
+                readContext.consentEpoch());
+        // Single-flight: one provider call per cache-cold key. Every request that
+        // arrives while the key is being filled waits, then replays the winner.
+        // A waiter whose leader failed, timed out or was rejected re-enters the
+        // flight map for a bounded number of rounds - one waiter becomes the new
+        // leader - and only answers on its own after the last round. All waits
+        // share one end-to-end deadline measured on the monotonic clock: waiting
+        // the whole bound per round would outlive the client's own read timeout.
+        long waitDeadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(singleFlightWaitMs);
+        for (int round = 0; round < SINGLE_FLIGHT_ROUNDS; round++) {
+            SummaryResponse replayed = replayIfCached(conversationId, window, request, readContext, prepared, optedOut);
+            if (replayed != null) {
+                return replayed;
+            }
+            boolean[] leader = {false};
+            CompletableFuture<Void> flight = singleFlights.computeIfAbsent(flightKey, key -> {
+                leader[0] = true;
+                return new CompletableFuture<>();
+            });
+            if (leader[0]) {
+                try {
+                    // A previous flight may have filled this key just before this
+                    // leader registered: re-check before spending a provider call.
+                    SummaryResponse winner = replayIfCached(conversationId, window, request, readContext, prepared, optedOut);
+                    if (winner == null) {
+                        SummaryGeneration generated = providerSelector.generate(prepared, window, request.language());
+                        winner = generateAndStore(userId, conversationId, window, request, readContext, prepared,
+                                generated, optedOut);
+                    }
+                    return winner;
+                } finally {
+                    // The entry leaves the map before the future is completed, so
+                    // a waiter woken by the completion either replays this
+                    // leader's row or registers a new flight. The future is
+                    // completed even when the leader dies with an error, so
+                    // waiters never sit out the whole bound after its death.
+                    singleFlights.remove(flightKey, flight);
+                    if (!flight.isDone()) {
+                        flight.complete(null);
+                    }
                 }
-                // A previous external summary cites a message whose author has
-                // since opted out. It must never be replayed; remove it and
-                // regenerate the cache entry below.
-                cacheRepository.delete(conversationId, window.fromSeq(), window.toSeq(),
-                        contentHash, prepared.cacheProvider(), request.language());
+            }
+            if (!awaitWinner(flight, waitDeadlineNanos)) {
+                // The shared wait budget is spent: stop re-coalescing and
+                // answer through the final probe and own generation below.
+                break;
             }
         }
-
+        // The last wait may have ended the moment the leader finished: probe once
+        // more before spending a provider call of our own.
+        SummaryResponse finalReplay = replayIfCached(conversationId, window, request, readContext, prepared, optedOut);
+        if (finalReplay != null) {
+            return finalReplay;
+        }
+        // No usable winner after the bounded rounds or once the shared wait
+        // deadline ran out: answer on our own.
         SummaryGeneration generated = providerSelector.generate(prepared, window, request.language());
+        return generateAndStore(userId, conversationId, window, request, readContext, prepared, generated, optedOut);
+    }
+
+    /**
+     * One round of waiting for the leader, capped by the shared end-to-end
+     * deadline: the wait lasts at most until {@code waitDeadlineNanos},
+     * however much of the budget is left. Returns false once that deadline is
+     * reached, which ends re-coalescing; while budget remains, neither a
+     * timeout nor a failed leader decides the answer, so the caller re-probes
+     * the cache and re-enters the flight map. A request cancelled mid-wait
+     * never spends a provider call: its own request thread failed, so
+     * generating for nobody is waste.
+     */
+    private boolean awaitWinner(CompletableFuture<Void> flight, long waitDeadlineNanos) {
+        long remainingMs = TimeUnit.NANOSECONDS.toMillis(waitDeadlineNanos - System.nanoTime());
+        if (remainingMs <= 0) {
+            return false;
+        }
+        try {
+            flight.get(remainingMs, TimeUnit.MILLISECONDS);
+            return true;
+        } catch (TimeoutException | ExecutionException ex) {
+            // No usable winner in time, or the winner failed: re-coalesce only
+            // while the shared deadline still has room.
+            return System.nanoTime() < waitDeadlineNanos;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "The summary request was cancelled");
+        }
+    }
+
+    /**
+     * Cache identity of a request: the conversation, the window span, the content
+     * hash, the cache tier and the language. Two requests share a flight only
+     * when they would read and write the same cache row.
+     */
+    private static String flightKey(
+            UUID conversationId,
+            SummaryWindow window,
+            SummaryRequest request,
+            SummaryPeriod period,
+            PreparedSummaryProvider prepared,
+            long consentEpoch) {
+        long lookupEpoch = "LLM".equals(prepared.cacheProvider()) ? consentEpoch : -1L;
+        return conversationId + "|" + window.fromSeq() + "|" + window.toSeq() + "|"
+                + contentHash(window, request, period, lookupEpoch) + "|"
+                + prepared.cacheProvider() + "|" + request.language().name();
+    }
+
+    /**
+     * Serves the cached response for the engine this request would use, or null
+     * when the key must be generated. A row that fails the playback guards is
+     * dropped instead of served. A request prepared for the external engine
+     * also accepts a stored local row whose recorded reason was a provider
+     * failure, so the failing tier is not retried on every repeat; rows stored
+     * under a consent, policy or routing downgrade stay invisible to it.
+     */
+    private SummaryResponse replayIfCached(
+            UUID conversationId,
+            SummaryWindow window,
+            SummaryRequest request,
+            SummaryReadContext readContext,
+            PreparedSummaryProvider prepared,
+            Set<UUID> optedOut) {
+        long consentEpoch = "LLM".equals(prepared.cacheProvider()) ? readContext.consentEpoch() : -1L;
+        // The key names the scope, the resolved day and zone, every included message and, for
+        // external AI, the consent generation, so a result is never replayed under other access.
+        String contentHash = contentHash(window, request, readContext.period(), consentEpoch);
+        Optional<SummaryCacheEntry> cached = cacheRepository.findValid(conversationId, window.fromSeq(),
+                window.toSeq(), contentHash, prepared.cacheProvider(), request.language());
+        if (cached.isPresent()) {
+            SummaryCacheEntry entry = cached.get();
+            if (citationsWithinWindow(entry.payload().content(), window)
+                    && replayAllowed(entry, window, optedOut)) {
+                return cachedResponse(entry, window, request, readContext, prepared, optedOut);
+            }
+            // A previous external summary cites a message whose author has
+            // since opted out. It must never be replayed; remove it and let
+            // the caller regenerate the cache entry below.
+            cacheRepository.delete(conversationId, window.fromSeq(), window.toSeq(),
+                    contentHash, prepared.cacheProvider(), request.language());
+        }
+        if (!"LLM".equals(prepared.cacheProvider())) {
+            return null;
+        }
+        // The same window can hold a local fallback row the external tier stored
+        // after a provider failure. It lives under the local engine's own key.
+        String fallbackHash = contentHash(window, request, readContext.period(), -1L);
+        Optional<SummaryCacheEntry> fallback = cacheRepository.findValid(conversationId, window.fromSeq(),
+                window.toSeq(), fallbackHash, "LOCAL", request.language());
+        if (fallback.isEmpty()) {
+            return null;
+        }
+        SummaryCacheEntry entry = fallback.get();
+        SummaryFallbackReason fallbackReason = fallbackReasonOf(entry.payload().fallbackReason());
+        if (fallbackReason == null || !PROVIDER_FAILURE_FALLBACKS.contains(fallbackReason)) {
+            return null;
+        }
+        // The replay lasts only as long as the circuit breaker keeps the failing
+        // external tier closed. After that window the breaker itself retries
+        // the external provider, so replaying the local answer any longer would
+        // pin it past that recovery point for the whole 24 h cache lifetime.
+        if (!clock.instant().isBefore(entry.createdAt().plus(CircuitBreaker.OPEN_DURATION))) {
+            return null;
+        }
+        if (!citationsWithinWindow(entry.payload().content(), window) || !replayAllowed(entry, window, optedOut)) {
+            // A fallback row that can no longer be replayed is dropped, like the
+            // primary-key path, so it is not re-probed on every request.
+            cacheRepository.delete(conversationId, window.fromSeq(), window.toSeq(),
+                    fallbackHash, "LOCAL", request.language());
+            return null;
+        }
+        return cachedResponse(entry, window, request, readContext, prepared, optedOut);
+    }
+
+    private static SummaryFallbackReason fallbackReasonOf(String raw) {
+        try {
+            return raw == null ? null : SummaryFallbackReason.valueOf(raw);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
+    private SummaryResponse cachedResponse(
+            SummaryCacheEntry entry,
+            SummaryWindow window,
+            SummaryRequest request,
+            SummaryReadContext readContext,
+            PreparedSummaryProvider prepared,
+            Set<UUID> optedOut) {
+        SummaryGeneration generation = forRequest(entry.payload().toGeneration(), prepared, null);
+        return SummaryResponse.create(entry.id(), window, generation, true,
+                contextOmitted(generation, window, optedOut), entry.createdAt(), request, readContext.period());
+    }
+
+    /**
+     * Stores the passed generation under the engine that actually produced it
+     * and reports the response, including the concurrent-fill guards on the
+     * save path.
+     */
+    private SummaryResponse generateAndStore(
+            UUID userId,
+            UUID conversationId,
+            SummaryWindow window,
+            SummaryRequest request,
+            SummaryReadContext readContext,
+            PreparedSummaryProvider prepared,
+            SummaryGeneration generated,
+            Set<UUID> optedOut) {
         // The row is stored under the engine that actually answered, so its key carries the
         // consent generation only when that engine was the external one.
         String storeHash = contentHash(window, request, readContext.period(),
@@ -116,8 +391,11 @@ public class SummaryService {
                 cached = false;
             }
         }
+        // The stored row is this request's own generation exactly when it won
+        // the save; when a concurrent request won, the response must describe
+        // the winner's row, not this request's own labels.
         SummaryGeneration responseGeneration = forRequest(
-                entry.payload().toGeneration(), prepared, generated);
+                entry.payload().toGeneration(), prepared, cached ? null : generated);
         return SummaryResponse.create(entry.id(), window, responseGeneration, cached,
                 contextOmitted(responseGeneration, window, optedOut), entry.createdAt(),
                 request, readContext.period());
@@ -132,8 +410,16 @@ public class SummaryService {
                     prepared.fallbackReason(), null);
         }
         if (generatedThisRequest != null && generatedThisRequest.fallbackReason() != null) {
-            return new SummaryGeneration(cachedGeneration.content(), cachedGeneration.language(), "LOCAL", null,
-                    generatedThisRequest.fallbackReason(), null);
+            return new SummaryGeneration(cachedGeneration.content(), cachedGeneration.language(), "LOCAL",
+                    cachedGeneration.model(), generatedThisRequest.fallbackReason(),
+                    cachedGeneration.provider());
+        }
+        if ("LOCAL".equals(cachedGeneration.generatedBy())) {
+            // The stored row was produced by the local engine, either as a provider
+            // fallback or by a concurrent fill: report the recorded engine, model
+            // and fallback, not the external tier this request was prepared for.
+            return new SummaryGeneration(cachedGeneration.content(), cachedGeneration.language(), "LOCAL",
+                    cachedGeneration.model(), cachedGeneration.fallbackReason(), cachedGeneration.provider());
         }
         return cachedGeneration;
     }
