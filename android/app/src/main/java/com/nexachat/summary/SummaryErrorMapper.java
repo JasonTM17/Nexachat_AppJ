@@ -14,6 +14,12 @@ final class SummaryErrorMapper {
         if (status == 403 || "NOT_MEMBER".equals(code)) {
             return SummaryError.NOT_MEMBER;
         }
+        if ("E2EE_AI_UNAVAILABLE".equals(code)) {
+            return SummaryError.E2EE_UNAVAILABLE;
+        }
+        if ("INVALID_TIME_ZONE".equals(code)) {
+            return SummaryError.INVALID_TIME_ZONE;
+        }
         if ("TOO_FEW_MESSAGES".equals(code) || "TOO_FEW".equals(code)) {
             return SummaryError.TOO_FEW;
         }

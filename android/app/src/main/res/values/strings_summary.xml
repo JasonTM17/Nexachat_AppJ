@@ -31,6 +31,7 @@
     <string name="summary_error_rate_limited_desc">Try again in a moment.</string>
     <string name="summary_error_offline">No connection. Check your network and try again.</string>
     <string name="summary_error_not_member">You are no longer in this conversation</string>
+    <string name="summary_error_e2ee_unavailable">Summaries are not available in encrypted chats</string>
     <string name="summary_error_generic">Could not generate summary. Try again.</string>
     <string name="summary_copied_to_clipboard">Summary copied</string>
     <string name="summary_loading_content_desc">Generating summary…</string>

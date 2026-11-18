@@ -19,6 +19,10 @@ public final class SummarySupportTest {
         assertEquals(SummaryError.NOT_MEMBER, SummaryErrorMapper.fromHttp(403, "{\"error\":{\"code\":\"NOT_MEMBER\"}}"));
         assertEquals(SummaryError.TOO_FEW, SummaryErrorMapper.fromHttp(400, "{\"error\":{\"code\":\"TOO_FEW_MESSAGES\"}}"));
         assertEquals(SummaryError.TOO_FEW, SummaryErrorMapper.fromHttp(400, "{\"error\":{\"code\":\"TOO_FEW\"}}"));
+        assertEquals(SummaryError.E2EE_UNAVAILABLE,
+                SummaryErrorMapper.fromHttp(409, "{\"error\":{\"code\":\"E2EE_AI_UNAVAILABLE\"}}"));
+        assertEquals(SummaryError.INVALID_TIME_ZONE,
+                SummaryErrorMapper.fromHttp(400, "{\"error\":{\"code\":\"INVALID_TIME_ZONE\"}}"));
         assertEquals(SummaryError.UNKNOWN, SummaryErrorMapper.fromHttp(500, "not json"));
     }
 

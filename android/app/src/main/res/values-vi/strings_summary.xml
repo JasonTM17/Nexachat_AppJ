@@ -30,6 +30,7 @@
     <string name="summary_error_rate_limited_desc">Hãy thử lại sau ít phút.</string>
     <string name="summary_error_offline">Không có kết nối. Hãy kiểm tra mạng và thử lại.</string>
     <string name="summary_error_not_member">Bạn không còn trong cuộc trò chuyện này</string>
+    <string name="summary_error_e2ee_unavailable">Không thể tóm tắt trong cuộc trò chuyện được mã hóa</string>
     <string name="summary_error_generic">Không tạo được tóm tắt. Hãy thử lại.</string>
     <string name="summary_copied_to_clipboard">Đã sao chép tóm tắt</string>
     <string name="summary_loading_content_desc">Đang tạo tóm tắt…</string>
