@@ -4,7 +4,6 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.media.MediaDataSource;
 import android.media.MediaMetadataRetriever;
-import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.widget.ImageView;
@@ -75,19 +74,16 @@ public final class VideoThumbnailLoader {
     private static Bitmap extract(Context context, String url) {
         MediaMetadataRetriever retriever = new MediaMetadataRetriever();
         try {
-            if (url.startsWith("content:") || url.startsWith("file:")) {
-                retriever.setDataSource(context, Uri.parse(url));
-            } else {
-                if (!isApiOrigin(url)) {
-                    // The authenticated client attaches the bearer token to every
-                    // request, so it must never be pointed at another host.
-                    return null;
-                }
-                OkHttpClient client = EntryPointAccessors
-                        .fromApplication(context, MediaOkHttpEntryPoint.class)
-                        .okHttpClient();
-                retriever.setDataSource(new RangeDataSource(client, url));
+            if (!isApiOrigin(url)) {
+                // The authenticated client attaches the bearer token to every
+                // request, so it must never be pointed at another host — or at
+                // a non-http(s) scheme such as file:/content: from server data.
+                return null;
             }
+            OkHttpClient client = EntryPointAccessors
+                    .fromApplication(context, MediaOkHttpEntryPoint.class)
+                    .okHttpClient();
+            retriever.setDataSource(new RangeDataSource(client, url));
             Bitmap frame = retriever.getFrameAtTime(
                     FRAME_TIME_US, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
             return frame == null ? null : downscale(frame);
@@ -102,18 +98,13 @@ public final class VideoThumbnailLoader {
         }
     }
 
-    /** True only for URLs on the API's scheme, host and port. */
+    /** True only for http(s) URLs on the API's scheme, host and port. */
     static boolean isApiOrigin(String url) {
-        HttpUrl target = HttpUrl.parse(url);
-        HttpUrl api = HttpUrl.parse(AppConfig.API_BASE_URL);
-        return isSameOrigin(target, api);
+        return isSameOrigin(HttpUrl.parse(url), HttpUrl.parse(AppConfig.API_BASE_URL));
     }
 
     static boolean isSameOrigin(@Nullable HttpUrl target, @Nullable HttpUrl api) {
-        return target != null && api != null
-                && target.scheme().equals(api.scheme())
-                && target.host().equals(api.host())
-                && target.port() == api.port();
+        return AppConfig.isSameOrigin(target, api);
     }
 
     private static Bitmap downscale(Bitmap source) {

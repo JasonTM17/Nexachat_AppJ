@@ -7,6 +7,7 @@ import androidx.lifecycle.LifecycleOwner;
 import androidx.lifecycle.ProcessLifecycleOwner;
 import com.nexachat.call.core.CallManager;
 import com.nexachat.call.service.CallNotificationObserver;
+import com.nexachat.core.media.MediaCacheCleaner;
 import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.network.stomp.RealtimeSession;
 import com.nexachat.core.realtime.ephemeral.EphemeralStateRouter;
@@ -40,6 +41,9 @@ public final class NexaChatApp extends Application {
     @Inject
     StreakCheckInCoordinator streakCheckIn;
 
+    @Inject
+    MediaCacheCleaner mediaCacheCleaner;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -50,6 +54,15 @@ public final class NexaChatApp extends Application {
                 LOGGER.log(Level.WARNING,
                         "session admission warm-up failed; fenced paths will bootstrap lazily",
                         warmFailure);
+            }
+        });
+        Schedulers.io().scheduleDirect(() -> {
+            try {
+                // Decrypted attachment working copies are transient: wipe whatever
+                // a previous process left in cacheDir/attachments-open.
+                mediaCacheCleaner.clearTransientAttachmentCopies().blockingAwait();
+            } catch (Throwable ignored) {
+                // Best-effort; account deletion wipes them again.
             }
         });
         new CallNotificationObserver(this, callManager).start();

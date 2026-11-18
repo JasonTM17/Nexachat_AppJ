@@ -30,4 +30,22 @@ public final class VideoThumbnailLoaderOriginTest {
         assertFalse(VideoThumbnailLoader.isSameOrigin(null, API));
         assertFalse(VideoThumbnailLoader.isSameOrigin(HttpUrl.get("https://api.example.test/a.mp4"), null));
     }
+
+    @Test
+    public void apiOriginUrlsAreAccepted() {
+        assertTrue(VideoThumbnailLoader.isApiOrigin(
+                com.nexachat.core.common.AppConfig.API_BASE_URL + "/api/v1/attachments/a.mp4/content"));
+    }
+
+    @Test
+    public void fileAndContentSchemesFromServerDataAreRejected() {
+        // Audit F-05: server-supplied contentUrl must never reach
+        // MediaMetadataRetriever as a local scheme.
+        assertFalse(VideoThumbnailLoader.isApiOrigin(
+                "file:///data/data/com.nexachat/databases/nexachat.db"));
+        assertFalse(VideoThumbnailLoader.isApiOrigin("content://media/external/video/1"));
+        assertFalse(VideoThumbnailLoader.isApiOrigin("content://com.other.app.provider/secret"));
+        assertFalse(VideoThumbnailLoader.isApiOrigin("data:video/mp4;base64,AAAA"));
+        assertFalse(VideoThumbnailLoader.isApiOrigin("https://evil.example.test/a.mp4"));
+    }
 }

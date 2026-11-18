@@ -104,12 +104,13 @@ public final class ArchiveMediaAdapter
                 null,
                 attachment.getBlurHash());
         String url = dto.contentUrl();
-        if (url == null) {
+        String absoluteUrl = AppConfig.absoluteMediaUrl(url);
+        if (absoluteUrl == null) {
+            // No url, or an absolute URL off the API origin: placeholder only.
             Glide.with(binding.archiveThumbnail).clear(binding.archiveThumbnail);
             binding.archiveThumbnail.setImageDrawable(placeholder);
             return;
         }
-        String absoluteUrl = AppConfig.absoluteMediaUrl(url);
         Glide.with(binding.archiveThumbnail)
                 .load(absoluteUrl)
                 .centerCrop()
