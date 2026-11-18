@@ -4,6 +4,7 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.summary.SummaryConsentRepository.ConsentSnapshot;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -27,7 +28,14 @@ import java.util.UUID;
  * cache write's own requester lock already reports as USER_NOT_FOUND, so
  * only a real snapshot change suppresses here.
  */
+/**
+ * Production bean only: the {@code test} profile wires no transaction
+ * manager, and the service itself is gated the same way. Tests that
+ * exercise the re-check construct the class directly; ones that do not need
+ * it use {@link #noop()}.
+ */
 @Component
+@Profile("!test")
 public class SummaryConsentRecheck {
 
     private static final SummaryConsentRecheck NOOP =
