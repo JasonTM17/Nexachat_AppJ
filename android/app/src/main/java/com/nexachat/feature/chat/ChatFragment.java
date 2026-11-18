@@ -2143,14 +2143,13 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         View content = getLayoutInflater().inflate(R.layout.dialog_language_picker, null);
         android.widget.EditText search = content.findViewById(R.id.languageSearchInput);
         android.widget.ListView list = content.findViewById(R.id.languageList);
-        java.util.List<String> names = new java.util.ArrayList<>();
-        String defaultRow = getString(R.string.translate_target_default_plain);
-        names.add(defaultRow);
+        java.util.List<LanguageRow> rows = new java.util.ArrayList<>();
+        rows.add(new LanguageRow(null, getString(R.string.translate_target_default_plain)));
         for (TranslationLanguages.Entry entry : TranslationLanguages.SUPPORTED) {
-            names.add(getString(entry.nameRes()));
+            rows.add(new LanguageRow(entry.code(), getString(entry.nameRes())));
         }
-        android.widget.ArrayAdapter<String> items = new android.widget.ArrayAdapter<>(
-                requireContext(), android.R.layout.simple_list_item_1, names);
+        android.widget.ArrayAdapter<LanguageRow> items = new android.widget.ArrayAdapter<>(
+                requireContext(), android.R.layout.simple_list_item_1, rows);
         list.setAdapter(items);
         AlertDialog picker = new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.translate_target_language_title)
@@ -2158,17 +2157,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                 .setNegativeButton(R.string.action_close, null)
                 .create();
         list.setOnItemClickListener((parent, view, position, id) -> {
-            String name = items.getItem(position);
-            if (defaultRow.equals(name)) {
-                viewModel.setTranslateTargetLang(null);
-                picker.dismiss();
-                return;
-            }
-            for (TranslationLanguages.Entry entry : TranslationLanguages.SUPPORTED) {
-                if (getString(entry.nameRes()).equals(name)) {
-                    viewModel.setTranslateTargetLang(entry.code());
-                    break;
-                }
+            LanguageRow row = items.getItem(position);
+            if (row != null) {
+                viewModel.setTranslateTargetLang(row.code());
             }
             picker.dismiss();
         });
@@ -2180,6 +2171,19 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             @Override public void afterTextChanged(android.text.Editable s) { }
         });
         picker.show();
+    }
+
+    /**
+     * Picker row that carries the language code, so a tap resolves by code instead of by the
+     * localized display name — two entries sharing a name in one locale would otherwise both
+     * map to the first entry's code. {@code code} is null for the "device default" row.
+     */
+    private record LanguageRow(@Nullable String code, @NonNull String label) {
+        @NonNull
+        @Override
+        public String toString() {
+            return label;
+        }
     }
 
     /** Glossary editor: add/remove term rows with client-side validation. */
