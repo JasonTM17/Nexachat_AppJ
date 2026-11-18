@@ -43,7 +43,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:background="@drawable/bg_message_image"
-                android:contentDescription="@string/cd_open_attachment"
+                android:importantForAccessibility="no"
                 android:scaleType="centerCrop"
                 android:visibility="gone" />
             <ImageButton
@@ -52,7 +52,7 @@
                 android:layout_height="@dimen/min_touch_target"
                 android:layout_gravity="center"
                 android:background="@drawable/bg_media_play_button"
-                android:contentDescription="@string/cd_open_attachment"
+                android:contentDescription="@string/cd_play_video"
                 android:padding="@dimen/space_inset"
                 android:src="@drawable/ic_play_arrow"
                 android:visibility="visible"
