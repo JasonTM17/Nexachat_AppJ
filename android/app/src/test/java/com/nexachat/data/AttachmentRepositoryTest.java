@@ -22,19 +22,25 @@ import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
+import com.nexachat.core.media.EncryptedAttachmentStore;
 import com.nexachat.core.media.ImageCompressor;
+import com.nexachat.core.media.MediaCacheConfig;
 import com.nexachat.core.network.AttachmentApi;
 import com.nexachat.core.network.dto.AttachmentDto;
 import io.reactivex.rxjava3.subscribers.TestSubscriber;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
 import okhttp3.ResponseBody;
@@ -66,6 +72,7 @@ public final class AttachmentRepositoryTest {
     private final Uri uri = mock(Uri.class);
 
     private AttachmentRepository repository;
+    private SecretKey storeKey;
 
     private final AttachmentDto dto = new AttachmentDto("att-1", "pic.png", "image/png", 4L);
 
@@ -74,7 +81,11 @@ public final class AttachmentRepositoryTest {
         File temporaryDirectory = Files.createTempDirectory("nexa-image-test").toFile();
         ImageCompressor compressor = new ImageCompressor(
                 new FailingImageBackend(), temporaryDirectory);
-        repository = new AttachmentRepository(attachmentApi, context, compressor);
+        KeyGenerator generator = KeyGenerator.getInstance("AES");
+        generator.init(256);
+        storeKey = generator.generateKey();
+        repository = new AttachmentRepository(attachmentApi, context, compressor,
+                EncryptedAttachmentStore.withSecretKey(storeKey));
     }
 
     @Test
@@ -444,6 +455,166 @@ public final class AttachmentRepositoryTest {
         assertTrue("truncated download left behind: "
                 + (files == null ? List.of() : java.util.Arrays.asList(files)),
                 files == null || files.length == 0);
+    }
+
+    @Test
+    public void successfulDownloadStoresCiphertextAtRestAndReturnsDecryptedWorkingCopy()
+            throws Exception {
+        byte[] payload = "fake-png-bytes".getBytes(StandardCharsets.UTF_8);
+        File cacheDir = Files.createTempDirectory("nexa-attachments").toFile();
+        when(context.getCacheDir()).thenReturn(cacheDir);
+        Call<ResponseBody> contentCall = mock(Call.class);
+        when(attachmentApi.content("att-1")).thenReturn(contentCall);
+        when(contentCall.execute()).thenReturn(Response.success(
+                ResponseBody.create(MediaType.parse("image/png"), payload)));
+
+        Result<File> result = awaitDownload(repository.downloadToCache("att-1", "pic.png"));
+
+        assertTrue(result instanceof Result.Success<?>);
+        File working = (File) ((Result.Success<?>) result).getValue();
+        // The returned file is the transient decrypted working copy…
+        assertEquals(MediaCacheConfig.ATTACHMENTS_TRANSIENT_DIR_NAME, working.getParentFile().getName());
+        assertArrayEquals(payload, Files.readAllBytes(working.toPath()));
+        // …while the at-rest store holds only ciphertext (IV + body + GCM tag).
+        File encrypted = new File(MediaCacheConfig.attachmentDirectory(cacheDir), working.getName());
+        assertTrue(encrypted.isFile());
+        byte[] stored = Files.readAllBytes(encrypted.toPath());
+        assertEquals(EncryptedAttachmentStore.IV_LENGTH + payload.length + 16, stored.length);
+        assertFalse(Arrays.equals(payload,
+                Arrays.copyOfRange(stored, EncryptedAttachmentStore.IV_LENGTH, stored.length)));
+    }
+
+    @Test
+    public void declaredOversizeDownloadFailsTypedWithoutWritingAnything() throws Exception {
+        File cacheDir = Files.createTempDirectory("nexa-attachments").toFile();
+        when(context.getCacheDir()).thenReturn(cacheDir);
+        Call<ResponseBody> contentCall = mock(Call.class);
+        when(attachmentApi.content("att-1")).thenReturn(contentCall);
+        when(contentCall.execute()).thenReturn(Response.success(
+                body(AttachmentRepository.MAX_DOWNLOAD_BYTES + 1, new byte[] {1, 2, 3})));
+
+        Result<File> result = awaitDownload(repository.downloadToCache("att-1", "big.bin"));
+
+        assertTooLarge(result);
+        File[] files = MediaCacheConfig.attachmentDirectory(cacheDir).listFiles();
+        assertTrue(files == null || files.length == 0);
+    }
+
+    @Test
+    public void streamThatOutgrowsTheDownloadCapMidTransferFailsTypedAndDeletesPartial()
+            throws Exception {
+        File cacheDir = Files.createTempDirectory("nexa-attachments").toFile();
+        when(context.getCacheDir()).thenReturn(cacheDir);
+        Call<ResponseBody> contentCall = mock(Call.class);
+        when(attachmentApi.content("att-1")).thenReturn(contentCall);
+        // Content-Length lies low; the counted stream read is authoritative.
+        when(contentCall.execute()).thenReturn(Response.success(
+                body(-1L, endlessZeros(AttachmentRepository.MAX_DOWNLOAD_BYTES + 1))));
+
+        Result<File> result = awaitDownload(repository.downloadToCache("att-1", "big.bin"));
+
+        assertTooLarge(result);
+        File[] files = MediaCacheConfig.attachmentDirectory(cacheDir).listFiles();
+        assertTrue("partial file left behind: "
+                + (files == null ? List.of() : java.util.Arrays.asList(files)),
+                files == null || files.length == 0);
+    }
+
+    @Test
+    public void networkFailureFallsBackToTheLocalEncryptedCopy() throws Exception {
+        byte[] payload = "voice-note-bytes".getBytes(StandardCharsets.UTF_8);
+        File cacheDir = Files.createTempDirectory("nexa-attachments").toFile();
+        when(context.getCacheDir()).thenReturn(cacheDir);
+        Call<ResponseBody> contentCall = mock(Call.class);
+        when(attachmentApi.content("att-1")).thenReturn(contentCall);
+        when(contentCall.execute())
+                .thenReturn(Response.success(ResponseBody.create(MediaType.parse("audio/mp4"), payload)))
+                .thenThrow(new IOException("offline"));
+
+        Result<File> first = awaitDownload(repository.downloadToCache("att-1", "note.m4a"));
+        assertTrue(first instanceof Result.Success<?>);
+
+        Result<File> offline = awaitDownload(repository.downloadToCache("att-1", "note.m4a"));
+        assertTrue(offline instanceof Result.Success<?>);
+        File working = (File) ((Result.Success<?>) offline).getValue();
+        assertArrayEquals(payload, Files.readAllBytes(working.toPath()));
+    }
+
+    @Test
+    public void networkFailureWithoutLocalCopySurfacesTheNetworkError() throws Exception {
+        File cacheDir = Files.createTempDirectory("nexa-attachments").toFile();
+        when(context.getCacheDir()).thenReturn(cacheDir);
+        Call<ResponseBody> contentCall = mock(Call.class);
+        when(attachmentApi.content("att-1")).thenReturn(contentCall);
+        when(contentCall.execute()).thenThrow(new IOException("offline"));
+
+        Result<File> result = awaitDownload(repository.downloadToCache("att-1", "note.m4a"));
+
+        assertTrue(result instanceof Result.Failure<?>);
+        assertTrue(((Result.Failure<?>) result).getError() instanceof ApiError.Network);
+    }
+
+    private static Result<File> awaitDownload(
+            io.reactivex.rxjava3.core.Single<Result<File>> single) {
+        io.reactivex.rxjava3.observers.TestObserver<Result<File>> observer = single.test();
+        observer.awaitDone(30, TimeUnit.SECONDS).assertComplete().assertNoErrors();
+        return observer.values().get(0);
+    }
+
+    private static void assertTooLarge(Result<File> result) {
+        assertTrue(result instanceof Result.Failure<?>);
+        ApiError error = ((Result.Failure<?>) result).getError();
+        assertTrue(error instanceof ApiError.Unknown);
+        assertEquals(AttachmentRepository.ERROR_TOO_LARGE, ((ApiError.Unknown) error).getCode());
+    }
+
+    private static ResponseBody body(long contentLength, byte[] bytes) {
+        return body(contentLength, new ByteArrayInputStream(bytes));
+    }
+
+    private static ResponseBody body(long contentLength, InputStream stream) {
+        return new ResponseBody() {
+            @Override
+            public MediaType contentType() {
+                return MediaType.parse("application/octet-stream");
+            }
+
+            @Override
+            public long contentLength() {
+                return contentLength;
+            }
+
+            @Override
+            public BufferedSource source() {
+                return Okio.buffer(Okio.source(stream));
+            }
+        };
+    }
+
+    private static InputStream endlessZeros(long total) {
+        return new InputStream() {
+            private long remaining = total;
+
+            @Override
+            public int read(byte[] buffer, int offset, int length) {
+                if (remaining <= 0L) {
+                    return -1;
+                }
+                int count = (int) Math.min(length, remaining);
+                Arrays.fill(buffer, offset, offset + count, (byte) 0);
+                remaining -= count;
+                return count;
+            }
+
+            @Override
+            public int read() {
+                if (remaining <= 0L) {
+                    return -1;
+                }
+                remaining--;
+                return 0;
+            }
+        };
     }
 
     @Test

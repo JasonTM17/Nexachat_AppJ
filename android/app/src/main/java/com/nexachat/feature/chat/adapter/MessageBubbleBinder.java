@@ -650,9 +650,9 @@ public final class MessageBubbleBinder {
                     ? attachment.getBlurHash()
                     : AttachmentBlurHashRegistry.get(attachment.getId());
             Drawable placeholder = createBlurHashPlaceholder(image, hash);
-            String remoteUrl = url == null
-                    ? null
-                    : url.startsWith("http") ? url : AppConfig.absoluteMediaUrl(url);
+            // absoluteMediaUrl rejects absolute URLs off the API origin and
+            // non-http(s) schemes; a null result leaves the placeholder in place.
+            String remoteUrl = AppConfig.absoluteMediaUrl(url);
             bindImage(image, remoteUrl, placeholder);
             image.setOnClickListener(v -> openAttachment(message, attachment, true));
             return;
@@ -672,10 +672,11 @@ public final class MessageBubbleBinder {
                 image.setVisibility(View.VISIBLE);
                 image.setImageResource(R.drawable.bg_media_video_placeholder);
                 String videoUrl = attachment == null ? null : attachment.contentUrl();
-                if (videoUrl != null) {
-                    String absolute = videoUrl.startsWith("content:") || videoUrl.startsWith("file:")
-                            ? videoUrl
-                            : AppConfig.absoluteMediaUrl(videoUrl);
+                // Server-supplied contentUrl is untrusted: only http(s) URLs on the
+                // API origin survive absoluteMediaUrl (file:/content: are rejected),
+                // and a null result keeps the static placeholder.
+                String absolute = AppConfig.absoluteMediaUrl(videoUrl);
+                if (absolute != null) {
                     image.setTag(absolute);
                     VideoThumbnailLoader.load(image, absolute);
                 }
