@@ -164,8 +164,11 @@ public class FeedService {
             return new Result(toResponse(existing, authorId,
                     store.reactionsFor(existing.id(), authorId)), false);
         }
-        if (imageId != null) {
-            store.bindImage(imageId, authorId);
+        if (imageId != null && store.bindImage(imageId, authorId) == 0) {
+            // The image was bound to another post between the check and the
+            // bind; rollback keeps the one-image/one-post invariant.
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "imageId is already attached to a post");
         }
         FeedStore.PostRow created = store.findOwnPostByClientId(authorId, request.clientPostId())
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.INTERNAL_ERROR,
