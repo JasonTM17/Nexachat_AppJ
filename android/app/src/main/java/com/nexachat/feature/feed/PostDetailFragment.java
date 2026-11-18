@@ -115,6 +115,7 @@ public final class PostDetailFragment extends Fragment implements ReportSheetFra
         switch (outcome) {
             case COMMENT_SENT -> binding.detailInput.setText("");
             case COMMENT_FAILED -> snackbar(R.string.feed_comment_failed);
+            case COMMENT_RATE_LIMITED -> snackbar(R.string.feed_comment_rate_limited);
             case COMMENT_DELETED -> snackbar(R.string.feed_comment_deleted);
             case COMMENT_DELETE_FAILED -> snackbar(R.string.feed_comment_failed);
             case POST_DELETED -> {

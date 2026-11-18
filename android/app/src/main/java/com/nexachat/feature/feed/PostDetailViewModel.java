@@ -23,6 +23,7 @@ public final class PostDetailViewModel extends ViewModel {
     public enum Outcome {
         COMMENT_SENT,
         COMMENT_FAILED,
+        COMMENT_RATE_LIMITED,
         COMMENT_DELETED,
         COMMENT_DELETE_FAILED,
         POST_DELETED,
@@ -90,6 +91,7 @@ public final class PostDetailViewModel extends ViewModel {
     private final MutableLiveData<Outcome> outcome = new MutableLiveData<>();
     private String postId = "";
     private String clientCommentId = UUID.randomUUID().toString();
+    private boolean reactionInFlight;
 
     @Inject
     public PostDetailViewModel(@NonNull FeedRepository repository) {
@@ -173,7 +175,9 @@ public final class PostDetailViewModel extends ViewModel {
                             current == null ? List.of() : current.comments,
                             false, false, false, false,
                             current == null ? null : current.nextCursor));
-                    outcome.setValue(Outcome.COMMENT_FAILED);
+                    outcome.setValue(FeedRules.isRateLimited(error)
+                            ? Outcome.COMMENT_RATE_LIMITED
+                            : Outcome.COMMENT_FAILED);
                 }));
     }
 
@@ -217,26 +221,32 @@ public final class PostDetailViewModel extends ViewModel {
                         error -> outcome.setValue(Outcome.POST_DELETE_FAILED)));
     }
 
-    /** Flips the caller's reaction at once, then adopts the server tally. */
+    /**
+     * Flips the caller's reaction at once, then adopts the server tally. A tap while the previous
+     * reaction request is still in flight is ignored.
+     */
     public void toggleReaction(@NonNull String emoji) {
         UiState state = uiState.getValue();
         FeedRepository.Post post = state == null ? null : state.post;
-        if (post == null) {
+        if (post == null || reactionInFlight) {
             return;
         }
         boolean active = !FeedRules.hasReaction(post.reactions(), emoji);
+        reactionInFlight = true;
         uiState.setValue(state.withPost(
                 withReactions(post, FeedRules.toggle(post.reactions(), emoji, active))));
         disposables.add(repository.setReaction(post.id(), emoji, active)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(reactions -> {
+                    reactionInFlight = false;
                     UiState current = uiState.getValue();
                     if (current != null && current.post != null) {
                         uiState.setValue(current.withPost(
                                 withReactions(current.post, reactions)));
                     }
                 }, error -> {
+                    reactionInFlight = false;
                     UiState current = uiState.getValue();
                     if (current != null && current.post != null) {
                         uiState.setValue(current.withPost(

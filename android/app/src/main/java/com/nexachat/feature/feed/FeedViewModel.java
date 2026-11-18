@@ -10,8 +10,10 @@ import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import javax.inject.Inject;
 
 /** The public feed list: newest-first pages, pull-to-refresh, reactions and own-post deletion. */
@@ -67,6 +69,7 @@ public final class FeedViewModel extends ViewModel {
 
     private final FeedRepository repository;
     private final CompositeDisposable disposables = new CompositeDisposable();
+    private final Set<String> reactionsInFlight = new HashSet<>();
     private final MutableLiveData<UiState> uiState =
             new MutableLiveData<>(new UiState(List.of(), true, false, false, false, null));
 
@@ -130,10 +133,13 @@ public final class FeedViewModel extends ViewModel {
                 .subscribe(() -> { }, error -> refresh()));
     }
 
-    /** Flips the caller's reaction at once, then adopts the server tally. */
+    /**
+     * Flips the caller's reaction at once, then adopts the server tally. A tap on a post whose
+     * previous reaction request is still in flight is ignored.
+     */
     public void toggleReaction(@NonNull String postId, @NonNull String emoji) {
         UiState state = uiState.getValue();
-        if (state == null) {
+        if (state == null || reactionsInFlight.contains(postId)) {
             return;
         }
         FeedRepository.Post post = find(state.items, postId);
@@ -141,6 +147,7 @@ public final class FeedViewModel extends ViewModel {
             return;
         }
         boolean active = !FeedRules.hasReaction(post.reactions(), emoji);
+        reactionsInFlight.add(postId);
         uiState.setValue(state.withItems(
                 replace(state.items, postId, withReactions(
                         post, FeedRules.toggle(post.reactions(), emoji, active))),
@@ -149,8 +156,14 @@ public final class FeedViewModel extends ViewModel {
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(
-                        reactions -> replaceReactions(postId, reactions),
-                        error -> replaceReactions(postId, post.reactions())));
+                        reactions -> {
+                            reactionsInFlight.remove(postId);
+                            replaceReactions(postId, reactions);
+                        },
+                        error -> {
+                            reactionsInFlight.remove(postId);
+                            replaceReactions(postId, post.reactions());
+                        }));
     }
 
     private void loadFirstPage(boolean keepRows) {
@@ -163,7 +176,8 @@ public final class FeedViewModel extends ViewModel {
                             UiState state = uiState.getValue();
                             uiState.setValue(new UiState(
                                     keepRows && state != null ? state.items : List.of(),
-                                    false, false, false, !keepRows, null));
+                                    false, false, false, !keepRows,
+                                    keepRows && state != null ? state.nextCursor : null));
                         }));
     }
 
