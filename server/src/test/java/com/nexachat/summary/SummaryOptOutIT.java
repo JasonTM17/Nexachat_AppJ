@@ -370,13 +370,6 @@ class SummaryOptOutIT {
                 + "\"decisions\":[],\"actionItems\":[],\"questions\":[],\"topics\":[\"Migration\"]}";
     }
 
-    private int summaryCacheRows() {
-        Integer count = jdbcTemplate.queryForObject(
-                "SELECT count(*) FROM message_summaries WHERE conversation_id = ?",
-                Integer.class, conversationId);
-        return count == null ? 0 : count;
-    }
-
     private User createUser(String displayName) {
         String phone = ItPhoneRanges.nextPhone(SummaryOptOutIT.class);
         return userRepository.save(User.create(phone, "x".repeat(60), displayName));
