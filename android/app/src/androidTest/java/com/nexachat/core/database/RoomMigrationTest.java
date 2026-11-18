@@ -6,7 +6,6 @@ import static org.junit.Assert.assertTrue;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
-import androidx.room.Room;
 import androidx.room.testing.MigrationTestHelper;
 import androidx.sqlite.db.SupportSQLiteDatabase;
 import androidx.test.core.app.ApplicationProvider;
@@ -119,7 +118,7 @@ public final class RoomMigrationTest {
             db.close();
         }
 
-        AppDatabase migrated = Room.databaseBuilder(context, AppDatabase.class, EXPORTED_DB)
+        AppDatabase migrated = TestDatabases.plaintextFile(context, EXPORTED_DB)
                 .addMigrations(AppDatabase.MIGRATION_13_14)
                 .addMigrations(AppDatabase.MIGRATION_13_14)
                 .allowMainThreadQueries()
@@ -152,7 +151,7 @@ public final class RoomMigrationTest {
                 EXPORTED_DB, 13, true, AppDatabase.MIGRATION_12_13);
         migratedSchema.close();
 
-        AppDatabase migrated = Room.databaseBuilder(context, AppDatabase.class, EXPORTED_DB)
+        AppDatabase migrated = TestDatabases.plaintextFile(context, EXPORTED_DB)
                 .addMigrations(AppDatabase.MIGRATION_13_14)
                 .addMigrations(AppDatabase.MIGRATION_13_14)
                 .allowMainThreadQueries()
@@ -173,7 +172,7 @@ public final class RoomMigrationTest {
     @Test
     public void ownerScopedQueueSurvivesDatabaseReopenAndAccountCacheClear() {
         context.deleteDatabase(OUTBOX_DB);
-        AppDatabase database = Room.databaseBuilder(context, AppDatabase.class, OUTBOX_DB)
+        AppDatabase database = TestDatabases.plaintextFile(context, OUTBOX_DB)
                 .allowMainThreadQueries()
                 .build();
         try {
@@ -185,7 +184,7 @@ public final class RoomMigrationTest {
                     "", "[]", false, "user-a")).blockingAwait();
             database.close();
 
-            database = Room.databaseBuilder(context, AppDatabase.class, OUTBOX_DB)
+            database = TestDatabases.plaintextFile(context, OUTBOX_DB)
                     .allowMainThreadQueries()
                     .build();
             assertEquals("file-backed outbox survives a database reopen", 1,
@@ -475,7 +474,7 @@ public final class RoomMigrationTest {
 
     /** Opens the legacy file through Room with the production migrations. */
     private SupportSQLiteDatabase openMigrated() {
-        return Room.databaseBuilder(context, AppDatabase.class, LEGACY_DB)
+        return TestDatabases.plaintextFile(context, LEGACY_DB)
                 .addMigrations(
                         AppDatabase.MIGRATION_1_2,
                         AppDatabase.MIGRATION_2_3,

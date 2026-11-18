@@ -2,6 +2,7 @@ package com.nexachat.core.database;
 
 import android.content.Context;
 import androidx.room.Room;
+import com.nexachat.core.storage.TokenCipher;
 import dagger.Module;
 import dagger.Provides;
 import dagger.hilt.InstallIn;
@@ -12,6 +13,10 @@ import javax.inject.Singleton;
 /**
  * Room providers. The database file name is explicit so debug inspection and
  * backup rules can point at one stable artifact.
+ *
+ * <p>The database is opened through SQLCipher (audit F-01): the passphrase is sealed
+ * with the existing keystore {@link TokenCipher} and a plaintext legacy database is
+ * migrated to encrypted before Room opens it — see {@link DatabaseEncryption}.
  */
 @Module
 @InstallIn(SingletonComponent.class)
@@ -20,8 +25,11 @@ public final class DatabaseModule {
 
     @Provides
     @Singleton
-    public static AppDatabase provideAppDatabase(@ApplicationContext Context context) {
-        return Room.databaseBuilder(context, AppDatabase.class, "nexachat.db")
+    public static AppDatabase provideAppDatabase(
+            @ApplicationContext Context context, TokenCipher cipher) {
+        byte[] passphrase = new DatabasePassphraseStore(context, cipher).passphrase();
+        return Room.databaseBuilder(context, AppDatabase.class, DatabaseEncryption.DB_NAME)
+                .openHelperFactory(DatabaseEncryption.encryptedFactory(context, passphrase))
                 .addMigrations(
                         AppDatabase.MIGRATION_1_2,
                         AppDatabase.MIGRATION_2_3,

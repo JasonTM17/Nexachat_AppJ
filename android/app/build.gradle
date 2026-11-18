@@ -525,6 +525,11 @@ dependencies {
     implementation(libs.bundles.room)
     annotationProcessor(libs.androidx.room.compiler)
 
+    // Room at-rest encryption (audit F-01): SQLCipher replaces the framework SQLite
+    // open helper via SupportOpenHelperFactory; the passphrase is sealed with the existing
+    // AndroidKeyStore AES/GCM TokenCipher (see core/database/DatabaseEncryption).
+    implementation(libs.sqlcipher.android)
+
     // Network — Retrofit/REST + OkHttp (also used for the STOMP-over-WS client)
     implementation(libs.bundles.network)
 
