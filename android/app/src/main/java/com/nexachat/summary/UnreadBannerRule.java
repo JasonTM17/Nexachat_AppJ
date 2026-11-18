@@ -13,4 +13,9 @@ public final class UnreadBannerRule {
     public static boolean shouldShow(int unreadCount, Long dismissedForSeq) {
         return unreadCount >= MIN_UNREAD_COUNT && dismissedForSeq == null;
     }
+
+    /** The banner only offers a summary, so an encrypted conversation never shows it. */
+    public static boolean shouldShow(int unreadCount, Long dismissedForSeq, boolean e2ee) {
+        return !e2ee && shouldShow(unreadCount, dismissedForSeq);
+    }
 }

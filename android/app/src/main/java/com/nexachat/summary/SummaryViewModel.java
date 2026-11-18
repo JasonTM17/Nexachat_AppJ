@@ -119,6 +119,14 @@ public final class SummaryViewModel extends ViewModel {
     }
 
     private void start(SummaryScope scope, Integer limit, boolean refresh) {
+        start(scope, limit, refresh, false);
+    }
+
+    /**
+     * {@code zoneFallback} marks the single retry that omits the device zone after the server
+     * rejected it, so a second rejection cannot loop.
+     */
+    private void start(SummaryScope scope, Integer limit, boolean refresh, boolean zoneFallback) {
         Objects.requireNonNull(scope, "scope");
         requestGeneration++;
         long token = requestGeneration;
@@ -140,21 +148,41 @@ public final class SummaryViewModel extends ViewModel {
         }
 
         publish(token, SummaryUiState.loading(scope, limit, lastSummaryId));
-        SummaryRequest request = requestFor(scope, limit, refresh);
-        activeRequest = repository.request(conversationId, request, new SummaryRepository.Callback() {
-            @Override
-            public void onSuccess(SummaryResponse response) {
-                publish(token, SummaryUiState.ready(scope, limit, response));
-            }
+        SummaryRequest request = requestFor(scope, limit, refresh, zoneFallback);
+        SummaryRepository.Cancellable handle = repository.request(conversationId, request,
+                new SummaryRepository.Callback() {
+                    @Override
+                    public void onSuccess(SummaryResponse response) {
+                        publish(token, SummaryUiState.ready(scope, limit, response));
+                    }
 
-            @Override
-            public void onError(SummaryError error) {
-                publish(token, SummaryUiState.error(scope, limit, error, lastSummaryId));
-            }
-        });
+                    @Override
+                    public void onError(SummaryError error) {
+                        if (error == SummaryError.INVALID_TIME_ZONE && !zoneFallback) {
+                            start(scope, limit, refresh, true);
+                            return;
+                        }
+                        publish(token, SummaryUiState.error(scope, limit,
+                                error == SummaryError.INVALID_TIME_ZONE
+                                        ? SummaryError.UNKNOWN
+                                        : error,
+                                lastSummaryId));
+                    }
+                });
+        if (token == requestGeneration) {
+            activeRequest = handle;
+        }
     }
 
     private SummaryRequest requestFor(SummaryScope scope, Integer limit, boolean refresh) {
+        return requestFor(scope, limit, refresh, false);
+    }
+
+    private SummaryRequest requestFor(
+            SummaryScope scope, Integer limit, boolean refresh, boolean zoneFallback) {
+        if (zoneFallback) {
+            return SummaryRequest.withoutTimeZone(scope, limit, SummaryLanguage.AUTO, refresh);
+        }
         return new SummaryRequest(scope, limit, SummaryLanguage.AUTO, refresh,
                 TimeZone.getDefault().getID());
     }
