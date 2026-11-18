@@ -101,6 +101,7 @@ export default function AlertsPage() {
 
   const confirm = async (reason: string) => {
     if (!pending) return;
+    let revealedMessages: RevealedMessage[] | null = null;
     try {
       if (pending.kind === 'status' && detail) {
         await api(`/api/v1/admin/alerts/${detail.alert.id}`, {
@@ -117,7 +118,7 @@ export default function AlertsPage() {
           `/api/v1/admin/alerts/${detail.alert.id}/reveal`,
           { method: 'POST', body: { reason } },
         );
-        setRevealed(res.messages);
+        revealedMessages = res.messages;
       } else if (pending.kind === 'bulk') {
         await api('/api/v1/admin/alerts/bulk-dismiss', {
           method: 'POST',
@@ -126,6 +127,9 @@ export default function AlertsPage() {
       }
       setPending(null);
       if (detail) openDetail(detail.alert.id);
+      // openDetail clears `revealed` to hide stale context from the previous
+      // alert; re-apply the fresh reveal afterwards so it survives.
+      if (revealedMessages) setRevealed(revealedMessages);
       load();
     } catch {
       setActionError(true);
