@@ -404,7 +404,56 @@ class StreakFlowIT extends FeatureItSupport {
         assertThat(fcmGateway.getSentPushes()).isEmpty();
     }
 
+    @Test
+    void theReminderJobLeavesTheDayUnclaimedWhenNoOwnedTokenRemains() throws Exception {
+        Actor alice = newUser("Alice");
+        Actor bob = newUser("Bob");
+        UUID conversationId = openDirect(alice, bob);
+        insertChain(conversationId, alice, bob, 5, today().minusDays(1));
+        patchAs(alice, "/api/v1/users/me/settings", Map.of("streakReminders", true))
+                .andExpect(status().isOk());
+        // One physical device, registered by Alice first and by Bob later: the
+        // token belongs to the newer registrant, so Alice owns nothing to push to.
+        String sharedToken = "shared-device-" + UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO user_device_tokens
+                    (id, user_id, token, platform, created_at, updated_at, last_used_at)
+                VALUES (?, ?, ?, 'ANDROID', now() - interval '2 hours',
+                        now() - interval '2 hours', now())
+                """, UUID.randomUUID(), alice.id(), sharedToken);
+        jdbcTemplate.update("""
+                INSERT INTO user_device_tokens
+                    (id, user_id, token, platform, created_at, updated_at, last_used_at)
+                VALUES (?, ?, ?, 'ANDROID', now() - interval '1 hour', now(), now())
+                """, UUID.randomUUID(), bob.id(), sharedToken);
+        fcmGateway.clear();
+
+        Instant reminderHour = today().atTime(streakProperties.getReminderHour(), 0)
+                .toInstant(ZoneOffset.UTC);
+        assertThat(reminderJob.runAt(reminderHour)).isZero();
+        assertThat(fcmGateway.getSentPushes()).isEmpty();
+        assertThat(reminderSentDay(alice.id())).isNull();
+
+        // A token only Alice owns makes the same day remind her after all.
+        postAs(alice, "/api/v1/devices/token",
+                Map.of("token", "alice-own-" + UUID.randomUUID(), "platform", "ANDROID"))
+                .andExpect(status().is2xxSuccessful());
+        assertThat(reminderJob.runAt(reminderHour)).isEqualTo(1);
+        assertThat(reminderSentDay(alice.id())).isEqualTo(today());
+        assertThat(fcmGateway.getSentPushes().stream()
+                .filter(push -> "STREAK_REMINDER".equals(push.data().get("type")))).hasSize(1);
+    }
+
     // ------------------------------------------------------------------ helpers
+
+    private LocalDate reminderSentDay(UUID userId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT reminder_sent_day FROM user_streaks WHERE user_id = ?",
+                (rs, rowNum) -> {
+                    java.sql.Date day = rs.getDate(1);
+                    return day == null ? null : day.toLocalDate();
+                }, userId);
+    }
 
     private void putDevice(Actor actor, UUID deviceId) throws Exception {
         byte[] key = new byte[32];
