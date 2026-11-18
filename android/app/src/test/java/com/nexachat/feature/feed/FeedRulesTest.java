@@ -46,6 +46,13 @@ public final class FeedRulesTest {
         assertFalse(FeedRules.canSubmitComment("a".repeat(FeedRules.MAX_COMMENT_LENGTH + 1)));
     }
 
+    @Test public void aReactionPillIsInsetToReachTheTouchTargetWithoutGrowingTheLook() {
+        assertEquals(8, FeedRules.reactionPillInset(48, 32));
+        assertEquals(0, FeedRules.reactionPillInset(32, 32));
+        assertEquals(0, FeedRules.reactionPillInset(24, 32));
+        assertEquals(12, FeedRules.reactionPillInset(60, 36));
+    }
+
     @Test public void rateLimitingIsReadFromTheApiFailure() {
         assertFalse(FeedRules.isRateLimited(null));
         assertFalse(FeedRules.isRateLimited(new IllegalStateException("boom")));

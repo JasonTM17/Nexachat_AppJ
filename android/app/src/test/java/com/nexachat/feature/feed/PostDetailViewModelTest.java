@@ -132,6 +132,27 @@ public final class PostDetailViewModelTest {
         assertEquals(List.of("comment-1"), commentIds(state().getComments()));
     }
 
+    @Test public void aRateLimitedCommentIsReportedSeparately() {
+        loadPostWithComments(null);
+
+        viewModel.sendComment("hello");
+        repository.addCommentCalls.get(0).onError(new FeedApiException(429, null));
+
+        assertEquals("COMMENT_RATE_LIMITED", outcome().name());
+        assertFalse(state().isSending());
+        assertEquals(List.of("comment-1"), commentIds(state().getComments()));
+    }
+
+    @Test public void aRateLimitedCommentKeepsItsClientCommentIdForTheRetry() {
+        loadPostWithComments(null);
+
+        viewModel.sendComment("hello");
+        repository.addCommentCalls.get(0).onError(new FeedApiException(429, null));
+        viewModel.sendComment("hello");
+
+        assertEquals(repository.addCommentClientIds.get(0), repository.addCommentClientIds.get(1));
+    }
+
     @Test public void theClientCommentIdChangesAfterASuccessfulSend() {
         loadPostWithComments(null);
 
@@ -220,6 +241,35 @@ public final class PostDetailViewModelTest {
         repository.setReactionCalls.get(0).onError(new IllegalStateException("offline"));
 
         assertTrue(state().getPost().reactions().isEmpty());
+    }
+
+    @Test public void aSecondTapWhileOneIsInFlightIsIgnored() {
+        loadPostWithComments(null);
+
+        viewModel.toggleReaction("\uD83D\uDC4D");
+        viewModel.toggleReaction("\uD83D\uDC4D");
+
+        assertEquals(1, repository.setReactionCalls.size());
+        assertEquals(List.of(new FeedRepository.Reaction("\uD83D\uDC4D", 1, true)),
+                state().getPost().reactions());
+
+        repository.setReactionCalls.get(0).onSuccess(
+                List.of(new FeedRepository.Reaction("\uD83D\uDC4D", 1, true)));
+        viewModel.toggleReaction("\uD83D\uDC4D");
+
+        assertEquals(2, repository.setReactionCalls.size());
+        assertFalse(repository.setReactionActive.get(1));
+    }
+
+    @Test public void aFailedReactionAllowsTheNextTap() {
+        loadPostWithComments(null);
+        viewModel.toggleReaction("\uD83D\uDC4D");
+        repository.setReactionCalls.get(0).onError(new IllegalStateException("offline"));
+
+        viewModel.toggleReaction("\uD83D\uDC4D");
+
+        assertEquals(2, repository.setReactionCalls.size());
+        assertTrue(repository.setReactionActive.get(1));
     }
 
     @Test public void aReactionWithoutAPostDoesNothing() {

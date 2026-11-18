@@ -106,15 +106,7 @@ public final class PublicFeedFragment extends Fragment implements ReportSheetFra
     }
 
     private void showNoticeOnce() {
-        if (noticeStore.isNoticeSeen()) {
-            return;
-        }
-        noticeStore.markNoticeSeen();
-        new MaterialAlertDialogBuilder(requireContext())
-                .setTitle(R.string.feed_notice_title)
-                .setMessage(R.string.feed_notice_body)
-                .setPositiveButton(R.string.feed_notice_ok, null)
-                .show();
+        FeedNoticeDialogFragment.showIfNeeded(getChildFragmentManager(), noticeStore);
     }
 
     private void openPost(@NonNull FeedRepository.Post post) {

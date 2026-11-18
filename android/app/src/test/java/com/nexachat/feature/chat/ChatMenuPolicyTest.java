@@ -91,6 +91,16 @@ public final class ChatMenuPolicyTest {
     }
 
     @Test
+    public void e2eePredicateLetsTheRowWinOverTheState() {
+        assertTrue(ChatFragment.ChatMenuPolicy.e2ee(
+                conversation("DIRECT", false, true, false, false, null), false));
+        assertFalse(ChatFragment.ChatMenuPolicy.e2ee(
+                conversation("DIRECT", false, false, false, false, null), true));
+        assertTrue(ChatFragment.ChatMenuPolicy.e2ee(null, true));
+        assertFalse(ChatFragment.ChatMenuPolicy.e2ee(null, false));
+    }
+
+    @Test
     public void pinFlagFollowsTheRowThenTheState() {
         assertTrue(ChatFragment.ChatMenuPolicy.resolve(
                 conversation("DIRECT", true, false, false, false, null),

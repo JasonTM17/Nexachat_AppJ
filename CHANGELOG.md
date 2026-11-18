@@ -7,6 +7,8 @@ All notable changes to NexaChat are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Website: a new bilingual landing page for nexachat.io.vn with the main
+  features, app screenshots and a download button.
 - Choose what a conversation summary covers: unread messages, the last 20, 50 or
   100 messages, or today. Today follows the device time zone and covers exactly
   the local calendar day.
@@ -31,6 +33,11 @@ All notable changes to NexaChat are documented here. The format follows
   cached result is replayed only while its citations still resolve.
 
 ### Fixed
+- Android: asking for a summary in an end-to-end encrypted chat now says that
+  summaries are not available there instead of showing a generic error, and the
+  unread-messages banner no longer offers a summary in those chats.
+- Android: if the server does not recognise the device time zone, the summary is
+  requested once more with the server's default zone instead of failing.
 - Android: the caller's call screen no longer closes a second or two after
   opening when you call again after an earlier call ended; the previous
   call's finished state is ignored instead of closing the new call's screen.
