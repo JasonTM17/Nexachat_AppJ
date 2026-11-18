@@ -83,19 +83,29 @@ public class PresenceSessionRegistry {
         if (existingUser != null) {
             return;
         }
-        UserSessions userSessions = sessionsByUser.computeIfAbsent(userId, ignored -> new UserSessions());
-        synchronized (userSessions) {
-            boolean firstSession = userSessions.sessionIds.isEmpty();
-            boolean coalesced = userSessions.pendingOffline != null;
-            if (coalesced) {
-                userSessions.pendingOffline.cancel(false);
-                userSessions.pendingOffline = null;
-                userSessions.generation++;
-            }
-            userSessions.sessionIds.add(sessionId);
-            sessionState.setOnline(userId, true);
-            if (firstSession && !coalesced) {
-                presenceService.connected(userId);
+        for (;;) {
+            UserSessions userSessions = sessionsByUser.computeIfAbsent(userId,
+                    ignored -> new UserSessions());
+            synchronized (userSessions) {
+                if (sessionsByUser.get(userId) != userSessions) {
+                    // The offline coalescer evicted this entry between the map
+                    // lookup and the lock — retry so the session lands on the
+                    // live entry instead of an orphaned one.
+                    continue;
+                }
+                boolean firstSession = userSessions.sessionIds.isEmpty();
+                boolean coalesced = userSessions.pendingOffline != null;
+                if (coalesced) {
+                    userSessions.pendingOffline.cancel(false);
+                    userSessions.pendingOffline = null;
+                    userSessions.generation++;
+                }
+                userSessions.sessionIds.add(sessionId);
+                sessionState.setOnline(userId, true);
+                if (firstSession && !coalesced) {
+                    presenceService.connected(userId);
+                }
+                return;
             }
         }
     }
@@ -130,6 +140,10 @@ public class PresenceSessionRegistry {
                 return;
             }
             userSessions.pendingOffline = null;
+            // The entry dies with its last coalesced publish: conditional
+            // remove so a reconnect that already swapped in a new UserSessions
+            // object can never be evicted by this stale task.
+            sessionsByUser.remove(userId, userSessions);
             presenceService.disconnected(userId, lastSeenAt);
         }
     }
