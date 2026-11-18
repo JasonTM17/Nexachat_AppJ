@@ -207,6 +207,8 @@ class FeedRetentionIT extends FeatureItSupport {
                 .andExpect(status().isCreated());
         putAs(author, "/api/v1/feed/posts/" + otherPost + "/reactions/\uD83D\uDC4D")
                 .andExpect(status().isOk());
+        String unboundImageId = uploadImage(author);
+        String unboundKey = storageKeyOf(unboundImageId);
         jdbcTemplate.update("UPDATE users SET password_hash = ? WHERE id = ?",
                 passwordEncoder.encode("secret"), author.id());
 
@@ -219,6 +221,10 @@ class FeedRetentionIT extends FeatureItSupport {
         assertThat(countRows(
                 "SELECT count(*) FROM public_posts WHERE id = ? AND deleted_at IS NOT NULL",
                 ownPost)).isEqualTo(1);
+        assertThat(countRows("SELECT count(*) FROM public_images WHERE id = ?",
+                UUID.fromString(unboundImageId))).isZero();
+        assertThatThrownBy(() -> storageService.open(unboundKey))
+                .isInstanceOf(ApiException.class);
         assertThat(countRows("""
                 SELECT count(*) FROM public_comments
                 WHERE author_id = ? AND deleted_at IS NOT NULL
