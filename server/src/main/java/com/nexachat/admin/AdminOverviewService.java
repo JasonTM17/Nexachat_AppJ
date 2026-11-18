@@ -87,7 +87,9 @@ public class AdminOverviewService {
 
     private Kpis kpis() {
         long registrationsToday = scalar(
-                "SELECT count(*) FROM users WHERE created_at >= date_trunc('day', now())");
+                "SELECT count(*) FROM users"
+                        + " WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'UTC')"
+                        + " AT TIME ZONE 'UTC'");
         long dau = scalar("""
                 SELECT count(*) FROM users
                 WHERE deleted_at IS NULL AND last_seen_at >= now() - interval '24 hours'
@@ -97,7 +99,9 @@ public class AdminOverviewService {
                 WHERE deleted_at IS NULL AND last_seen_at >= now() - interval '7 days'
                 """);
         long messagesToday = scalar(
-                "SELECT count(*) FROM messages WHERE created_at >= date_trunc('day', now())");
+                "SELECT count(*) FROM messages"
+                        + " WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'UTC')"
+                        + " AT TIME ZONE 'UTC'");
         long activeCalls = callRegistry == null ? 0 : callRegistry.activeCallSessions().size();
         long databaseBytes = scalar("SELECT pg_database_size(current_database())");
         long pendingAlerts = scalar("SELECT count(*) FROM message_alerts WHERE status = 'OPEN'");
@@ -113,18 +117,26 @@ public class AdminOverviewService {
                 scanQueue.alertsCreated(), properties.alerts().enabled(), properties.alerts().dryRun());
     }
 
-    /** Per-day registrations and message counts over the trailing window. */
+    /**
+     * Per-day registrations and message counts over the trailing window. All
+     * day buckets are UTC — {@code first} is a UTC date, so the bucketing and
+     * the series bound must resolve in UTC too rather than in the DB session
+     * timezone, where {@code ::date} and {@code CURRENT_DATE} otherwise drift.
+     */
     private List<SeriesPoint> series(int days) {
         LocalDate first = LocalDate.now(ZoneOffset.UTC).minusDays(days - 1L);
         List<SeriesPoint> points = jdbcTemplate.query("""
                         WITH days AS (
-                            SELECT generate_series(?::date, CURRENT_DATE, interval '1 day')::date AS day
+                            SELECT generate_series(?::date, (now() AT TIME ZONE 'UTC')::date,
+                                                   interval '1 day')::date AS day
                         ), regs AS (
-                            SELECT created_at::date AS day, count(*) AS n
-                            FROM users WHERE created_at::date >= ?::date GROUP BY 1
+                            SELECT (created_at AT TIME ZONE 'UTC')::date AS day, count(*) AS n
+                            FROM users
+                            WHERE (created_at AT TIME ZONE 'UTC')::date >= ?::date GROUP BY 1
                         ), msgs AS (
-                            SELECT created_at::date AS day, count(*) AS n
-                            FROM messages WHERE created_at::date >= ?::date GROUP BY 1
+                            SELECT (created_at AT TIME ZONE 'UTC')::date AS day, count(*) AS n
+                            FROM messages
+                            WHERE (created_at AT TIME ZONE 'UTC')::date >= ?::date GROUP BY 1
                         )
                         SELECT days.day, COALESCE(regs.n, 0) AS registrations,
                                COALESCE(msgs.n, 0) AS messages
