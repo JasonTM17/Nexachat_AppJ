@@ -96,6 +96,16 @@ button, input, select, textarea {
   border-radius: 8px;
 }
 
+/* Filled buttons sit on a same-hue ring that is invisible against the button
+   itself; give them a solid outline in the theme's primary colour, which
+   contrasts with the page background in both schemes. */
+.btn.primary:focus-visible,
+.btn.danger:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
 /* ---------- Layout ---------- */
 
 .shell { display: flex; min-height: 100vh; }
@@ -229,7 +239,8 @@ button, input, select, textarea {
 .chip.medium { background: var(--info-container); color: var(--info-text); border-color: transparent; }
 .chip.low { background: var(--surface-2); color: var(--text-2); }
 .chip.success { background: var(--success-container); color: var(--success-text); border-color: transparent; }
-.chip.status-open { background: var(--danger-container); color: var(--danger); border-color: transparent; }
+/* Outlined so the status chip reads differently from a filled severity chip. */
+.chip.status-open { background: var(--danger-container); color: var(--danger); border-color: var(--danger); }
 [data-theme='dark'] .chip.status-open { color: #ffc9c6; }
 .chip.status-acknowledged, .chip.status-ack { background: var(--info-container); color: var(--info-text); border-color: transparent; }
 .chip.status-resolved { background: var(--success-container); color: var(--success-text); border-color: transparent; }
@@ -392,6 +403,8 @@ th.col-actions { position: sticky; right: 0; z-index: 1; box-shadow: -10px 0 12p
 }
 
 .login-card { width: min(380px, 100%); }
+.login-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.login-head .select { width: auto; min-width: 76px; }
 .login-card h1 { margin: 0 0 4px; font-size: 20px; }
 .login-card .sub { color: var(--text-2); font-size: 13px; margin-bottom: 20px; }
 

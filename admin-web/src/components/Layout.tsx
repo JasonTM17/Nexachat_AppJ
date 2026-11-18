@@ -50,6 +50,7 @@ export default function Layout() {
               key={item.to}
               to={item.to}
               title={t(item.key)}
+              aria-label={t(item.key)}
               className={({ isActive }) => `navlink${isActive ? ' active' : ''}`}
             >
               <span aria-hidden="true">{item.icon}</span>
@@ -60,6 +61,7 @@ export default function Layout() {
         <button
           className="navlink"
           title={t('nav.logout')}
+          aria-label={t('nav.logout')}
           onClick={() => {
             signOut();
             navigate('/login');
