@@ -7,7 +7,9 @@
 # ------------------------------------------------------------------------------
 -keepattributes Signature, InnerClasses, EnclosingMethod
 -keepattributes RuntimeVisibleAnnotations, RuntimeVisibleParameterAnnotations, AnnotationDefault
--keepattributes SourceFile, LineNumberTable
+# F-08: strip SourceFile/LineNumberTable from release artifacts instead of keeping them.
+# Release crash symbolication uses the R8 mapping file (mapping.txt), not in-app attributes.
+-keepattributes !SourceFile,!LineNumberTable
 
 # Support AndroidX @Keep annotation
 -keep @androidx.annotation.Keep class * { *; }

@@ -4,7 +4,6 @@ import static org.junit.Assert.*;
 
 import android.database.Cursor;
 import androidx.room.testing.MigrationTestHelper;
-import androidx.room.Room;
 import androidx.test.core.app.ApplicationProvider;
 import org.junit.After;
 import androidx.sqlite.db.SupportSQLiteDatabase;
@@ -65,8 +64,8 @@ public final class RoomV14MigrationInstrumentedTest {
             try { page(db); db.setTransactionSuccessful(); }
             finally { db.endTransaction(); }
         } finally { db.close(); }
-        AppDatabase reopened = Room.databaseBuilder(ApplicationProvider.getApplicationContext(),
-                AppDatabase.class, "room14-fault.db").addCallback(AppDatabase.SYNC_CACHE_CALLBACK).build();
+        AppDatabase reopened = TestDatabases.plaintextFile(ApplicationProvider.getApplicationContext(),
+                "room14-fault.db").addCallback(AppDatabase.SYNC_CACHE_CALLBACK).build();
         try {
             assertNotNull("committed row survives reopen", reopened.messageDao().byId("m").blockingGet());
             assertEquals("committed cursor survives reopen", 1,

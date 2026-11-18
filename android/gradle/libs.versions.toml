@@ -7,6 +7,9 @@ hilt = "2.52"
 google-services = "4.5.0"
 lifecycle = "2.8.7"
 room = "2.6.1"
+# SQLCipher for Android — at-rest encryption of the Room database (audit F-01).
+# 4.5.4 is the newest release published on Maven Central (2023-04-27); pinned, never "latest".
+sqlcipher = "4.5.4"
 retrofit = "2.11.0"
 okhttp = "4.12.0"
 moshi = "1.15.1"
@@ -68,6 +71,9 @@ hilt-android-testing = { group = "com.google.dagger", name = "hilt-android-testi
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-rxjava3 = { group = "androidx.room", name = "room-rxjava3", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+# SQLCipher: its SupportFactory implements androidx.sqlite's SupportSQLiteOpenHelper.Factory,
+# so Room + DAOs keep working unchanged while the database file is encrypted at rest.
+android-database-sqlcipher = { group = "net.zetetic", name = "android-database-sqlcipher", version.ref = "sqlcipher" }
 
 # Network
 retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
