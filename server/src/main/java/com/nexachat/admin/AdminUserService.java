@@ -1,11 +1,13 @@
 package com.nexachat.admin;
 
 import com.nexachat.auth.AccessTokenRevocationService;
+import com.nexachat.auth.AccessTokenValidityChangedEvent;
 import com.nexachat.auth.TokenService;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,17 +48,20 @@ public class AdminUserService {
     private final TokenService tokenService;
     private final AccessTokenRevocationService accessTokenRevocationService;
     private final AdminAuditService auditService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public AdminUserService(JdbcTemplate jdbcTemplate,
                             UserRepository userRepository,
                             TokenService tokenService,
                             AccessTokenRevocationService accessTokenRevocationService,
-                            AdminAuditService auditService) {
+                            AdminAuditService auditService,
+                            ApplicationEventPublisher eventPublisher) {
         this.jdbcTemplate = jdbcTemplate;
         this.userRepository = userRepository;
         this.tokenService = tokenService;
         this.accessTokenRevocationService = accessTokenRevocationService;
         this.auditService = auditService;
+        this.eventPublisher = eventPublisher;
     }
 
     /** List row: profile + lifecycle flags. */
@@ -213,6 +218,8 @@ public class AdminUserService {
         if (target.isSuspended()) {
             target.unsuspend();
             userRepository.save(target);
+            // Tokens stay valid; only the cached validity snapshot is stale.
+            eventPublisher.publishEvent(new AccessTokenValidityChangedEvent(targetId));
         }
         auditService.record(actorId, actorRole, "USER_UNSUSPEND", "user", targetId.toString(),
                 reason == null ? null : reason.trim(), Map.of("phone", maskPhone(target)), ip);

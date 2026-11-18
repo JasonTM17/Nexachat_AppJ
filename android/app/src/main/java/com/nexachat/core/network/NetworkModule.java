@@ -2,9 +2,7 @@ package com.nexachat.core.network;
 
 import android.content.Context;
 import androidx.annotation.NonNull;
-import com.nexachat.core.media.MediaCacheConfig;
 import com.nexachat.core.media.MediaCacheRequestInterceptor;
-import com.nexachat.core.media.MediaCacheResponseInterceptor;
 import com.nexachat.BuildConfig;
 import com.nexachat.core.common.AppConfig;
 import com.squareup.moshi.Moshi;
@@ -46,12 +44,14 @@ public final class NetworkModule {
                 .readTimeout(15, TimeUnit.SECONDS)
                 // 60s write window: attachment uploads may stream up to 25 MB.
                 .writeTimeout(60, TimeUnit.SECONDS)
-                .cache(MediaCacheConfig.createOkHttpCache(context.getCacheDir()))
+                // No OkHttp disk cache on purpose: it stored decrypted attachment
+                // bytes unencrypted (audit F-02) and OkHttp's cache format cannot
+                // be encrypted. MediaCacheRequestInterceptor forces no-store so
+                // nothing is ever written even if a cache is re-added later.
                 .addInterceptor(new MediaCacheRequestInterceptor())
                 .addInterceptor(new AcceptLanguageInterceptor())
                 .addInterceptor(authInterceptor)
                 .addInterceptor(new AiRequestTimeoutInterceptor())
-                .addNetworkInterceptor(new MediaCacheResponseInterceptor())
                 .authenticator(tokenAuthenticator);
         if (BuildConfig.DEBUG) {
             // BASIC only: never log auth bodies/headers (plan §13 "Sensitive log").

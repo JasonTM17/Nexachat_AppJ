@@ -110,14 +110,16 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
     }
 
     private static void bindImage(@NonNull ImageView image, @Nullable FeedRepository.Image model) {
-        if (model == null || model.url() == null) {
+        String absolute = model == null ? null : AppConfig.absoluteMediaUrl(model.url());
+        if (absolute == null) {
+            // No url, or an absolute URL off the API origin: nothing to load.
             Glide.with(image).clear(image);
             image.setVisibility(View.GONE);
             return;
         }
         image.setVisibility(View.VISIBLE);
         Glide.with(image)
-                .load(AppConfig.absoluteMediaUrl(model.url()))
+                .load(absolute)
                 .centerCrop()
                 .into(image);
     }
