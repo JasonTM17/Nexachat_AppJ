@@ -7,6 +7,7 @@ import {
 } from '../api';
 import { useI18n, type StringKey } from '../i18n';
 import { useSession } from '../auth';
+import { useDebouncedValue, useLatestRequest } from '../lib/async';
 import {
   Chip,
   ConfirmDialog,
@@ -47,23 +48,26 @@ export default function UsersPage() {
   const [busy, setBusy] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
   const [deleted, setDeleted] = useState<UserSummary[] | null>(null);
+  const searchInput = useDebouncedValue(search, 300);
+  const latest = useLatestRequest();
 
   const params = useMemo(() => {
     const q = new URLSearchParams();
-    if (search.trim()) q.set('search', search.trim());
+    if (searchInput.trim()) q.set('search', searchInput.trim());
     if (status) q.set('status', status);
     if (role) q.set('role', role);
     q.set('page', String(page));
     q.set('size', String(PAGE_SIZE));
     return q.toString();
-  }, [search, status, role, page]);
+  }, [searchInput, status, role, page]);
 
   const load = useCallback(() => {
     setFailed(false);
-    api<Page<UserSummary>>(`/api/v1/admin/users?${params}`)
-      .then(setData)
-      .catch(() => setFailed(true));
-  }, [params]);
+    latest(api<Page<UserSummary>>(`/api/v1/admin/users?${params}`), (data) => {
+      if (data) setData(data);
+      else setFailed(true);
+    });
+  }, [params, latest]);
 
   useEffect(() => {
     load();

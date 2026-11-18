@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, type AuditEntry, type Page } from '../api';
 import { useI18n } from '../i18n';
+import { useDebouncedValue, useLatestRequest } from '../lib/async';
 import { Chip, Empty, ErrorBlock, Loading, Pager, fmtTime, truncateJson } from '../components/ui';
 
 const PAGE_SIZE = 25;
+const SEARCH_DEBOUNCE_MS = 300;
 
 export default function AuditPage() {
   const { t } = useI18n();
@@ -13,23 +15,28 @@ export default function AuditPage() {
   const [page, setPage] = useState(0);
   const [data, setData] = useState<Page<AuditEntry> | null>(null);
   const [failed, setFailed] = useState(false);
+  const actorInput = useDebouncedValue(actor, SEARCH_DEBOUNCE_MS);
+  const actionInput = useDebouncedValue(action, SEARCH_DEBOUNCE_MS);
+  const targetInput = useDebouncedValue(target, SEARCH_DEBOUNCE_MS);
+  const latest = useLatestRequest();
 
   const params = useMemo(() => {
     const q = new URLSearchParams();
-    if (actor.trim()) q.set('actorId', actor.trim());
-    if (action.trim()) q.set('action', action.trim());
-    if (target.trim()) q.set('targetId', target.trim());
+    if (actorInput.trim()) q.set('actorId', actorInput.trim());
+    if (actionInput.trim()) q.set('action', actionInput.trim());
+    if (targetInput.trim()) q.set('targetId', targetInput.trim());
     q.set('page', String(page));
     q.set('size', String(PAGE_SIZE));
     return q.toString();
-  }, [actor, action, target, page]);
+  }, [actorInput, actionInput, targetInput, page]);
 
   const load = useCallback(() => {
     setFailed(false);
-    api<Page<AuditEntry>>(`/api/v1/admin/audit?${params}`)
-      .then(setData)
-      .catch(() => setFailed(true));
-  }, [params]);
+    latest(api<Page<AuditEntry>>(`/api/v1/admin/audit?${params}`), (data) => {
+      if (data) setData(data);
+      else setFailed(true);
+    });
+  }, [params, latest]);
 
   useEffect(() => {
     load();
