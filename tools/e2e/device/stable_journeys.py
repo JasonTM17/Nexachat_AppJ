@@ -243,16 +243,52 @@ ROWS: tuple[JourneyRow, ...] = (
         id="archive-preferences",
         title="Archive browser and conversation preferences",
         matrix_refs=("phase-08:Groups/archive", "c1-5:Archive/labels/preferences"),
-        preconditions=("Disposable conversation with message/media fixtures is available"),
-        steps=("Browse media/files/links and paging", "Archive/unarchive, mute/unmute, pin and seen/presence preferences"),
-        assertions=("Caller-only flags and list contents survive refresh", "Peer cannot see private labels/preferences"),
-        captures=("archive/filter/preference screenshots", "redacted REST transcripts", "logcat.txt", "summary.json"),
-        cleanup=("Restore only the created conversation's preference flags"),
-        rest_plan=(("GET", "/api/v1/conversations/{id}/archive"),
+        preconditions=("An is signed in on the device",
+                       "The seeded non-E2EE An↔Binh DIRECT conversation exists "
+                       "(archive items exclude encrypted messages)",
+                       "The archive list is taller than one page: >30 seeded link items"),
+        steps=("Seed a tagged image, file, 40+ links and one peer-authored link via REST",
+               "Browse media/files/links tabs, page past the 30-item limit, apply and clear "
+               "the sender filter on the shared-media screen",
+               "Mute/unmute and label-assign through the chat overflow; archive from the "
+               "overflow and undo the snackbar; pin/unpin and archive/unarchive through the "
+               "inbox long-press sheet; browse the Archived inbox chip and pull-to-refresh",
+               "Toggle showSeen/showPresence on the profile screen and read the peer-visible "
+               "effect over REST and the peer's STOMP topic"),
+        assertions=("Every tab/filter/page renders the tagged fixture and agrees with "
+                    "GET /conversations/{id}/archive items and nextCursor",
+                    "Each flag mutation lands in the caller's inbox entry and never in the "
+                    "peer's (muted/mutedUntil/pinned/archived/labels)",
+                    "The archived chip lists the conversation after archive and the row "
+                    "disappears after unarchive; flags survive pull-to-refresh",
+                    "The peer's inbox entry and /api/v1/labels never carry the private label",
+                    "With showSeen off no MESSAGE_READ(an) reaches Binh's STOMP topic; with "
+                    "showPresence off Binh's entry drops peerPresence"),
+        captures=("archive-media.png", "archive-files.png", "archive-links-*.png",
+                  "archive-filtered.png", "archived-inbox.png", "profile-privacy.png",
+                  "ui-tree.txt", "logcat.txt", "rest-transcript.json",
+                  "stomp-transcript.json", "summary.json"),
+        cleanup=("Restore An's showSeen/showPresence settings and Binh's showSeen",
+                 "Reset mute/pin/archive flags on the seeded conversation to their baseline",
+                 "Unassign and delete only the row-created label; soft-delete only the "
+                 "row-created messages"),
+        rest_plan=(("POST", "/api/v1/attachments"),
+                   ("POST", "/api/v1/conversations/{id}/messages"),
+                   ("GET", "/api/v1/conversations/{id}/archive"),
+                   ("GET", "/api/v1/conversations?archived={bool}"),
+                   ("PUT", "/api/v1/conversations/{id}/mute"),
+                   ("DELETE", "/api/v1/conversations/{id}/mute"),
                    ("PUT", "/api/v1/conversations/{id}/archive"),
-                   ("GET", "/api/v1/conversations?archived=true")),
-        capability_gap=("No maintained UI driver covers archive tabs, filters, paging and undo; API flags alone "
-                        "cannot assert the Android browser journey."),
+                   ("DELETE", "/api/v1/conversations/{id}/archive"),
+                   ("PUT", "/api/v1/conversations/{id}/pin"),
+                   ("DELETE", "/api/v1/conversations/{id}/pin"),
+                   ("POST", "/api/v1/labels"),
+                   ("PUT", "/api/v1/conversations/{id}/labels/{labelId}"),
+                   ("DELETE", "/api/v1/labels/{labelId}"),
+                   ("PATCH", "/api/v1/users/me/settings"),
+                   ("POST", "/api/v1/conversations/{id}/read")),
+        stomp_plan=("CONNECT as Binh", "SUBSCRIBE /topic/conversations.{conversationId}",
+                    "Assert MESSAGE_READ(userId=An) only while An's showSeen is enabled"),
     ),
     JourneyRow(
         id="labels-lifecycle",
@@ -485,6 +521,35 @@ HELPER_CALLS = {
         {"helper": "e2e_common.Client.put", "path": "/api/v1/conversations/{id}/ai-opt-out",
          "actor": "Binh", "assert": "ask drops the fact citation and reports contextOmitted"},
     ),
+    "archive-preferences": (
+        {"helper": "e2e_common.Client.request",
+         "path": "POST /api/v1/attachments + /messages", "actor": "Binh+An",
+         "seed": "tagged image, file and 41 link items"},
+        {"helper": "adb_ui.Device.tap_node", "target": "resource-id moreButton -> Shared media",
+         "assert": "archiveTabs media/files/links render the tagged fixture"},
+        {"helper": "adb_ui.Device.swipe", "target": "resource-id archiveList",
+         "assert": "page-2-only link URL renders past the 30-item page"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "archiveSenderFilter -> single-choice Binh -> archiveClearFilters",
+         "assert": "An-authored link is hidden under the Binh filter and returns after Clear"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "chat overflow Mute notifications -> Until turned back on -> Unmute",
+         "assert": "An entry muted+mutedUntil flips; Binh entry unchanged"},
+        {"helper": "adb_ui.Device.long_press + tap_node",
+         "target": "inbox row Binh -> Pin/Unpin/Archive/Unarchive sheet items",
+         "assert": "caller flags flip on REST; archived chip lists and drops the row"},
+        {"helper": "adb_ui.Device.tap_node", "target": "snackbar Undo",
+         "assert": "the overflow archive is reverted caller-side"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "chat overflow Assign labels -> sj-lab CheckBox -> Done",
+         "assert": "An's entry.labels gains the id; Binh's never does"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "profile showSeen/showPresence switch rows",
+         "assert": "MESSAGE_READ(an) reaches Binh's topic only while showSeen; "
+                  "Binh's peerPresence appears only while showPresence"},
+        {"helper": "realtime_probe.FrameReader", "actor": "Binh",
+         "assert": "MESSAGE_READ frame gated by the device toggle"},
+    ),
     "injected-notifications": (
         {"helper": "e2e_common.send_text", "actor": "Binh", "assert": "real message id and seq"},
         {"helper": "inject_push.main", "kind": "message", "serial": SERIAL},
@@ -524,7 +589,20 @@ UI_MARKERS = {
     "media": ("text:unique media fixture name", "text:voice duration"),
     "groups-contacts": ("text:unique group name", "text:member list", "text:invite destination"),
     "polls-reminders": ("text:unique poll question", "text:unique reminder title"),
-    "archive-preferences": ("text:Archive", "text:unique archived conversation"),
+    "archive-preferences": (
+        "resource-id:archiveTabs", "resource-id:archiveList",
+        "resource-id:archiveMediaTitle", "resource-id:archiveRowTitle",
+        "resource-id:archiveSenderFilter", "resource-id:archiveClearFilters",
+        "text:Photos & videos", "text:Files", "text:Links",
+        "text:Shared media", "text:Mute notifications",
+        "text:Until turned back on", "text:Unmute notifications",
+        "text:Pin conversation", "text:Unpin conversation",
+        "text:Archive", "text:Unarchive", "text:Undo",
+        "text:Conversation archived", "resource-id:filterArchivedChip",
+        "resource-id:filterAllChip", "text:Assign labels",
+        "text:Conversation labels", "text:<sj-lab label checkbox>",
+        "resource-id:showSeen", "resource-id:showPresence",
+    ),
     "labels-lifecycle": ("text:unique label name", "text:one label render after recreation"),
     "calls-signaling": ("text:call state", "text:call history"),
     "calls-injected-notification": ("text:Incoming voice call", "text:Accept", "text:Decline"),
@@ -2037,6 +2115,985 @@ def run_summary_ask(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+# --- archive-preferences ------------------------------------------------------
+# Shared-media browser (media/files/links tabs, sender filter, keyset paging),
+# per-member pin/mute/archive flags driven through the real chat overflow and
+# the inbox long-press sheet, the archive undo snackbar, a caller-private label
+# round-trip, and the showSeen/showPresence profile switches. Every flag is
+# asserted on the device UI AND on the caller's and the peer's REST inbox —
+# caller-only state must never leak into the peer's view.
+_ARCHIVE_MENU_ITEM = ("Shared media", "Nội dung đã chia sẻ")
+_ARCHIVE_TAB_MEDIA = ("Photos & videos", "Ảnh/Video")
+_ARCHIVE_TAB_FILES = ("Files", "Tệp")
+_ARCHIVE_TAB_LINKS = ("Links", "Liên kết")
+_ARCHIVE_ALL_SENDERS = ("All senders", "Tất cả người gửi")
+_ARCHIVE_CLEAR_FILTERS = ("Clear", "Xóa lọc")
+_PREF_MENU_MUTE = ("Mute notifications", "Tắt thông báo")
+_PREF_MENU_UNMUTE = ("Unmute notifications", "Bật thông báo")
+_PREF_MUTE_FOREVER = ("Until turned back on", "Cho đến khi bật lại")
+_PREF_MENU_ARCHIVE = ("Archive", "Lưu trữ")
+_PREF_MENU_UNARCHIVE = ("Unarchive", "Bỏ lưu trữ")
+_PREF_MENU_PIN = ("Pin conversation", "Ghim trò chuyện")
+_PREF_MENU_UNPIN = ("Unpin conversation", "Bỏ ghim trò chuyện")
+_PREF_MENU_LABELS = ("Assign labels", "Gán nhãn")
+_PREF_LABELS_TITLE = ("Conversation labels", "Nhãn trò chuyện")
+_PREF_LABELS_DONE = ("Done", "Hoàn tất")
+_PREF_ARCHIVED_SNACKBAR = ("Conversation archived", "Đã lưu trữ cuộc trò chuyện")
+_PREF_UNDO = ("Undo", "Hoàn tác")
+_ARCHIVE_LINK_MESSAGES = 4
+_ARCHIVE_LINKS_PER_MESSAGE = 10  # server MAX_LINKS cap; 4*10+1 = 41 > PAGE_SIZE(30)
+_PNG_1PX = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+    "0000000d49444154789c626001000000ffff03000006000557bfabd4"
+    "0000000049454e44ae426082")
+
+
+def _multipart_upload(recorder: RecordingClient, token: str, filename: str,
+                      content: bytes, content_type: str) -> dict[str, Any]:
+    """POST /api/v1/attachments with a hand-built multipart body."""
+    boundary = "----sj" + uuid.uuid4().hex[:16]
+    body = (
+        f"--{boundary}\r\n"
+        f"Content-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n"
+        f"Content-Type: {content_type}\r\n\r\n"
+    ).encode("utf-8") + content + f"\r\n--{boundary}--\r\n".encode("utf-8")
+    response = recorder.request(
+        "POST", "/api/v1/attachments", token=token,
+        raw_body=(body, f"multipart/form-data; boundary={boundary}"))
+    if response.status != 201:
+        raise EnvironmentFailure(f"attachment upload returned HTTP {response.status}")
+    return dict(response.json() or {})
+
+
+def _send_attachment_message(recorder: RecordingClient, token: str,
+                             conversation_id: str, msg_type: str,
+                             attachment_id: str) -> dict[str, Any]:
+    response = recorder.post(
+        f"/api/v1/conversations/{conversation_id}/messages",
+        token=token,
+        body={"clientMessageId": str(uuid.uuid4()), "type": msg_type,
+              "content": None, "attachmentIds": [attachment_id]},
+    )
+    if response.status not in (200, 201):
+        raise EnvironmentFailure(f"{msg_type} seed message returned HTTP {response.status}")
+    return dict(response.json() or {})
+
+
+def _archive_page(recorder: RecordingClient, token: str, conversation_id: str,
+                  archive_type: str, *, limit: int = 30,
+                  cursor: str | None = None, sender_id: str | None = None) -> dict[str, Any]:
+    params: dict[str, Any] = {"type": archive_type, "limit": limit}
+    if cursor:
+        params["cursor"] = cursor
+    if sender_id:
+        params["senderId"] = sender_id
+    response = recorder.get(
+        f"/api/v1/conversations/{conversation_id}/archive",
+        token=token, params=params)
+    if response.status != 200:
+        raise ProductFailure(f"archive {archive_type} returned HTTP {response.status}")
+    return dict(response.json() or {})
+
+
+def _inbox_entry(recorder: RecordingClient, token: str,
+                 conversation_id: str, *, archived: bool) -> dict[str, Any] | None:
+    """Fresh REST read of one caller's inbox entry for the conversation."""
+    response = recorder.get(
+        "/api/v1/conversations", token=token,
+        params={"archived": "true" if archived else "false"})
+    if response.status != 200:
+        raise ProductFailure(f"inbox returned HTTP {response.status}")
+    body = response.json() or []
+    items = body.get("items") if isinstance(body, dict) else body
+    for item in items or []:
+        if str(item.get("id")) == conversation_id:
+            return item
+    return None
+
+
+def _wait_inbox_entry(recorder: RecordingClient, token: str, conversation_id: str,
+                      predicate: Callable[[dict[str, Any] | None], bool],
+                      what: str, *, archived: bool = False,
+                      timeout: float = 15.0) -> dict[str, Any] | None:
+    deadline = time.monotonic() + timeout
+    while True:
+        entry = _inbox_entry(recorder, token, conversation_id, archived=archived)
+        if predicate(entry):
+            return entry
+        if time.monotonic() >= deadline:
+            raise ProductFailure(what)
+        time.sleep(0.6)
+
+
+def _peer_flag_clean(recorder: RecordingClient, token: str, conversation_id: str,
+                     field: str, what: str) -> dict[str, Any] | None:
+    """Assert the peer's member-scoped flag stayed unset (no propagation wait —
+    per-member flags are independent rows written only for the caller)."""
+    entry = _inbox_entry(recorder, token, conversation_id, archived=False)
+    value = (entry or {}).get(field)
+    if value not in (None, False, [], {}):
+        raise ProductFailure(f"{what}: peer inbox entry leaked {field}={value!r}")
+    return entry
+
+
+def _entry_labels(entry: dict[str, Any] | None) -> set[str]:
+    return {str(item).casefold() for item in (entry or {}).get("labels") or []}
+
+
+def _patch_settings(recorder: RecordingClient, token: str,
+                    body: dict[str, Any]) -> dict[str, Any]:
+    response = recorder.patch("/api/v1/users/me/settings", token=token, body=body)
+    if response.status != 200:
+        raise ProductFailure(f"settings PATCH returned HTTP {response.status}")
+    return dict(response.json() or {})
+
+
+def _tap_dialog_item(context: dict[str, Any], labels: tuple[str, ...],
+                     what: str | None = None,
+                     timeout: float | None = None) -> Any:
+    """Tap an AlertDialog row, scrolling the dialog's list when the row is off
+    screen. Scoped to android.R.id.text1 so a background node with the same
+    localized text (e.g. the VI 'Lưu trữ' chip) can't win."""
+    ui = context["device"]
+    deadline = time.monotonic() + float(timeout or _ui_timeout(context))
+    while True:
+        nodes = _ui_nodes(context)
+        match = next(
+            (node for node in nodes
+             if node.text.strip() in labels and (
+                 _rid_ends(node, "text1") or "CheckedTextView" in node.cls)),
+            None)
+        if match is not None:
+            ui.tap_node(match)
+            return match
+        if time.monotonic() >= deadline:
+            raise ProductFailure(what or f"the dialog did not offer {labels!r}")
+        # The chat overflow lists >10 actions: page its ListView down.
+        listview = next((node for node in nodes
+                         if _rid_ends(node, "select_dialog_listview")), None)
+        if listview is not None and getattr(listview, "box", None):
+            left, top, right, bottom = listview.box
+            cx = (left + right) // 2
+            ui.swipe(cx, bottom - int((bottom - top) * 0.15),
+                     cx, top + int((bottom - top) * 0.35), 250)
+        time.sleep(0.4)
+
+
+def _open_chat_menu(context: dict[str, Any], item_labels: tuple[str, ...]) -> None:
+    """Open the chat overflow and pick an item by its dialog row text."""
+    ui = context["device"]
+    more = _wait_ui_node(
+        context,
+        lambda node: _rid_ends(node, "moreButton"),
+        "the chat overflow button was not exposed",
+    )
+    ui.tap_node(more)
+    _tap_dialog_item(context, item_labels)
+
+
+def _inbox_conversation_row(context: dict[str, Any], title: str) -> Any | None:
+    """Title/avatar node of a conversation row INSIDE the conversationList.
+
+    The 'Active now' presence strip also renders a 'Binh' label when the peer
+    is online, so a bare text match long-presses the strip instead of the row.
+    Constrain the match to nodes inside the conversationList bounds.
+    """
+    nodes = _ui_nodes(context)
+    container = next((node for node in nodes
+                      if _rid_ends(node, "conversationList")), None)
+    if container is None or not container.box:
+        # An empty variant drops the RecyclerView from the a11y dump entirely
+        # (verified: only 'No archived chats' remains) — no row can render,
+        # so reporting "absent" is truthful. An unbounded fallback would
+        # false-positive on the presence-strip card for the same peer.
+        return None
+    top, bottom = container.box[1], container.box[3]
+    for node in nodes:
+        if node.text.strip() != title and node.desc.strip() != title:
+            continue
+        if node.box and top <= node.box[1] and node.box[3] <= bottom:
+            return node
+    return None
+
+
+def _open_inbox_actions(context: dict[str, Any]) -> None:
+    """Long-press the seeded peer row until the actions dialog opens."""
+    ui = context["device"]
+    deadline = time.monotonic() + _ui_timeout(context)
+    while True:
+        row = _inbox_conversation_row(context, "Binh")
+        if row is None:
+            if time.monotonic() >= deadline:
+                raise ProductFailure("the seeded peer row was not on the inbox")
+            time.sleep(0.4)
+            continue
+        ui.long_press(row)
+        dialog_deadline = time.monotonic() + 6
+        while time.monotonic() < dialog_deadline:
+            if any(_rid_ends(node, "text1") or "CheckedTextView" in node.cls
+                   for node in _ui_nodes(context)):
+                return
+            time.sleep(0.4)
+        if time.monotonic() >= deadline:
+            raise ProductFailure("the inbox long-press actions dialog did not open")
+
+
+def _wait_binh_row(context: dict[str, Any], present: bool, what: str,
+                   timeout: float | None = None) -> None:
+    if present:
+        deadline = time.monotonic() + float(timeout or _ui_timeout(context))
+        while True:
+            if _inbox_conversation_row(context, "Binh") is not None:
+                return
+            if time.monotonic() >= deadline:
+                raise ProductFailure(what)
+            time.sleep(0.4)
+    else:
+        deadline = time.monotonic() + float(timeout or _ui_timeout(context))
+        while True:
+            if _inbox_conversation_row(context, "Binh") is None:
+                return
+            if time.monotonic() >= deadline:
+                raise ProductFailure(what)
+            time.sleep(0.4)
+
+
+def _scroll_list_until(context: dict[str, Any], container_rid: str,
+                       predicate: Callable[[Any], bool], what: str,
+                       swipes: int = 14) -> Any:
+    """Swipe up inside a list container until predicate matches a node."""
+    ui = context["device"]
+    for _ in range(swipes):
+        nodes = _ui_nodes(context)
+        match = next((node for node in nodes if predicate(node)), None)
+        if match is not None:
+            return match
+        container = next((node for node in nodes if _rid_ends(node, container_rid)), None)
+        box = getattr(container, "box", None) or (0, 0, 320, 640)
+        cx = (box[0] + box[2]) // 2
+        height = box[3] - box[1]
+        ui.swipe(cx, box[3] - int(height * 0.12), cx, box[1] + int(height * 0.30), 300)
+        time.sleep(0.7)
+    raise ProductFailure(what)
+
+
+def _scroll_list_to_top(context: dict[str, Any], container_rid: str,
+                        swipes: int = 10) -> None:
+    """Swipe down inside a list container to return to the first page."""
+    ui = context["device"]
+    for _ in range(swipes):
+        nodes = _ui_nodes(context)
+        container = next((node for node in nodes if _rid_ends(node, container_rid)), None)
+        box = getattr(container, "box", None) or (0, 0, 320, 640)
+        cx = (box[0] + box[2]) // 2
+        height = box[3] - box[1]
+        ui.swipe(cx, box[1] + int(height * 0.30), cx, box[3] - int(height * 0.12), 300)
+        time.sleep(0.5)
+
+
+def _pull_to_refresh(context: dict[str, Any]) -> None:
+    nodes = _ui_nodes(context)
+    container = next((node for node in nodes if _rid_ends(node, "conversationList")), None)
+    box = getattr(container, "box", None) or (0, 0, 320, 640)
+    cx = (box[0] + box[2]) // 2
+    height = box[3] - box[1]
+    context["device"].swipe(cx, box[1] + int(height * 0.15),
+                            cx, box[1] + int(height * 0.55), 350)
+
+
+def _switch_checked(context: dict[str, Any], switch_rid: str,
+                    expected: bool, what: str, timeout: float = 10.0) -> None:
+    wanted = "true" if expected else "false"
+    _wait_ui_node(
+        context,
+        lambda node: _rid_ends(node, switch_rid)
+        and node.attrs.get("checked") == wanted,
+        what, timeout=timeout)
+
+
+def _scroll_profile_until(context: dict[str, Any], *rids: str) -> None:
+    """Scroll the profile column until every named switch is on screen."""
+    ui = context["device"]
+    for _ in range(10):
+        nodes = _ui_nodes(context)
+        if all(any(_rid_ends(node, rid) for node in nodes) for rid in rids):
+            return
+        column = next((node for node in nodes if _rid_ends(node, "profileColumn")), None)
+        box = getattr(column, "box", None) or (0, 0, 320, 640)
+        cx = (box[0] + box[2]) // 2
+        height = box[3] - box[1]
+        ui.swipe(cx, box[3] - int(height * 0.15), cx, box[1] + int(height * 0.30), 300)
+        time.sleep(0.6)
+    raise ProductFailure(f"profile switches {rids!r} were not reachable")
+
+
+def _stomp_events(context: dict[str, Any], reader: Any, seconds: float) -> list[dict[str, Any]]:
+    """Collect envelopes for a bounded window and record them for evidence."""
+    seen: list[dict[str, Any]] = []
+    for envelope in reader.events(seconds):
+        context["stomp_events"].append(envelope)
+        seen.append(envelope)
+    return seen
+
+
+def _message_read_for(events: list[dict[str, Any]], user_id: str) -> bool:
+    return any(
+        envelope.get("eventType") == "MESSAGE_READ"
+        and str((envelope.get("payload") or {}).get("userId") or "") == user_id
+        for envelope in events)
+
+
+def run_archive_preferences(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Shared-media browser + member-scoped prefs on the seeded An↔Binh direct.
+
+    The device runs as seeded An. Deterministic fixtures (a tagged image, file,
+    41 link items across five messages, a private label) are seeded over REST
+    so the archive browser genuinely pages and filters. Every UI-driven flag
+    (mute, pin, archive, labels, showSeen, showPresence) is verified on the
+    caller's REST inbox AND against the peer's — caller-only state must never
+    leak. showSeen is proven through Binh's STOMP topic (MESSAGE_READ frames),
+    showPresence through the peerPresence field of Binh's inbox entry.
+    """
+    _campaign_serial(context)
+    _campaign_base_url(context)
+    _prepare_seeded_an(context)
+    api, _adb_ui, patch = context["helpers"]
+    recorder: RecordingClient = context["client"]
+    ui = context["device"]
+    an, binh, conversation_id, an_user_id, _binh_user_id = _seed_pair(context)
+    _, conversation = api.direct_conversation(recorder, an["accessToken"], api.USER_C["phone"])
+    if conversation.get("e2eeEnabled"):
+        raise EnvironmentFailure(
+            "the seeded An↔Binh conversation is E2EE; archive items are unavailable by design")
+    row_dir = Path(context["row_dir"])
+    tag = uuid.uuid4().hex[:8]
+    png_name = f"sj-arch-{tag}.png"
+    txt_name = f"sj-arch-{tag}.txt"
+    label_name = f"sj-lab-{tag}"
+    an_link_url = f"https://e2e.test/sj-{tag}-an-00"
+    page2_marker = f"sj-{tag}-b0-"  # oldest seeded link message: lands past page 1
+
+    from realtime_probe import FrameReader
+
+    ws_url = recorder.base_url.replace("https://", "wss://").replace("http://", "ws://") + "/ws"
+    factory = context.get("frame_reader_factory") or FrameReader
+    reader = factory(ws_url, binh["accessToken"])
+    context["frame_reader"] = reader
+    reader.subscribe(f"/topic/conversations.{conversation_id}")
+
+    an_settings0 = _user_settings(recorder, an["accessToken"])
+    binh_settings0 = _user_settings(recorder, binh["accessToken"])
+    entry0 = _inbox_entry(recorder, an["accessToken"], conversation_id, archived=False)
+    if entry0 is None:
+        raise EnvironmentFailure("the seeded conversation is missing from An's inbox")
+    baseline_flags = {field: entry0.get(field)
+                      for field in ("muted", "mutedUntil", "pinned", "archived")}
+
+    seeded: list[tuple[str, str]] = []  # (message id, author access token)
+    label_id = ""
+    last_seq = 0
+    result: dict[str, Any] = {}
+    primary_error: Exception | None = None
+    try:
+        # Fixture: the peer must publish read receipts for the gating check.
+        if binh_settings0.get("showSeen") is not True:
+            _patch_settings(recorder, binh["accessToken"], {"showSeen": True})
+        if an_settings0.get("showSeen") is not True:
+            _patch_settings(recorder, an["accessToken"], {"showSeen": True})
+        if an_settings0.get("showPresence") is not True:
+            _patch_settings(recorder, an["accessToken"], {"showPresence": True})
+
+        # --- REST fixtures -------------------------------------------------
+        png = _multipart_upload(recorder, binh["accessToken"], png_name, _PNG_1PX, "image/png")
+        image_msg = _send_attachment_message(
+            recorder, binh["accessToken"], conversation_id, "IMAGE", str(png.get("id")))
+        seeded.append((str(image_msg.get("id")), binh["accessToken"]))
+        txt = _multipart_upload(
+            recorder, binh["accessToken"], txt_name,
+            f"sj archive file fixture {tag}\n".encode(), "text/plain")
+        file_msg = _send_attachment_message(
+            recorder, binh["accessToken"], conversation_id, "FILE", str(txt.get("id")))
+        seeded.append((str(file_msg.get("id")), binh["accessToken"]))
+        for index in range(_ARCHIVE_LINK_MESSAGES):
+            links = " ".join(
+                f"https://e2e.test/sj-{tag}-b{index}-{link}"
+                for link in range(_ARCHIVE_LINKS_PER_MESSAGE))
+            sent = api.send_text(recorder, binh["accessToken"], conversation_id, links)
+            seeded.append((str(sent.get("id")), binh["accessToken"]))
+            last_seq = max(last_seq, int(sent.get("seq") or 0))
+        own_link = api.send_text(recorder, an["accessToken"], conversation_id, an_link_url)
+        seeded.append((str(own_link.get("id")), an["accessToken"]))
+        last_seq = max(last_seq, int(own_link.get("seq") or 0))
+        if not all(message_id for message_id, _ in seeded):
+            raise EnvironmentFailure("a seeded fixture message did not return an id")
+        created = recorder.post(
+            "/api/v1/labels", token=an["accessToken"],
+            body={"name": label_name, "colorId": "BLUE"})
+        if created.status not in (200, 201):
+            raise EnvironmentFailure(f"label create returned HTTP {created.status}")
+        label_id = str((created.json() or {}).get("id") or "")
+        if not label_id:
+            raise EnvironmentFailure("label create did not return an id")
+
+        # The activity-scoped LabelViewModel.load() only fetches once per
+        # process lifetime, so the REST-created label is invisible to the
+        # running app until a cold start. Force-stop + relaunch loads the
+        # label and the seeded messages into fresh ViewModels.
+        context["adb"].command("shell", "am", "force-stop", PACKAGE, timeout=20)
+        context["adb"].command("shell", "am", "start", "-n",
+                               f"{PACKAGE}/{MAIN_ACTIVITY}", timeout=30)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "inboxUserAvatar"),
+            "the inbox did not reload after the fixture relaunch",
+            timeout=30)
+
+        # --- open the seeded direct ----------------------------------------
+        row_node = _inbox_conversation_row(context, "Binh")
+        if row_node is None:
+            raise EnvironmentFailure("seed An↔Binh conversation is not visible in the device inbox")
+        ui.tap_node(row_node)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "messageInput"),
+            "the seeded direct conversation did not open its composer",
+        )
+
+        # === phase 1: shared-media browser =================================
+        _open_chat_menu(context, _ARCHIVE_MENU_ITEM)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "archiveTabs"),
+            "the shared-media screen did not open",
+        )
+
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "archiveMediaTitle") and node.text.strip() == png_name,
+            "the media tab did not render the seeded image",
+        )
+        ui.screenshot(str(row_dir / "archive-media.png"))
+        media_rest = _archive_page(recorder, an["accessToken"], conversation_id, "MEDIA", limit=5)
+        if not any(str((item.get("attachment") or {}).get("fileName")) == png_name
+                   for item in media_rest.get("items") or []):
+            raise ProductFailure("REST MEDIA archive did not list the seeded image")
+
+        _tap_text(context, _ARCHIVE_TAB_FILES)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "archiveRowTitle") and node.text.strip() == txt_name,
+            "the files tab did not render the seeded file",
+        )
+        ui.screenshot(str(row_dir / "archive-files.png"))
+        file_rest = _archive_page(recorder, an["accessToken"], conversation_id, "FILE", limit=5)
+        if not any(str((item.get("attachment") or {}).get("fileName")) == txt_name
+                   for item in file_rest.get("items") or []):
+            raise ProductFailure("REST FILE archive did not list the seeded file")
+
+        _tap_text(context, _ARCHIVE_TAB_LINKS)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "archiveRowTitle") and f"sj-{tag}" in node.text,
+            "the links tab did not render any seeded link",
+        )
+        if any(_rid_ends(node, "archiveRowTitle") and page2_marker in node.text
+               for node in _ui_nodes(context)):
+            raise ProductFailure("a page-2-only link rendered on the first page")
+        ui.screenshot(str(row_dir / "archive-links-page1.png"))
+
+        # REST keyset paging across the seeded 41-item link set.
+        page1 = _archive_page(recorder, an["accessToken"], conversation_id, "LINK", limit=30)
+        items1 = list(page1.get("items") or [])
+        cursor = page1.get("nextCursor")
+        if len(items1) != 30 or not cursor:
+            raise ProductFailure(
+                f"archive LINK page 1 did not fill the page or lost its cursor "
+                f"({len(items1)} items, cursor={cursor!r})")
+        page2 = _archive_page(
+            recorder, an["accessToken"], conversation_id, "LINK", limit=30, cursor=cursor)
+        items2 = list(page2.get("items") or [])
+        tagged = {
+            str((item.get("link") or {}).get("url"))
+            for item in items1 + items2
+            if f"sj-{tag}" in str((item.get("link") or {}).get("url"))
+        }
+        if len(tagged) != 41:
+            raise ProductFailure(
+                f"REST link paging covered {len(tagged)}/41 seeded links across two pages")
+        if not any(page2_marker in url for url in tagged if url):
+            raise ProductFailure("the oldest seeded link message was missing from page 2")
+
+        # UI paging: scroll the real RecyclerView until a page-2 URL renders.
+        _scroll_list_until(
+            context, "archiveList",
+            lambda node: _rid_ends(node, "archiveRowTitle") and page2_marker in node.text,
+            "the links list never paged to a page-2-only URL",
+        )
+        ui.screenshot(str(row_dir / "archive-links-paged.png"))
+
+        # Sender filter: dialog -> Binh hides An's own seeded link. The chip is
+        # disabled until the loaded pages surface senders, so retry the tap.
+        sender_deadline = time.monotonic() + _ui_timeout(context)
+        while True:
+            nodes = _ui_nodes(context)
+            dialog_open = any(
+                _rid_ends(node, "text1") or "CheckedTextView" in node.cls
+                for node in nodes)
+            if not dialog_open:
+                chip = next((node for node in nodes
+                             if _rid_ends(node, "archiveSenderFilter")), None)
+                if chip is None:
+                    raise ProductFailure("the archive sender filter chip was not rendered")
+                ui.tap_node(chip)
+            try:
+                _tap_dialog_item(
+                    context, ("Binh",),
+                    "the sender dialog did not list Binh", timeout=4)
+                break
+            except ProductFailure:
+                if time.monotonic() >= sender_deadline:
+                    raise ProductFailure("the archive sender filter never opened its dialog")
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "archiveSenderFilter")
+            and node.text.strip() in (f"Sender: Binh", "Người gửi: Binh"),
+            "the sender filter chip did not switch to Binh",
+        )
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "archiveSenderFilter")
+            and node.text.strip() in (f"Sender: Binh", f"Người gửi: Binh"),
+            "the sender filter chip did not switch to Binh",
+        )
+        _wait_ui_absent(
+            context,
+            lambda node: _rid_ends(node, "archiveRowTitle") and "-an-" in node.text,
+            "An-authored link stayed visible under the Binh sender filter",
+        )
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "archiveRowTitle") and f"sj-{tag}-b" in node.text,
+            "Binh's links disappeared under the Binh sender filter",
+        )
+        ui.screenshot(str(row_dir / "archive-filtered.png"))
+        filtered = _archive_page(
+            recorder, an["accessToken"], conversation_id, "LINK",
+            limit=50, sender_id=_binh_user_id)
+        filtered_items = filtered.get("items") or []
+        if not filtered_items or any(
+                str(item.get("senderId")) != _binh_user_id for item in filtered_items):
+            raise ProductFailure("REST senderId filter did not return only Binh's items")
+        clear = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "archiveClearFilters")
+            and node.text.strip() in _ARCHIVE_CLEAR_FILTERS,
+            "the Clear filter control was not visible",
+        )
+        ui.tap_node(clear)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "archiveSenderFilter")
+            and node.text.strip() in _ARCHIVE_ALL_SENDERS,
+            "the sender filter chip did not reset to All senders",
+        )
+        # An's link is the newest item: it sits on the first page, so reset
+        # the scroll position before asserting it returned.
+        _scroll_list_to_top(context, "archiveList")
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "archiveRowTitle") and "-an-" in node.text,
+            "An-authored link did not return after clearing the sender filter",
+        )
+        ui.screenshot(str(row_dir / "archive-unfiltered.png"))
+        ui.key("KEYCODE_BACK")
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "messageInput"),
+            "the shared-media back navigation did not return to the chat",
+        )
+
+        # === phase 2: chat overflow mute -> presets -> unmute ===============
+        _open_chat_menu(context, _PREF_MENU_MUTE)
+        _tap_dialog_item(
+            context, _PREF_MUTE_FOREVER,
+            "the mute preset dialog did not offer 'Until turned back on'")
+        _wait_inbox_entry(
+            recorder, an["accessToken"], conversation_id,
+            lambda entry: entry is not None and entry.get("muted") is True
+            and entry.get("mutedUntil") is None,
+            "the forever mute never persisted on An's inbox entry")
+        _peer_flag_clean(recorder, binh["accessToken"], conversation_id, "muted",
+                         "An's mute leaked into Binh's inbox entry")
+        result["mute"] = "muted forever caller-side; peer unaffected"
+
+        _open_chat_menu(context, _PREF_MENU_UNMUTE)
+        _wait_inbox_entry(
+            recorder, an["accessToken"], conversation_id,
+            lambda entry: entry is not None and entry.get("muted") is False,
+            "the unmute never persisted on An's inbox entry")
+        result["unmute"] = "muted flag cleared caller-side"
+
+        # === phase 3: chat overflow labels (caller-private) =================
+        _open_chat_menu(context, _PREF_MENU_LABELS)
+        _wait_ui_node(
+            context,
+            lambda node: node.text.strip() in _PREF_LABELS_TITLE,
+            "the conversation-labels dialog did not open",
+        )
+        checkbox = _wait_ui_node(
+            context,
+            lambda node: node.text.strip() == label_name
+            and ("CheckBox" in node.cls or node.clickable),
+            "the private label checkbox did not render",
+        )
+        ui.tap_node(checkbox)
+        _wait_inbox_entry(
+            recorder, an["accessToken"], conversation_id,
+            lambda entry: entry is not None and label_id.casefold() in _entry_labels(entry),
+            "the label assignment never persisted on An's inbox entry")
+        peer_entry = _inbox_entry(recorder, binh["accessToken"], conversation_id, archived=False)
+        if label_id.casefold() in _entry_labels(peer_entry):
+            raise ProductFailure("the private label leaked into Binh's inbox entry")
+        peer_labels = recorder.get("/api/v1/labels", token=binh["accessToken"])
+        if peer_labels.status != 200:
+            raise ProductFailure(f"peer /api/v1/labels returned HTTP {peer_labels.status}")
+        if any(str(item.get("id")).casefold() == label_id.casefold()
+               for item in peer_labels.json() or []):
+            raise ProductFailure("the private label leaked into Binh's label list")
+        ui.screenshot(str(row_dir / "label-assigned.png"))
+        _tap_text(context, _PREF_LABELS_DONE)
+        _wait_ui_absent(
+            context,
+            lambda node: node.text.strip() in _PREF_LABELS_TITLE,
+            "the conversation-labels dialog did not dismiss",
+        )
+        result["labels"] = "assigned caller-side; peer entry and peer /labels stay clean"
+
+        # === phase 4: overflow archive -> snackbar undo =====================
+        # The snackbar renders only after the archive write commits (the chat
+        # fragment pops when it observes the archived flag), so verify REST
+        # first — the GET converges before the snackbar's ~3s TTL starts. The
+        # Undo action then has to be captured and tapped inside one dump
+        # window: any delay for further round-trips lets it auto-dismiss.
+        _open_chat_menu(context, _PREF_MENU_ARCHIVE)
+        _wait_inbox_entry(
+            recorder, an["accessToken"], conversation_id,
+            lambda entry: entry is not None and entry.get("archived") is True,
+            "the overflow archive never persisted on An's archived inbox entry",
+            archived=True)
+        _wait_inbox_entry(
+            recorder, an["accessToken"], conversation_id,
+            lambda entry: entry is None,
+            "the conversation stayed in An's default inbox after archive")
+        deadline = time.monotonic() + _ui_timeout(context)
+        undo = None
+        snackbar_seen = False
+        while time.monotonic() < deadline:
+            nodes = _ui_nodes(context)
+            if any(node.text.strip() in _PREF_ARCHIVED_SNACKBAR for node in nodes):
+                # Message and action live in the same snackbar hierarchy, so
+                # they appear atomically in one dump.
+                snackbar_seen = True
+                undo = next((node for node in nodes
+                             if node.text.strip() in _PREF_UNDO), None)
+                break
+            time.sleep(0.25)
+        if not snackbar_seen:
+            raise ProductFailure(
+                "the archive snackbar did not render after the overflow archive")
+        ui.screenshot(str(row_dir / "archive-snackbar.png"))
+        if undo is None:
+            raise ProductFailure("the archive snackbar did not offer Undo")
+        ui.tap_node(undo)
+        _wait_inbox_entry(
+            recorder, an["accessToken"], conversation_id,
+            lambda entry: entry is not None and entry.get("archived") is False,
+            "the undo never restored the conversation to An's inbox")
+        _peer_flag_clean(recorder, binh["accessToken"], conversation_id, "archived",
+                         "An's archive leaked into Binh's inbox entry")
+        _wait_binh_row(
+            context, True,
+            "the conversation row did not return to the inbox after Undo")
+        result["archive_undo"] = ("overflow archive persisted caller-side; the "
+                                  "snackbar's Undo action reverted it")
+
+        # === phase 5: inbox sheet pin, archive, unarchive ===================
+        _open_inbox_actions(context)
+        _tap_dialog_item(context, _PREF_MENU_PIN, "the inbox sheet did not offer Pin conversation")
+        _wait_inbox_entry(
+            recorder, an["accessToken"], conversation_id,
+            lambda entry: entry is not None and entry.get("pinned") is True
+            and entry.get("pinnedAt") is not None,
+            "the pin never persisted on An's inbox entry")
+        _peer_flag_clean(recorder, binh["accessToken"], conversation_id, "pinned",
+                         "An's pin leaked into Binh's inbox entry")
+        _open_inbox_actions(context)
+        _tap_dialog_item(
+            context, _PREF_MENU_UNPIN,
+            "the inbox sheet did not offer Unpin conversation after pin")
+        _wait_inbox_entry(
+            recorder, an["accessToken"], conversation_id,
+            lambda entry: entry is not None and entry.get("pinned") is False,
+            "the unpin never persisted on An's inbox entry")
+        result["pin"] = "pin/unpin round-tripped caller-side; peer unaffected"
+
+        _open_inbox_actions(context)
+        _tap_dialog_item(context, _PREF_MENU_ARCHIVE, "the inbox sheet did not offer Archive")
+        _wait_inbox_entry(
+            recorder, an["accessToken"], conversation_id,
+            lambda entry: entry is None,
+            "the conversation stayed in An's default inbox after the sheet archive")
+        _wait_inbox_entry(
+            recorder, an["accessToken"], conversation_id,
+            lambda entry: entry is not None and entry.get("archived") is True,
+            "the conversation never appeared in An's archived inbox", archived=True)
+        archived_chip = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "filterArchivedChip"),
+            "the Archived inbox chip was not exposed",
+        )
+        ui.tap_node(archived_chip)
+        _wait_binh_row(
+            context, True,
+            "the archived conversation did not render in the Archived inbox view")
+        ui.screenshot(str(row_dir / "archived-inbox.png"))
+        _open_inbox_actions(context)
+        _tap_dialog_item(
+            context, _PREF_MENU_UNARCHIVE,
+            "the inbox sheet did not offer Unarchive inside the archived view")
+        _wait_inbox_entry(
+            recorder, an["accessToken"], conversation_id,
+            lambda entry: entry is not None and entry.get("archived") is False,
+            "the sheet unarchive never persisted on An's inbox entry")
+        # Stay on the Archived view while the flag propagates: the row is
+        # filtered out of this variant by the app's own Room projection, and a
+        # clean op sequence drops it in ~2-3s (measured on the running build).
+        # Repeatedly re-selecting the filter chips instead starves the page
+        # reconcile — every variant switch bumps the page generation, so an
+        # in-flight refresh's prune pass is superseded before it can run.
+        _wait_binh_row(
+            context, False,
+            "the unarchived conversation still rendered in the Archived "
+            "inbox view", timeout=40)
+        ui.tap_node(_wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "filterAllChip"),
+            "the All inbox chip was not exposed after unarchive",
+        ))
+        _wait_binh_row(
+            context, True,
+            "the conversation did not re-render in the All inbox after unarchive")
+        result["archive_sheet"] = ("inbox-sheet archive listed the row under Archived; "
+                                   "unarchive dropped it on the Archived re-query "
+                                   "and returned it to All")
+
+        # === phase 6: pull-to-refresh — flags + private label survive =======
+        _pull_to_refresh(context)
+        time.sleep(1.5)
+        refreshed = _inbox_entry(recorder, an["accessToken"], conversation_id, archived=False)
+        if refreshed is None:
+            raise ProductFailure("the conversation vanished from An's inbox after refresh")
+        for field, expected in (("muted", False), ("pinned", False), ("archived", False)):
+            if refreshed.get(field) is not expected:
+                raise ProductFailure(
+                    f"inbox refresh lost the caller flag {field}={refreshed.get(field)!r}")
+        if label_id.casefold() not in _entry_labels(refreshed):
+            raise ProductFailure("the private label assignment did not survive refresh")
+        _wait_binh_row(context, True, "the peer row did not re-render after refresh")
+        _wait_ui_node(
+            context,
+            lambda node: node.text.strip() == label_name,
+            "the private label chip did not render in the inbox after refresh",
+        )
+        result["refresh"] = "flags and the private label survived pull-to-refresh"
+
+        # === phase 7: profile seen/presence privacy =========================
+        avatar = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "inboxUserAvatar"),
+            "the profile entry point was not exposed",
+        )
+        ui.tap_node(avatar)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "profileName") and node.text.strip() == "An",
+            "the profile screen did not open for An",
+        )
+        _scroll_profile_until(context, "showSeen", "showPresence")
+        ui.screenshot(str(row_dir / "profile-privacy.png"))
+
+        # Drain any MESSAGE_READ the app itself broadcast while navigating.
+        _stomp_events(context, reader, 1.5)
+
+        seen_switch = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "showSeen"),
+            "the showSeen switch was not exposed",
+        )
+        ui.tap_node(seen_switch)
+        _switch_checked(context, "showSeen", False, "the showSeen switch did not turn off")
+        deadline = time.monotonic() + 15
+        while _user_settings(recorder, an["accessToken"]).get("showSeen") is not False:
+            if time.monotonic() >= deadline:
+                raise ProductFailure("the showSeen toggle never persisted server-side")
+            time.sleep(0.5)
+        mark = recorder.post(
+            f"/api/v1/conversations/{conversation_id}/read",
+            token=an["accessToken"], body={"upToSeq": last_seq})
+        if mark.status not in (200, 204):
+            raise EnvironmentFailure(f"conversation read returned HTTP {mark.status}")
+        leaked = _stomp_events(context, reader, 4.0)
+        if _message_read_for(leaked, an_user_id):
+            raise ProductFailure(
+                "MESSAGE_READ reached the peer's topic while showSeen was disabled")
+
+        _scroll_profile_until(context, "showSeen")
+        seen_switch = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "showSeen"),
+            "the showSeen switch was not exposed for re-enable",
+        )
+        ui.tap_node(seen_switch)
+        _switch_checked(context, "showSeen", True, "the showSeen switch did not turn back on")
+        deadline = time.monotonic() + 15
+        while _user_settings(recorder, an["accessToken"]).get("showSeen") is not True:
+            if time.monotonic() >= deadline:
+                raise ProductFailure("the showSeen re-enable never persisted server-side")
+            time.sleep(0.5)
+        mark = recorder.post(
+            f"/api/v1/conversations/{conversation_id}/read",
+            token=an["accessToken"], body={"upToSeq": last_seq})
+        if mark.status not in (200, 204):
+            raise EnvironmentFailure(f"conversation read returned HTTP {mark.status}")
+        if not _message_read_for(_stomp_events(context, reader, 6.0), an_user_id):
+            raise ProductFailure(
+                "MESSAGE_READ did not reach the peer's topic while showSeen was enabled")
+        result["show_seen"] = "off suppressed MESSAGE_READ(an) on the peer topic; on restored it"
+
+        presence_switch = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "showPresence"),
+            "the showPresence switch was not exposed",
+        )
+        ui.tap_node(presence_switch)
+        _switch_checked(
+            context, "showPresence", False, "the showPresence switch did not turn off")
+        deadline = time.monotonic() + 15
+        while _user_settings(recorder, an["accessToken"]).get("showPresence") is not False:
+            if time.monotonic() >= deadline:
+                raise ProductFailure("the showPresence toggle never persisted server-side")
+            time.sleep(0.5)
+        _wait_inbox_entry(
+            recorder, binh["accessToken"], conversation_id,
+            lambda entry: entry is not None and not entry.get("peerPresence"),
+            "Binh's inbox entry still carried An's peerPresence with showPresence off")
+        _scroll_profile_until(context, "showPresence")
+        presence_switch = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "showPresence"),
+            "the showPresence switch was not exposed for re-enable",
+        )
+        ui.tap_node(presence_switch)
+        _switch_checked(
+            context, "showPresence", True, "the showPresence switch did not turn back on")
+        deadline = time.monotonic() + 15
+        while _user_settings(recorder, an["accessToken"]).get("showPresence") is not True:
+            if time.monotonic() >= deadline:
+                raise ProductFailure("the showPresence re-enable never persisted server-side")
+            time.sleep(0.5)
+        _wait_inbox_entry(
+            recorder, binh["accessToken"], conversation_id,
+            lambda entry: entry is not None and bool(entry.get("peerPresence")),
+            "Binh's inbox entry did not regain An's peerPresence after re-enable")
+        result["show_presence"] = ("off removed peerPresence from the peer's entry; "
+                                   "on restored it")
+        ui.screenshot(str(row_dir / "profile-privacy-restored.png"))
+        result["summary"] = "all phases passed"
+    except Exception as error:
+        primary_error = error
+    finally:
+        cleanup_errors: list[str] = []
+        # Back to the inbox so the next row starts from a known surface.
+        try:
+            for _ in range(6):
+                nodes = _ui_nodes(context)
+                if any(_rid_ends(node, "inboxUserAvatar") for node in nodes):
+                    break
+                ui.key("KEYCODE_BACK")
+                time.sleep(0.5)
+        except Exception as error:
+            cleanup_errors.append(f"ui restore: {type(error).__name__}")
+        try:
+            # Reset member flags to the un-flagged baseline, then re-apply any
+            # flag that was actually set before this row ran.
+            recorder.delete(f"/api/v1/conversations/{conversation_id}/archive",
+                            token=an["accessToken"])
+            recorder.delete(f"/api/v1/conversations/{conversation_id}/mute",
+                            token=an["accessToken"])
+            recorder.delete(f"/api/v1/conversations/{conversation_id}/pin",
+                            token=an["accessToken"])
+            if baseline_flags.get("archived") is True:
+                recorder.put(f"/api/v1/conversations/{conversation_id}/archive",
+                             token=an["accessToken"])
+            if baseline_flags.get("pinned") is True:
+                recorder.put(f"/api/v1/conversations/{conversation_id}/pin",
+                             token=an["accessToken"])
+            if baseline_flags.get("muted") is True:
+                body = ({"forever": True} if baseline_flags.get("mutedUntil") is None
+                        else {"mutedUntil": baseline_flags.get("mutedUntil")})
+                recorder.request("PUT", f"/api/v1/conversations/{conversation_id}/mute",
+                                 token=an["accessToken"], body=body)
+        except Exception as error:
+            cleanup_errors.append(f"flag restore: {type(error).__name__}")
+        if label_id:
+            try:
+                recorder.delete(
+                    f"/api/v1/conversations/{conversation_id}/labels/{label_id}",
+                    token=an["accessToken"])
+            except Exception as error:
+                cleanup_errors.append(f"label unassign: {type(error).__name__}")
+            try:
+                deleted = recorder.delete(f"/api/v1/labels/{label_id}", token=an["accessToken"])
+                if deleted.status not in (200, 204):
+                    cleanup_errors.append(f"label delete HTTP {deleted.status}")
+            except Exception as error:
+                cleanup_errors.append(f"label delete: {type(error).__name__}")
+        for key, wanted in (("showSeen", an_settings0.get("showSeen")),
+                            ("showPresence", an_settings0.get("showPresence"))):
+            try:
+                current = _user_settings(recorder, an["accessToken"]).get(key)
+                if current is not wanted:
+                    _patch_settings(recorder, an["accessToken"], {key: wanted})
+            except Exception as error:
+                cleanup_errors.append(f"{key} restore: {type(error).__name__}")
+        try:
+            current = _user_settings(recorder, binh["accessToken"]).get("showSeen")
+            if current is not binh_settings0.get("showSeen"):
+                _patch_settings(
+                    recorder, binh["accessToken"],
+                    {"showSeen": binh_settings0.get("showSeen")})
+        except Exception as error:
+            cleanup_errors.append(f"peer showSeen restore: {type(error).__name__}")
+        for message_id, author_token in seeded:
+            try:
+                deleted = recorder.delete(
+                    f"/api/v1/conversations/{conversation_id}/messages/{message_id}",
+                    token=author_token)
+                if deleted.status not in (200, 204):
+                    cleanup_errors.append(f"message HTTP {deleted.status}")
+            except Exception as error:
+                cleanup_errors.append(type(error).__name__)
+        if cleanup_errors:
+            context["cleanup_errors"] = cleanup_errors
+    if primary_error is not None:
+        raise primary_error
+    if context.get("cleanup_errors"):
+        raise HarnessError("archive-preferences cleanup could not restore fixtures")
+    result["cleanup"] = ("flags/settings/labels restored; "
+                         f"{len(seeded)} seeded messages soft-deleted")
+    return result
+
+
 SEED_PHONES = frozenset({
     "+84900000001", "+84900000002", "+84900000003",
     "+84900000101", "+84900000102",
@@ -2685,6 +3742,7 @@ def run_registered_row(row: JourneyRow, context: dict[str, Any]) -> dict[str, An
         "chat-send-receive": run_chat_send_receive,
         "chat-interactions": run_chat_interactions,
         "summary-ask": run_summary_ask,
+        "archive-preferences": run_archive_preferences,
         "calls-injected-notification": run_calls_injected_notification,
         "injected-notifications": run_injected_notifications,
     }
