@@ -137,7 +137,9 @@ public final class DebugPushInjectionTest {
         assertTrue(DebugPushInjectionReceiver.isAllowedSender(DebugPushInjectionReceiver.ROOT_UID, 34));
         assertFalse(DebugPushInjectionReceiver.isAllowedSender(1000, 36));
         assertFalse(DebugPushInjectionReceiver.isAllowedSender(10_123, 36));
-        assertFalse(DebugPushInjectionReceiver.isAllowedSender(DebugPushInjectionReceiver.INVALID_UID, 36));
+        // API 36 strips the sender uid from `am broadcast`; INVALID_UID is admitted
+        // because android.permission.DUMP remains the enforced delivery gate.
+        assertTrue(DebugPushInjectionReceiver.isAllowedSender(DebugPushInjectionReceiver.INVALID_UID, 36));
         assertFalse(DebugPushInjectionReceiver.isAllowedSender(DebugPushInjectionReceiver.SHELL_UID, 33));
         assertTrue(DebugPushInjectionReceiver.COLD_START_HOLD_MS < 10_000L);
     }

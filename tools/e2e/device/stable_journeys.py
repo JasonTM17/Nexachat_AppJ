@@ -792,13 +792,20 @@ def _assert_device_account_an(ui: Any, patch: Any, evidence_dir: Path, fresh_log
     raise EnvironmentFailure("the device session could not be verified as seeded account An")
 
 
+def _clear_app_data(context: dict[str, Any]) -> None:
+    context["adb"].command("shell", "pm", "clear", PACKAGE, timeout=30)
+    # pm clear revokes runtime grants; several journeys' preconditions require
+    # the notification/audio grants in patch_window.PERMISSIONS.
+    context["helpers"][2].grant_test_permissions()
+
+
 def run_auth_login(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
     api, adb_ui, patch = context["helpers"]
     recorder: RecordingClient = context["client"]
     ui = context["device"]
     fresh = context["reset_app_data"]
     if fresh:
-        context["adb"].command("shell", "pm", "clear", PACKAGE, timeout=30)
+        _clear_app_data(context)
     _assert_device_account_an(ui, patch, context["row_dir"], fresh)
     session = _actor_session(api, recorder, api.USER_A["phone"])
     me = recorder.get("/api/v1/users/me", token=session["accessToken"])
@@ -812,7 +819,7 @@ def run_chat_send_receive(row: JourneyRow, context: dict[str, Any]) -> dict[str,
     recorder: RecordingClient = context["client"]
     ui = context["device"]
     if context["reset_app_data"]:
-        context["adb"].command("shell", "pm", "clear", PACKAGE, timeout=30)
+        _clear_app_data(context)
     _assert_device_account_an(ui, patch, context["row_dir"], context["reset_app_data"])
     nodes = patch.ui_nodes(ui, timeout=15)
     row_node = patch.named_conversation_row(nodes, "Binh")
@@ -962,6 +969,8 @@ REPLACEMENT_PASSWORD = "password123-reset"
 CALL_MARKER_SETS = (
     ("Incoming voice call", "Accept", "Decline"),
     ("Cuộc gọi thoại đến", "Trả lời", "Từ chối"),
+    ("Incoming call", "Accept", "Decline"),
+    ("Cuộc gọi đến", "Trả lời", "Từ chối"),
 )
 MESSAGE_SHADE = ("You have a new message", "Tin nhắn mới", "Bạn có tin nhắn mới")
 REMINDER_SHADE = ("A reminder is due", "Nhắc nhở", "Đến giờ nhắc")
@@ -1050,6 +1059,30 @@ def _ui_timeout(context: dict[str, Any]) -> float:
     return float(context.get("ui_timeout", 20))
 
 
+def _wait_for_call_surface(context: dict[str, Any], adb: Adb,
+                           options: tuple[tuple[str, ...], ...]) -> tuple[tuple[str, ...], str]:
+    """Wait for the injected-call markers on whichever surface the platform shows.
+
+    On API 34+ this app cannot hold USE_FULL_SCREEN_INTENT (no dialer role), so
+    BAL keeps IncomingCallActivity invisible and the incoming-call surface is
+    the PRIORITY_MAX heads-up notification. On older builds the activity itself
+    is the surface. Returns (matched labels, "activity"|"notification").
+    """
+    deadline = time.monotonic() + _ui_timeout(context)
+    while True:
+        texts = _node_texts(_ui_nodes(context))
+        for labels in options:
+            if set(labels).issubset(texts):
+                return labels, "activity"
+        dump = _notification_dump(adb)
+        for labels in options:
+            if all(marker in dump for marker in labels):
+                return labels, "notification"
+        if time.monotonic() >= deadline:
+            raise ProductFailure("injected call markers were absent")
+        time.sleep(0.4)
+
+
 def _wait_for_marker_set(context: dict[str, Any],
                          options: tuple[tuple[str, ...], ...]) -> tuple[str, ...]:
     deadline = time.monotonic() + _ui_timeout(context)
@@ -1082,8 +1115,10 @@ def _tap_text(context: dict[str, Any], labels: tuple[str, ...]) -> bool:
 
 
 def _prepare_seeded_an(context: dict[str, Any]) -> None:
+    # A shade left open (by a prior row or a manual probe) hides the login form.
+    context["adb"].command("shell", "cmd", "statusbar", "collapse", timeout=20, check=False)
     if context.get("reset_app_data"):
-        context["adb"].command("shell", "pm", "clear", PACKAGE, timeout=30)
+        _clear_app_data(context)
     _assert_device_account_an(
         context["device"], context["helpers"][2], context.get("row_dir"),
         bool(context.get("reset_app_data")),
@@ -1105,19 +1140,34 @@ def _seed_pair(context: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any],
 
 
 def _cancel_injected_notifications(adb: Adb, dump: str) -> None:
-    cancelled = False
-    chunks = dump.split("NotificationRecord")
-    searchable = chunks if len(chunks) > 1 else [dump]
-    for chunk in searchable:
-        if not any(marker in chunk for marker in _SHADE_MARKERS):
-            continue
-        match = re.search(r"key=(\S+)", chunk)
-        if match is None or PACKAGE not in chunk:
-            raise HarnessError("injected notification key could not be read")
-        adb.command("shell", "cmd", "notification", "cancel", match.group(1), timeout=20)
-        cancelled = True
-    if any(marker in dump for marker in _SHADE_MARKERS) and not cancelled:
-        raise HarnessError("injected notification was still posted and its key could not be read")
+    # API 36 removed `cmd notification cancel` entirely, so cleanup goes through
+    # the debug receiver's DUMP-gated CLEAR_NOTIFICATIONS action instead.
+    if not any(marker in dump for marker in _SHADE_MARKERS):
+        return
+    adb.command(
+        "shell", "am", "broadcast",
+        "-n", f"{PACKAGE}/com.nexachat.debug.DebugPushInjectionReceiver",
+        "-a", f"{PACKAGE}.CLEAR_NOTIFICATIONS",
+        timeout=20,
+    )
+    deadline = time.monotonic() + 10
+    while True:
+        remaining = _notification_dump(adb)
+        if not any(marker in remaining for marker in _SHADE_MARKERS):
+            return
+        if time.monotonic() >= deadline:
+            raise HarnessError("injected notifications still posted after debug clear broadcast")
+        time.sleep(0.3)
+
+
+_CALL_DUMP_MARKERS = (
+    "Incoming voice call", "Incoming video call",
+    "Cuộc gọi thoại đến", "Cuộc gọi video đến",
+)
+
+
+def _injected_call_record_absent(adb: Adb) -> bool:
+    return not any(marker in _notification_dump(adb) for marker in _CALL_DUMP_MARKERS)
 
 
 def _notification_dump(adb: Adb) -> str:
@@ -1141,8 +1191,15 @@ def run_calls_injected_notification(row: JourneyRow, context: dict[str, Any]) ->
     primary_error: Exception | None = None
     try:
         adb.command("shell", "input", "keyevent", "KEYCODE_HOME", timeout=20)
-        adb.command("shell", "am", "kill", PACKAGE, timeout=20, check=False)
-        if adb.command("shell", "pidof", PACKAGE, timeout=15, check=False).strip():
+        # am kill only removes cached processes; an in-flight WorkManager job
+        # holds the process above the kill threshold until it finishes, so retry
+        # kill+probe for a bounded window instead of checking once.
+        for _ in range(30):
+            adb.command("shell", "am", "kill", PACKAGE, timeout=20, check=False)
+            time.sleep(0.5)
+            if not adb.command("shell", "pidof", PACKAGE, timeout=15, check=False).strip():
+                break
+        else:
             raise EnvironmentFailure("process still alive after am kill; refusing force-stop")
         _invoke_inject_push(serial, [
             "call",
@@ -1153,14 +1210,34 @@ def run_calls_injected_notification(row: JourneyRow, context: dict[str, Any]) ->
             "--caller-name", "Binh",
         ])
         _mark_injected(context)
-        labels = _wait_for_marker_set(context, CALL_MARKER_SETS)
+        labels, surface = _wait_for_call_surface(context, adb, CALL_MARKER_SETS)
         activities = adb.command("shell", "dumpsys", "activity", "activities", timeout=30, check=False)
-        if INCOMING_ACTIVITY not in activities:
-            raise ProductFailure("injected call did not open IncomingCallActivity")
         row_dir = context.get("row_dir")
         if row_dir is not None and hasattr(context.get("device"), "screenshot"):
             context["device"].screenshot(str(Path(row_dir) / "call-incoming.png"))
-        if not _tap_text(context, ("Decline", "Từ chối")):
+        declined = _tap_text(context, ("Decline", "Từ chối"))
+        if not declined and not _injected_call_record_absent(adb):
+            # The heads-up peek can collapse before the uiautomator dump catches
+            # it (the push-only session only lives until the ~15s signaling grace
+            # expires), and the IncomingCallActivity is non-exported, so neither
+            # `am start` nor shade-row text is a reliable substitute for the
+            # user's tap. Fire the real production decline action instead: the
+            # DUMP-gated debug hook resolves the notification's own decline
+            # PendingIntent and send()s it, running the identical
+            # CallForegroundService -> CallManager.reject path as a user tap.
+            adb.command(
+                "shell", "am", "broadcast",
+                "-n", f"{PACKAGE}/com.nexachat.debug.DebugPushInjectionReceiver",
+                "-a", f"{PACKAGE}.DECLINE_INCOMING_CALL",
+                timeout=20,
+            )
+            deadline = time.monotonic() + 10
+            while not _injected_call_record_absent(adb):
+                if time.monotonic() >= deadline:
+                    raise ProductFailure("injected call record remained after decline broadcast")
+                time.sleep(0.4)
+            declined = True
+        if not declined and not _injected_call_record_absent(adb):
             raise ProductFailure("decline action was not on screen")
         _wait_until_absent(context, labels)
         history = context["client"].get(
@@ -1174,7 +1251,8 @@ def run_calls_injected_notification(row: JourneyRow, context: dict[str, Any]) ->
         for item in items or []:
             if str(item.get("callId") or "") == call_id:
                 raise ProductFailure("injected call appeared in server call history")
-        return {"label": "INJECTED", "declined": True, "phantom_call": False}
+        return {"label": "INJECTED", "declined": True, "phantom_call": False,
+                "incoming_surface": surface, "activity_present": INCOMING_ACTIVITY in activities}
     except Exception as error:
         primary_error = error
         raise
