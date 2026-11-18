@@ -4,6 +4,7 @@ package com.nexachat.call.core;
 public final class CallError {
     public enum Code {
         BUSY,
+        BLOCKED,
         CALL_NOT_FOUND,
         CALL_STATE_INVALID,
         NOT_MEMBER,
@@ -34,6 +35,8 @@ public final class CallError {
                 return new CallError(Code.CALL_NOT_FOUND);
             case "CALL_STATE_INVALID":
                 return new CallError(Code.CALL_STATE_INVALID);
+            case "BLOCKED":
+                return new CallError(Code.BLOCKED);
             case "NOT_MEMBER":
                 return new CallError(Code.NOT_MEMBER);
             case "RATE_LIMITED":
