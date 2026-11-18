@@ -509,4 +509,22 @@ class FeedFlowIT extends FeatureItSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(postId));
     }
+
+    @Test
+    void distinctReactionsPerUserPerPostAreCapped() throws Exception {
+        Actor author = newUser("Post Host");
+        Actor reactor = newUser("Prolific Reactor");
+        UUID postId = createPostId(author, "react here");
+        String path = "/api/v1/feed/posts/" + postId + "/reactions/";
+        String[] emojis = {"👍", "❤️", "😂", "😮", "😢", "🔥", "👏", "🎉"};
+        for (String emoji : emojis) {
+            putAs(reactor, path + emoji).andExpect(status().isOk());
+        }
+        // re-adding an existing emoji stays idempotent under the cap
+        putAs(reactor, path + "👍").andExpect(status().isOk());
+
+        putAs(reactor, path + "🤯")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+    }
 }

@@ -62,6 +62,8 @@ public class FeedService {
     static final int COMMENTS_PER_MINUTE = 10;
     static final int COMMENTS_PER_DAY = 200;
     static final int REACTIONS_PER_MINUTE = 60;
+    /** Distinct emojis one user may leave on a post; re-adding one is free. */
+    static final int MAX_DISTINCT_REACTIONS_PER_USER = 8;
 
     /** Feed images are served only through this path, never through {@code /files/**}. */
     static final String IMAGE_PATH = "/api/v1/feed/images/";
@@ -279,7 +281,11 @@ public class FeedService {
         requireVisiblePost(userId, postId);
         String emoji = ReactionEmoji.normalize(rawEmoji);
         if (add) {
-            store.addReaction(postId, userId, emoji);
+            if (store.addReaction(postId, userId, emoji, MAX_DISTINCT_REACTIONS_PER_USER) == 0
+                    && !store.hasReaction(postId, userId, emoji)) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "too many different reactions on this post");
+            }
         } else {
             store.removeReaction(postId, userId, emoji);
         }

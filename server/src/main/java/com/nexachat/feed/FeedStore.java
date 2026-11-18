@@ -293,11 +293,28 @@ class FeedStore {
         return reactionsFor(List.of(postId), viewerId).getOrDefault(postId, List.of());
     }
 
-    int addReaction(UUID postId, UUID userId, String emoji) {
+    int addReaction(UUID postId, UUID userId, String emoji, int maxDistinct) {
         return jdbc.update("""
                 INSERT INTO public_post_reactions (post_id, user_id, emoji)
-                VALUES (?, ?, ?) ON CONFLICT DO NOTHING
-                """, postId, userId, emoji);
+                SELECT ?, ?, ?
+                WHERE NOT EXISTS (
+                        SELECT 1 FROM public_post_reactions
+                        WHERE post_id = ? AND user_id = ? AND emoji = ?)
+                  AND (SELECT count(*) FROM public_post_reactions
+                        WHERE post_id = ? AND user_id = ?) < ?
+                ON CONFLICT DO NOTHING
+                """, postId, userId, emoji, postId, userId, emoji,
+                postId, userId, maxDistinct);
+    }
+
+    boolean hasReaction(UUID postId, UUID userId, String emoji) {
+        Boolean found = jdbc.query("""
+                        SELECT TRUE FROM public_post_reactions
+                        WHERE post_id = ? AND user_id = ? AND emoji = ?
+                        """,
+                rs -> rs.next() ? Boolean.TRUE : Boolean.FALSE,
+                postId, userId, emoji);
+        return Boolean.TRUE.equals(found);
     }
 
     int removeReaction(UUID postId, UUID userId, String emoji) {
