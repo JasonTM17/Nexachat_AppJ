@@ -27,7 +27,9 @@ import org.springframework.test.web.servlet.ResultActions;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -37,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -89,6 +92,14 @@ class SummaryScopeApiIT {
     private SummaryWindowRepository windowRepository;
     @Autowired
     private JwtService jwtService;
+    @Autowired
+    private SummaryRateLimiter rateLimiter;
+    @Autowired
+    private SummaryProviderSelector providerSelector;
+    @Autowired
+    private SummaryCacheRepository cacheRepository;
+    @Autowired
+    private ConversationAiOptOuts aiOptOuts;
 
     private User caller;
     private User peer;
@@ -321,6 +332,62 @@ class SummaryScopeApiIT {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("TOO_FEW_MESSAGES"))
                 .andExpect(jsonPath("$.error.details.available").value(0));
+    }
+
+    @Test
+    void aTodaySummaryIsCachedPerDayAndNotReplayedOnTheFollowingDay() {
+        // 19:00 UTC is 02:00 on the following Vietnam day: both dial positions sit
+        // safely inside their own local day.
+        AtomicReference<Instant> now = new AtomicReference<>(Instant.parse("2026-11-17T19:00:00Z"));
+        Clock mutableClock = new Clock() {
+            @Override
+            public Instant instant() {
+                return now.get();
+            }
+
+            @Override
+            public ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(ZoneId zone) {
+                return this;
+            }
+        };
+        SummaryWindowService clockWindowService = new SummaryWindowService(
+                conversationRepository, memberRepository, consentRepository, windowRepository, mutableClock);
+        SummaryService service = new SummaryService(
+                rateLimiter, clockWindowService, providerSelector, cacheRepository, aiOptOuts);
+
+        SummaryPeriod firstDay = SummaryPeriods.today(now.get(), "Asia/Ho_Chi_Minh");
+        for (int index = 0; index < 5; index++) {
+            addMessage(caller.getId(), "Day one plan number " + index + " is settled.",
+                    firstDay.start().plusSeconds(60 + index));
+        }
+        SummaryRequest firstRequest = new SummaryRequest(SummaryScope.TODAY, null,
+                SummaryLanguage.EN, false, "Asia/Ho_Chi_Minh");
+        SummaryResponse first = service.summarize(conversationId, caller.getId(), firstRequest);
+        assertThat(first.cached()).isFalse();
+        assertThat(first.period().date()).isEqualTo(LocalDate.parse("2026-11-18"));
+        SummaryResponse firstRepeat = service.summarize(conversationId, caller.getId(), firstRequest);
+        assertThat(firstRepeat.cached()).isTrue();
+        assertThat(firstRepeat.summaryId()).isEqualTo(first.summaryId());
+
+        now.set(Instant.parse("2026-11-18T19:00:00Z"));
+        SummaryPeriod secondDay = SummaryPeriods.today(now.get(), "Asia/Ho_Chi_Minh");
+        for (int index = 0; index < 5; index++) {
+            addMessage(peer.getId(), "Day two plan number " + index + " is agreed.",
+                    secondDay.start().plusSeconds(60 + index));
+        }
+        SummaryRequest nextDayRequest = new SummaryRequest(SummaryScope.TODAY, null,
+                SummaryLanguage.EN, false, "Asia/Ho_Chi_Minh");
+        SummaryResponse nextDay = service.summarize(conversationId, caller.getId(), nextDayRequest);
+        assertThat(nextDay.cached()).isFalse();
+        assertThat(nextDay.period().date()).isEqualTo(LocalDate.parse("2026-11-19"));
+        assertThat(nextDay.summaryId()).isNotEqualTo(first.summaryId());
+        SummaryResponse nextDayRepeat = service.summarize(conversationId, caller.getId(), nextDayRequest);
+        assertThat(nextDayRepeat.cached()).isTrue();
     }
 
     private SummaryReadContext windowAt(Instant now, SummaryRequest request) {

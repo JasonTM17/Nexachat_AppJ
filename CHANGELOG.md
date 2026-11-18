@@ -51,6 +51,9 @@ All notable changes to NexaChat are documented here. The format follows
   unread-messages banner no longer offers a summary in those chats.
 - Android: if the server does not recognise the device time zone, the summary is
   requested once more with the server's default zone instead of failing.
+- Summary requests made at the same time for the same window no longer each
+  call the external AI; a summary that fell back to the built-in engine is
+  reused briefly instead of retrying the external AI on every tap.
 - Android: the caller's call screen no longer closes a second or two after
   opening when you call again after an earlier call ended; the previous
   call's finished state is ignored instead of closing the new call's screen.
@@ -72,6 +75,11 @@ All notable changes to NexaChat are documented here. The format follows
 - The streak card now correctly shows when a grace day would still save a
   missed day, and the check-in streak read keeps working if its bookkeeping
   write fails.
+- A streak no longer loses a day when one member's send crosses local
+  midnight and is stored ahead of the other member's message from the day
+  before — days now complete from both members' recorded runs even when the
+  records arrive out of order, while days only one member skipped still
+  never count.
 - Deleting someone else's feed post or comment after they blocked you answers
   not-found instead of revealing the post exists.
 - Feed image uploads with negative or implausibly large dimensions are

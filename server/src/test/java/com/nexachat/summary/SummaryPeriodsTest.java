@@ -88,6 +88,58 @@ class SummaryPeriodsTest {
                 .isEqualTo(LocalDate.parse("2026-11-18"));
     }
 
+    @Test
+    void berlinSpringForwardDayLastsTwentyThreeHours() {
+        SummaryPeriod period = SummaryPeriods.today(Instant.parse("2026-03-29T12:00:00Z"), "Europe/Berlin");
+
+        assertThat(period.start()).isEqualTo(Instant.parse("2026-03-28T23:00:00Z"));
+        assertThat(period.end()).isEqualTo(Instant.parse("2026-03-29T22:00:00Z"));
+        assertThat(Duration.between(period.start(), period.end())).isEqualTo(Duration.ofHours(23));
+    }
+
+    @Test
+    void berlinFallBackDayLastsTwentyFiveHours() {
+        SummaryPeriod period = SummaryPeriods.today(Instant.parse("2026-10-25T12:00:00Z"), "Europe/Berlin");
+
+        assertThat(period.start()).isEqualTo(Instant.parse("2026-10-24T22:00:00Z"));
+        assertThat(period.end()).isEqualTo(Instant.parse("2026-10-25T23:00:00Z"));
+        assertThat(Duration.between(period.start(), period.end())).isEqualTo(Duration.ofHours(25));
+    }
+
+    @Test
+    void lordHoweShiftsItsDayLengthByThirtyMinutesOnBothTransitionDays() {
+        // Lord Howe moves only half an hour: the end-of-season day gains 30 minutes
+        // and the start-of-season day loses 30 minutes.
+        SummaryPeriod dstEnd = SummaryPeriods.today(Instant.parse("2026-04-05T05:00:00Z"), "Australia/Lord_Howe");
+        assertThat(dstEnd.start()).isEqualTo(Instant.parse("2026-04-04T13:00:00Z"));
+        assertThat(dstEnd.end()).isEqualTo(Instant.parse("2026-04-05T13:30:00Z"));
+        assertThat(Duration.between(dstEnd.start(), dstEnd.end())).isEqualTo(Duration.ofMinutes(1470));
+
+        SummaryPeriod dstStart = SummaryPeriods.today(Instant.parse("2026-10-04T05:00:00Z"), "Australia/Lord_Howe");
+        assertThat(dstStart.start()).isEqualTo(Instant.parse("2026-10-03T13:30:00Z"));
+        assertThat(dstStart.end()).isEqualTo(Instant.parse("2026-10-04T13:00:00Z"));
+        assertThat(Duration.between(dstStart.start(), dstStart.end())).isEqualTo(Duration.ofMinutes(1410));
+    }
+
+    @Test
+    void apiaSkippedDayKeepsTheCalendarContinuousWithoutThrowing() {
+        // Samoa skipped 2011-12-30 entirely. Requests from either side of the skip
+        // resolve their day windows without an error, and both point at the same
+        // boundary instant (2011-12-30T10:00:00Z, the local start of the 31st).
+        // The local 29th still spans exactly 24 real hours: its midnight-to-midnight
+        // window ends at the first valid instant of the 31st.
+        SummaryPeriod beforeTheSkip = SummaryPeriods.today(Instant.parse("2011-12-30T09:00:00Z"), "Pacific/Apia");
+        assertThat(beforeTheSkip.date()).isEqualTo(LocalDate.parse("2011-12-29"));
+        assertThat(beforeTheSkip.start()).isEqualTo(Instant.parse("2011-12-29T10:00:00Z"));
+        assertThat(beforeTheSkip.end()).isEqualTo(Instant.parse("2011-12-30T10:00:00Z"));
+        assertThat(Duration.between(beforeTheSkip.start(), beforeTheSkip.end())).isEqualTo(Duration.ofHours(24));
+
+        SummaryPeriod afterTheSkip = SummaryPeriods.today(Instant.parse("2011-12-30T12:00:00Z"), "Pacific/Apia");
+        assertThat(afterTheSkip.date()).isEqualTo(LocalDate.parse("2011-12-31"));
+        assertThat(afterTheSkip.start()).isEqualTo(Instant.parse("2011-12-30T10:00:00Z"));
+        assertThat(afterTheSkip.end()).isEqualTo(Instant.parse("2011-12-31T10:00:00Z"));
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"Mars/Phobos", "../etc/passwd", "UTC+99", "+25:00", "Asia/Ho_Chi_Minh; DROP TABLE",
             "<script>", "🌏"})
