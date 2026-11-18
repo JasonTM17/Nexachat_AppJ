@@ -95,3 +95,9 @@ members (`GET /api/v1/conversations/{id}/streak` enforces membership); the
 check-in streak is visible only to its owner (`GET /api/v1/streaks/me`).
 Inbox `streakCount`/`streakAtRisk` leak nothing beyond what the member already
 sees in the conversation.
+
+The `STREAK_REMINDER` push is data-only and carries exactly `type`,
+`recipientId`, `conversationId`, `peerName` and `count`. `peerName` is the
+peer's display name, the same way a new-message push carries the sender's
+display name as `senderName`; the client builds the visible text. The payload
+contains no message content.
