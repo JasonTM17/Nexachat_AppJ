@@ -13,7 +13,7 @@ interface SessionState {
   me: MeResponse | null;
   loading: boolean;
   isAdmin: boolean;
-  signIn: (phone: string, password: string) => Promise<MeResponse>;
+  signIn: (identifier: string, password: string) => Promise<MeResponse>;
   signOut: () => void;
 }
 
@@ -52,8 +52,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const signIn = useCallback(async (phone: string, password: string) => {
-    await apiLogin(phone, password);
+  const signIn = useCallback(async (identifier: string, password: string) => {
+    await apiLogin(identifier, password);
     const res = await api<MeResponse>('/api/v1/admin/me');
     setMe(res);
     return res;
