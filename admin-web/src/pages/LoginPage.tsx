@@ -26,6 +26,7 @@ export default function LoginPage() {
       if (err instanceof ApiException) {
         if (err.status === 403) key = 'login.error.staff';
         else if (err.status !== 401) key = 'login.error.server';
+        if (err.code === 'ACCOUNT_SUSPENDED') key = 'login.error.suspended';
       } else {
         // No response at all: network failure, CORS, or server offline.
         key = 'login.error.network';
