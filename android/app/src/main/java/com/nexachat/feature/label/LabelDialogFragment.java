@@ -88,6 +88,10 @@ public final class LabelDialogFragment extends DialogFragment {
         manageMode = conversationId == null;
         viewModel = new ViewModelProvider(requireActivity()).get(LabelViewModel.class);
         viewModel.load();
+        // The ViewModel is activity-scoped: labels loaded once stay stale for
+        // the whole activity lifetime. Reopening the dialog must refetch so
+        // labels created elsewhere (or by a prior REST call) appear.
+        viewModel.reloadLabels();
         if (conversationId != null) viewModel.loadAssignment(conversationId);
 
         content = new LinearLayout(requireContext());
