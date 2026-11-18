@@ -47,12 +47,14 @@ ASKER_PHONE = "+84900000601"     # A: consented member who asks / summarizes
 PEER_PHONE = "+84900000602"      # B: non-consented member, authors facts, opts out
 OUTSIDER_PHONE = "+84900000603"  # C: never a member of the A-B conversation
 LIMIT_PHONE = "+84900000604"     # R: outsider that only burns its own ask bucket
+ADMIN_PHONE = "+84900000890"     # operator phone for /api/v1/rag/stats
 
 NAMES = {
     ASKER_PHONE: TAG + " Asker",
     PEER_PHONE: TAG + " Peer",
     OUTSIDER_PHONE: TAG + " Outsider",
     LIMIT_PHONE: TAG + " Limiter",
+    ADMIN_PHONE: TAG + " Admin",
 }
 
 ASK_MODES = ("CACHE", "NOT_FOUND", "EXTRACTIVE", "LLM")
@@ -363,6 +365,32 @@ def scenario_ask_cites_and_caches(ctx: Context) -> None:
           "ask after a new message still replayed the cache")
 
 
+def scenario_rag_stats_counters(ctx: Context) -> None:
+    stats = lambda: ctx.client.get("/api/v1/rag/stats", token=ctx.token(ADMIN_PHONE))
+    first = stats()
+    if first.status in (401, 403):
+        raise NotRun(f"{ADMIN_PHONE} is not ADMIN on this stack "
+                     "(NEXACHAT_ADMIN_PHONES not configured?)")
+    check(first.status == 200, f"rag/stats expected 200, got {first}")
+    before = first.json()
+    for key in ("requests", "cacheHits", "notFound", "extractive", "llmCalls"):
+        check(isinstance(before.get(key), int) and before[key] >= 0,
+              f"rag/stats.{key} missing or negative: {before.get(key)!r}")
+
+    _, _, question, _ = seed_fact(ctx, ASKER_PHONE, "stats")
+    ctx.ask(ASKER_PHONE, question)
+    mid = stats().json()
+    # Counters are stack-global; concurrent traffic may add extra increments.
+    check(mid["requests"] >= before["requests"] + 1,
+          f"ask did not increment requests ({before['requests']} -> {mid['requests']})")
+    ctx.ask(ASKER_PHONE, question)  # identical ask replays from the exact cache
+    after = stats().json()
+    check(after["requests"] >= mid["requests"] + 1,
+          f"repeat ask did not increment requests ({mid['requests']} -> {after['requests']})")
+    check(after["cacheHits"] >= mid["cacheHits"] + 1,
+          f"cached ask did not increment cacheHits ({mid['cacheHits']} -> {after['cacheHits']})")
+
+
 def scenario_ask_authz_validation(ctx: Context) -> None:
     cid = ctx.conversation_id()
     path = f"/api/v1/conversations/{cid}/ask"
@@ -596,6 +624,7 @@ def scenario_ask_rate_limit(ctx: Context) -> None:
 
 SCENARIOS: List[Tuple[str, Callable[[Context], None]]] = [
     ("ask_cites_and_caches", scenario_ask_cites_and_caches),
+    ("rag_stats_counters", scenario_rag_stats_counters),
     ("ask_authz_validation", scenario_ask_authz_validation),
     ("ai_opt_out_excludes_peer", scenario_ai_opt_out_excludes_peer),
     ("summary_purge_on_opt_out", scenario_summary_purge_on_opt_out),
