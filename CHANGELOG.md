@@ -25,6 +25,9 @@ All notable changes to NexaChat are documented here. The format follows
 - Admin console: a `/feed` moderation page lists feed reports and lets staff
   hide/unhide posts and comments (reason required) and resolve reports as
   reviewed or dismissed.
+- Live E2E journeys for feed moderation, AI privacy (RAG ask/opt-out/translate),
+  groups privacy (rejoin visibility, disappearing, blocks, E2EE devices) and
+  admin console/streaks, with a sequential runner.
 
 ### Changed
 - Admin console: light and dark themes apply on every page including sign-in,
@@ -38,6 +41,9 @@ All notable changes to NexaChat are documented here. The format follows
   cached result is replayed only while its citations still resolve.
 
 ### Fixed
+- Unsuspending an account takes effect immediately: a fresh sign-in is no
+  longer rejected as suspended for up to a minute while a cached copy of the
+  suspended state lingered.
 - Calling someone again after an earlier call whose media setup failed no longer
   answers busy: the server ends that stale call and starts the new one.
 - Android: when a call fails or times out on your phone (media setup failure,
