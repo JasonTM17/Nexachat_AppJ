@@ -166,7 +166,7 @@ export function ConfirmDialog({
               ref={reasonRef}
               maxLength={maxReasonLength}
               autoFocus
-              required={requireReason !== false}
+              required
               aria-invalid={reasonError || undefined}
               aria-describedby={reasonError ? 'confirm-reason-error' : undefined}
               onInput={() => reasonError && setReasonError(false)}

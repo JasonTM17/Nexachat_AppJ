@@ -183,37 +183,41 @@ export default function UsersPage() {
             <option value="ADMIN">ADMIN</option>
           </select>
         </label>
-        <button className="btn ghost" onClick={toggleDeleted}>
+        <button className="btn ghost" onClick={toggleDeleted} aria-pressed={showDeleted}>
           {t('users.deleted')}
         </button>
       </div>
 
       {showDeleted && deleted ? (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>{t('users.col.user')}</th>
-                <th>{t('users.col.joined')}</th>
-                <th>{t('users.col.status')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {deleted.map((u) => (
-                <tr className="plain" key={u.id}>
-                  <td>
-                    <div>{u.displayName ?? '—'}</div>
-                    <div className="muted mono">{u.phone ?? '—'}</div>
-                  </td>
-                  <td>{fmtTime(u.createdAt)}</td>
-                  <td>
-                    <Chip tone="low">{t('users.status.deleted')}</Chip>
-                  </td>
+        deleted.length === 0 ? (
+          <Empty />
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('users.col.user')}</th>
+                  <th>{t('users.col.joined')}</th>
+                  <th>{t('users.col.status')}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {deleted.map((u) => (
+                  <tr className="plain" key={u.id}>
+                    <td>
+                      <div>{u.displayName ?? '—'}</div>
+                      <div className="muted mono">{u.phone ?? '—'}</div>
+                    </td>
+                    <td>{fmtTime(u.createdAt)}</td>
+                    <td>
+                      <Chip tone="low">{t('users.status.deleted')}</Chip>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
       ) : failed ? (
         <ErrorBlock onRetry={load} />
       ) : !data ? (
