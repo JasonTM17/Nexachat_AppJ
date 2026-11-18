@@ -71,9 +71,14 @@ export function Chip({
 const modalStack: { close: () => void }[] = [];
 
 function useEscapeToClose(open: boolean, close: () => void) {
+  // Callers pass inline closures, so `close` changes identity every render — keep
+  // it in a ref and register once per open-cycle, or a re-render would re-push
+  // the layer on top of a dialog stacked above it.
+  const closeRef = useRef(close);
+  closeRef.current = close;
   useEffect(() => {
     if (!open) return;
-    const layer = { close };
+    const layer = { close: () => closeRef.current() };
     modalStack.push(layer);
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -81,7 +86,7 @@ function useEscapeToClose(open: boolean, close: () => void) {
       if (top !== layer) return;
       e.stopPropagation();
       modalStack.pop();
-      close();
+      layer.close();
     };
     document.addEventListener('keydown', onKey);
     return () => {
@@ -89,7 +94,7 @@ function useEscapeToClose(open: boolean, close: () => void) {
       const i = modalStack.indexOf(layer);
       if (i !== -1) modalStack.splice(i, 1);
     };
-  }, [open, close]);
+  }, [open]);
 }
 
 export function Drawer({
