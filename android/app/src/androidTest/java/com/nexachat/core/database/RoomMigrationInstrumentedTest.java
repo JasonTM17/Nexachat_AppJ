@@ -8,7 +8,6 @@ import static org.junit.Assert.assertTrue;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteConstraintException;
-import androidx.room.migration.Migration;
 import androidx.room.testing.MigrationTestHelper;
 import androidx.sqlite.db.SupportSQLiteDatabase;
 import androidx.test.core.app.ApplicationProvider;
@@ -207,12 +206,14 @@ public final class RoomMigrationInstrumentedTest {
         }
 
         AppDatabase database = TestDatabases.plaintextFile(context, FULL_CHAIN_DB)
-                .addMigrations(allMigrations())
+                .addMigrations(AppDatabase.ALL_MIGRATIONS)
                 .allowMainThreadQueries()
                 .build();
         try {
             SupportSQLiteDatabase db = database.getOpenHelper().getWritableDatabase();
-            assertEquals("full chain reaches the current schema", 14, db.getVersion());
+            assertEquals("full chain reaches the current schema",
+                    AppDatabase.ALL_MIGRATIONS[AppDatabase.ALL_MIGRATIONS.length - 1].endVersion,
+                    db.getVersion());
             assertExistingRows(db);
             assertV7DefaultsFromV6(db);
             assertEquals("peerDeliveredSeq defaults to zero", 0L,
@@ -236,24 +237,6 @@ public final class RoomMigrationInstrumentedTest {
         } finally {
             database.close();
         }
-    }
-
-    private static Migration[] allMigrations() {
-        return new Migration[] {
-            AppDatabase.MIGRATION_1_2,
-            AppDatabase.MIGRATION_2_3,
-            AppDatabase.MIGRATION_3_4,
-            AppDatabase.MIGRATION_4_5,
-            AppDatabase.MIGRATION_5_6,
-            AppDatabase.MIGRATION_6_7,
-            AppDatabase.MIGRATION_7_8,
-            AppDatabase.MIGRATION_8_9,
-            AppDatabase.MIGRATION_9_10,
-            AppDatabase.MIGRATION_10_11,
-            AppDatabase.MIGRATION_11_12,
-            AppDatabase.MIGRATION_12_13,
-            AppDatabase.MIGRATION_13_14
-        };
     }
 
     private static void assertMentionDefaults(SupportSQLiteDatabase db) {
