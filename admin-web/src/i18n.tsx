@@ -1,4 +1,11 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 
 export type Lang = 'en' | 'vi';
 
@@ -335,6 +342,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(
     () => (localStorage.getItem('admin.lang') as Lang) || 'en',
   );
+  // Keep <html lang> in sync so assistive tech reads the right language.
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
   const value = useMemo(
     () => ({
       lang,
