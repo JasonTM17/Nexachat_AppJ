@@ -245,10 +245,17 @@ public class ReportService {
     }
 
     private static String truncate(String content) {
-        if (content == null) {
-            return null;
+        if (content == null || content.length() <= SNAPSHOT_MAX) {
+            return content;
         }
-        return content.length() <= SNAPSHOT_MAX ? content : content.substring(0, SNAPSHOT_MAX);
+        String snapshot = content.substring(0, SNAPSHOT_MAX);
+        // A raw char cut can split a UTF-16 surrogate pair (the 500th unit
+        // landing on an emoji's high surrogate) — drop the dangling half so
+        // the stored snapshot stays valid encodable text.
+        if (Character.isHighSurrogate(snapshot.charAt(snapshot.length() - 1))) {
+            snapshot = snapshot.substring(0, snapshot.length() - 1);
+        }
+        return snapshot;
     }
 
     private static String normalizeOptional(String value) {
