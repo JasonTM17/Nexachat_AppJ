@@ -119,6 +119,8 @@ excluded, the LLM is not called and the local engine answers with
 - Eligible text from every participant in the window, including the requester, is sent on the requester's behalf, except text authored by a member who opted out in that conversation. The cloud primary, cloud fallback and the local server model all receive the filtered window; only the built-in local extractive engine may still use the opted-out messages.
 - Prompts and raw model output are not stored. Only the validated summary is cached for 24 hours; edits, deletes and opt-out changes change the cache key or invalidate the cached entry.
 
+Identical requests are served by one generation per node: callers that arrive while a key is cold wait on the same provider call and replay the winner's row, and a waiter whose leader fails or stalls re-enters the queue a bounded number of times before answering on its own. All of a waiter's re-entries share one end-to-end wait deadline (the summed tier timeouts), so a stalled leader never parks a caller beyond that single bound. A local row stored after a provider failure is replayed only for the circuit-breaker window (60 s) after it was written; a request after that window retries the external provider, and `refresh: true` always regenerates.
+
 ## Operator configuration
 
 | Configuration key | Environment variable | Default |
