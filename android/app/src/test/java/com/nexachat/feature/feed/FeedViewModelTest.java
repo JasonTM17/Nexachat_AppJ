@@ -87,7 +87,7 @@ public final class FeedViewModelTest {
 
     @Test public void aFailedRefreshKeepsTheRowsAndShowsNoError() {
         repository.listPostsCalls.get(0).onSuccess(
-                new FeedRepository.PostPage(List.of(post("post-1")), null));
+                new FeedRepository.PostPage(List.of(post("post-1")), "cursor-1"));
 
         viewModel.refresh();
         repository.listPostsCalls.get(1).onError(new IllegalStateException("offline"));
@@ -95,6 +95,14 @@ public final class FeedViewModelTest {
         assertEquals(List.of("post-1"), ids(state().getItems()));
         assertFalse(state().isError());
         assertFalse(state().isRefreshing());
+        assertTrue(state().hasMore());
+
+        viewModel.loadMore();
+
+        assertEquals("cursor-1", repository.listPostsCursors.get(2));
+        repository.listPostsCalls.get(2).onSuccess(
+                new FeedRepository.PostPage(List.of(post("post-2")), null));
+        assertEquals(List.of("post-1", "post-2"), ids(state().getItems()));
     }
 
     @Test public void loadMoreAppendsTheNextPage() {
@@ -186,6 +194,48 @@ public final class FeedViewModelTest {
         repository.setReactionCalls.get(0).onError(new IllegalStateException("offline"));
 
         assertTrue(state().getItems().get(0).reactions().isEmpty());
+    }
+
+    @Test public void aSecondTapOnTheSamePostWhileOneIsInFlightIsIgnored() {
+        repository.listPostsCalls.get(0).onSuccess(new FeedRepository.PostPage(
+                List.of(post("post-1")), null));
+
+        viewModel.toggleReaction("post-1", "\uD83D\uDC4D");
+        viewModel.toggleReaction("post-1", "\uD83D\uDC4D");
+
+        assertEquals(1, repository.setReactionCalls.size());
+        assertEquals(List.of(new FeedRepository.Reaction("\uD83D\uDC4D", 1, true)),
+                state().getItems().get(0).reactions());
+
+        repository.setReactionCalls.get(0).onSuccess(
+                List.of(new FeedRepository.Reaction("\uD83D\uDC4D", 1, true)));
+        viewModel.toggleReaction("post-1", "\uD83D\uDC4D");
+
+        assertEquals(2, repository.setReactionCalls.size());
+        assertFalse(repository.setReactionActive.get(1));
+        assertTrue(state().getItems().get(0).reactions().isEmpty());
+    }
+
+    @Test public void aReactionOnAnotherPostIsNotBlockedByAnInFlightOne() {
+        repository.listPostsCalls.get(0).onSuccess(new FeedRepository.PostPage(
+                List.of(post("post-1"), post("post-2")), null));
+
+        viewModel.toggleReaction("post-1", "\uD83D\uDC4D");
+        viewModel.toggleReaction("post-2", "\uD83D\uDC4D");
+
+        assertEquals(2, repository.setReactionCalls.size());
+    }
+
+    @Test public void aFailedReactionAllowsTheNextTap() {
+        repository.listPostsCalls.get(0).onSuccess(new FeedRepository.PostPage(
+                List.of(post("post-1")), null));
+        viewModel.toggleReaction("post-1", "\uD83D\uDC4D");
+        repository.setReactionCalls.get(0).onError(new IllegalStateException("offline"));
+
+        viewModel.toggleReaction("post-1", "\uD83D\uDC4D");
+
+        assertEquals(2, repository.setReactionCalls.size());
+        assertTrue(repository.setReactionActive.get(1));
     }
 
     @Test public void togglingAnOwnReactionRemovesIt() {

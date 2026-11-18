@@ -86,6 +86,7 @@ import com.nexachat.summary.SummaryResponse;
 import com.nexachat.summary.SummaryScope;
 import com.nexachat.summary.SummaryUiState;
 import com.nexachat.summary.SummaryViewModel;
+import com.nexachat.summary.UnreadBannerRule;
 import dagger.hilt.android.AndroidEntryPoint;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -1562,7 +1563,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     private void renderUnread(InboxUiState inbox) {
         ConversationSummary row = inbox.getConversations().stream().filter(c -> conversationId.equals(c.getId())).findFirst().orElse(null);
         int unread = row == null ? 0 : row.getUnreadCount();
-        if (unread >= 20) {
+        boolean e2ee = ChatMenuPolicy.e2ee(row, state != null && state.isE2eeEnabled());
+        if (UnreadBannerRule.shouldShow(unread, null, e2ee)) {
             binding.unreadBanner.setVisibility(View.VISIBLE);
             binding.unreadBanner.bind(unread, this::showSummary,
                     () -> binding.unreadBanner.setVisibility(View.GONE));
@@ -2767,9 +2769,14 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                         conversation.isMutedAt(nowEpochMs),
                         conversation.isArchived(),
                         conversation.isPinned(),
-                        conversation.isE2eeEnabled());
+                        e2ee(conversation, stateE2ee));
             }
             return new Flags(stateGroup, false, false, statePinned, stateE2ee);
+        }
+
+        /** The row wins over the chat state; the overflow menu and the unread banner share this. */
+        static boolean e2ee(@Nullable ConversationSummary conversation, boolean stateE2ee) {
+            return conversation != null ? conversation.isE2eeEnabled() : stateE2ee;
         }
 
         /** Label for the pin row; pairs with {@link Flags#pinTarget()} off the same flag. */

@@ -67,6 +67,13 @@ public final class SummaryErrorViewHelper {
                 showRetry = false;
                 iconTintAttr = com.google.android.material.R.attr.colorError;
                 break;
+            case E2EE_UNAVAILABLE:
+                iconRes = R.drawable.ic_lock;
+                titleRes = R.string.summary_error_e2ee_unavailable;
+                descRes = null;
+                showRetry = false;
+                iconTintAttr = com.google.android.material.R.attr.colorOnSurfaceVariant;
+                break;
             case NETWORK:
                 iconRes = R.drawable.ic_wifi_off;
                 titleRes = R.string.summary_error_offline;

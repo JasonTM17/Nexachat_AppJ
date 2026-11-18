@@ -1,6 +1,7 @@
 package com.nexachat.summary;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -121,6 +122,62 @@ public final class SummaryViewModelTest {
                 assertEquals("summary-3", refreshed.getSummary().getSummaryId());
                 assertEquals("true", refreshFlag.get());
                 assertEquals(3, calls.get());
+            }
+        }
+    }
+
+    @Test
+    public void invalidTimeZoneRetriesOnceWithoutAZoneAndDeliversTheResult() throws Exception {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            AtomicInteger calls = new AtomicInteger();
+            AtomicReference<String> retryBody = new AtomicReference<>();
+            try (SummaryTestServer server = new SummaryTestServer(exchange -> {
+                int call = calls.incrementAndGet();
+                if (call == 1) {
+                    SummaryTestServer.respond(exchange, 400,
+                            "{\"error\":{\"code\":\"INVALID_TIME_ZONE\",\"message\":\"synthetic\"}}");
+                } else {
+                    retryBody.set(SummaryTestServer.requestBody(exchange));
+                    SummaryTestServer.respond(exchange, 200,
+                            SummaryRepositoryTest.responseJson("summary-default-zone", false));
+                }
+            })) {
+                SummaryRepository repository = new SummaryRepository(
+                        SummaryRepositoryTest.api(server.baseUrl()));
+                SavedStateHandle handle = new SavedStateHandle(
+                        Map.of(SummaryViewModel.ARG_CONVERSATION_ID, "conversation-1"));
+                SummaryViewModel viewModel = new SummaryViewModel(handle, repository);
+
+                viewModel.request(SummaryScope.TODAY, null);
+                SummaryUiState ready = awaitState(viewModel, SummaryUiState.Status.READY);
+
+                assertEquals("summary-default-zone", ready.getSummary().getSummaryId());
+                assertEquals(2, calls.get());
+                assertFalse(retryBody.get().contains("\"timeZone\""));
+            }
+        }
+    }
+
+    @Test
+    public void aSecondInvalidTimeZoneStopsAtTheGenericError() throws Exception {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            AtomicInteger calls = new AtomicInteger();
+            try (SummaryTestServer server = new SummaryTestServer(exchange -> {
+                calls.incrementAndGet();
+                SummaryTestServer.respond(exchange, 400,
+                        "{\"error\":{\"code\":\"INVALID_TIME_ZONE\",\"message\":\"synthetic\"}}");
+            })) {
+                SummaryRepository repository = new SummaryRepository(
+                        SummaryRepositoryTest.api(server.baseUrl()));
+                SavedStateHandle handle = new SavedStateHandle(
+                        Map.of(SummaryViewModel.ARG_CONVERSATION_ID, "conversation-1"));
+                SummaryViewModel viewModel = new SummaryViewModel(handle, repository);
+
+                viewModel.request(SummaryScope.TODAY, null);
+                SummaryUiState error = awaitState(viewModel, SummaryUiState.Status.ERROR);
+
+                assertEquals(SummaryError.UNKNOWN, error.getError());
+                assertEquals(2, calls.get());
             }
         }
     }

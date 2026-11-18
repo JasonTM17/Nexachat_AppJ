@@ -1,6 +1,8 @@
 # NexaChat Static Site & App Links Configuration
 
-This directory contains the minimal static site for `nexachat.io.vn`, deployed on Vercel.
+This directory contains the static site for `nexachat.io.vn`, deployed on Vercel: a bilingual landing page (`index.html`, `style.css`, screenshots in `assets/`), the download, privacy, terms and account-deletion pages, and the invite-link page under `join/`. It has no build step and no third-party requests; the strict CSP in `vercel.json` allows only same-origin styles, scripts and images.
+
+The landing page switches language with CSS only: `/` shows Vietnamese and `/#lang-en` shows English (`:target`). Keep both panes in sync when editing copy.
 
 ## Digital Asset Links (`.well-known/assetlinks.json`)
 

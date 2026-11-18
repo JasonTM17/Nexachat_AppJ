@@ -51,6 +51,14 @@ public final class FeedRules {
         return normalized != null && normalized.length() <= MAX_COMMENT_LENGTH;
     }
 
+    /**
+     * Vertical inset on each side that lets a pill of {@code pillHeightPx} tap in a
+     * {@code touchTargetPx} high area while only the pill itself is drawn.
+     */
+    public static int reactionPillInset(int touchTargetPx, int pillHeightPx) {
+        return Math.max(0, (touchTargetPx - pillHeightPx) / 2);
+    }
+
     /** True when the server rejected the call because the caller is posting too fast. */
     public static boolean isRateLimited(@Nullable Throwable error) {
         return error instanceof FeedApiException api && api.isRateLimited();

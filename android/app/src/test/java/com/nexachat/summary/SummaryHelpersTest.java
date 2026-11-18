@@ -21,6 +21,13 @@ public final class SummaryHelpersTest {
     }
 
     @Test
+    public void unreadBannerIsHiddenInEncryptedConversations() {
+        assertFalse(UnreadBannerRule.shouldShow(80, null, true));
+        assertTrue(UnreadBannerRule.shouldShow(80, null, false));
+        assertFalse(UnreadBannerRule.shouldShow(19, null, false));
+    }
+
+    @Test
     public void shareFormatterProducesVietnameseGoldenText() {
         String formatted = SummaryTextFormatter.toShareText(sampleSummary(), new Locale("vi"));
 

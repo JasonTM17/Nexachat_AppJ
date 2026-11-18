@@ -5,6 +5,8 @@ public enum SummaryError {
     TOO_FEW,
     RATE_LIMITED,
     NOT_MEMBER,
+    E2EE_UNAVAILABLE,
+    INVALID_TIME_ZONE,
     NETWORK,
     UNKNOWN
 }
