@@ -1557,7 +1557,8 @@ keyset-paginate newest first.
 
 `PostResponse` = `{id, author:{id, displayName, avatarUrl}, body, image:{url, width, height, mimeType}?, createdAt, commentCount, reactions:[{emoji, count, mine}], mine}` —
 `body` is null on an image-only post, `image` null on a text-only one.
-`CommentResponse` = `{id, postId, author:{id, displayName, avatarUrl}, body, createdAt, mine}`.
+`commentCount` counts the post's visible comments (not deleted, not hidden);
+staff hide/unhide moves it. `CommentResponse` = `{id, postId, author:{id, displayName, avatarUrl}, body, createdAt, mine}`.
 Hidden and soft-deleted rows are excluded from every list/read predicate;
 `POST_NOT_FOUND`/`COMMENT_NOT_FOUND` is returned for them. Upload-first images
 bind to a post via `imageId` (one image per post); unbound images are purged

@@ -19,8 +19,10 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -33,6 +35,8 @@ import java.util.UUID;
  * is set with an {@code UPDATE ... WHERE reminder_sent_day IS DISTINCT FROM
  * today} and only the caller whose update changed a row sends. A failed push is
  * therefore not retried the same day, which is the right trade for a nudge.
+ * The claim happens only after the owned-token set is resolved, so a user
+ * whose every token belongs to a newer registrant keeps the day unclaimed.
  *
  * <p>Skipped: muted conversations, blocks in either direction, deleted or
  * suspended accounts, deleted peers, and users without a registered device.
@@ -77,7 +81,13 @@ public class StreakReminderJob {
                     SELECT 1 FROM user_blocks b
                     WHERE (b.blocker_id = side.user_id AND b.blocked_id = side.peer_id)
                        OR (b.blocker_id = side.peer_id AND b.blocked_id = side.user_id))
-              AND EXISTS (SELECT 1 FROM user_device_tokens t WHERE t.user_id = side.user_id)
+              AND EXISTS (
+                    SELECT 1 FROM user_device_tokens t
+                    WHERE t.user_id = side.user_id
+                      AND NOT EXISTS (
+                            SELECT 1 FROM user_device_tokens o
+                            WHERE o.token = t.token AND o.user_id <> t.user_id
+                              AND o.updated_at > t.updated_at))
             ORDER BY side.user_id, cs.count DESC, cs.last_day DESC, cs.conversation_id
             LIMIT :batch
             """;
@@ -139,15 +149,33 @@ public class StreakReminderJob {
         }
         LocalDate today = local.toLocalDate();
         int reminded = 0;
+        // Users skipped this run because no owned token remained: later passes
+        // must not re-query them, so the loop cannot spin on the same
+        // unclaimed candidate.
+        Set<UUID> skippedWithoutOwnedToken = new HashSet<>();
         for (int pass = 0; pass < MAX_PASSES; pass++) {
             List<Candidate> batch = candidates(today, now);
+            batch.removeIf(candidate -> skippedWithoutOwnedToken.contains(candidate.userId()));
             if (batch.isEmpty()) {
                 break;
             }
+            int progressed = 0;
             for (Candidate candidate : batch) {
-                if (claim(candidate.userId(), today) && dispatch(candidate)) {
+                List<String> tokens = ownedTokens(candidate.userId());
+                if (tokens.isEmpty()) {
+                    // Nothing to push to: remember the skip for this run and
+                    // leave the day unclaimed so a later run can remind once
+                    // the user owns a token again.
+                    skippedWithoutOwnedToken.add(candidate.userId());
+                    continue;
+                }
+                if (claim(candidate.userId(), today) && dispatch(candidate, tokens)) {
                     reminded++;
                 }
+                progressed++;
+            }
+            if (progressed == 0) {
+                break;
             }
         }
         if (reminded > 0) {
@@ -175,11 +203,11 @@ public class StreakReminderJob {
                 """, today.toString(), userId, today.toString()) == 1;
     }
 
-    private boolean dispatch(Candidate candidate) {
-        List<String> tokens = jdbc.queryForList(OWNED_TOKENS, String.class, candidate.userId());
-        if (tokens.isEmpty()) {
-            return false;
-        }
+    private List<String> ownedTokens(UUID userId) {
+        return jdbc.queryForList(OWNED_TOKENS, String.class, userId);
+    }
+
+    private boolean dispatch(Candidate candidate, List<String> tokens) {
         Map<String, String> data = new HashMap<>();
         data.put("type", "STREAK_REMINDER");
         data.put("recipientId", candidate.userId().toString());

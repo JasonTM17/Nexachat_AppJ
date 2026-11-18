@@ -43,7 +43,10 @@ import java.util.UUID;
  *
  * <p><b>Rate limits.</b> Posts 3/min and 30/day, comments 10/min and 200/day,
  * reactions 60/min, all per user through {@link FeedRateLimits}; a denial is
- * {@code RATE_LIMITED} with {@code retryAfterSeconds}.
+ * {@code RATE_LIMITED} with {@code retryAfterSeconds}. A bucket is consumed
+ * only after the request passed validation — for reactions also past the
+ * distinct-emoji cap — so a rejected attempt does not burn quota (an
+ * idempotent replay still counts).
  */
 @Service
 public class FeedService {
@@ -128,11 +131,6 @@ public class FeedService {
      */
     @Transactional
     public Result create(UUID authorId, CreatePostRequest request) {
-        consume("feed:post:minute:" + authorId, POSTS_PER_MINUTE, Duration.ofMinutes(1),
-                "Too many posts");
-        consume("feed:post:day:" + authorId, POSTS_PER_DAY, Duration.ofDays(1),
-                "Daily post limit reached");
-
         String body = normalizeBody(request.body(), MAX_BODY, "body");
         UUID imageId = request.imageId();
         if (body == null && imageId == null) {
@@ -155,6 +153,12 @@ public class FeedService {
                         "imageId is already attached to a post");
             }
         }
+        // Quota is consumed only once the request passed validation; a replay
+        // of an already-stored clientPostId still counts.
+        consume("feed:post:minute:" + authorId, POSTS_PER_MINUTE, Duration.ofMinutes(1),
+                "Too many posts");
+        consume("feed:post:day:" + authorId, POSTS_PER_DAY, Duration.ofDays(1),
+                "Daily post limit reached");
 
         Instant now = clock.instant();
         int inserted = store.insertPost(UUID.randomUUID(), authorId, request.clientPostId(),
@@ -220,16 +224,16 @@ public class FeedService {
     /** Adds a comment, or returns the row an earlier attempt stored. */
     @Transactional
     public CommentResult createComment(UUID authorId, UUID postId, CreateCommentRequest request) {
-        consume("feed:comment:minute:" + authorId, COMMENTS_PER_MINUTE, Duration.ofMinutes(1),
-                "Too many comments");
-        consume("feed:comment:day:" + authorId, COMMENTS_PER_DAY, Duration.ofDays(1),
-                "Daily comment limit reached");
-
         requireVisiblePost(authorId, postId);
         String body = normalizeBody(request.body(), MAX_COMMENT, "body");
         if (body == null) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "body is required");
         }
+        // Quota is consumed only once the target and body passed validation.
+        consume("feed:comment:minute:" + authorId, COMMENTS_PER_MINUTE, Duration.ofMinutes(1),
+                "Too many comments");
+        consume("feed:comment:day:" + authorId, COMMENTS_PER_DAY, Duration.ofDays(1),
+                "Daily comment limit reached");
 
         Instant now = clock.instant();
         int inserted = store.insertComment(UUID.randomUUID(), postId, authorId,
@@ -276,10 +280,11 @@ public class FeedService {
     /** Idempotent add or remove of one emoji; returns the post's aggregate. */
     @Transactional
     public ReactionListResponse react(UUID userId, UUID postId, String rawEmoji, boolean add) {
-        consume("feed:reaction:minute:" + userId, REACTIONS_PER_MINUTE, Duration.ofMinutes(1),
-                "Too many reactions");
         requireVisiblePost(userId, postId);
         String emoji = ReactionEmoji.normalize(rawEmoji);
+        // The write runs first so a cap rejection stays free of quota; when
+        // the consume below denies the request, the transaction rolls the
+        // write back.
         if (add) {
             if (store.addReaction(postId, userId, emoji, MAX_DISTINCT_REACTIONS_PER_USER) == 0
                     && !store.hasReaction(postId, userId, emoji)) {
@@ -289,6 +294,8 @@ public class FeedService {
         } else {
             store.removeReaction(postId, userId, emoji);
         }
+        consume("feed:reaction:minute:" + userId, REACTIONS_PER_MINUTE, Duration.ofMinutes(1),
+                "Too many reactions");
         return new ReactionListResponse(store.reactionsFor(postId, userId).stream()
                 .map(row -> new ReactionSummary(row.emoji(), row.count(), row.mine()))
                 .toList());

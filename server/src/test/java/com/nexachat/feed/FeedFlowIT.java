@@ -1,12 +1,15 @@
 package com.nexachat.feed;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.nexachat.auth.RateLimitService;
 import com.nexachat.testutil.FeatureItSupport;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -30,6 +33,9 @@ class FeedFlowIT extends FeatureItSupport {
 
     private static final byte[] PNG_BYTES = hex("89504E470D0A1A0A"
             + "0000000D4948445200000010000000100806000000");
+
+    @Autowired
+    private RateLimitService rateLimitService;
 
     private static byte[] hex(String value) {
         byte[] bytes = new byte[value.length() / 2];
@@ -367,6 +373,54 @@ class FeedFlowIT extends FeatureItSupport {
                 .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
     }
 
+    @Test
+    void reportingACommentOnAPostWhoseAuthorBlockedTheReporterIsNotFound() throws Exception {
+        Actor author = newUser("Blocking Post Author");
+        Actor commenter = newUser("Third Party Commenter");
+        Actor reporter = newUser("Blocked Reporter");
+        UUID postId = createPostId(author, "author's post");
+        JsonNode comment = json(postAs(commenter, "/api/v1/feed/posts/" + postId + "/comments",
+                Map.of("body", "third party comment", "clientCommentId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated()));
+        postAs(author, "/api/v1/users/" + reporter.id() + "/block", null)
+                .andExpect(status().is2xxSuccessful());
+
+        getAs(reporter, "/api/v1/feed/posts/" + postId + "/comments")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
+
+        postAs(reporter, "/api/v1/reports", Map.of(
+                "targetType", "COMMENT",
+                "targetId", comment.get("id").asText(),
+                "reason", "SPAM"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("COMMENT_NOT_FOUND"));
+    }
+
+    @Test
+    void reportingACommentOnAPostByADeletedAuthorIsNotFound() throws Exception {
+        Actor author = newUser("Deleted Post Author");
+        Actor commenter = newUser("Surviving Commenter");
+        Actor reporter = newUser("Late Reporter");
+        UUID postId = createPostId(author, "doomed post");
+        JsonNode comment = json(postAs(commenter, "/api/v1/feed/posts/" + postId + "/comments",
+                Map.of("body", "comment on a doomed post",
+                        "clientCommentId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated()));
+        jdbcTemplate.update("UPDATE users SET deleted_at = now() WHERE id = ?", author.id());
+
+        getAs(reporter, "/api/v1/feed/posts/" + postId + "/comments")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
+
+        postAs(reporter, "/api/v1/reports", Map.of(
+                "targetType", "COMMENT",
+                "targetId", comment.get("id").asText(),
+                "reason", "SPAM"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("COMMENT_NOT_FOUND"));
+    }
+
     // ------------------------------------------------------------------ images
 
     @Test
@@ -437,6 +491,82 @@ class FeedFlowIT extends FeatureItSupport {
                 "body", "one too many", "clientPostId", UUID.randomUUID().toString()))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"));
+    }
+
+    @Test
+    void rejectedPostsDoNotBurnThePerMinuteLimit() throws Exception {
+        Actor author = newUser("Sloppy Author");
+
+        // Neither text nor an image, and images the author does not own: all
+        // rejected by the service after the request passed bean validation.
+        postAs(author, "/api/v1/feed/posts",
+                Map.of("clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+        postAs(author, "/api/v1/feed/posts", Map.of(
+                "body", "hi", "imageId", UUID.randomUUID().toString(),
+                "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+        postAs(author, "/api/v1/feed/posts", Map.of(
+                "body", "hi", "imageId", UUID.randomUUID().toString(),
+                "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+
+        postAs(author, "/api/v1/feed/posts", Map.of(
+                "body", "valid after the rejections", "clientPostId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void rejectedCommentsDoNotBurnThePerMinuteLimit() throws Exception {
+        Actor author = newUser("Quiet Host");
+        Actor commenter = newUser("Noisy Commenter");
+        UUID postId = createPostId(author, "host post");
+        String commentsPath = "/api/v1/feed/posts/" + postId + "/comments";
+
+        for (int index = 0; index < 10; index++) {
+            postAs(commenter, "/api/v1/feed/posts/" + UUID.randomUUID() + "/comments",
+                    Map.of("body", "hi", "clientCommentId", UUID.randomUUID().toString()))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
+        }
+
+        postAs(commenter, commentsPath, Map.of(
+                "body", "valid after the rejections", "clientCommentId", UUID.randomUUID().toString()))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void reactionsOnAnInvisiblePostDoNotBurnThePerMinuteLimit() throws Exception {
+        Actor author = newUser("Quiet Post Host");
+        Actor reactor = newUser("Impatient Reactor");
+        UUID postId = createPostId(author, "react target");
+        String missingPost = "/api/v1/feed/posts/" + UUID.randomUUID() + "/reactions/\uD83D\uDC4D";
+
+        for (int index = 0; index < 60; index++) {
+            putAs(reactor, missingPost).andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
+        }
+
+        putAs(reactor, "/api/v1/feed/posts/" + postId + "/reactions/\uD83D\uDC4D")
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void invalidEmojiReactionsDoNotBurnThePerMinuteLimit() throws Exception {
+        Actor author = newUser("Emoji Host");
+        Actor reactor = newUser("Long Emoji Reactor");
+        UUID postId = createPostId(author, "emoji target");
+        String path = "/api/v1/feed/posts/" + postId + "/reactions/";
+
+        for (int index = 0; index < 60; index++) {
+            putAs(reactor, path + "x".repeat(17)).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+        }
+
+        putAs(reactor, path + "\uD83D\uDC4D").andExpect(status().isOk());
     }
 
     @Test
@@ -526,6 +656,37 @@ class FeedFlowIT extends FeatureItSupport {
         putAs(reactor, path + "🤯")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    void aCapRejectedReactionDoesNotBurnThePerMinuteLimit() throws Exception {
+        Actor author = newUser("Cap Host");
+        Actor reactor = newUser("Capped Reactor");
+        UUID postId = createPostId(author, "cap target");
+        String path = "/api/v1/feed/posts/" + postId + "/reactions/";
+        String[] emojis = {"👍", "❤️", "😂", "😮", "😢", "🔥", "👏", "🎉"};
+        // Place the 8 distinct reactions directly so the request below is the
+        // only one that can touch the per-minute reaction bucket.
+        for (String emoji : emojis) {
+            jdbcTemplate.update(
+                    "INSERT INTO public_post_reactions (post_id, user_id, emoji) VALUES (?, ?, ?)",
+                    postId, reactor.id(), emoji);
+        }
+
+        // The ninth distinct emoji is rejected by the cap; the rejection must
+        // not use up one of the per-minute reaction tokens.
+        putAs(reactor, path + "🤯")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+
+        // The bucket was never touched: all 60 tokens are still there.
+        String bucket = "feed:reaction:minute:" + reactor.id();
+        int remaining = 0;
+        while (rateLimitService.tryConsume(bucket, FeedService.REACTIONS_PER_MINUTE,
+                Duration.ofMinutes(1)).allowed()) {
+            remaining++;
+        }
+        assertThat(remaining).isEqualTo(FeedService.REACTIONS_PER_MINUTE);
     }
 
     @Test
