@@ -80,7 +80,7 @@ export default function RulesPage() {
       await api('/api/v1/admin/rules', {
         method: 'POST',
         body: {
-          name: form.name,
+          name: form.name.trim(),
           category: form.category,
           severity: form.severity,
           patternType: form.patternType,
@@ -134,7 +134,7 @@ export default function RulesPage() {
 
       {showNew && (
         <div className="card" style={{ marginBottom: 16 }}>
-          {formError && <div className="form-error">{formError}</div>}
+          {formError && <div className="form-error" role="alert">{formError}</div>}
           <div className="filters">
             <div className="field" style={{ minWidth: 200 }}>
               <label htmlFor="rule-name">{t('rules.field.name')}</label>
@@ -200,7 +200,11 @@ export default function RulesPage() {
             <button className="btn ghost" onClick={() => setShowNew(false)}>
               {t('common.cancel')}
             </button>
-            <button className="btn primary" onClick={() => void create()} disabled={!form.name}>
+            <button
+              className="btn primary"
+              onClick={() => void create()}
+              disabled={!form.name.trim()}
+            >
               {t('common.save')}
             </button>
           </div>
