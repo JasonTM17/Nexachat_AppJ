@@ -35,6 +35,18 @@ public final class MediaCacheCleaner {
         return Completable.fromAction(this::clearNow).subscribeOn(Schedulers.io());
     }
 
+    /**
+     * Wipes the transient decrypted attachment working copies left in cache by a
+     * previous process. Called on app start so cold at-rest storage holds only
+     * the encrypted store.
+     */
+    @NonNull
+    public Completable clearTransientAttachmentCopies() {
+        return Completable.fromAction(() -> deleteTree(
+                        MediaCacheConfig.transientAttachmentDirectory(context.getCacheDir())))
+                .subscribeOn(Schedulers.io());
+    }
+
     private void clearNow() {
         Cache cache = okHttpClient.cache();
         if (cache != null) {
@@ -46,7 +58,11 @@ public final class MediaCacheCleaner {
         }
         File cacheDir = context.getCacheDir();
         deleteTree(MediaCacheConfig.glideDirectory(cacheDir));
+        // Legacy dir from pre-hardening installs; never written anymore.
         deleteTree(MediaCacheConfig.okHttpDirectory(cacheDir));
+        // Encrypted attachment store and any decrypted working copies.
+        deleteTree(MediaCacheConfig.attachmentDirectory(cacheDir));
+        deleteTree(MediaCacheConfig.transientAttachmentDirectory(cacheDir));
         deleteTree(new File(cacheDir, MEDIA_UPLOADS_DIR));
         try {
             Glide.get(context).clearDiskCache();

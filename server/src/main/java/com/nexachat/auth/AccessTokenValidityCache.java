@@ -147,6 +147,12 @@ public class AccessTokenValidityCache {
         evict(event.userId());
     }
 
+    @org.springframework.transaction.event.TransactionalEventListener(
+            phase = org.springframework.transaction.event.TransactionPhase.AFTER_COMMIT)
+    public void onAccessTokenValidityChanged(AccessTokenValidityChangedEvent event) {
+        evict(event.userId());
+    }
+
     /** Visible for tests: how many users currently hold a cached entry. */
     int size() {
         synchronized (lock) {

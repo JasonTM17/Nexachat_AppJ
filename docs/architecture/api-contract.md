@@ -241,10 +241,12 @@ These keys are Spring properties; override them with the matching
 | `NO_PASSWORD_SET` | 409 | Password change refused because the account has no password hash |
 | `PASSWORD_REQUIRED` | 409 | `POST /users/me/deletion-code` refused because the account has a password hash |
 | `FORBIDDEN` | 403 | Authenticated but not allowed |
+| `ACCOUNT_SUSPENDED` | 403 | Sign-in (password or Google) attempted on a suspended account |
 | `PHONE_EXISTS` | 409 | Register: phone already registered |
 | `EMAIL_ALREADY_IN_USE` | 409 | Recovery email is already verified on another active account |
 | `MAIL_UNAVAILABLE` | 503 | No configured mail provider is available for an authenticated email operation |
 | `USER_NOT_FOUND` | 404 | Target user does not exist |
+| `NOTICE_NOT_FOUND` | 404 | Unknown moderation notice on `POST /users/me/notices/{noticeId}/read` |
 | `ALREADY_CONTACT` | 409 | Contact already present |
 | `CONVERSATION_NOT_FOUND` | 404 | Conversation id does not exist |
 | `NOT_MEMBER` | 403 | Caller is not a member of the conversation |
@@ -284,6 +286,8 @@ These keys are Spring properties; override them with the matching
 | `AI_OPTED_OUT` | 403 | The target message's sender opted out of AI in that conversation |
 | `TRANSLATION_UNSUPPORTED` | 400 | Unsupported target language or non-translatable message shape |
 | `TRANSLATION_UNAVAILABLE` | 503 | No translation provider available or provider output rejected |
+| `ALERT_RULE_NOT_FOUND` | 404 | Admin alert rule id does not exist |
+| `RULE_IN_USE` | 409 | Admin rule deletion refused while the rule is still referenced by alerts |
 | `NOT_FOUND` | 404 | Unknown path |
 | `METHOD_NOT_ALLOWED` | 405 | Wrong HTTP method for the path |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | Request `Content-Type` not accepted |
@@ -1282,9 +1286,11 @@ participant, `CallService` throws `CallException`
 (`CALL_NOT_FOUND` or `NOT_MEMBER`). `GlobalExceptionHandler` maps those codes to
 `404` / `403` on REST (`NOT_MEMBER` uses the shared `ApiErrorCode`; call-specific
 codes keep their STOMP string names in the JSON `error.code`).
-As of `CallService.validateEnvelope`, STOMP `INVITE` frames must not include
-`sdp`, so the `saveOffer` branch on invite is unreachable through public
-signaling; media offer/answer still flows through `SDP` frames after `ACCEPT`.
+`CallService.validateEnvelope` allows a STOMP `INVITE` to carry an SDP
+`offer` (`type` `offer`, non-blank `description` ≤ 16 KiB UTF-8); the invite
+handler stores it via `registry.saveOffer` (`CallService.java:131-133`,
+`470-489`) so the push-wake fast path above can serve it. The callee still
+answers with an `SDP` frame after `ACCEPT`.
 
 ### STOMP signaling
 
@@ -1299,7 +1305,7 @@ signaling; media offer/answer still flows through `SDP` frames after `ACCEPT`.
 - `INVITE` may carry `mediaType` (`AUDIO` or `VIDEO`); an absent value means
   `AUDIO` so pre-mediaType clients keep working. Any other value fails
   `VALIDATION_FAILED`; `mediaType` is rejected on non-INVITE frames.
-- `INVITE` must not include `sdp` or `candidate` (control-only).
+- `INVITE` must not include `candidate`; it may carry an `sdp` offer (see above).
 - `SDP` carries `sdp` only (`type` `offer` or `answer`, `description` ≤ 16 KiB UTF-8).
 - `ICE` carries `candidate` only (`candidate` ≤ 1 KiB UTF-8; `sdpMid` ≤ 256 chars; `sdpMLineIndex` ≥ 0 when set).
 - Other control frames (`ACCEPT`, `REJECT`, `CANCEL`, `END`) must not include SDP/ICE.

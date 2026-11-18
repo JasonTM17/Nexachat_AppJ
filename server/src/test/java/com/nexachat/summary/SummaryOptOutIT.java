@@ -178,6 +178,52 @@ class SummaryOptOutIT {
     }
 
     @Test
+    void optOutPurgesCachedSummariesWhoseOverviewIsNotCitationBound() throws Exception {
+        TestMessage peerFact = addMessage(peer.getId(),
+                "The private migration date is alpha-bravo March 14.");
+        addMessage(caller.getId(), "The team reviewed the release notes.");
+        addMessage(caller.getId(), "The demo is scheduled for next week.");
+        addMessage(caller.getId(), "The review is complete.");
+        addMessage(caller.getId(), "The rollout starts after the review.");
+        // The overview paraphrases the peer's message but cites only a caller
+        // message (source index 2), so the citation-based replay guard cannot
+        // see that the cached row carries the opted-out member's content.
+        LLM.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
+                FakeOpenAiServer.jsonResponse(uncitedOverviewJson())));
+        int requestsBefore = LLM.requestCount();
+
+        MvcResult first = postSummaryRefresh(true)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.generatedBy").value("LLM"))
+                .andExpect(jsonPath("$.cached").value(false))
+                .andReturn();
+        JsonNode firstBody = objectMapper.readTree(first.getResponse().getContentAsString());
+        assertThat(firstBody.path("overview").asText()).contains("alpha-bravo");
+        assertThat(citations(firstBody)).doesNotContain(peerFact.id().toString());
+        assertThat(summaryCacheRows()).isEqualTo(1);
+
+        mockMvc.perform(put("/api/v1/conversations/" + conversationId + "/ai-opt-out")
+                        .header("Authorization", bearer(peer)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aiOptOut").value(true));
+
+        assertThat(summaryCacheRows())
+                .as("opt-out purges the conversation's cached summaries")
+                .isZero();
+
+        LLM.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
+                FakeOpenAiServer.jsonResponse(validJson())));
+        MvcResult second = postSummaryRefresh(false)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cached").value(false))
+                .andReturn();
+        JsonNode secondBody = objectMapper.readTree(second.getResponse().getContentAsString());
+        assertThat(secondBody.path("overview").asText()).doesNotContain("alpha-bravo");
+        assertThat(LLM.requests().get(LLM.requestCount() - 1).body()).doesNotContain("alpha-bravo");
+        assertThat(LLM.requestCount()).isEqualTo(requestsBefore + 2);
+    }
+
+    @Test
     void rechecksOptOutWhenTheWindowWasLoadedBeforeTheCall() throws Exception {
         TestMessage peerFact = addMessage(peer.getId(),
                 "The private migration date is alpha-bravo March 14.");
@@ -316,6 +362,19 @@ class SummaryOptOutIT {
         return "{\"overview\":\"The group agreed on the next steps.\","
                 + "\"keyPoints\":[{\"text\":\"The team agreed.\",\"citations\":[1]}],"
                 + "\"decisions\":[],\"actionItems\":[],\"questions\":[],\"topics\":[\"Next steps\"]}";
+    }
+
+    private static String uncitedOverviewJson() {
+        return "{\"overview\":\"The migration date alpha-bravo was confirmed privately.\","
+                + "\"keyPoints\":[{\"text\":\"The team reviewed the notes.\",\"citations\":[2]}],"
+                + "\"decisions\":[],\"actionItems\":[],\"questions\":[],\"topics\":[\"Migration\"]}";
+    }
+
+    private int summaryCacheRows() {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM message_summaries WHERE conversation_id = ?",
+                Integer.class, conversationId);
+        return count == null ? 0 : count;
     }
 
     private User createUser(String displayName) {

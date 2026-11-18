@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <!-- AttachmentRepository downloads land in cacheDir/attachments -->
+    <!-- AttachmentRepository downloads land in cacheDir/attachments (encrypted at
+         rest); the decrypted working copies handed to viewers/share intents live in
+         cacheDir/attachments-open and are wiped on app start. -->
     <cache-path name="attachments" path="attachments/" />
+    <cache-path name="attachments-open" path="attachments-open/" />
 </paths>
