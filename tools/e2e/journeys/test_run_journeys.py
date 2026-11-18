@@ -49,11 +49,16 @@ class SelectedJourneysTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             run_journeys.selected_journeys("feed_moderation,bogus")
 
+    def test_only_rejects_empty_selection(self):
+        for selection in ("", " , "):
+            with self.subTest(selection=selection), self.assertRaises(SystemExit):
+                run_journeys.selected_journeys(selection)
+
 
 class StatusOfTest(unittest.TestCase):
     def test_statuses(self):
         self.assertEqual(run_journeys.status_of(make_result("a", ran=False)), "not_run")
-        self.assertEqual(run_journeys.status_of(make_result("b")), "ok")
+        self.assertEqual(run_journeys.status_of(make_result("b", passed=1)), "ok")
         self.assertEqual(run_journeys.status_of(make_result("c", exit_code=2)), "exit=2")
         self.assertEqual(
             run_journeys.status_of(make_result("d", exit_code=None, timed_out=True)),
@@ -80,25 +85,30 @@ class SummaryRowsTest(unittest.TestCase):
 
 
 class ComputeExitCodeTest(unittest.TestCase):
-    def test_success_and_skips(self):
-        results = [
-            make_result("a", passed=5),
-            make_result("b", ran=False),
-            make_result("c", passed=0, not_run=3),
-        ]
+    def test_success_with_optional_scenario_skip(self):
+        results = [make_result("a", passed=5), make_result("b", passed=1, not_run=3)]
         self.assertEqual(run_journeys.compute_exit_code(results), 0)
 
     def test_nonzero_exit_fails(self):
-        results = [make_result("a"), make_result("b", exit_code=1)]
+        results = [make_result("a", passed=1), make_result("b", exit_code=1, passed=1)]
         self.assertEqual(run_journeys.compute_exit_code(results), 1)
 
     def test_timeout_fails(self):
         results = [make_result("a", exit_code=None, timed_out=True)]
         self.assertEqual(run_journeys.compute_exit_code(results), 1)
 
-    def test_all_missing_passes_with_zero(self):
-        results = [make_result(name, ran=False) for name in run_journeys.JOURNEYS]
-        self.assertEqual(run_journeys.compute_exit_code(results), 0)
+    def test_missing_selected_journey_fails(self):
+        results = [make_result("a", passed=1), make_result("b", ran=False)]
+        self.assertEqual(run_journeys.compute_exit_code(results), 1)
+
+    def test_no_passing_evidence_fails(self):
+        for results in ([], [make_result("a")], [make_result("a", not_run=3)]):
+            with self.subTest(results=results):
+                self.assertEqual(run_journeys.compute_exit_code(results), 1)
+
+    def test_fail_line_fails_even_if_child_exits_zero(self):
+        self.assertEqual(
+            run_journeys.compute_exit_code([make_result("a", passed=1, failed=1)]), 1)
 
 
 if __name__ == "__main__":

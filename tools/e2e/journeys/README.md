@@ -36,13 +36,13 @@ python tools/e2e/journeys/feed_moderation_e2e.py --base-url http://127.0.0.1:809
 ```
 
 `--timeout` bounds each journey's wall-clock budget (default 600 s); the
-runner exits 1 when any executed journey exits non-zero or times out.
+runner exits 1 if any selected journey is missing, exits non-zero, times
+out, prints a `FAIL` line, or reports no passing scenarios.
 
 ## NOT_RUN semantics
 
 A journey script may print `NOT_RUN <scenario>: <reason>` for a check whose
-preconditions the stack does not provide — it is reported but does not fail
-the run. A missing `*_e2e.py` file is also reported as `NOT_RUN` by the
-runner, so partially populated checkouts still produce a complete summary.
-`FAIL` lines from a journey do not themselves set the runner's exit code —
-only the journey's own non-zero exit or a timeout does.
+preconditions the stack does not provide. This does not fail the run if
+the journey also reports at least one `PASS` and no failures. A missing
+selected `*_e2e.py` file is reported as `NOT_RUN` in the summary and fails
+the run. A zero exit does not imply every scenario ran.
