@@ -3,9 +3,9 @@
 
 Discovers ``*_e2e.py`` siblings in a fixed order and runs each one as
 ``python <file> --base-url <url>`` in a subprocess, streaming its output and
-tallying the ``PASS ``/``FAIL ``/``NOT_RUN `` result lines it prints. A journey
-that is missing on disk is reported as ``NOT_RUN`` and does not fail the run;
-a journey that exits non-zero or exceeds ``--timeout`` fails it (exit 1).
+tallying the ``PASS ``/``FAIL ``/``NOT_RUN `` result lines it prints. Each
+selected journey must exist, exit zero, and report at least one PASS and no
+FAIL lines. A timeout also fails the run.
 """
 
 from __future__ import annotations
@@ -51,9 +51,11 @@ def script_path(journey: str) -> str:
 
 
 def selected_journeys(only: str | None) -> list[str]:
-    if not only:
+    if only is None:
         return list(JOURNEYS)
     wanted = {part.strip() for part in only.split(",") if part.strip()}
+    if not wanted:
+        raise SystemExit("--only must name at least one journey")
     unknown = sorted(wanted - set(JOURNEYS))
     if unknown:
         raise SystemExit(
@@ -107,7 +109,9 @@ def collect_results(base_url: str, timeout: int, only: str | None,
     for journey in selected_journeys(only):
         if not os.path.exists(script_path(journey)):
             stream.write(f"NOT_RUN {journey}: {journey}_e2e.py not found\n")
-            results.append(JourneyResult(name=journey, ran=False))
+            missing = JourneyResult(name=journey, ran=False)
+            missing.counts["not_run"] = 1
+            results.append(missing)
             continue
         stream.write(f"== journey: {journey} ==\n")
         results.append(run_journey(journey, base_url, timeout, stream))
@@ -121,6 +125,10 @@ def status_of(result: JourneyResult) -> str:
         return "timeout"
     if result.exit_code != 0:
         return f"exit={result.exit_code}"
+    if result.counts["fail"]:
+        return "failed"
+    if not result.counts["pass"]:
+        return "no_pass"
     return "ok"
 
 
@@ -147,13 +155,8 @@ def render_summary(results: list[JourneyResult]) -> str:
 
 
 def compute_exit_code(results: list[JourneyResult]) -> int:
-    """1 when any executed journey exited non-zero or timed out."""
-    for r in results:
-        if not r.ran:
-            continue
-        if r.timed_out or r.exit_code != 0:
-            return 1
-    return 0
+    """Fail when any selected journey lacks passing execution evidence."""
+    return 0 if results and all(status_of(result) == "ok" for result in results) else 1
 
 
 def main() -> int:
