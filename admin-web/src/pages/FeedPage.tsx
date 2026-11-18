@@ -155,7 +155,7 @@ export default function FeedPage() {
                   <th>{t('feed.col.content')}</th>
                   <th className="col-lo">{t('feed.col.reason')}</th>
                   <th className="col-lo">{t('feed.col.author')}</th>
-                  <th>{t('feed.col.state')}</th>
+                  <th className="col-lo">{t('feed.col.state')}</th>
                   <th className="col-lo">{t('feed.col.reported')}</th>
                   <th className="col-actions">{t('feed.col.actions')}</th>
                 </tr>
@@ -176,6 +176,9 @@ export default function FeedPage() {
                         {t(r.targetType === 'POST' ? 'feed.type.post' : 'feed.type.comment')}
                       </td>
                       <td>
+                        <div className="feed-mobile-state">
+                          <Chip tone={STATE_TONE[targetState]}>{t(STATE_KEY[targetState])}</Chip>
+                        </div>
                         <div className={open ? 'snippet' : 'truncate'}>{text}</div>
                         {((open && r.details) || (!body && r.details)) && (
                           <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
@@ -196,7 +199,7 @@ export default function FeedPage() {
                         <Chip>{r.reason}</Chip>
                       </td>
                       <td className="col-lo">{r.authorName ?? r.authorId ?? '—'}</td>
-                      <td>
+                      <td className="col-lo">
                         <Chip tone={STATE_TONE[targetState]}>
                           {t(STATE_KEY[targetState])}
                         </Chip>
