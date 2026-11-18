@@ -91,8 +91,12 @@ public class AlertRuleService {
         requireAdmin(actorRole);
         AlertRuleRow existing = requireRule(ruleId);
         if (existing.builtIn()) {
-            throw ApiException.of(ApiErrorCode.RULE_IN_USE,
-                    "Built-in rules cannot be deleted — disable them instead");
+            // Contract: DELETE on a built-in disables it instead of refusing.
+            repository.setEnabled(ruleId, false);
+            auditService.record(actorId, actorRole, "RULE_UPDATE", "alert_rule", ruleId.toString(),
+                    null, Map.of("enabled", false, "severity", existing.severity(),
+                            "name", existing.name()), ip);
+            return;
         }
         repository.delete(ruleId);
         auditService.record(actorId, actorRole, "RULE_DELETE", "alert_rule", ruleId.toString(),
