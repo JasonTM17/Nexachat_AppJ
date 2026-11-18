@@ -224,9 +224,13 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
                         hashes.put(rs.getObject("id", UUID.class),
                                 RagHashes.messageContentHash(
                                         rs.getObject("id", UUID.class),
-                                        rs.getTimestamp("edited_at"),
+                                        instantOrNull(rs.getTimestamp("edited_at")),
                                         rs.getString("content"))));
         return hashes;
+    }
+
+    private static Instant instantOrNull(Timestamp timestamp) {
+        return timestamp == null ? null : timestamp.toInstant();
     }
 
     @Override
