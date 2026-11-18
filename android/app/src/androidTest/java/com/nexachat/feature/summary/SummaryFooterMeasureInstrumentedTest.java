@@ -5,6 +5,7 @@ import static org.junit.Assert.assertTrue;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.util.DisplayMetrics;
+import android.view.ContextThemeWrapper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -22,12 +23,32 @@ import org.junit.runner.RunWith;
 public final class SummaryFooterMeasureInstrumentedTest {
 
   @Test
-  public void narrowSheetDesiredFooterExceedsRowAtLargeType() {
+  public void narrowSheetDesiredFooterExceedsRowAtLargeType() throws Throwable {
+    // Chip inflation starts animators, which require a Looper thread — the
+    // instrumentation thread has none, so the whole measure runs on the main thread.
+    final Throwable[] failure = new Throwable[1];
+    androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+            .runOnMainSync(() -> {
+      try {
+        measureAndAssert();
+      } catch (Throwable t) {
+        failure[0] = t;
+      }
+    });
+    if (failure[0] != null) {
+      throw failure[0];
+    }
+  }
+
+  private void measureAndAssert() {
     Context app = ApplicationProvider.getApplicationContext();
     Configuration config = new Configuration(app.getResources().getConfiguration());
     config.fontScale = 1.3f;
     config.densityDpi = DisplayMetrics.DENSITY_DEFAULT;
-    Context themed = app.createConfigurationContext(config);
+    // createConfigurationContext does not carry the application theme, and
+    // bottom_sheet_summary inflates Material widgets that need it.
+    Context themed = new ContextThemeWrapper(
+            app.createConfigurationContext(config), R.style.Theme_NexaChat);
     float widthDp = 320f;
     int widthPx = Math.round(widthDp * themed.getResources().getDisplayMetrics().density);
 
