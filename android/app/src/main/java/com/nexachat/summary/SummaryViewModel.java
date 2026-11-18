@@ -31,7 +31,7 @@ public final class SummaryViewModel extends ViewModel {
 
     private SummaryScope lastScope;
     private Integer lastLimit;
-    private long requestGeneration;
+    private volatile long requestGeneration;
     private SummaryRepository.Cancellable activeRequest;
 
     @Inject
@@ -84,7 +84,9 @@ public final class SummaryViewModel extends ViewModel {
 
     /**
      * Re-requests a TODAY summary whose day or zone no longer matches the device, so a sheet
-     * left open across midnight or a zone change never shows yesterday's result.
+     * left open across midnight or a zone change never shows yesterday's result. A period the
+     * server resolved with its own default zone is left alone: its zone stays different from the
+     * device zone forever, so re-requesting it would repeat on every resume.
      */
     public void revalidate() {
         SummaryUiState current = state.getValue();
@@ -96,6 +98,9 @@ public final class SummaryViewModel extends ViewModel {
         SummaryResponse summary = current.getSummary();
         SummaryPeriod period = summary.getPeriod();
         if (summary.getScope() != SummaryScope.TODAY || period == null) {
+            return;
+        }
+        if (period.isTimeZoneDefaulted()) {
             return;
         }
         String zone = TimeZone.getDefault().getID();
@@ -158,6 +163,10 @@ public final class SummaryViewModel extends ViewModel {
 
                     @Override
                     public void onError(SummaryError error) {
+                        // A superseded request must not start a retry the user never asked for.
+                        if (token != requestGeneration) {
+                            return;
+                        }
                         if (error == SummaryError.INVALID_TIME_ZONE && !zoneFallback) {
                             start(scope, limit, refresh, true);
                             return;
