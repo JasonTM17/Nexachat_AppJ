@@ -7,18 +7,20 @@ function Spark({ points, label }: { points: number[]; label: string }) {
   const w = 560;
   const h = 140;
   const pad = 8;
+  // Extra right inset keeps the end value + label inside the card edge.
+  const padR = 36;
   const max = Math.max(1, ...points);
-  const stepX = points.length > 1 ? (w - pad * 2) / (points.length - 1) : 0;
+  const stepX = points.length > 1 ? (w - pad - padR) / (points.length - 1) : 0;
   const coords = points.map(
     (v, i) => `${pad + i * stepX},${h - pad - (v / max) * (h - pad * 2)}`,
   );
-  const area = `${pad},${h - pad} ${coords.join(' ')} ${w - pad},${h - pad}`;
+  const area = `${pad},${h - pad} ${coords.join(' ')} ${w - padR},${h - pad}`;
   return (
     <svg className="spark" viewBox={`0 0 ${w} ${h}`} role="img" aria-label={label}>
       <polygon className="fill" points={area} />
       <polyline points={coords.join(' ')} />
       <text x={pad} y={14}>{label}</text>
-      <text x={w - pad} y={14} textAnchor="end">{max}</text>
+      <text x={w - 8} y={14} textAnchor="end">{max}</text>
     </svg>
   );
 }

@@ -215,12 +215,12 @@ export default function RulesPage() {
             <thead>
               <tr>
                 <th>{t('rules.col.name')}</th>
-                <th>{t('rules.col.category')}</th>
-                <th>{t('rules.col.severity')}</th>
-                <th>{t('rules.col.type')}</th>
-                <th>{t('rules.col.pattern')}</th>
+                <th className="col-lo">{t('rules.col.category')}</th>
+                <th className="col-lo">{t('rules.col.severity')}</th>
+                <th className="col-lo">{t('rules.col.type')}</th>
+                <th className="col-lo">{t('rules.col.pattern')}</th>
                 <th>{t('rules.col.enabled')}</th>
-                {isAdmin && <th />}
+                {isAdmin && <th className="col-actions" aria-label={t('common.actions')} />}
               </tr>
             </thead>
             <tbody>
@@ -230,12 +230,12 @@ export default function RulesPage() {
                     <div>{r.name}</div>
                     {r.builtIn && <Chip tone="low">{t('rules.builtIn')}</Chip>}
                   </td>
-                  <td>{r.category}</td>
-                  <td>
+                  <td className="col-lo">{r.category}</td>
+                  <td className="col-lo">
                     {isAdmin ? (
                       <select
                         className="select"
-                        style={{ width: 'auto', padding: '4px 10px' }}
+                        style={{ width: 'auto' }}
                         aria-label={`${t('rules.col.severity')} ${r.name}`}
                         value={r.severity}
                         onChange={(e) => changeSeverity(r, e.target.value)}
@@ -248,20 +248,22 @@ export default function RulesPage() {
                       <Chip tone={r.severity.toLowerCase()}>{r.severity}</Chip>
                     )}
                   </td>
-                  <td>{r.patternType}</td>
-                  <td className="mono truncate">{r.pattern ?? '—'}</td>
+                  <td className="col-lo">{r.patternType}</td>
+                  <td className="mono truncate col-lo">{r.pattern ?? '—'}</td>
                   <td>
-                    <input
-                      type="checkbox"
-                      className="checkbox"
-                      aria-label={`${t('rules.col.enabled')} ${r.name}`}
-                      checked={r.enabled}
-                      disabled={!isAdmin}
-                      onChange={() => toggle(r)}
-                    />
+                    <label className="check-hit">
+                      <input
+                        type="checkbox"
+                        className="checkbox"
+                        aria-label={`${t('rules.col.enabled')} ${r.name}`}
+                        checked={r.enabled}
+                        disabled={!isAdmin}
+                        onChange={() => toggle(r)}
+                      />
+                    </label>
                   </td>
                   {isAdmin && (
-                    <td>
+                    <td className="col-actions">
                       {!r.builtIn && (
                         <button className="btn danger sm" onClick={() => setConfirmDelete(r)}>
                           {t('common.delete')}
