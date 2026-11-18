@@ -77,6 +77,7 @@ export function Drawer({
   onClose: () => void;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     ref.current?.focus();
@@ -97,7 +98,16 @@ export function Drawer({
         tabIndex={-1}
         ref={ref}
       >
-        <h2>{title}</h2>
+        <div className="drawer-head">
+          <h2>{title}</h2>
+          <button
+            className="btn ghost sm drawer-close"
+            onClick={onClose}
+            aria-label={t('common.close')}
+          >
+            ✕
+          </button>
+        </div>
         {sub && <div className="sub">{sub}</div>}
         {children}
       </div>
