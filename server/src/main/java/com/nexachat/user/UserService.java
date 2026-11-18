@@ -153,7 +153,8 @@ public class UserService {
      *       (search semantics), while an unparseable number is a 400.</li>
      *   <li>{@code email}: normalized like recovery email, exact match on verified
      *       active users — 0..1 rows, caller excluded; unknown, unverified, or
-     *       deleted addresses yield an empty list.</li>
+     *       deleted addresses yield an empty list. The phone number is disclosed
+     *       only when the found user is already in the caller's contacts.</li>
      *   <li>{@code q}: case-insensitive displayName prefix, capped at
      *       {@value #SEARCH_LIMIT} rows, caller excluded. A blank {@code q}
      *       counts as "not supplied".</li>
@@ -187,7 +188,17 @@ public class UserService {
             String normalized = EmailOtpService.normalizeEmail(email);
             return userRepository.findActiveByVerifiedEmail(normalized)
                     .filter(user -> !user.getId().equals(callerId))
-                    .map(user -> List.of(scrubAvatar(UserResponse.from(user), callerId, user.getId())))
+                    .map(user -> {
+                        // Same disclosure rule as the q branch: the phone number
+                        // is visible only to callers who already have the user
+                        // in their contacts — knowing the email must not be
+                        // enough to learn the number.
+                        boolean contact = contactRepository
+                                .findContactUserIdsAmong(callerId, List.of(user.getId()))
+                                .contains(user.getId());
+                        return List.of(scrubAvatar(
+                                UserResponse.forSearchResult(user, contact), callerId, user.getId()));
+                    })
                     .orElseGet(List::of);
         }
 
