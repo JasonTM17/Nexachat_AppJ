@@ -27,4 +27,27 @@ public final class FeedTimeRulesTest {
         assertEquals(0L, FeedTimeRules.epochMillis("2026-02-25"));
         assertEquals(0L, FeedTimeRules.epochMillis("not-a-time"));
     }
+
+    @Test public void underAMinuteIsJustNow() {
+        long now = 1_771_997_600_000L;
+        assertEquals(true, FeedTimeRules.isJustNow(now - 59_999L, now));
+        assertEquals(true, FeedTimeRules.isJustNow(now, now));
+    }
+
+    @Test public void exactlyAMinuteIsNotJustNow() {
+        long now = 1_771_997_600_000L;
+        assertEquals(false, FeedTimeRules.isJustNow(now - 60_000L, now));
+    }
+
+    @Test public void clockSkewAheadIsJustNow() {
+        long now = 1_771_997_600_000L;
+        assertEquals(true, FeedTimeRules.isJustNow(now + 5_000L, now));
+    }
+
+    @Test public void missingInstantIsNotJustNow() {
+        long now = 1_771_997_600_000L;
+        assertEquals(false, FeedTimeRules.isJustNow(
+                FeedTimeRules.epochMillis("not-a-time"), now));
+        assertEquals(false, FeedTimeRules.isJustNow(0L, now));
+    }
 }

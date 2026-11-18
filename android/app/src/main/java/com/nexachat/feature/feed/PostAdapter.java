@@ -160,6 +160,9 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
         if (epochMs <= 0L) {
             return "";
         }
+        if (FeedTimeRules.isJustNow(epochMs, System.currentTimeMillis())) {
+            return context.getString(R.string.time_just_now);
+        }
         return DateUtils.getRelativeTimeSpanString(
                 epochMs, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS);
     }
