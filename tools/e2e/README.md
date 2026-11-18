@@ -8,7 +8,7 @@ demo/CI smoke tools, not part of the app build.
 
 | Kind | Entry points | Requires running backend |
 | --- | --- | --- |
-| **Live API/STOMP evidence** | `smoke_api.py` (and `smoke-api.sh` / `smoke-api.ps1`), `stomp_e2e.py`, `p0/p0_live.py`, `new_features/features_live.py`, `final/final_live.py`, `final/final_extended.py`, `summary/summary_e2e.py`, `calls/call_e2e.py` | Yes (or explicit `--allow-skip` / `NOT_RUN` where documented) |
+| **Live API/STOMP evidence** | `smoke_api.py` (and `smoke-api.sh` / `smoke-api.ps1`), `stomp_e2e.py`, `p0/p0_live.py`, `new_features/features_live.py`, `final/final_live.py`, `final/final_extended.py`, `summary/summary_e2e.py`, `calls/call_e2e.py`, `calls/call_media_e2e.py` | Yes (or explicit `--allow-skip` / `NOT_RUN` where documented) |
 
 ## Prerequisites
 
@@ -40,6 +40,29 @@ python tools/e2e/stomp_e2e.py            # ~30 s: events, presence, rate limit
 python tools/e2e/perf_e2e.py             # ~2 min: 550-message corpus + latency
 python tools/e2e/summary/summary_e2e.py    # AI summary API (fixture +849000003xx)
 ```
+
+### Call media E2E (real WebRTC)
+
+`calls/call_e2e.py` verifies the signaling contract only. `calls/call_media_e2e.py`
+goes one step further: it builds two `aiortc` peer connections on top of the live
+STOMP signaling and asserts that a real RTP stream flows in both directions.
+It needs extra Python packages (`pip install aiortc av numpy websocket-client`).
+
+```bash
+# One process, two endpoints (loopback ICE, still a real RTP stack):
+python tools/e2e/calls/call_media_e2e.py --media-seconds 5
+
+# Two machines/processes: callee waits for an INVITE, caller dials it.
+python tools/e2e/calls/call_media_e2e.py --role callee --base-url http://<host>:8080
+python tools/e2e/calls/call_media_e2e.py --role caller --base-url http://<host>:8080 \
+    --callee-phone +84900000122
+```
+
+The `both` run covers three scenarios: an audio call, a video call (tone + color
+bars, decoded frames checked for non-silence and size), and an audio call whose
+offer rides inside `INVITE` — the push-wake path where the callee fetches the
+offer over `GET /api/v1/calls/{callId}/offer`. Each call ends with a `COMPLETED`
+history row and the `CALL|...` terminal system line (`|VIDEO` suffix for video).
 
 ### Local mail sink (Mailpit)
 
