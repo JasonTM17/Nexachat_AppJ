@@ -135,7 +135,7 @@ public class TranslateService {
         List<TargetRow> rows = contextRepository.findTargets(conversationId, List.of(messageId));
         TargetRow row = rows.isEmpty() ? null : rows.get(0);
         Set<UUID> optedOut = aiOptOuts.optedOutUserIds(conversationId);
-        ApiErrorCode refusal = refusalFor(row, member, optedOut);
+        ApiErrorCode refusal = refusalFor(row, member, optedOut, userId);
         if (refusal != null) {
             metrics.recordTranslateRequest("REFUSED", "none");
             throw ApiException.of(refusal, refusalMessage(refusal));
@@ -161,7 +161,7 @@ public class TranslateService {
                     "External AI consent is required to translate messages");
         }
         rateLimiter.consumeOne(userId);
-        Generation generation = runProvider(conversationId, member, row.toMessage(),
+        Generation generation = runProvider(conversationId, userId, member, row.toMessage(),
                 target, glossary);
         if (generation == null) {
             metrics.recordTranslateRequest("FAILURE", "none");
@@ -213,7 +213,7 @@ public class TranslateService {
         List<TranslateBatchItem> items = new ArrayList<>(ids.size());
         for (UUID id : ids) {
             TargetRow row = rows.get(id);
-            ApiErrorCode refusal = refusalFor(row, member, optedOut);
+            ApiErrorCode refusal = refusalFor(row, member, optedOut, userId);
             if (refusal != null) {
                 metrics.recordTranslateRequest("REFUSED", "none");
                 items.add(TranslateBatchItem.failed(id, target.code(), refusal.getCode()));
@@ -254,7 +254,7 @@ public class TranslateService {
                         ApiErrorCode.RATE_LIMITED.getCode()));
                 continue;
             }
-            Generation generation = runProvider(conversationId, member, message, target, glossary);
+            Generation generation = runProvider(conversationId, userId, member, message, target, glossary);
             if (generation == null) {
                 metrics.recordTranslateRequest("FAILURE", "none");
                 items.add(TranslateBatchItem.failed(id, target.code(),
@@ -358,10 +358,10 @@ public class TranslateService {
     }
 
     private Generation runProvider(
-            UUID conversationId, ConversationMember member, TranslationMessage message,
+            UUID conversationId, UUID viewerId, ConversationMember member, TranslationMessage message,
             TranslationLanguage target, List<GlossaryTerm> glossary) {
         List<TranslationMessage> context = contextRepository.findContextBefore(
-                conversationId, message.seq(), member.getJoinedAt(),
+                conversationId, viewerId, message.seq(), member.getJoinedAt(),
                 properties.getContextMessages(), properties.getContextMessageMaxChars());
         TranslationPrompt prompt = promptBuilder.build(
                 message, target, context, glossary, properties.getContextMaxChars());
@@ -409,12 +409,14 @@ public class TranslateService {
 
     /**
      * The typed refusal for one message, in probe-safe order: rows a member
-     * cannot see (missing, or sent before their admission) are
-     * {@code MESSAGE_NOT_FOUND}; deleted, encrypted, non-text and opted-out
-     * rows get their own codes.
+     * cannot see (missing, sent before their admission, or peer-suppressed
+     * and not authored by them) are {@code MESSAGE_NOT_FOUND}; deleted,
+     * encrypted, non-text and opted-out rows get their own codes.
      */
-    private ApiErrorCode refusalFor(TargetRow row, ConversationMember member, Set<UUID> optedOut) {
-        if (row == null || row.createdAt().isBefore(member.getJoinedAt())) {
+    private ApiErrorCode refusalFor(TargetRow row, ConversationMember member, Set<UUID> optedOut,
+                                    UUID viewerId) {
+        if (row == null || row.createdAt().isBefore(member.getJoinedAt())
+                || (row.peerSuppressed() && !row.senderId().equals(viewerId))) {
             return ApiErrorCode.MESSAGE_NOT_FOUND;
         }
         if (row.deletedAt() != null) {
