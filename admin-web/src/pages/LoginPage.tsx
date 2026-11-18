@@ -25,7 +25,10 @@ export default function LoginPage() {
       let key: StringKey = 'login.error.invalid';
       if (err instanceof ApiException) {
         if (err.status === 403) key = 'login.error.staff';
-        if (err.code === 'ACCOUNT_SUSPENDED') key = 'login.error.suspended';
+        else if (err.status !== 401) key = 'login.error.server';
+      } else {
+        // No response at all: network failure, CORS, or server offline.
+        key = 'login.error.network';
       }
       setError(t(key));
     } finally {
