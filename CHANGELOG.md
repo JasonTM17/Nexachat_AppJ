@@ -50,7 +50,9 @@ All notable changes to NexaChat are documented here. The format follows
   summaries are not available there instead of showing a generic error, and the
   unread-messages banner no longer offers a summary in those chats.
 - Android: if the server does not recognise the device time zone, the summary is
-  requested once more with the server's default zone instead of failing.
+  requested once more with the server's default zone instead of failing, and a
+  summary the server resolved in its own zone is kept when the sheet is reopened
+  instead of being requested again every time.
 - Summary requests made at the same time for the same window no longer each
   call the external AI; a summary that fell back to the built-in engine is
   reused briefly instead of retrying the external AI on every tap.
