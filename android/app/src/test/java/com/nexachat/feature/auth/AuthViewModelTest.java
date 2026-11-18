@@ -17,6 +17,7 @@ import com.nexachat.data.AuthSessionResult;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import io.reactivex.rxjava3.subjects.SingleSubject;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.After;
@@ -332,6 +333,36 @@ public final class AuthViewModelTest {
 
         assertFalse(viewModel.getEmailSignup().getValue().isCodeSent());
         assertEquals("minh@example.com", viewModel.getEmailSignup().getValue().getEmail());
+    }
+
+    @Test
+    public void aLateCodeRequestSuccessCannotReopenTheCodeStepAfterChangingTheEmail() {
+        SingleSubject<Result<Unit>> codeRequest = SingleSubject.create();
+        when(repository.requestEmailSignupCode(anyString())).thenReturn(codeRequest);
+        fillSignupForm();
+        viewModel.requestSignupCode();
+        viewModel.changeSignupEmail();
+        assertFalse(viewModel.getEmailSignup().getValue().isCodeSent());
+
+        codeRequest.onSuccess(new Result.Success<>(Unit.INSTANCE));
+
+        assertFalse(viewModel.getEmailSignup().getValue().isCodeSent());
+        assertFalse(viewModel.getUiState().getValue().getLoading());
+        assertEquals(null, viewModel.getUiState().getValue().getError());
+    }
+
+    @Test
+    public void aLateCodeRequestFailureCannotSurfaceABannerAfterChangingTheEmail() {
+        SingleSubject<Result<Unit>> codeRequest = SingleSubject.create();
+        when(repository.requestEmailSignupCode(anyString())).thenReturn(codeRequest);
+        fillSignupForm();
+        viewModel.requestSignupCode();
+        viewModel.changeSignupEmail();
+
+        codeRequest.onSuccess(Result.failure(ApiError.RateLimited.INSTANCE));
+
+        assertEquals(null, viewModel.getUiState().getValue().getError());
+        assertFalse(viewModel.getUiState().getValue().getLoading());
     }
 
     @Test
