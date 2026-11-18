@@ -75,6 +75,11 @@ All notable changes to NexaChat are documented here. The format follows
 - The streak card now correctly shows when a grace day would still save a
   missed day, and the check-in streak read keeps working if its bookkeeping
   write fails.
+- A streak no longer loses a day when one member's send crosses local
+  midnight and is stored ahead of the other member's message from the day
+  before — days now complete from both members' recorded runs even when the
+  records arrive out of order, while days only one member skipped still
+  never count.
 - Deleting someone else's feed post or comment after they blocked you answers
   not-found instead of revealing the post exists.
 - Feed image uploads with negative or implausibly large dimensions are

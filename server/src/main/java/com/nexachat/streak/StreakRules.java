@@ -23,7 +23,17 @@ import java.time.temporal.ChronoUnit;
  *
  * <p>The grace day is available when no grace was consumed in the six days
  * before the completing day. Days never move backwards: a record older than
- * what is already stored changes nothing, which makes replays idempotent.
+ * the side's stored day cannot move its pointer, though a record landing just
+ * below the run floor still lowers that floor. Replays stay idempotent.
+ *
+ * <p>Records do not have to arrive in day order. Each side carries the first
+ * day of its current contiguous run of sends ({@code contA}/{@code contB}),
+ * so a late record — its side's stored day already moved past it — can still
+ * complete its day as long as that day falls inside both sides' runs. The
+ * floors only rise on a jump and only fall by the day a late record proves,
+ * so a day one side genuinely skipped still never completes. A null floor
+ * means "unknown" (rows written before the floors existed) and is treated as
+ * the side's stored day, which is exactly the pre-floor behavior.
  */
 public final class StreakRules {
 
@@ -38,9 +48,11 @@ public final class StreakRules {
 
     /** Persistent chain state; {@code null} dates mean "never". */
     public record State(LocalDate dayA, LocalDate dayB, int count, int bestCount,
-                        LocalDate lastDay, LocalDate startedOn, LocalDate freezeUsedOn) {
+                        LocalDate lastDay, LocalDate startedOn, LocalDate freezeUsedOn,
+                        LocalDate contA, LocalDate contB) {
 
-        public static final State EMPTY = new State(null, null, 0, 0, null, null, null);
+        public static final State EMPTY = new State(null, null, 0, 0, null, null, null,
+                null, null);
     }
 
     /** Read-side projection of a {@link State} against a given day. */
@@ -59,19 +71,76 @@ public final class StreakRules {
     public static State record(State state, Side side, LocalDate day) {
         LocalDate dayA = state.dayA();
         LocalDate dayB = state.dayB();
+        LocalDate contA = state.contA();
+        LocalDate contB = state.contB();
         if (side == Side.A) {
+            contA = stepCont(dayA, contA, day);
             dayA = later(dayA, day);
         } else {
+            contB = stepCont(dayB, contB, day);
             dayB = later(dayB, day);
         }
         State next = new State(dayA, dayB, state.count(), state.bestCount(), state.lastDay(),
-                state.startedOn(), state.freezeUsedOn());
-        boolean completesDay = day.equals(dayA) && day.equals(dayB)
-                && (state.lastDay() == null || state.lastDay().isBefore(day));
-        if (completesDay) {
+                state.startedOn(), state.freezeUsedOn(), contA, contB);
+        next = completeDue(next);
+        return next.equals(state) ? state : next;
+    }
+
+    /**
+     * Moves one side's contiguous-run floor for a record of {@code day}. A
+     * first record starts the run on the day; a forward step of exactly one
+     * day keeps it; any other forward move (a jump, or a run whose start is
+     * unknown) restarts the run on the day. A record at or behind the stored
+     * day cannot move the pointer, but a record of the day just below the
+     * floor extends the run down — that day was sent too.
+     */
+    private static LocalDate stepCont(LocalDate last, LocalDate cont, LocalDate day) {
+        if (last == null) {
+            return day;
+        }
+        if (day.isAfter(last)) {
+            return day.equals(last.plusDays(1)) && cont != null ? cont : day;
+        }
+        return cont != null && day.equals(cont.minusDays(1)) ? day : cont;
+    }
+
+    /**
+     * Completes every day in {@code (lastDay, min(dayA, dayB)]} that both
+     * sides provably sent, in order, through the normal advance. A day is
+     * provably sent by a side when it lies at or above that side's floor; a
+     * null floor is unknown and reads as the side's stored day. Days below the
+     * shared floor are not completable and are simply not fed to
+     * {@code advance}: its gap logic already treats a jump past them as a miss
+     * or a grace day.
+     */
+    private static State completeDue(State state) {
+        LocalDate frontier = min(state.dayA(), state.dayB());
+        if (frontier == null) {
+            return state;
+        }
+        LocalDate floor = max(floorOf(state.contA(), state.dayA()),
+                floorOf(state.contB(), state.dayB()));
+        LocalDate start = state.lastDay() == null
+                ? floor
+                : max(state.lastDay().plusDays(1), floor);
+        State next = state;
+        for (LocalDate day = start; !day.isAfter(frontier); day = day.plusDays(1)) {
             next = advance(next, day);
         }
-        return next.equals(state) ? state : next;
+        return next;
+    }
+
+    /** A side's earliest provably-sent day; an unknown floor is the stored day. */
+    private static LocalDate floorOf(LocalDate cont, LocalDate day) {
+        return cont != null ? cont : day;
+    }
+
+    private static LocalDate min(LocalDate a, LocalDate b) {
+        return a == null || b == null ? null : a.isBefore(b) ? a : b;
+    }
+
+    private static LocalDate max(LocalDate a, LocalDate b) {
+        return a.isBefore(b) ? b : a;
     }
 
     private static State advance(State state, LocalDate day) {
@@ -94,7 +163,7 @@ public final class StreakRules {
             }
         }
         return new State(state.dayA(), state.dayB(), count, Math.max(state.bestCount(), count),
-                day, startedOn, freezeUsedOn);
+                day, startedOn, freezeUsedOn, state.contA(), state.contB());
     }
 
     /** Whether a grace day could be consumed to bridge a one-day miss ending on {@code day}. */
