@@ -10,7 +10,13 @@ import java.time.Instant;
 public final class CircuitBreaker {
 
     private static final int FAILURE_THRESHOLD = 5;
-    private static final Duration OPEN_DURATION = Duration.ofSeconds(60);
+    /**
+     * How long the breaker keeps the external tier closed after it opened. It
+     * is also the window a stored provider-failure fallback stays replayable:
+     * replaying it longer would pin the local engine past the breaker's own
+     * recovery point.
+     */
+    public static final Duration OPEN_DURATION = Duration.ofSeconds(60);
 
     private final Clock clock;
     private int consecutiveFailures;

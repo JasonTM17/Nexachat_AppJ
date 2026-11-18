@@ -1374,6 +1374,12 @@ neutral flag that is `true` only when the external LLM produced the summary and
 some messages were excluded because their authors opted out in that
 conversation; the local engine may still use those messages.
 
+When a cached answer is replayed, the response carries the stored row's
+`generatedBy`, `model`, `provider` and `fallbackReason` — the labels of the
+engine that actually produced it, not of the request that triggered the replay.
+A stored provider-failure fallback is replayed only briefly (the circuit-breaker
+window) and never bypasses `refresh: true`.
+
 The request body is `{scope, limit?, language?, refresh?, timeZone?}`:
 
 - `scope` — required, one of `UNREAD` (new messages since the caller's read
