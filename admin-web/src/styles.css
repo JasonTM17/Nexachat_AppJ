@@ -448,6 +448,8 @@ th.col-actions { position: sticky; right: 0; z-index: 1; box-shadow: -10px 0 12p
   margin-top: 8px;
 }
 
+.feed-mobile-state { display: none; }
+
 .status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
 .status-item { padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
@@ -468,6 +470,7 @@ th.col-actions { position: sticky; right: 0; z-index: 1; box-shadow: -10px 0 12p
   /* Low-priority table columns are hidden on small screens; the row drawer
      carries the full data. */
   .col-lo { display: none; }
+  .feed-mobile-state { display: block; margin-bottom: 6px; }
 
   th, td { padding: 10px; }
   .truncate { max-width: 120px; }
