@@ -62,6 +62,34 @@ public final class LabelViewModelTest {
     }
 
     @Test
+    public void reloadLabelsRefreshesListLoadedEarlierInTheActivityLifetime() {
+        repository.labels.add(label("label-a", "Label A"));
+        LabelViewModel viewModel = new LabelViewModel(repository);
+        viewModel.load();
+        assertEquals(List.of("label-a"), ids(state(viewModel).getLabels()));
+
+        // A label created elsewhere after the first load appears on reload —
+        // reopening the dialog must not show the stale first-load list.
+        repository.labels.add(label("label-b", "Label B"));
+        viewModel.reloadLabels();
+
+        assertEquals(List.of("label-a", "label-b"), ids(state(viewModel).getLabels()));
+    }
+
+    @Test
+    public void reloadLabelsIsANoopWhileAFetchIsAlreadyInFlight() {
+        SingleSubject<List<ConversationLabel>> gate = SingleSubject.create();
+        repository.labelsResponse = gate;
+        LabelViewModel viewModel = new LabelViewModel(repository);
+        viewModel.load();
+
+        viewModel.reloadLabels(); // must not queue a second subscription
+        gate.onSuccess(List.of(label("label-a", "Label A")));
+
+        assertEquals(List.of("label-a"), ids(state(viewModel).getLabels()));
+    }
+
+    @Test
     public void assignmentLimitStopsFourthLabelBeforeRepositoryCall() {
         repository.labels.addAll(List.of(
                 label("one", "One"), label("two", "Two"),
