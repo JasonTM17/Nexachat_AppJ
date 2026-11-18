@@ -225,24 +225,13 @@ jobs:
         # Git Bash emits /Program Files/Git/admin/... asset URLs) and fail if
         # the committed bundle drifted.
         run: |
-          cd admin-web
-          export VITE_API_URL=https://api.nexachat.io.vn
-          npx vite build --base=/admin/ --outDir dist-deploy
-          echo "--- index.html diff ---"
-          diff ../site/admin/index.html dist-deploy/index.html || true
-          echo "--- js byte diff ---"
-          python3 - <<'EOF'
-          import glob
-          old = open(glob.glob('../site/admin/assets/*.js')[0], 'rb').read()
-          new = open(glob.glob('dist-deploy/assets/*.js')[0], 'rb').read()
-          print('lens', len(old), len(new))
-          diffs = [i for i, (a, b) in enumerate(zip(old, new)) if a != b]
-          print('num diffs', len(diffs), 'first', diffs[:10])
-          for i in diffs[:3]:
-              print('OLD', repr(old[max(0,i-50):i+50]))
-              print('NEW', repr(new[max(0,i-50):i+50]))
-          EOF
-          exit 1
+          bash admin-web/scripts/build-site-bundle.sh
+          if [ -n "$(git status --porcelain site/admin/)" ]; then
+            echo "::error::site/admin/ is stale — run admin-web/scripts/build-site-bundle.sh and commit the result"
+            git status --porcelain site/admin/
+            git diff --stat site/admin/
+            exit 1
+          fi
       - name: Install Playwright browser
         working-directory: admin-web
         run: npx playwright install --with-deps chromium
