@@ -95,7 +95,8 @@ export async function api<T>(
   }
   if (!res.ok) throw await parseError(res);
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export async function login(phone: string, password: string) {
@@ -244,4 +245,45 @@ export interface MeResponse {
   userId: string;
   role: string;
   displayName: string | null;
+}
+
+export type FeedReportStatus = 'OPEN' | 'REVIEWED' | 'DISMISSED';
+export type FeedTargetType = 'POST' | 'COMMENT';
+export type FeedTargetState = 'VISIBLE' | 'HIDDEN' | 'DELETED';
+
+export interface FeedReport {
+  id: string;
+  targetType: FeedTargetType;
+  targetId: string;
+  reason: string;
+  details: string | null;
+  messageSnapshot: string | null;
+  status: FeedReportStatus;
+  createdAt: string;
+  reporterId: string;
+  reporterName: string | null;
+  authorId: string | null;
+  authorName: string | null;
+  targetBody: string | null;
+  targetDeleted: boolean;
+  targetHidden: boolean;
+  targetCreatedAt: string | null;
+}
+
+export function feedReportsPath(status: FeedReportStatus, page: number, size: number): string {
+  const q = new URLSearchParams({ status, page: String(page), size: String(size) });
+  return `/api/v1/admin/feed/reports?${q.toString()}`;
+}
+
+export function feedTargetPath(
+  type: FeedTargetType,
+  id: string,
+  action: 'hide' | 'unhide',
+): string {
+  const kind = type === 'POST' ? 'posts' : 'comments';
+  return `/api/v1/admin/feed/${kind}/${encodeURIComponent(id)}/${action}`;
+}
+
+export function feedResolvePath(reportId: string): string {
+  return `/api/v1/admin/feed/reports/${encodeURIComponent(reportId)}/resolve`;
 }

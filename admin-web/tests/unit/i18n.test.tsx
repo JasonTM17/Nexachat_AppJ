@@ -22,6 +22,15 @@ describe('i18n', () => {
     expect(localStorage.getItem('admin.lang')).toBe('vi');
   });
 
+  it('has the feed strings in English and Vietnamese', () => {
+    const { result } = renderHook(() => useI18n(), { wrapper });
+    expect(result.current.t('nav.feed')).toBe('Feed');
+    expect(result.current.t('feed.action.hide')).toBe('Hide');
+    act(() => result.current.setLang('vi'));
+    expect(result.current.t('nav.feed')).toBe('Bản tin');
+    expect(result.current.t('feed.action.hide')).toBe('Ẩn');
+  });
+
   it('interpolates variables', () => {
     const { result } = renderHook(() => useI18n(), { wrapper });
     expect(result.current.t('common.selected', { n: 3 })).toBe('3 selected');

@@ -9,6 +9,7 @@ import com.nexachat.common.error.ApiException;
 import com.nexachat.message.MessageRepository;
 import com.nexachat.message.dto.MessageRow;
 import com.nexachat.presence.PresenceService;
+import com.nexachat.streak.StreakService;
 import com.nexachat.summary.ConversationAiOptOuts;
 import com.nexachat.label.InboxLabelReader;
 import com.nexachat.user.UserBlockRepository;
@@ -62,6 +63,8 @@ public class InboxService {
     private final InboxLabelReader labelReader;
     private final Clock clock;
     private final UserBlockRepository blockRepository;
+    /** Optional: absent in database-less test profiles and legacy unit-test wiring. */
+    private StreakService streakService;
 
     @Autowired
     public InboxService(ConversationMemberRepository memberRepository,
@@ -96,6 +99,11 @@ public class InboxService {
         this.labelReader = labelReader;
         this.clock = clock;
         this.blockRepository = blockRepository;
+    }
+
+    @Autowired(required = false)
+    void setStreakService(StreakService streakService) {
+        this.streakService = streakService;
     }
 
     @Transactional(readOnly = true)
@@ -220,6 +228,9 @@ public class InboxService {
                 labelReader.findInboxLabelIds(userId, conversationIds);
 
         Set<UUID> optedOutConversations = aiOptOuts.optedOutConversationIds(userId);
+        // One batched read for the page; only DIRECT chats ever have a row.
+        Map<UUID, StreakService.InboxStreak> streaks = streakService == null
+                ? Map.of() : streakService.inboxStreaks(conversationIds);
         Instant now = clock.instant();
         return rows.stream()
                 .map(row -> {
@@ -262,7 +273,9 @@ public class InboxService {
                             row.pinned() ? row.pinnedAt() : null,
                             labelsByConversation.getOrDefault(row.id(), List.of()),
                             lastEncrypted, row.e2eeEnabled(),
-                            row.disappearingSeconds() == null ? 0 : row.disappearingSeconds());
+                            row.disappearingSeconds() == null ? 0 : row.disappearingSeconds(),
+                            streaks.containsKey(row.id()) ? streaks.get(row.id()).count() : 0,
+                            streaks.containsKey(row.id()) && streaks.get(row.id()).atRisk());
                 })
                 .toList();
     }

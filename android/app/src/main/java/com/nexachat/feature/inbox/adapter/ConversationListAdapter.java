@@ -24,6 +24,7 @@ import com.nexachat.feature.inbox.InboxRowPreviewRules;
 import com.nexachat.feature.inbox.InboxRowTypography;
 import com.nexachat.feature.inbox.InboxPreviewKind;
 import com.nexachat.feature.label.ConversationLabel;
+import com.nexachat.feature.streak.StreakBadge;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
 import java.util.List;
@@ -114,6 +115,7 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
         private final ImageView pinIndicator;
         private final TextView unreadBadge;
         private final ImageView muteIcon;
+        private final StreakBadge streakBadge;
         private final ChipGroup labelChips;
         @Nullable private ConversationSummary boundConversation;
         @Nullable private Runnable muteExpiryRefresh;
@@ -128,6 +130,7 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             pinIndicator = itemView.findViewById(R.id.pinIndicator);
             unreadBadge = itemView.findViewById(R.id.unreadBadge);
             muteIcon = itemView.findViewById(R.id.muteIcon);
+            streakBadge = itemView.findViewById(R.id.streakBadge);
             labelChips = itemView.findViewById(R.id.labelChips);
         }
 
@@ -233,6 +236,9 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
 
             if (pinIndicator != null) {
                 pinIndicator.setVisibility(conversation.isPinned() ? View.VISIBLE : View.GONE);
+            }
+            if (streakBadge != null) {
+                streakBadge.setStreak(conversation.getStreakCount(), conversation.isStreakAtRisk());
             }
             bindMuteIndicator(conversation);
 

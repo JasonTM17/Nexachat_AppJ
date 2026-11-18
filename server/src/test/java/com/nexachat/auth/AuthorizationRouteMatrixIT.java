@@ -68,6 +68,11 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
                     test("com.nexachat.auth.AuthFlowIT", "protectedEndpointRequiresBearer"),
                     test("com.nexachat.contact.ContactConversationIT", "contactsLifecycle"),
                     test("com.nexachat.contact.ContactConversationIT", "nonOwnerCannotPatchAnotherUsersContactAlias"))),
+            Map.entry("authenticated_public_feed", roleScenario("AUTHENTICATED",
+                    "anonymous=401; any signed-in caller may read the public feed; only the author may delete their own post or comment",
+                    "two signed-in users, one post and one comment",
+                    test("com.nexachat.feed.FeedFlowIT", "anotherUserCanReadButNotDeleteAPost"),
+                    test("com.nexachat.feed.FeedFlowIT", "anotherUserCannotDeleteAComment"))),
             Map.entry("authenticated_invite", roleScenario("AUTHENTICATED_INVITE",
                     "anonymous=401; valid invitee accepted or pending; removed or previously rejected invitee denied",
                     "group owner, invitee, pending requester, and active invite link",
@@ -557,14 +562,16 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
             // Existence is the first check for every conversation-scoped route
             // except the message-send/edit/delete and pin routes, which check
             // the membership row first and therefore mask an unknown id as
-            // NOT_MEMBER.
+            // NOT_MEMBER. The streak read does the same, so an unknown
+            // conversation is not an existence oracle.
             boolean membershipFirst =
                     (route.method().equals("POST") && route.path().endsWith("/messages"))
                             || ((route.method().equals("PATCH") || route.method().equals("DELETE"))
                                     && route.path().contains("/messages/{messageId}"))
                             || (route.method().equals("POST") && route.path().endsWith("/pins"))
                             || (route.method().equals("DELETE")
-                                    && route.path().contains("/pins/{messageId}"));
+                                    && route.path().contains("/pins/{messageId}"))
+                            || (route.method().equals("GET") && route.path().endsWith("/streak"));
             int expectedStatus = membershipFirst ? 403 : 404;
             ApiErrorCode expectedCode = membershipFirst
                     ? ApiErrorCode.NOT_MEMBER : ApiErrorCode.CONVERSATION_NOT_FOUND;

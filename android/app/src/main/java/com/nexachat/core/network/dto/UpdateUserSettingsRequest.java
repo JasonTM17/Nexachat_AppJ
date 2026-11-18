@@ -11,6 +11,7 @@ public final class UpdateUserSettingsRequest {
     @Nullable private final Boolean showPresence;
     @Nullable private final Boolean showSeen;
     @Nullable private final String translateTargetLang;
+    @Nullable private final Boolean streakReminders;
 
     public UpdateUserSettingsRequest(boolean showPresence) {
         this(showPresence, null, null);
@@ -22,9 +23,25 @@ public final class UpdateUserSettingsRequest {
 
     public UpdateUserSettingsRequest(@Nullable Boolean showPresence, @Nullable Boolean showSeen,
             @Nullable String translateTargetLang) {
+        this(showPresence, showSeen, translateTargetLang, null);
+    }
+
+    public UpdateUserSettingsRequest(@Nullable Boolean showPresence, @Nullable Boolean showSeen,
+            @Nullable String translateTargetLang, @Nullable Boolean streakReminders) {
         this.showPresence = showPresence;
         this.showSeen = showSeen;
         this.translateTargetLang = translateTargetLang;
+        this.streakReminders = streakReminders;
+    }
+
+    /** A partial update that changes only the streak-reminder preference. */
+    public static UpdateUserSettingsRequest streakReminders(boolean enabled) {
+        return new UpdateUserSettingsRequest(null, null, null, enabled);
+    }
+
+    @Nullable
+    public Boolean getStreakReminders() {
+        return streakReminders;
     }
 
     @Nullable
@@ -57,11 +74,12 @@ public final class UpdateUserSettingsRequest {
         }
         return Objects.equals(showPresence, request.showPresence)
                 && Objects.equals(showSeen, request.showSeen)
-                && Objects.equals(translateTargetLang, request.translateTargetLang);
+                && Objects.equals(translateTargetLang, request.translateTargetLang)
+                && Objects.equals(streakReminders, request.streakReminders);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(showPresence, showSeen, translateTargetLang);
+        return Objects.hash(showPresence, showSeen, translateTargetLang, streakReminders);
     }
 }

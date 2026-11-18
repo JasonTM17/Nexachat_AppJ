@@ -79,6 +79,8 @@ import com.nexachat.feature.inbox.ConversationPreferenceMenu;
 import com.nexachat.feature.profile.AppSettingsViewModel;
 import com.nexachat.feature.label.LabelDialogFragment;
 import com.nexachat.feature.safety.ReportSheetFragment;
+import com.nexachat.feature.streak.StreakMilestoneSheet;
+import com.nexachat.feature.streak.StreakViewModel;
 import com.nexachat.notification.ForegroundConversationTracker;
 import com.nexachat.summary.SummaryResponse;
 import com.nexachat.summary.SummaryScope;
@@ -116,6 +118,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     private static final String PREFS_LOCATION_PERMISSION = "chat_location_permission";
     private static final String KEY_LOCATION_REQUESTED = "location_requested";
     private static final String ARG_CONVERSATION_ID = "conversationId";
+    private static final long STREAK_REFRESH_DELAY_MS = 1500L;
     private static final String ARG_ARCHIVE_JUMP_MESSAGE_ID = "archiveJumpMessageId";
     private static final int MENU_ASK = 1;
     private static final int MENU_SUMMARY = 2;
@@ -139,6 +142,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     private ChatViewModel viewModel;
     private InboxViewModel inboxViewModel;
     private SummaryViewModel summaryViewModel;
+    private StreakViewModel streakViewModel;
+    private boolean streakRequested;
+    @Nullable private String lastActivitySignature;
+    @Nullable private Runnable streakRefresh;
     private AppSettingsViewModel settingsViewModel;
     private MessageListAdapter adapter;
     private ChatViewModel.UiState state = new ChatViewModel.UiState();
@@ -272,6 +279,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         configureComposer();
         composerMentionDraft = viewModel.getMentionDraft();
         observeViewModel();
+        observeStreak();
         if (getChildFragmentManager().findFragmentByTag("summary_sheet")
                 instanceof com.nexachat.feature.summary.SummaryBottomSheetFragment existingSheet) {
             attachSummaryListener(existingSheet);
@@ -1148,6 +1156,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             if (next != null) {
                 state = next;
                 render();
+                onChatActivity(next);
             }
         });
         viewModel.getEditSession().observe(getViewLifecycleOwner(), ignored -> render());
@@ -1225,6 +1234,36 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             if (next != null && adapter != null) adapter.setTranslations(next);
         });
         viewModel.loadTranslatePrefs();
+    }
+
+    private void observeStreak() {
+        streakViewModel = new ViewModelProvider(this).get(StreakViewModel.class);
+        StreakMilestoneSheet.bind(this, streakViewModel);
+        streakViewModel.getConversationStreak().observe(getViewLifecycleOwner(), streak -> {
+            if (binding == null) return;
+            binding.chatStreakBadge.setStreak(
+                    streak == null ? 0 : streak.getCount(), streak != null && streak.isAtRisk());
+        });
+    }
+
+    /** Loads the direct-chat streak once the peer is known and refreshes it after new messages. */
+    private void onChatActivity(@NonNull ChatViewModel.UiState next) {
+        if (binding == null || conversationId.isBlank() || next.getOtherUserId() == null) return;
+        if (!streakRequested) {
+            streakRequested = true;
+            streakViewModel.loadConversation(conversationId, isResumed());
+        }
+        List<ChatMessage> messages = next.getMessages();
+        String signature = messages.size() + ":" + next.getSending().size() + ":"
+                + (messages.isEmpty() ? "" : messages.get(messages.size() - 1).getId());
+        String previous = lastActivitySignature;
+        lastActivitySignature = signature;
+        if (previous == null || previous.equals(signature)) return;
+        if (streakRefresh != null) binding.getRoot().removeCallbacks(streakRefresh);
+        streakRefresh = () -> {
+            if (streakViewModel != null) streakViewModel.onChatActivity();
+        };
+        binding.getRoot().postDelayed(streakRefresh, STREAK_REFRESH_DELAY_MS);
     }
 
     private void render() {
@@ -2586,17 +2625,25 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         if (!conversationId.isBlank()) {
             foregroundConversationTracker.onConversationResumed(conversationId);
         }
+        if (streakRequested && streakViewModel != null) {
+            streakViewModel.loadConversation(conversationId, true);
+        }
         viewModel.refreshKeysetNotice();
         viewModel.refreshPeerBlocked();
     }
 
     @Override public void onPause() {
         foregroundConversationTracker.onConversationPaused(conversationId);
+        if (streakViewModel != null) streakViewModel.onScreenHidden();
         super.onPause();
     }
 
     @Override public void onDestroyView() {
         foregroundConversationTracker.onConversationPaused(conversationId);
+        if (streakRefresh != null && binding != null) binding.getRoot().removeCallbacks(streakRefresh);
+        streakRefresh = null;
+        streakRequested = false;
+        lastActivitySignature = null;
         subscriptions.clear();
         if (recordingTimerRunnable != null) {
             recordingHandler.removeCallbacks(recordingTimerRunnable);

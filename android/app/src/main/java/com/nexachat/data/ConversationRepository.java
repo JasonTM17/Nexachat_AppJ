@@ -1714,7 +1714,9 @@ public final class ConversationRepository implements AutoCloseable {
                         keepNewerLocalActivity
                                 ? old.getLastMessageType()
                                 : row.getLastMessageType(),
-                        row.getDisappearingSeconds()));
+                        row.getDisappearingSeconds(),
+                        row.getStreakCount(),
+                        row.isStreakAtRisk()));
             }
             return conversationDao.upsertAll(merged);
         }).subscribeOn(Schedulers.io());
@@ -1782,7 +1784,9 @@ public final class ConversationRepository implements AutoCloseable {
                 Boolean.TRUE.equals(dto.getLastMessageEncrypted()),
                 dto.resolvedLastType(),
                 dto.getDisappearingSeconds() == null ? 0
-                        : Math.max(0, dto.getDisappearingSeconds()));
+                        : Math.max(0, dto.getDisappearingSeconds()),
+                dto.resolvedStreakCount(),
+                dto.resolvedStreakAtRisk());
     }
 
     private ConversationEntity toEntity(ConversationDto dto, String fallbackTitle) {
@@ -1861,7 +1865,9 @@ public final class ConversationRepository implements AutoCloseable {
                 row.isE2eeEnabled(),
                 row.isLastMessageEncrypted(),
                 row.getLastMessageType(),
-                row.getDisappearingSeconds());
+                row.getDisappearingSeconds(),
+                row.getStreakCount(),
+                row.isStreakAtRisk());
     }
 
     private ConversationEntity withTitle(ConversationEntity row, String title) {

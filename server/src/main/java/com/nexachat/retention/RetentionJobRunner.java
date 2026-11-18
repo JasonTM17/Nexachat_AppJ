@@ -38,6 +38,7 @@ public class RetentionJobRunner {
     private final SyncProperties syncProperties;
     private final RetentionAttachmentCleaner attachmentCleaner;
     private final RetentionPollCleaner pollCleaner;
+    private final RetentionFeedCleaner feedCleaner;
     private final MeterRegistry meterRegistry;
     private final TransactionTemplate transactionTemplate;
     private final ScheduledAdvisoryLock advisoryLock;
@@ -47,6 +48,7 @@ public class RetentionJobRunner {
                               SyncProperties syncProperties,
                               RetentionAttachmentCleaner attachmentCleaner,
                               RetentionPollCleaner pollCleaner,
+                              RetentionFeedCleaner feedCleaner,
                               MeterRegistry meterRegistry,
                               PlatformTransactionManager transactionManager,
                               ScheduledAdvisoryLock advisoryLock) {
@@ -55,6 +57,7 @@ public class RetentionJobRunner {
         this.syncProperties = syncProperties;
         this.attachmentCleaner = attachmentCleaner;
         this.pollCleaner = pollCleaner;
+        this.feedCleaner = feedCleaner;
         this.meterRegistry = meterRegistry;
         this.advisoryLock = advisoryLock;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -170,6 +173,7 @@ public class RetentionJobRunner {
                     "candidate.expires_at <= ?", "candidate.expires_at, candidate.id", now(), dryRun);
             case RAG_LIMITS -> deleteLimits("rag_ask_request_limits",
                     properties.getJobs().getRagLimits(), dryRun);
+            case PUBLIC_FEED -> feedCleaner.run(dryRun);
         };
     }
 
@@ -354,7 +358,8 @@ public class RetentionJobRunner {
         SUMMARIES("summaries"),
         SUMMARY_LIMITS("summary-limits"),
         RAG_CACHE("rag-cache"),
-        RAG_LIMITS("rag-limits");
+        RAG_LIMITS("rag-limits"),
+        PUBLIC_FEED("public-feed");
 
         private final String id;
 

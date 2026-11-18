@@ -57,6 +57,10 @@ public final class ConversationEntity {
     @Nullable private final String lastMessageType;
     /** Disappearing-message timer in seconds; 0 = off. */
     @ColumnInfo(defaultValue = "0") private final int disappearingSeconds;
+    /** Direct-chat streak length from the inbox payload; 0 when none or the server omits it. */
+    @ColumnInfo(defaultValue = "0") private final int streakCount;
+    /** The streak is alive but the caller's side has not completed today yet. */
+    @ColumnInfo(defaultValue = "0") private final boolean streakAtRisk;
 
     @androidx.room.Ignore
     public ConversationEntity(
@@ -155,6 +159,7 @@ public final class ConversationEntity {
                 e2eeEnabled, lastMessageEncrypted, lastMessageType, 0);
     }
 
+    @androidx.room.Ignore
     public ConversationEntity(
             @NonNull String id,
             @NonNull String type,
@@ -183,6 +188,45 @@ public final class ConversationEntity {
             boolean lastMessageEncrypted,
             @Nullable String lastMessageType,
             int disappearingSeconds) {
+        this(id, type, title, lastMessageSeq, lastMessageContent, lastMessageSenderName,
+                lastMessageAt, unreadCount, otherUserName, otherUserAvatar, avatarUrl,
+                peerReadSeq, myRole, otherUserId, lastMessageDeleted, peerDeliveredSeq,
+                muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt, labelIdsCsv,
+                e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds, 0, false);
+    }
+
+    public ConversationEntity(
+            @NonNull String id,
+            @NonNull String type,
+            @Nullable String title,
+            long lastMessageSeq,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable Long lastMessageAt,
+            int unreadCount,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            long peerReadSeq,
+            @Nullable String myRole,
+            @Nullable String otherUserId,
+            boolean lastMessageDeleted,
+            long peerDeliveredSeq,
+            boolean muted,
+            @Nullable Long mutedUntilEpochMs,
+            boolean archived,
+            boolean aiOptOut,
+            boolean pinned,
+            @Nullable Long pinnedAt,
+            @NonNull String labelIdsCsv,
+            boolean e2eeEnabled,
+            boolean lastMessageEncrypted,
+            @Nullable String lastMessageType,
+            int disappearingSeconds,
+            int streakCount,
+            boolean streakAtRisk) {
+        this.streakCount = Math.max(0, streakCount);
+        this.streakAtRisk = streakAtRisk;
         this.disappearingSeconds = disappearingSeconds;
         this.e2eeEnabled = e2eeEnabled;
         this.lastMessageEncrypted = lastMessageEncrypted;
@@ -366,6 +410,8 @@ public final class ConversationEntity {
     @Nullable public String getLastMessageType() { return lastMessageType; }
     /** Disappearing-message timer in seconds; 0 = off. */
     public int getDisappearingSeconds() { return disappearingSeconds; }
+    public int getStreakCount() { return streakCount; }
+    public boolean isStreakAtRisk() { return streakAtRisk; }
     @NonNull public List<String> getLabelIds() {
         if (labelIdsCsv.isBlank()) return List.of();
         return Arrays.stream(labelIdsCsv.split(","))
@@ -380,7 +426,8 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId, lastMessageDeleted,
                 peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt,
-                labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds);
+                labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds,
+                streakCount, streakAtRisk);
     }
 
     /** Returns this row with its group avatar URL replaced. */
@@ -389,7 +436,8 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, newAvatarUrl, peerReadSeq, myRole, otherUserId,
                 lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
-                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds);
+                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds,
+                streakCount, streakAtRisk);
     }
 
     /** Returns this row with client-only values merged from local state. */
@@ -399,7 +447,8 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, newPeerReadSeq, newMyRole, newOtherUserId,
                 lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
-                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds);
+                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds,
+                streakCount, streakAtRisk);
     }
 
     /** Returns this row with updated peerDeliveredSeq. */
@@ -408,7 +457,8 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
                 lastMessageDeleted, newPeerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
-                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds);
+                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds,
+                streakCount, streakAtRisk);
     }
 
     /** Returns this row with updated pinned state. */
@@ -417,7 +467,8 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
                 lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
-                newPinned, newPinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds);
+                newPinned, newPinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds,
+                streakCount, streakAtRisk);
     }
 
     /** Returns this row with the disappearing-message timer replaced. */
@@ -427,7 +478,17 @@ public final class ConversationEntity {
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
                 lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
                 pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType,
-                newDisappearingSeconds);
+                newDisappearingSeconds, streakCount, streakAtRisk);
+    }
+
+    /** Returns this row with the streak badge values replaced. */
+    @NonNull public ConversationEntity withStreak(int newStreakCount, boolean newStreakAtRisk) {
+        return new ConversationEntity(id, type, title, lastMessageSeq, lastMessageContent,
+                lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
+                otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
+                lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
+                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType,
+                disappearingSeconds, newStreakCount, newStreakAtRisk);
     }
 
     /** Returns this row with a replaced caller-owned label assignment cache. */
@@ -436,7 +497,8 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId, lastMessageDeleted,
                 peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut, pinned, pinnedAt,
-                newLabelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds);
+                newLabelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds,
+                streakCount, streakAtRisk);
     }
 
     @Override public boolean equals(Object other) {
@@ -461,7 +523,9 @@ public final class ConversationEntity {
                 && Objects.equals(mutedUntilEpochMs, that.mutedUntilEpochMs)
                 && Objects.equals(labelIdsCsv, that.labelIdsCsv)
                 && Objects.equals(lastMessageType, that.lastMessageType)
-                && disappearingSeconds == that.disappearingSeconds;
+                && disappearingSeconds == that.disappearingSeconds
+                && streakCount == that.streakCount
+                && streakAtRisk == that.streakAtRisk;
     }
 
     @Override public int hashCode() {
@@ -469,7 +533,8 @@ public final class ConversationEntity {
                 lastMessageSenderName, lastMessageAt, unreadCount, otherUserName,
                 otherUserAvatar, avatarUrl, peerReadSeq, myRole, otherUserId,
                 lastMessageDeleted, peerDeliveredSeq, muted, mutedUntilEpochMs, archived, aiOptOut,
-                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds);
+                pinned, pinnedAt, labelIdsCsv, e2eeEnabled, lastMessageEncrypted, lastMessageType, disappearingSeconds,
+                streakCount, streakAtRisk);
     }
 
     @NonNull @Override public String toString() {
@@ -485,6 +550,7 @@ public final class ConversationEntity {
                 + ", archived=" + archived + ", aiOptOut=" + aiOptOut
                 + ", pinned=" + pinned + ", pinnedAt=" + pinnedAt
                 + ", labelIdsCsv=" + labelIdsCsv
-                + ", disappearingSeconds=" + disappearingSeconds + ')';
+                + ", disappearingSeconds=" + disappearingSeconds
+                + ", streakCount=" + streakCount + ", streakAtRisk=" + streakAtRisk + ')';
     }
 }

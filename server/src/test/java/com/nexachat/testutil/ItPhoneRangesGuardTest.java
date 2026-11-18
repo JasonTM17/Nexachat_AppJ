@@ -70,9 +70,12 @@ class ItPhoneRangesGuardTest {
                     .as("registered integration test source exists: %s", entry.getKey())
                     .isTrue();
             if (!SEARCH_TRIGRAM.equals(entry.getKey())) {
-                assertThat(Files.readString(source))
-                        .as("registered integration test uses the shared range helper: %s", entry.getKey())
-                        .contains("ItPhoneRanges.");
+                String contents = Files.readString(source);
+                assertThat(contents.contains("ItPhoneRanges.")
+                        || contents.contains("extends FeatureItSupport"))
+                        .as("registered integration test uses the shared range helper: %s",
+                                entry.getKey())
+                        .isTrue();
             }
         }
 

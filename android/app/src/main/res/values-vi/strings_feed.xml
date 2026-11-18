@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="feed_title">Bảng tin công khai</string>
+    <string name="feed_entry_cd">Bảng tin công khai</string>
+    <string name="feed_compose_title">Bài viết mới</string>
+    <string name="feed_compose_hint">Viết bài</string>
+    <string name="feed_compose_add_image">Thêm ảnh</string>
+    <string name="feed_compose_remove_image">Bỏ ảnh</string>
+    <string name="feed_compose_submit">Đăng</string>
+    <string name="feed_compose_counter" translatable="false">%1$d/%2$d</string>
+    <string name="feed_empty">Chưa có bài viết nào</string>
+    <string name="feed_error">Không tải được bảng tin</string>
+    <string name="feed_notice_title">Bài viết ở đây là công khai</string>
+    <string name="feed_notice_body">Mọi người trên NexaChat đều đọc được.</string>
+    <string name="feed_notice_ok">Đã hiểu</string>
+    <string name="feed_post_deleted">Đã xoá bài viết</string>
+    <string name="feed_comment_deleted">Đã xoá bình luận</string>
+    <string name="feed_delete_post">Xoá bài viết</string>
+    <string name="feed_delete_comment">Xoá bình luận</string>
+    <string name="feed_delete_post_title">Xoá bài viết này?</string>
+    <string name="feed_delete_comment_title">Xoá bình luận này?</string>
+    <string name="feed_delete_body">Bài viết sẽ biến mất với mọi người.</string>
+    <string name="feed_delete_confirm">Xoá</string>
+    <string name="feed_cancel">Huỷ</string>
+    <string name="feed_report">Báo cáo</string>
+    <string name="feed_report_sent">Đã gửi báo cáo</string>
+    <string name="feed_comment_hint">Viết bình luận</string>
+    <string name="feed_comment_send">Gửi</string>
+    <string name="feed_react_cd">Bày tỏ cảm xúc</string>
+    <string name="feed_post_image_cd">Ảnh của bài viết</string>
+    <string name="feed_post_failed">Không đăng được. Hãy thử lại</string>
+    <string name="feed_comment_failed">Không gửi được. Hãy thử lại</string>
+    <string name="feed_image_failed">Không tải được ảnh lên</string>
+    <string name="feed_rate_limited">Bạn đăng quá nhiều. Hãy thử lại sau</string>
+    <string name="feed_reaction_pill" translatable="false">%1$s %2$d</string>
+    <string name="feed_comment_cd" translatable="false">%1$s: %2$s</string>
+    <plurals name="feed_comment_count">
+        <item quantity="other">%d bình luận</item>
+    </plurals>
+    <plurals name="feed_reaction_count_cd">
+        <item quantity="other">%1$s, %2$d cảm xúc</item>
+    </plurals>
+</resources>

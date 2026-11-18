@@ -56,6 +56,15 @@
                     tools:targetApi="p" />
 
                 <ImageButton
+                    android:id="@+id/inboxPublicButton"
+                    android:layout_width="@dimen/min_touch_target"
+                    android:layout_height="@dimen/min_touch_target"
+                    android:background="?attr/selectableItemBackground"
+                    android:contentDescription="@string/feed_entry_cd"
+                    android:src="@drawable/ic_public"
+                    app:tint="?attr/colorOnSurfaceVariant" />
+
+                <ImageButton
                     android:id="@+id/inboxContactsButton"
                     android:layout_width="@dimen/min_touch_target"
                     android:layout_height="@dimen/min_touch_target"

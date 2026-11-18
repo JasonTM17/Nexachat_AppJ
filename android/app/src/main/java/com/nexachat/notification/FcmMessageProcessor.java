@@ -49,6 +49,7 @@ public final class FcmMessageProcessor {
     public static final String TYPE_CALL_INVITE = "CALL_INVITE";
     public static final String TYPE_NEW_MESSAGE = "NEW_MESSAGE";
     public static final String TYPE_REMINDER = "REMINDER";
+    public static final String TYPE_STREAK_REMINDER = "STREAK_REMINDER";
 
     @FunctionalInterface
     public interface IncomingCallLauncher {
@@ -74,6 +75,7 @@ public final class FcmMessageProcessor {
     private final NotificationAdmission notificationAdmission;
     private final NotificationWorkScheduler notificationWorkScheduler;
     private final ForegroundConversationTracker foregroundConversationTracker;
+    private final StreakNotifications streakNotifications;
     private final Scheduler ioScheduler;
     private final LongSupplier clock;
     private final CompositeDisposable subscriptions = new CompositeDisposable();
@@ -88,11 +90,12 @@ public final class FcmMessageProcessor {
             @NonNull Moshi moshi,
             @NonNull NotificationAdmission notificationAdmission,
             @NonNull NotificationWorkScheduler notificationWorkScheduler,
-            @NonNull ForegroundConversationTracker foregroundConversationTracker) {
+            @NonNull ForegroundConversationTracker foregroundConversationTracker,
+            @NonNull StreakNotifications streakNotifications) {
         this(callManager, context, defaultLauncher(context), reminderPushEvents,
                 tokenRefresher, tokenStore, moshi, notificationAdmission,
                 notificationWorkScheduler, foregroundConversationTracker,
-                Schedulers.io(), System::currentTimeMillis);
+                streakNotifications, Schedulers.io(), System::currentTimeMillis);
     }
 
     @VisibleForTesting
@@ -107,6 +110,7 @@ public final class FcmMessageProcessor {
             @NonNull NotificationAdmission notificationAdmission,
             @NonNull NotificationWorkScheduler notificationWorkScheduler,
             @NonNull ForegroundConversationTracker foregroundConversationTracker,
+            @NonNull StreakNotifications streakNotifications,
             @NonNull Scheduler ioScheduler,
             @NonNull LongSupplier clock) {
         this.callManager = callManager;
@@ -119,6 +123,7 @@ public final class FcmMessageProcessor {
         this.notificationAdmission = notificationAdmission;
         this.notificationWorkScheduler = notificationWorkScheduler;
         this.foregroundConversationTracker = foregroundConversationTracker;
+        this.streakNotifications = streakNotifications;
         this.ioScheduler = ioScheduler;
         this.clock = clock;
         subscriptions.add(this.tokenRefresher.sessionSignals().subscribe(signal -> {
@@ -163,6 +168,7 @@ public final class FcmMessageProcessor {
         }
         String type = data.get("type");
         int maxPayloadBytes = TYPE_REMINDER.equalsIgnoreCase(type)
+                        || TYPE_STREAK_REMINDER.equalsIgnoreCase(type)
                 ? MAX_REMINDER_PAYLOAD_BYTES
                 : MAX_PAYLOAD_BYTES;
         if (exceedsPayloadLimit(data, maxPayloadBytes)) {
@@ -174,6 +180,8 @@ public final class FcmMessageProcessor {
             handleNewMessage(data);
         } else if (TYPE_REMINDER.equalsIgnoreCase(type)) {
             handleReminder(data);
+        } else if (TYPE_STREAK_REMINDER.equalsIgnoreCase(type)) {
+            handleStreakReminder(data);
         }
     }
 
@@ -362,6 +370,34 @@ public final class FcmMessageProcessor {
                                 reminderId, occurrence));
                     });
                 }, ignored -> { });
+    }
+
+    private void handleStreakReminder(@NonNull Map<String, String> data) {
+        String conversationId = data.get("conversationId");
+        if (!hasText(conversationId)) {
+            return;
+        }
+        String peerName = data.get("peerName");
+        int count = parseStreakCount(data.get("count"));
+        Disposable admission = notificationAdmission.admitCurrentSession(conversationId)
+                .subscribeOn(ioScheduler)
+                .subscribe(session -> {
+                    if (foregroundConversationTracker.isForegroundConversation(conversationId)) {
+                        return;
+                    }
+                    tokenRefresher.runIfSessionCurrent(session.sessionEpoch(), () ->
+                            streakNotifications.show(session.recipientId(), session.sessionEpoch(),
+                                    conversationId, peerName, count));
+                }, ignored -> { });
+    }
+
+    private static int parseStreakCount(@Nullable String raw) {
+        if (!hasText(raw)) return 0;
+        try {
+            return Math.max(Integer.parseInt(raw), 0);
+        } catch (NumberFormatException malformed) {
+            return 0;
+        }
     }
 
     private void handleNewMessage(@NonNull Map<String, String> data) {

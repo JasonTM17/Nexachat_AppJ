@@ -35,7 +35,7 @@ public class UserSettingsController {
                                        @Valid @RequestBody UpdateUserSettingsRequest request) {
         return settingsService.updateSettings(requireUserId(principal),
                 request.showPresence(), request.showSeen(), request.aiSummaryConsent(),
-                request.translateTargetLang());
+                request.translateTargetLang(), request.streakReminders());
     }
 
     private static UUID requireUserId(JwtPrincipal principal) {

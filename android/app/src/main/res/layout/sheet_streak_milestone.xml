@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_sheet_surface"
+    android:gravity="center_horizontal"
+    android:orientation="vertical"
+    android:paddingBottom="@dimen/space_md">
+
+    <include layout="@layout/include_sheet_handle" />
+
+    <ImageView
+        android:id="@+id/streakMilestoneFlame"
+        android:layout_width="@dimen/streak_milestone_disc_size"
+        android:layout_height="@dimen/streak_milestone_disc_size"
+        android:layout_marginTop="@dimen/space_md"
+        android:background="@drawable/bg_streak_flame_disc"
+        android:importantForAccessibility="no"
+        android:padding="24dp"
+        android:src="@drawable/ic_streak_flame" />
+
+    <TextView
+        android:id="@+id/streakMilestoneTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/space_md"
+        android:layout_marginTop="@dimen/space_md"
+        android:accessibilityHeading="true"
+        android:gravity="center"
+        android:textAppearance="?attr/textAppearanceHeadlineSmall"
+        android:textColor="?attr/colorOnSurface" />
+
+    <TextView
+        android:id="@+id/streakMilestoneLine"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/space_md"
+        android:layout_marginTop="@dimen/space_xs"
+        android:gravity="center"
+        android:text="@string/streak_milestone_line"
+        android:textAppearance="?attr/textAppearanceBodyLarge"
+        android:textColor="?attr/colorOnSurfaceVariant" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/streakMilestoneDone"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/space_md"
+        android:layout_marginTop="@dimen/space_lg"
+        android:minHeight="@dimen/min_touch_target"
+        android:text="@string/streak_milestone_done" />
+</LinearLayout>

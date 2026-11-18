@@ -26,6 +26,9 @@
 | [Calls](#calls--apiv1calls-and-apiv1conversations) | `/api/v1/calls` | ICE configuration, direct call history, and WebRTC signaling integration |
 | [Conversation Summary](#conversation-summary-api) | `/api/v1/conversations/{id}/summary` | Consent-gated catch-up summary (local extractive & OpenAI-compatible LLM) |
 | [Conversation Ask (RAG)](#conversation-ask-api-rag) | `/api/v1/conversations/{id}/ask` | Hybrid retrieval-augmented chat QA with citation validation and local lexical fallback |
+| [Streaks](#streaks--apiv1streaks-and-apiv1conversationsidstreak) | `/api/v1/streaks`, `/api/v1/conversations/{id}/streak` | Direct-chat streaks, per-user check-in streak, opt-in daily reminder push |
+| [Public feed](#public-feed--apiv1feed) | `/api/v1/feed` | Plaintext public posts, image upload, comments, emoji reactions, feed reporting |
+| [Admin feed moderation](#admin-feed-moderation--apiv1adminfeed) | `/api/v1/admin/feed` | Report queue and hide/unhide/resolve actions for feed posts and comments |
 | [Firebase realtime bridge](#firebase-realtime-bridge-opt-in) | `/api/v1/realtime` | Opt-in Firebase custom token, bridge lease renewal and revocation |
 | [WebSocket / STOMP](#websocket--stomp) | `/ws` | Realtime messaging, delivery/read receipts, typing, and presence |
 
@@ -56,6 +59,11 @@ Android client can consume the API but no dedicated screen is merged into
 | Author message recall window | No migration (V21 reserved, unused) | Shipped — chat overflow recall with `RECALL_WINDOW_EXPIRED` handling | `MessageRecallPropertiesTest`, `MessageFeatureFlowIT`, Android `ChatInteractionsViews` / `ChatViewModel` recall flow |
 | Muted-conversation push policy | No migration | n/a | `FcmPushServiceTest`, `SystemMessageTest` |
 | User blocking, abuse reports, starred messages | V38 | Shipped — profile/chat overflow block + report entries, blocked-users and starred-messages screens, message action-sheet star/report | `UserBlockServiceTest`, `DirectBlockSendTest`, `ReportServiceTest`, `StarServiceTest`, `V38MigrationTest`, `StompConversationMembershipOutboundInterceptorTest` block-gate cases |
+| Disappearing messages | V39 | Shipped — chat overflow timer presets, `expiresAt` bubbles | `DisappearingMessagesIT`, Android disappearing-message suite |
+| Video calls | V40 | Shipped — camera toggle on call screen | call-screen suite |
+| Signup email OTP | V41 | Shipped — signup verification code screen | signup OTP flow tests |
+| Chat streaks and check-in streak | V42 | Shipped — inbox streak badges, settings `streakReminders` toggle | `StreakFlowIT`, `StreakServiceTest`, `StreakReminderJobTest`, Android streak suites |
+| Public feed | V43 | Shipped — feed tab, composer, comments, reactions, report action; admin `/feed` moderation page | `FeedFlowIT`, `FeedAdminFlowIT`, `FeedRetentionIT`, admin-web `feed.test.tsx` |
 
 ## Migration history
 
@@ -96,8 +104,14 @@ Android client can consume the API but no dedicated screen is merged into
 | V33 | `V33__google_signup.sql` | Nullable `password_hash`; active users must have phone, password, or verified email. |
 | V34 | `V34__e2ee_direct_chats.sql` | `e2ee_devices` public-key registry, `conversations.e2ee_enabled` (DIRECT only) and message ciphertext/envelope columns. |
 | V35 | `V35__backfill_unversioned_messages.sql` | Backfills `change_version` on rows inserted outside the sync-v2 contract and raises each conversation's cursor. |
+| V36 | `V36__admin_console.sql` | Staff roles, `admin_audit_log`, admin moderation tables. |
+| V37 | `V37__message_translation.sql` | Message-translation cache and consent bookkeeping. |
 | V38 | `V38__safety_block_report_stars.sql` | `user_blocks` directed edges, `reports` abuse filings with OPEN-dedupe, per-user `message_stars`, and `messages.peer_suppressed` for accepted-but-never-delivered sends. |
+| V39 | `V39__disappearing_messages.sql` | Per-conversation disappearing-message timers and `messages.expires_at`. |
 | V40 | `V40__call_media_type.sql` | `call_records.media_type` (`AUDIO` default, `AUDIO`/`VIDEO` check) for video-call history. |
+| V41 | `V41__signup_email_otps.sql` | Signup verification OTP storage for email-confirmed registration. |
+| V42 | `V42__chat_streaks.sql` | `conversation_streaks` (one row per DIRECT pair) and `user_streaks` (app check-in streak) with weekly grace day and reminder bookkeeping. |
+| V43 | `V43__public_feed.sql` | `public_posts`, `public_comments`, `public_post_reactions`, `public_images`; extends `reports.target_type` with `POST`/`COMMENT`. |
 
 ## Operational notes
 
@@ -136,6 +150,14 @@ Android client can consume the API but no dedicated screen is merged into
 | `nexachat.rate-limit.stomp.messages-per-window` | `30` | STOMP message sends per `window-seconds` (10). |
 | `nexachat.rate-limit.stomp.typing-per-window` | `60` | STOMP typing frames per `typing-window-seconds` (10). |
 | `nexachat.rate-limit.stomp.acks-per-window` | `120` | STOMP delivery/read ack frames per `ack-window-seconds` (10). |
+| `nexachat.streaks.enabled` | `true` | Master switch for recording streak progress from sends and check-ins. |
+| `nexachat.streaks.reminders-enabled` | `true` | Runs the daily `STREAK_REMINDER` push job (`StreakReminderJob`). |
+| `nexachat.streaks.zone` | `UTC` | IANA zone streak days are measured in; invalid ids fail startup. |
+| `nexachat.streaks.reminder-hour` | `20` | Local hour (0–23, in the streak zone) the daily reminder push goes out at. |
+| `nexachat.streaks.reminder-min-count` | `3` | Smallest chain length that triggers a reminder push. |
+| `nexachat.retention.jobs.public-feed.enabled` | `false` | Opt-in hard-purge job for soft-deleted feed content and unbound images. |
+| `nexachat.retention.jobs.public-feed.retention-days` | `30` | Soft-deleted posts/comments are purged after this many days. |
+| `nexachat.retention.jobs.public-feed.unbound-hours` | `24` | Uploaded feed images never bound to a post are purged after this many hours. |
 
 These keys are Spring properties; override them with the matching
 `NEXACHAT_*` environment variable (relaxed binding) or a profile-specific
@@ -232,6 +254,9 @@ These keys are Spring properties; override them with the matching
 | `POLL_CLOSED` | 409 | Vote/retract attempted after explicit close or expiry |
 | `NOT_MESSAGE_AUTHOR` | 403 | Caller is not the message author |
 | `MESSAGE_NOT_FOUND` | 404 | Message missing or belongs to another conversation |
+| `POST_NOT_FOUND` | 404 | Feed post missing, hidden/deleted for the caller, or reported target absent |
+| `COMMENT_NOT_FOUND` | 404 | Feed comment missing, hidden/deleted for the caller, or reported target absent |
+| `INVALID_TIME_ZONE` | 400 | `timeZone` on the summary request is not a valid IANA id or offset |
 | `MESSAGE_DELETED` | 409 | Deleted message cannot be edited, reacted to, or pinned |
 | `RECALL_WINDOW_EXPIRED` | 409 | The author tried to recall a live message after the recall window |
 | `FILE_NOT_FOUND` | 404 | Stored file / attachment key missing |
@@ -394,9 +419,15 @@ JSON `null` values.
   "archived": false,
   "aiOptOut": false,
   "pinned": false,
-  "labels": []
+  "labels": [],
+  "streakCount": 4,
+  "streakAtRisk": true
 }
 ```
+
+`streakCount` is the direct chat's current streak (0 when there is none or it
+has lapsed); `streakAtRisk` is true while the streak is alive but today's
+exchange is not complete yet. Both are computed in the server's streak zone.
 
 `MessageResponse` as returned by send and history (optional null fields omitted;
 `content` is explicit `null` on a deleted-message tombstone):
@@ -732,11 +763,12 @@ newest-first pagination are scoped and ordered for the existing
 on large conversations; PostgreSQL's cost planner may still prefer a table
 scan on small datasets.
 
-`GET /users/me/settings` returns `{showPresence: boolean, showSeen: boolean, aiSummaryConsent: boolean}`;
+`GET /users/me/settings` returns `{showPresence: boolean, showSeen: boolean, aiSummaryConsent: boolean, translateTargetLang: string|null, streakReminders: boolean}`;
 `showSeen` and `showPresence` default to `true`, `aiSummaryConsent` defaults to
-`false`. `PATCH /users/me/settings` accepts any of the three fields
-independently; an omitted field remains unchanged, and an empty object is
-rejected.
+`false`, and `streakReminders` defaults to `false`. `PATCH /users/me/settings`
+accepts any of the fields independently; an omitted field remains unchanged,
+and an empty object is rejected. `streakReminders` opts the account in or out
+of the daily `STREAK_REMINDER` push (see [Streaks](#streaks--apiv1streaks-and-apiv1conversationsidstreak)).
 
 `showSeen=false` is the Zalo-style reciprocal "hidden seen" state: the caller's
 `MESSAGE_READ` receipts are not broadcast and the caller does not receive other
@@ -1126,7 +1158,7 @@ to all five mutating endpoints (see [Idempotency and retries](#idempotency-and-r
 | `DELETE /users/{id}/block` | Bearer | — | `204` empty — idempotent | `UNAUTHORIZED` 401 |
 | `GET /users/{id}/block` | Bearer | — | `200` `{"blocked": bool}` — per-peer probe for the chat composer | `UNAUTHORIZED` 401 |
 | `GET /users/blocked` | Bearer | `?limit=` (≤100, default 50), `?cursor=` | `200` `BlockedPageResponse {items: BlockedUserView[], nextCursor}` newest first | `VALIDATION_FAILED` 400 (bad cursor) · `UNAUTHORIZED` 401 |
-| `POST /reports` | Bearer | `{targetType: USER\|MESSAGE\|CONVERSATION, targetId, reason: SPAM\|HARASSMENT\|VIOLENCE\|SEXUAL\|SCAM\|OTHER, details? ≤500, messageSnapshot? ≤500}` | `201` `ReportResponse` on a new filing; `200` with the existing row when an OPEN report on the same target already exists | `VALIDATION_FAILED` 400 (also self-report) · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 · `MESSAGE_NOT_FOUND` 404 · `CONVERSATION_NOT_FOUND` 404 · `NOT_MEMBER` 403 · `RATE_LIMITED` 429 (20/hour per user, `Retry-After` set) |
+| `POST /reports` | Bearer | `{targetType: USER\|MESSAGE\|CONVERSATION\|POST\|COMMENT, targetId, reason: SPAM\|HARASSMENT\|VIOLENCE\|SEXUAL\|SCAM\|OTHER, details? ≤500, messageSnapshot? ≤500}` | `201` `ReportResponse` on a new filing; `200` with the existing row when an OPEN report on the same target already exists | `VALIDATION_FAILED` 400 (also self-report) · `UNAUTHORIZED` 401 · `USER_NOT_FOUND` 404 · `MESSAGE_NOT_FOUND` 404 · `CONVERSATION_NOT_FOUND` 404 · `POST_NOT_FOUND` 404 · `COMMENT_NOT_FOUND` 404 · `NOT_MEMBER` 403 · `RATE_LIMITED` 429 (20/hour per user, `Retry-After` set) |
 | `GET /reports/mine` | Bearer | `?limit=` (≤100, default 50), `?cursor=` | `200` `ReportPageResponse {items: ReportResponse[], nextCursor}` newest first | `VALIDATION_FAILED` 400 (bad cursor) · `UNAUTHORIZED` 401 |
 | `PUT /messages/{id}/star` | Bearer member | — | `204` empty — idempotent | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 (not a member, or message predates admission) · `MESSAGE_NOT_FOUND` 404 |
 | `DELETE /messages/{id}/star` | Bearer | — | `204` empty — idempotent | `UNAUTHORIZED` 401 |
@@ -1342,6 +1374,20 @@ neutral flag that is `true` only when the external LLM produced the summary and
 some messages were excluded because their authors opted out in that
 conversation; the local engine may still use those messages.
 
+The request body is `{scope, limit?, language?, refresh?, timeZone?}`:
+
+- `scope` — required, one of `UNREAD` (new messages since the caller's read
+  pointer), `LAST_N` (the newest `limit` messages), or `TODAY` (messages from
+  the caller's local calendar day).
+- `limit` — required for `LAST_N`, 5–500 (`VALIDATION_FAILED` otherwise).
+- `language` — `AUTO` (default) or an explicit output language.
+- `refresh` — default `false`; `true` bypasses the cached summary.
+- `timeZone` — IANA id or UTC offset; only decides which local day `TODAY`
+  covers. Absent defaults to `Asia/Ho_Chi_Minh` and the response's
+  `period.timeZoneDefaulted` is `true`. An invalid value is rejected with
+  `INVALID_TIME_ZONE` (400). The response `period` echoes
+  `{date, timeZone, start, end, timeZoneDefaulted}`.
+
 ## Conversation ask API (RAG)
 
 `POST /api/v1/conversations/{conversationId}/ask` (Bearer, conversation member)
@@ -1432,6 +1478,12 @@ messages and AI-opted-out conversations are never scanned or shown.
 | `DELETE /api/v1/admin/rules/{ruleId}` | ADMIN | — | `204`; built-ins disable instead | 401/403 · 404 |
 | `POST /api/v1/admin/rules/test` | staff | `{patternType, pattern, sampleText}` | `200` `{matched, matches[]}` | 401/403 · 400 |
 | `GET /api/v1/admin/audit` | staff | `?actor=&action=&target=&from=&to=&page=` | `200` audit page | 401/403 |
+| `GET /api/v1/admin/feed/reports` | staff | `?status=&page=&size=` | `200` page of `AdminFeedReportResponse` | 401/403 |
+| `POST /api/v1/admin/feed/posts/{id}/hide` | staff | `{reason}` ≤500 | `204` empty | 401/403 · 404 |
+| `POST /api/v1/admin/feed/posts/{id}/unhide` | staff | optional `{reason}` | `204` empty | 401/403 · 404 |
+| `POST /api/v1/admin/feed/comments/{id}/hide` | staff | `{reason}` ≤500 | `204` empty | 401/403 · 404 |
+| `POST /api/v1/admin/feed/comments/{id}/unhide` | staff | optional `{reason}` | `204` empty | 401/403 · 404 |
+| `POST /api/v1/admin/feed/reports/{id}/resolve` | staff | `{status: REVIEWED\|DISMISSED}` | `204` empty | 401/403 · 404 · `VALIDATION_FAILED` 400 |
 
 Alert detection runs asynchronously: a bounded in-memory queue drains matched
 text messages into `alerts` rows storing a redacted snippet and matched rule
@@ -1444,6 +1496,82 @@ id list for `ALERT_BULK_DISMISS`.
 Users see moderation notices at `GET /api/v1/users/me/notices` (Bearer, `200`
 page) and acknowledge with `POST /api/v1/users/me/notices/{noticeId}/read`
 (Bearer, `204`).
+
+## Streaks — `/api/v1/streaks` and `/api/v1/conversations/{id}/streak`
+
+A streak counts consecutive days a DIRECT pair both sent at least one message,
+or the days an individual user opened the app and sent something. Day
+boundaries are measured in the server's streak zone
+(`nexachat.streaks.zone`, default `UTC`) — not per user, since there is no
+per-user time zone. One automatic grace day ("freeze") per rolling week keeps a
+chain alive when a single day is missed. `nexachat.streaks.enabled=false`
+stops recording progress; reads still return the last stored state.
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `GET /api/v1/streaks/me` | Bearer | — | `200` `StreakSummaryResponse` — the caller's app-wide check-in streak | `UNAUTHORIZED` 401 |
+| `POST /api/v1/streaks/check-in` | Bearer | — | `200` `StreakSummaryResponse` — records today's app open | `UNAUTHORIZED` 401 |
+| `GET /api/v1/conversations/{conversationId}/streak` | Bearer member of the DIRECT chat | — | `200` `StreakResponse` | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+
+`StreakResponse` = `{count, bestCount, startedOn, lastDay, day, atRisk, freezeAvailable, milestone, mySentToday?, peerSentToday?, openedToday?, sentToday?}`.
+`mySentToday`/`peerSentToday` appear only on a conversation streak;
+`openedToday`/`sentToday` only on the user check-in streak (`StreakSummaryResponse`).
+`atRisk` is true while the streak is alive but today's exchange is not complete
+yet — the same flag the inbox exposes per entry as `streakAtRisk`.
+
+`nexachat.streaks.reminders-enabled` (default `true`) runs `StreakReminderJob`,
+which sends a `STREAK_REMINDER` push once per day at
+`nexachat.streaks.reminder-hour` (default `20`, in the streak zone) to accounts
+whose live chain is at least `nexachat.streaks.reminder-min-count` (default `3`)
+and who opted in via the `streakReminders` user setting. See
+[`docs/architecture/streaks.md`](streaks.md).
+
+## Public feed — `/api/v1/feed`
+
+A plaintext public feed (not E2EE, visible to every authenticated account — this
+is by design): posts with optional images, comments, and per-user emoji
+reactions. Authors may delete their own posts/comments (soft delete); staff
+hide/unhide content from the admin console (see [Admin feed
+moderation](#admin-feed-moderation--apiv1adminfeed)). All listing endpoints
+keyset-paginate newest first.
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `GET /api/v1/feed/posts` | Bearer | `?limit=` `?cursor=` | `200` page of `FeedPostResponse` | `UNAUTHORIZED` 401 · `VALIDATION_FAILED` 400 (bad cursor) |
+| `POST /api/v1/feed/posts` | Bearer | `{body, imageIds?}` | `201` `FeedPostResponse` | `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 |
+| `GET /api/v1/feed/posts/{postId}` | Bearer | — | `200` `FeedPostResponse` | `POST_NOT_FOUND` 404 |
+| `DELETE /api/v1/feed/posts/{postId}` | Bearer author | — | `204` empty | `POST_NOT_FOUND` 404 · `FORBIDDEN` 403 |
+| `PUT /api/v1/feed/posts/{postId}/reactions/{emoji}` | Bearer | — | `204` empty | `POST_NOT_FOUND` 404 |
+| `DELETE /api/v1/feed/posts/{postId}/reactions/{emoji}` | Bearer | — | `204` empty | `POST_NOT_FOUND` 404 |
+| `GET /api/v1/feed/posts/{postId}/comments` | Bearer | `?limit=` `?cursor=` | `200` page of `FeedCommentResponse` | `POST_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 |
+| `POST /api/v1/feed/posts/{postId}/comments` | Bearer | `{body}` | `201` `FeedCommentResponse` | `POST_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 |
+| `DELETE /api/v1/feed/comments/{commentId}` | Bearer author | — | `204` empty | `COMMENT_NOT_FOUND` 404 · `FORBIDDEN` 403 |
+| `POST /api/v1/feed/images` | Bearer | `multipart/form-data` `file`, `width?`, `height?` | `201` `{imageId, url}` | `MIME_NOT_ALLOWED` 415 · `FILE_TOO_LARGE` 413 · `RATE_LIMITED` 429 |
+| `GET /api/v1/feed/images/{imageId}` | Bearer | — | `200` image bytes | `FILE_NOT_FOUND` 404 |
+
+`FeedPostResponse` = `{id, authorId, authorName, authorAvatarUrl, body, images, reactionCounts, myReaction?, commentCount, createdAt}`.
+`FeedCommentResponse` = `{id, postId, authorId, authorName, authorAvatarUrl, body, createdAt}`.
+Hidden and soft-deleted rows are excluded from every list/read predicate;
+`POST_NOT_FOUND`/`COMMENT_NOT_FOUND` is returned for them. Upload-first images
+bind to a post via `imageIds`; unbound images are purged after
+`nexachat.retention.jobs.public-feed.unbound-hours` (default `24`).
+
+Feed posts and comments are reportable targets (`POST /reports` with
+`targetType: POST|COMMENT`, see [Safety](#safety--blocks-apiv1users-reports-apiv1reports-stars-apiv1messages));
+the server snapshots the target body (≤500 chars) as the evidence
+`messageSnapshot`. See [`docs/architecture/public-feed.md`](public-feed.md).
+
+## Admin feed moderation — `/api/v1/admin/feed`
+
+The staff moderation queue for feed reports, used by `admin-web/`'s `/feed`
+page. All routes require `ADMIN` or `MODERATOR` like every `/api/v1/admin`
+route (see [Admin console](#admin-console--apiv1admin) for the role model); the
+six routes are listed in that table. `AdminFeedReportResponse` =
+`{id, targetType: POST|COMMENT, targetId, reason, details, messageSnapshot, status, createdAt, reporterId, reporterName, authorId, authorName, targetBody, targetDeleted, targetHidden, targetCreatedAt}`
+paged as `{items, page, size, total, hasMore}`. `POST …/hide` requires a
+`reason` (≤500 chars) and hides the target; `POST …/unhide` restores it;
+`POST …/reports/{id}/resolve` sets the report `status` to `REVIEWED` or
+`DISMISSED`. All mutations return `204` and are audit-logged.
 
 ## Firebase realtime bridge (opt-in)
 

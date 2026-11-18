@@ -77,6 +77,25 @@ public final class NotificationAdmission {
                 .subscribeOn(ioScheduler);
     }
 
+    /**
+     * Captures the signed-in account for a push that names no audience, such as
+     * a streak reminder. The subject is read from the stored token rather than
+     * the payload, so a push can never address an account that is not signed in.
+     */
+    @NonNull
+    public Maybe<NotificationSession> admitCurrentSession(@Nullable String conversationId) {
+        if (!hasText(conversationId)) return Maybe.empty();
+        return currentCredential(null)
+                .flatMap(credential -> {
+                    String recipientId = TimeAndJwt.userIdFromJwt(credential.accessToken, moshi);
+                    if (!hasText(recipientId)) return Maybe.empty();
+                    return conversationDao.byId(conversationId)
+                            .filter(ignored -> tokenRefresher.isSessionCurrent(credential.epoch))
+                            .map(ignored -> new NotificationSession(recipientId, credential.epoch));
+                })
+                .subscribeOn(ioScheduler);
+    }
+
     /** Rechecks audience and local membership before and after authoritative delta sync. */
     @NonNull
     public Single<Boolean> syncAndCheck(

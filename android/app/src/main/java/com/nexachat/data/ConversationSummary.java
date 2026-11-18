@@ -61,6 +61,10 @@ public final class ConversationSummary {
     @Nullable private final String lastMessageType;
     /** Disappearing-message timer in seconds; 0 = off. */
     private final int disappearingSeconds;
+    /** Direct-chat streak length; 0 when none. */
+    private final int streakCount;
+    /** The streak is alive but the caller has not completed today. */
+    private final boolean streakAtRisk;
 
     public ConversationSummary(
             String id,
@@ -191,6 +195,48 @@ public final class ConversationSummary {
             boolean lastMessageEncrypted,
             @Nullable String lastMessageType,
             int disappearingSeconds) {
+        this(id, type, title, lastMessageContent, lastMessageSenderName, lastMessageAtEpochMs,
+                lastMessageSeq, unreadCount, myLastReadSeq, otherUserName, otherUserAvatar,
+                avatarUrl, peerReadSeq, peerDeliveredSeq, myRole, otherUserId, lastMessageDeleted,
+                peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut, pinned,
+                pinnedAtEpochMs, labelIds, e2eeEnabled, lastMessageEncrypted, lastMessageType,
+                disappearingSeconds, 0, false);
+    }
+
+    public ConversationSummary(
+            String id,
+            String type,
+            @Nullable String title,
+            @Nullable String lastMessageContent,
+            @Nullable String lastMessageSenderName,
+            @Nullable Long lastMessageAtEpochMs,
+            long lastMessageSeq,
+            int unreadCount,
+            long myLastReadSeq,
+            @Nullable String otherUserName,
+            @Nullable String otherUserAvatar,
+            @Nullable String avatarUrl,
+            long peerReadSeq,
+            long peerDeliveredSeq,
+            @Nullable String myRole,
+            @Nullable String otherUserId,
+            boolean lastMessageDeleted,
+            @Nullable PeerPresence peerPresence,
+            boolean muted,
+            @Nullable Long mutedUntilEpochMs,
+            boolean archived,
+            boolean aiOptOut,
+            boolean pinned,
+            @Nullable Long pinnedAtEpochMs,
+            List<String> labelIds,
+            boolean e2eeEnabled,
+            boolean lastMessageEncrypted,
+            @Nullable String lastMessageType,
+            int disappearingSeconds,
+            int streakCount,
+            boolean streakAtRisk) {
+        this.streakCount = Math.max(0, streakCount);
+        this.streakAtRisk = streakAtRisk;
         this.disappearingSeconds = disappearingSeconds;
         this.e2eeEnabled = e2eeEnabled;
         this.lastMessageEncrypted = lastMessageEncrypted;
@@ -378,6 +424,8 @@ public final class ConversationSummary {
     @Nullable public String getLastMessageType() { return lastMessageType; }
     /** Disappearing-message timer in seconds; 0 = off. */
     public int getDisappearingSeconds() { return disappearingSeconds; }
+    public int getStreakCount() { return streakCount; }
+    public boolean isStreakAtRisk() { return streakAtRisk; }
 
     /**
      * A timed mute expires lazily: the stored flag stays true while the expiry
@@ -458,7 +506,9 @@ public final class ConversationSummary {
                 && Objects.equals(peerPresence, that.peerPresence)
                 && Objects.equals(mutedUntilEpochMs, that.mutedUntilEpochMs)
                 && Objects.equals(lastMessageType, that.lastMessageType)
-                && disappearingSeconds == that.disappearingSeconds;
+                && disappearingSeconds == that.disappearingSeconds
+                && streakCount == that.streakCount
+                && streakAtRisk == that.streakAtRisk;
     }
 
     @Override
@@ -468,6 +518,6 @@ public final class ConversationSummary {
                 otherUserAvatar, avatarUrl, peerReadSeq, peerDeliveredSeq, myRole, otherUserId,
                 lastMessageDeleted, peerPresence, muted, mutedUntilEpochMs, archived, aiOptOut,
                 pinned, pinnedAtEpochMs, labelIds, lastMessageType, e2eeEnabled, lastMessageEncrypted,
-                disappearingSeconds);
+                disappearingSeconds, streakCount, streakAtRisk);
     }
 }

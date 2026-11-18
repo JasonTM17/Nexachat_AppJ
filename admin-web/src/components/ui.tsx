@@ -80,10 +80,12 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   confirmDanger,
+  maxReasonLength,
   children,
 }: {
   title: string;
   requireReason?: boolean;
+  maxReasonLength?: number;
   onConfirm: (reason: string) => void;
   onCancel: () => void;
   confirmDanger?: boolean;
@@ -119,6 +121,7 @@ export function ConfirmDialog({
               className="textarea"
               rows={2}
               ref={reasonRef}
+              maxLength={maxReasonLength}
               autoFocus
             />
           </div>

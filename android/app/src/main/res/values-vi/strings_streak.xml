@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="streak_title">Chuỗi</string>
+    <string name="streak_best">Dài nhất %1$d</string>
+    <string name="streak_at_risk">Sắp mất</string>
+    <plurals name="streak_days">
+        <item quantity="other">%d ngày</item>
+    </plurals>
+    <plurals name="streak_badge_cd">
+        <item quantity="other">Chuỗi: %d ngày</item>
+    </plurals>
+    <plurals name="streak_badge_at_risk_cd">
+        <item quantity="other">Chuỗi: %d ngày, sắp mất</item>
+    </plurals>
+    <plurals name="streak_milestone_title">
+        <item quantity="other">Chuỗi %d ngày</item>
+    </plurals>
+    <string name="streak_milestone_line">Tiếp tục nào</string>
+    <string name="streak_milestone_done">Xong</string>
+    <string name="streak_reminders_title">Nhắc giữ chuỗi</string>
+    <string name="streak_reminders_update_failed">Không cập nhật được. Hãy thử lại</string>
+    <string name="cd_streak_reminders">Công tắc nhắc giữ chuỗi</string>
+    <string name="streak_notification_title">Chuỗi sắp mất</string>
+    <string name="streak_notification_text">Giữ chuỗi %1$d ngày với %2$s</string>
+    <string name="streak_notification_text_generic">Hãy giữ chuỗi của bạn nhé</string>
+</resources>

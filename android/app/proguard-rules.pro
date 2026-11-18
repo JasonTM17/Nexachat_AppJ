@@ -67,6 +67,18 @@
 -keep class com.nexachat.feature.safety.ReportRequest { *; }
 -keep class com.nexachat.feature.safety.StarredMessageDto { *; }
 -keep class com.nexachat.feature.safety.StarredPageDto { *; }
+-keep class com.nexachat.feature.feed.FeedAuthorDto { *; }
+-keep class com.nexachat.feature.feed.FeedImageRefDto { *; }
+-keep class com.nexachat.feature.feed.FeedReactionDto { *; }
+-keep class com.nexachat.feature.feed.FeedPostDto { *; }
+-keep class com.nexachat.feature.feed.FeedPostPageDto { *; }
+-keep class com.nexachat.feature.feed.FeedCommentDto { *; }
+-keep class com.nexachat.feature.feed.FeedCommentPageDto { *; }
+-keep class com.nexachat.feature.feed.FeedReactionsDto { *; }
+-keep class com.nexachat.feature.feed.FeedImageUploadDto { *; }
+-keep class com.nexachat.feature.feed.FeedCreatePostRequest { *; }
+-keep class com.nexachat.feature.feed.FeedCreateCommentRequest { *; }
+-keep class com.nexachat.feature.streak.StreakDto { *; }
 -keep class com.nexachat.call.core.CallFrameCodec$* { *; }
 -keepclassmembers class * {
     @com.squareup.moshi.Json <fields>;

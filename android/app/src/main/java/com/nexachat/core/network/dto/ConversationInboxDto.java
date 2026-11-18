@@ -34,6 +34,10 @@ public final class ConversationInboxDto {
     @Nullable private final Boolean lastMessageEncrypted;
     /** Disappearing-message timer in seconds (0 = off); absent in legacy payloads. */
     @Nullable private Integer disappearingSeconds;
+    /** Direct-chat streak length; absent on servers that predate streaks. */
+    @Nullable private Integer streakCount;
+    /** True when the streak is alive but the caller has not completed today. */
+    @Nullable private Boolean streakAtRisk;
 
     public ConversationInboxDto() {
         this(null, null, null, null, null, null, null, null, null, null, null, null, null, null, List.of(), null,
@@ -371,6 +375,19 @@ public final class ConversationInboxDto {
 
     public void setDisappearingSeconds(@Nullable Integer disappearingSeconds) {
         this.disappearingSeconds = disappearingSeconds;
+    }
+
+    public int resolvedStreakCount() {
+        return streakCount == null ? 0 : Math.max(0, streakCount);
+    }
+
+    public boolean resolvedStreakAtRisk() {
+        return resolvedStreakCount() > 0 && Boolean.TRUE.equals(streakAtRisk);
+    }
+
+    public void setStreak(@Nullable Integer count, @Nullable Boolean atRisk) {
+        this.streakCount = count;
+        this.streakAtRisk = atRisk;
     }
 
     @Nullable

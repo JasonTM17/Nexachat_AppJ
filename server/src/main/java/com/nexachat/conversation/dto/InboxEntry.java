@@ -13,6 +13,10 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *
  * <p>{@code pinned}/{@code pinnedAt} are the caller's own per-member pin
  * state; {@code pinnedAt} is omitted while the conversation is not pinned.
+ *
+ * <p>{@code streakCount} is the chat's current streak (0 when there is none or
+ * it has lapsed) and {@code streakAtRisk} is true while the streak is alive but
+ * today's exchange is not complete yet.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record InboxEntry(
@@ -34,8 +38,23 @@ public record InboxEntry(
         List<UUID> labels,
         boolean lastMessageEncrypted,
         boolean e2eeEnabled,
-        int disappearingSeconds
+        int disappearingSeconds,
+        int streakCount,
+        boolean streakAtRisk
 ) {
+
+    /** Pre-streak shape for callers that predate the chat streak fields. */
+    public InboxEntry(UUID id, String type, String title, String avatarUrl,
+                      List<Member> members, LastMessage lastMessage, long unreadCount,
+                      long lastReadSeq, PeerPresence peerPresence, boolean muted,
+                      Instant mutedUntil, boolean archived, boolean aiOptOut,
+                      boolean pinned, Instant pinnedAt, List<UUID> labels,
+                      boolean lastMessageEncrypted, boolean e2eeEnabled,
+                      int disappearingSeconds) {
+        this(id, type, title, avatarUrl, members, lastMessage, unreadCount, lastReadSeq,
+                peerPresence, muted, mutedUntil, archived, aiOptOut, pinned, pinnedAt, labels,
+                lastMessageEncrypted, e2eeEnabled, disappearingSeconds, 0, false);
+    }
 
     /** Backward-compatible constructor for code that builds the pre-label inbox shape. */
     public InboxEntry(UUID id, String type, String title, String avatarUrl,
@@ -45,7 +64,7 @@ public record InboxEntry(
                       boolean pinned, Instant pinnedAt) {
         this(id, type, title, avatarUrl, members, lastMessage, unreadCount, lastReadSeq,
                 peerPresence, muted, mutedUntil, archived, aiOptOut, pinned, pinnedAt, List.of(),
-                false, false, 0);
+                false, false, 0, 0, false);
     }
 
     /** Pre-disappearing shape for callers that predate the timer column. */
@@ -57,7 +76,7 @@ public record InboxEntry(
                       boolean lastMessageEncrypted, boolean e2eeEnabled) {
         this(id, type, title, avatarUrl, members, lastMessage, unreadCount, lastReadSeq,
                 peerPresence, muted, mutedUntil, archived, aiOptOut, pinned, pinnedAt, labels,
-                lastMessageEncrypted, e2eeEnabled, 0);
+                lastMessageEncrypted, e2eeEnabled, 0, 0, false);
     }
 
     /** Member as the client needs it for headers/avatars plus admin gating. */

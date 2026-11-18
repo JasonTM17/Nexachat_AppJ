@@ -23,6 +23,7 @@ import com.google.android.material.color.MaterialColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.nexachat.R;
 import com.nexachat.core.ui.ForwardFilter;
+import com.nexachat.core.ui.ReactionSet;
 import com.nexachat.core.ui.RecallWindowRules;
 import com.nexachat.data.ChatMessage;
 import com.nexachat.databinding.SheetMessageActionsBinding;
@@ -42,11 +43,6 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
     private static final String ARG_STARRED = "starred";
     private static final String ARG_DELETE_ACTION = "deleteAction";
     private static final String ARG_TRANSLATED = "translated";
-
-    private static final String[] REACTIONS = {"👍", "❤️", "😂", "😮", "😢", "🙏"};
-    private static final int[] REACTION_NAMES = {R.string.reaction_like, R.string.reaction_love,
-            R.string.reaction_laugh, R.string.reaction_surprised, R.string.reaction_sad,
-            R.string.reaction_thanks};
 
     /** Resolves the long-pressed message after a recreation. */
     public interface Host {
@@ -352,14 +348,14 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
         row.removeAllViews();
         int target = context.getResources().getDimensionPixelSize(R.dimen.min_touch_target);
         int gap = context.getResources().getDimensionPixelSize(R.dimen.space_xs);
-        for (int i = 0; i < REACTIONS.length; i++) {
-            String emoji = REACTIONS[i];
+        for (int i = 0; i < ReactionSet.size(); i++) {
+            String emoji = ReactionSet.emoji(i);
             // Circular tiles: the ripple is masked to the tile's circle so it
             // never paints past the pill strip's rounded ends.
             TextView tile = new TextView(context);
             tile.setText(emoji);
             TextViewCompat.setTextAppearance(tile, R.style.TextAppearance_NexaChat_TitleLarge);
-            tile.setContentDescription(context.getString(REACTION_NAMES[i]));
+            tile.setContentDescription(context.getString(ReactionSet.label(i)));
             tile.setGravity(Gravity.CENTER);
             tile.setMinWidth(target);
             tile.setMinHeight(target);

@@ -29,7 +29,7 @@ import java.util.UUID;
 public class Report {
 
     public enum TargetType {
-        USER, MESSAGE, CONVERSATION
+        USER, MESSAGE, CONVERSATION, POST, COMMENT
     }
 
     public enum Reason {

@@ -37,6 +37,7 @@ import com.nexachat.message.dto.SendMessageRequest;
 import com.nexachat.message.dto.SyncRequest;
 import com.nexachat.message.dto.SyncResponse;
 import com.nexachat.message.dto.SyncFence;
+import com.nexachat.streak.StreakService;
 import com.nexachat.user.UserBlockRepository;
 import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
@@ -120,6 +121,8 @@ public class MessageService {
     private final SyncProperties syncProperties;
     private final MessageRecallProperties recallProperties;
     private final org.springframework.beans.factory.ObjectProvider<E2eeDeviceService> e2eeDeviceService;
+    /** Optional: absent in database-less test profiles and legacy unit-test wiring. */
+    private StreakService streakService;
 
     @Autowired
     public MessageService(MessageRepository messageRepository,
@@ -265,6 +268,11 @@ public class MessageService {
         this.blockRepository = blockRepository;
     }
 
+    @Autowired(required = false)
+    void setStreakService(StreakService streakService) {
+        this.streakService = streakService;
+    }
+
     /** Result of {@link #send}: the stored message plus whether this call created it. */
     public record SendResult(MessageResponse message, boolean created) {
     }
@@ -397,6 +405,14 @@ public class MessageService {
             // You have trivially "read" what you sent — keep your own unread at 0.
             memberRepository.advanceReadWatermark(conversationId, senderId, row.seq());
             bindAttachments(row.id(), lockedAttachments);
+            // A suppressed (blocked) send never counts toward a streak: the peer
+            // never receives it, so it cannot be half of "both of us wrote today".
+            if (!peerSuppressed && streakService != null && type != Message.Type.SYSTEM) {
+                streakService.recordMessageSent(conversationId,
+                        conversation.getType() == Conversation.Type.DIRECT
+                                ? conversation.getDirectKey() : null,
+                        senderId, row.createdAt());
+            }
             log.info("Message {} (seq={}) stored in {} by {}", row.id(), row.seq(), conversationId, senderId);
         }
 

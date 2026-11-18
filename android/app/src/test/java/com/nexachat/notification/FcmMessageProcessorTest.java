@@ -49,6 +49,7 @@ public final class FcmMessageProcessorTest {
     private NotificationAdmission notificationAdmission;
     private NotificationWorkScheduler notificationWorkScheduler;
     private ForegroundConversationTracker foregroundConversationTracker;
+    private StreakNotifications streakNotifications;
     private AtomicLong clock;
     private AtomicReference<IncomingCallPushData> lastAdmittedPush;
     private FcmMessageProcessor processor;
@@ -65,6 +66,7 @@ public final class FcmMessageProcessorTest {
         notificationAdmission = mock(NotificationAdmission.class);
         notificationWorkScheduler = mock(NotificationWorkScheduler.class);
         foregroundConversationTracker = mock(ForegroundConversationTracker.class);
+        streakNotifications = mock(StreakNotifications.class);
         clock = new AtomicLong(1_800_000_000_000L);
         lastAdmittedPush = new AtomicReference<>();
         when(context.getApplicationContext()).thenReturn(context);
@@ -81,6 +83,9 @@ public final class FcmMessageProcessorTest {
         when(notificationAdmission.admitPush(anyString(), anyString())).thenAnswer(invocation ->
                 Maybe.just(new NotificationAdmission.NotificationSession(
                         invocation.getArgument(0), SESSION_EPOCH)));
+        when(notificationAdmission.admitCurrentSession(anyString())).thenAnswer(invocation ->
+                Maybe.just(new NotificationAdmission.NotificationSession(
+                        RECIPIENT_ID, SESSION_EPOCH)));
         when(callManager.admitIncomingPush(
                         anyString(), anyString(), anyString(), anyString(), anyLong(),
                         anyString(), anyLong(), anyLong(), any(CallMediaType.class), any(BooleanSupplier.class)))
@@ -117,6 +122,7 @@ public final class FcmMessageProcessorTest {
                 notificationAdmission,
                 notificationWorkScheduler,
                 foregroundConversationTracker,
+                streakNotifications,
                 Schedulers.trampoline(),
                 clock::get);
     }
@@ -346,6 +352,69 @@ public final class FcmMessageProcessorTest {
                         + ":reminder-1:0123456789abcdef0123456789abcdef",
                 request.getValue().uniqueWorkName());
         subscription.dispose();
+    }
+
+    @Test
+    public void streakReminderPostsForTheSignedInAccount() {
+        processor.processDataPayload(Map.of(
+                "type", FcmMessageProcessor.TYPE_STREAK_REMINDER,
+                "conversationId", "conversation-1",
+                "peerName", "An",
+                "count", "5"));
+
+        verify(streakNotifications).show(RECIPIENT_ID, SESSION_EPOCH, "conversation-1", "An", 5);
+        verify(notificationWorkScheduler, never()).enqueue(any());
+    }
+
+    @Test
+    public void streakReminderIsSkippedWhileTheConversationIsOpen() {
+        when(foregroundConversationTracker.isForegroundConversation("conversation-1"))
+                .thenReturn(true);
+
+        processor.processDataPayload(Map.of(
+                "type", FcmMessageProcessor.TYPE_STREAK_REMINDER,
+                "conversationId", "conversation-1",
+                "peerName", "An",
+                "count", "5"));
+
+        verify(streakNotifications, never()).show(
+                anyString(), anyLong(), anyString(), any(), org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    @Test
+    public void streakReminderWithoutConversationFailsClosed() {
+        processor.processDataPayload(Map.of(
+                "type", FcmMessageProcessor.TYPE_STREAK_REMINDER,
+                "peerName", "An",
+                "count", "5"));
+
+        verify(notificationAdmission, never()).admitCurrentSession(any());
+        verify(streakNotifications, never()).show(
+                anyString(), anyLong(), anyString(), any(), org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    @Test
+    public void streakReminderAcceptsReminderSizedPayload() {
+        String peerName = "A".repeat(300);
+
+        processor.processDataPayload(Map.of(
+                "type", FcmMessageProcessor.TYPE_STREAK_REMINDER,
+                "conversationId", "conversation-1",
+                "peerName", peerName,
+                "count", "12"));
+
+        verify(streakNotifications).show(RECIPIENT_ID, SESSION_EPOCH, "conversation-1", peerName, 12);
+    }
+
+    @Test
+    public void streakReminderWithMalformedCountStillPosts() {
+        processor.processDataPayload(Map.of(
+                "type", FcmMessageProcessor.TYPE_STREAK_REMINDER,
+                "conversationId", "conversation-1",
+                "peerName", "An",
+                "count", "many"));
+
+        verify(streakNotifications).show(RECIPIENT_ID, SESSION_EPOCH, "conversation-1", "An", 0);
     }
 
     @Test

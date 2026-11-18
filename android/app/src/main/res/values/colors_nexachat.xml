@@ -96,4 +96,8 @@
     <!-- Note mark. Night brand_indigo supplies the dark mark. The plate ink does not flip. -->
     <color name="nexa_logo_mark">@color/brand_indigo</color>
     <color name="nexa_logo_on_brand">#FFFFFCFF</color>
+    <!-- Streak flame: amber tonal pair that sits beside the plum brand. -->
+    <color name="streak_flame">#FFB25E00</color>
+    <color name="streak_container">#FFFFDDB8</color>
+    <color name="streak_on_container">#FF4A2800</color>
 </resources>

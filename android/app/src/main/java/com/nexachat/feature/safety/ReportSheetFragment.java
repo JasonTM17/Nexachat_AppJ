@@ -60,6 +60,19 @@ public final class ReportSheetFragment extends NexaBottomSheetFragment {
         return newInstance("CONVERSATION", conversationId, null);
     }
 
+    /** A public feed post; the snapshot is the server's copy of the body. */
+    @NonNull
+    public static ReportSheetFragment forPost(@NonNull String postId, @Nullable String snapshot) {
+        return newInstance("POST", postId, snapshot);
+    }
+
+    /** A public feed comment; the snapshot is the server's copy of the body. */
+    @NonNull
+    public static ReportSheetFragment forComment(
+            @NonNull String commentId, @Nullable String snapshot) {
+        return newInstance("COMMENT", commentId, snapshot);
+    }
+
     @NonNull
     private static ReportSheetFragment newInstance(
             @NonNull String targetType, @NonNull String targetId, @Nullable String snapshot) {
