@@ -7,7 +7,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
@@ -47,6 +50,28 @@ public class AlertRuleRepository {
                        built_in, enabled, description, created_by, created_at, updated_at
                 FROM alert_rules WHERE id = ?
                 """, this::map, id).stream().findFirst();
+    }
+
+    /**
+     * Rule names for a batch of matched-rule ids in one query; ids without a
+     * row (a deleted custom rule) are simply absent from the map and the
+     * caller falls back to the raw id.
+     */
+    public Map<UUID, String> findNamesByIds(Collection<UUID> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return jdbcTemplate.query("""
+                SELECT id, name FROM alert_rules WHERE id = ANY(?)
+                """, statement -> statement.setArray(1,
+                        statement.getConnection().createArrayOf("uuid", ids.toArray(UUID[]::new))),
+                rs -> {
+                    Map<UUID, String> names = new HashMap<>();
+                    while (rs.next()) {
+                        names.put(rs.getObject("id", UUID.class), rs.getString("name"));
+                    }
+                    return names;
+                });
     }
 
     /** The enabled rule set, served from the short-lived cache when fresh. */

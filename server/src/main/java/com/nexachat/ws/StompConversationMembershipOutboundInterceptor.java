@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.message.MessageRepository;
 import com.nexachat.user.UserBlockRepository;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 import org.springframework.messaging.Message;
@@ -14,9 +13,6 @@ import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
-import org.springframework.messaging.simp.user.SimpSession;
-import org.springframework.messaging.simp.user.SimpUser;
-import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.stereotype.Component;
 
@@ -43,19 +39,16 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
     private final ConversationMemberRepository memberRepository;
     private final MessageRepository messageRepository;
     private final UserBlockRepository blockRepository;
-    private final SimpUserRegistry userRegistry;
     private final StompSessionRegistry sessionRegistry;
 
     public StompConversationMembershipOutboundInterceptor(
             ConversationMemberRepository memberRepository,
             MessageRepository messageRepository,
             UserBlockRepository blockRepository,
-            @Lazy SimpUserRegistry userRegistry,
             StompSessionRegistry sessionRegistry) {
         this.memberRepository = memberRepository;
         this.messageRepository = messageRepository;
         this.blockRepository = blockRepository;
-        this.userRegistry = userRegistry;
         this.sessionRegistry = sessionRegistry;
     }
 
@@ -273,20 +266,9 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
 
     @Nullable
     private UUID userIdForSession(@Nullable String sessionId) {
-        if (sessionId == null) {
-            return null;
-        }
-        for (SimpUser user : userRegistry.getUsers()) {
-            for (SimpSession session : user.getSessions()) {
-                if (sessionId.equals(session.getId())) {
-                    try {
-                        return UUID.fromString(user.getName());
-                    } catch (IllegalArgumentException ignored) {
-                        return null;
-                    }
-                }
-            }
-        }
-        return null;
+        // O(1) lookup in the authenticated-session map; the registry scan the
+        // SimpUserRegistry would require is O(all sessions) and this runs once
+        // per subscriber session per broadcast.
+        return sessionRegistry.userIdForSession(sessionId);
     }
 }

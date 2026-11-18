@@ -682,4 +682,55 @@ class InviteServiceTest {
                 ApiException.class);
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
     }
+
+    @Test
+    void approveJoinRequest_bannedRequester_failsForbidden() {
+        UUID reqId = UUID.randomUUID();
+        GroupInviteLink link = new GroupInviteLink(
+                groupConversation, adminUser, "hash", true, null, 10);
+        UUID linkId = UUID.randomUUID();
+        ReflectionTestUtils.setField(link, "id", linkId);
+
+        GroupJoinRequest request = new GroupJoinRequest(groupConversation, link, strangerUser);
+        ReflectionTestUtils.setField(request, "id", reqId);
+
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(groupConversation));
+        when(memberRepository.findByConversation_IdAndUser_Id(conversationId, adminId))
+                .thenReturn(Optional.of(memberRow(groupConversation, adminUser, ConversationMember.Role.ADMIN)));
+        when(joinRequestRepository.findById(reqId)).thenReturn(Optional.of(request));
+        when(banRepository.isBannedFromLink(conversationId, strangerId, linkId)).thenReturn(true);
+
+        ApiException ex = catchThrowableOfType(
+                () -> inviteService.approveJoinRequest(adminId, conversationId, reqId),
+                ApiException.class);
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.FORBIDDEN);
+        verify(linkRepository, never()).tryConsumeUse(any());
+        verify(groupService, never()).addMemberFromInvite(any(), any(), any());
+    }
+
+    @Test
+    void approveJoinRequest_requesterAlreadyMember_skipsLinkUseAndAdd() {
+        UUID reqId = UUID.randomUUID();
+        GroupInviteLink link = new GroupInviteLink(
+                groupConversation, adminUser, "hash", true, null, 10);
+        UUID linkId = UUID.randomUUID();
+        ReflectionTestUtils.setField(link, "id", linkId);
+
+        GroupJoinRequest request = new GroupJoinRequest(groupConversation, link, strangerUser);
+        ReflectionTestUtils.setField(request, "id", reqId);
+
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(groupConversation));
+        when(memberRepository.findByConversation_IdAndUser_Id(conversationId, adminId))
+                .thenReturn(Optional.of(memberRow(groupConversation, adminUser, ConversationMember.Role.ADMIN)));
+        when(joinRequestRepository.findById(reqId)).thenReturn(Optional.of(request));
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, strangerId))
+                .thenReturn(true);
+        when(joinRequestRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        JoinRequestResponse response = inviteService.approveJoinRequest(adminId, conversationId, reqId);
+
+        assertThat(response.status()).isEqualTo("APPROVED");
+        verify(linkRepository, never()).tryConsumeUse(any());
+        verify(groupService, never()).addMemberFromInvite(any(), any(), any());
+    }
 }

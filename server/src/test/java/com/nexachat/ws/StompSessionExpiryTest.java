@@ -9,9 +9,6 @@ import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
-import org.springframework.messaging.simp.user.SimpSession;
-import org.springframework.messaging.simp.user.SimpUser;
-import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.WebSocketHandler;
@@ -21,7 +18,6 @@ import org.springframework.web.socket.messaging.SessionConnectedEvent;
 
 import java.time.Instant;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,7 +36,6 @@ class StompSessionExpiryTest {
 
     private final UserRepository users = mock(UserRepository.class);
     private final ConversationMemberRepository members = mock(ConversationMemberRepository.class);
-    private final SimpUserRegistry userRegistry = mock(SimpUserRegistry.class);
     private final MessageChannel channel = mock(MessageChannel.class);
 
     private final UUID userId = UUID.randomUUID();
@@ -65,19 +60,13 @@ class StompSessionExpiryTest {
         StompUserPrincipal principal = new StompUserPrincipal(userId, issuedAt, expiresAt);
         registry.onSessionConnected(connectedEvent(principal));
 
-        SimpSession simpSession = mock(SimpSession.class);
-        when(simpSession.getId()).thenReturn(sessionId);
-        SimpUser simpUser = mock(SimpUser.class);
-        when(simpUser.getName()).thenReturn(userId.toString());
-        when(simpUser.getSessions()).thenReturn(Set.of(simpSession));
-        when(userRegistry.getUsers()).thenReturn(Set.of(simpUser));
         when(members.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
 
         StompConversationMembershipOutboundInterceptor outbound =
                 new StompConversationMembershipOutboundInterceptor(members,
                         mock(com.nexachat.message.MessageRepository.class),
                         mock(com.nexachat.user.UserBlockRepository.class),
-                        userRegistry, registry);
+                        registry);
 
         // The token is still valid at bind time.
         assertThat(registry.isAuthenticatedSession(sessionId)).isTrue();

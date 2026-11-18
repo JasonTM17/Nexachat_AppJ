@@ -147,10 +147,13 @@ public class AlertRepository {
     }
 
     public void updateStatus(UUID alertId, String status, UUID actorId, boolean resolved) {
+        // Moving away from RESOLVED/DISMISSED clears the resolution evidence:
+        // a reopened alert must not keep a resolver it no longer has.
         jdbcTemplate.update("""
                 UPDATE message_alerts
-                SET status = ?, resolved_by = CASE WHEN ? THEN ? ELSE resolved_by END,
-                    resolved_at = CASE WHEN ? THEN now() ELSE resolved_at END,
+                SET status = ?,
+                    resolved_by = CASE WHEN ? THEN ? ELSE NULL END,
+                    resolved_at = CASE WHEN ? THEN now() ELSE NULL END,
                     updated_at = now()
                 WHERE id = ?
                 """, status, resolved, actorId, resolved, alertId);

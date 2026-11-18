@@ -1481,7 +1481,7 @@ messages and AI-opted-out conversations are never scanned or shown.
 | `GET /api/v1/admin/alerts` | staff | `?status=&category=&severity=&from=&to=&page=&size=` | `200` alert page (redacted snippets) | 401/403 |
 | `GET /api/v1/admin/alerts/{alertId}` | staff | — | `200` alert detail + notes | 401/403 · `ALERT_NOT_FOUND` 404 |
 | `PATCH /api/v1/admin/alerts/{alertId}` | staff | `{status?, assigneeId?, reason?}` | `200` updated alert | 401/403 · 404 |
-| `POST /api/v1/admin/alerts/{alertId}/notes` | staff | `{body}` | `200` appended note | 401/403 · 404 |
+| `POST /api/v1/admin/alerts/{alertId}/notes` | staff | `{body}` | `201` appended note | 401/403 · 404 |
 | `POST /api/v1/admin/alerts/{alertId}/actions` | staff | `{action, reason}` | `200` workflow action | 401/403 · 404 |
 | `POST /api/v1/admin/alerts/{alertId}/reveal` | staff | `{reason}` | `200` message content + context | 401/403 · 404 · `RATE_LIMITED` 429 |
 | `POST /api/v1/admin/alerts/bulk-dismiss` | staff | `{ids[], reason}` | `200` `{dismissed}` | 401/403 |

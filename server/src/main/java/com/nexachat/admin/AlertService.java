@@ -86,8 +86,9 @@ public class AlertService {
         int safePage = Math.max(0, page);
         AdminAuditService.Page<AlertRepository.AlertRow> rows = alertRepository.search(
                 status, severity, category, from, to, safePage, safeSize);
+        Map<UUID, String> ruleNames = ruleNamesFor(rows.items());
         return new AdminAuditService.Page<>(
-                rows.items().stream().map(this::toSummary).toList(),
+                rows.items().stream().map(row -> toSummary(row, ruleNames)).toList(),
                 rows.page(), rows.size(), rows.total(), rows.hasMore());
     }
 
@@ -98,7 +99,8 @@ public class AlertService {
                         "SELECT display_name FROM users WHERE id = ?",
                         (rs, rowNum) -> rs.getString(1), row.senderId())
                 .stream().findFirst().orElse(null);
-        return new AlertDetail(toSummary(row), alertRepository.notes(alertId), senderName);
+        return new AlertDetail(toSummary(row, ruleNamesFor(List.of(row))),
+                alertRepository.notes(alertId), senderName);
     }
 
     /** Status and/or assignment change; either field may be null to keep it. */
@@ -291,12 +293,21 @@ public class AlertService {
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.ALERT_NOT_FOUND, "Alert not found"));
     }
 
-    private AlertSummary toSummary(AlertRepository.AlertRow row) {
-        List<String> ruleNames = row.matchedRuleIds().stream()
-                .map(id -> ruleRepository.findById(id).map(AlertRuleRow::name).orElse(id.toString()))
+    /** One batched rule-name query for a page or a single alert row. */
+    private Map<UUID, String> ruleNamesFor(List<AlertRepository.AlertRow> rows) {
+        List<UUID> ids = rows.stream()
+                .flatMap(row -> row.matchedRuleIds().stream())
+                .distinct()
+                .toList();
+        return ruleRepository.findNamesByIds(ids);
+    }
+
+    private AlertSummary toSummary(AlertRepository.AlertRow row, Map<UUID, String> ruleNames) {
+        List<String> names = row.matchedRuleIds().stream()
+                .map(id -> ruleNames.containsKey(id) ? ruleNames.get(id) : id.toString())
                 .toList();
         return new AlertSummary(row.id(), row.messageId(), row.conversationId(), row.senderId(),
-                row.messageSeq(), row.category(), row.severity(), ruleNames,
+                row.messageSeq(), row.category(), row.severity(), names,
                 row.snippet(), row.snippetTombstoned(), row.status(), row.assigneeId(),
                 row.escalated(), row.dryRun(), row.createdAt());
     }

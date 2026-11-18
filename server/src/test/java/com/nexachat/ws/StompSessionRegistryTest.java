@@ -10,7 +10,6 @@ import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
-import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.WebSocketSession;
@@ -156,7 +155,7 @@ class StompSessionRegistryTest {
                             mock(ConversationMemberRepository.class),
                             mock(com.nexachat.message.MessageRepository.class),
                             mock(com.nexachat.user.UserBlockRepository.class),
-                            mock(SimpUserRegistry.class), registry);
+                            registry);
             assertThat(outbound.preSend(conversationFrame(sessionId), mock(MessageChannel.class)))
                     .as("a socket revoked while CONNECT validation was in flight must not receive topic frames")
                     .isNull();

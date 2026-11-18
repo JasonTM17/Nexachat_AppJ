@@ -9,6 +9,7 @@ import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -91,8 +92,18 @@ public class E2eeDeviceService {
             throw ApiException.of(ApiErrorCode.E2EE_DEVICE_LIMIT,
                     "At most " + MAX_ACTIVE_DEVICES + " active devices per user");
         }
-        E2eeDevice saved = deviceRepository.save(E2eeDevice.register(deviceId, owner, key));
-        return toResponse(saved);
+        try {
+            E2eeDevice saved = deviceRepository.saveAndFlush(
+                    E2eeDevice.register(deviceId, owner, key));
+            return toResponse(saved);
+        } catch (DataIntegrityViolationException e) {
+            // The owner row lock above serializes same-user registrations, so a
+            // violation here means another owner committed this client-minted
+            // id first: the primary key is the final arbiter. Answer with the
+            // same conflict the pre-check gives instead of a generic 500.
+            throw ApiException.of(ApiErrorCode.E2EE_DEVICE_CONFLICT,
+                    "Device id is already registered");
+        }
     }
 
     @Transactional
