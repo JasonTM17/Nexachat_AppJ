@@ -218,16 +218,31 @@ def ensure_user(client: Client, phone: str, display_name: str) -> dict:
     accounts may have a live session from another client, and a user's second
     session suppresses their presence events by design.
     """
-    response = client.post(
-        "/api/v1/auth/register",
-        body={"phone": phone, "password": PASSWORD, "displayName": display_name},
-    )
-    if response.status in (200, 201):
-        data = response.json()
-        _store_session(phone, data["accessToken"], data["user"]["id"])
-        return data
+    cached = _cached_session(client, phone)
+    if cached is not None:
+        return cached  # a still-valid token proves the account exists
+    for attempt in range(4):
+        response = client.post(
+            "/api/v1/auth/register",
+            body={"phone": phone, "password": PASSWORD, "displayName": display_name},
+        )
+        if response.status in (200, 201):
+            data = response.json()
+            _store_session(phone, data["accessToken"], data["user"]["id"])
+            return data
+        if response.status == 429 and attempt < 3:
+            # Register is 10 requests / 5 min per IP: back-to-back suites on a
+            # fresh backend exhaust the bucket, and a rate-limited register is
+            # not proof the phone already exists. Wait for the bucket instead
+            # of logging in to an account that was never created.
+            details = (response.json() or {}).get("error", {}).get("details") or {}
+            wait = min(120, int(details.get("retryAfterSeconds", 15)) + 1)
+            print(f"[wait] register budget for {phone} exhausted, retrying in {wait}s")
+            time.sleep(wait)
+            continue
+        break
     check(
-        response.status in (409, 429),
+        response.status == 409,
         f"register {phone} expected 201/409, got {response}",
     )
     return login(client, phone)
