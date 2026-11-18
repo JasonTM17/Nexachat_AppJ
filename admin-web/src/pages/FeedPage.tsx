@@ -151,13 +151,13 @@ export default function FeedPage() {
             <table>
               <thead>
                 <tr>
-                  <th className="col-lo">{t('feed.col.type')}</th>
-                  <th>{t('feed.col.content')}</th>
-                  <th className="col-lo">{t('feed.col.reason')}</th>
-                  <th className="col-lo">{t('feed.col.author')}</th>
-                  <th className="col-lo">{t('feed.col.state')}</th>
-                  <th className="col-lo">{t('feed.col.reported')}</th>
-                  <th className="col-actions">{t('feed.col.actions')}</th>
+                  <th scope="col" className="col-lo">{t('feed.col.type')}</th>
+                  <th scope="col">{t('feed.col.content')}</th>
+                  <th scope="col" className="col-lo">{t('feed.col.reason')}</th>
+                  <th scope="col" className="col-lo">{t('feed.col.author')}</th>
+                  <th scope="col" className="col-lo">{t('feed.col.state')}</th>
+                  <th scope="col" className="col-lo">{t('feed.col.reported')}</th>
+                  <th scope="col" className="col-actions">{t('feed.col.actions')}</th>
                 </tr>
               </thead>
               <tbody>

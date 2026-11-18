@@ -30,6 +30,7 @@ export default function RulesPage() {
   const [failed, setFailed] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<AlertRule | null>(null);
+  const [actionError, setActionError] = useState(false);
 
   const [form, setForm] = useState({
     name: '',
@@ -64,14 +65,18 @@ export default function RulesPage() {
     api(`/api/v1/admin/rules/${rule.id}`, {
       method: 'PATCH',
       body: { enabled: !rule.enabled },
-    }).then(load);
+    })
+      .then(load)
+      .catch(() => setActionError(true));
   };
 
   const changeSeverity = (rule: AlertRule, severity: string) => {
     api(`/api/v1/admin/rules/${rule.id}`, {
       method: 'PATCH',
       body: { severity },
-    }).then(load);
+    })
+      .then(load)
+      .catch(() => setActionError(true));
   };
 
   const create = async () => {
@@ -80,7 +85,7 @@ export default function RulesPage() {
       await api('/api/v1/admin/rules', {
         method: 'POST',
         body: {
-          name: form.name,
+          name: form.name.trim(),
           category: form.category,
           severity: form.severity,
           patternType: form.patternType,
@@ -99,10 +104,12 @@ export default function RulesPage() {
 
   const remove = () => {
     if (!confirmDelete) return;
-    api(`/api/v1/admin/rules/${confirmDelete.id}`, { method: 'DELETE' }).then(() => {
-      setConfirmDelete(null);
-      load();
-    });
+    api(`/api/v1/admin/rules/${confirmDelete.id}`, { method: 'DELETE' })
+      .then(() => {
+        setConfirmDelete(null);
+        load();
+      })
+      .catch(() => setActionError(true));
   };
 
   const runTest = () => {
@@ -132,9 +139,15 @@ export default function RulesPage() {
         </div>
       )}
 
+      {actionError && (
+        <div className="form-error" role="alert">
+          {t('common.error')}
+        </div>
+      )}
+
       {showNew && (
         <div className="card" style={{ marginBottom: 16 }}>
-          {formError && <div className="form-error">{formError}</div>}
+          {formError && <div className="form-error" role="alert">{formError}</div>}
           <div className="filters">
             <div className="field" style={{ minWidth: 200 }}>
               <label htmlFor="rule-name">{t('rules.field.name')}</label>
@@ -200,7 +213,11 @@ export default function RulesPage() {
             <button className="btn ghost" onClick={() => setShowNew(false)}>
               {t('common.cancel')}
             </button>
-            <button className="btn primary" onClick={() => void create()} disabled={!form.name}>
+            <button
+              className="btn primary"
+              onClick={() => void create()}
+              disabled={!form.name.trim()}
+            >
               {t('common.save')}
             </button>
           </div>
@@ -214,13 +231,13 @@ export default function RulesPage() {
           <table>
             <thead>
               <tr>
-                <th>{t('rules.col.name')}</th>
-                <th className="col-lo">{t('rules.col.category')}</th>
-                <th className="col-lo">{t('rules.col.severity')}</th>
-                <th className="col-lo">{t('rules.col.type')}</th>
-                <th className="col-lo">{t('rules.col.pattern')}</th>
-                <th>{t('rules.col.enabled')}</th>
-                {isAdmin && <th className="col-actions" aria-label={t('common.actions')} />}
+                <th scope="col">{t('rules.col.name')}</th>
+                <th scope="col" className="col-lo">{t('rules.col.category')}</th>
+                <th scope="col" className="col-lo">{t('rules.col.severity')}</th>
+                <th scope="col" className="col-lo">{t('rules.col.type')}</th>
+                <th scope="col" className="col-lo">{t('rules.col.pattern')}</th>
+                <th scope="col">{t('rules.col.enabled')}</th>
+                {isAdmin && <th scope="col" className="col-actions" aria-label={t('common.actions')} />}
               </tr>
             </thead>
             <tbody>

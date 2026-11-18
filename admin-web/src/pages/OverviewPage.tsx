@@ -54,7 +54,7 @@ export default function OverviewPage() {
     {
       key: 'kpi.pendingAlerts',
       value: String(k.pendingAlerts),
-      sub: k.queue.dryRun ? 'dry-run' : undefined,
+      sub: k.queue.dryRun ? t('kpi.queue.dryRun') : undefined,
     },
     { key: 'kpi.databaseBytes', value: fmtBytes(k.databaseBytes) },
     { key: 'kpi.uploadsBytes', value: fmtBytes(k.uploadsBytes) },
@@ -62,7 +62,10 @@ export default function OverviewPage() {
     {
       key: 'kpi.queue',
       value: String(k.queue.depth),
-      sub: `${k.queue.dropped} dropped / ${k.queue.scanned} scanned`,
+      sub: t('kpi.queue.detail', {
+        dropped: k.queue.dropped,
+        scanned: k.queue.scanned,
+      }),
     },
   ];
 
@@ -74,7 +77,7 @@ export default function OverviewPage() {
             <div className="label">
               {t(tile.key)}{' '}
               {tile.key === 'kpi.queue' && !k.queue.enabled && (
-                <Chip tone="medium">off</Chip>
+                <Chip tone="medium">{t('kpi.queue.off')}</Chip>
               )}
             </div>
             <div className="value">{tile.value}</div>

@@ -25,7 +25,11 @@ export default function LoginPage() {
       let key: StringKey = 'login.error.invalid';
       if (err instanceof ApiException) {
         if (err.status === 403) key = 'login.error.staff';
+        else if (err.status !== 401) key = 'login.error.server';
         if (err.code === 'ACCOUNT_SUSPENDED') key = 'login.error.suspended';
+      } else {
+        // No response at all: network failure, CORS, or server offline.
+        key = 'login.error.network';
       }
       setError(t(key));
     } finally {
@@ -49,7 +53,7 @@ export default function LoginPage() {
           </select>
         </div>
         <div className="sub">{t('login.title')}</div>
-        <form onSubmit={submit}>
+        <form onSubmit={submit} aria-busy={busy}>
           {error && (
             <div className="form-error" role="alert">
               {error}
@@ -66,6 +70,7 @@ export default function LoginPage() {
               onChange={(e) => setIdentifier(e.target.value)}
               required
               autoFocus
+              disabled={busy}
             />
           </div>
           <div className="field">
@@ -78,10 +83,16 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              disabled={busy}
             />
           </div>
-          <button className="btn primary" type="submit" disabled={busy} style={{ width: '100%' }}>
-            {t('login.submit')}
+          <button
+            className="btn primary"
+            type="submit"
+            disabled={busy}
+            style={{ width: '100%' }}
+          >
+            {busy ? t('common.loading') : t('login.submit')}
           </button>
         </form>
       </div>
