@@ -86,7 +86,7 @@ public class FcmReminderPushSender implements ReminderPushSender {
         this.deviceTokenService = deviceTokenService;
         this.metrics = metrics;
         this.pushTimeoutMs = pushTimeoutMs;
-        this.settledTargetTtlMillis = Math.max(1L, settledTargetTtlMillis);
+        this.settledTargetTtlMillis = Math.max(0L, settledTargetTtlMillis);
     }
 
     @Override
