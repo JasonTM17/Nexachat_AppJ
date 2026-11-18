@@ -49,7 +49,7 @@ export default function LoginPage() {
           </select>
         </div>
         <div className="sub">{t('login.title')}</div>
-        <form onSubmit={submit}>
+        <form onSubmit={submit} aria-busy={busy}>
           {error && (
             <div className="form-error" role="alert">
               {error}
@@ -66,6 +66,7 @@ export default function LoginPage() {
               onChange={(e) => setPhone(e.target.value)}
               required
               autoFocus
+              disabled={busy}
             />
           </div>
           <div className="field">
@@ -78,10 +79,16 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              disabled={busy}
             />
           </div>
-          <button className="btn primary" type="submit" disabled={busy} style={{ width: '100%' }}>
-            {t('login.submit')}
+          <button
+            className="btn primary"
+            type="submit"
+            disabled={busy}
+            style={{ width: '100%' }}
+          >
+            {busy ? t('common.loading') : t('login.submit')}
           </button>
         </form>
       </div>
