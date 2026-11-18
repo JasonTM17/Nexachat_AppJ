@@ -187,6 +187,7 @@ public class IncomingCallActivity extends ComponentActivity {
                 && isCurrentPushSession(currentSession)
                 && (currentSession.getState() == CallState.INCOMING_RINGING
                     || currentSession.getState() == CallState.PENDING_INCOMING)) {
+            CallNotifications.clearIncoming(this);
             ringtone().start();
         }
     }

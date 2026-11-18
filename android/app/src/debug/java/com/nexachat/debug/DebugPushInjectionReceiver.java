@@ -11,9 +11,16 @@ import android.os.PowerManager;
 import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
+import com.nexachat.call.core.CallManager;
+import com.nexachat.call.core.CallSession;
+import com.nexachat.call.core.CallState;
+import com.nexachat.call.service.CallNotifications;
 import com.nexachat.notification.FcmMessageProcessor;
 import com.nexachat.notification.NexaFirebaseMessagingService;
+import dagger.hilt.EntryPoint;
+import dagger.hilt.InstallIn;
 import dagger.hilt.android.EntryPointAccessors;
+import dagger.hilt.components.SingletonComponent;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -28,6 +35,23 @@ import java.util.Map;
  */
 public final class DebugPushInjectionReceiver extends BroadcastReceiver {
     public static final String ACTION_INJECT = "com.nexachat.debug.INJECT_PUSH";
+    /**
+     * Test cleanup hook: cancels every notification this app posted. API 36
+     * removed {@code cmd notification cancel}, so the device harness drives
+     * cleanup through this receiver, gated by the same DUMP permission.
+     */
+    public static final String ACTION_CLEAR_NOTIFICATIONS =
+            "com.nexachat.debug.CLEAR_NOTIFICATIONS";
+    /**
+     * Fires the incoming-call notification's Decline PendingIntent on the
+     * harness's behalf. It resolves the same {@code PendingIntentRecord} the
+     * notification wires to its action and {@code send()}s it, so the real
+     * production path runs — {@code CallForegroundService} handles {@code
+     * ACTION_DECLINE} exactly as after a user tap. Service pending intents are
+     * not subject to background-activity-launch restrictions.
+     */
+    public static final String ACTION_DECLINE_INCOMING_CALL =
+            "com.nexachat.debug.DECLINE_INCOMING_CALL";
     static final String WAKE_LOCK_TAG = "nexachat:debug_push_injection";
     /** Same budget as the FCM service wake lock, used as a backstop if finish is delayed. */
     static final long WAKE_LOCK_TIMEOUT_MS = 15_000L;
@@ -59,6 +83,15 @@ public final class DebugPushInjectionReceiver extends BroadcastReceiver {
             Log.i(TAG, "Rejected debug push injection; sender uid " + senderUid);
             return;
         }
+        if (ACTION_CLEAR_NOTIFICATIONS.equals(intent.getAction())) {
+            androidx.core.app.NotificationManagerCompat.from(context).cancelAll();
+            Log.i(TAG, "Cleared all app notifications via debug hook");
+            return;
+        }
+        if (ACTION_DECLINE_INCOMING_CALL.equals(intent.getAction())) {
+            declineIncomingCall(context);
+            return;
+        }
         if (!ACTION_INJECT.equals(intent.getAction())) {
             Log.i(TAG, "Rejected debug push injection; action was not INJECT_PUSH");
             return;
@@ -86,15 +119,22 @@ public final class DebugPushInjectionReceiver extends BroadcastReceiver {
     }
 
     /**
-     * Shell and root only, and only on API 34+ where {@link #getSentFromUid()} exists.
-     * Older platforms fail closed because the sender uid cannot be read.
+     * Shell, root, or an unattributed sender, and only on API 34+ where
+     * {@link #getSentFromUid()} exists. Android 16 strips the sender uid from
+     * {@code am broadcast} (both {@code getSentFromUid} and
+     * {@code getSentFromPackage} report nothing), so shell-driven injection
+     * arrives as {@link #INVALID_UID}. That is safe to admit because delivery
+     * itself requires the sender to hold {@code android.permission.DUMP} — the
+     * manifest gate no third-party app can satisfy — while broadcasts carrying
+     * a real app uid (>= 10000) are still rejected here. Older platforms fail
+     * closed because the sender uid cannot be read.
      */
     @VisibleForTesting
     static boolean isAllowedSender(int senderUid, int sdkInt) {
         if (sdkInt < SENDER_UID_API) {
             return false;
         }
-        return senderUid == SHELL_UID || senderUid == ROOT_UID;
+        return senderUid == SHELL_UID || senderUid == ROOT_UID || senderUid == INVALID_UID;
     }
 
     /**
@@ -133,6 +173,33 @@ public final class DebugPushInjectionReceiver extends BroadcastReceiver {
             }
         }
         return values;
+    }
+
+    @EntryPoint
+    @InstallIn(SingletonComponent.class)
+    public interface DebugCallEntryPoint {
+        CallManager callManager();
+    }
+
+    private static void declineIncomingCall(Context context) {
+        try {
+            CallManager callManager = EntryPointAccessors.fromApplication(
+                    context.getApplicationContext(), DebugCallEntryPoint.class).callManager();
+            CallSession session = callManager.currentSessionSnapshot();
+            if (session == null || session.getCallId() == null
+                    || (session.getState() != CallState.INCOMING_RINGING
+                        && session.getState() != CallState.PENDING_INCOMING)) {
+                Log.i(TAG, "No ringing incoming call for debug decline hook");
+                return;
+            }
+            CallNotifications.incomingDeclinePendingIntent(
+                    context, session,
+                    callManager.currentIncomingPushData(session.getCallId()))
+                    .send();
+            Log.i(TAG, "Fired decline PendingIntent for call " + session.getCallId());
+        } catch (RuntimeException | android.app.PendingIntent.CanceledException failed) {
+            Log.w(TAG, "Debug decline incoming call failed", failed);
+        }
     }
 
     @Nullable

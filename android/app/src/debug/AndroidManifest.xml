@@ -4,7 +4,7 @@
   No intent-filter: the receiver accepts only an explicit component.
   android:permission requires the sender to hold android.permission.DUMP,
   which the adb shell uid has and third-party apps cannot obtain.
-  onReceive also rejects every sender other than the shell or root uid.
+  onReceive still rejects any broadcast that carries a real app uid.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
