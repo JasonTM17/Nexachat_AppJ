@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 // Debounce a fast-changing value (e.g. a search box) so consumers only react
 // once typing settles. The timer resets on every change; `delayMs` of quiet
@@ -17,7 +17,10 @@ export function useDebouncedValue<T>(value: T, delayMs: number): T {
 // from any but the newest call.
 export function useLatestRequest(): <T>(fn: Promise<T>, apply: (value: T) => void) => void {
   const seqRef = useRef(0);
-  return <T,>(fn: Promise<T>, apply: (value: T) => void) => {
+  // Memoized: consumers put the returned function into useCallback/useEffect
+  // dependency lists — a fresh identity each render would refire the effect
+  // (and its network call) on every render.
+  return useCallback(<T,>(fn: Promise<T>, apply: (value: T) => void) => {
     const seq = ++seqRef.current;
     void fn.then(
       (value) => {
@@ -27,5 +30,5 @@ export function useLatestRequest(): <T>(fn: Promise<T>, apply: (value: T) => voi
         if (seq === seqRef.current) apply(null as T);
       },
     );
-  };
+  }, []);
 }
