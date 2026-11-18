@@ -1,5 +1,6 @@
 package com.nexachat.rag;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -44,6 +45,23 @@ public final class VectorCache {
             return;
         }
         vectors.forEach((messageId, vector) -> put(model, messageId, vector));
+    }
+
+    /**
+     * Evicts every cached vector of the given messages, across all models. The
+     * cache is keyed by {@code (model, messageId)} and carries no conversation,
+     * so message-scoped eviction is the granularity the cache supports; callers
+     * pass the message ids of one conversation (e.g. a member's messages after
+     * an AI opt-out). Iteration is synchronized on the backing map, matching
+     * the concurrency of the other accessors.
+     */
+    public void removeMessageIds(Collection<UUID> messageIds) {
+        if (messageIds == null || messageIds.isEmpty()) {
+            return;
+        }
+        synchronized (cache) {
+            cache.entrySet().removeIf(entry -> messageIds.contains(entry.getKey().messageId()));
+        }
     }
 
     public int size() {
