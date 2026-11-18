@@ -5,6 +5,7 @@ import com.nexachat.testutil.FeatureItSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.ResultActions;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -436,5 +437,121 @@ class FeedFlowIT extends FeatureItSupport {
                 "body", "one too many", "clientPostId", UUID.randomUUID().toString()))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"));
+    }
+
+    @Test
+    void feedImageUploadIsRateLimitedPerUser() throws Exception {
+        Actor author = newUser("Frequent Uploader");
+        for (int index = 0; index < 10; index++) {
+            uploadImage(author).andExpect(status().isCreated());
+        }
+
+        uploadImage(author)
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"));
+    }
+
+    @Test
+    void feedImageUploadIsCappedWhenUnboundUploadsAccumulate() throws Exception {
+        Actor author = newUser("Hoarding Uploader");
+        for (int index = 0; index < 20; index++) {
+            jdbcTemplate.update("""
+                    INSERT INTO public_images
+                        (id, owner_id, storage_key, mime_type, size_bytes, created_at)
+                    VALUES (?, ?, ?, 'image/png', 10, now())
+                    """, UUID.randomUUID(), author.id(), "it/" + UUID.randomUUID());
+        }
+
+        uploadImage(author)
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"));
+    }
+
+    private ResultActions uploadImage(Actor uploader) throws Exception {
+        return mockMvc.perform(multipart("/api/v1/feed/images")
+                .file(new MockMultipartFile("file", "photo.png", "image/png", PNG_BYTES))
+                .header("Authorization", bearer(uploader)));
+    }
+
+    @Test
+    void reportingAnImageOnlyPostIsAcceptedWithANullSnapshot() throws Exception {
+        Actor author = newUser("Image Poster");
+        Actor reporter = newUser("Image Reporter");
+        UUID imageId = UUID.fromString(json(uploadImage(author)
+                        .andExpect(status().isCreated()).andReturn())
+                .get("imageId").asText());
+        String postId = json(postAs(author, "/api/v1/feed/posts", Map.of(
+                        "imageId", imageId.toString(),
+                        "clientPostId", UUID.randomUUID().toString()))
+                        .andExpect(status().isCreated()).andReturn())
+                .get("id").asText();
+
+        postAs(reporter, "/api/v1/reports", Map.of(
+                        "targetType", "POST", "targetId", postId, "reason", "OTHER"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void replayedClientPostIdWithAnImageReturnsTheStoredRow() throws Exception {
+        Actor author = newUser("Retrying Poster");
+        UUID imageId = UUID.fromString(json(uploadImage(author)
+                        .andExpect(status().isCreated()).andReturn())
+                .get("imageId").asText());
+        UUID clientPostId = UUID.randomUUID();
+        Map<String, String> payload = Map.of(
+                "body", "photo post", "imageId", imageId.toString(),
+                "clientPostId", clientPostId.toString());
+        String postId = json(postAs(author, "/api/v1/feed/posts", payload)
+                        .andExpect(status().isCreated()).andReturn())
+                .get("id").asText();
+
+        postAs(author, "/api/v1/feed/posts", payload)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(postId));
+    }
+
+    @Test
+    void distinctReactionsPerUserPerPostAreCapped() throws Exception {
+        Actor author = newUser("Post Host");
+        Actor reactor = newUser("Prolific Reactor");
+        UUID postId = createPostId(author, "react here");
+        String path = "/api/v1/feed/posts/" + postId + "/reactions/";
+        String[] emojis = {"👍", "❤️", "😂", "😮", "😢", "🔥", "👏", "🎉"};
+        for (String emoji : emojis) {
+            putAs(reactor, path + emoji).andExpect(status().isOk());
+        }
+        // re-adding an existing emoji stays idempotent under the cap
+        putAs(reactor, path + "👍").andExpect(status().isOk());
+
+        putAs(reactor, path + "🤯")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    void deletingAPostWhoseAuthorBlockedYouIsNotFound() throws Exception {
+        Actor author = newUser("Blocking Author");
+        Actor viewer = newUser("Blocked Deleter");
+        UUID postId = createPostId(author, "blocked content");
+        postAs(viewer, "/api/v1/users/" + author.id() + "/block", null)
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .delete("/api/v1/feed/posts/" + postId)
+                        .header("Authorization", bearer(viewer)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
+    }
+
+    @Test
+    void feedImageUploadRejectsAbsurdDimensions() throws Exception {
+        Actor author = newUser("Dimension Cheater");
+
+        mockMvc.perform(multipart("/api/v1/feed/images")
+                        .file(new MockMultipartFile("file", "photo.png", "image/png", PNG_BYTES))
+                        .param("width", "20000").param("height", "4")
+                        .header("Authorization", bearer(author)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
     }
 }

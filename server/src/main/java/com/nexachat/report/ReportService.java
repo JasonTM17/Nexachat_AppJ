@@ -147,9 +147,8 @@ public class ReportService {
                 }
                 yield Snapshot.NONE;
             }
-            case POST -> feedSnapshot(feedTargets == null ? Optional.empty()
-                    : feedTargets.visiblePostBody(userId, request.targetId()),
-                    ApiErrorCode.POST_NOT_FOUND);
+            case POST -> feedPostSnapshot(feedTargets == null ? Optional.empty()
+                    : feedTargets.visiblePostBody(userId, request.targetId()));
             case COMMENT -> feedSnapshot(feedTargets == null ? Optional.empty()
                     : feedTargets.visibleCommentBody(userId, request.targetId()),
                     ApiErrorCode.COMMENT_NOT_FOUND);
@@ -214,6 +213,17 @@ public class ReportService {
      */
     private static Snapshot feedSnapshot(Optional<String> body, ApiErrorCode notFound) {
         return new Snapshot(truncate(body.orElseThrow(() -> ApiException.of(notFound))), false);
+    }
+
+    /**
+     * Evidence copy for a feed post. Visibility is proven by the row, not by
+     * text: an image-only post snapshots as null because the column is
+     * nullable.
+     */
+    private static Snapshot feedPostSnapshot(Optional<FeedReportTargets.PostBody> post) {
+        FeedReportTargets.PostBody body = post.orElseThrow(
+                () -> ApiException.of(ApiErrorCode.POST_NOT_FOUND));
+        return new Snapshot(truncate(body.value()), false);
     }
 
     /** Newest-first keyset page of the reporter's own filings. */

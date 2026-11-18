@@ -1,6 +1,5 @@
 package com.nexachat.feed;
 
-import com.nexachat.auth.RateLimitService;
 import com.nexachat.common.ReactionEmoji;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
@@ -43,7 +42,7 @@ import java.util.UUID;
  * duplicate a post or a comment.
  *
  * <p><b>Rate limits.</b> Posts 3/min and 30/day, comments 10/min and 200/day,
- * reactions 60/min, all per user through {@link RateLimitService}; a denial is
+ * reactions 60/min, all per user through {@link FeedRateLimits}; a denial is
  * {@code RATE_LIMITED} with {@code retryAfterSeconds}.
  */
 @Service
@@ -63,6 +62,8 @@ public class FeedService {
     static final int COMMENTS_PER_MINUTE = 10;
     static final int COMMENTS_PER_DAY = 200;
     static final int REACTIONS_PER_MINUTE = 60;
+    /** Distinct emojis one user may leave on a post; re-adding one is free. */
+    static final int MAX_DISTINCT_REACTIONS_PER_USER = 8;
 
     /** Feed images are served only through this path, never through {@code /files/**}. */
     static final String IMAGE_PATH = "/api/v1/feed/images/";
@@ -76,16 +77,16 @@ public class FeedService {
     }
 
     private final FeedStore store;
-    private final RateLimitService rateLimitService;
+    private final FeedRateLimits rateLimits;
     private final ObjectProvider<StreakService> streakService;
     private final Clock clock;
 
     public FeedService(FeedStore store,
-                       RateLimitService rateLimitService,
+                       FeedRateLimits rateLimits,
                        ObjectProvider<StreakService> streakService,
                        Clock clock) {
         this.store = store;
-        this.rateLimitService = rateLimitService;
+        this.rateLimits = rateLimits;
         this.streakService = streakService;
         this.clock = clock;
     }
@@ -146,7 +147,10 @@ public class FeedService {
                 throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                         "imageId is not an uploaded feed image");
             }
-            if (image.boundAt() != null) {
+            // An already-bound image is rejected only on a fresh insert: a
+            // clientPostId replay returns the post it was bound to.
+            if (image.boundAt() != null
+                    && store.findOwnPostByClientId(authorId, request.clientPostId()).isEmpty()) {
                 throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                         "imageId is already attached to a post");
             }
@@ -162,8 +166,11 @@ public class FeedService {
             return new Result(toResponse(existing, authorId,
                     store.reactionsFor(existing.id(), authorId)), false);
         }
-        if (imageId != null) {
-            store.bindImage(imageId, authorId);
+        if (imageId != null && store.bindImage(imageId, authorId) == 0) {
+            // The image was bound to another post between the check and the
+            // bind; rollback keeps the one-image/one-post invariant.
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "imageId is already attached to a post");
         }
         FeedStore.PostRow created = store.findOwnPostByClientId(authorId, request.clientPostId())
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.INTERNAL_ERROR,
@@ -180,7 +187,7 @@ public class FeedService {
             log.info("Feed post {} deleted by its author", postId);
             return;
         }
-        store.findVisiblePostAuthor(postId)
+        store.findVisiblePostAuthor(authorId, postId)
                 .filter(author -> !author.equals(authorId))
                 .ifPresent(author -> {
                     throw ApiException.of(ApiErrorCode.FORBIDDEN, "Not the author of this post");
@@ -255,7 +262,7 @@ public class FeedService {
             log.info("Feed comment {} deleted by its author", commentId);
             return;
         }
-        store.findVisibleCommentAuthor(commentId)
+        store.findVisibleCommentAuthor(authorId, commentId)
                 .filter(author -> !author.equals(authorId))
                 .ifPresent(author -> {
                     throw ApiException.of(ApiErrorCode.FORBIDDEN,
@@ -274,7 +281,11 @@ public class FeedService {
         requireVisiblePost(userId, postId);
         String emoji = ReactionEmoji.normalize(rawEmoji);
         if (add) {
-            store.addReaction(postId, userId, emoji);
+            if (store.addReaction(postId, userId, emoji, MAX_DISTINCT_REACTIONS_PER_USER) == 0
+                    && !store.hasReaction(postId, userId, emoji)) {
+                throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                        "too many different reactions on this post");
+            }
         } else {
             store.removeReaction(postId, userId, emoji);
         }
@@ -299,12 +310,7 @@ public class FeedService {
     }
 
     private void consume(String bucket, long capacity, Duration period, String message) {
-        RateLimitService.Consumption consumption = rateLimitService.tryConsume(
-                bucket, capacity, period);
-        if (!consumption.allowed()) {
-            throw ApiException.of(ApiErrorCode.RATE_LIMITED, message,
-                    Map.of("retryAfterSeconds", consumption.retryAfterSeconds()));
-        }
+        rateLimits.consume(bucket, capacity, period, message);
     }
 
     private static int normalizeLimit(Integer limit, int fallback, int maximum) {

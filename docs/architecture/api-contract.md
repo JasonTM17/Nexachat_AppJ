@@ -62,7 +62,7 @@ Android client can consume the API but no dedicated screen is merged into
 | Disappearing messages | V39 | Shipped — chat overflow timer presets, `expiresAt` bubbles | `DisappearingMessagesIT`, Android disappearing-message suite |
 | Video calls | V40 | Shipped — camera toggle on call screen | call-screen suite |
 | Signup email OTP | V41 | Shipped — signup verification code screen | signup OTP flow tests |
-| Chat streaks and check-in streak | V42 | Shipped — inbox streak badges, settings `streakReminders` toggle | `StreakFlowIT`, `StreakServiceTest`, `StreakReminderJobTest`, Android streak suites |
+| Chat streaks and check-in streak | V42 | Shipped — inbox streak badges, settings `streakReminders` toggle | `StreakFlowIT`, `StreakRulesTest`, `StreakServiceTest`, Android streak suites |
 | Public feed | V43 | Shipped — feed tab, composer, comments, reactions, report action; admin `/feed` moderation page | `FeedFlowIT`, `FeedAdminFlowIT`, `FeedRetentionIT`, admin-web `feed.test.tsx` |
 
 ## Migration history
@@ -1537,29 +1537,31 @@ keyset-paginate newest first.
 
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
-| `GET /api/v1/feed/posts` | Bearer | `?limit=` `?cursor=` | `200` page of `FeedPostResponse` | `UNAUTHORIZED` 401 · `VALIDATION_FAILED` 400 (bad cursor) |
-| `POST /api/v1/feed/posts` | Bearer | `{body, imageIds?}` | `201` `FeedPostResponse` | `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 |
-| `GET /api/v1/feed/posts/{postId}` | Bearer | — | `200` `FeedPostResponse` | `POST_NOT_FOUND` 404 |
+| `GET /api/v1/feed/posts` | Bearer | `?limit=` `?cursor=` | `200` `PostPageResponse` `{items, nextCursor}` | `UNAUTHORIZED` 401 · `VALIDATION_FAILED` 400 (bad cursor) |
+| `POST /api/v1/feed/posts` | Bearer | `{body?, imageId?, clientPostId}` — `clientPostId` required; `body` required unless `imageId` is set (≤1000 chars) | `201` `PostResponse` created; `200` `PostResponse` on a `clientPostId` replay (returns the stored row) | `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 (3/min, 30/day) |
+| `GET /api/v1/feed/posts/{postId}` | Bearer | — | `200` `PostResponse` | `POST_NOT_FOUND` 404 |
 | `DELETE /api/v1/feed/posts/{postId}` | Bearer author | — | `204` empty | `POST_NOT_FOUND` 404 · `FORBIDDEN` 403 |
-| `PUT /api/v1/feed/posts/{postId}/reactions/{emoji}` | Bearer | — | `204` empty | `POST_NOT_FOUND` 404 |
-| `DELETE /api/v1/feed/posts/{postId}/reactions/{emoji}` | Bearer | — | `204` empty | `POST_NOT_FOUND` 404 |
-| `GET /api/v1/feed/posts/{postId}/comments` | Bearer | `?limit=` `?cursor=` | `200` page of `FeedCommentResponse` | `POST_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 |
-| `POST /api/v1/feed/posts/{postId}/comments` | Bearer | `{body}` | `201` `FeedCommentResponse` | `POST_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 |
+| `PUT /api/v1/feed/posts/{postId}/reactions/{emoji}` | Bearer | — | `200` `ReactionListResponse` (post's reaction aggregate; idempotent re-add) | `POST_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 (over 8 distinct emojis per user per post) · `RATE_LIMITED` 429 (60/min) |
+| `DELETE /api/v1/feed/posts/{postId}/reactions/{emoji}` | Bearer | — | `200` `ReactionListResponse` | `POST_NOT_FOUND` 404 |
+| `GET /api/v1/feed/posts/{postId}/comments` | Bearer | `?limit=` `?cursor=` | `200` `CommentPageResponse` `{items, nextCursor}` | `POST_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 |
+| `POST /api/v1/feed/posts/{postId}/comments` | Bearer | `{body, clientCommentId}` — both required; `body` ≤500 chars | `201` `CommentResponse` created; `200` `CommentResponse` on a `clientCommentId` replay | `POST_NOT_FOUND` 404 · `VALIDATION_FAILED` 400 · `RATE_LIMITED` 429 (10/min, 200/day) |
 | `DELETE /api/v1/feed/comments/{commentId}` | Bearer author | — | `204` empty | `COMMENT_NOT_FOUND` 404 · `FORBIDDEN` 403 |
-| `POST /api/v1/feed/images` | Bearer | `multipart/form-data` `file`, `width?`, `height?` | `201` `{imageId, url}` | `MIME_NOT_ALLOWED` 415 · `FILE_TOO_LARGE` 413 · `RATE_LIMITED` 429 |
+| `POST /api/v1/feed/images` | Bearer | `multipart/form-data` `file`, `width?`, `height?` | `201` `FeedImageResponse` `{imageId, url, width, height, mimeType}` | `VALIDATION_FAILED` 400 (negative or >16384 dimensions) · `MIME_NOT_ALLOWED` 415 · `FILE_TOO_LARGE` 413 · `RATE_LIMITED` 429 (10/min, 100/day, ≤20 unbound) |
 | `GET /api/v1/feed/images/{imageId}` | Bearer | — | `200` image bytes | `FILE_NOT_FOUND` 404 |
 
-`FeedPostResponse` = `{id, authorId, authorName, authorAvatarUrl, body, images, reactionCounts, myReaction?, commentCount, createdAt}`.
-`FeedCommentResponse` = `{id, postId, authorId, authorName, authorAvatarUrl, body, createdAt}`.
+`PostResponse` = `{id, author:{id, displayName, avatarUrl}, body, image:{url, width, height, mimeType}?, createdAt, commentCount, reactions:[{emoji, count, mine}], mine}` —
+`body` is null on an image-only post, `image` null on a text-only one.
+`CommentResponse` = `{id, postId, author:{id, displayName, avatarUrl}, body, createdAt, mine}`.
 Hidden and soft-deleted rows are excluded from every list/read predicate;
 `POST_NOT_FOUND`/`COMMENT_NOT_FOUND` is returned for them. Upload-first images
-bind to a post via `imageIds`; unbound images are purged after
-`nexachat.retention.jobs.public-feed.unbound-hours` (default `24`).
+bind to a post via `imageId` (one image per post); unbound images are purged
+after `nexachat.retention.jobs.public-feed.unbound-hours` (default `24`) once
+the retention sweep is enabled — it is off by default.
 
 Feed posts and comments are reportable targets (`POST /reports` with
 `targetType: POST|COMMENT`, see [Safety](#safety--blocks-apiv1users-reports-apiv1reports-stars-apiv1messages));
 the server snapshots the target body (≤500 chars) as the evidence
-`messageSnapshot`. See [`docs/architecture/public-feed.md`](public-feed.md).
+`messageSnapshot` (`null` on an image-only post). See [`docs/architecture/public-feed.md`](public-feed.md).
 
 ## Admin feed moderation — `/api/v1/admin/feed`
 

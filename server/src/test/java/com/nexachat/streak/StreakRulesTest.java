@@ -256,6 +256,26 @@ class StreakRulesTest {
     }
 
     @Test
+    void viewReportsTheGraceDayWhileAMissTodayWouldStillBeBridged() {
+        // The grace day was spent on day 2. Today (day 8) is six days later,
+        // but the completing send lands on day 9 — outside the cooldown — so
+        // a miss today would still be bridged and the flag must say so.
+        State state = new State(day(7), day(7), 4, 4, day(7), day(0), day(2));
+
+        assertThat(StreakRules.view(state, day(8)).freezeAvailable()).isTrue();
+    }
+
+    @Test
+    void viewStopsReportingTheGraceDayOnceTheBridgeWouldPassTheCooldown() {
+        // The grace day was spent on day 3. A miss today would be completed
+        // on day 9 — exactly the strict-cooldown boundary — so it would not
+        // be bridged.
+        State state = new State(day(7), day(7), 4, 4, day(7), day(0), day(3));
+
+        assertThat(StreakRules.view(state, day(8)).freezeAvailable()).isFalse();
+    }
+
+    @Test
     void aLapsedChainHasNoGraceDayLeftToSpend() {
         State state = both(both(State.EMPTY, day(0)), day(1));
 

@@ -132,7 +132,7 @@ public class StreakService {
     public StreakSummaryResponse checkIn(UUID userId) {
         LocalDate today = today();
         if (properties.isEnabled()) {
-            store.applyUser(userId, Side.A, today);
+            store.guarded("user check-in", () -> store.applyUser(userId, Side.A, today));
         }
         return summary(userId);
     }

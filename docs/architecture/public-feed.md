@@ -16,12 +16,13 @@ erDiagram
     users ||--o{ public_images : uploads
     public_posts ||--o{ public_comments : has
     public_posts ||--o{ public_post_reactions : has
-    public_posts ||--o{ public_images : binds
+    public_posts }o--o| public_images : references
     users ||--o{ public_post_reactions : reacts
 
     public_posts {
         uuid id PK
         uuid author_id FK
+        uuid image_id FK
         text body
         timestamptz created_at
         timestamptz deleted_at
@@ -47,7 +48,6 @@ erDiagram
     public_images {
         uuid id PK
         uuid owner_id FK
-        uuid post_id FK
         text storage_key
         timestamptz bound_at
     }
@@ -70,7 +70,7 @@ when the comment rows themselves are clean.
 ```mermaid
 flowchart TB
     U[POST /feed/images] -->|unbound image| I{bound within<br/>unbound-hours?}
-    I -->|yes: imageIds on POST /feed/posts| P[live post]
+    I -->|yes: imageId on POST /feed/posts| P[live post]
     I -->|no| X[retention purge]
     P --> C[comments / reactions]
     P -->|author DELETE| D[soft-deleted]
@@ -85,19 +85,27 @@ flowchart TB
 ```
 
 - **Upload-first images** mirror message attachments: `POST /feed/images`
-  stores an unbound image owned by the uploader; `imageIds` on
-  `POST /feed/posts` bind them. Images never bound are purged after
-  `nexachat.retention.jobs.public-feed.unbound-hours` (default `24`).
+  stores an unbound image owned by the uploader; `imageId` on
+  `POST /feed/posts` binds it (one image per post). An uploader may keep at
+  most 20 unbound images; beyond that, uploads answer `RATE_LIMITED`.
+  Images never bound are purged after
+  `nexachat.retention.jobs.public-feed.unbound-hours` (default `24`) — once
+  the retention sweep is enabled.
 - **Soft delete** stamps `deleted_at`; **hide** stamps `hidden_at` (staff
   only, with a mandatory `reason` ≤500 chars, audit-logged).
 - **Hard purge** is the opt-in `nexachat.retention.jobs.public-feed` retention
-  job (default `enabled=false`): rows soft-deleted or hidden longer than
-  `retention-days` (default `30`) are removed.
+  job, **off by default** (`enabled=false`): rows soft-deleted or hidden
+  longer than `retention-days` (default `30`) are removed. Enable it with
+  `nexachat.retention.jobs.public-feed.enabled=true` (requires the global
+  `nexachat.retention.enabled` as well); until then nothing is swept.
 
 ## Rate limits and abuse
 
-Post and comment creation and image upload are per-user rate limited
-(`RATE_LIMITED` 429 with `Retry-After`). Reporting feeds the shared abuse
+Per-user rate limits (`RATE_LIMITED` 429 with `Retry-After`): posts 3 per
+minute and 30 per day, comments 10 per minute and 200 per day, image uploads
+10 per minute and 100 per day (plus the 20-unbound cap above), reactions
+60 per minute. A user may place at most 8 distinct emojis on one post;
+re-adding one already placed is a no-op. Reporting feeds the shared abuse
 pipeline (20/hour per user) with OPEN-report dedupe — a second report on the
 same target returns `200` with the existing row.
 

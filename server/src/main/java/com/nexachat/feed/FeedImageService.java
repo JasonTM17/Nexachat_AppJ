@@ -14,6 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;
 
@@ -42,16 +43,24 @@ public class FeedImageService {
     /** The feed accepts still images only; the sniffed type decides, never the client. */
     static final Set<String> ALLOWED_MIME_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
 
+    static final int IMAGES_PER_MINUTE = 10;
+    static final int IMAGES_PER_DAY = 100;
+    static final int MAX_UNBOUND_IMAGES = 20;
+    static final int MAX_IMAGE_DIMENSION = 16384;
+
     private final FeedStore store;
+    private final FeedRateLimits rateLimits;
     private final StorageService storageService;
     private final UploadAdmission uploadAdmission;
     private final Clock clock;
 
     public FeedImageService(FeedStore store,
+                            FeedRateLimits rateLimits,
                             StorageService storageService,
                             UploadAdmission uploadAdmission,
                             Clock clock) {
         this.store = store;
+        this.rateLimits = rateLimits;
         this.storageService = storageService;
         this.uploadAdmission = uploadAdmission;
         this.clock = clock;
@@ -78,6 +87,14 @@ public class FeedImageService {
     @Transactional
     public FeedImageResponse upload(UUID ownerId, MultipartFile file, Integer width,
                                     Integer height) {
+        rateLimits.consume("feed:image:minute:" + ownerId, IMAGES_PER_MINUTE,
+                Duration.ofMinutes(1), "Too many image uploads");
+        rateLimits.consume("feed:image:day:" + ownerId, IMAGES_PER_DAY,
+                Duration.ofDays(1), "Daily image upload limit reached");
+        if (store.countUnboundImages(ownerId) >= MAX_UNBOUND_IMAGES) {
+            throw ApiException.of(ApiErrorCode.RATE_LIMITED,
+                    "Too many unattached feed images; bind or let them expire first");
+        }
         if (file == null || file.isEmpty()) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Image file is required");
         }
@@ -130,8 +147,9 @@ public class FeedImageService {
     }
 
     private static void validateDimension(String field, Integer value) {
-        if (value != null && value < 0) {
-            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, field + " must not be negative");
+        if (value != null && (value < 0 || value > MAX_IMAGE_DIMENSION)) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    field + " must be between 0 and " + MAX_IMAGE_DIMENSION);
         }
     }
 }
