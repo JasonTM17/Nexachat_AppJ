@@ -283,6 +283,11 @@ public class CallService {
         if (session.peerOf(userId) == null) {
             throw CallException.notMember();
         }
+        // The offer exists for the push-wake fast path while the call rings;
+        // fetching it for an answered or ended call is meaningless.
+        if (session.state() != CallState.RINGING) {
+            throw CallException.notFound();
+        }
         CallSignal.Sdp sdp = registry.findOffer(callId)
                 .orElseThrow(CallException::notFound);
         return new CallOfferResponse(callId, sdp, iceConfig);
@@ -471,8 +476,16 @@ public class CallService {
             throw CallException.validation("mediaType is only allowed on INVITE");
         }
         if (signal.type() == CallSignal.Type.INVITE) {
-            if (signal.sdp() != null || signal.candidate() != null) {
-                throw CallException.validation("INVITE cannot include SDP or ICE data");
+            // An INVITE may carry the SDP offer for the push-wake fast path
+            // (GET /calls/{id}/offer); ICE candidates still travel as ICE frames.
+            if (signal.candidate() != null) {
+                throw CallException.validation("INVITE cannot include ICE data");
+            }
+            if (signal.sdp() != null && (signal.sdp().type() == null
+                    || !"offer".equals(signal.sdp().type())
+                    || signal.sdp().description() == null || signal.sdp().description().isBlank()
+                    || exceedsUtf8Limit(signal.sdp().description(), SDP_LIMIT))) {
+                throw CallException.validation("Invalid or oversized SDP payload");
             }
         } else if (signal.type() == CallSignal.Type.SDP && signal.candidate() != null) {
             throw CallException.validation("SDP cannot include an ICE candidate");

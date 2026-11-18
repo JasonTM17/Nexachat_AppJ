@@ -158,6 +158,20 @@ class StompConnection:
             except (websocket.WebSocketException, OSError):
                 return
 
+    def poll_frame(self, timeout: float):
+        """Returns the next buffered frame, or None after `timeout` seconds.
+
+        Used by consumers that collect every event (e.g. call_media_e2e.py
+        routes CALL_ICE frames while waiting on other types). Must not run
+        concurrently with `wait_for`/`wait_event` on the same connection —
+        they share `self._frames`.
+        """
+        if not self._frames:
+            self._receive(timeout)
+        if self._frames:
+            return self._frames.popleft()
+        return None
+
     def wait_for(self, predicate, timeout: float, description: str):
         deadline = time.monotonic() + timeout
         while True:

@@ -101,7 +101,10 @@ Client frames are JSON sent to
 ```
 
 Control frames carry only `type` and `callId`, plus `mediaType` on `INVITE`
-when the caller requests a video call (absent = audio). `SDP` carries `sdp`
+when the caller requests a video call (absent = audio). `INVITE` may also
+carry `sdp` — an `offer` validated like a relayed `SDP` frame — which the
+server stores for the push-wake fast path (`GET /calls/{callId}/offer`); the
+callee still answers with an `SDP` frame after `ACCEPT`. `SDP` carries `sdp`
 only; `ICE` carries `candidate` only. The caller generates the UUID on
 `INVITE` and reuses it for the rest of the call.
 
@@ -129,8 +132,10 @@ Server events are delivered to the authenticated participant's own
 Fields that do not apply to an event are null/omitted according to the server's
 Jackson configuration. End reasons and duration appear on terminal events.
 Malformed frames and call failures use the existing
-`/user/queue/errors` envelope, for example `{"code":"CALL_NOT_FOUND"}`.
-Errors include `VALIDATION_FAILED`, `NOT_MEMBER`, `RATE_LIMITED`,
+`/user/queue/errors` envelope, correlated to the rejected signal —
+for example
+`{"code":"CALL_NOT_FOUND","callId":"…","conversationId":"…"}`.
+Errors include `VALIDATION_FAILED`, `NOT_MEMBER`, `BLOCKED`, `RATE_LIMITED`,
 `CALL_NOT_FOUND`, and `CALL_STATE_INVALID`. A non-member's call SEND is denied
 by the STOMP authorization interceptor before it reaches the controller.
 
@@ -193,8 +198,13 @@ negotiated by the Android client; signaling does not carry audio bytes.
   expected demo environment.
 - Video media (camera capture, local preview, remote rendering, camera
   toggle/switch) is implemented in the Android engine and UI; it has not been
-  verified between two real devices. Answering a video offer without camera
-  permission falls back to a voice-only accept. Group calls are out of scope.
+  verified between two real Android devices. The signaling-to-media path
+  itself is verified between two real WebRTC endpoints by
+  `tools/e2e/calls/call_media_e2e.py` (aiortc peers over the live STOMP
+  signaling, asserting bidirectional decoded audio/video frames, including
+  the INVITE-embedded offer fetched over `GET /calls/{id}/offer`). Answering
+  a video offer without camera permission falls back to a voice-only accept.
+  Group calls are out of scope.
 - Call delivery while offline: token registration and server high-priority
   `CALL_INVITE` FCM dispatch exist with OAuth2 service-account authentication
   (`DefaultFcmPushService.java:82-99`, `NotificationEventListener.java:138-146`),
