@@ -57,6 +57,7 @@ class MatrixAndDryRunTest(unittest.TestCase):
         runnable = {row.id for row in journeys.ROWS if row.capability_gap is None}
         self.assertEqual(runnable, {
             "auth-login", "chat-send-receive", "chat-interactions", "summary-ask",
+            "archive-preferences",
             "calls-injected-notification", "injected-notifications",
         })
         self.assertEqual(journeys.ROWS[-1].id, "account-deletion")
@@ -292,6 +293,7 @@ class WiringDecisionTest(unittest.TestCase):
                 runnable.append(row_id)
         self.assertEqual(runnable, [
             "auth-login", "chat-send-receive", "chat-interactions",
+            "archive-preferences",
             "calls-injected-notification", "summary-ask", "injected-notifications",
         ])
         self.assertEqual(len(runnable) + len(blocked), len(journeys.ROWS))
@@ -305,9 +307,10 @@ class WiringDecisionTest(unittest.TestCase):
         self.assertNotIn("calls-injected-notification", blocked)
         self.assertNotIn("injected-notifications", blocked)
         self.assertNotIn("summary-ask", blocked)
+        self.assertNotIn("archive-preferences", blocked)
         for row_id in (
             "media", "groups-contacts", "polls-reminders",
-            "archive-preferences", "labels-lifecycle", "calls-signaling",
+            "labels-lifecycle", "calls-signaling",
             "offline-sync", "accessibility-sweep",
         ):
             self.assertIn("BLOCKED_CAPABILITY:", blocked[row_id])
@@ -344,6 +347,7 @@ class WiringDecisionTest(unittest.TestCase):
         cases = (
             journeys.run_chat_interactions,
             journeys.run_summary_ask,
+            journeys.run_archive_preferences,
             journeys.run_calls_injected_notification,
             journeys.run_injected_notifications,
             journeys.run_otp_forgot_password,
@@ -1714,6 +1718,707 @@ class SummaryAskExecutorTest(unittest.TestCase):
         self.assertFalse(store.consent)
         self.assertFalse(store.binh_opt_out)
         self.assertFalse(world.ask_open)
+
+
+class ArchivePreferencesExecutorTest(unittest.TestCase):
+    """Offline fake device+REST world for run_archive_preferences.
+
+    The world mirrors the surfaces probed on emulator-5554: the chat overflow
+    (text1 dialog rows), the shared-media screen's tabs/sender filter/30-row
+    paging window, the inbox long-press actions dialog and Archived chip, the
+    archive snackbar's Undo, the caller-private label CheckBox dialog, and the
+    profile showSeen/showPresence switches. Per-member flags live in the
+    store keyed by caller token so peer-leak assertions are real, and the
+    STOMP queue only emits MESSAGE_READ while the reader's showSeen allows it.
+    """
+
+    class Node:
+        def __init__(self, text="", desc="", rid="", box=(0, 0, 320, 48),
+                     clickable=True, cls="android.widget.TextView", checked=None):
+            self.text = text
+            self.desc = desc
+            self.attrs = {"resource-id": ("com.nexachat.debug:id/" + rid) if rid else ""}
+            if checked is not None:
+                self.attrs["checked"] = "true" if checked else "false"
+            self.box = box
+            self.clickable = clickable
+            self.cls = cls
+
+        @property
+        def center(self):
+            left, top, right, bottom = self.box
+            return (left + right) // 2, (top + bottom) // 2
+
+    class Store:
+        """Server truth: messages/attachments, per-member flags, labels,
+        settings, and the STOMP event queue."""
+
+        def __init__(self):
+            self.seq = 100
+            self.next_id = 0
+            self.next_att_id = 0
+            self.next_label_id = 0
+            self.messages = []
+            self.attachments = {}
+            self.labels = {"an": [], "binh": []}
+            self.flags = {
+                caller: {"muted": False, "mutedUntil": None, "pinned": False,
+                         "pinnedAt": None, "archived": False, "labels": set()}
+                for caller in ("an", "binh")
+            }
+            self.settings = {
+                "an": {"showSeen": True, "showPresence": True, "aiSummaryConsent": True},
+                "binh": {"showSeen": True, "showPresence": True, "aiSummaryConsent": True},
+            }
+            self.events = []
+
+        @staticmethod
+        def links_of(content):
+            return [token for token in (content or "").split()
+                    if token.startswith("https://")][:10]
+
+        def create(self, cid, content, sender_id, attachment_ids=None, msg_type="TEXT"):
+            self.next_id += 1
+            self.seq += 1
+            msg = {
+                "id": f"m-{self.next_id}", "conversationId": cid, "seq": self.seq,
+                "senderId": sender_id,
+                "senderDisplayName": "Binh" if sender_id == "user-binh" else "An",
+                "type": msg_type, "content": content,
+                "attachments": [dict(self.attachments[aid])
+                                for aid in (attachment_ids or [])],
+                "createdAt": "2026-01-01T00:00:00Z", "deletedAt": None,
+            }
+            self.messages.append(msg)
+            return msg
+
+        def archive_items(self, cid, archive_type, sender_id=None):
+            items = []
+            live = (m for m in self.messages
+                    if m["conversationId"] == cid and not m["deletedAt"])
+            for msg in sorted(live, key=lambda m: m["seq"], reverse=True):
+                base = {"messageId": msg["id"], "seq": msg["seq"],
+                        "senderId": msg["senderId"], "createdAt": msg["createdAt"]}
+                if archive_type == "LINK":
+                    for url in self.links_of(msg["content"]):
+                        items.append({**base, "kind": "LINK",
+                                      "attachment": None, "link": {"url": url}})
+                else:
+                    for att in msg["attachments"]:
+                        if archive_type == "MEDIA" and msg["type"] == "IMAGE":
+                            items.append({**base, "kind": "IMAGE", "link": None,
+                                          "attachment": dict(att)})
+                        elif archive_type == "FILE" and msg["type"] == "FILE":
+                            items.append({**base, "kind": "FILE", "link": None,
+                                          "attachment": dict(att)})
+            if sender_id:
+                items = [item for item in items if item["senderId"] == sender_id]
+            return items
+
+        def peer_presence_for(self, caller):
+            peer = "binh" if caller == "an" else "an"
+            if not self.settings[peer]["showPresence"]:
+                return None
+            return {"online": True, "lastSeenAt": "2026-01-01T00:00:00Z"}
+
+    class World:
+        """Device surface state re-read by every uiautomator dump."""
+
+        def __init__(self, store, direct_id):
+            self.store = store
+            self.direct_id = direct_id
+            self.screen = "inbox"
+            self.inbox_filter = "all"
+            self.menu_open = False
+            self.mute_dialog = False
+            self.inbox_dialog = False
+            self.label_dialog = False
+            self.sender_dialog = False
+            self.snackbar_archived = False
+            self.tab = "media"
+            self.sender = None
+            self.offset = 0
+            self.hide_tabs = False  # failure variant
+
+        def archive_rows(self):
+            kind = {"media": "MEDIA", "file": "FILE", "link": "LINK"}[self.tab]
+            sender = {"user-binh": "user-binh", "user-an": "user-an"}.get(self.sender)
+            items = self.store.archive_items(self.direct_id, kind, sender_id=sender)
+            return items[self.offset:self.offset + 10]
+
+        def _dialog(self, cls, *texts):
+            return [ArchivePreferencesExecutorTest.Node(text=text, rid="text1",
+                                                        cls=cls) for text in texts]
+
+        def tree(self):
+            N = ArchivePreferencesExecutorTest.Node
+            s = self.store
+            flags = s.flags["an"]
+            nodes = []
+            if self.screen == "inbox":
+                nodes.append(N(rid="inboxUserAvatar"))
+                # Real layout: the 'Active now' presence strip (which also
+                # carries a 'Binh' label while the peer is online) sits ABOVE
+                # the conversationList RecyclerView — row lookups must be
+                # scoped inside the list or they hit the strip.
+                nodes.append(N(text="Binh", desc="Binh, Active now",
+                               box=(100, 196, 184, 283)))
+                for rid in ("filterAllChip", "filterUnreadChip",
+                            "filterGroupsChip", "filterArchivedChip"):
+                    nodes.append(N(rid=rid))
+                nodes.append(N(rid="conversationList", box=(0, 347, 320, 620)))
+                for lab in s.labels["an"]:
+                    nodes.append(N(text=lab["name"]))
+                if self.inbox_filter == "all":
+                    if not flags["archived"]:
+                        nodes.append(N(text="Binh", desc="Binh, Online",
+                                       box=(76, 355, 263, 379)))
+                    nodes.append(N(text="NexaChat Team", box=(76, 427, 263, 451)))
+                    nodes.append(N(text="Chi", box=(76, 499, 260, 523)))
+                elif self.inbox_filter == "archived" and flags["archived"]:
+                    # The app's Room projection filters the flag out of the
+                    # rendered variant; a settled view drops it in ~2-3s.
+                    nodes.append(N(text="Binh", desc="Binh, Online",
+                                   box=(76, 355, 263, 379)))
+                if self.snackbar_archived:
+                    nodes.append(N(text="Conversation archived"))
+                    nodes.append(N(text="Undo"))
+            elif self.screen == "chat":
+                nodes.append(N(text="Binh"))
+                nodes.append(N(rid="moreButton"))
+                nodes.append(N(text="Message", rid="messageInput", box=(60, 580, 260, 628)))
+            elif self.screen == "archive":
+                if not self.hide_tabs:
+                    nodes.append(N(rid="archiveTabs"))
+                    for tab_text in ("Photos & videos", "Files", "Links"):
+                        nodes.append(N(text=tab_text))
+                    chip = {"user-binh": "Sender: Binh", "user-an": "Sender: An"}.get(
+                        self.sender, "All senders")
+                    nodes.append(N(text=chip, rid="archiveSenderFilter"))
+                    if self.sender:
+                        nodes.append(N(text="Clear", rid="archiveClearFilters"))
+                    nodes.append(N(rid="archiveList", box=(0, 100, 320, 620)))
+                    for item in self.archive_rows():
+                        if self.tab == "media":
+                            nodes.append(N(text=item["attachment"]["fileName"],
+                                           rid="archiveMediaTitle"))
+                        elif self.tab == "file":
+                            nodes.append(N(text=item["attachment"]["fileName"],
+                                           rid="archiveRowTitle"))
+                        else:
+                            nodes.append(N(text=item["link"]["url"], rid="archiveRowTitle"))
+            elif self.screen == "profile":
+                nodes.append(N(text="An", rid="profileName"))
+                nodes.append(N(rid="profileColumn", box=(0, 0, 320, 640)))
+                nodes.append(N(rid="showSeenRow"))
+                nodes.append(N(rid="showSeen", checked=s.settings["an"]["showSeen"]))
+                nodes.append(N(rid="showPresenceRow"))
+                nodes.append(N(rid="showPresence", checked=s.settings["an"]["showPresence"]))
+            if self.menu_open:
+                nodes += self._dialog(
+                    "android.widget.CheckedTextView",
+                    "Ask this chat", "Search in chat", "Summarize conversation",
+                    "End-to-end encryption", "Chat info", "Disappearing messages",
+                    "Unmute notifications" if flags["muted"] else "Mute notifications",
+                    "Unarchive" if flags["archived"] else "Archive",
+                    "Unpin conversation" if flags["pinned"] else "Pin conversation",
+                    "Conversation settings", "Assign labels", "Shared media",
+                    "Starred messages", "Block Binh", "Report")
+            if self.mute_dialog:
+                nodes += self._dialog(
+                    "android.widget.CheckedTextView",
+                    "For 1 hour", "For 4 hours", "Until 8:00 AM",
+                    "Until turned back on")
+            if self.inbox_dialog:
+                rows = ["Unpin conversation" if flags["pinned"] else "Pin conversation"]
+                rows += (["Unmute notifications"] if flags["muted"]
+                         else ["For 1 hour", "For 4 hours", "Until 8:00 AM",
+                               "Until turned back on"])
+                rows += ["Unarchive" if flags["archived"] else "Archive",
+                         "Assign labels"]
+                nodes += self._dialog("android.widget.CheckedTextView", *rows)
+            if self.sender_dialog:
+                nodes.append(N(text="Sender"))
+                nodes += self._dialog(
+                    "android.widget.CheckedTextView", "All senders", "An", "Binh")
+            if self.label_dialog:
+                nodes.append(N(text="Conversation labels"))
+                for lab in s.labels["an"]:
+                    nodes.append(N(text=lab["name"], cls="android.widget.CheckBox",
+                                   checked=lab["id"] in flags["labels"]))
+                nodes.append(N(text="Done"))
+            return nodes
+
+    class Device:
+        def __init__(self, world):
+            self.world = world
+
+        def nodes(self):
+            return self.world.tree()
+
+        def _overflow(self, node):
+            w = self.world
+            s = w.store
+            w.menu_open = False
+            text = node.text.strip()
+            if text == "Mute notifications":
+                w.mute_dialog = True
+            elif text == "Unmute notifications":
+                s.flags["an"].update(muted=False, mutedUntil=None)
+            elif text == "Pin conversation":
+                s.flags["an"].update(pinned=True, pinnedAt="2026-01-01T00:00:00Z")
+            elif text == "Unpin conversation":
+                s.flags["an"].update(pinned=False, pinnedAt=None)
+            elif text == "Archive":
+                s.flags["an"]["archived"] = True
+                w.screen = "inbox"
+                w.snackbar_archived = True
+            elif text == "Unarchive":
+                s.flags["an"]["archived"] = False
+            elif text == "Assign labels":
+                w.label_dialog = True
+            elif text == "Shared media":
+                w.screen = "archive"
+                w.tab = "media"
+                w.sender = None
+                w.offset = 0
+
+        def _inbox_sheet(self, node):
+            w = self.world
+            s = w.store
+            w.inbox_dialog = False
+            text = node.text.strip()
+            if text == "Pin conversation":
+                s.flags["an"].update(pinned=True, pinnedAt="2026-01-01T00:00:00Z")
+            elif text == "Unpin conversation":
+                s.flags["an"].update(pinned=False, pinnedAt=None)
+            elif text == "Unmute notifications":
+                s.flags["an"].update(muted=False, mutedUntil=None)
+            elif text in ("For 1 hour", "For 4 hours", "Until 8:00 AM"):
+                s.flags["an"].update(muted=True, mutedUntil="2026-01-01T01:00:00Z")
+            elif text == "Until turned back on":
+                s.flags["an"].update(muted=True, mutedUntil=None)
+            elif text == "Archive":
+                s.flags["an"]["archived"] = True
+            elif text == "Unarchive":
+                s.flags["an"]["archived"] = False
+            elif text == "Assign labels":
+                w.label_dialog = True
+
+        def tap_node(self, node):
+            w = self.world
+            s = w.store
+            rid = node.attrs["resource-id"]
+            text = node.text.strip()
+            if w.sender_dialog:
+                w.sender_dialog = False
+                if text == "Binh":
+                    w.sender = "user-binh"
+                elif text == "An":
+                    w.sender = "user-an"
+                else:
+                    w.sender = None
+                return
+            if w.mute_dialog:
+                w.mute_dialog = False
+                if text == "Until turned back on":
+                    s.flags["an"].update(muted=True, mutedUntil=None)
+                else:
+                    s.flags["an"].update(muted=True, mutedUntil="2026-01-01T01:00:00Z")
+                return
+            if w.menu_open:
+                self._overflow(node)
+                return
+            if w.inbox_dialog:
+                self._inbox_sheet(node)
+                return
+            if w.label_dialog:
+                if "CheckBox" in node.cls:
+                    lab = next((l for l in s.labels["an"] if l["name"] == text), None)
+                    if lab is not None:
+                        if lab["id"] in s.flags["an"]["labels"]:
+                            s.flags["an"]["labels"].discard(lab["id"])
+                        else:
+                            s.flags["an"]["labels"].add(lab["id"])
+                elif text == "Done":
+                    w.label_dialog = False
+                return
+            if w.screen == "inbox":
+                if rid.endswith("/inboxUserAvatar"):
+                    w.screen = "profile"
+                elif rid.endswith("/filterArchivedChip"):
+                    w.inbox_filter = "archived"
+                elif rid.endswith("/filterAllChip"):
+                    w.inbox_filter = "all"
+                elif text == "Undo" and w.snackbar_archived:
+                    s.flags["an"]["archived"] = False
+                    w.snackbar_archived = False
+                elif text == "Binh" and node.box and node.box[1] >= 347:
+                    # Only the conversationList row opens the chat; the
+                    # presence-strip card (above y=347) ignores taps.
+                    w.screen = "chat"
+                return
+            if w.screen == "chat":
+                if rid.endswith("/moreButton"):
+                    w.menu_open = True
+                return
+            if w.screen == "archive":
+                if text in ("Photos & videos", "Files", "Links"):
+                    w.tab = {"Photos & videos": "media", "Files": "file",
+                             "Links": "link"}[text]
+                    w.offset = 0
+                elif rid.endswith("/archiveSenderFilter"):
+                    w.sender_dialog = True
+                elif rid.endswith("/archiveClearFilters"):
+                    w.sender = None
+                return
+            if w.screen == "profile":
+                if rid.endswith("/showSeen"):
+                    s.settings["an"]["showSeen"] = not s.settings["an"]["showSeen"]
+                elif rid.endswith("/showPresence"):
+                    s.settings["an"]["showPresence"] = not s.settings["an"]["showPresence"]
+                return
+
+        def long_press(self, node, duration_ms=800):
+            w = self.world
+            if (w.screen == "inbox" and node.box and node.box[1] >= 347
+                    and (node.text.strip() == "Binh"
+                         or node.desc.strip() == "Binh")):
+                # Only the conversationList row surfaces the actions sheet;
+                # long-pressing the presence-strip card does nothing.
+                w.inbox_dialog = True
+
+        def swipe(self, x1, y1, x2, y2, duration_ms=300):
+            w = self.world
+            if w.screen == "inbox":
+                return
+            if w.screen != "archive":
+                return
+            if y2 < y1:
+                w.offset += 10
+            else:
+                w.offset = 0
+
+        def type_text(self, value):
+            return None
+
+        def screenshot(self, path):
+            Path(path).write_bytes(b"png")
+
+        def key(self, code):
+            w = self.world
+            if w.sender_dialog:
+                w.sender_dialog = False
+            elif w.mute_dialog:
+                w.mute_dialog = False
+            elif w.inbox_dialog:
+                w.inbox_dialog = False
+            elif w.label_dialog:
+                w.label_dialog = False
+            elif w.menu_open:
+                w.menu_open = False
+            elif w.screen == "archive":
+                w.screen = "chat"
+            elif w.screen == "profile":
+                w.screen = "inbox"
+            elif w.screen == "chat":
+                w.screen = "inbox"
+
+    class Patch:
+        @staticmethod
+        def ui_nodes(device, timeout=8):
+            return device.nodes()
+
+        @staticmethod
+        def named_conversation_row(nodes, display_name):
+            return next((n for n in nodes
+                         if n.text.strip() == display_name or n.desc.strip() == display_name),
+                        None)
+
+        @staticmethod
+        def grant_test_permissions():
+            return {}
+
+        @staticmethod
+        def filtered_logcat(baseline):
+            return [], False
+
+    class Adb:
+        serial = "emulator-5554"
+
+        def command(self, *args, **kwargs):
+            return ""
+
+    class Response:
+        def __init__(self, status, body=None):
+            self.status = status
+            self._body = body
+
+        def json(self):
+            return self._body
+
+    class Client:
+        base_url = "http://127.0.0.1:18093"
+        timeout = 30
+
+        def __init__(self, store, direct_id):
+            self.store = store
+            self.direct_id = direct_id
+
+        @staticmethod
+        def _caller(token):
+            return "an" if token == "tok-an" else "binh"
+
+        def _sender(self, token):
+            return "user-" + self._caller(token)
+
+        def request(self, method, path, token=None, body=None,
+                    params=None, raw_body=None, headers=None):
+            if raw_body is not None:
+                data, content_type = raw_body
+                marker = b'filename="'
+                start = data.index(marker) + len(marker)
+                filename = data[start:data.index(b'"', start)].decode()
+                self.store.next_att_id += 1
+                att_id = f"att-{self.store.next_att_id}"
+                self.store.attachments[att_id] = {
+                    "id": att_id, "fileName": filename, "mimeType": content_type,
+                }
+                body = dict(self.store.attachments[att_id])
+                body["originalName"] = filename
+                return ArchivePreferencesExecutorTest.Response(201, body)
+            handler = {"GET": self.get, "POST": self.post, "PATCH": self.patch,
+                       "PUT": self.put, "DELETE": self.delete}[method]
+            return handler(path, token=token, body=body, params=params, headers=headers)
+
+        def get(self, path, token=None, params=None, headers=None):
+            R = ArchivePreferencesExecutorTest.Response
+            caller = self._caller(token)
+            if path == "/api/v1/users/me/settings":
+                return R(200, dict(self.store.settings[caller]))
+            if path == "/api/v1/labels":
+                return R(200, [dict(lab) for lab in self.store.labels[caller]])
+            if path == "/api/v1/conversations":
+                archived = (params or {}).get("archived") == "true"
+                flags = self.store.flags[caller]
+                if bool(flags["archived"]) != archived:
+                    return R(200, [])
+                entry = {"id": self.direct_id, "type": "DIRECT",
+                         "muted": flags["muted"], "mutedUntil": flags["mutedUntil"],
+                         "pinned": flags["pinned"], "pinnedAt": flags["pinnedAt"],
+                         "archived": flags["archived"], "aiOptOut": False,
+                         "labels": sorted(flags["labels"]),
+                         "peerPresence": self.store.peer_presence_for(caller)}
+                return R(200, [entry])
+            if path.endswith("/archive"):
+                params = params or {}
+                items = self.store.archive_items(
+                    self.direct_id, params.get("type"),
+                    sender_id=params.get("senderId"))
+                limit = int(params.get("limit") or 30)
+                cursor = params.get("cursor")
+                start = int(str(cursor).rsplit("-", 1)[1]) if cursor else 0
+                page = items[start:start + limit]
+                nxt = f"c-{start + limit}" if start + limit < len(items) else None
+                return R(200, {"items": page, "nextCursor": nxt})
+            return R(404)
+
+        def post(self, path, token=None, body=None, headers=None):
+            R = ArchivePreferencesExecutorTest.Response
+            caller = self._caller(token)
+            if path == "/api/v1/labels":
+                self.store.next_label_id += 1
+                lab = {"id": f"lab-{self.store.next_label_id}",
+                       "name": (body or {}).get("name"),
+                       "colorId": (body or {}).get("colorId")}
+                self.store.labels[caller].append(lab)
+                return R(201, dict(lab))
+            if path.endswith("/messages"):
+                msg = self.store.create(
+                    self.direct_id, (body or {}).get("content"), self._sender(token),
+                    attachment_ids=(body or {}).get("attachmentIds"),
+                    msg_type=(body or {}).get("type") or "TEXT")
+                return R(201, dict(msg))
+            if path.endswith("/read"):
+                if self.store.settings[caller]["showSeen"]:
+                    self.store.events.append((f"/topic/conversations.{self.direct_id}", {
+                        "eventType": "MESSAGE_READ",
+                        "payload": {"userId": self._sender(token),
+                                    "upToSeq": (body or {}).get("upToSeq")},
+                    }))
+                return R(204)
+            return R(404)
+
+        def patch(self, path, token=None, body=None, headers=None):
+            R = ArchivePreferencesExecutorTest.Response
+            caller = self._caller(token)
+            if path == "/api/v1/users/me/settings":
+                self.store.settings[caller].update(body or {})
+                return R(200, dict(self.store.settings[caller]))
+            return R(404)
+
+        def put(self, path, token=None, body=None, headers=None):
+            R = ArchivePreferencesExecutorTest.Response
+            caller = self._caller(token)
+            flags = self.store.flags[caller]
+            if path.endswith("/mute"):
+                flags.update(muted=True, mutedUntil=(body or {}).get("mutedUntil"))
+                return R(204)
+            if path.endswith("/archive"):
+                flags["archived"] = True
+                return R(204)
+            if path.endswith("/pin"):
+                flags.update(pinned=True, pinnedAt="2026-01-01T00:00:00Z")
+                return R(204)
+            if "/labels/" in path:
+                flags["labels"].add(path.rsplit("/", 1)[1])
+                return R(204)
+            return R(404)
+
+        def delete(self, path, token=None, params=None, headers=None):
+            R = ArchivePreferencesExecutorTest.Response
+            caller = self._caller(token)
+            flags = self.store.flags[caller]
+            if path.endswith("/mute"):
+                flags.update(muted=False, mutedUntil=None)
+                return R(204)
+            if path.endswith("/archive"):
+                flags["archived"] = False
+                return R(204)
+            if path.endswith("/pin"):
+                flags.update(pinned=False, pinnedAt=None)
+                return R(204)
+            if "/conversations/" in path and "/labels/" in path:
+                flags["labels"].discard(path.rsplit("/", 1)[1])
+                return R(204)
+            if path.startswith("/api/v1/labels/"):
+                label_id = path.rsplit("/", 1)[1]
+                self.store.labels[caller] = [
+                    lab for lab in self.store.labels[caller] if lab["id"] != label_id]
+                return R(204)
+            if "/messages/" in path:
+                mid = path.rsplit("/", 1)[1]
+                msg = next((m for m in self.store.messages if m["id"] == mid), None)
+                if msg is not None:
+                    msg["deletedAt"] = "2026-01-01T00:03:00Z"
+                    msg["content"] = None
+                return R(204)
+            return R(404)
+
+    class Reader:
+        def __init__(self, store):
+            self.store = store
+            self.subscriptions = []
+
+        def subscribe(self, destination):
+            self.subscriptions.append(destination)
+
+        def events(self, seconds):
+            pending, self.store.events = self.store.events, []
+            out = []
+            for destination, envelope in pending:
+                envelope["_destination"] = destination
+                out.append(envelope)
+            return iter(out)
+
+        def close(self):
+            return None
+
+    def _fixture(self, hide_tabs=False):
+        direct_id = "conv-an-binh"
+        store = self.Store()
+        world = self.World(store, direct_id)
+        world.hide_tabs = hide_tabs
+        client = self.Client(store, direct_id)
+        reader = self.Reader(store)
+
+        class Api:
+            USER_A = {"phone": "+84900000001"}
+            USER_C = {"phone": "+84900000002"}
+
+            @staticmethod
+            def direct_conversation(client_obj, token, phone):
+                return 200, {"id": direct_id, "e2eeEnabled": False}
+
+            @staticmethod
+            def send_text(client_obj, token, cid, content):
+                sender = "user-an" if token == "tok-an" else "user-binh"
+                return store.create(cid, content, sender)
+
+        def session(api, recorder, phone):
+            if phone.endswith("0001"):
+                return {"accessToken": "tok-an", "user": {"id": "user-an", "phone": phone}}
+            return {"accessToken": "tok-binh", "user": {"id": "user-binh", "phone": phone}}
+
+        context = {
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "row": journeys.ROW_BY_ID["archive-preferences"],
+            "row_dir": Path(tempfile.mkdtemp()),
+            "adb": self.Adb(),
+            "device": self.Device(world),
+            "helpers": (Api(), None, self.Patch()),
+            "client": client,
+            "stomp_events": [],
+            "frame_reader": None,
+            "frame_reader_factory": lambda url, token: reader,
+            "ui_timeout": 2,
+        }
+        return store, world, client, context, session
+
+    def test_executor_drives_archive_browser_flags_labels_and_privacy(self):
+        store, world, client, context, session = self._fixture()
+        row = journeys.ROW_BY_ID["archive-preferences"]
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session):
+            result = journeys.run_archive_preferences(row, context)
+
+        self.assertIn("caller-side", result["mute"])
+        self.assertIn("Undo action reverted it", result["archive_undo"])
+        self.assertIn("peer entry and peer /labels stay clean", result["labels"])
+        self.assertIn("survived pull-to-refresh", result["refresh"])
+        self.assertIn("suppressed MESSAGE_READ", result["show_seen"])
+        self.assertIn("peerPresence", result["show_presence"])
+        # Every seeded message was tombstoned; flags/settings/label restored.
+        self.assertEqual(len(store.messages), 7)  # image, file, 4 link texts, An's link
+        self.assertTrue(all(m["deletedAt"] for m in store.messages))
+        self.assertEqual(store.flags["an"], {"muted": False, "mutedUntil": None,
+                                             "pinned": False, "pinnedAt": None,
+                                             "archived": False, "labels": set()})
+        self.assertEqual(store.flags["binh"]["labels"], set())
+        self.assertFalse(store.flags["binh"]["muted"])
+        self.assertFalse(store.flags["binh"]["pinned"])
+        self.assertFalse(store.flags["binh"]["archived"])
+        self.assertEqual(store.labels["an"], [])
+        self.assertTrue(store.settings["an"]["showSeen"])
+        self.assertTrue(store.settings["an"]["showPresence"])
+        self.assertTrue(store.settings["binh"]["showSeen"])
+        # The peer topic received MESSAGE_READ only while showSeen was on.
+        reads = [env for env in context["stomp_events"]
+                 if env.get("eventType") == "MESSAGE_READ"]
+        self.assertTrue(any((env.get("payload") or {}).get("userId") == "user-an"
+                            for env in reads))
+        self.assertIn("/topic/conversations.conv-an-binh",
+                      context["frame_reader"].subscriptions)
+        # World ended back on a sane surface for the next row.
+        self.assertEqual(world.screen, "inbox")
+        self.assertFalse(world.snackbar_archived or world.menu_open or world.inbox_dialog)
+
+    def test_executor_sweeps_fixtures_when_the_archive_screen_never_opens(self):
+        store, world, client, context, session = self._fixture(hide_tabs=True)
+        row = journeys.ROW_BY_ID["archive-preferences"]
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session):
+            with self.assertRaises(journeys.ProductFailure) as caught:
+                journeys.run_archive_preferences(row, context)
+        self.assertIn("shared-media screen did not open", str(caught.exception))
+        # The failure happened after the full fixture seed, so the sweep must
+        # still tombstone every row-owned message and drop the created label.
+        self.assertEqual(len(store.messages), 7)
+        self.assertTrue(all(m["deletedAt"] for m in store.messages))
+        self.assertEqual(store.labels["an"], [])
+        self.assertEqual(store.flags["an"]["archived"], False)
+        self.assertEqual(store.flags["an"]["labels"], set())
 
 
 if __name__ == "__main__":
