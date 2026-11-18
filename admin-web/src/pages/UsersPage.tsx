@@ -48,6 +48,7 @@ export default function UsersPage() {
   const [busy, setBusy] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
   const [deleted, setDeleted] = useState<UserSummary[] | null>(null);
+  const [actionError, setActionError] = useState(false);
   const searchInput = useDebouncedValue(search, 300);
   const latest = useLatestRequest();
 
@@ -74,7 +75,9 @@ export default function UsersPage() {
   }, [load]);
 
   const openDetail = (id: string) => {
-    api<UserDetail>(`/api/v1/admin/users/${id}`).then(setSelected).catch(() => {});
+    api<UserDetail>(`/api/v1/admin/users/${id}`)
+      .then(setSelected)
+      .catch(() => setActionError(true));
   };
 
   const runAction = async (reason: string) => {
@@ -117,6 +120,9 @@ export default function UsersPage() {
       setAction(null);
       openDetail(id);
       load();
+    } catch {
+      setActionError(true);
+      setAction(null);
     } finally {
       setBusy(false);
     }
@@ -132,7 +138,7 @@ export default function UsersPage() {
         setDeleted(rows);
         setShowDeleted(true);
       })
-      .catch(() => {});
+      .catch(() => setActionError(true));
   };
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
@@ -191,6 +197,12 @@ export default function UsersPage() {
           {t('users.deleted')}
         </button>
       </div>
+
+      {actionError && (
+        <div className="form-error" role="alert">
+          {t('common.error')}
+        </div>
+      )}
 
       {showDeleted && deleted ? (
         deleted.length === 0 ? (

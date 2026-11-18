@@ -30,6 +30,7 @@ export default function RulesPage() {
   const [failed, setFailed] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<AlertRule | null>(null);
+  const [actionError, setActionError] = useState(false);
 
   const [form, setForm] = useState({
     name: '',
@@ -64,14 +65,18 @@ export default function RulesPage() {
     api(`/api/v1/admin/rules/${rule.id}`, {
       method: 'PATCH',
       body: { enabled: !rule.enabled },
-    }).then(load);
+    })
+      .then(load)
+      .catch(() => setActionError(true));
   };
 
   const changeSeverity = (rule: AlertRule, severity: string) => {
     api(`/api/v1/admin/rules/${rule.id}`, {
       method: 'PATCH',
       body: { severity },
-    }).then(load);
+    })
+      .then(load)
+      .catch(() => setActionError(true));
   };
 
   const create = async () => {
@@ -99,10 +104,12 @@ export default function RulesPage() {
 
   const remove = () => {
     if (!confirmDelete) return;
-    api(`/api/v1/admin/rules/${confirmDelete.id}`, { method: 'DELETE' }).then(() => {
-      setConfirmDelete(null);
-      load();
-    });
+    api(`/api/v1/admin/rules/${confirmDelete.id}`, { method: 'DELETE' })
+      .then(() => {
+        setConfirmDelete(null);
+        load();
+      })
+      .catch(() => setActionError(true));
   };
 
   const runTest = () => {
@@ -129,6 +136,12 @@ export default function RulesPage() {
           <button className="btn primary" onClick={() => setShowNew((v) => !v)}>
             {t('rules.new')}
           </button>
+        </div>
+      )}
+
+      {actionError && (
+        <div className="form-error" role="alert">
+          {t('common.error')}
         </div>
       )}
 

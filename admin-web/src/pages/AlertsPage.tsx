@@ -66,6 +66,7 @@ export default function AlertsPage() {
   const [pending, setPending] = useState<Pending | null>(null);
   const [revealed, setRevealed] = useState<RevealedMessage[] | null>(null);
   const [noteText, setNoteText] = useState('');
+  const [actionError, setActionError] = useState(false);
 
   const params = useMemo(() => {
     const q = new URLSearchParams();
@@ -127,7 +128,7 @@ export default function AlertsPage() {
       if (detail) openDetail(detail.alert.id);
       load();
     } catch {
-      // keep dialog open on failure? close and let the list reload surface it
+      setActionError(true);
       setPending(null);
       load();
     }
@@ -138,7 +139,9 @@ export default function AlertsPage() {
     api(`/api/v1/admin/alerts/${detail.alert.id}`, {
       method: 'PATCH',
       body: { assigneeId: me.userId },
-    }).then(() => openDetail(detail.alert.id));
+    })
+      .then(() => openDetail(detail.alert.id))
+      .catch(() => setActionError(true));
   };
 
   const addNote = () => {
@@ -146,10 +149,12 @@ export default function AlertsPage() {
     api(`/api/v1/admin/alerts/${detail.alert.id}/notes`, {
       method: 'POST',
       body: { body: noteText.trim() },
-    }).then(() => {
-      setNoteText('');
-      openDetail(detail.alert.id);
-    });
+    })
+      .then(() => {
+        setNoteText('');
+        openDetail(detail.alert.id);
+      })
+      .catch(() => setActionError(true));
   };
 
   const toggle = (id: string) => {
@@ -233,6 +238,12 @@ export default function AlertsPage() {
           </button>
         )}
       </div>
+
+      {actionError && (
+        <div className="form-error" role="alert">
+          {t('common.error')}
+        </div>
+      )}
 
       {failed ? (
         <ErrorBlock onRetry={load} />
