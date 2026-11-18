@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -139,6 +140,67 @@ class FcmReminderPushSenderTest {
                 .isNotEqualTo(FcmReminderPushSender.occurrenceKey(delivery));
         assertThat(FcmReminderPushSender.occurrenceKey(delivery))
                 .isEqualTo(FcmReminderPushSender.occurrenceKey(delivery));
+    }
+
+    @Test
+    void aSettledTargetExpiresAndIsPushedAgainAfterTheDedupeWindow() {
+        // A one-shot TTL keeps the test deterministic: the entry settled by
+        // the accepted push of the retryable first attempt is expired by the
+        // time the occurrence is retried, so the accepted target is pushed
+        // again. A duplicate push for the same occurrence is suppressed by
+        // the client's occurrence ledger, so this stays invisible to the
+        // user; without the expiry the entry would be retained forever when
+        // the occurrence is abandoned mid-claim.
+        FcmReminderPushSender ttlSender = new FcmReminderPushSender(
+                tokenRepository, fcmGateway, deviceTokenService, metrics, 1_000, 1L);
+        UUID recipient = UUID.randomUUID();
+        UserDeviceToken accepted = device("token-a", recipient, null);
+        UserDeviceToken other = device("token-b", UUID.randomUUID(), null);
+        when(tokenRepository.findByUserIdIn(any())).thenReturn(List.of(accepted, other));
+        AtomicInteger attempts = new AtomicInteger();
+        when(fcmGateway.sendDataPush(eq("token-a"), anyMap(), anyString(), anyLong()))
+                .thenReturn(CompletableFuture.completedFuture(PushResult.success("id")));
+        when(fcmGateway.sendDataPush(eq("token-b"), anyMap(), anyString(), anyLong()))
+                .thenAnswer(invocation -> attempts.incrementAndGet() == 1
+                        ? CompletableFuture.completedFuture(PushResult.failure("UNAVAILABLE", false))
+                        : CompletableFuture.completedFuture(PushResult.success("id")));
+
+        assertThatThrownBy(() -> ttlSender.send(delivery, List.of(recipient, UUID.randomUUID())))
+                .isInstanceOf(ReminderPushSender.RetryableDeliveryException.class);
+        ttlSender.send(delivery, List.of(recipient, UUID.randomUUID()));
+
+        verify(fcmGateway, times(2))
+                .sendDataPush(eq("token-a"), anyMap(), eq("HIGH"), anyLong());
+        verify(fcmGateway, times(2))
+                .sendDataPush(eq("token-b"), anyMap(), eq("HIGH"), anyLong());
+    }
+
+    @Test
+    void aSettledTargetInsideTheDedupeWindowIsNotPushedAgainOnRetry() {
+        FcmReminderPushSender ttlSender = new FcmReminderPushSender(
+                tokenRepository, fcmGateway, deviceTokenService, metrics, 1_000, 3_600_000L);
+        UUID recipient = UUID.randomUUID();
+        UserDeviceToken accepted = device("token-a", recipient, null);
+        UserDeviceToken other = device("token-b", UUID.randomUUID(), null);
+        when(tokenRepository.findByUserIdIn(any())).thenReturn(List.of(accepted, other));
+        AtomicInteger attempts = new AtomicInteger();
+        when(fcmGateway.sendDataPush(eq("token-a"), anyMap(), anyString(), anyLong()))
+                .thenReturn(CompletableFuture.completedFuture(PushResult.success("id")));
+        when(fcmGateway.sendDataPush(eq("token-b"), anyMap(), anyString(), anyLong()))
+                .thenAnswer(invocation -> attempts.incrementAndGet() == 1
+                        ? CompletableFuture.completedFuture(PushResult.failure("UNAVAILABLE", false))
+                        : CompletableFuture.completedFuture(PushResult.success("id")));
+
+        assertThatThrownBy(() -> ttlSender.send(delivery, List.of(recipient, UUID.randomUUID())))
+                .isInstanceOf(ReminderPushSender.RetryableDeliveryException.class);
+        ttlSender.send(delivery, List.of(recipient, UUID.randomUUID()));
+
+        // Inside the window the accepted target is still deduped, exactly as
+        // without the expiry.
+        verify(fcmGateway, times(1))
+                .sendDataPush(eq("token-a"), anyMap(), eq("HIGH"), anyLong());
+        verify(fcmGateway, times(2))
+                .sendDataPush(eq("token-b"), anyMap(), eq("HIGH"), anyLong());
     }
 
     private static UserDeviceToken device(String token) {

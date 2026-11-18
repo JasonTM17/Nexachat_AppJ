@@ -9,6 +9,7 @@ import com.nexachat.notification.UserDeviceTokenRepository;
 import com.nexachat.observability.ObservabilityMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -42,29 +43,50 @@ public class FcmReminderPushSender implements ReminderPushSender {
 
     private static final Logger log = LoggerFactory.getLogger(FcmReminderPushSender.class);
     private static final long DEFAULT_TTL_SECONDS = 3_600L;
+    /** Bounds settled entries whose occurrence was abandoned mid-claim. */
+    private static final long DEFAULT_SETTLED_TARGET_TTL_MILLIS = 3_600_000L;
 
     private final UserDeviceTokenRepository tokenRepository;
     private final FcmGateway fcmGateway;
     private final DeviceTokenService deviceTokenService;
     private final ObservabilityMetrics metrics;
     private final long pushTimeoutMs;
+    private final long settledTargetTtlMillis;
     /**
      * Targets accepted for an occurrence that still has a retryable miss.
      * Cleared once that occurrence meets the delivery policy. A restarted
      * process does not have this set, so a target may be pushed again.
+     *
+     * <p>Entries carry an expiry because an occurrence can be abandoned
+     * mid-claim (the reminder is deleted or rescheduled while a push result
+     * was retryable), which skips the per-occurrence cleanup below. Expiring
+     * the entries bounds the set; a duplicate push after expiry is still
+     * suppressed by the client's occurrence ledger.</p>
      */
     private final Set<SettledTarget> settledTargets = ConcurrentHashMap.newKeySet();
 
+    @Autowired
     public FcmReminderPushSender(UserDeviceTokenRepository tokenRepository,
                                  FcmGateway fcmGateway,
                                  DeviceTokenService deviceTokenService,
                                  ObservabilityMetrics metrics,
                                  @Value("${nexachat.reminders.push-timeout-ms:10000}") long pushTimeoutMs) {
+        this(tokenRepository, fcmGateway, deviceTokenService, metrics, pushTimeoutMs,
+                DEFAULT_SETTLED_TARGET_TTL_MILLIS);
+    }
+
+    FcmReminderPushSender(UserDeviceTokenRepository tokenRepository,
+                          FcmGateway fcmGateway,
+                          DeviceTokenService deviceTokenService,
+                          ObservabilityMetrics metrics,
+                          long pushTimeoutMs,
+                          long settledTargetTtlMillis) {
         this.tokenRepository = tokenRepository;
         this.fcmGateway = fcmGateway;
         this.deviceTokenService = deviceTokenService;
         this.metrics = metrics;
         this.pushTimeoutMs = pushTimeoutMs;
+        this.settledTargetTtlMillis = Math.max(1L, settledTargetTtlMillis);
     }
 
     @Override
@@ -95,7 +117,7 @@ public class FcmReminderPushSender implements ReminderPushSender {
         boolean retryable = false;
         for (Map.Entry<UUID, UserDeviceToken> target : targets) {
             String token = target.getValue().getToken();
-            if (settledTargets.contains(new SettledTarget(occurrence, token))) {
+            if (settledRecently(occurrence, token)) {
                 continue;
             }
             Map<String, String> data = new HashMap<>();
@@ -127,11 +149,11 @@ public class FcmReminderPushSender implements ReminderPushSender {
                 PushResult result = futures.get(i).get(remaining, TimeUnit.NANOSECONDS);
                 if (result != null && result.success()) {
                     metrics.recordPushSend("SUCCESS");
-                    settledTargets.add(new SettledTarget(occurrence, token));
+                    settledTargets.add(new SettledTarget(occurrence, token, expiryMillis()));
                 } else if (result != null && result.unregistered()) {
                     metrics.recordPushSend("UNREGISTERED");
                     removeUnregisteredToken(token);
-                    settledTargets.add(new SettledTarget(occurrence, token));
+                    settledTargets.add(new SettledTarget(occurrence, token, expiryMillis()));
                 } else {
                     metrics.recordPushSend("FAILURE");
                     retryable = true;
@@ -154,7 +176,10 @@ public class FcmReminderPushSender implements ReminderPushSender {
             }
         }
         if (!retryable) {
-            settledTargets.removeIf(settled -> occurrence.equals(settled.occurrence()));
+            settledTargets.removeIf(settled ->
+                    occurrence.equals(settled.occurrence()) || settled.isExpired());
+        } else {
+            settledTargets.removeIf(SettledTarget::isExpired);
         }
         log.info("Reminder {} push attempted for {} recipient target(s)",
                 reminder.reminderId(), futures.size());
@@ -166,7 +191,45 @@ public class FcmReminderPushSender implements ReminderPushSender {
         }
     }
 
-    private record SettledTarget(String occurrence, String token) {
+    /**
+     * True while a target accepted for this occurrence is still inside the
+     * dedupe window. An expired entry is dropped here, so occurrences
+     * abandoned mid-claim cannot retain their entries forever.
+     */
+    private boolean settledRecently(String occurrence, String token) {
+        SettledTarget probe = new SettledTarget(occurrence, token, 0L);
+        SettledTarget settled = settledTargets.stream()
+                .filter(probe::equalsIgnoringExpiry)
+                .findFirst()
+                .orElse(null);
+        if (settled == null) {
+            return false;
+        }
+        if (settled.isExpired()) {
+            settledTargets.remove(settled);
+            return false;
+        }
+        return true;
+    }
+
+    private long expiryMillis() {
+        return System.currentTimeMillis() + settledTargetTtlMillis;
+    }
+
+    /**
+     * One accepted push for one occurrence and device token. The expiry lets
+     * the entry age out when its occurrence is abandoned mid-claim and never
+     * reaches the per-occurrence cleanup.
+     */
+    private record SettledTarget(String occurrence, String token, long expiresAtMillis) {
+
+        private boolean isExpired() {
+            return expiresAtMillis <= System.currentTimeMillis();
+        }
+
+        private boolean equalsIgnoringExpiry(SettledTarget other) {
+            return occurrence.equals(other.occurrence) && token.equals(other.token);
+        }
     }
 
     /**
