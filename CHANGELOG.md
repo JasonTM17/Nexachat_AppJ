@@ -38,6 +38,9 @@ All notable changes to NexaChat are documented here. The format follows
   cached result is replayed only while its citations still resolve.
 
 ### Fixed
+- Unsuspending an account takes effect immediately: a fresh sign-in is no
+  longer rejected as suspended for up to a minute while a cached copy of the
+  suspended state lingered.
 - Calling someone again after an earlier call whose media setup failed no longer
   answers busy: the server ends that stale call and starts the new one.
 - Android: when a call fails or times out on your phone (media setup failure,
