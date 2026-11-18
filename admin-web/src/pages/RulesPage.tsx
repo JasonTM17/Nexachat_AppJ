@@ -214,13 +214,13 @@ export default function RulesPage() {
           <table>
             <thead>
               <tr>
-                <th>{t('rules.col.name')}</th>
-                <th className="col-lo">{t('rules.col.category')}</th>
-                <th className="col-lo">{t('rules.col.severity')}</th>
-                <th className="col-lo">{t('rules.col.type')}</th>
-                <th className="col-lo">{t('rules.col.pattern')}</th>
-                <th>{t('rules.col.enabled')}</th>
-                {isAdmin && <th className="col-actions" aria-label={t('common.actions')} />}
+                <th scope="col">{t('rules.col.name')}</th>
+                <th scope="col" className="col-lo">{t('rules.col.category')}</th>
+                <th scope="col" className="col-lo">{t('rules.col.severity')}</th>
+                <th scope="col" className="col-lo">{t('rules.col.type')}</th>
+                <th scope="col" className="col-lo">{t('rules.col.pattern')}</th>
+                <th scope="col">{t('rules.col.enabled')}</th>
+                {isAdmin && <th scope="col" className="col-actions" aria-label={t('common.actions')} />}
               </tr>
             </thead>
             <tbody>

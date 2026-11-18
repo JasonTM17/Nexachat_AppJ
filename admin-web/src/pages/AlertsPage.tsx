@@ -257,12 +257,12 @@ export default function AlertsPage() {
             <table>
               <thead>
                 <tr>
-                  <th className="col-lo" aria-label={t('common.select')} />
-                  <th>{t('alerts.col.severity')}</th>
-                  <th className="col-lo">{t('alerts.col.category')}</th>
-                  <th>{t('alerts.col.snippet')}</th>
-                  <th>{t('alerts.col.status')}</th>
-                  <th className="col-lo">{t('alerts.col.created')}</th>
+                  <th scope="col" className="col-lo" aria-label={t('common.select')} />
+                  <th scope="col">{t('alerts.col.severity')}</th>
+                  <th scope="col" className="col-lo">{t('alerts.col.category')}</th>
+                  <th scope="col">{t('alerts.col.snippet')}</th>
+                  <th scope="col">{t('alerts.col.status')}</th>
+                  <th scope="col" className="col-lo">{t('alerts.col.created')}</th>
                 </tr>
               </thead>
               <tbody>

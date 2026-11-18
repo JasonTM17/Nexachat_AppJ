@@ -104,12 +104,12 @@ export default function AuditPage() {
             <table>
               <thead>
                 <tr>
-                  <th>{t('audit.col.time')}</th>
-                  <th className="col-lo">{t('audit.col.actor')}</th>
-                  <th>{t('audit.col.action')}</th>
-                  <th className="col-lo">{t('audit.col.target')}</th>
-                  <th className="col-lo">{t('audit.col.reason')}</th>
-                  <th className="col-lo">{t('audit.col.detail')}</th>
+                  <th scope="col">{t('audit.col.time')}</th>
+                  <th scope="col" className="col-lo">{t('audit.col.actor')}</th>
+                  <th scope="col">{t('audit.col.action')}</th>
+                  <th scope="col" className="col-lo">{t('audit.col.target')}</th>
+                  <th scope="col" className="col-lo">{t('audit.col.reason')}</th>
+                  <th scope="col" className="col-lo">{t('audit.col.detail')}</th>
                 </tr>
               </thead>
               <tbody>

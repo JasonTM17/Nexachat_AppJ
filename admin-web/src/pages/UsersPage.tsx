@@ -196,9 +196,9 @@ export default function UsersPage() {
             <table>
               <thead>
                 <tr>
-                  <th>{t('users.col.user')}</th>
-                  <th>{t('users.col.joined')}</th>
-                  <th>{t('users.col.status')}</th>
+                  <th scope="col">{t('users.col.user')}</th>
+                  <th scope="col">{t('users.col.joined')}</th>
+                  <th scope="col">{t('users.col.status')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -241,11 +241,11 @@ export default function UsersPage() {
             <table>
               <thead>
                 <tr>
-                  <th>{t('users.col.user')}</th>
-                  <th className="col-lo">{t('users.col.role')}</th>
-                  <th>{t('users.col.status')}</th>
-                  <th className="col-lo">{t('users.col.joined')}</th>
-                  <th className="col-lo">{t('users.col.lastSeen')}</th>
+                  <th scope="col">{t('users.col.user')}</th>
+                  <th scope="col" className="col-lo">{t('users.col.role')}</th>
+                  <th scope="col">{t('users.col.status')}</th>
+                  <th scope="col" className="col-lo">{t('users.col.joined')}</th>
+                  <th scope="col" className="col-lo">{t('users.col.lastSeen')}</th>
                 </tr>
               </thead>
               <tbody>
