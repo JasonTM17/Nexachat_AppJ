@@ -2,18 +2,28 @@ package com.nexachat.core.media;
 
 import androidx.annotation.NonNull;
 import java.io.File;
-import okhttp3.Cache;
-import okhttp3.Request;
 
-/** Internal media cache sizing and path policy. The two caches share one 2 GiB ceiling. */
+/**
+ * Internal media cache path policy.
+ *
+ * <p>The OkHttp disk cache is gone on purpose: it persisted decrypted attachment
+ * bytes unencrypted (audit F-02), and OkHttp's cache format cannot be encrypted.
+ * Every request is forced {@code no-store} by {@link MediaCacheRequestInterceptor},
+ * so no HTTP response body is ever written to disk. {@link #OKHTTP_DIRECTORY_NAME}
+ * is kept only so account deletion still wipes the directory left behind by
+ * pre-hardening installs.
+ */
 public final class MediaCacheConfig {
 
     public static final long MAX_TOTAL_DISK_CACHE_BYTES = 2L * 1024L * 1024L * 1024L;
     public static final long GLIDE_DISK_CACHE_BYTES = MAX_TOTAL_DISK_CACHE_BYTES / 2L;
-    public static final long OKHTTP_DISK_CACHE_BYTES =
-            MAX_TOTAL_DISK_CACHE_BYTES - GLIDE_DISK_CACHE_BYTES;
     public static final String GLIDE_DIRECTORY_NAME = "media-glide-cache";
+    /** Legacy OkHttp media cache dir; wiped on account deletion, never written. */
     public static final String OKHTTP_DIRECTORY_NAME = "media-okhttp-cache";
+    /** Encrypted at-rest store for downloaded attachments (AES/GCM, keystore key). */
+    public static final String ATTACHMENTS_DIR_NAME = "attachments";
+    /** Transient decrypted working copies handed to viewers; wiped on app start. */
+    public static final String ATTACHMENTS_TRANSIENT_DIR_NAME = "attachments-open";
 
     private MediaCacheConfig() { }
 
@@ -28,31 +38,12 @@ public final class MediaCacheConfig {
     }
 
     @NonNull
-    public static Cache createOkHttpCache(@NonNull File cacheDirectory) {
-        return new Cache(okHttpDirectory(cacheDirectory), OKHTTP_DISK_CACHE_BYTES);
+    public static File attachmentDirectory(@NonNull File cacheDirectory) {
+        return new File(cacheDirectory, ATTACHMENTS_DIR_NAME);
     }
 
-    public static boolean isAttachmentContentGet(@NonNull Request request) {
-        if (!"GET".equals(request.method())) {
-            return false;
-        }
-        String[] segments = request.url().encodedPath().split("/");
-        return segments.length == 6
-                && "api".equals(segments[1])
-                && "v1".equals(segments[2])
-                && "attachments".equals(segments[3])
-                && !segments[4].isEmpty()
-                && "content".equals(segments[5]);
-    }
-
-    public static boolean isMediaContentType(String contentType) {
-        String normalized = contentType == null
-                ? ""
-                : contentType.split(";", 2)[0].trim().toLowerCase(java.util.Locale.ROOT);
-        return normalized.startsWith("image/")
-                || normalized.startsWith("video/")
-                || normalized.startsWith("audio/")
-                || "application/pdf".equals(normalized)
-                || "application/octet-stream".equals(normalized);
+    @NonNull
+    public static File transientAttachmentDirectory(@NonNull File cacheDirectory) {
+        return new File(cacheDirectory, ATTACHMENTS_TRANSIENT_DIR_NAME);
     }
 }

@@ -11,9 +11,10 @@ import java.util.UUID;
 
 /**
  * Persists the per-conversation AI opt-out and purges derived data when a
- * member opts out: stored message vectors and cached ask answers that cite the
- * member's messages are removed in the same transaction. A database-less test
- * context (the {@code test} profile) gets empty read results.
+ * member opts out: stored message vectors, cached ask answers and cached
+ * summaries of the conversation are removed in the same transaction. A
+ * database-less test context (the {@code test} profile) gets empty read
+ * results.
  */
 @Repository
 public class JdbcConversationAiOptOutRepository implements ConversationAiOptOuts {
@@ -90,10 +91,12 @@ public class JdbcConversationAiOptOutRepository implements ConversationAiOptOuts
     /**
      * Inserts the opt-out idempotently and removes every derived artifact in
      * the same transaction: stored vectors for the member's messages in this
-     * conversation and every cached ask answer for the conversation. The cache
-     * row records only the cited messages, while the external prompt can use
-     * the member's messages as uncited context, so the whole conversation's
-     * ask cache is the smallest set that is guaranteed to be free of it.
+     * conversation, every cached ask answer and every cached summary for the
+     * conversation. The cache rows record only the cited messages, while the
+     * external prompt can use the member's messages as uncited context (and
+     * the summary overview is never citation-bound), so the whole
+     * conversation's caches are the smallest set that is guaranteed to be
+     * free of it.
      *
      * @return the member's message ids in the conversation, so listeners can
      *         purge the same set from in-memory caches
@@ -119,6 +122,14 @@ public class JdbcConversationAiOptOutRepository implements ConversationAiOptOuts
                 """, conversationId, userId);
         jdbcTemplate.update("""
                 DELETE FROM rag_ask_cache
+                WHERE conversation_id = ?
+                """, conversationId);
+        // Cached summaries are derived data too: the LLM overview field carries
+        // no citations, so a cached row can paraphrase the member's messages
+        // even when no cited message belongs to them. Purge the whole
+        // conversation's summary cache, like the ask cache above.
+        jdbcTemplate.update("""
+                DELETE FROM message_summaries
                 WHERE conversation_id = ?
                 """, conversationId);
         // Cached translations of the member's messages are derived data too:

@@ -44,7 +44,8 @@ public class TranslationContextRepository {
                 rs.getTimestamp("created_at").toInstant(),
                 rs.getString("type"),
                 deletedAt == null ? null : deletedAt.toInstant(),
-                rs.getString("encryption"));
+                rs.getString("encryption"),
+                rs.getBoolean("peer_suppressed"));
     };
 
     private final JdbcTemplate jdbcTemplate;
@@ -56,11 +57,14 @@ public class TranslationContextRepository {
     /**
      * The most recent {@code limit} usable text messages in the conversation
      * strictly before {@code beforeSeq}, excluding messages authored by
-     * AI-opted-out members. Chronological order, per-message text truncated
-     * to {@code maxCharsPerMessage}.
+     * AI-opted-out members and rows the viewer cannot see (a peer-suppressed
+     * row reaches only its sender — the same boundary every message read
+     * applies, so blocked content never leaves the server as prompt context).
+     * Chronological order, per-message text truncated to {@code maxCharsPerMessage}.
      */
     public List<TranslationMessage> findContextBefore(
-            UUID conversationId, long beforeSeq, Instant admittedFrom, int limit, int maxCharsPerMessage) {
+            UUID conversationId, UUID viewerId, long beforeSeq, Instant admittedFrom,
+            int limit, int maxCharsPerMessage) {
         List<TranslationMessage> newestFirst = jdbcTemplate.query("""
                 SELECT m.id, m.seq, m.sender_id, u.display_name AS sender_name,
                        m.content, m.change_version, m.created_at
@@ -75,6 +79,7 @@ public class TranslationContextRepository {
                   AND m.content IS NOT NULL
                   AND btrim(m.content) <> ''
                   AND m.created_at >= ?
+                  AND (m.peer_suppressed = false OR m.sender_id = ?)
                   AND NOT EXISTS (
                       SELECT 1 FROM conversation_ai_opt_outs o
                       WHERE o.conversation_id = m.conversation_id
@@ -90,7 +95,7 @@ public class TranslationContextRepository {
                             message.changeVersion(), message.createdAt());
                 },
                 conversationId, beforeSeq,
-                OffsetDateTime.ofInstant(admittedFrom, ZoneOffset.UTC), limit);
+                OffsetDateTime.ofInstant(admittedFrom, ZoneOffset.UTC), viewerId, limit);
         Collections.reverse(newestFirst);
         return List.copyOf(newestFirst);
     }
@@ -114,7 +119,7 @@ public class TranslationContextRepository {
         return jdbcTemplate.query(
                 "SELECT m.id, m.seq, m.sender_id, u.display_name AS sender_name,"
                         + " m.content, m.change_version, m.created_at,"
-                        + " m.type, m.deleted_at, m.encryption"
+                        + " m.type, m.deleted_at, m.encryption, m.peer_suppressed"
                         + " FROM messages m JOIN users u ON u.id = m.sender_id"
                         + " WHERE m.conversation_id = ? AND m.id IN (" + placeholders + ")",
                 TARGET_MAPPER,
@@ -132,7 +137,8 @@ public class TranslationContextRepository {
             Instant createdAt,
             String type,
             Instant deletedAt,
-            String encryption) {
+            String encryption,
+            boolean peerSuppressed) {
 
         public TranslationMessage toMessage() {
             return new TranslationMessage(id, seq, senderId, senderName, content,
