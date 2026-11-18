@@ -91,6 +91,15 @@ class FrameReader:
                     envelope = json.loads(body)
                 except ValueError:
                     continue
+                # MESSAGE_CREATED legitimately arrives twice on one socket —
+                # once on /topic/conversations.{id} and once on the member's
+                # /user/queue/inbox push — so callers must filter by destination.
+                for line in head.splitlines()[1:]:
+                    key, _, value = line.partition(":")
+                    if key == "destination":
+                        envelope["_destination"] = value
+                    elif key == "subscription":
+                        envelope["_subscription"] = value
                 yield envelope
 
     def close(self) -> None:

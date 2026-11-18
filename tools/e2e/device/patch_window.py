@@ -303,8 +303,12 @@ def node_by_id(nodes: list[Node], suffix: str) -> Node | None:
 
 
 def inbox_visible(nodes: list[Node]) -> bool:
-    """True when the inbox list is drawn, not merely bottom-nav chrome."""
-    return any(text_matches(node, ("Binh", "NexaChat Team")) for node in nodes)
+    """True when the inbox list is drawn, not merely bottom-nav chrome.
+
+    Anchored on the inbox-only avatar entry point: a peer title like "Binh"
+    also appears on an open conversation screen and must not qualify.
+    """
+    return node_by_id(nodes, "inboxUserAvatar") is not None
 
 
 def login_form_visible(nodes: list[Node]) -> bool:
@@ -321,6 +325,20 @@ def ensure_server_readiness(client: Client, base_url: str) -> None:
           f"{base_url}/actuator/health/readiness returned HTTP {response.status}")
 
 
+def fill_login_field(ui: Device, field_id: str, value: str) -> None:
+    # The IME can move the form after the previous field was tapped.
+    node = node_by_id(ui_nodes(ui, timeout=15), field_id)
+    check(node is not None, f"login field {field_id} is not visible")
+    ui.tap_node(node)
+    focused = node_by_id(ui_nodes(ui, timeout=15), field_id)
+    check(focused is not None and focused.attrs.get("focused") == "true",
+          f"login field {field_id} did not receive input focus")
+    if focused.text:
+        ui.move_end()
+        ui.delete_chars(len(focused.text))
+    ui.type_text(value)
+
+
 def sign_in_as_device_account(ui: Device, evidence_dir: Path) -> None:
     """Drive the manual login probe: tap ids, hide keyboard, tap primaryAction."""
     adb("shell", "am", "start", "-n", f"{PACKAGE}/{MAIN_ACTIVITY_CLASS}", timeout=30)
@@ -328,25 +346,17 @@ def sign_in_as_device_account(ui: Device, evidence_dir: Path) -> None:
     time.sleep(8)
     nodes = ui_nodes(ui, timeout=15)
     check(login_form_visible(nodes), "login form was not visible after cold start")
-    phone = node_by_id(nodes, "phoneInput")
-    password = node_by_id(nodes, "passwordInput")
-    check(phone is not None and password is not None,
-          "login screen did not expose phone/password inputs")
-    ui.tap_node(phone)
-    time.sleep(0.3)
-    ui.type_text(DEVICE_ACCOUNT)
-    ui.tap_node(password)
-    time.sleep(0.3)
-    ui.type_text(PASSWORD)
+    fill_login_field(ui, "phoneInput", DEVICE_ACCOUNT)
+    # Dismiss the phone keyboard before locating the password field again.
+    ui.key("KEYCODE_BACK")
+    fill_login_field(ui, "passwordInput", PASSWORD)
     # Hide the keyboard so it cannot cover the button, then target the button by id.
     adb("shell", "input", "keyevent", "4", check_result=False, timeout=15)
     time.sleep(1)
     current = ui_nodes(ui)
     phone_field = node_by_id(current, "phoneInput")
-    if phone_field is not None and DEVICE_ACCOUNT not in phone_field.text:
-        raise E2EFailure(
-            f"phone field did not accept {DEVICE_ACCOUNT!r}; got {phone_field.text!r}"
-        )
+    check(phone_field is not None and phone_field.text == DEVICE_ACCOUNT,
+          "phone field does not match the seeded account")
     action = node_by_id(current, "primaryAction") or next(
         (node for node in current if text_matches(node, ("Sign in", "Đăng nhập"))), None)
     check(action is not None, "login action was not visible")
@@ -368,7 +378,12 @@ def ensure_device_account(ui: Device, evidence_dir: Path, *, fresh_login: bool) 
 
     adb("shell", "am", "start", "-n", f"{PACKAGE}/{MAIN_ACTIVITY_CLASS}", timeout=30)
     # Cold start passes through the splash; wait until the sign-in form or inbox is drawn.
+    # A resumed task may land on a previous screen (chat, profile): press Back a
+    # bounded number of times to pop the fragment stack, then relaunch once if
+    # the back stack emptied onto the launcher.
     nodes: list[Node] = []
+    backs = 0
+    relaunched = False
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         nodes = ui_nodes(ui, timeout=10)
@@ -378,6 +393,12 @@ def ensure_device_account(ui: Device, evidence_dir: Path, *, fresh_login: bool) 
         if login_form_visible(nodes):
             sign_in_as_device_account(ui, evidence_dir)
             return
+        if backs < 4:
+            ui.key("KEYCODE_BACK")
+            backs += 1
+        elif not relaunched:
+            adb("shell", "am", "start", "-n", f"{PACKAGE}/{MAIN_ACTIVITY_CLASS}", timeout=30)
+            relaunched = True
         time.sleep(1)
     # No login form and no inbox markers yet; fall through to profile verification.
 
