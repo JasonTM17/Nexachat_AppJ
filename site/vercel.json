@@ -15,7 +15,7 @@
     },
     {
       "source": "/admin/:path*",
-      "destination": "https://nexachat-admin-nguyensonbmt06-6377s-projects.vercel.app/admin/:path*"
+      "destination": "https://nexachat-admin.vercel.app/admin/:path*"
     }
   ],
   "redirects": [
