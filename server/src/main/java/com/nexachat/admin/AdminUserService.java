@@ -299,8 +299,11 @@ public class AdminUserService {
                                  UUID actorId, User.Role actorRole, String ip) {
         requireReason(reason);
         requireActionableTarget(targetId, actorId, actorRole);
+        // The cited alert must be the target's own: a warning notice bound to
+        // an alert raised on someone else's message would mislink evidence.
         if (alertId != null && !Boolean.TRUE.equals(jdbcTemplate.queryForObject(
-                "SELECT EXISTS (SELECT 1 FROM message_alerts WHERE id = ?)", Boolean.class, alertId))) {
+                "SELECT EXISTS (SELECT 1 FROM message_alerts WHERE id = ? AND sender_id = ?)",
+                Boolean.class, alertId, targetId))) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, "Unknown alert");
         }
         String body = "Your messages violated the community rules (" + reason.trim() + ")";

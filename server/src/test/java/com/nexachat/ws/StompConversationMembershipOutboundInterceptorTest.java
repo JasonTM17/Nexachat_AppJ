@@ -9,9 +9,6 @@ import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessageType;
-import org.springframework.messaging.simp.user.SimpSession;
-import org.springframework.messaging.simp.user.SimpUser;
-import org.springframework.messaging.simp.user.SimpUserRegistry;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
@@ -25,7 +22,6 @@ import org.springframework.web.socket.TextMessage;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -50,7 +46,6 @@ class StompConversationMembershipOutboundInterceptorTest {
     private static final String SESSION_ID = "pending-session";
 
     private final ConversationMemberRepository memberRepository = mock(ConversationMemberRepository.class);
-    private final SimpUserRegistry userRegistry = mock(SimpUserRegistry.class);
     private final StompSessionRegistry sessionRegistry = mock(StompSessionRegistry.class);
     private final MessageChannel channel = mock(MessageChannel.class);
     private final com.nexachat.message.MessageRepository messageRepository =
@@ -60,7 +55,7 @@ class StompConversationMembershipOutboundInterceptorTest {
     private final StompConversationMembershipOutboundInterceptor interceptor =
             new StompConversationMembershipOutboundInterceptor(
                     memberRepository, messageRepository, blockRepository,
-                    userRegistry, sessionRegistry);
+                    sessionRegistry);
 
     @Test
     void connectedResponsePassesBeforeSessionBindingCompletes() {
@@ -70,7 +65,7 @@ class StompConversationMembershipOutboundInterceptorTest {
         assertThat(interceptor.preSend(connected, channel)).isSameAs(connected);
 
         verify(sessionRegistry, never()).isAuthenticatedSession(SESSION_ID);
-        verifyNoInteractions(memberRepository, userRegistry);
+        verifyNoInteractions(memberRepository);
     }
 
     @Test
@@ -82,7 +77,7 @@ class StompConversationMembershipOutboundInterceptorTest {
         assertThat(interceptor.preSend(heartbeat, channel)).isSameAs(heartbeat);
 
         verify(sessionRegistry, never()).isAuthenticatedSession(SESSION_ID);
-        verifyNoInteractions(memberRepository, userRegistry);
+        verifyNoInteractions(memberRepository);
     }
 
     @Test
@@ -93,7 +88,7 @@ class StompConversationMembershipOutboundInterceptorTest {
         assertThat(interceptor.preSend(event, channel)).isNull();
 
         verify(sessionRegistry).isAuthenticatedSession(SESSION_ID);
-        verifyNoInteractions(memberRepository, userRegistry);
+        verifyNoInteractions(memberRepository);
     }
 
     @Test
@@ -119,14 +114,6 @@ class StompConversationMembershipOutboundInterceptorTest {
         registry.onSessionConnected(connectedEvent(principal));
         assertThat(registry.isAuthenticatedSession(SESSION_ID)).isTrue();
 
-        SimpSession simpSession = mock(SimpSession.class);
-        when(simpSession.getId()).thenReturn(SESSION_ID);
-        SimpUser simpUser = mock(SimpUser.class);
-        when(simpUser.getName()).thenReturn(userId.toString());
-        when(simpUser.getSessions()).thenReturn(Set.of(simpSession));
-        SimpUserRegistry connectedUsers = mock(SimpUserRegistry.class);
-        when(connectedUsers.getUsers()).thenReturn(Set.of(simpUser));
-
         CountDownLatch membershipLookupStarted = new CountDownLatch(1);
         CountDownLatch resumeMembershipLookup = new CountDownLatch(1);
         ConversationMemberRepository members = mock(ConversationMemberRepository.class);
@@ -141,7 +128,7 @@ class StompConversationMembershipOutboundInterceptorTest {
                 new StompConversationMembershipOutboundInterceptor(members,
                         mock(com.nexachat.message.MessageRepository.class),
                         mock(com.nexachat.user.UserBlockRepository.class),
-                        connectedUsers, registry);
+                        registry);
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
@@ -191,20 +178,13 @@ class StompConversationMembershipOutboundInterceptorTest {
                 userId, Instant.now().minusSeconds(30), Instant.now().plusSeconds(300));
         registry.onSessionConnected(connectedEvent(principal));
 
-        SimpSession simpSession = mock(SimpSession.class);
-        when(simpSession.getId()).thenReturn(SESSION_ID);
-        SimpUser simpUser = mock(SimpUser.class);
-        when(simpUser.getName()).thenReturn(userId.toString());
-        when(simpUser.getSessions()).thenReturn(Set.of(simpSession));
-        SimpUserRegistry connectedUsers = mock(SimpUserRegistry.class);
-        when(connectedUsers.getUsers()).thenReturn(Set.of(simpUser));
         ConversationMemberRepository members = mock(ConversationMemberRepository.class);
         when(members.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
         StompConversationMembershipOutboundInterceptor outbound =
                 new StompConversationMembershipOutboundInterceptor(members,
                         mock(com.nexachat.message.MessageRepository.class),
                         mock(com.nexachat.user.UserBlockRepository.class),
-                        connectedUsers, registry);
+                        registry);
 
         Message<byte[]> authorized = conversationMessage(conversationId);
         assertThat(outbound.preSend(authorized, channel)).isSameAs(authorized);
@@ -506,12 +486,7 @@ class StompConversationMembershipOutboundInterceptorTest {
 
     private void bindSessionTo(UUID userId) {
         when(sessionRegistry.isAuthenticatedSession(SESSION_ID)).thenReturn(true);
-        SimpSession simpSession = mock(SimpSession.class);
-        when(simpSession.getId()).thenReturn(SESSION_ID);
-        SimpUser simpUser = mock(SimpUser.class);
-        when(simpUser.getName()).thenReturn(userId.toString());
-        when(simpUser.getSessions()).thenReturn(Set.of(simpSession));
-        when(userRegistry.getUsers()).thenReturn(Set.of(simpUser));
+        when(sessionRegistry.userIdForSession(SESSION_ID)).thenReturn(userId);
     }
 
     private static Message<byte[]> interactionFrame(UUID conversationId, String eventType,

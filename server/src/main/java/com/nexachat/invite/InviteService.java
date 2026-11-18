@@ -444,6 +444,27 @@ public class InviteService {
             throw ApiException.of(ApiErrorCode.FORBIDDEN, "Cannot approve this request");
         }
 
+        UUID inviteLinkId = request.getInviteLink() != null ? request.getInviteLink().getId() : null;
+        // The same removal ban join() enforces: a request can sit PENDING
+        // across a remove-and-ban, and approving it must not re-admit the
+        // user through the back door.
+        if (inviteLinkId != null
+                && banRepository.isBannedFromLink(conversationId, requesterId, inviteLinkId)) {
+            throw ApiException.of(ApiErrorCode.FORBIDDEN,
+                    "User was removed from this group by admin and cannot rejoin via this link");
+        }
+
+        // The requester may have been added by another path while the request
+        // was pending; approving must not burn a scarce link use or post a
+        // duplicate join line for a user who is already a member.
+        if (memberRepository.existsByConversation_IdAndUser_Id(conversationId, requesterId)) {
+            request.approve(review.reviewer(), Instant.now());
+            request = joinRequestRepository.save(request);
+            log.info("Join request {} approved for already-member user {} by admin {}",
+                    requestId, requesterId, callerId);
+            return toJoinRequestResponse(request);
+        }
+
         long memberCount = memberRepository.countByConversation_Id(conversationId);
         if (memberCount >= maxMembers) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
@@ -451,7 +472,6 @@ public class InviteService {
                     Map.of("limit", maxMembers));
         }
 
-        UUID inviteLinkId = request.getInviteLink() != null ? request.getInviteLink().getId() : null;
         if (inviteLinkId != null) {
             linkRepository.findByIdForUpdate(inviteLinkId)
                     .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_FOUND, "Invite link not found or inactive"));

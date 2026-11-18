@@ -618,6 +618,80 @@ class AlertPipelineIT {
 
     // ------------------------------------------------------------- fixtures
 
+    @Test
+    void reopeningAResolvedAlertClearsTheStaleResolutionEvidence() throws Exception {
+        send(sender, "send me the code 482913 please");
+        UUID alertId = (UUID) awaitAlerts(1).get(0).get("id");
+
+        mockMvc.perform(patch("/api/v1/admin/alerts/" + alertId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("status", "RESOLVED"))))
+                .andExpect(status().isOk());
+        Map<String, Object> resolved = jdbcTemplate.queryForMap(
+                "SELECT resolved_by, resolved_at FROM message_alerts WHERE id = ?", alertId);
+        assertThat(resolved.get("resolved_by")).isEqualTo(admin.getId());
+
+        mockMvc.perform(patch("/api/v1/admin/alerts/" + alertId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("status", "OPEN"))))
+                .andExpect(status().isOk());
+
+        Map<String, Object> reopened = jdbcTemplate.queryForMap(
+                "SELECT status, resolved_by, resolved_at FROM message_alerts WHERE id = ?", alertId);
+        assertThat(reopened.get("status")).isEqualTo("OPEN");
+        assertThat(reopened.get("resolved_by")).isNull();
+        assertThat(reopened.get("resolved_at")).isNull();
+    }
+
+    @Test
+    void warnUserRejectsAnAlertRaisedOnAnotherUsersMessage() {
+        send(sender, "send me the code 482913 please");
+        UUID alertId = (UUID) awaitAlerts(1).get(0).get("id");
+
+        // The peer did not send the flagged message: citing this alert against
+        // them would mislink the warning's evidence.
+        assertThatThrownBy(() -> adminUserService.warnUser(peer.getId(), alertId,
+                "wrong target probe", admin.getId(), User.Role.ADMIN, "127.0.0.1"))
+                .isInstanceOf(ApiException.class)
+                .extracting(e -> ((ApiException) e).getCode())
+                .isEqualTo(com.nexachat.common.error.ApiErrorCode.VALIDATION_FAILED);
+
+        adminUserService.warnUser(sender.getId(), alertId,
+                "right target probe", admin.getId(), User.Role.ADMIN, "127.0.0.1");
+        Integer notices = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM user_notices WHERE user_id = ? AND alert_id = ?",
+                Integer.class, sender.getId(), alertId);
+        assertThat(notices).isEqualTo(1);
+    }
+
+    @Test
+    void deletingABuiltInRuleDisablesItInsteadOfRefusing() throws Exception {
+        UUID builtInId = jdbcTemplate.queryForObject(
+                "SELECT id FROM alert_rules WHERE built_in = TRUE ORDER BY id LIMIT 1", UUID.class);
+        Boolean wasEnabled = jdbcTemplate.queryForObject(
+                "SELECT enabled FROM alert_rules WHERE id = ?", Boolean.class, builtInId);
+        try {
+            mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .delete("/api/v1/admin/rules/" + builtInId)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token(admin)))
+                    .andExpect(status().isNoContent());
+
+            Boolean enabled = jdbcTemplate.queryForObject(
+                    "SELECT enabled FROM alert_rules WHERE id = ?", Boolean.class, builtInId);
+            assertThat(enabled)
+                    .as("DELETE on a built-in rule disables it; the row must survive")
+                    .isFalse();
+            Integer rows = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM alert_rules WHERE id = ?", Integer.class, builtInId);
+            assertThat(rows).isEqualTo(1);
+        } finally {
+            jdbcTemplate.update("UPDATE alert_rules SET enabled = ? WHERE id = ?",
+                    wasEnabled, builtInId);
+        }
+    }
+
     private User createUser(String displayName) {
         String phone = ItPhoneRanges.nextPhone(AlertPipelineIT.class);
         return userRepository.save(User.create(phone, "x".repeat(60), displayName));
