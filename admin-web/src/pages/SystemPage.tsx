@@ -1,7 +1,24 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type SystemHealth } from '../api';
-import { useI18n } from '../i18n';
+import { useI18n, type StringKey } from '../i18n';
 import { Chip, ErrorBlock, Loading, fmtTime } from '../components/ui';
+
+// Map a service status string to a chip tone + localized label. Anything that
+// is not a known-healthy value must not render as healthy: unknown statuses
+// fall through to the critical 'unknown' state.
+export function serviceStatus(status: string): { tone: string; key: StringKey } {
+  const s = status.trim().toUpperCase();
+  if (s === 'UP' || s === 'OK' || s === 'HEALTHY') {
+    return { tone: 'success', key: 'system.up' };
+  }
+  if (s === 'DEGRADED' || s === 'WARN' || s === 'WARNING') {
+    return { tone: 'high', key: 'system.degraded' };
+  }
+  if (s === 'DOWN' || s === 'OUTAGE' || s === 'ERROR') {
+    return { tone: 'critical', key: 'system.down' };
+  }
+  return { tone: 'critical', key: 'system.unknown' };
+}
 
 function fmtUptime(seconds: number): string {
   const d = Math.floor(seconds / 86400);
@@ -39,8 +56,8 @@ export default function SystemPage() {
         <div className="card kpi">
           <div className="label">{t('system.status')}</div>
           <div className="value">
-            <Chip tone={health.status === 'UP' ? 'success' : 'critical'}>
-              {health.status === 'UP' ? t('system.up') : t('system.down')}
+            <Chip tone={serviceStatus(health.status).tone}>
+              {t(serviceStatus(health.status).key)}
             </Chip>
           </div>
           <div className="sub">{fmtTime(health.checkedAt)}</div>
@@ -59,8 +76,8 @@ export default function SystemPage() {
                 <div style={{ fontWeight: 600 }}>{svc.name}</div>
                 {svc.detail && <div className="muted" style={{ fontSize: 12 }}>{svc.detail}</div>}
               </div>
-              <Chip tone={svc.status === 'UP' ? 'success' : 'critical'}>
-                {svc.status === 'UP' ? t('system.up') : t('system.down')}
+              <Chip tone={serviceStatus(svc.status).tone}>
+                {t(serviceStatus(svc.status).key)}
               </Chip>
             </div>
           ))}

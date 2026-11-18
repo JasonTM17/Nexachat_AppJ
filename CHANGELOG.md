@@ -27,6 +27,11 @@ All notable changes to NexaChat are documented here. The format follows
   reviewed or dismissed.
 
 ### Changed
+- Admin console: light and dark themes apply on every page including sign-in,
+  tables stay usable on a phone (low-priority columns hide, actions stay
+  reachable), controls are at least 44 px tall, filters have visible labels,
+  empty and error states offer a next step, and a degraded service shows as
+  degraded instead of down.
 - A scope with fewer than five messages reports how many it found and offers
   another scope instead of quietly widening the range.
 - Cached summaries are keyed by scope, count, day, zone and AI consent, and a
