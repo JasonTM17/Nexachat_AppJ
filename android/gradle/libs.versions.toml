@@ -8,8 +8,12 @@ google-services = "4.5.0"
 lifecycle = "2.8.7"
 room = "2.6.1"
 # SQLCipher for Android — at-rest encryption of the Room database (audit F-01).
-# 4.5.4 is the newest release published on Maven Central (2023-04-27); pinned, never "latest".
-sqlcipher = "4.5.4"
+# Maintained artifact net.zetetic:sqlcipher-android; the old android-database-sqlcipher
+# line is deprecated (last release 2023) and its native libs are 4KB-page only (ELF
+# p_align 0x1000), which fails to load on 16KB-page devices — a Play requirement for
+# targetSdk 35+. 4.20.0 is the newest release on Maven Central (published 2026-10-27,
+# >7 days before pinning); its .so files use p_align 0x4000 (16KB). Pinned, never "latest".
+sqlcipher = "4.20.0"
 retrofit = "2.11.0"
 okhttp = "4.12.0"
 moshi = "1.15.1"
@@ -71,9 +75,11 @@ hilt-android-testing = { group = "com.google.dagger", name = "hilt-android-testi
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-rxjava3 = { group = "androidx.room", name = "room-rxjava3", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
-# SQLCipher: its SupportFactory implements androidx.sqlite's SupportSQLiteOpenHelper.Factory,
-# so Room + DAOs keep working unchanged while the database file is encrypted at rest.
-android-database-sqlcipher = { group = "net.zetetic", name = "android-database-sqlcipher", version.ref = "sqlcipher" }
+# SQLCipher: its SupportOpenHelperFactory implements androidx.sqlite's
+# SupportSQLiteOpenHelper.Factory, so Room + DAOs keep working unchanged while the
+# database file is encrypted at rest. This artifact line renames the Java packages to
+# net.zetetic.database.sqlcipher.* and loads the native lib via System.loadLibrary.
+sqlcipher-android = { group = "net.zetetic", name = "sqlcipher-android", version.ref = "sqlcipher" }
 
 # Network
 retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
