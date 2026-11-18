@@ -36,6 +36,7 @@ Response `200`:
   "language": "VI", "generatedBy": "LOCAL", "model": null,
   "provider": null, "fallbackReason": null, "cached": false, "contextOmitted": false,
   "createdAt": "2026-11-05T12:00:00Z",
+  "scope": "LAST_N", "limit": 50, "period": null,
   "overview": "string, at most 400 chars",
   "keyPoints":   [{ "text": "...", "messageIds": ["uuid"] }],
   "decisions":   [{ "text": "...", "messageIds": ["uuid"] }],
@@ -55,9 +56,32 @@ was excluded because its author opted out in this conversation; it never
 identifies the member. Local summaries report `false` because the local engine
 may still use those messages.
 
-Errors use the standard envelope: `400 VALIDATION_FAILED`, `400 TOO_FEW_MESSAGES` (fewer than 5 usable messages), `403 NOT_MEMBER`, `404` unknown conversation, `429 RATE_LIMITED`. The endpoint never answers `503`: provider trouble degrades to the local engine (`fallbackReason`: `NO_CONSENT | LLM_DISABLED | LLM_TIMEOUT | LLM_BAD_OUTPUT | LLM_HTTP_ERROR | NO_EXTERNAL_CONTEXT`).
+Errors use the standard envelope: `400 VALIDATION_FAILED`, `400 TOO_FEW_MESSAGES` (fewer than 5 usable messages in the chosen scope), `400 INVALID_TIME_ZONE` (unparseable `timeZone`), `403 NOT_MEMBER`, `404` unknown conversation, `429 RATE_LIMITED`. The endpoint never answers `503`: provider trouble degrades to the local engine (`fallbackReason`: `NO_CONSENT | LLM_DISABLED | LLM_TIMEOUT | LLM_BAD_OUTPUT | LLM_HTTP_ERROR | NO_EXTERNAL_CONTEXT`).
 
-Scopes: `UNREAD` = messages after the caller's `last_read_seq`; `LAST_N` = latest N; `TODAY` = since 00:00 UTC of the current day.
+Scopes:
+
+| Scope | Window |
+|---|---|
+| `UNREAD` | messages with `seq` above the caller's `last_read_seq` |
+| `LAST_N` | the newest `limit` messages (`limit` required, 5..500) |
+| `TODAY` | `[00:00, next 00:00)` of the caller's local day |
+
+`timeZone` (IANA zone id or UTC offset) only decides which local day `TODAY`
+covers; `UNREAD` and `LAST_N` never read it. An absent or blank value falls back
+to `Asia/Ho_Chi_Minh` and the response's `period.timeZoneDefaulted` is `true`. A
+value that is not a valid zone id or offset is rejected with
+`400 INVALID_TIME_ZONE` before a rate-limit token is spent. Day boundaries come
+from `atStartOfDay`, so 23- and 25-hour days and skipped midnights resolve
+correctly. The response echoes the resolved day as
+`period: {date, timeZone, start, end, timeZoneDefaulted}`, `null` for the other
+scopes. The Android sheet offers 20/50/100 presets for `LAST_N` (default 50);
+the server accepts any value in 5..500.
+
+No scope is ever widened to reach the five-message minimum: when the chosen
+scope holds fewer than 5 usable messages the request answers
+`400 TOO_FEW_MESSAGES` with `details` `{scope, available, required, period?}` —
+`available` is what that scope actually held, `required` is `5`, and `period` is
+present for `TODAY`. The 500-message cap above applies to every scope.
 
 Limits: 10 requests/min and 60/day per user.
 
