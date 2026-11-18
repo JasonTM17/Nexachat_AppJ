@@ -262,15 +262,14 @@
                     android:textColor="@color/call_text_muted"
                     android:visibility="gone" />
             </LinearLayout>
-        </LinearLayout>
 
-        <!-- End call sits centered under the controls row -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="24dp"
-            android:gravity="center"
-            android:orientation="vertical">
+            <!-- End call Column -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:orientation="vertical">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/call_hang_up"
@@ -299,6 +298,7 @@
                 android:text="@string/call_hang_up"
                 android:textAppearance="?attr/textAppearanceLabelMedium"
                 android:textColor="@color/call_action_decline_text" />
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
     </ScrollView>
