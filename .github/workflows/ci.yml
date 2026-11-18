@@ -218,6 +218,20 @@ jobs:
           npm run typecheck
           npm test
           npm run build
+      - name: Verify committed /admin bundle is in sync
+        # site/admin/ is the deployed console — rebuilt and committed because
+        # Vercel's site build can't reach ../admin-web. Regenerate via the
+        # shared script (it disables MSYS path conversion, without which
+        # Git Bash emits /Program Files/Git/admin/... asset URLs) and fail if
+        # the committed bundle drifted.
+        run: |
+          bash admin-web/scripts/build-site-bundle.sh
+          if [ -n "$(git status --porcelain site/admin/)" ]; then
+            echo "::error::site/admin/ is stale — run admin-web/scripts/build-site-bundle.sh and commit the result"
+            git status --porcelain site/admin/
+            git diff --stat site/admin/
+            exit 1
+          fi
       - name: Install Playwright browser
         working-directory: admin-web
         run: npx playwright install --with-deps chromium
