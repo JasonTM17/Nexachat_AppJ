@@ -119,13 +119,13 @@ class TranslateServiceTest {
         lenient().when(glossaryRepository.findTerms(conversationId, userId)).thenReturn(List.of());
         lenient().when(cacheRepository.find(any(), anyLong(), anyString(), anyString()))
                 .thenReturn(Optional.empty());
-        lenient().when(contextRepository.findContextBefore(any(), anyLong(), any(), anyInt(), anyInt()))
+        lenient().when(contextRepository.findContextBefore(any(), any(), anyLong(), any(), anyInt(), anyInt()))
                 .thenReturn(List.of());
     }
 
     private TargetRow row(String content) {
         return new TargetRow(messageId, 42L, senderId, "Lan", content, 0L,
-                Instant.parse("2026-11-16T09:00:00Z"), "TEXT", null, null);
+                Instant.parse("2026-11-16T09:00:00Z"), "TEXT", null, null, false);
     }
 
     private void stubTarget(TargetRow row) {
@@ -164,7 +164,7 @@ class TranslateServiceTest {
     @Test
     void messageBeforeAdmissionIsNotFound() {
         stubTarget(new TargetRow(messageId, 1L, senderId, "Lan", "hi", 0L,
-                Instant.parse("2025-01-01T00:00:00Z"), "TEXT", null, null));
+                Instant.parse("2025-01-01T00:00:00Z"), "TEXT", null, null, false));
 
         assertThatThrownBy(() -> service.translate(userId, messageId, "en"))
                 .satisfies(error -> assertThat(((ApiException) error).getCode())
@@ -175,7 +175,7 @@ class TranslateServiceTest {
     void deletedMessageIsRejected() {
         stubTarget(new TargetRow(messageId, 1L, senderId, "Lan", "hi", 0L,
                 Instant.parse("2026-11-16T09:00:00Z"), "TEXT",
-                Instant.parse("2026-11-16T09:30:00Z"), null));
+                Instant.parse("2026-11-16T09:30:00Z"), null, false));
 
         assertThatThrownBy(() -> service.translate(userId, messageId, "en"))
                 .satisfies(error -> assertThat(((ApiException) error).getCode())
@@ -185,7 +185,7 @@ class TranslateServiceTest {
     @Test
     void encryptedMessageIsRefused() {
         stubTarget(new TargetRow(messageId, 1L, senderId, "Lan", "hi", 0L,
-                Instant.parse("2026-11-16T09:00:00Z"), "TEXT", null, "SIGNAL"));
+                Instant.parse("2026-11-16T09:00:00Z"), "TEXT", null, "SIGNAL", false));
 
         assertThatThrownBy(() -> service.translate(userId, messageId, "en"))
                 .satisfies(error -> assertThat(((ApiException) error).getCode())
@@ -206,7 +206,7 @@ class TranslateServiceTest {
     @Test
     void nonTextMessageIsRejected() {
         stubTarget(new TargetRow(messageId, 1L, senderId, "Lan", null, 0L,
-                Instant.parse("2026-11-16T09:00:00Z"), "IMAGE", null, null));
+                Instant.parse("2026-11-16T09:00:00Z"), "IMAGE", null, null, false));
 
         assertThatThrownBy(() -> service.translate(userId, messageId, "en"))
                 .satisfies(error -> assertThat(((ApiException) error).getCode())
@@ -222,6 +222,41 @@ class TranslateServiceTest {
                 .satisfies(error -> assertThat(((ApiException) error).getCode())
                         .isEqualTo(ApiErrorCode.AI_OPTED_OUT));
         verify(provider, never()).translate(any());
+    }
+
+    @Test
+    void peerSuppressedMessageIsNotFoundForNonSender() {
+        stubTarget(new TargetRow(messageId, 1L, senderId, "Lan", "blocked secret text", 0L,
+                Instant.parse("2026-11-16T09:00:00Z"), "TEXT", null, null, true));
+
+        assertThatThrownBy(() -> service.translate(userId, messageId, "en"))
+                .satisfies(error -> assertThat(((ApiException) error).getCode())
+                        .isEqualTo(ApiErrorCode.MESSAGE_NOT_FOUND));
+        verify(provider, never()).translate(any());
+        verify(rateLimiter, never()).consumeOne(any());
+    }
+
+    @Test
+    void senderCanStillTranslateOwnSuppressedMessage() {
+        stubTarget(new TargetRow(messageId, 1L, userId, "Me", "my own suppressed text", 0L,
+                Instant.parse("2026-11-16T09:00:00Z"), "TEXT", null, null, true));
+        when(provider.translate(any())).thenReturn(completion("bản dịch của riêng tôi", "en"));
+
+        TranslateResponse response = service.translate(userId, messageId, "vi");
+
+        assertThat(response.text()).isEqualTo("bản dịch của riêng tôi");
+        verify(provider).translate(any());
+    }
+
+    @Test
+    void contextWindowIsScopedToTheRequestingViewer() {
+        stubTarget(row("xin chào"));
+        when(provider.translate(any())).thenReturn(completion("hello", "vi"));
+
+        service.translate(userId, messageId, "en");
+
+        verify(contextRepository).findContextBefore(eq(conversationId), eq(userId), anyLong(),
+                any(), anyInt(), anyInt());
     }
 
     @Test
@@ -352,10 +387,10 @@ class TranslateServiceTest {
         Instant created = Instant.parse("2026-11-16T09:00:00Z");
         when(contextRepository.findTargets(eq(conversationId), any()))
                 .thenReturn(List.of(
-                        new TargetRow(cached, 1L, senderId, "A", "xin chào", 0L, created, "TEXT", null, null),
+                        new TargetRow(cached, 1L, senderId, "A", "xin chào", 0L, created, "TEXT", null, null, false),
                         new TargetRow(deleted, 2L, senderId, "A", "bye", 0L, created, "TEXT",
-                                Instant.parse("2026-11-16T09:30:00Z"), null),
-                        new TargetRow(fresh, 3L, senderId, "A", "tối nay", 0L, created, "TEXT", null, null)));
+                                Instant.parse("2026-11-16T09:30:00Z"), null, false),
+                        new TargetRow(fresh, 3L, senderId, "A", "tối nay", 0L, created, "TEXT", null, null, false)));
         when(cacheRepository.find(eq(cached), anyLong(), eq("en"), anyString()))
                 .thenReturn(Optional.of(new TranslationCacheRepository.CacheEntry(
                         "hello", "vi", "m", "cloud")));
@@ -380,8 +415,8 @@ class TranslateServiceTest {
         Instant created = Instant.parse("2026-11-16T09:00:00Z");
         when(contextRepository.findTargets(eq(conversationId), any()))
                 .thenReturn(List.of(
-                        new TargetRow(a, 1L, senderId, "A", "tối nay", 0L, created, "TEXT", null, null),
-                        new TargetRow(b, 2L, senderId, "A", "mai nhé", 0L, created, "TEXT", null, null)));
+                        new TargetRow(a, 1L, senderId, "A", "tối nay", 0L, created, "TEXT", null, null, false),
+                        new TargetRow(b, 2L, senderId, "A", "mai nhé", 0L, created, "TEXT", null, null, false)));
         when(rateLimiter.tryConsume(userId, 1)).thenReturn(false);
         lenient().when(provider.translate(any())).thenReturn(completion("x", "vi"));
 
@@ -395,12 +430,29 @@ class TranslateServiceTest {
     }
 
     @Test
+    void batchRefusesSuppressedItemForNonSender() {
+        UUID suppressed = UUID.randomUUID();
+        Instant created = Instant.parse("2026-11-16T09:00:00Z");
+        when(contextRepository.findTargets(eq(conversationId), any()))
+                .thenReturn(List.of(new TargetRow(suppressed, 1L, senderId, "A", "blocked secret", 0L,
+                        created, "TEXT", null, null, true)));
+
+        List<TranslateBatchItem> results = service.translateBatch(
+                userId, conversationId, List.of(suppressed), "en");
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).messageId()).isEqualTo(suppressed);
+        assertThat(results.get(0).error()).isEqualTo(ApiErrorCode.MESSAGE_NOT_FOUND.getCode());
+        verify(provider, never()).translate(any());
+    }
+
+    @Test
     void batchWithoutConsentReturnsConsentErrorPerItem() {
         UUID a = UUID.randomUUID();
         Instant created = Instant.parse("2026-11-16T09:00:00Z");
         when(contextRepository.findTargets(eq(conversationId), any()))
                 .thenReturn(List.of(
-                        new TargetRow(a, 1L, senderId, "A", "tối nay", 0L, created, "TEXT", null, null)));
+                        new TargetRow(a, 1L, senderId, "A", "tối nay", 0L, created, "TEXT", null, null, false)));
         when(consentRepository.isConsented(userId)).thenReturn(false);
 
         List<TranslateBatchItem> results = service.translateBatch(
