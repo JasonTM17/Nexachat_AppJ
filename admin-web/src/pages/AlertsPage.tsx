@@ -257,7 +257,7 @@ export default function AlertsPage() {
             <table>
               <thead>
                 <tr>
-                  <th className="col-lo" aria-label="select" />
+                  <th className="col-lo" aria-label={t('common.select')} />
                   <th>{t('alerts.col.severity')}</th>
                   <th className="col-lo">{t('alerts.col.category')}</th>
                   <th>{t('alerts.col.snippet')}</th>
@@ -278,7 +278,7 @@ export default function AlertsPage() {
                         <input
                           type="checkbox"
                           className="checkbox"
-                          aria-label={`select ${a.id}`}
+                          aria-label={`${t('common.select')} ${a.id}`}
                           checked={checked.has(a.id)}
                           onChange={() => toggle(a.id)}
                         />

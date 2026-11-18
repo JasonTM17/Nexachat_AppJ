@@ -206,7 +206,7 @@ export function Pager({
   const { t } = useI18n();
   if (totalPages <= 1) return null;
   return (
-    <nav className="pager" aria-label="Pagination">
+    <nav className="pager" aria-label={t('common.pagination')}>
       <button
         className="btn ghost sm"
         disabled={page <= 0}
