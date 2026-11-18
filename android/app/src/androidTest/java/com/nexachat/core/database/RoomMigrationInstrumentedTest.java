@@ -8,7 +8,6 @@ import static org.junit.Assert.assertTrue;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteConstraintException;
-import androidx.room.Room;
 import androidx.room.migration.Migration;
 import androidx.room.testing.MigrationTestHelper;
 import androidx.sqlite.db.SupportSQLiteDatabase;
@@ -207,7 +206,7 @@ public final class RoomMigrationInstrumentedTest {
             oldDb.close();
         }
 
-        AppDatabase database = Room.databaseBuilder(context, AppDatabase.class, FULL_CHAIN_DB)
+        AppDatabase database = TestDatabases.plaintextFile(context, FULL_CHAIN_DB)
                 .addMigrations(allMigrations())
                 .allowMainThreadQueries()
                 .build();
