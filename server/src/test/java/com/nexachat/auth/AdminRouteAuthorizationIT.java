@@ -150,6 +150,12 @@ class AdminRouteAuthorizationIT extends SecurityITBase {
                 Map.of("reason", "validity cache probe"), admin.accessToken())
                 .andExpect(status().isNoContent());
 
+        // Suspend stamps the access-token cutoff at second resolution and a
+        // token whose iat is not after it fails closed, so a login inside the
+        // same wall-clock second mints an instantly-revoked token. Wait past
+        // the second boundary before signing in.
+        Thread.sleep(1100);
+
         var login = postJson("/api/v1/auth/login",
                 Map.of("phone", phoneOf(target.userId()), "password", "secret123"))
                 .andExpect(status().isOk())
