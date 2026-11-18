@@ -248,7 +248,7 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
             }
             entries.add(new MessageActionEntry(getString(actionLabel),
                     getString(actionCaption),
-                    () -> confirmDelete(message, deleteAction), MessageActionKind.DELETE));
+                    () -> confirmDelete(message, deleteAction, callbacks), MessageActionKind.DELETE));
         }
 
         ViewCompat.setAccessibilityHeading(binding.messageActionsTitle, true);
@@ -372,7 +372,8 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
 
     private void confirmDelete(
             @NonNull ChatMessage message,
-            @NonNull RecallWindowRules.DeleteAction action) {
+            @NonNull RecallWindowRules.DeleteAction action,
+            @NonNull Actions callbacks) {
         int title;
         int body;
         switch (action) {
@@ -394,12 +395,11 @@ public final class MessageActionSheetFragment extends NexaBottomSheetFragment {
                 .setTitle(title)
                 .setMessage(body)
                 .setNegativeButton(R.string.action_cancel, null)
-                .setPositiveButton(R.string.action_delete, (dialog, which) -> {
-                    Actions callbacks = actions();
-                    if (callbacks != null) {
-                        callbacks.delete(message, action);
-                    }
-                })
+                // Capture the host callback now: this sheet is already
+                // dismissing when the user confirms, so getParentFragment()
+                // is null by the time the dialog button fires.
+                .setPositiveButton(R.string.action_delete,
+                        (dialog, which) -> callbacks.delete(message, action))
                 .show());
     }
 

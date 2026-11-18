@@ -56,7 +56,7 @@ class MatrixAndDryRunTest(unittest.TestCase):
         self.assertTrue(expected.issubset(refs), sorted(expected - refs))
         runnable = {row.id for row in journeys.ROWS if row.capability_gap is None}
         self.assertEqual(runnable, {
-            "auth-login", "chat-send-receive",
+            "auth-login", "chat-send-receive", "chat-interactions",
             "calls-injected-notification", "injected-notifications",
         })
         self.assertEqual(journeys.ROWS[-1].id, "account-deletion")
@@ -291,7 +291,7 @@ class WiringDecisionTest(unittest.TestCase):
             else:
                 runnable.append(row_id)
         self.assertEqual(runnable, [
-            "auth-login", "chat-send-receive",
+            "auth-login", "chat-send-receive", "chat-interactions",
             "calls-injected-notification", "injected-notifications",
         ])
         self.assertEqual(len(runnable) + len(blocked), len(journeys.ROWS))
@@ -305,7 +305,7 @@ class WiringDecisionTest(unittest.TestCase):
         self.assertNotIn("calls-injected-notification", blocked)
         self.assertNotIn("injected-notifications", blocked)
         for row_id in (
-            "chat-interactions", "media", "groups-contacts", "polls-reminders",
+            "media", "groups-contacts", "polls-reminders",
             "archive-preferences", "labels-lifecycle", "calls-signaling",
             "summary-ask", "offline-sync", "accessibility-sweep",
         ):
@@ -341,6 +341,7 @@ class WiringDecisionTest(unittest.TestCase):
 
     def test_executors_refuse_a_non_reserved_serial(self):
         cases = (
+            journeys.run_chat_interactions,
             journeys.run_calls_injected_notification,
             journeys.run_injected_notifications,
             journeys.run_otp_forgot_password,
@@ -874,6 +875,474 @@ class WiringDecisionTest(unittest.TestCase):
                     })
             run.assert_not_called()
             self.assertIn("Room 14", str(caught.exception))
+
+
+class ChatInteractionsExecutorTest(unittest.TestCase):
+    """Offline fake device+REST world for run_chat_interactions.
+
+    The device tree is re-rendered from a small world model on every
+    uiautomator dump; taps/long-presses drive the same transitions the real
+    app does, and REST history answers from the same store so a wrong tap
+    stalls a wait instead of faking a pass.
+    """
+
+    class Node:
+        def __init__(self, text="", desc="", rid="", box=(0, 0, 320, 48), clickable=True):
+            self.text = text
+            self.desc = desc
+            self.attrs = {"resource-id": ("com.nexachat.debug:id/" + rid) if rid else ""}
+            self.box = box
+            self.clickable = clickable
+            self.cls = "android.widget.TextView"
+
+        @property
+        def center(self):
+            left, top, right, bottom = self.box
+            return (left + right) // 2, (top + bottom) // 2
+
+    class Store:
+        """Server truth: conversation -> message list; STOMP event queue."""
+        def __init__(self):
+            self.seq = 100
+            self.next_id = 0
+            self.messages = {}
+            self.events = []
+
+        def create(self, cid, content, sender_id, sender_name,
+                   reply_to_id=None, reply_to=None):
+            self.next_id += 1
+            self.seq += 1
+            msg = {
+                "id": f"m-{self.next_id}", "conversationId": cid, "seq": self.seq,
+                "senderId": sender_id, "senderDisplayName": sender_name,
+                "type": "TEXT", "content": content, "replyToId": reply_to_id,
+                "replyTo": reply_to, "reactions": [], "attachments": [],
+                "createdAt": "2026-01-01T00:00:00Z", "editedAt": None, "deletedAt": None,
+            }
+            self.messages.setdefault(cid, []).append(msg)
+            self.events.append((f"/topic/conversations.{cid}",
+                                {"eventType": "MESSAGE_CREATED", "payload": dict(msg)}))
+            return msg
+
+        def by_id(self, cid, mid):
+            return next((m for m in self.messages.get(cid, []) if m["id"] == mid), None)
+
+        def id_for_content(self, cid, content):
+            msg = next((m for m in self.messages.get(cid, []) if m["content"] == content), None)
+            return msg["id"] if msg else None
+
+        def toggle_reaction(self, cid, mid, emoji, user_id):
+            msg = self.by_id(cid, mid)
+            msg["reactions"] = [{"emoji": emoji, "count": 1, "byMe": True}]
+            self.events.append((f"/topic/conversations.{cid}", {
+                "eventType": "REACTION_UPDATED",
+                "payload": {"messageId": mid,
+                            "reactions": [{"emoji": emoji, "count": 1, "userIds": [user_id]}]},
+            }))
+
+        def edit(self, cid, mid, content):
+            msg = self.by_id(cid, mid)
+            msg["content"] = content
+            msg["editedAt"] = "2026-01-01T00:01:00Z"
+            self.events.append((f"/topic/conversations.{cid}",
+                                {"eventType": "MESSAGE_UPDATED", "payload": dict(msg)}))
+
+        def mark_deleted(self, cid, mid):
+            msg = self.by_id(cid, mid)
+            msg["deletedAt"] = "2026-01-01T00:02:00Z"
+            msg["content"] = None
+            self.events.append((f"/topic/conversations.{cid}", {
+                "eventType": "MESSAGE_DELETED",
+                "payload": {"messageId": mid, "deletedAt": msg["deletedAt"]},
+            }))
+
+    class World:
+        """Device surface state re-read by every uiautomator dump."""
+        def __init__(self, store, direct_id, group_id):
+            self.store = store
+            self.direct_id = direct_id
+            self.group_id = group_id
+            self.screen = "inbox"
+            self.sheet_open = False
+            self.sheet_scrolled = False
+            self.banner = None  # ("reply"|"edit", target_id, quoted_text)
+            self.composer = ""
+            self.longpress_id = None
+            self.longpress_content = None
+            self.confirm_open = False
+            self.picker_open = False
+            self.picker_selected = False
+            self.read_upto = 0
+
+        def tree(self):
+            N = ChatInteractionsExecutorTest.Node
+            if self.screen == "inbox":
+                return [N(rid="inboxUserAvatar"), N(text="Binh"),
+                        N(text="Chi"), N(text="NexaChat Team")]
+            nodes = [N(text="Binh")]
+            for msg in self.store.messages.get(self.direct_id, []):
+                if msg["deletedAt"]:
+                    nodes.append(N(text="This message was deleted", rid="messageBody"))
+                    continue
+                nodes.append(N(text=msg["content"], rid="messageBody"))
+                reply = msg.get("replyTo")
+                if reply:
+                    nodes.append(N(text=reply["senderDisplayName"], rid="replyAuthor"))
+                    nodes.append(N(text=reply["content"], rid="replySnippet"))
+                if msg.get("editedAt"):
+                    nodes.append(N(text="Edited", rid="editedLabel"))
+                for entry in msg.get("reactions", []):
+                    suffix = "yours" if entry.get("byMe") else ""
+                    nodes.append(N(text=f"{entry['emoji']} {entry['count']}",
+                                   desc=f"{entry['emoji']}, {entry['count']}, {suffix}"))
+                if msg["senderId"] == "user-an":
+                    nodes.append(N(desc="Read" if msg["seq"] <= self.read_upto else "Sent",
+                                   rid="deliveryIcon"))
+            if self.banner:
+                kind, _target, quoted = self.banner
+                prefix = "An" if kind == "reply" else "Edit"
+                nodes.append(N(text=f"{prefix}: {quoted}", rid="replyPreview"))
+            nodes.append(N(text=self.composer or "Message", rid="messageInput",
+                           box=(60, 580, 260, 628)))
+            if self.composer or (self.banner and self.banner[0] == "edit"):
+                editing = self.banner and self.banner[0] == "edit"
+                nodes.append(N(desc="Save changes" if editing else "Send", rid="sendButton"))
+            if self.sheet_open:
+                nodes.append(N(text="Message actions", rid="messageActionsTitle"))
+                for label in ("Like", "Love", "Laugh", "Surprised", "Sad", "Thanks"):
+                    nodes.append(N(desc=label, rid="reactionTile"))
+                rows = [("Reply", 0), ("Copy", 0), ("Forward", 0), ("Translate", 0),
+                        ("Star", 0), ("Report", 0), ("Edit", 1), ("Recall", 1)]
+                y = 240
+                for label, needs_scroll in rows:
+                    if needs_scroll and not self.sheet_scrolled:
+                        continue
+                    nodes.append(N(text=label, rid="actionLabel", box=(0, y, 320, y + 44)))
+                    y += 44
+                nodes.append(N(rid="messageActionList", box=(0, 200, 320, 620)))
+            if self.confirm_open:
+                nodes.append(N(text="Recall message?"))
+                nodes.append(N(text="Cancel"))
+                nodes.append(N(text="Delete"))
+            if self.picker_open:
+                nodes.append(N(rid="forwardDialogRoot", box=(0, 100, 320, 640)))
+                nodes.append(N(text="Forward message", rid="forwardTitle"))
+                for name in ("Binh", "Chi", "NexaChat Team"):
+                    nodes.append(N(text=name, desc=name))
+                nodes.append(N(text="Send", rid="forwardSend"))
+            return nodes
+
+    class Device:
+        def __init__(self, world):
+            self.world = world
+
+        def nodes(self):
+            return self.world.tree()
+
+        def tap_node(self, node):
+            w = self.world
+            rid = node.attrs["resource-id"]
+            if w.screen == "inbox" and node.text == "Binh":
+                w.screen = "chat"
+                return
+            if w.picker_open:
+                if node.desc == "NexaChat Team":
+                    w.picker_selected = True
+                    return
+                if rid.endswith("/forwardSend") and w.picker_selected:
+                    w.picker_open = False
+                    w.store.create(w.group_id, w.longpress_content, "user-an", "An")
+                    return
+            if w.confirm_open:
+                if node.text == "Delete":
+                    w.confirm_open = False
+                    w.store.mark_deleted(w.direct_id, w.longpress_id)
+                elif node.text == "Cancel":
+                    w.confirm_open = False
+                return
+            if w.sheet_open:
+                if node.desc == "Like":
+                    w.sheet_open = False
+                    w.store.toggle_reaction(w.direct_id, w.longpress_id, "👍", "user-an")
+                    return
+                if rid.endswith("/actionLabel"):
+                    label = node.text
+                    w.sheet_open = False
+                    if label == "Reply":
+                        w.banner = ("reply", w.longpress_id, w.longpress_content)
+                    elif label == "Edit":
+                        w.banner = ("edit", w.longpress_id, w.longpress_content)
+                        w.composer = w.longpress_content
+                    elif label == "Recall":
+                        w.confirm_open = True
+                    elif label == "Forward":
+                        w.picker_open = True
+                    return
+            if rid.endswith("/messageInput"):
+                return
+            if rid.endswith("/sendButton"):
+                content = w.composer.strip()
+                if not content:
+                    return
+                if w.banner and w.banner[0] == "edit":
+                    w.store.edit(w.direct_id, w.banner[1], content)
+                elif w.banner and w.banner[0] == "reply":
+                    target = w.store.by_id(w.direct_id, w.banner[1])
+                    w.store.create(
+                        w.direct_id, content, "user-an", "An",
+                        reply_to_id=w.banner[1],
+                        reply_to={"id": w.banner[1], "senderId": "user-an",
+                                  "senderDisplayName": "An", "type": "TEXT",
+                                  "content": target["content"], "deleted": False})
+                else:
+                    w.store.create(w.direct_id, content, "user-an", "An")
+                w.banner = None
+                w.composer = ""
+
+        def long_press(self, node, duration_ms=800):
+            w = self.world
+            if node.attrs["resource-id"].endswith("/messageBody") and w.screen == "chat":
+                w.longpress_content = node.text
+                w.longpress_id = w.store.id_for_content(w.direct_id, node.text)
+                w.sheet_open = True
+                w.sheet_scrolled = False
+
+        def type_text(self, value):
+            self.world.composer += value
+
+        def move_end(self):
+            return None
+
+        def delete_chars(self, count):
+            self.world.composer = self.world.composer[:-count] if count else self.world.composer
+
+        def swipe(self, x1, y1, x2, y2, duration_ms=300):
+            self.world.sheet_scrolled = True
+
+        def screenshot(self, path):
+            Path(path).write_bytes(b"png")
+
+        def key(self, code):
+            return None
+
+    class Patch:
+        @staticmethod
+        def ui_nodes(device, timeout=8):
+            return device.nodes()
+
+        @staticmethod
+        def node_by_id(nodes, suffix):
+            return next((n for n in nodes
+                         if n.attrs["resource-id"].endswith("/" + suffix)), None)
+
+        @staticmethod
+        def named_conversation_row(nodes, display_name):
+            return next((n for n in nodes
+                         if n.text.strip() == display_name or n.desc.strip() == display_name), None)
+
+        @staticmethod
+        def find_chat_composer(nodes):
+            node = ChatInteractionsExecutorTest.Patch.node_by_id(nodes, "messageInput")
+            assert node is not None
+            return node
+
+        @staticmethod
+        def grant_test_permissions():
+            return {}
+
+        @staticmethod
+        def filtered_logcat(baseline):
+            return [], False
+
+    class Adb:
+        serial = "emulator-5554"
+
+        def command(self, *args, **kwargs):
+            return ""
+
+    class Response:
+        def __init__(self, status, body=None):
+            self.status = status
+            self._body = body
+
+        def json(self):
+            return self._body
+
+    class Client:
+        base_url = "http://127.0.0.1:18093"
+        timeout = 30
+
+        def __init__(self, store, world, direct_id, group_id):
+            self.store = store
+            self.world = world
+            self.direct_id = direct_id
+            self.group_id = group_id
+
+        def get(self, path, token=None, params=None, headers=None):
+            if path == "/api/v1/conversations":
+                return ChatInteractionsExecutorTest.Response(200, [
+                    {"id": self.direct_id, "type": "DIRECT"},
+                    {"id": self.group_id, "type": "GROUP", "title": "NexaChat Team"},
+                ])
+            if "/messages" in path:
+                cid = path.split("/")[4]
+                return ChatInteractionsExecutorTest.Response(
+                    200, {"items": [dict(m) for m in self.store.messages.get(cid, [])]})
+            return ChatInteractionsExecutorTest.Response(404)
+
+        def post(self, path, token=None, body=None, headers=None):
+            if path.endswith("/read"):
+                self.world.read_upto = int((body or {}).get("upToSeq") or 0)
+                self.store.events.append((f"/topic/conversations.{self.direct_id}", {
+                    "eventType": "MESSAGE_READ",
+                    "payload": {"userId": "user-binh", "upToSeq": self.world.read_upto},
+                }))
+                return ChatInteractionsExecutorTest.Response(204)
+            return ChatInteractionsExecutorTest.Response(404)
+
+        def delete(self, path, token=None, params=None, headers=None):
+            parts = path.split("/")
+            cid, mid = parts[4], parts[6]
+            msg = self.store.by_id(cid, mid)
+            if msg is not None and not msg.get("deletedAt"):
+                msg["deletedAt"] = "2026-01-01T00:03:00Z"
+                msg["content"] = None
+            return ChatInteractionsExecutorTest.Response(204)
+
+    class Reader:
+        def __init__(self, store):
+            self.store = store
+            self.subscriptions = []
+
+        def subscribe(self, destination):
+            self.subscriptions.append(destination)
+
+        def events(self, seconds):
+            pending, self.store.events = self.store.events, []
+            out = []
+            for destination, envelope in pending:
+                envelope["_destination"] = destination
+                out.append(envelope)
+            return iter(out)
+
+        def close(self):
+            return None
+
+    def _world_fixture(self):
+        direct_id, group_id = "conv-an-binh", "conv-team"
+        store = self.Store()
+        world = self.World(store, direct_id, group_id)
+        client = self.Client(store, world, direct_id, group_id)
+        reader = self.Reader(store)
+        return store, world, client, reader, direct_id, group_id
+
+    def test_executor_drives_react_reply_edit_recall_forward_and_receipt(self):
+        store, world, client, reader, direct_id, group_id = self._world_fixture()
+        row = journeys.ROW_BY_ID["chat-interactions"]
+
+        class Api:
+            USER_A = {"phone": "+84900000001"}
+            USER_C = {"phone": "+84900000002"}
+
+            @staticmethod
+            def direct_conversation(client_obj, token, phone):
+                return 200, {"id": direct_id}
+
+        def session(api, recorder, phone):
+            if phone.endswith("0001"):
+                return {"accessToken": "tok-an", "user": {"id": "user-an", "phone": phone}}
+            return {"accessToken": "tok-binh", "user": {"id": "user-binh", "phone": phone}}
+
+        context = {
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "row": row,
+            "row_dir": Path(tempfile.mkdtemp()),
+            "adb": self.Adb(),
+            "device": self.Device(world),
+            "helpers": (Api(), None, self.Patch()),
+            "client": client,
+            "stomp_events": [],
+            "frame_reader": None,
+            "frame_reader_factory": lambda url, token: reader,
+            "ui_timeout": 2,
+        }
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session):
+            result = journeys.run_chat_interactions(row, context)
+
+        self.assertEqual(set(result) - {"cleanup"}, {
+            "reaction", "reply", "edit", "recall", "forward", "read_receipt"})
+        direct = store.messages[direct_id]
+        contents = [m["content"] for m in direct]
+        # Every unique marker reached the store exactly once; all were cleaned
+        # up by the executor's soft-delete sweep.
+        self.assertTrue(all(m["deletedAt"] for m in direct))
+        self.assertTrue(any(m["replyToId"] for m in direct))
+        self.assertTrue(any(m["editedAt"] for m in direct))
+        self.assertTrue(any(m["reactions"] for m in direct))
+        group_msgs = store.messages[group_id]
+        self.assertEqual(len(group_msgs), 1)
+        self.assertTrue(group_msgs[0]["deletedAt"])  # swept, not left live
+        self.assertTrue(world.read_upto > 0)
+        seen = {env["eventType"] for env in context["stomp_events"]}
+        self.assertTrue({"MESSAGE_CREATED", "REACTION_UPDATED", "MESSAGE_UPDATED",
+                         "MESSAGE_DELETED", "MESSAGE_READ"} <= seen)
+        self.assertIn(f"/topic/conversations.{group_id}", reader.subscriptions)
+        self.assertFalse(any(c.startswith("sj-") for c in contents if c))
+
+    def test_executor_cleans_up_partial_state_after_a_product_failure(self):
+        store, world, client, reader, direct_id, group_id = self._world_fixture()
+        row = journeys.ROW_BY_ID["chat-interactions"]
+
+        class Api:
+            USER_A = {"phone": "+84900000001"}
+            USER_C = {"phone": "+84900000002"}
+
+            @staticmethod
+            def direct_conversation(client_obj, token, phone):
+                return 200, {"id": direct_id}
+
+        def session(api, recorder, phone):
+            if phone.endswith("0001"):
+                return {"accessToken": "tok-an", "user": {"id": "user-an", "phone": phone}}
+            return {"accessToken": "tok-binh", "user": {"id": "user-binh", "phone": phone}}
+
+        # The product bug: tapping the reaction tile does nothing, so the chip
+        # assertion must fail as FAIL_PRODUCT — and the already-sent message
+        # must still be swept.
+        device = self.Device(world)
+        real_tap = device.tap_node
+
+        def broken_tap(node):
+            if device.world.sheet_open and node.desc == "Like":
+                device.world.sheet_open = False
+                return
+            real_tap(node)
+
+        device.tap_node = broken_tap
+        context = {
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "row": row,
+            "row_dir": Path(tempfile.mkdtemp()),
+            "adb": self.Adb(),
+            "device": device,
+            "helpers": (Api(), None, self.Patch()),
+            "client": client,
+            "stomp_events": [],
+            "frame_reader": None,
+            "frame_reader_factory": lambda url, token: reader,
+            "ui_timeout": 1,
+        }
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session):
+            with self.assertRaises(journeys.ProductFailure):
+                journeys.run_chat_interactions(row, context)
+        # The sent message reached the store and was tombstoned by cleanup even
+        # though the reaction assertion failed.
+        self.assertEqual(len(store.messages[direct_id]), 1)
+        self.assertTrue(store.messages[direct_id][0]["deletedAt"])
 
 
 if __name__ == "__main__":

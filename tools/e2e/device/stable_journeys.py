@@ -173,17 +173,28 @@ ROWS: tuple[JourneyRow, ...] = (
         id="chat-interactions",
         title="Chat edits, recalls, reactions, replies, receipts, mentions and forward",
         matrix_refs=("phase-08:Chat", "c1-5:Chat remainder"),
-        preconditions=("Integrated RC and disposable local conversations are installed"),
-        steps=("Drive edit/recall/reaction/reply/read/mention/forward/typing UI actions", "Verify peer REST/STOMP state"),
-        assertions=("One stored message per id", "UI state agrees with server tombstones, receipts and interaction metadata"),
-        captures=("paired before/after UI screenshots", "redacted REST/STOMP transcripts", "logcat.txt", "summary.json"),
-        cleanup=("Soft-delete only unique test messages and revert owned preferences"),
+        preconditions=("An is signed in on the device",
+                       "The seeded An↔Binh DIRECT conversation exists",
+                       "The seeded 'NexaChat Team' group exists as the forward target"),
+        steps=("Send unique texts from the device and long-press each bubble",
+               "Drive Reply, React (👍), Edit, Recall and Forward through the action sheet",
+               "Mark the conversation read as Binh over REST"),
+        assertions=("Reply renders the quoted banner and REST replyToId",
+                    "Reaction chip and REST reactions/REACTION_UPDATED agree",
+                    "Edited text and Edited marker match REST editedAt/MESSAGE_UPDATED",
+                    "Recall tombstone matches peer REST deletedAt/MESSAGE_DELETED",
+                    "Forwarded copy lands in the group REST history",
+                    "Device shows the peer Read receipt and MESSAGE_READ arrives on the topic"),
+        captures=("chat-interactions-*.png", "ui-tree.txt", "logcat.txt",
+                  "rest-transcript.json", "stomp-transcript.json", "summary.json"),
+        cleanup=("Soft-delete only the unique direct and group messages created by this row"),
         rest_plan=(("GET", "/api/v1/conversations/{id}/messages"),
                    ("PATCH", "/api/v1/conversations/{id}/messages/{messageId}"),
-                   ("DELETE", "/api/v1/conversations/{id}/messages/{messageId}")),
-        stomp_plan=("Observe MESSAGE_UPDATED, MESSAGE_DELETED, REACTION_UPDATED and MESSAGE_READ"),
-        capability_gap=("adb_ui exposes hierarchy and taps but there is no maintained driver for the interaction "
-                        "menus, reply/mention controls and receipt UI. The send/receive row does not prove these cases."),
+                   ("DELETE", "/api/v1/conversations/{id}/messages/{messageId}"),
+                   ("POST", "/api/v1/conversations/{id}/read")),
+        stomp_plan=("SUBSCRIBE /topic/conversations.{directId} and /topic/conversations.{groupId}",
+                    "Assert MESSAGE_CREATED (replyToId), REACTION_UPDATED, MESSAGE_UPDATED (editedAt), "
+                    "MESSAGE_DELETED and MESSAGE_READ frames"),
     ),
     JourneyRow(
         id="media",
@@ -397,6 +408,17 @@ HELPER_CALLS = {
         {"helper": "e2e_common.history", "actor": "Binh", "assert": "exactly one matching row"},
         {"helper": "e2e_common.send_text", "actor": "Binh", "assert": "device renders peer message"},
     ),
+    "chat-interactions": (
+        {"helper": "adb_ui.Device.long_press", "target": "resource-id messageBody", "opens": "messageActionsTitle sheet"},
+        {"helper": "adb_ui.Device.tap_node", "target": "reaction tile desc Like", "assert": "chip desc '👍, 1, yours'"},
+        {"helper": "adb_ui.Device.tap_node", "target": "actionLabel Reply/Edit/Recall/Forward"},
+        {"helper": "adb_ui.Device.tap_node", "target": "confirm Delete; forwardSend; sendButton desc Save changes"},
+        {"helper": "e2e_common.history", "actor": "Binh", "assert": "reactions/replyToId/editedAt/deletedAt/forwarded copy"},
+        {"helper": "e2e_common.Client.post", "path": "/api/v1/conversations/{id}/read", "actor": "Binh",
+         "assert": "device deliveryIcon desc Read"},
+        {"helper": "realtime_probe.FrameReader", "actor": "Binh",
+         "assert": "REACTION_UPDATED/MESSAGE_CREATED/MESSAGE_UPDATED/MESSAGE_DELETED/MESSAGE_READ"},
+    ),
     "auth-session-lifecycle": (
         {"helper": "response_barrier.Barrier.hold", "method": "GET",
          "path": "^/api/v1/conversations$", "token_contains": "account A access token"},
@@ -452,7 +474,13 @@ UI_MARKERS = {
                            "text:<unique outbound message>", "text:<unique inbound message>"),
     "auth-session-lifecycle": ("text:localized login/error state", "text:An", "text:Binh"),
     "otp-forgot-password": ("text:localized OTP verification state", "text:password changed"),
-    "chat-interactions": ("text:edited message", "text:deleted tombstone", "text:reaction/reply state"),
+    "chat-interactions": (
+        "resource-id:messageActionsTitle", "resource-id:actionLabel",
+        "resource-id:replyPreview", "resource-id:replySnippet",
+        "resource-id:editedLabel", "text:This message was deleted",
+        "resource-id:forwardDialogRoot", "resource-id:forwardSend",
+        "content-desc:Read",
+    ),
     "media": ("text:unique media fixture name", "text:voice duration"),
     "groups-contacts": ("text:unique group name", "text:member list", "text:invite destination"),
     "polls-reminders": ("text:unique poll question", "text:unique reminder title"),
@@ -957,6 +985,527 @@ def run_chat_send_receive(row: JourneyRow, context: dict[str, Any]) -> dict[str,
     if context.get("cleanup_errors"):
         raise HarnessError("one or more unique chat test messages could not be soft-deleted")
     result["cleanup"] = "unique test messages soft-deleted"
+    return result
+
+
+# --- chat-interactions -------------------------------------------------------
+# Localized labels for the long-press action sheet and its confirmation
+# surfaces. The device runs en-US in the campaign but the sweep variants may
+# leave vi-VN behind, so every tap resolves both locales.
+_CHAT_ACTION_LABELS = {
+    "reply": ("Reply", "Trả lời"),
+    "edit": ("Edit", "Chỉnh sửa"),
+    "recall": ("Recall", "Thu hồi"),
+    "forward": ("Forward", "Chuyển tiếp"),
+}
+_CHAT_REACTION_TILE = ("Like", "Thích")  # 👍 is ReactionSet.emoji(0)/reaction_like
+_CHAT_REACTION_EMOJI = "👍"
+_CHAT_DELETE_CONFIRM = ("Delete", "Xóa")
+_CHAT_EDITED_MARKERS = ("Edited", "Đã chỉnh sửa")
+_CHAT_TOMBSTONE_MARKERS = ("This message was deleted", "Tin nhắn đã bị xóa")
+_CHAT_READ_MARKERS = ("Read", "Đã xem")
+_CHAT_SAVE_DESC = ("Save changes", "Lưu thay đổi")
+_CHAT_SEND_DESC = ("Send", "Gửi")
+_CHAT_FORWARD_TITLE = ("Forward message", "Chuyển tiếp tin nhắn")
+_CHAT_FORWARD_TARGET_TITLE = "NexaChat Team"
+
+
+def _rid_ends(node: Any, suffix: str) -> bool:
+    return str(getattr(node, "attrs", {}).get("resource-id", "") or "").endswith("/" + suffix)
+
+
+def _wait_ui_node(context: dict[str, Any], predicate: Callable[[Any], bool],
+                  what: str, timeout: float | None = None) -> Any:
+    deadline = time.monotonic() + float(timeout or _ui_timeout(context))
+    while True:
+        match = next((node for node in _ui_nodes(context) if predicate(node)), None)
+        if match is not None:
+            return match
+        if time.monotonic() >= deadline:
+            raise ProductFailure(what)
+        time.sleep(0.4)
+
+
+def _wait_ui_absent(context: dict[str, Any], predicate: Callable[[Any], bool],
+                  what: str, timeout: float | None = None) -> None:
+    deadline = time.monotonic() + float(timeout or _ui_timeout(context))
+    while True:
+        if not any(predicate(node) for node in _ui_nodes(context)):
+            return
+        if time.monotonic() >= deadline:
+            raise ProductFailure(what)
+        time.sleep(0.4)
+
+
+def _wait_sheet_closed(context: dict[str, Any], timeout: float = 12) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not any(_rid_ends(node, "messageActionsTitle") for node in _ui_nodes(context)):
+            return
+        time.sleep(0.4)
+    raise ProductFailure("the message action sheet did not dismiss")
+
+
+def _chat_send_text(context: dict[str, Any], content: str) -> None:
+    """Type into the chat composer and tap send; assert the bubble renders."""
+    patch = context["helpers"][2]
+    ui = context["device"]
+    composer = patch.find_chat_composer(_ui_nodes(context))
+    ui.tap_node(composer)
+    ui.type_text(content)
+    send = _wait_ui_node(
+        context,
+        lambda node: _rid_ends(node, "sendButton"),
+        "the chat send control was not exposed",
+    )
+    ui.tap_node(send)
+    _wait_ui_node(
+        context,
+        lambda node: _rid_ends(node, "messageBody") and node.text.strip() == content,
+        f"device did not render sent message {content!r}",
+    )
+
+
+def _message_bubble(context: dict[str, Any], content: str) -> Any:
+    return next(
+        (node for node in _ui_nodes(context)
+         if _rid_ends(node, "messageBody") and node.text.strip() == content),
+        None,
+    )
+
+
+def _open_action_sheet(context: dict[str, Any], content: str) -> None:
+    """Long-press the rendered bubble until the action sheet title appears."""
+    ui = context["device"]
+    deadline = time.monotonic() + _ui_timeout(context)
+    while True:
+        bubble = _message_bubble(context, content)
+        if bubble is None:
+            raise ProductFailure(f"message bubble {content!r} was not on screen")
+        ui.long_press(bubble)
+        sheet_deadline = time.monotonic() + 6
+        while time.monotonic() < sheet_deadline:
+            if any(_rid_ends(node, "messageActionsTitle") for node in _ui_nodes(context)):
+                return
+            time.sleep(0.4)
+        if time.monotonic() >= deadline:
+            raise ProductFailure("the message action sheet did not open after long-press")
+
+
+def _sheet_scroll(context: dict[str, Any]) -> None:
+    """Scroll the open action sheet's list down by one viewport."""
+    patch = context["helpers"][2]
+    nodes = _ui_nodes(context)
+    list_node = patch.node_by_id(nodes, "messageActionList")
+    if list_node is not None and getattr(list_node, "box", None):
+        left, top, right, bottom = list_node.box
+        cx = (left + right) // 2
+        context["device"].swipe(cx, bottom - 24, cx, top + 32, 300)
+        return
+    # Fallback: swipe up inside the lower half of the screen.
+    root = nodes[0] if nodes else None
+    box = getattr(root, "box", None) or (0, 0, 320, 640)
+    width, height = box[2], box[3]
+    context["device"].swipe(width // 2, int(height * 0.78), width // 2, int(height * 0.55), 300)
+
+
+def _tap_sheet_action(context: dict[str, Any], labels: tuple[str, ...]) -> None:
+    """Tap the action-sheet row whose label matches, scrolling the sheet if needed."""
+    for _ in range(6):
+        target = next(
+            (node for node in _ui_nodes(context)
+             if _rid_ends(node, "actionLabel") and node.text.strip() in labels),
+            None,
+        )
+        if target is not None:
+            context["device"].tap_node(target)
+            return
+        _sheet_scroll(context)
+        time.sleep(0.4)
+    raise ProductFailure(f"action {labels!r} was not offered by the message action sheet")
+
+
+def _history_items(recorder: RecordingClient, token: str,
+                   conversation_id: str) -> list[dict[str, Any]]:
+    response = recorder.get(
+        f"/api/v1/conversations/{conversation_id}/messages",
+        token=token, params={"limit": 50},
+    )
+    if response.status != 200:
+        raise ProductFailure(f"peer REST history returned HTTP {response.status}")
+    return list((response.json() or {}).get("items") or [])
+
+
+def _history_wait(recorder: RecordingClient, token: str, conversation_id: str,
+                  predicate: Callable[[dict[str, Any]], bool],
+                  what: str, timeout: float = 12) -> dict[str, Any]:
+    """Return the first peer-visible history row matching predicate, or fail."""
+    deadline = time.monotonic() + timeout
+    while True:
+        items = _history_items(recorder, token, conversation_id)
+        match = next((item for item in items if predicate(item)), None)
+        if match is not None:
+            return match
+        if time.monotonic() >= deadline:
+            raise ProductFailure(what)
+        time.sleep(0.5)
+
+
+def _history_item_by_content(recorder: RecordingClient, token: str,
+                             conversation_id: str, content: str) -> dict[str, Any]:
+    return _history_wait(
+        recorder, token, conversation_id,
+        lambda item: item.get("content") == content,
+        f"peer REST history did not contain a {content!r} message",
+    )
+
+
+def _stomp_of_type(events: Iterable[dict[str, Any]], event_type: str,
+                   destination_suffix: str | None = None) -> list[dict[str, Any]]:
+    out = []
+    for event in events:
+        if event.get("eventType") != event_type:
+            continue
+        if destination_suffix and not str(event.get("_destination", "")).endswith(destination_suffix):
+            continue
+        out.append(event)
+    return out
+
+
+def run_chat_interactions(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Reply/react/edit/recall/forward through the device long-press sheet.
+
+    The device runs as seeded An; Binh participates through his REST session
+    and a subscribed STOMP FrameReader on the direct and forward-target
+    topics. Every interaction is asserted on the device UI first, then on
+    Binh's API-visible transcript, and (except Forward, which lands on the
+    group topic) on the STOMP frame the peer received.
+    """
+    _campaign_serial(context)
+    _campaign_base_url(context)
+    _prepare_seeded_an(context)
+    patch = context["helpers"][2]
+    recorder: RecordingClient = context["client"]
+    ui = context["device"]
+    an, binh, conversation_id, _recipient_id, binh_user_id = _seed_pair(context)
+    an_user_id = str((an.get("user") or {}).get("id") or "")
+
+    # Resolve the seeded forward target by title — the UUID is never embedded.
+    inbox = recorder.get("/api/v1/conversations", token=an["accessToken"], params={"limit": 50})
+    if inbox.status != 200:
+        raise EnvironmentFailure(f"conversation inbox returned HTTP {inbox.status}")
+    inbox_body = inbox.json() or []
+    inbox_items = inbox_body.get("items") if isinstance(inbox_body, dict) else inbox_body
+    group = next((item for item in (inbox_items or [])
+                  if item.get("type") == "GROUP"
+                  and item.get("title") == _CHAT_FORWARD_TARGET_TITLE), None)
+    if group is None or not group.get("id"):
+        raise EnvironmentFailure("seeded 'NexaChat Team' forward target was absent from the inbox")
+    group_id = str(group["id"])
+
+    # Open the seeded direct conversation on the device.
+    row_node = patch.named_conversation_row(_ui_nodes(context), "Binh")
+    if row_node is None:
+        raise EnvironmentFailure("seed An↔Binh conversation is not visible in the device inbox")
+    ui.tap_node(row_node)
+    _wait_ui_node(
+        context,
+        lambda node: _rid_ends(node, "messageInput"),
+        "the seeded direct conversation did not open its composer",
+    )
+
+    from realtime_probe import FrameReader
+
+    ws_url = recorder.base_url.replace("https://", "wss://").replace("http://", "ws://") + "/ws"
+    factory = context.get("frame_reader_factory") or FrameReader
+    reader = factory(ws_url, binh["accessToken"])
+    context["frame_reader"] = reader
+    reader.subscribe(f"/topic/conversations.{conversation_id}")
+    reader.subscribe(f"/topic/conversations.{group_id}")
+
+    tag = uuid.uuid4().hex[:8]
+    msg_a = "sj-ia-" + tag          # reaction + reply target
+    msg_b = "sj-ib-" + tag          # edit target
+    msg_b_edited = "sj-ibx-" + tag  # replacement content after Edit
+    msg_c = "sj-ic-" + tag          # recall target
+    msg_d = "sj-id-" + tag          # forward target
+    reply_text = "sj-ir-" + tag     # reply to msg_a
+    row_dir = Path(context["row_dir"])
+
+    observed: list[dict[str, Any]] = []
+
+    def drain(seconds: float = 2.5) -> None:
+        events = list(reader.events(seconds))
+        observed.extend(events)
+        context["stomp_events"].extend(events)
+
+    # (conversation_id, message_id, author session) for the soft-delete sweep.
+    created: list[tuple[str, str, dict[str, Any]]] = []
+    ids: dict[str, str] = {}
+    result: dict[str, Any] = {}
+    primary_error: Exception | None = None
+    try:
+        # --- send + react 👍 ---
+        _chat_send_text(context, msg_a)
+        a_rest = _history_item_by_content(recorder, binh["accessToken"], conversation_id, msg_a)
+        ids["a"] = str(a_rest["id"])
+        created.append((conversation_id, ids["a"], an))
+
+        _open_action_sheet(context, msg_a)
+        tile = _wait_ui_node(
+            context,
+            lambda node: (node.desc or "").strip() in _CHAT_REACTION_TILE,
+            "the 👍 reaction tile was not offered by the action sheet",
+        )
+        ui.tap_node(tile)
+        _wait_sheet_closed(context)
+        _wait_ui_node(
+            context,
+            lambda node: _CHAT_REACTION_EMOJI in (node.desc or "")
+                         and ("yours" in node.desc or "của bạn" in node.desc),
+            "the reaction chip did not render on the device",
+        )
+        ui.screenshot(str(row_dir / "chat-interactions-react.png"))
+        drain()
+        _history_wait(
+            recorder, binh["accessToken"], conversation_id,
+            lambda item: item.get("id") == ids["a"]
+                         and any(entry.get("emoji") == _CHAT_REACTION_EMOJI
+                                 and int(entry.get("count") or 0) >= 1
+                                 for entry in (item.get("reactions") or [])),
+            "peer REST does not show the 👍 reaction",
+        )
+        reaction_frames = [event for event in _stomp_of_type(observed, "REACTION_UPDATED")
+                           if (event.get("payload") or {}).get("messageId") == ids["a"]]
+        if not any(_CHAT_REACTION_EMOJI in json.dumps(
+                (event.get("payload") or {}).get("reactions"), ensure_ascii=False)
+                for event in reaction_frames):
+            raise ProductFailure("Binh STOMP did not receive REACTION_UPDATED with the 👍 state")
+
+        # --- reply with a rendered quote ---
+        _open_action_sheet(context, msg_a)
+        _tap_sheet_action(context, _CHAT_ACTION_LABELS["reply"])
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "replyPreview") and msg_a in node.text,
+            "the reply banner did not quote the target message",
+        )
+        _chat_send_text(context, reply_text)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "replySnippet") and msg_a in node.text,
+            "the sent reply did not render the quoted snippet",
+        )
+        ui.screenshot(str(row_dir / "chat-interactions-reply.png"))
+        r_rest = _history_item_by_content(recorder, binh["accessToken"], conversation_id, reply_text)
+        ids["reply"] = str(r_rest["id"])
+        created.append((conversation_id, ids["reply"], an))
+        if str(r_rest.get("replyToId") or "") != ids["a"]:
+            raise ProductFailure("peer REST reply did not carry replyToId of the target")
+        reply_ref = r_rest.get("replyTo") or {}
+        if reply_ref.get("id") != ids["a"] or reply_ref.get("content") != msg_a:
+            raise ProductFailure("peer REST replyTo preview did not embed the quoted message")
+        drain()
+        reply_frames = [event for event in _stomp_of_type(
+            observed, "MESSAGE_CREATED", "/topic/conversations." + conversation_id)
+            if (event.get("payload") or {}).get("id") == ids["reply"]]
+        if not reply_frames:
+            raise ProductFailure("Binh STOMP did not receive MESSAGE_CREATED for the reply")
+
+        # --- edit ---
+        _chat_send_text(context, msg_b)
+        b_rest = _history_item_by_content(recorder, binh["accessToken"], conversation_id, msg_b)
+        ids["b"] = str(b_rest["id"])
+        created.append((conversation_id, ids["b"], an))
+
+        _open_action_sheet(context, msg_b)
+        _tap_sheet_action(context, _CHAT_ACTION_LABELS["edit"])
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "replyPreview") and msg_b in node.text,
+            "the edit banner did not show the original message",
+        )
+        composer = patch.find_chat_composer(_ui_nodes(context))
+        ui.tap_node(composer)
+        ui.move_end()
+        ui.delete_chars(len(msg_b))
+        ui.type_text(msg_b_edited)
+        save = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "sendButton")
+                         and (node.desc or "").strip() in _CHAT_SAVE_DESC,
+            "the composer did not switch to the save affordance",
+        )
+        ui.tap_node(save)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "messageBody") and node.text.strip() == msg_b_edited,
+            "the edited message text did not render on the device",
+        )
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "editedLabel")
+                         and node.text.strip() in _CHAT_EDITED_MARKERS,
+            "the Edited marker did not render on the device",
+        )
+        ui.screenshot(str(row_dir / "chat-interactions-edit.png"))
+        _history_wait(
+            recorder, binh["accessToken"], conversation_id,
+            lambda item: item.get("id") == ids["b"]
+                         and item.get("content") == msg_b_edited
+                         and bool(item.get("editedAt")),
+            "peer REST did not store the edited content/editedAt",
+        )
+        drain()
+        update_frames = [event for event in _stomp_of_type(observed, "MESSAGE_UPDATED")
+                         if (event.get("payload") or {}).get("id") == ids["b"]
+                         and (event.get("payload") or {}).get("content") == msg_b_edited
+                         and (event.get("payload") or {}).get("editedAt")]
+        if not update_frames:
+            raise ProductFailure("Binh STOMP did not receive MESSAGE_UPDATED for the edit")
+
+        # --- recall/unsend ---
+        _chat_send_text(context, msg_c)
+        c_rest = _history_item_by_content(recorder, binh["accessToken"], conversation_id, msg_c)
+        ids["c"] = str(c_rest["id"])
+        created.append((conversation_id, ids["c"], an))
+
+        _open_action_sheet(context, msg_c)
+        _tap_sheet_action(context, _CHAT_ACTION_LABELS["recall"])
+        confirm = _wait_ui_node(
+            context,
+            lambda node: node.text.strip() in _CHAT_DELETE_CONFIRM and node.clickable,
+            "the recall confirmation did not offer Delete",
+        )
+        ui.tap_node(confirm)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "messageBody")
+                         and node.text.strip() in _CHAT_TOMBSTONE_MARKERS,
+            "the deleted-message tombstone did not render on the device",
+        )
+        ui.screenshot(str(row_dir / "chat-interactions-recall.png"))
+        _history_wait(
+            recorder, binh["accessToken"], conversation_id,
+            lambda item: item.get("id") == ids["c"]
+                         and bool(item.get("deletedAt"))
+                         and item.get("content") is None,
+            "peer REST did not tombstone the recalled message",
+        )
+        drain()
+        delete_frames = [event for event in _stomp_of_type(observed, "MESSAGE_DELETED")
+                         if (event.get("payload") or {}).get("messageId") == ids["c"]]
+        if not delete_frames:
+            raise ProductFailure("Binh STOMP did not receive MESSAGE_DELETED for the recall")
+
+        # --- forward to the seeded group ---
+        _chat_send_text(context, msg_d)
+        d_rest = _history_item_by_content(recorder, binh["accessToken"], conversation_id, msg_d)
+        ids["d"] = str(d_rest["id"])
+        created.append((conversation_id, ids["d"], an))
+
+        _open_action_sheet(context, msg_d)
+        _tap_sheet_action(context, _CHAT_ACTION_LABELS["forward"])
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "forwardDialogRoot"),
+            "the forward picker did not open",
+        )
+        target = _wait_ui_node(
+            context,
+            lambda node: (node.desc or "").strip() == _CHAT_FORWARD_TARGET_TITLE,
+            "the seeded group was not offered as a forward target",
+        )
+        ui.tap_node(target)
+        send = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "forwardSend")
+                         and node.text.strip() in _CHAT_SEND_DESC,
+            "the forward Send control was not enabled",
+        )
+        ui.tap_node(send)
+        _wait_ui_absent(
+            context,
+            lambda node: _rid_ends(node, "forwardDialogRoot"),
+            "the forward picker did not dismiss",
+        )
+        ui.screenshot(str(row_dir / "chat-interactions-forward.png"))
+        forwarded = _history_item_by_content(recorder, an["accessToken"], group_id, msg_d)
+        ids["forwarded"] = str(forwarded["id"])
+        created.append((group_id, ids["forwarded"], an))
+        if str(forwarded.get("senderId") or "") != an_user_id:
+            raise ProductFailure("the forwarded group message was not authored by An")
+        drain()
+        forward_frames = [event for event in _stomp_of_type(
+            observed, "MESSAGE_CREATED", "/topic/conversations." + group_id)
+            if (event.get("payload") or {}).get("id") == ids["forwarded"]]
+        if not forward_frames:
+            raise ProductFailure("Binh STOMP did not receive MESSAGE_CREATED in the forward target")
+
+        # --- peer read receipt ---
+        latest_seq = max(int(item.get("seq") or 0)
+                         for item in _history_items(recorder, binh["accessToken"], conversation_id))
+        read = recorder.post(
+            f"/api/v1/conversations/{conversation_id}/read",
+            token=binh["accessToken"], body={"upToSeq": latest_seq},
+        )
+        if read.status not in (200, 204):
+            raise ProductFailure(f"peer read receipt returned HTTP {read.status}")
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "deliveryIcon")
+                         and (node.desc or "").strip() in _CHAT_READ_MARKERS,
+            "the device did not render the peer Read receipt",
+        )
+        ui.screenshot(str(row_dir / "chat-interactions-read.png"))
+        drain()
+        read_frames = [event for event in _stomp_of_type(observed, "MESSAGE_READ")
+                       if str((event.get("payload") or {}).get("userId") or "") == binh_user_id]
+        if not read_frames:
+            raise ProductFailure("the conversation topic did not broadcast MESSAGE_READ")
+
+        result = {
+            "reaction": "👍 on device + REST + REACTION_UPDATED",
+            "reply": "quote rendered + replyToId + MESSAGE_CREATED",
+            "edit": "Edited marker + editedAt + MESSAGE_UPDATED",
+            "recall": "tombstone + deletedAt + MESSAGE_DELETED",
+            "forward": "NexaChat Team history + group MESSAGE_CREATED",
+            "read_receipt": "device Read + MESSAGE_READ",
+        }
+    except Exception as error:
+        primary_error = error
+    finally:
+        # Discover any of this run's unique markers that reached the server but
+        # whose ids were not recorded yet, so the sweep is complete.
+        markers = (msg_a, msg_b, msg_b_edited, msg_c, msg_d, reply_text)
+        known = {message_id for _cid, message_id, _author in created}
+        for conv_id, token in ((conversation_id, binh["accessToken"]),
+                               (group_id, an["accessToken"])):
+            try:
+                for item in _history_items(recorder, token, conv_id):
+                    if item.get("content") in markers and str(item.get("id")) not in known:
+                        created.append((conv_id, str(item["id"]), an))
+                        known.add(str(item["id"]))
+            except Exception:
+                pass
+        cleanup_errors: list[str] = []
+        for conv_id, message_id, author in created:
+            try:
+                deleted = recorder.delete(
+                    f"/api/v1/conversations/{conv_id}/messages/{message_id}",
+                    token=author["accessToken"],
+                )
+                if deleted.status not in (200, 204):
+                    cleanup_errors.append(f"HTTP {deleted.status}")
+            except Exception as error:
+                cleanup_errors.append(type(error).__name__)
+        if cleanup_errors:
+            context["cleanup_errors"] = cleanup_errors
+    if primary_error is not None:
+        raise primary_error
+    if context.get("cleanup_errors"):
+        raise HarnessError("one or more unique chat-interactions messages could not be soft-deleted")
+    result["cleanup"] = "unique direct and group messages soft-deleted"
     return result
 
 
@@ -1606,6 +2155,7 @@ def run_registered_row(row: JourneyRow, context: dict[str, Any]) -> dict[str, An
     executors = {
         "auth-login": run_auth_login,
         "chat-send-receive": run_chat_send_receive,
+        "chat-interactions": run_chat_interactions,
         "calls-injected-notification": run_calls_injected_notification,
         "injected-notifications": run_injected_notifications,
     }
