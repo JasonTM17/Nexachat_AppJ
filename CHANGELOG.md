@@ -51,6 +51,9 @@ All notable changes to NexaChat are documented here. The format follows
   unread-messages banner no longer offers a summary in those chats.
 - Android: if the server does not recognise the device time zone, the summary is
   requested once more with the server's default zone instead of failing.
+- Summary requests made at the same time for the same window no longer each
+  call the external AI; a summary that fell back to the built-in engine is
+  reused briefly instead of retrying the external AI on every tap.
 - Android: the caller's call screen no longer closes a second or two after
   opening when you call again after an earlier call ended; the previous
   call's finished state is ignored instead of closing the new call's screen.
