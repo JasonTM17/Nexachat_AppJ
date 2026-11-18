@@ -144,15 +144,16 @@ class FcmReminderPushSenderTest {
 
     @Test
     void aSettledTargetExpiresAndIsPushedAgainAfterTheDedupeWindow() {
-        // A one-shot TTL keeps the test deterministic: the entry settled by
-        // the accepted push of the retryable first attempt is expired by the
-        // time the occurrence is retried, so the accepted target is pushed
-        // again. A duplicate push for the same occurrence is suppressed by
-        // the client's occurrence ledger, so this stays invisible to the
-        // user; without the expiry the entry would be retained forever when
-        // the occurrence is abandoned mid-claim.
+        // A zero TTL makes every settled entry born-expired, so the retry
+        // always pushes again regardless of clock granularity: the entry
+        // settled by the accepted push of the retryable first attempt is
+        // already expired by the time the occurrence is retried. A duplicate
+        // push for the same occurrence is suppressed by the client's
+        // occurrence ledger, so this stays invisible to the user; without
+        // the expiry the entry would be retained forever when the occurrence
+        // is abandoned mid-claim.
         FcmReminderPushSender ttlSender = new FcmReminderPushSender(
-                tokenRepository, fcmGateway, deviceTokenService, metrics, 1_000, 1L);
+                tokenRepository, fcmGateway, deviceTokenService, metrics, 1_000, 0L);
         UUID recipient = UUID.randomUUID();
         UserDeviceToken accepted = device("token-a", recipient, null);
         UserDeviceToken other = device("token-b", UUID.randomUUID(), null);
