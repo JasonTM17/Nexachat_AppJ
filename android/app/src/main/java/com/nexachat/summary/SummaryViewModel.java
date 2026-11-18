@@ -31,7 +31,7 @@ public final class SummaryViewModel extends ViewModel {
 
     private SummaryScope lastScope;
     private Integer lastLimit;
-    private long requestGeneration;
+    private volatile long requestGeneration;
     private SummaryRepository.Cancellable activeRequest;
 
     @Inject
@@ -186,8 +186,9 @@ public final class SummaryViewModel extends ViewModel {
     private SummaryRequest requestFor(
             SummaryScope scope, Integer limit, boolean refresh, boolean zoneFallback) {
         if (zoneFallback) {
-            // The fallback repeats the same question, so it never forces a fresh generation.
-            return SummaryRequest.withoutTimeZone(scope, limit, SummaryLanguage.AUTO, false);
+            // The fallback repeats the same request minus the rejected zone: an
+            // explicit refresh keeps forcing a fresh generation.
+            return SummaryRequest.withoutTimeZone(scope, limit, SummaryLanguage.AUTO, refresh);
         }
         return new SummaryRequest(scope, limit, SummaryLanguage.AUTO, refresh,
                 TimeZone.getDefault().getID());

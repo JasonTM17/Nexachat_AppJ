@@ -160,7 +160,7 @@ public final class SummaryViewModelTest {
     }
 
     @Test
-    public void refreshRetriesWithoutAZoneAndWithoutForcingAFreshGeneration() throws Exception {
+    public void refreshRetriesWithoutAZoneAndKeepsForcingAFreshGeneration() throws Exception {
         try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
             AtomicInteger calls = new AtomicInteger();
             AtomicReference<String> retryBody = new AtomicReference<>();
@@ -187,7 +187,7 @@ public final class SummaryViewModelTest {
 
                 assertEquals("summary-default-zone", ready.getSummary().getSummaryId());
                 assertEquals(2, calls.get());
-                assertFalse(retryBody.get().contains("\"refresh\":true"));
+                assertTrue(retryBody.get().contains("\"refresh\":true"));
                 assertFalse(retryBody.get().contains("\"timeZone\""));
             }
         }
