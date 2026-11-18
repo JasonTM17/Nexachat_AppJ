@@ -418,6 +418,190 @@ class CallServiceTest {
         assertThat(captured.getAllValues().get(1).session().endReason()).isEqualTo(CallEndReason.MISSED);
     }
 
+    private UUID establishActiveCall(UUID conversation, UUID caller, UUID callee) {
+        UUID callId = UUID.randomUUID();
+        service.signal(conversation, caller,
+                new CallSignal(CallSignal.Type.INVITE, callId, null, null));
+        service.signal(conversation, callee,
+                new CallSignal(CallSignal.Type.ACCEPT, callId, null, null));
+        assertThat(registry.find(callId).orElseThrow().state()).isEqualTo(CallState.ACTIVE);
+        return callId;
+    }
+
+    private UUID directConversationWith(UUID first, UUID second) {
+        UUID otherConversationId = UUID.randomUUID();
+        Conversation other = mock(Conversation.class);
+        when(conversationRepository.findById(otherConversationId)).thenReturn(Optional.of(other));
+        when(other.getType()).thenReturn(Conversation.Type.DIRECT);
+        when(memberRepository.findMemberUserIds(otherConversationId)).thenReturn(List.of(first, second));
+        return otherConversationId;
+    }
+
+    private void stubActiveUsers(UUID... activeIds) {
+        List<UUID> active = List.of(activeIds);
+        when(userRepository.findActiveUsersByIdsForUpdate(org.mockito.ArgumentMatchers.anyList()))
+                .thenAnswer(invocation -> {
+                    List<UUID> requested = invocation.getArgument(0);
+                    return requested.stream().filter(active::contains)
+                            .map(CallServiceTest::activeUser).toList();
+                });
+    }
+
+    private List<CallDelivery> deliveries() {
+        org.mockito.ArgumentCaptor<CallDelivery> captured =
+                org.mockito.ArgumentCaptor.forClass(CallDelivery.class);
+        verify(eventPublisher, org.mockito.Mockito.atLeast(0)).publishEvent(captured.capture());
+        return captured.getAllValues();
+    }
+
+    private static List<String> summary(List<CallDelivery> sent, UUID callId) {
+        return sent.stream().filter(d -> d.event().callId().equals(callId))
+                .map(d -> d.recipientId() + ":" + d.event().eventType()).toList();
+    }
+
+    @Test
+    void inviteFromCallerOfStaleActiveCallEndsItAndRingsTheSameCallee() {
+        UUID staleId = establishActiveCall(conversationId, callerId, calleeId);
+        org.mockito.Mockito.clearInvocations(eventPublisher, systemMessageWriter, recordRepository);
+        UUID freshId = UUID.randomUUID();
+
+        service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.INVITE, freshId, null, null));
+
+        CallSession stale = registry.find(staleId).orElseThrow();
+        assertThat(stale.state()).isEqualTo(CallState.ENDED);
+        assertThat(stale.endReason()).isEqualTo(CallEndReason.FAILED);
+        assertThat(registry.find(freshId).orElseThrow().state()).isEqualTo(CallState.RINGING);
+        assertThat(registry.activeCallForUser(callerId).orElseThrow().callId()).isEqualTo(freshId);
+        assertThat(registry.activeCallForUser(calleeId).orElseThrow().callId()).isEqualTo(freshId);
+
+        org.mockito.ArgumentCaptor<CallRecord> saved = org.mockito.ArgumentCaptor.forClass(CallRecord.class);
+        verify(recordRepository, times(2)).save(saved.capture());
+        assertThat(saved.getAllValues()).extracting(CallRecord::getCallId)
+                .containsExactly(staleId, freshId);
+        assertThat(saved.getAllValues().get(0).getState()).isEqualTo(CallState.ENDED);
+        assertThat(saved.getAllValues().get(0).getEndReason()).isEqualTo(CallEndReason.FAILED);
+        verify(systemMessageWriter, times(1)).write(any(CallSession.class));
+        verify(systemMessageWriter).write(stale);
+
+        List<CallDelivery> sent = deliveries();
+        assertThat(summary(sent, staleId))
+                .containsExactlyInAnyOrder(callerId + ":CALL_ENDED", calleeId + ":CALL_ENDED");
+        assertThat(summary(sent, freshId)).containsExactly(calleeId + ":CALL_INVITE");
+        verify(eventPublisher, times(1)).publishEvent(any(CallRingingEvent.class));
+    }
+
+    @Test
+    void inviteToAThirdUserEndsTheStaleCallAndNotifiesItsPeer() {
+        UUID thirdId = UUID.randomUUID();
+        UUID thirdConversation = directConversationWith(callerId, thirdId);
+        stubActiveUsers(callerId, calleeId, thirdId);
+        UUID staleId = establishActiveCall(conversationId, callerId, calleeId);
+        org.mockito.Mockito.clearInvocations(eventPublisher, systemMessageWriter, recordRepository);
+        UUID freshId = UUID.randomUUID();
+
+        service.signal(thirdConversation, callerId,
+                new CallSignal(CallSignal.Type.INVITE, freshId, null, null));
+
+        CallSession stale = registry.find(staleId).orElseThrow();
+        assertThat(stale.state()).isEqualTo(CallState.ENDED);
+        assertThat(stale.endReason()).isEqualTo(CallEndReason.FAILED);
+        assertThat(registry.find(freshId).orElseThrow().state()).isEqualTo(CallState.RINGING);
+        assertThat(registry.activeCallForUser(callerId).orElseThrow().callId()).isEqualTo(freshId);
+        assertThat(registry.activeCallForUser(thirdId).orElseThrow().callId()).isEqualTo(freshId);
+        assertThat(registry.activeCallForUser(calleeId)).isEmpty();
+        List<CallDelivery> sent = deliveries();
+        assertThat(summary(sent, staleId))
+                .containsExactlyInAnyOrder(callerId + ":CALL_ENDED", calleeId + ":CALL_ENDED");
+        assertThat(summary(sent, freshId)).containsExactly(thirdId + ":CALL_INVITE");
+        verify(systemMessageWriter, times(1)).write(stale);
+    }
+
+    @Test
+    void inviteWhileTheCallersOwnCallIsStillRingingIsRefusedUnchanged() {
+        UUID ringingId = UUID.randomUUID();
+        service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.INVITE, ringingId, null, null));
+        UUID secondId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.INVITE, secondId, null, null)))
+                .isInstanceOf(CallException.class)
+                .extracting("code").isEqualTo(CallException.Code.CALL_STATE_INVALID);
+
+        assertThat(registry.find(ringingId).orElseThrow().state()).isEqualTo(CallState.RINGING);
+        assertThat(registry.find(secondId)).isEmpty();
+        verify(systemMessageWriter, never()).write(any());
+    }
+
+    @Test
+    void inviteToACalleeInAnotherActiveCallStillAnswersBusyAndKeepsThatCall() {
+        UUID thirdId = UUID.randomUUID();
+        UUID thirdConversation = directConversationWith(calleeId, thirdId);
+        stubActiveUsers(callerId, calleeId, thirdId);
+        UUID otherCallId = establishActiveCall(thirdConversation, thirdId, calleeId);
+        org.mockito.Mockito.clearInvocations(eventPublisher, systemMessageWriter, recordRepository);
+        UUID busyId = UUID.randomUUID();
+
+        service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.INVITE, busyId, null, null));
+
+        CallSession busy = registry.find(busyId).orElseThrow();
+        assertThat(busy.state()).isEqualTo(CallState.ENDED);
+        assertThat(busy.endReason()).isEqualTo(CallEndReason.BUSY);
+        assertThat(registry.find(otherCallId).orElseThrow().state()).isEqualTo(CallState.ACTIVE);
+        assertThat(registry.activeCallForUser(calleeId).orElseThrow().callId()).isEqualTo(otherCallId);
+        assertThat(registry.activeCallForUser(thirdId).orElseThrow().callId()).isEqualTo(otherCallId);
+        assertThat(summary(deliveries(), busyId)).containsExactly(callerId + ":CALL_BUSY");
+        assertThat(summary(deliveries(), otherCallId)).isEmpty();
+    }
+
+    @Test
+    void restoresTheStaleActiveCallWhenPersistingTheNewInviteFails() {
+        UUID staleId = establishActiveCall(conversationId, callerId, calleeId);
+        CallSession before = registry.find(staleId).orElseThrow();
+        org.mockito.Mockito.clearInvocations(eventPublisher, systemMessageWriter, recordRepository);
+        UUID freshId = UUID.randomUUID();
+        when(recordRepository.save(any(CallRecord.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0))
+                .thenThrow(new IllegalStateException("database unavailable"));
+
+        assertThatThrownBy(() -> service.signal(conversationId, callerId,
+                new CallSignal(CallSignal.Type.INVITE, freshId, null, null)))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(registry.find(freshId)).isEmpty();
+        assertThat(registry.find(staleId).orElseThrow()).isSameAs(before);
+        assertThat(registry.find(staleId).orElseThrow().state()).isEqualTo(CallState.ACTIVE);
+        assertThat(registry.activeCallForUser(callerId).orElseThrow().callId()).isEqualTo(staleId);
+        assertThat(registry.activeCallForUser(calleeId).orElseThrow().callId()).isEqualTo(staleId);
+    }
+
+    @Test
+    void restoresTheStaleActiveCallWhenTheTransactionRollsBackAfterTheInvite() {
+        UUID staleId = establishActiveCall(conversationId, callerId, calleeId);
+        UUID freshId = UUID.randomUUID();
+        TransactionSynchronizationManager.initSynchronization();
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        try {
+            service.signal(conversationId, callerId,
+                    new CallSignal(CallSignal.Type.INVITE, freshId, null, null));
+            assertThat(registry.find(staleId).orElseThrow().state()).isEqualTo(CallState.ENDED);
+            for (TransactionSynchronization synchronization
+                    : TransactionSynchronizationManager.getSynchronizations()) {
+                synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+            }
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+            TransactionSynchronizationManager.setActualTransactionActive(false);
+        }
+
+        assertThat(registry.find(freshId)).isEmpty();
+        assertThat(registry.find(staleId).orElseThrow().state()).isEqualTo(CallState.ACTIVE);
+        assertThat(registry.activeCallForUser(callerId).orElseThrow().callId()).isEqualTo(staleId);
+        assertThat(registry.activeCallForUser(calleeId).orElseThrow().callId()).isEqualTo(staleId);
+    }
+
     @Test
     void racingInviteAcceptAndEndFramesWriteExactlyOneTerminalMessage() throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(200);
