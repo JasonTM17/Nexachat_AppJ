@@ -182,6 +182,10 @@ public class CallRegistry {
         calls.remove(current.callId());
         activeCallByUser.remove(current.callerId(), current.callId());
         activeCallByUser.remove(current.calleeId(), current.callId());
+        // The call row is gone for good, so evictExpiredTerminals will never
+        // visit this callId again — release any SDP saved between the invite
+        // and the failing transaction step here or it leaks.
+        offers.remove(current.callId());
     }
 
     public synchronized void rollback(Transition transition) {
