@@ -8,6 +8,7 @@ import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.rag.JdbcRagMessageIndex;
 import com.nexachat.rag.RagMessage;
+import com.nexachat.rag.VectorCache;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import com.nexachat.user.UserSettingsService;
@@ -76,6 +77,8 @@ class ConversationAiOptOutIT {
     private JwtService jwtService;
     @Autowired
     private JdbcRagMessageIndex index;
+    @Autowired
+    private VectorCache vectorCache;
 
     private User caller;
     private User peer;
@@ -159,6 +162,30 @@ class ConversationAiOptOutIT {
                 .andExpect(jsonPath("$.contextOmitted").value(true))
                 .andReturn();
         assertThat(result.getResponse().getContentAsString()).doesNotContain("March 14");
+    }
+
+    @Test
+    void optOutEvictsTheMembersVectorsFromTheInMemoryCache() throws Exception {
+        userSettingsService.updateSettings(caller.getId(), null, null, true);
+        TestMessage fact = addMessage(peer.getId(),
+                "The server migration is scheduled for March 14 at 02:00.");
+        addMessage(caller.getId(), "We discussed the release notes.");
+
+        postAsk(caller, "{\"question\":\"When is the server migration scheduled?\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.citations[0].messageId").value(fact.id().toString()));
+        String model = jdbcTemplate.queryForObject(
+                "SELECT model FROM message_embeddings WHERE message_id = ?", String.class, fact.id());
+        assertThat(vectorCache.get(model, fact.id()))
+                .as("the ask populated the in-memory vector cache")
+                .isNotNull();
+
+        putOptOut(peer).andExpect(status().isOk());
+
+        assertThat(embeddedRows(fact.id())).isZero();
+        assertThat(vectorCache.get(model, fact.id()))
+                .as("opt-out evicts the cached vector, not just the stored row")
+                .isNull();
     }
 
     @Test
