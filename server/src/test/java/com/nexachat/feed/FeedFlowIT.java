@@ -490,4 +490,23 @@ class FeedFlowIT extends FeatureItSupport {
                         "targetType", "POST", "targetId", postId, "reason", "OTHER"))
                 .andExpect(status().isCreated());
     }
+
+    @Test
+    void replayedClientPostIdWithAnImageReturnsTheStoredRow() throws Exception {
+        Actor author = newUser("Retrying Poster");
+        UUID imageId = UUID.fromString(json(uploadImage(author)
+                        .andExpect(status().isCreated()).andReturn())
+                .get("imageId").asText());
+        UUID clientPostId = UUID.randomUUID();
+        Map<String, String> payload = Map.of(
+                "body", "photo post", "imageId", imageId.toString(),
+                "clientPostId", clientPostId.toString());
+        String postId = json(postAs(author, "/api/v1/feed/posts", payload)
+                        .andExpect(status().isCreated()).andReturn())
+                .get("id").asText();
+
+        postAs(author, "/api/v1/feed/posts", payload)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(postId));
+    }
 }

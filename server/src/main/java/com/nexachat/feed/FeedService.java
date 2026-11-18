@@ -145,7 +145,10 @@ public class FeedService {
                 throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                         "imageId is not an uploaded feed image");
             }
-            if (image.boundAt() != null) {
+            // An already-bound image is rejected only on a fresh insert: a
+            // clientPostId replay returns the post it was bound to.
+            if (image.boundAt() != null
+                    && store.findOwnPostByClientId(authorId, request.clientPostId()).isEmpty()) {
                 throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                         "imageId is already attached to a post");
             }
