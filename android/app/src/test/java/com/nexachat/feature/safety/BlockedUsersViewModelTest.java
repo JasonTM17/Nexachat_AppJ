@@ -1,12 +1,15 @@
 package com.nexachat.feature.safety;
 
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
+import com.nexachat.feature.safety.SafetyRepository.BlockedPage;
+import com.nexachat.feature.safety.SafetyRepository.BlockedUser;
 import io.reactivex.rxjava3.android.plugins.RxAndroidPlugins;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import io.reactivex.rxjava3.subjects.SingleSubject;
 import java.util.List;
 import java.util.Set;
 import org.junit.After;
@@ -64,8 +67,48 @@ public final class BlockedUsersViewModelTest {
         assertFalse(state.hasMore());
     }
 
+    @Test
+    public void anInFlightPageCannotResurrectARowUnblockedWhileItWasLoading() {
+        SingleSubject<BlockedPage> page2 = SingleSubject.create();
+        repository.nextPage = page2;
+        viewModel.loadMore();
+        viewModel.unblock("u1");
+        assertEquals(1, viewModel.getUiState().getValue().getItems().size());
+
+        page2.onSuccess(new BlockedPage(List.of(
+                new BlockedUser("u3", "Three", null, null, null)), null));
+
+        List<SafetyRepository.BlockedUser> items =
+                viewModel.getUiState().getValue().getItems();
+        assertEquals(1, items.size());
+        assertEquals("u2", items.get(0).userId());
+    }
+
+    @Test
+    public void aRefreshDuringAnInFlightPageDoesNotDropTheNewFirstPage() {
+        SingleSubject<BlockedPage> page2 = SingleSubject.create();
+        repository.nextPage = page2;
+        viewModel.loadMore();
+
+        SingleSubject<BlockedPage> freshPage1 = SingleSubject.create();
+        repository.nextPage = freshPage1;
+        viewModel.refresh();
+        freshPage1.onSuccess(new BlockedPage(List.of(
+                new BlockedUser("u9", "Fresh", null, null, null)), null));
+        assertEquals(1, viewModel.getUiState().getValue().getItems().size());
+
+        page2.onSuccess(new BlockedPage(List.of(
+                new BlockedUser("u3", "Three", null, null, null)), null));
+
+        List<SafetyRepository.BlockedUser> items =
+                viewModel.getUiState().getValue().getItems();
+        assertEquals(1, items.size());
+        assertEquals("u9", items.get(0).userId());
+    }
+
     private static final class FakeRepository implements SafetyRepository {
         String unblockedId;
+        Single<BlockedPage> nextPage;
 
         @Override public Completable blockUser(String userId) {
             return Completable.complete();
@@ -81,6 +124,11 @@ public final class BlockedUsersViewModelTest {
         }
 
         @Override public Single<BlockedPage> listBlocked(int limit, String cursor) {
+            if (nextPage != null) {
+                Single<BlockedPage> result = nextPage;
+                nextPage = null;
+                return result;
+            }
             if (cursor == null) {
                 return Single.just(new BlockedPage(List.of(
                         new BlockedUser("u1", "One", null, null, null),
