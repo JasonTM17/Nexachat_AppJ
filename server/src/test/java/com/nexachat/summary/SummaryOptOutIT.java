@@ -11,6 +11,7 @@ import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.summary.llm.LlmSummaryProvider;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
+import com.nexachat.user.UserSettingsService;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +37,11 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -100,6 +106,8 @@ class SummaryOptOutIT {
     private LlmSummaryProvider llmSummaryProvider;
     @Autowired
     private ConversationAiOptOuts aiOptOuts;
+    @Autowired
+    private UserSettingsService userSettingsService;
 
     private User caller;
     private User peer;
@@ -218,6 +226,60 @@ class SummaryOptOutIT {
         assertThat(LLM.requestCount()).isEqualTo(requestsBefore);
     }
 
+    @Test
+    void consentRevokedDuringGenerationSuppressesTheResponseAndCachesNothing() throws Exception {
+        addMessage(peer.getId(), "The team agreed on the plan.");
+        addMessage(caller.getId(), "The release notes are ready.");
+        addMessage(caller.getId(), "The demo is scheduled.");
+        addMessage(caller.getId(), "The review is complete.");
+        addMessage(caller.getId(), "The next step is the rollout.");
+        CountDownLatch llmStarted = new CountDownLatch(1);
+        CountDownLatch releaseLlm = new CountDownLatch(1);
+        LLM.handle((exchange, body, authorization) -> {
+            llmStarted.countDown();
+            try {
+                if (!releaseLlm.await(10, TimeUnit.SECONDS)) {
+                    throw new IOException("The test never released the LLM call");
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted while waiting for the test release", interrupted);
+            }
+            FakeOpenAiServer.respond(exchange, 200, FakeOpenAiServer.jsonResponse(validJson()));
+        });
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<MvcResult> pending = executor.submit(() -> postSummaryRefresh(true)
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.error.code").value("AI_CONSENT_REQUIRED"))
+                    .andReturn());
+            assertThat(llmStarted.await(10, TimeUnit.SECONDS))
+                    .as("the external call should be in flight")
+                    .isTrue();
+            // Revoke consent while the generation is still running.
+            userSettingsService.updateSettings(caller.getId(), null, null, false);
+            releaseLlm.countDown();
+
+            MvcResult result = pending.get(30, TimeUnit.SECONDS);
+            assertThat(result.getResponse().getContentAsString()).doesNotContain("The group agreed");
+            assertThat(summaryCacheRows())
+                    .as("the suppressed summary is never cached")
+                    .isZero();
+
+            // A retry under the revoked consent answers locally, no external call.
+            int requestsBefore = LLM.requestCount();
+            postSummaryRefresh(true)
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.generatedBy").value("LOCAL"))
+                    .andExpect(jsonPath("$.fallbackReason").value("NO_CONSENT"));
+            assertThat(LLM.requestCount()).isEqualTo(requestsBefore);
+        } finally {
+            releaseLlm.countDown();
+            executor.shutdownNow();
+        }
+    }
+
     private org.springframework.test.web.servlet.ResultActions postSummaryRefresh(boolean refresh) throws Exception {
         String body = objectMapper.writeValueAsString(java.util.Map.of(
                 "scope", "UNREAD", "language", "EN", "refresh", refresh));
@@ -229,6 +291,13 @@ class SummaryOptOutIT {
 
     private String bearer(User user) {
         return "Bearer " + jwtService.generateAccessToken(user);
+    }
+
+    private int summaryCacheRows() {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM message_summaries WHERE conversation_id = ?",
+                Integer.class, conversationId);
+        return count == null ? 0 : count;
     }
 
     private List<String> citations(JsonNode body) {
