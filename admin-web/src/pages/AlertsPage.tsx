@@ -294,7 +294,9 @@ export default function AlertsPage() {
                       ) : (
                         a.snippet ?? '—'
                       )}
-                      {a.escalated && <Chip tone="high">!</Chip>}
+                      {a.escalated && (
+                        <Chip tone="high" label={t('alerts.escalated')}>!</Chip>
+                      )}
                     </td>
                     <td>
                       <Chip tone={`status-${a.status.toLowerCase()}`}>
@@ -324,7 +326,7 @@ export default function AlertsPage() {
                   {t('alerts.action.assign')}
                 </button>
                 <button
-                  className="btn sm"
+                  className="btn ghost sm"
                   onClick={() => setPending({ kind: 'status', status: 'ACKNOWLEDGED' })}
                 >
                   {t('alerts.action.ack')}
@@ -360,7 +362,7 @@ export default function AlertsPage() {
                   {t('alerts.action.warnUser')}
                 </button>
                 <button
-                  className="btn sm"
+                  className="btn ghost sm"
                   onClick={() => setPending({ kind: 'reveal' })}
                 >
                   {t('alerts.action.reveal')}

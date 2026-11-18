@@ -203,7 +203,7 @@ export default function UsersPage() {
                 <tr className="plain" key={u.id}>
                   <td>
                     <div>{u.displayName ?? '—'}</div>
-                    <div className="muted mono">{u.phone ?? u.id}</div>
+                    <div className="muted mono">{u.phone ?? '—'}</div>
                   </td>
                   <td>{fmtTime(u.createdAt)}</td>
                   <td>
@@ -254,7 +254,7 @@ export default function UsersPage() {
                   >
                     <td>
                       <div>{u.displayName ?? '—'}</div>
-                      <div className="muted mono">{u.phone ?? u.id}</div>
+                      <div className="muted mono">{u.phone ?? '—'}</div>
                     </td>
                     <td className="col-lo">
                       <Chip>{u.role}</Chip>
