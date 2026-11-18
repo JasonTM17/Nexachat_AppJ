@@ -7,6 +7,8 @@ All notable changes to NexaChat are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Website: a new bilingual landing page for nexachat.io.vn with the main
+  features, app screenshots and a download button.
 - Choose what a conversation summary covers: unread messages, the last 20, 50 or
   100 messages, or today. Today follows the device time zone and covers exactly
   the local calendar day.
