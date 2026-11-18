@@ -69,8 +69,12 @@ class SummaryServiceTest {
         // By default the locked re-read sees the same snapshot the window load saw.
         lenient().when(consentRepository.lockForResponse(any()))
                 .thenReturn(new SummaryConsentRepository.ConsentSnapshot(true, 0L));
+        // The unlocked pre-generate look defaults to the same snapshot too.
+        lenient().when(consentRepository.snapshot(any()))
+                .thenReturn(new SummaryConsentRepository.ConsentSnapshot(true, 0L));
         service = new SummaryService(rateLimiter, windowService, providerSelector, cacheRepository,
-                ConversationAiOptOuts.none(), Clock.systemUTC(), 120_000L, consentRepository, transactionManager);
+                ConversationAiOptOuts.none(), Clock.systemUTC(), 120_000L, consentRepository,
+                new SummaryConsentRecheck(consentRepository, transactionManager));
     }
 
     @Test
@@ -265,6 +269,129 @@ class SummaryServiceTest {
     }
 
     @Test
+    void consentRevokedBeforeGenerationDegradesToTheLocalTier() {
+        SummaryRequest request = request(false);
+        PreparedSummaryProvider external = new PreparedSummaryProvider(new StubProvider("LLM"), "LLM", null);
+        PreparedSummaryProvider local = new PreparedSummaryProvider(
+                new StubProvider("LOCAL"), "LOCAL", SummaryFallbackReason.NO_CONSENT);
+        SummaryGeneration generated = generation("LOCAL", "Local output", SummaryFallbackReason.NO_CONSENT);
+        SummaryCacheEntry entry = cacheEntry(generated, "LOCAL");
+        when(windowService.load(conversationId, userId, request))
+                .thenReturn(new SummaryReadContext(window, true, 0L, null));
+        when(providerSelector.prepare(eq(true), any(), anyBoolean())).thenReturn(external);
+        when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
+                hash("LLM"), "LLM", SummaryLanguage.EN)).thenReturn(Optional.empty());
+        // The revoke landed before the provider call: the unlocked re-read sees
+        // it and re-prepares on the local tier instead of transmitting.
+        when(consentRepository.snapshot(userId))
+                .thenReturn(new SummaryConsentRepository.ConsentSnapshot(false, 1L));
+        when(providerSelector.prepare(eq(false), any(), anyBoolean())).thenReturn(local);
+        when(providerSelector.generate(local, window, SummaryLanguage.EN)).thenReturn(generated);
+        when(cacheRepository.saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(hash("LOCAL")),
+                eq("LOCAL"), eq(SummaryLanguage.EN), eq(generated)))
+                .thenReturn(new SummaryCacheRepository.SavedSummary(entry, true));
+
+        SummaryResponse response = service.summarize(conversationId, userId, request);
+
+        assertThat(response.overview()).isEqualTo("Local output");
+        assertThat(response.generatedBy()).isEqualTo("LOCAL");
+        // The external call never happens: the revoke was caught first.
+        verify(providerSelector, never()).generate(external, window, SummaryLanguage.EN);
+        verify(providerSelector).generate(local, window, SummaryLanguage.EN);
+    }
+
+    @Test
+    void aConsentRegrantBeforeGenerationIsAuthorizedUnderTheNewerSnapshot() {
+        SummaryRequest request = request(false);
+        PreparedSummaryProvider prepared = new PreparedSummaryProvider(new StubProvider("LLM"), "LLM", null);
+        SummaryGeneration generated = generation("LLM", "External output", null);
+        SummaryCacheEntry entry = cacheEntry(generated, "LLM");
+        when(windowService.load(conversationId, userId, request))
+                .thenReturn(new SummaryReadContext(window, true, 0L, null));
+        when(providerSelector.prepare(eq(true), any(), anyBoolean())).thenReturn(prepared);
+        when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
+                hash("LLM"), "LLM", SummaryLanguage.EN)).thenReturn(Optional.empty());
+        // A revoke-and-regrant landed before the provider call: the window read
+        // saw epoch 0, the pre-generate look sees epoch 1 and still consented,
+        // so the external call proceeds under the newer snapshot.
+        when(consentRepository.snapshot(userId))
+                .thenReturn(new SummaryConsentRepository.ConsentSnapshot(true, 1L));
+        when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(generated);
+        when(consentRepository.lockForResponse(userId))
+                .thenReturn(new SummaryConsentRepository.ConsentSnapshot(true, 1L));
+        // The row is keyed under the authorizing epoch (1), so the next request
+        // — which reads epoch 1 — can replay it.
+        String epochOneHash = SummaryService.contentHash(window, request, null, 1L);
+        when(cacheRepository.saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(epochOneHash),
+                eq("LLM"), eq(SummaryLanguage.EN), eq(generated)))
+                .thenReturn(new SummaryCacheRepository.SavedSummary(entry, true));
+
+        SummaryResponse response = service.summarize(conversationId, userId, request);
+
+        assertThat(response.overview()).isEqualTo("External output");
+        assertThat(response.generatedBy()).isEqualTo("LLM");
+        verify(cacheRepository).saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(epochOneHash),
+                eq("LLM"), eq(SummaryLanguage.EN), eq(generated));
+    }
+
+    @Test
+    void aConsentGrantDuringLocalGenerationStillServesTheLocalSummary() {
+        SummaryRequest request = request(false);
+        PreparedSummaryProvider prepared = new PreparedSummaryProvider(
+                new StubProvider("LOCAL"), "LOCAL", SummaryFallbackReason.NO_CONSENT);
+        SummaryGeneration generated = generation("LOCAL", "Local output", SummaryFallbackReason.NO_CONSENT);
+        SummaryCacheEntry entry = cacheEntry(generated, "LOCAL");
+        when(windowService.load(conversationId, userId, request))
+                .thenReturn(new SummaryReadContext(window, false, 0L, null));
+        when(providerSelector.prepare(eq(false), any(), anyBoolean())).thenReturn(prepared);
+        when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
+                hash("LOCAL"), "LOCAL", SummaryLanguage.EN)).thenReturn(Optional.empty());
+        when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(generated);
+        when(cacheRepository.saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(hash("LOCAL")),
+                eq("LOCAL"), eq(SummaryLanguage.EN), eq(generated)))
+                .thenReturn(new SummaryCacheRepository.SavedSummary(entry, true));
+        // A consent flip while the local generation ran must not reject the
+        // local-tier result — and must not even take the response lock.
+
+        SummaryResponse response = service.summarize(conversationId, userId, request);
+
+        assertThat(response.overview()).isEqualTo("Local output");
+        assertThat(response.generatedBy()).isEqualTo("LOCAL");
+        verify(consentRepository, never()).lockForResponse(any());
+        verify(consentRepository, never()).snapshot(any());
+        verify(cacheRepository).saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(hash("LOCAL")),
+                eq("LOCAL"), eq(SummaryLanguage.EN), eq(generated));
+    }
+
+    @Test
+    void aLocalFallbackOutputSurvivesAConsentChangeDuringGeneration() {
+        SummaryRequest request = request(false);
+        PreparedSummaryProvider prepared = new PreparedSummaryProvider(new StubProvider("LLM"), "LLM", null);
+        SummaryGeneration generated = generation("LOCAL", "Fallback output", SummaryFallbackReason.LLM_TIMEOUT);
+        SummaryCacheEntry entry = cacheEntry(generated, "LOCAL");
+        when(windowService.load(conversationId, userId, request))
+                .thenReturn(new SummaryReadContext(window, true, 0L, null));
+        when(providerSelector.prepare(eq(true), any(), anyBoolean())).thenReturn(prepared);
+        when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
+                hash("LLM"), "LLM", SummaryLanguage.EN)).thenReturn(Optional.empty());
+        when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(generated);
+        when(cacheRepository.saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(hash("LOCAL")),
+                eq("LOCAL"), eq(SummaryLanguage.EN), eq(generated)))
+                .thenReturn(new SummaryCacheRepository.SavedSummary(entry, true));
+        // The revoke landed while the provider chain ran, but it fell back to
+        // the local engine: nothing was transmitted, so the local output must
+        // not be suppressed.
+
+        SummaryResponse response = service.summarize(conversationId, userId, request);
+
+        assertThat(response.overview()).isEqualTo("Fallback output");
+        assertThat(response.generatedBy()).isEqualTo("LOCAL");
+        verify(consentRepository, never()).lockForResponse(any());
+        verify(cacheRepository).saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(hash("LOCAL")),
+                eq("LOCAL"), eq(SummaryLanguage.EN), eq(generated));
+    }
+
+    @Test
     void fallbackOutputUsesActualLocalProviderCacheKey() {
         SummaryRequest request = request(false);
         PreparedSummaryProvider prepared = new PreparedSummaryProvider(new StubProvider("LLM"), "LLM", null);
@@ -357,8 +484,6 @@ class SummaryServiceTest {
                 SummaryLanguage.EN, "LOCAL", null, null);
         when(windowService.load(conversationId, userId, request))
                 .thenReturn(new SummaryReadContext(window, false, 0L, null));
-        when(consentRepository.lockForResponse(userId))
-                .thenReturn(new SummaryConsentRepository.ConsentSnapshot(false, 0L));
         when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(false), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
         when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
@@ -388,8 +513,6 @@ class SummaryServiceTest {
         SummaryReadContext context = new SummaryReadContext(window, true, 4L, period);
         String hash = SummaryService.contentHash(window, request, period, 4L);
         when(windowService.load(conversationId, userId, request)).thenReturn(context);
-        when(consentRepository.lockForResponse(userId))
-                .thenReturn(new SummaryConsentRepository.ConsentSnapshot(true, 4L));
         when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
         when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(), hash, "LLM",
@@ -416,8 +539,6 @@ class SummaryServiceTest {
         SummaryGeneration generated = generation("LOCAL", "Local", null);
         String hash = SummaryService.contentHash(window, request, null, -1L);
         when(windowService.load(conversationId, userId, request)).thenReturn(new SummaryReadContext(window, false, 0L, null));
-        when(consentRepository.lockForResponse(userId))
-                .thenReturn(new SummaryConsentRepository.ConsentSnapshot(false, 0L));
         when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(false), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
         when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(), hash, "LOCAL",
