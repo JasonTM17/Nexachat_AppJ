@@ -153,6 +153,41 @@ public final class SummaryViewModelTest {
 
                 assertEquals("summary-default-zone", ready.getSummary().getSummaryId());
                 assertEquals(2, calls.get());
+                assertFalse(retryBody.get().contains("\"refresh\":true"));
+                assertFalse(retryBody.get().contains("\"timeZone\""));
+            }
+        }
+    }
+
+    @Test
+    public void refreshRetriesWithoutAZoneAndKeepsForcingAFreshGeneration() throws Exception {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            AtomicInteger calls = new AtomicInteger();
+            AtomicReference<String> retryBody = new AtomicReference<>();
+            try (SummaryTestServer server = new SummaryTestServer(exchange -> {
+                int call = calls.incrementAndGet();
+                if (call == 1) {
+                    SummaryTestServer.respond(exchange, 400,
+                            "{\"error\":{\"code\":\"INVALID_TIME_ZONE\",\"message\":\"synthetic\"}}");
+                } else {
+                    retryBody.set(SummaryTestServer.requestBody(exchange));
+                    SummaryTestServer.respond(exchange, 200,
+                            SummaryRepositoryTest.responseJson("summary-default-zone", false));
+                }
+            })) {
+                SummaryRepository repository = new SummaryRepository(
+                        SummaryRepositoryTest.api(server.baseUrl()));
+                SavedStateHandle handle = new SavedStateHandle(Map.of(
+                        SummaryViewModel.ARG_CONVERSATION_ID, "conversation-1",
+                        "summary_scope", "TODAY"));
+                SummaryViewModel viewModel = new SummaryViewModel(handle, repository);
+
+                viewModel.refresh();
+                SummaryUiState ready = awaitState(viewModel, SummaryUiState.Status.READY);
+
+                assertEquals("summary-default-zone", ready.getSummary().getSummaryId());
+                assertEquals(2, calls.get());
+                assertTrue(retryBody.get().contains("\"refresh\":true"));
                 assertFalse(retryBody.get().contains("\"timeZone\""));
             }
         }
@@ -282,6 +317,103 @@ public final class SummaryViewModelTest {
         }
     }
 
+    @Test
+    public void aStaleInvalidTimeZoneNeverStartsTheZoneLessRetry() throws Exception {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            SummaryRepository repository = mock(SummaryRepository.class);
+            AtomicInteger calls = new AtomicInteger();
+            AtomicReference<SummaryRepository.Callback> staleCallback = new AtomicReference<>();
+            when(repository.findCachedById(anyString(), any(), anyString())).thenReturn(Optional.empty());
+            when(repository.request(anyString(), any(), any())).thenAnswer(invocation -> {
+                calls.incrementAndGet();
+                SummaryRepository.Callback callback = invocation.getArgument(2);
+                if (invocation.getArgument(1, SummaryRequest.class).getScope() == SummaryScope.UNREAD) {
+                    staleCallback.set(callback);
+                    return (SummaryRepository.Cancellable) () -> { };
+                }
+                callback.onSuccess(summaryResponse("summary-new"));
+                return (SummaryRepository.Cancellable) () -> { };
+            });
+            SavedStateHandle handle = new SavedStateHandle(
+                    Map.of(SummaryViewModel.ARG_CONVERSATION_ID, "conversation-1"));
+            SummaryViewModel viewModel = new SummaryViewModel(handle, repository);
+
+            // Supersede the first request so its callback is stale when the zone is rejected.
+            viewModel.request(SummaryScope.UNREAD, null);
+            viewModel.request(SummaryScope.TODAY, null);
+            awaitState(viewModel, SummaryUiState.Status.READY, "summary-new");
+
+            SummaryRepository.Callback stale = staleCallback.get();
+            assertNotNull(stale);
+            stale.onError(SummaryError.INVALID_TIME_ZONE);
+
+            assertEquals(2, calls.get());
+        }
+    }
+
+    @Test
+    public void revalidateKeepsATodaySummaryWhoseZoneTheServerDefaulted() throws Exception {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            SummaryRepository repository = mock(SummaryRepository.class);
+            AtomicInteger calls = new AtomicInteger();
+            String zone = TimeZone.getDefault().getID();
+            String otherZone = zone.equals("Asia/Ho_Chi_Minh") ? "UTC" : "Asia/Ho_Chi_Minh";
+            long now = Instant.parse("2026-11-17T05:00:00Z").toEpochMilli();
+            String today = Instant.ofEpochMilli(now).atZone(ZoneId.of(zone))
+                    .toLocalDate().toString();
+            when(repository.findCachedById(anyString(), any(), anyString())).thenReturn(Optional.empty());
+            when(repository.request(anyString(), any(), any())).thenAnswer(invocation -> {
+                int call = calls.incrementAndGet();
+                SummaryRepository.Callback callback = invocation.getArgument(2);
+                callback.onSuccess(todaySummary("summary-" + call, today, otherZone, true));
+                return (SummaryRepository.Cancellable) () -> { };
+            });
+            SavedStateHandle handle = new SavedStateHandle(
+                    Map.of(SummaryViewModel.ARG_CONVERSATION_ID, "conversation-1"));
+            SummaryViewModel viewModel = new SummaryViewModel(handle, repository, Runnable::run,
+                    () -> now);
+
+            viewModel.request(SummaryScope.TODAY, null);
+            awaitState(viewModel, SummaryUiState.Status.READY, "summary-1");
+
+            // The zone-less retry produced this result, so the server's own day is authoritative
+            // and a resume must not re-request forever.
+            viewModel.revalidate();
+            assertEquals(1, calls.get());
+        }
+    }
+
+    @Test
+    public void revalidateStillReRequestsATodaySummaryFromAnotherZone() throws Exception {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            SummaryRepository repository = mock(SummaryRepository.class);
+            AtomicInteger calls = new AtomicInteger();
+            String zone = TimeZone.getDefault().getID();
+            String otherZone = zone.equals("Asia/Ho_Chi_Minh") ? "UTC" : "Asia/Ho_Chi_Minh";
+            long now = Instant.parse("2026-11-17T05:00:00Z").toEpochMilli();
+            String today = Instant.ofEpochMilli(now).atZone(ZoneId.of(zone))
+                    .toLocalDate().toString();
+            when(repository.findCachedById(anyString(), any(), anyString())).thenReturn(Optional.empty());
+            when(repository.request(anyString(), any(), any())).thenAnswer(invocation -> {
+                int call = calls.incrementAndGet();
+                SummaryRepository.Callback callback = invocation.getArgument(2);
+                callback.onSuccess(todaySummary("summary-" + call, today, otherZone, false));
+                return (SummaryRepository.Cancellable) () -> { };
+            });
+            SavedStateHandle handle = new SavedStateHandle(
+                    Map.of(SummaryViewModel.ARG_CONVERSATION_ID, "conversation-1"));
+            SummaryViewModel viewModel = new SummaryViewModel(handle, repository, Runnable::run,
+                    () -> now);
+
+            viewModel.request(SummaryScope.TODAY, null);
+            awaitState(viewModel, SummaryUiState.Status.READY, "summary-1");
+
+            viewModel.revalidate();
+            awaitState(viewModel, SummaryUiState.Status.READY, "summary-2");
+            assertEquals(2, calls.get());
+        }
+    }
+
     private static SummaryResponse summaryResponse(String summaryId) throws Exception {
         return new Moshi.Builder().build().adapter(SummaryResponse.class).fromJson(
                 SummaryRepositoryTest.responseJson(summaryId, false));
@@ -289,9 +421,14 @@ public final class SummaryViewModelTest {
 
     private static SummaryResponse todaySummary(String summaryId, String date, String zone)
             throws Exception {
+        return todaySummary(summaryId, date, zone, false);
+    }
+
+    private static SummaryResponse todaySummary(
+            String summaryId, String date, String zone, boolean zoneDefaulted) throws Exception {
         String period = "{\"date\":\"" + date + "\",\"timeZone\":\"" + zone + "\","
                 + "\"start\":\"2026-11-17T00:00:00Z\",\"end\":\"2026-11-18T00:00:00Z\","
-                + "\"timeZoneDefaulted\":false}";
+                + "\"timeZoneDefaulted\":" + zoneDefaulted + "}";
         return new Moshi.Builder().build().adapter(SummaryResponse.class).fromJson(
                 SummaryRepositoryTest.responseJson(summaryId, false, "TODAY", null, period));
     }
