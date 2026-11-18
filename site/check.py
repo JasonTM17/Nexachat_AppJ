@@ -524,6 +524,24 @@ def test_vercel_headers(vercel_data):
     else:
         failures.append("Missing rewrite for /join/:token to /join/index.html")
 
+    # An /admin proxy rewrite may target a local path or the public production
+    # alias of the dedicated admin Vercel project. Team-scoped *-projects
+    # deployment domains are typically behind Vercel deployment protection,
+    # which would serve an SSO login page to end users instead of the console.
+    admin_dest = next(
+        (r.get("destination", "") for r in rewrites
+         if r.get("source") in ("/admin/:path*", "/admin/(.*)")),
+        None,
+    )
+    if admin_dest is not None:
+        host = (urlsplit(admin_dest).hostname or "").lower()
+        if host.endswith("-projects.vercel.app"):
+            failures.append(
+                f"/admin rewrite targets SSO-gated team-scoped domain {host}; use the project's public alias"
+            )
+        else:
+            log_pass("/admin rewrite target is not a team-scoped (SSO-protected) Vercel domain")
+
     return failures
 
 
