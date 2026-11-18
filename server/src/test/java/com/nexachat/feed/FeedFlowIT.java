@@ -5,6 +5,7 @@ import com.nexachat.testutil.FeatureItSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.ResultActions;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -436,5 +437,39 @@ class FeedFlowIT extends FeatureItSupport {
                 "body", "one too many", "clientPostId", UUID.randomUUID().toString()))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"));
+    }
+
+    @Test
+    void feedImageUploadIsRateLimitedPerUser() throws Exception {
+        Actor author = newUser("Frequent Uploader");
+        for (int index = 0; index < 10; index++) {
+            uploadImage(author).andExpect(status().isCreated());
+        }
+
+        uploadImage(author)
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"));
+    }
+
+    @Test
+    void feedImageUploadIsCappedWhenUnboundUploadsAccumulate() throws Exception {
+        Actor author = newUser("Hoarding Uploader");
+        for (int index = 0; index < 20; index++) {
+            jdbcTemplate.update("""
+                    INSERT INTO public_images
+                        (id, owner_id, storage_key, mime_type, size_bytes, created_at)
+                    VALUES (?, ?, ?, 'image/png', 10, now())
+                    """, UUID.randomUUID(), author.id(), "it/" + UUID.randomUUID());
+        }
+
+        uploadImage(author)
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"));
+    }
+
+    private ResultActions uploadImage(Actor uploader) throws Exception {
+        return mockMvc.perform(multipart("/api/v1/feed/images")
+                .file(new MockMultipartFile("file", "photo.png", "image/png", PNG_BYTES))
+                .header("Authorization", bearer(uploader)));
     }
 }

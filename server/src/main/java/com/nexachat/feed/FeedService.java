@@ -1,6 +1,5 @@
 package com.nexachat.feed;
 
-import com.nexachat.auth.RateLimitService;
 import com.nexachat.common.ReactionEmoji;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
@@ -43,7 +42,7 @@ import java.util.UUID;
  * duplicate a post or a comment.
  *
  * <p><b>Rate limits.</b> Posts 3/min and 30/day, comments 10/min and 200/day,
- * reactions 60/min, all per user through {@link RateLimitService}; a denial is
+ * reactions 60/min, all per user through {@link FeedRateLimits}; a denial is
  * {@code RATE_LIMITED} with {@code retryAfterSeconds}.
  */
 @Service
@@ -76,16 +75,16 @@ public class FeedService {
     }
 
     private final FeedStore store;
-    private final RateLimitService rateLimitService;
+    private final FeedRateLimits rateLimits;
     private final ObjectProvider<StreakService> streakService;
     private final Clock clock;
 
     public FeedService(FeedStore store,
-                       RateLimitService rateLimitService,
+                       FeedRateLimits rateLimits,
                        ObjectProvider<StreakService> streakService,
                        Clock clock) {
         this.store = store;
-        this.rateLimitService = rateLimitService;
+        this.rateLimits = rateLimits;
         this.streakService = streakService;
         this.clock = clock;
     }
@@ -299,12 +298,7 @@ public class FeedService {
     }
 
     private void consume(String bucket, long capacity, Duration period, String message) {
-        RateLimitService.Consumption consumption = rateLimitService.tryConsume(
-                bucket, capacity, period);
-        if (!consumption.allowed()) {
-            throw ApiException.of(ApiErrorCode.RATE_LIMITED, message,
-                    Map.of("retryAfterSeconds", consumption.retryAfterSeconds()));
-        }
+        rateLimits.consume(bucket, capacity, period, message);
     }
 
     private static int normalizeLimit(Integer limit, int fallback, int maximum) {

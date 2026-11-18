@@ -336,6 +336,14 @@ class FeedStore {
                         """, single(imageMapper()), storageKey));
     }
 
+    /** How many uploaded images still wait to be bound to a post. */
+    int countUnboundImages(UUID ownerId) {
+        Integer count = jdbc.queryForObject("""
+                SELECT count(*) FROM public_images WHERE owner_id = ? AND bound_at IS NULL
+                """, Integer.class, ownerId);
+        return count == null ? 0 : count;
+    }
+
     /** Binds an unbound upload to the post that just referenced it. */
     int bindImage(UUID imageId, UUID ownerId) {
         return jdbc.update("""
