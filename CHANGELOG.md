@@ -34,6 +34,10 @@ All notable changes to NexaChat are documented here. The format follows
 - Android: the caller's call screen no longer closes a second or two after
   opening when you call again after an earlier call ended; the previous
   call's finished state is ignored instead of closing the new call's screen.
+- Android: a brand-new feed post or comment reads "Just now" instead of
+  "0 minutes ago", a post without comments reads "No comments" instead of
+  "0 comments", and the streak milestone sheet no longer leaves a strip of
+  the underlying screen showing behind the navigation bar.
 - Feed image uploads are now limited per account (10 per minute, 100 per day)
   and a backlog of more than 20 unused uploads is refused instead of piling up.
 - A post that only carries an image can be reported; the report queue no

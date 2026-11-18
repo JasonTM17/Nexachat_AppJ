@@ -82,6 +82,7 @@ public final class StreakMilestoneSheet extends NexaBottomSheetFragment {
         binding.streakMilestoneTitle.setText(getResources()
                 .getQuantityString(R.plurals.streak_milestone_title, milestone, milestone));
         binding.streakMilestoneDone.setOnClickListener(ignored -> dismissAllowingStateLoss());
+        applySheetInsets(view);
         if (savedInstanceState == null) {
             playEntrance();
         }

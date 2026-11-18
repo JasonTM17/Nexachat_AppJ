@@ -65,17 +65,20 @@ public final class CommentAdapter extends ListAdapter<FeedRepository.Comment, Co
         holder.avatar.setAvatarUrl(comment.author().avatarUrl());
         holder.avatar.setOnlineStatus(null);
         holder.body.setText(comment.body() == null ? "" : comment.body());
-        holder.time.setText(relativeTime(comment.createdAt()));
+        holder.time.setText(relativeTime(context, comment.createdAt()));
         holder.menu.setVisibility(comment.mine() ? View.VISIBLE : View.GONE);
         holder.menu.setOnClickListener(anchor -> listener.onCommentMenu(comment, anchor));
         holder.itemView.setContentDescription(context.getString(
                 R.string.feed_comment_cd, author, comment.body() == null ? "" : comment.body()));
     }
 
-    private static CharSequence relativeTime(@Nullable String createdAt) {
+    private static CharSequence relativeTime(Context context, @Nullable String createdAt) {
         long epochMs = FeedTimeRules.epochMillis(createdAt);
         if (epochMs <= 0L) {
             return "";
+        }
+        if (FeedTimeRules.isJustNow(epochMs, System.currentTimeMillis())) {
+            return context.getString(R.string.time_just_now);
         }
         return DateUtils.getRelativeTimeSpanString(
                 epochMs, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS);
