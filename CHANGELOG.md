@@ -35,6 +35,12 @@ All notable changes to NexaChat are documented here. The format follows
 ### Fixed
 - Calling someone again after an earlier call whose media setup failed no longer
   answers busy: the server ends that stale call and starts the new one.
+- Android: when a call fails or times out on your phone (media setup failure,
+  ring timeout, lost connection), the server is now told, so the other side
+  stops ringing or is hung up instead of waiting for the server timeout.
+- Android: if the incoming-call screen has to close early while the call is
+  still ringing, the incoming-call notification stays visible instead of the
+  phone ringing with nothing on screen.
 - Android: asking for a summary in an end-to-end encrypted chat now says that
   summaries are not available there instead of showing a generic error, and the
   unread-messages banner no longer offers a summary in those chats.

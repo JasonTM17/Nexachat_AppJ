@@ -40,6 +40,7 @@ import dagger.hilt.android.AndroidEntryPoint;
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
 import io.reactivex.rxjava3.disposables.Disposable;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.logging.Logger;
 import javax.inject.Inject;
 
 /** Lock-screen incoming call view; call state remains owned by the process CallManager. */
@@ -59,6 +60,7 @@ public class IncomingCallActivity extends ComponentActivity {
     private static final String STATE_PENDING_ACCEPT = "call.pendingAccept";
     private static final String STATE_ACCEPT_AS_VOICE = "call.acceptAsVoice";
     private static final long ENDED_SCREEN_MS = 1600L;
+    private static final Logger LOGGER = Logger.getLogger("IncomingCallActivity");
 
     @Inject CallManager callManager;
     @Inject IncomingCallPushAdmission incomingCallPushAdmission;
@@ -99,36 +101,22 @@ public class IncomingCallActivity extends ComponentActivity {
         acceptButton = findViewById(R.id.incoming_accept);
         declineButton = findViewById(R.id.incoming_decline);
         pulseRing = findViewById(R.id.incoming_pulse_ring);
-        ringtonePlayer = new CallRingtonePlayer(getApplicationContext());
         callManager.attachMediaEngine(CallMediaEngineProvider.get(getApplicationContext()));
         acceptButton.setOnClickListener(view -> requestAccept());
         declineButton.setOnClickListener(view -> decline());
         currentSession = callManager.currentSessionSnapshot();
-        if (currentSession == null || currentSession.getState() == CallState.IDLE) {
+        IncomingCallGate.Decision gate = gateFor(currentSession);
+        if (gate == IncomingCallGate.Decision.NO_ACTIVE_SESSION) {
             if (beginFallbackAdmission()) return;
-            CallNotifications.clearIncoming(this);
-            finish();
+            finishThroughGate(gate);
             return;
         }
-        if (callManager.hasIncomingPushAdmission(currentSession.getCallId())
-                && !isCurrentPushIntent(currentSession.getCallId())) {
-            resolving = true;
-            CallNotifications.clearIncoming(this);
-            finish();
+        if (gate != IncomingCallGate.Decision.ALL_CLEAR) {
+            finishThroughGate(gate);
             return;
         }
-        if (!matchesTargetCall(currentSession)) {
-            CallNotifications.clearIncoming(this);
-            finish();
-            return;
-        }
+        ringtonePlayer = new CallRingtonePlayer(getApplicationContext());
         render(currentSession);
-        if (currentSession == null
-                || (currentSession.getState() != CallState.INCOMING_RINGING
-                    && currentSession.getState() != CallState.PENDING_INCOMING)) {
-            finish();
-            return;
-        }
         if (savedInstanceState == null
                 && CallNotificationActionRouter.ACTION_ACCEPT.equals(getIntent().getAction())) {
             requestAccept();
@@ -144,35 +132,36 @@ public class IncomingCallActivity extends ComponentActivity {
                 if (session != null
                         && callManager.hasIncomingPushAdmission(session.getCallId())
                         && !callManager.isIncomingPushAdmissionCurrent(session.getCallId())) {
-                    resolving = true;
-                    ringtonePlayer.stop();
-                    finish();
+                    currentSession = session;
+                    finishThroughGate(IncomingCallGate.Decision.STALE_PUSH_SESSION);
+                    return;
+                }
+                if (session == null) {
+                    currentSession = null;
+                    finishThroughGate(IncomingCallGate.Decision.NO_ACTIVE_SESSION, null);
                     return;
                 }
                 if (!matchesTargetCall(session)) {
-                    resolving = true;
-                    ringtonePlayer.stop();
-                    finish();
+                    currentSession = session;
+                    finishThroughGate(IncomingCallGate.Decision.TARGET_CALL_MISMATCH);
                     return;
                 }
                 currentSession = session;
                 render(session);
-                boolean isRinging = session != null
-                        && (session.getState() == CallState.INCOMING_RINGING
-                            || session.getState() == CallState.PENDING_INCOMING);
+                boolean isRinging = session.getState() == CallState.INCOMING_RINGING
+                        || session.getState() == CallState.PENDING_INCOMING;
                 if (!isRinging) {
-                    ringtonePlayer.stop();
+                    stopRingtone();
                     CallNotifications.clearIncoming(IncomingCallActivity.this);
-                    if (session == null) {
-                        resolving = true;
-                        finish();
+                    if (session.getState() == CallState.IDLE) {
+                        finishThroughGate(IncomingCallGate.Decision.NO_ACTIVE_SESSION, session);
                     } else if (session.getState() == CallState.ENDED && !isFinishing()) {
                         resolving = true;
                         mainHandler.removeCallbacks(finishEndedScreen);
                         mainHandler.postDelayed(finishEndedScreen, ENDED_SCREEN_MS);
                     }
                 } else {
-                    ringtonePlayer.start();
+                    ringtone().start();
                 }
             }
 
@@ -183,14 +172,14 @@ public class IncomingCallActivity extends ComponentActivity {
         };
         callManager.addListener(listener);
         currentSession = callManager.currentSessionSnapshot();
-        if (!resolving && (!matchesTargetCall(currentSession)
-                || !isCurrentPushSession(currentSession)
-                || (callManager.hasIncomingPushAdmission(currentSession.getCallId())
-                    && !isCurrentPushIntent(currentSession.getCallId())))) {
-            resolving = true;
-            ringtonePlayer.stop();
-            CallNotifications.clearIncoming(this);
-            finish();
+        IncomingCallGate.Decision gate = IncomingCallGate.decideOnStart(
+                currentSession,
+                matchesTargetCall(currentSession),
+                hasAdmission(currentSession),
+                pushIntentCurrent(currentSession),
+                isCurrentPushSession(currentSession));
+        if (!resolving && gate != IncomingCallGate.Decision.ALL_CLEAR) {
+            finishThroughGate(gate);
             return;
         }
         render(currentSession);
@@ -198,7 +187,7 @@ public class IncomingCallActivity extends ComponentActivity {
                 && isCurrentPushSession(currentSession)
                 && (currentSession.getState() == CallState.INCOMING_RINGING
                     || currentSession.getState() == CallState.PENDING_INCOMING)) {
-            ringtonePlayer.start();
+            ringtone().start();
         }
     }
 
@@ -214,7 +203,7 @@ public class IncomingCallActivity extends ComponentActivity {
         if (!resolving && matchesTargetCall(currentSession)
                 && (currentSession.getState() == CallState.INCOMING_RINGING
                     || currentSession.getState() == CallState.PENDING_INCOMING)) {
-            ringtonePlayer.stop();
+            stopRingtone();
             if (isCurrentPushSession(currentSession)) {
                 CallNotifications.showIncoming(this, currentSession);
             } else {
@@ -234,14 +223,10 @@ public class IncomingCallActivity extends ComponentActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         currentSession = callManager.currentSessionSnapshot();
-        if (!matchesTargetCall(currentSession)
-                || (currentSession != null
-                    && callManager.hasIncomingPushAdmission(currentSession.getCallId())
-                    && !isCurrentPushIntent(currentSession.getCallId()))) {
-            resolving = true;
-            ringtonePlayer.stop();
-            CallNotifications.clearIncoming(this);
-            finish();
+        IncomingCallGate.Decision gate = gateFor(currentSession);
+        if (gate != IncomingCallGate.Decision.ALL_CLEAR
+                && gate != IncomingCallGate.Decision.NOT_RINGING) {
+            finishThroughGate(gate);
             return;
         }
         render(currentSession);
@@ -262,7 +247,7 @@ public class IncomingCallActivity extends ComponentActivity {
             pulseAnimator.cancel();
             pulseAnimator = null;
         }
-        if (ringtonePlayer != null) ringtonePlayer.stop();
+        stopRingtone();
         super.onDestroy();
     }
 
@@ -500,7 +485,7 @@ public class IncomingCallActivity extends ComponentActivity {
                 || (currentSession.getState() != CallState.INCOMING_RINGING
                     && currentSession.getState() != CallState.PENDING_INCOMING)) return;
         resolving = true;
-        ringtonePlayer.stop();
+        stopRingtone();
         CallNotifications.clearIncoming(this);
         CallForegroundService.startForCall(this,
                 !acceptAsVoiceOnly && currentSession.getMediaType() == CallMediaType.VIDEO);
@@ -522,7 +507,7 @@ public class IncomingCallActivity extends ComponentActivity {
         pendingAccept = false;
         resolving = true;
         if (currentSession != null) callManager.reject(currentSession.getCallId());
-        ringtonePlayer.stop();
+        stopRingtone();
         CallNotifications.clearIncoming(this);
         showPermissionFallback();
     }
@@ -534,7 +519,7 @@ public class IncomingCallActivity extends ComponentActivity {
                     || currentSession.getState() == CallState.PENDING_INCOMING)) {
             callManager.reject(currentSession.getCallId());
         }
-        ringtonePlayer.stop();
+        stopRingtone();
         CallNotifications.clearIncoming(this);
         finish();
     }
@@ -577,6 +562,59 @@ public class IncomingCallActivity extends ComponentActivity {
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
     }
 
+    private IncomingCallGate.Decision gateFor(@Nullable CallSession session) {
+        return IncomingCallGate.decide(
+                session,
+                matchesTargetCall(session),
+                hasAdmission(session),
+                pushIntentCurrent(session),
+                isCurrentPushSession(session));
+    }
+
+    private boolean hasAdmission(@Nullable CallSession session) {
+        return session != null && callManager.hasIncomingPushAdmission(session.getCallId());
+    }
+
+    private boolean pushIntentCurrent(@Nullable CallSession session) {
+        return session != null && isCurrentPushIntent(session.getCallId());
+    }
+
+    /** Logs the gate, keeps a still-ringing call visible through the notification, and finishes. */
+    private void finishThroughGate(IncomingCallGate.Decision gate) {
+        finishThroughGate(gate, currentSession);
+    }
+
+    private void finishThroughGate(IncomingCallGate.Decision gate, @Nullable CallSession session) {
+        resolving = true;
+        stopRingtone();
+        logGate(gate, session);
+        boolean ringing = session != null
+                && (session.getState() == CallState.INCOMING_RINGING
+                    || session.getState() == CallState.PENDING_INCOMING);
+        if (IncomingCallGate.shouldPostIncomingNotification(ringing, isCurrentPushSession(session))) {
+            CallNotifications.showIncomingFromGate(this, session,
+                    callManager.currentIncomingPushData(session.getCallId()));
+        } else {
+            CallNotifications.clearIncoming(this);
+        }
+        finish();
+    }
+
+    private void logGate(IncomingCallGate.Decision gate, @Nullable CallSession session) {
+        String callId = session == null ? null : session.getCallId();
+        String prefix = callId == null ? "none" : callId.substring(0, Math.min(8, callId.length()));
+        LOGGER.info("incoming-call-gate=" + gate + " callId=" + prefix);
+    }
+
+    private CallRingtonePlayer ringtone() {
+        if (ringtonePlayer == null) ringtonePlayer = new CallRingtonePlayer(getApplicationContext());
+        return ringtonePlayer;
+    }
+
+    private void stopRingtone() {
+        if (ringtonePlayer != null) ringtonePlayer.stop();
+    }
+
     private boolean matchesTargetCall(CallSession session) {
         if (session == null) return false;
         String requestedCallId = getIntent().getStringExtra(EXTRA_CALL_ID);
@@ -598,7 +636,7 @@ public class IncomingCallActivity extends ComponentActivity {
                         currentSession = session;
                         resolving = false;
                         render(session);
-                        if (!isFinishing()) ringtonePlayer.start();
+                        if (!isFinishing()) ringtone().start();
                         restored.set(true);
                     });
                     if (!current || !restored.get()) {
@@ -616,10 +654,7 @@ public class IncomingCallActivity extends ComponentActivity {
     }
 
     private void dismissAfterFailedAdmission() {
-        resolving = true;
-        if (ringtonePlayer != null) ringtonePlayer.stop();
-        CallNotifications.clearIncoming(this);
-        finish();
+        finishThroughGate(IncomingCallGate.Decision.PUSH_ADMISSION_FAILED);
     }
 
     private boolean isCurrentPushSession(CallSession session) {

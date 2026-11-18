@@ -39,6 +39,18 @@ public final class CallNotifications {
         return showIncoming(context, session, null);
     }
 
+    /**
+     * Posts the incoming-call notification even while the app is in the foreground. Used when
+     * the ringing activity bails out through a gate and would otherwise leave no visible UI;
+     * the normal foreground suppression in {@code CallNotificationObserver} is unchanged.
+     */
+    public static boolean showIncomingFromGate(
+            Context context,
+            CallSession session,
+            @Nullable IncomingCallPushData pushData) {
+        return showIncoming(context, session, pushData);
+    }
+
     public static boolean showIncoming(
             Context context,
             CallSession session,

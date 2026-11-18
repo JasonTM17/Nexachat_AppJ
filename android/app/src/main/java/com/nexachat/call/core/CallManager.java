@@ -25,12 +25,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
+import java.util.logging.Logger;
 
 /**
  * Serializes every call-state mutation on one executor and posts LiveData
  * snapshots to the Android main thread.
  */
 public final class CallManager implements AutoCloseable {
+    private static final Logger LOGGER = Logger.getLogger("CallManager");
     private static final long RING_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(50);
     private static final long PUSH_INVITE_GRACE_MS = TimeUnit.SECONDS.toMillis(15);
     private static final long PUSH_REPLAY_WINDOW_MS = TimeUnit.SECONDS.toMillis(60);
@@ -212,7 +214,9 @@ public final class CallManager implements AutoCloseable {
             scheduleRingTimeout(callId);
             if (!signaling.send(conversationId,
                     CallSignal.control(CallSignal.Type.INVITE, callId, resolvedMediaType))) {
-                finish(CallEndReason.FAILED, null, new CallError(CallError.Code.NETWORK));
+                // The server never saw the INVITE, so no terminal signal may be sent.
+                finish(CallEndReason.FAILED, CallTerminalSignal.NONE.signalType(),
+                        new CallError(CallError.Code.NETWORK));
             }
         });
     }
@@ -356,7 +360,9 @@ public final class CallManager implements AutoCloseable {
             ringTimeout = scheduler.schedule(
                     () -> {
                         if (isCurrentPushSession()) {
-                            finish(CallEndReason.MISSED, CallSignal.Type.CANCEL, null);
+                            // The grace timer ends a callee-side ringing call; the shared
+                            // decision maps PENDING_INCOMING to REJECT, which the server accepts.
+                            finishLocal(CallEndReason.MISSED, null);
                         }
                     },
                     Math.min(PUSH_INVITE_GRACE_MS, ringExpiresAtMs - now));
@@ -455,7 +461,7 @@ public final class CallManager implements AutoCloseable {
             cancelRingTimeout();
             cancelReconnectGraceTimer();
             if (!send(currentSession.getConversationId(), CallSignal.Type.ACCEPT, callId)) {
-                finish(CallEndReason.FAILED, null, new CallError(CallError.Code.NETWORK));
+                finishLocal(CallEndReason.FAILED, new CallError(CallError.Code.NETWORK));
                 return;
             }
             transition(CallState.CONNECTING, null, currentSession.getAnsweredAtMs());
@@ -489,16 +495,14 @@ public final class CallManager implements AutoCloseable {
         scheduler.execute(() -> {
             CallState state = currentSession.getState();
             if (!isCallInProgress(state)) return;
-            CallSignal.Type signalType;
+            CallSignal.Type signalType =
+                    CallTerminalSignal.forLocalFailure(state, false).signalType();
             CallEndReason reason;
             if (state == CallState.OUTGOING_RINGING) {
-                signalType = CallSignal.Type.CANCEL;
                 reason = CallEndReason.CANCELLED;
-            } else if (state == CallState.INCOMING_RINGING) {
-                signalType = CallSignal.Type.REJECT;
+            } else if (state == CallState.INCOMING_RINGING || state == CallState.PENDING_INCOMING) {
                 reason = CallEndReason.REJECTED;
             } else {
-                signalType = CallSignal.Type.END;
                 reason = state == CallState.ACTIVE
                         ? CallEndReason.COMPLETED
                         : CallEndReason.CANCELLED;
@@ -592,7 +596,7 @@ public final class CallManager implements AutoCloseable {
         scheduler.execute(() -> {
             if (closed) return;
             if (isCallInProgress(currentSession.getState())) {
-                finish(CallEndReason.FAILED, null, null);
+                finishLocal(CallEndReason.FAILED, null);
             }
             closed = true;
             pendingSubscriptions.clear();
@@ -642,30 +646,30 @@ public final class CallManager implements AutoCloseable {
                 break;
             case CALL_REJECTED:
                 if (currentSession.getState() == CallState.OUTGOING_RINGING) {
-                    finish(CallEndReason.REJECTED, null, null);
+                    finishFromServer(CallEndReason.REJECTED, null);
                 } else if (isRinging(currentSession.getState())) {
-                    finish(CallEndReason.REJECTED, null, null);
+                    finishFromServer(CallEndReason.REJECTED, null);
                 }
                 break;
             case CALL_CANCELLED:
                 if (isRinging(currentSession.getState())) {
-                    finish(CallEndReason.CANCELLED, null, null);
+                    finishFromServer(CallEndReason.CANCELLED, null);
                 }
                 break;
             case CALL_BUSY:
                 if (currentSession.getState() == CallState.OUTGOING_RINGING) {
-                    finish(CallEndReason.BUSY, null, new CallError(CallError.Code.BUSY));
+                    finishFromServer(CallEndReason.BUSY, new CallError(CallError.Code.BUSY));
                 } else if (isRinging(currentSession.getState())) {
-                    finish(CallEndReason.BUSY, null, null);
+                    finishFromServer(CallEndReason.BUSY, null);
                 }
                 break;
             case CALL_TIMEOUT:
                 if (isRinging(currentSession.getState())) {
-                    finish(CallEndReason.MISSED, null, null);
+                    finishFromServer(CallEndReason.MISSED, null);
                 }
                 break;
             case CALL_ENDED:
-                finish(parseEndReason(event.getReason()), null, null);
+                finishFromServer(parseEndReason(event.getReason()), null);
                 break;
             case CALL_SDP:
             case CALL_ICE:
@@ -713,8 +717,13 @@ public final class CallManager implements AutoCloseable {
 
         CallState state = currentSession.getState();
         if (state == CallState.OUTGOING_RINGING || state == CallState.PENDING_INCOMING) {
-            // A server-delivered INVITE is the server's glare winner.
-            send(currentSession.getConversationId(), CallSignal.Type.CANCEL, currentSession.getCallId());
+            // A server-delivered INVITE is the server's glare winner; the local call yields
+            // with the terminal signal its own role allows (caller CANCELs, callee REJECTs).
+            CallSignal.Type glareSignal =
+                    CallTerminalSignal.forLocalFailure(state, false).signalType();
+            if (glareSignal != null) {
+                send(currentSession.getConversationId(), glareSignal, currentSession.getCallId());
+            }
             cancelRingTimeout();
             pendingRemoteSignals.clear();
         } else if (isCallInProgress(state)) {
@@ -829,9 +838,9 @@ public final class CallManager implements AutoCloseable {
         CallError error = CallError.fromServerCode(event.getErrorCode());
         notifyError(error);
         if (isCallInProgress(currentSession.getState())) {
-            finish(error.getCode() == CallError.Code.BUSY
+            finishFromServer(error.getCode() == CallError.Code.BUSY
                     ? CallEndReason.BUSY
-                    : CallEndReason.FAILED, null, null);
+                    : CallEndReason.FAILED, null);
         }
     }
 
@@ -862,14 +871,14 @@ public final class CallManager implements AutoCloseable {
                 mediaEngine.onRemoteIce(signal.getCandidate());
             }
         } catch (RuntimeException exception) {
-            finish(CallEndReason.FAILED, null, new CallError(CallError.Code.MEDIA_UNAVAILABLE));
+            finishLocal(CallEndReason.FAILED, new CallError(CallError.Code.MEDIA_UNAVAILABLE));
         }
     }
 
     private void beginMedia(String callId, boolean isCaller) {
         if (mediaStartPending || mediaStarted) return;
         if (mediaEngine == null) {
-            finish(CallEndReason.FAILED, null, new CallError(CallError.Code.MEDIA_UNAVAILABLE));
+            finishLocal(CallEndReason.FAILED, new CallError(CallError.Code.MEDIA_UNAVAILABLE));
             return;
         }
         mediaStartPending = true;
@@ -895,11 +904,11 @@ public final class CallManager implements AutoCloseable {
             CallError error = result == null || result.getError() == null
                     ? new CallError(CallError.Code.NETWORK)
                     : result.getError();
-            finish(CallEndReason.FAILED, null, error);
+            finishLocal(CallEndReason.FAILED, error);
             return;
         }
         if (mediaEngine == null) {
-            finish(CallEndReason.FAILED, null, new CallError(CallError.Code.MEDIA_UNAVAILABLE));
+            finishLocal(CallEndReason.FAILED, new CallError(CallError.Code.MEDIA_UNAVAILABLE));
             return;
         }
         String startedCallId = currentSession.getCallId();
@@ -925,7 +934,7 @@ public final class CallManager implements AutoCloseable {
                 public void onFailed(String reason) {
                     scheduler.execute(() -> {
                         if (matches(startedCallId) && isCallInProgress(currentSession.getState())) {
-                            finish(CallEndReason.FAILED, null,
+                            finishLocal(CallEndReason.FAILED,
                                     new CallError(CallError.Code.MEDIA_UNAVAILABLE));
                         }
                     });
@@ -967,7 +976,7 @@ public final class CallManager implements AutoCloseable {
             pendingRemoteSignals.clear();
             for (CallSignal pending : queued) deliverRemoteSignal(pending);
         } catch (RuntimeException exception) {
-            finish(CallEndReason.FAILED, null, new CallError(CallError.Code.MEDIA_UNAVAILABLE));
+            finishLocal(CallEndReason.FAILED, new CallError(CallError.Code.MEDIA_UNAVAILABLE));
         }
     }
 
@@ -994,7 +1003,7 @@ public final class CallManager implements AutoCloseable {
             return;
         }
         if (!signaling.send(currentSession.getConversationId(), signal)) {
-            finish(CallEndReason.FAILED, null, new CallError(CallError.Code.NETWORK));
+            finishLocal(CallEndReason.FAILED, new CallError(CallError.Code.NETWORK));
         }
     }
 
@@ -1009,12 +1018,12 @@ public final class CallManager implements AutoCloseable {
             cancelReconnectGraceTimer();
             reconnectGraceTimer = scheduler.schedule(() -> {
                 if (currentSession.getState() == CallState.RECONNECTING_NETWORK) {
-                    finish(CallEndReason.FAILED, null, new CallError(CallError.Code.NETWORK));
+                    finishLocal(CallEndReason.FAILED, new CallError(CallError.Code.NETWORK));
                 }
             }, 15_000L);
         } else if (isCallInProgress(currentSession.getState())
                 && currentSession.getState() != CallState.RECONNECTING_NETWORK) {
-            finish(CallEndReason.FAILED, null, new CallError(CallError.Code.NETWORK));
+            finishLocal(CallEndReason.FAILED, new CallError(CallError.Code.NETWORK));
         }
     }
 
@@ -1040,6 +1049,42 @@ public final class CallManager implements AutoCloseable {
         return signaling.send(conversationId, CallSignal.control(type, callId));
     }
 
+    /** Best-effort terminal signal: a throwing transport must not hold the terminal state open. */
+    private boolean sendSafely(String conversationId, CallSignal.Type type, String callId) {
+        boolean sent;
+        try {
+            sent = send(conversationId, type, callId);
+        } catch (RuntimeException exception) {
+            sent = false;
+        }
+        if (!sent) {
+            // Signal type and call-id prefix only; never peer ids, names or tokens.
+            LOGGER.warning("terminal-signal=" + type + " not-delivered callId=" + idPrefix(callId));
+        }
+        return sent;
+    }
+
+    private static String idPrefix(String callId) {
+        return callId == null ? "none" : callId.substring(0, Math.min(8, callId.length()));
+    }
+
+    /**
+     * Ends the call for a local reason. The terminal signal sent to the server is decided in
+     * one place by {@link CallTerminalSignal}; sending stays best-effort on the state executor.
+     */
+    private void finishLocal(CallEndReason reason, @Nullable CallError error) {
+        finish(reason,
+                CallTerminalSignal.forLocalFailure(currentSession.getState(), false).signalType(),
+                error);
+    }
+
+    /** Ends the call because an inbound server event already ended it; nothing is echoed back. */
+    private void finishFromServer(CallEndReason reason, @Nullable CallError error) {
+        finish(reason,
+                CallTerminalSignal.forLocalFailure(currentSession.getState(), true).signalType(),
+                error);
+    }
+
     private void finish(CallEndReason reason, CallSignal.Type signalType, CallError error) {
         if (!isCallInProgress(currentSession.getState())) return;
         if (isCurrentPushSession()) {
@@ -1056,7 +1101,7 @@ public final class CallManager implements AutoCloseable {
         CallSession old = currentSession;
         rememberTerminalCall(old.getCallId(), clock.getAsLong());
         boolean sent = signalType == null
-                || send(old.getConversationId(), signalType, old.getCallId());
+                || sendSafely(old.getConversationId(), signalType, old.getCallId());
         cancelRingTimeout();
         cancelReconnectGraceTimer();
         mediaStartPending = false;
@@ -1129,7 +1174,7 @@ public final class CallManager implements AutoCloseable {
         ringTimeout = scheduler.schedule(() -> {
             if (matches(callId) && (currentSession.getState() == CallState.OUTGOING_RINGING
                     || currentSession.getState() == CallState.INCOMING_RINGING)) {
-                finish(CallEndReason.MISSED, null, null);
+                finishLocal(CallEndReason.MISSED, null);
             }
         }, delayMs);
     }
