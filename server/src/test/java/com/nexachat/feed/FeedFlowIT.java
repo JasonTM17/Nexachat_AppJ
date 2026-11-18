@@ -542,4 +542,16 @@ class FeedFlowIT extends FeatureItSupport {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
     }
+
+    @Test
+    void feedImageUploadRejectsAbsurdDimensions() throws Exception {
+        Actor author = newUser("Dimension Cheater");
+
+        mockMvc.perform(multipart("/api/v1/feed/images")
+                        .file(new MockMultipartFile("file", "photo.png", "image/png", PNG_BYTES))
+                        .param("width", "20000").param("height", "4")
+                        .header("Authorization", bearer(author)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+    }
 }

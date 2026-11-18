@@ -46,6 +46,7 @@ public class FeedImageService {
     static final int IMAGES_PER_MINUTE = 10;
     static final int IMAGES_PER_DAY = 100;
     static final int MAX_UNBOUND_IMAGES = 20;
+    static final int MAX_IMAGE_DIMENSION = 16384;
 
     private final FeedStore store;
     private final FeedRateLimits rateLimits;
@@ -146,8 +147,9 @@ public class FeedImageService {
     }
 
     private static void validateDimension(String field, Integer value) {
-        if (value != null && value < 0) {
-            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED, field + " must not be negative");
+        if (value != null && (value < 0 || value > MAX_IMAGE_DIMENSION)) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    field + " must be between 0 and " + MAX_IMAGE_DIMENSION);
         }
     }
 }
