@@ -9,7 +9,8 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
 /**
- * Bounded purge of closed alerts past the configured retention window, on the
+ * Bounded purge of closed alerts past the configured retention window — the
+ * window runs from each row's close time, not its creation time — on the
  * same opt-in + dry-run convention the global retention jobs use. Open and
  * acknowledged rows are never purged — only resolved/dismissed evidence has
  * a shelf life.
