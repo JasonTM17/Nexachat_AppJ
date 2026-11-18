@@ -133,6 +133,7 @@ WebSocket endpoints (`docs/architecture/api-contract.md`, `docs/architecture/web
 | `tools/e2e/final/final_extended.py` | Extended STOMP/REST matrix on the `nexachat_e2e_grok2` stack |
 | `tools/e2e/summary/summary_e2e.py` | AI summary API against a live backend |
 | `tools/e2e/calls/call_e2e.py` | Call signaling journey |
+| `tools/e2e/journeys/run_journeys.py` | Sequential runner for the `journeys/*_e2e.py` journey suites (feed moderation, AI privacy, groups privacy, admin/streaks) |
 
 `tools/e2e/final/final_live.py` covers the checks that need a disposable stack:
 parallel joins at `maxUses`, revoke during a join, approval limits, recall
