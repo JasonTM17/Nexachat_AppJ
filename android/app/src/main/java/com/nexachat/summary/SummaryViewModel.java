@@ -84,7 +84,8 @@ public final class SummaryViewModel extends ViewModel {
 
     /**
      * Re-requests a TODAY summary whose day or zone no longer matches the device, so a sheet
-     * left open across midnight or a zone change never shows yesterday's result.
+     * left open across midnight or a zone change never shows yesterday's result. A summary the
+     * server resolved in its own default zone already covers the server's day, so it is kept.
      */
     public void revalidate() {
         SummaryUiState current = state.getValue();
@@ -95,7 +96,9 @@ public final class SummaryViewModel extends ViewModel {
         }
         SummaryResponse summary = current.getSummary();
         SummaryPeriod period = summary.getPeriod();
-        if (summary.getScope() != SummaryScope.TODAY || period == null) {
+        if (summary.getScope() != SummaryScope.TODAY
+                || period == null
+                || period.isTimeZoneDefaulted()) {
             return;
         }
         String zone = TimeZone.getDefault().getID();
@@ -158,7 +161,9 @@ public final class SummaryViewModel extends ViewModel {
 
                     @Override
                     public void onError(SummaryError error) {
-                        if (error == SummaryError.INVALID_TIME_ZONE && !zoneFallback) {
+                        if (error == SummaryError.INVALID_TIME_ZONE
+                                && !zoneFallback
+                                && token == requestGeneration) {
                             start(scope, limit, refresh, true);
                             return;
                         }
@@ -181,7 +186,8 @@ public final class SummaryViewModel extends ViewModel {
     private SummaryRequest requestFor(
             SummaryScope scope, Integer limit, boolean refresh, boolean zoneFallback) {
         if (zoneFallback) {
-            return SummaryRequest.withoutTimeZone(scope, limit, SummaryLanguage.AUTO, refresh);
+            // The fallback repeats the same question, so it never forces a fresh generation.
+            return SummaryRequest.withoutTimeZone(scope, limit, SummaryLanguage.AUTO, false);
         }
         return new SummaryRequest(scope, limit, SummaryLanguage.AUTO, refresh,
                 TimeZone.getDefault().getID());
