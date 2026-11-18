@@ -527,4 +527,19 @@ class FeedFlowIT extends FeatureItSupport {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
     }
+
+    @Test
+    void deletingAPostWhoseAuthorBlockedYouIsNotFound() throws Exception {
+        Actor author = newUser("Blocking Author");
+        Actor viewer = newUser("Blocked Deleter");
+        UUID postId = createPostId(author, "blocked content");
+        postAs(viewer, "/api/v1/users/" + author.id() + "/block", null)
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .delete("/api/v1/feed/posts/" + postId)
+                        .header("Authorization", bearer(viewer)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("POST_NOT_FOUND"));
+    }
 }

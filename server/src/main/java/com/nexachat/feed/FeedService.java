@@ -187,7 +187,7 @@ public class FeedService {
             log.info("Feed post {} deleted by its author", postId);
             return;
         }
-        store.findVisiblePostAuthor(postId)
+        store.findVisiblePostAuthor(authorId, postId)
                 .filter(author -> !author.equals(authorId))
                 .ifPresent(author -> {
                     throw ApiException.of(ApiErrorCode.FORBIDDEN, "Not the author of this post");
@@ -262,7 +262,7 @@ public class FeedService {
             log.info("Feed comment {} deleted by its author", commentId);
             return;
         }
-        store.findVisibleCommentAuthor(commentId)
+        store.findVisibleCommentAuthor(authorId, commentId)
                 .filter(author -> !author.equals(authorId))
                 .ifPresent(author -> {
                     throw ApiException.of(ApiErrorCode.FORBIDDEN,

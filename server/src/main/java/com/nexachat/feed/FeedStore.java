@@ -149,14 +149,18 @@ class FeedStore {
                         .addValue("createdAt", timestamp(createdAt)));
     }
 
-    /** The visible author of a post, or empty when the row is gone or hidden. */
-    Optional<UUID> findVisiblePostAuthor(UUID postId) {
+    /** The visible author of a post, or empty when it is gone, hidden or blocked. */
+    Optional<UUID> findVisiblePostAuthor(UUID viewerId, UUID postId) {
         return jdbc.query("""
-                        SELECT author_id FROM public_posts
-                        WHERE id = ? AND deleted_at IS NULL AND hidden_at IS NULL
+                        SELECT p.author_id FROM public_posts p
+                        WHERE p.id = ? AND p.deleted_at IS NULL AND p.hidden_at IS NULL
+                          AND NOT EXISTS (
+                                SELECT 1 FROM user_blocks b
+                                WHERE (b.blocker_id = ? AND b.blocked_id = p.author_id)
+                                   OR (b.blocker_id = p.author_id AND b.blocked_id = ?))
                         """,
                 rs -> rs.next() ? Optional.of(rs.getObject("author_id", UUID.class))
-                        : Optional.empty(), postId);
+                        : Optional.empty(), postId, viewerId, viewerId);
     }
 
     int softDeletePost(UUID postId, UUID authorId, Instant now) {
@@ -240,13 +244,17 @@ class FeedStore {
                 """, postId);
     }
 
-    Optional<UUID> findVisibleCommentAuthor(UUID commentId) {
+    Optional<UUID> findVisibleCommentAuthor(UUID viewerId, UUID commentId) {
         return jdbc.query("""
-                        SELECT author_id FROM public_comments
-                        WHERE id = ? AND deleted_at IS NULL AND hidden_at IS NULL
+                        SELECT c.author_id FROM public_comments c
+                        WHERE c.id = ? AND c.deleted_at IS NULL AND c.hidden_at IS NULL
+                          AND NOT EXISTS (
+                                SELECT 1 FROM user_blocks b
+                                WHERE (b.blocker_id = ? AND b.blocked_id = c.author_id)
+                                   OR (b.blocker_id = c.author_id AND b.blocked_id = ?))
                         """,
                 rs -> rs.next() ? Optional.of(rs.getObject("author_id", UUID.class))
-                        : Optional.empty(), commentId);
+                        : Optional.empty(), commentId, viewerId, viewerId);
     }
 
     Optional<UUID> findCommentPostId(UUID commentId) {
