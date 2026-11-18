@@ -37,14 +37,20 @@ public final class MediaCacheCleaner {
 
     /**
      * Wipes the transient decrypted attachment working copies left in cache by a
-     * previous process. Called on app start so cold at-rest storage holds only
-     * the encrypted store.
+     * previous process, plus the legacy pre-hardening OkHttp cache dir (which held
+     * plaintext attachment bytes). Called on app start so cold at-rest storage
+     * holds only the encrypted store.
      */
     @NonNull
     public Completable clearTransientAttachmentCopies() {
-        return Completable.fromAction(() -> deleteTree(
-                        MediaCacheConfig.transientAttachmentDirectory(context.getCacheDir())))
-                .subscribeOn(Schedulers.io());
+        return Completable.fromAction(() -> {
+            File cacheDir = context.getCacheDir();
+            deleteTree(MediaCacheConfig.transientAttachmentDirectory(cacheDir));
+            // Legacy dir from pre-hardening installs; never written anymore, but
+            // upgraded installs must shed its plaintext promptly, not only on
+            // account deletion.
+            deleteTree(MediaCacheConfig.okHttpDirectory(cacheDir));
+        }).subscribeOn(Schedulers.io());
     }
 
     private void clearNow() {

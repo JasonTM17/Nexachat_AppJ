@@ -12,6 +12,7 @@ import androidx.annotation.Nullable;
 import com.nexachat.core.common.AppConfig;
 import dagger.hilt.android.EntryPointAccessors;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import okhttp3.HttpUrl;
@@ -122,19 +123,25 @@ public final class VideoThumbnailLoader {
         return scaled;
     }
 
-    /** Random-access reader over an authenticated URL using {@code Range} requests. */
-    private static final class RangeDataSource extends MediaDataSource {
+    /**
+     * Random-access reader over an authenticated URL using {@code Range} requests.
+     * The whole fetch is capped at {@code maxBytes}: a declared size above the cap
+     * is rejected on the HEAD probe, and reads past the cap abort mid-stream.
+     */
+    static final class RangeFetcher {
         private final OkHttpClient client;
         private final String url;
+        private final long maxBytes;
         private long size = -2L;
+        private long bytesRead;
 
-        RangeDataSource(OkHttpClient client, String url) {
+        RangeFetcher(OkHttpClient client, String url, long maxBytes) {
             this.client = client;
             this.url = url;
+            this.maxBytes = maxBytes;
         }
 
-        @Override
-        public synchronized long getSize() throws IOException {
+        synchronized long getSize() throws IOException {
             if (size != -2L) {
                 return size;
             }
@@ -144,15 +151,20 @@ public final class VideoThumbnailLoader {
                     throw new IOException("HTTP " + response.code());
                 }
                 String length = response.header("Content-Length");
-                size = length == null ? -1L : Long.parseLong(length);
+                long declared = length == null ? -1L : Long.parseLong(length);
+                if (declared > maxBytes) {
+                    throw new IOException(
+                            "media too large: " + declared + " > " + maxBytes + " bytes");
+                }
+                size = declared;
             } catch (NumberFormatException ex) {
                 size = -1L;
             }
             return size;
         }
 
-        @Override
-        public int readAt(long position, byte[] buffer, int offset, int length) throws IOException {
+        synchronized int readAt(long position, byte[] buffer, int offset, int length)
+                throws IOException {
             if (length == 0) {
                 return 0;
             }
@@ -160,9 +172,16 @@ public final class VideoThumbnailLoader {
             if (total >= 0 && position >= total) {
                 return -1;
             }
+            long budget = maxBytes - bytesRead;
+            if (budget <= 0) {
+                throw new IOException("media fetch exceeded " + maxBytes + " bytes");
+            }
             long last = position + length - 1;
             if (total >= 0) {
                 last = Math.min(last, total - 1);
+            } else {
+                // Unknown total: never request more than the remaining budget.
+                last = Math.min(last, position + budget - 1);
             }
             Request request = new Request.Builder()
                     .url(url)
@@ -174,22 +193,49 @@ public final class VideoThumbnailLoader {
                     // A server that ignores Range would stream the whole file from byte 0.
                     throw new IOException("Range not honoured: HTTP " + response.code());
                 }
-                java.io.InputStream stream = body.byteStream();
                 int read = 0;
-                while (read < length) {
-                    int count = stream.read(buffer, offset + read, length - read);
-                    if (count < 0) {
-                        break;
+                // The server may ignore the Range end and stream more than asked;
+                // the counted stream aborts past the remaining budget.
+                try (InputStream stream = new BoundedInputStream(body.byteStream(), budget)) {
+                    while (read < length) {
+                        int count = stream.read(buffer, offset + read, length - read);
+                        if (count < 0) {
+                            break;
+                        }
+                        read += count;
                     }
-                    read += count;
                 }
+                bytesRead += read;
                 return read == 0 ? -1 : read;
             }
         }
 
+        void close() {
+            // Requests are closed per read.
+        }
+    }
+
+    /** {@link MediaDataSource} adapter over {@link RangeFetcher}. */
+    private static final class RangeDataSource extends MediaDataSource {
+        private final RangeFetcher fetcher;
+
+        RangeDataSource(OkHttpClient client, String url) {
+            this.fetcher = new RangeFetcher(client, url, MediaCacheConfig.MAX_MEDIA_FETCH_BYTES);
+        }
+
+        @Override
+        public synchronized long getSize() throws IOException {
+            return fetcher.getSize();
+        }
+
+        @Override
+        public int readAt(long position, byte[] buffer, int offset, int length) throws IOException {
+            return fetcher.readAt(position, buffer, offset, length);
+        }
+
         @Override
         public void close() {
-            // Requests are closed per read.
+            fetcher.close();
         }
     }
 }
