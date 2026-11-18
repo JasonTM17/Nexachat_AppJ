@@ -7,8 +7,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -66,13 +64,15 @@ public class SummaryService {
     private final SummaryCacheRepository cacheRepository;
     private final ConversationAiOptOuts aiOptOuts;
     /**
-     * Consent re-check collaborators for the post-generation response lock.
-     * Null when the service is constructed directly without them (unit tests
-     * that do not exercise the consent race); the Spring-wired constructor
-     * always passes both, so the production bean always re-checks.
+     * Consent collaborators. {@code consentRepository} is the cheap unlocked
+     * snapshot reader used for the pre-generate lane check; it is null only
+     * when the service is constructed directly without it (unit tests that do
+     * not exercise consent). {@code consentRecheck} is the post-generation
+     * response-lock re-check; {@link SummaryConsentRecheck#noop()} disables it
+     * explicitly in tests — production always wires the real bean.
      */
     private final SummaryConsentRepository consentRepository;
-    private final TransactionTemplate responseLockTx;
+    private final SummaryConsentRecheck consentRecheck;
     /**
      * In-process single-flight sessions, keyed by the cache tuple. The server
      * runs a single node, so this map spans every summary request the node
@@ -122,7 +122,7 @@ public class SummaryService {
             Clock clock,
             long singleFlightWaitMs) {
         this(rateLimiter, windowService, providerSelector, cacheRepository, aiOptOuts,
-                clock, singleFlightWaitMs, null, null);
+                clock, singleFlightWaitMs, null, SummaryConsentRecheck.noop());
     }
 
     public SummaryService(
@@ -134,7 +134,7 @@ public class SummaryService {
             Clock clock,
             long singleFlightWaitMs,
             SummaryConsentRepository consentRepository,
-            PlatformTransactionManager transactionManager) {
+            SummaryConsentRecheck consentRecheck) {
         this.rateLimiter = rateLimiter;
         this.windowService = windowService;
         this.providerSelector = providerSelector;
@@ -143,7 +143,7 @@ public class SummaryService {
         this.clock = clock;
         this.singleFlightWaitMs = singleFlightWaitMs;
         this.consentRepository = consentRepository;
-        this.responseLockTx = transactionManager == null ? null : new TransactionTemplate(transactionManager);
+        this.consentRecheck = consentRecheck;
     }
 
     @Autowired
@@ -158,11 +158,11 @@ public class SummaryService {
             @Value("${nexachat.summary.llm.local-timeout-ms:60000}") long localLlmTimeoutMs,
             @Value("${nexachat.summary.llm-fallback.timeout-ms:30000}") long llmFallbackTimeoutMs,
             SummaryConsentRepository consentRepository,
-            PlatformTransactionManager transactionManager) {
+            SummaryConsentRecheck consentRecheck) {
         // One generation can spend the primary, fallback and local-server budgets
         // sequentially, so the wait bound is their sum, not one tier's timeout.
         this(rateLimiter, windowService, providerSelector, cacheRepository, aiOptOuts, clock,
-                llmTimeoutMs + localLlmTimeoutMs + llmFallbackTimeoutMs, consentRepository, transactionManager);
+                llmTimeoutMs + localLlmTimeoutMs + llmFallbackTimeoutMs, consentRepository, consentRecheck);
     }
 
     public SummaryResponse summarize(UUID conversationId, UUID userId, SummaryRequest request) {
@@ -181,8 +181,9 @@ public class SummaryService {
         PreparedSummaryProvider prepared = providerSelector.prepare(readContext.aiSummaryConsent(), window, request.refresh());
         if (request.refresh()) {
             // An explicit refresh always regenerates: it neither replays nor waits on a flight.
-            SummaryGeneration generated = providerSelector.generate(prepared, window, request.language());
-            return generateAndStore(userId, conversationId, window, request, readContext, prepared, generated, optedOut);
+            GeneratePreparation gen = preparedForGenerate(userId, readContext, prepared, window, true);
+            SummaryGeneration generated = providerSelector.generate(gen.prepared(), window, request.language());
+            return generateAndStore(userId, conversationId, window, request, readContext, gen, generated, optedOut);
         }
         String flightKey = flightKey(conversationId, window, request, readContext.period(), prepared,
                 readContext.consentEpoch());
@@ -210,8 +211,10 @@ public class SummaryService {
                     // leader registered: re-check before spending a provider call.
                     SummaryResponse winner = replayIfCached(conversationId, window, request, readContext, prepared, optedOut);
                     if (winner == null) {
-                        SummaryGeneration generated = providerSelector.generate(prepared, window, request.language());
-                        winner = generateAndStore(userId, conversationId, window, request, readContext, prepared,
+                        GeneratePreparation gen = preparedForGenerate(
+                                userId, readContext, prepared, window, false);
+                        SummaryGeneration generated = providerSelector.generate(gen.prepared(), window, request.language());
+                        winner = generateAndStore(userId, conversationId, window, request, readContext, gen,
                                 generated, optedOut);
                     }
                     return winner;
@@ -241,8 +244,41 @@ public class SummaryService {
         }
         // No usable winner after the bounded rounds or once the shared wait
         // deadline ran out: answer on our own.
-        SummaryGeneration generated = providerSelector.generate(prepared, window, request.language());
-        return generateAndStore(userId, conversationId, window, request, readContext, prepared, generated, optedOut);
+        GeneratePreparation gen = preparedForGenerate(userId, readContext, prepared, window, false);
+        SummaryGeneration generated = providerSelector.generate(gen.prepared(), window, request.language());
+        return generateAndStore(userId, conversationId, window, request, readContext, gen, generated, optedOut);
+    }
+
+    /** The provider preparation plus the consent snapshot it was authorized under. */
+    private record GeneratePreparation(PreparedSummaryProvider prepared,
+            SummaryConsentRepository.ConsentSnapshot snapshot) {
+    }
+
+    /**
+     * One unlocked consent look before spending an external call: a revoke
+     * committed after the window read must not transmit conversation text to
+     * the provider. A moved snapshot re-prepares on its own truth, so the
+     * request degrades to whatever tier the current consent allows instead of
+     * failing — the same soft degradation the ask lane uses. The returned
+     * snapshot is what {@link SummaryConsentRecheck} compares against after
+     * generation, so a revoke-then-regrant is judged on the snapshot that
+     * actually authorized the call. Local-tier preparations skip the look
+     * entirely: they never transmit anyway.
+     */
+    private GeneratePreparation preparedForGenerate(UUID userId, SummaryReadContext readContext,
+            PreparedSummaryProvider prepared, SummaryWindow window, boolean refresh) {
+        SummaryConsentRepository.ConsentSnapshot atRead = new SummaryConsentRepository.ConsentSnapshot(
+                readContext.aiSummaryConsent(), readContext.consentEpoch());
+        if (consentRepository == null || !"LLM".equals(prepared.cacheProvider())
+                || readContext.consentEpoch() < 0) {
+            return new GeneratePreparation(prepared, atRead);
+        }
+        SummaryConsentRepository.ConsentSnapshot current = consentRepository.snapshot(userId);
+        if (current.epoch() < 0 || atRead.equals(current)) {
+            return new GeneratePreparation(prepared, atRead);
+        }
+        return new GeneratePreparation(
+                providerSelector.prepare(current.consented(), window, refresh), current);
     }
 
     /**
@@ -379,15 +415,15 @@ public class SummaryService {
 
     /**
      * Post-generation consent re-check, mirroring the ask lane's
-     * {@code AskResponseWriter}: a short transaction takes the {@code FOR SHARE}
-     * row lock via {@link SummaryConsentRepository#lockForResponse(UUID)} and
-     * re-reads the snapshot. A consent revoke uses a conflicting write lock on
-     * the same row, so it either commits before this lock (the snapshot differs
-     * and the generated summary is dropped — never stored, never served) or
+     * {@code AskResponseWriter}: {@link SummaryConsentRecheck} takes the
+     * {@code FOR SHARE} row lock and re-reads the snapshot on the external
+     * lane only. A consent revoke uses a conflicting write lock on the same
+     * row, so it either commits before this lock (the snapshot differs and
+     * the generated summary is dropped — never stored, never served) or
      * after it (the epoch bump already keeps any stored row out of LLM-tier
-     * replay through the content hash, so the cache write needs no lock of its
-     * own, exactly as the ask lane writes its cache outside the response lock).
-     * The check is one locked SELECT: no extra LLM call.
+     * replay through the content hash, so the cache write needs no lock of
+     * its own, exactly as the ask lane writes its cache outside the response
+     * lock). The check is one locked SELECT: no extra LLM call.
      */
     private SummaryResponse generateAndStore(
             UUID userId,
@@ -395,25 +431,12 @@ public class SummaryService {
             SummaryWindow window,
             SummaryRequest request,
             SummaryReadContext readContext,
-            PreparedSummaryProvider prepared,
+            GeneratePreparation preparation,
             SummaryGeneration generated,
             Set<UUID> optedOut) {
-        if (responseLockTx != null) {
-            responseLockTx.executeWithoutResult(status -> {
-                SummaryConsentRepository.ConsentSnapshot current = consentRepository.lockForResponse(userId);
-                SummaryConsentRepository.ConsentSnapshot atRead = new SummaryConsentRepository.ConsentSnapshot(
-                        readContext.aiSummaryConsent(), readContext.consentEpoch());
-                // A negative epoch is the repository's missing-row sentinel (the
-                // column itself is CHECK >= 0): the account was deleted mid-flight,
-                // which the cache write's own requester lock already reports as
-                // USER_NOT_FOUND, so only a real snapshot change suppresses here.
-                if (current.epoch() >= 0 && !atRead.equals(current)) {
-                    throw ApiException.of(ApiErrorCode.AI_CONSENT_REQUIRED,
-                            "AI summary consent changed while the summary was being generated");
-                }
-            });
-        }
-        return storeGenerated(userId, conversationId, window, request, readContext, prepared, generated, optedOut);
+        consentRecheck.verifyUnchanged(userId, generated.generatedBy(), preparation.snapshot());
+        return storeGenerated(userId, conversationId, window, request, readContext, preparation.prepared(),
+                generated, optedOut, preparation.snapshot().epoch());
     }
 
     /**
@@ -429,11 +452,14 @@ public class SummaryService {
             SummaryReadContext readContext,
             PreparedSummaryProvider prepared,
             SummaryGeneration generated,
-            Set<UUID> optedOut) {
+            Set<UUID> optedOut,
+            long generationConsentEpoch) {
         // The row is stored under the engine that actually answered, so its key carries the
-        // consent generation only when that engine was the external one.
+        // consent generation only when that engine was the external one. The epoch is the
+        // one the generation was authorized under, which can be newer than the window
+        // read's when consent moved before the provider call.
         String storeHash = contentHash(window, request, readContext.period(),
-                "LLM".equals(generated.generatedBy()) ? readContext.consentEpoch() : -1L);
+                "LLM".equals(generated.generatedBy()) ? generationConsentEpoch : -1L);
         SummaryCacheEntry entry;
         boolean cached;
         if (request.refresh()) {

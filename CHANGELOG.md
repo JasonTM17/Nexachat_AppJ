@@ -41,6 +41,12 @@ All notable changes to NexaChat are documented here. The format follows
   cached result is replayed only while its citations still resolve.
 
 ### Fixed
+- Conversation summaries now re-check AI consent once more right before the
+  external AI call, so a consent withdrawn while the request was in flight —
+  or while waiting on an identical in-flight summary — is never sent to the
+  provider; the request quietly falls back to the built-in engine instead.
+  A summary the built-in engine wrote is also no longer rejected when consent
+  changed during generation, since nothing left the server.
 - Unsuspending an account takes effect immediately: a fresh sign-in is no
   longer rejected as suspended for up to a minute while a cached copy of the
   suspended state lingered.
