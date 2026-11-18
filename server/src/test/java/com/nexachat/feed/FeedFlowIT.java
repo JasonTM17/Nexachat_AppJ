@@ -582,6 +582,46 @@ class FeedFlowIT extends FeatureItSupport {
     }
 
     @Test
+    void invalidImageUploadsDoNotBurnThePerMinuteLimit() throws Exception {
+        Actor author = newUser("Sloppy Uploader");
+
+        // Rejected uploads: non-image bytes, an empty file, absurd dimensions.
+        for (int index = 0; index < 5; index++) {
+            mockMvc.perform(multipart("/api/v1/feed/images")
+                            .file(new MockMultipartFile("file", "evil.png", "image/png",
+                                    hex("4D5A90000300000004000000FFFF0000")))
+                            .header("Authorization", bearer(author)))
+                    .andExpect(status().isUnsupportedMediaType())
+                    .andExpect(jsonPath("$.error.code").value("MIME_NOT_ALLOWED"));
+            mockMvc.perform(multipart("/api/v1/feed/images")
+                            .file(new MockMultipartFile("file", "empty.png", "image/png", new byte[0]))
+                            .header("Authorization", bearer(author)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+        }
+        mockMvc.perform(multipart("/api/v1/feed/images")
+                        .file(new MockMultipartFile("file", "photo.png", "image/png", PNG_BYTES))
+                        .param("width", "20000")
+                        .header("Authorization", bearer(author)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+
+        // A valid upload still succeeds right after the rejections: under the
+        // old pre-validation quota order these ten rejections would have
+        // drained the minute bucket and this upload would be 429.
+        uploadImage(author).andExpect(status().isCreated());
+
+        // Exactly one token was spent — by the valid upload alone.
+        String bucket = "feed:image:minute:" + author.id();
+        int remaining = 0;
+        while (rateLimitService.tryConsume(bucket, FeedImageService.IMAGES_PER_MINUTE,
+                Duration.ofMinutes(1)).allowed()) {
+            remaining++;
+        }
+        assertThat(remaining).isEqualTo(FeedImageService.IMAGES_PER_MINUTE - 1);
+    }
+
+    @Test
     void feedImageUploadIsCappedWhenUnboundUploadsAccumulate() throws Exception {
         Actor author = newUser("Hoarding Uploader");
         for (int index = 0; index < 20; index++) {

@@ -10,7 +10,9 @@ import androidx.annotation.Nullable;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.media.AttachmentBlurHashRegistry;
+import com.nexachat.core.media.EncryptedAttachmentStore;
 import com.nexachat.core.media.ImageCompressor;
+import com.nexachat.core.media.MediaCacheConfig;
 import com.nexachat.core.network.ApiResult;
 import com.nexachat.core.network.AttachmentApi;
 import com.nexachat.core.network.ProgressRequestBody;
@@ -45,6 +47,12 @@ import okhttp3.RequestBody;
 public final class AttachmentRepository {
 
     public static final long MAX_UPLOAD_BYTES = 25L * 1024L * 1024L;
+    /**
+     * Downloads are capped at the same 25 MiB ceiling as uploads (audit F-06):
+     * a server that streams an oversized body must not be able to fill the
+     * device's storage.
+     */
+    public static final long MAX_DOWNLOAD_BYTES = MAX_UPLOAD_BYTES;
     public static final String ERROR_TOO_LARGE = "ATTACHMENT_TOO_LARGE";
     /** Server-side magic-byte whitelist ({@code MIME_NOT_ALLOWED} when missed). */
     public static final String ERROR_MIME_NOT_ALLOWED = "MIME_NOT_ALLOWED";
@@ -82,7 +90,8 @@ public final class AttachmentRepository {
     /** The picked content URI can no longer be read (grant revoked/gone). */
     public static final String ERROR_UNREADABLE = "ATTACHMENT_UNREADABLE";
     public static final String PART_FILE = "file";
-    public static final String CACHE_DIR_NAME = "attachments";
+    /** Encrypted at-rest store dir name (see {@link MediaCacheConfig#ATTACHMENTS_DIR_NAME}). */
+    public static final String CACHE_DIR_NAME = MediaCacheConfig.ATTACHMENTS_DIR_NAME;
 
     private static final Logger LOGGER = Logger.getLogger("AttachmentRepository");
     private static final String DEFAULT_MIME = "application/octet-stream";
@@ -93,15 +102,25 @@ public final class AttachmentRepository {
     private final AttachmentApi attachmentApi;
     private final Context context;
     private final ImageCompressor imageCompressor;
+    private final EncryptedAttachmentStore attachmentStore;
 
     @Inject
     public AttachmentRepository(
             @NonNull AttachmentApi attachmentApi,
             @ApplicationContext @NonNull Context context,
             @NonNull ImageCompressor imageCompressor) {
+        this(attachmentApi, context, imageCompressor, new EncryptedAttachmentStore());
+    }
+
+    public AttachmentRepository(
+            @NonNull AttachmentApi attachmentApi,
+            @ApplicationContext @NonNull Context context,
+            @NonNull ImageCompressor imageCompressor,
+            @NonNull EncryptedAttachmentStore attachmentStore) {
         this.attachmentApi = Objects.requireNonNull(attachmentApi, "attachmentApi");
         this.context = Objects.requireNonNull(context, "context");
         this.imageCompressor = Objects.requireNonNull(imageCompressor, "imageCompressor");
+        this.attachmentStore = Objects.requireNonNull(attachmentStore, "attachmentStore");
     }
 
     public AttachmentRepository(
@@ -225,6 +244,14 @@ public final class AttachmentRepository {
                             return saveBodyToCache((okhttp3.ResponseBody) success.getBody(),
                                     attachmentId, displayName);
                         }
+                        if (result instanceof ApiResult.NetworkError<?>) {
+                            // Offline or server unreachable: fall back to the local
+                            // encrypted store so re-viewing an attachment still works.
+                            Result<File> local = readLocalCopy(attachmentId, displayName);
+                            if (local != null) {
+                                return local;
+                            }
+                        }
                         return attachmentFailure(result);
                     }))
                 .subscribeOn(Schedulers.io());
@@ -237,28 +264,81 @@ public final class AttachmentRepository {
         emitter.onComplete();
     }
 
+    /**
+     * Persists the response body as an AES/GCM-encrypted file under
+     * {@code cacheDir/attachments} (keystore key, {@link EncryptedAttachmentStore})
+     * and returns a decrypted working copy under {@code cacheDir/attachments-open}
+     * for viewers and share intents. The working copy is transient — wiped on app
+     * start and on account deletion — so cold at-rest storage holds ciphertext only.
+     *
+     * <p>The download is capped at {@link #MAX_DOWNLOAD_BYTES}: a body that exceeds
+     * it (declared up front or observed mid-stream) aborts, deletes the partial
+     * file, and fails with {@link #ERROR_TOO_LARGE}.
+     */
     @NonNull
     private Result<File> saveBodyToCache(
             @NonNull okhttp3.ResponseBody body,
             @NonNull String attachmentId,
             @Nullable String displayName) {
-        File directory = new File(cacheDir(), CACHE_DIR_NAME);
-        directory.mkdirs();
-        File file = new File(directory, attachmentId + "-" + sanitize(displayName));
-        try (InputStream input = body.byteStream();
-                java.io.FileOutputStream output = new java.io.FileOutputStream(file)) {
-            byte[] chunk = new byte[READ_BUFFER];
-            int read;
-            while ((read = input.read(chunk)) >= 0) {
-                output.write(chunk, 0, read);
-            }
-            return new Result.Success<>(file);
-        } catch (IOException exception) {
+        if (body.contentLength() > MAX_DOWNLOAD_BYTES) {
+            return Result.failure(new ApiError.Unknown(ERROR_TOO_LARGE));
+        }
+        File storeDir = MediaCacheConfig.attachmentDirectory(cacheDir());
+        storeDir.mkdirs();
+        File encrypted = new File(storeDir, cacheFileName(attachmentId, displayName));
+        try (InputStream input = body.byteStream()) {
+            attachmentStore.writeEncrypted(encrypted, input, MAX_DOWNLOAD_BYTES);
+        } catch (EncryptedAttachmentStore.OversizeException exception) {
+            //noinspection ResultOfMethodCallIgnored
+            encrypted.delete();
+            return Result.failure(new ApiError.Unknown(ERROR_TOO_LARGE));
+        } catch (IOException | RuntimeException exception) {
             // Never leave a truncated file that media viewers could open.
             //noinspection ResultOfMethodCallIgnored
-            file.delete();
+            encrypted.delete();
             return Result.failure(new ApiError.Network(exception.getMessage()));
         }
+        return decryptWorkingCopy(encrypted, attachmentId, displayName);
+    }
+
+    /** Decrypts the local encrypted copy, or {@code null} when none exists. */
+    @Nullable
+    private Result<File> readLocalCopy(
+            @NonNull String attachmentId,
+            @Nullable String displayName) {
+        File encrypted = new File(MediaCacheConfig.attachmentDirectory(cacheDir()),
+                cacheFileName(attachmentId, displayName));
+        if (!encrypted.isFile()) {
+            return null;
+        }
+        return decryptWorkingCopy(encrypted, attachmentId, displayName);
+    }
+
+    @NonNull
+    private Result<File> decryptWorkingCopy(
+            @NonNull File encrypted,
+            @NonNull String attachmentId,
+            @Nullable String displayName) {
+        File transientDir = MediaCacheConfig.transientAttachmentDirectory(cacheDir());
+        transientDir.mkdirs();
+        File working = new File(transientDir, cacheFileName(attachmentId, displayName));
+        try {
+            attachmentStore.decryptTo(encrypted, working);
+            return new Result.Success<>(working);
+        } catch (IOException | RuntimeException exception) {
+            //noinspection ResultOfMethodCallIgnored
+            working.delete();
+            return Result.failure(new ApiError.Network(exception.getMessage()));
+        }
+    }
+
+    @NonNull
+    private static String cacheFileName(
+            @NonNull String attachmentId,
+            @Nullable String displayName) {
+        // Both parts are sanitized: the id is server-supplied and must not be able
+        // to escape the cache directory with a "../" payload.
+        return sanitize(attachmentId) + "-" + sanitize(displayName);
     }
 
     /** Java-side resolver work; called from an Rx IO subscription. */
@@ -362,7 +442,7 @@ public final class AttachmentRepository {
                 || DEFAULT_MIME.equalsIgnoreCase(type);
     }
 
-    private boolean isBlank(@NonNull String value) {
+    private static boolean isBlank(@NonNull String value) {
         for (int index = 0; index < value.length(); index++) {
             char character = value.charAt(index);
             if (!Character.isWhitespace(character) && !Character.isSpaceChar(character)) {
@@ -377,7 +457,7 @@ public final class AttachmentRepository {
         return context.getCacheDir();
     }
 
-    private String sanitize(@Nullable String name) {
+    private static String sanitize(@Nullable String name) {
         if (name == null) {
             return DEFAULT_FILENAME;
         }

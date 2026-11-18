@@ -22,12 +22,20 @@ public final class MediaCacheCleanerTest {
         File cacheDir = temp.newFolder("cache");
         File glideDir = MediaCacheConfig.glideDirectory(cacheDir);
         File okhttpDir = MediaCacheConfig.okHttpDirectory(cacheDir);
+        File attachmentsDir = MediaCacheConfig.attachmentDirectory(cacheDir);
+        File transientDir = MediaCacheConfig.transientAttachmentDirectory(cacheDir);
         File uploadsDir = new File(cacheDir, "media-uploads");
         assertTrue(glideDir.mkdirs());
         assertTrue(okhttpDir.mkdirs());
+        assertTrue(attachmentsDir.mkdirs());
+        assertTrue(transientDir.mkdirs());
         assertTrue(uploadsDir.mkdirs());
         File marker = new File(uploadsDir, "blob.bin");
         assertTrue(marker.createNewFile());
+        File encrypted = new File(attachmentsDir, "att-1-pic.png");
+        assertTrue(encrypted.createNewFile());
+        File working = new File(transientDir, "att-1-pic.png");
+        assertTrue(working.createNewFile());
 
         Context context = Mockito.mock(Context.class);
         Mockito.when(context.getCacheDir()).thenReturn(cacheDir);
@@ -38,7 +46,35 @@ public final class MediaCacheCleanerTest {
         new MediaCacheCleaner(context, client).clearForAccountDeletion().blockingAwait();
 
         assertFalse(marker.exists());
+        assertFalse(encrypted.exists());
+        assertFalse(working.exists());
         assertFalse(glideDir.exists());
         assertFalse(uploadsDir.exists());
+        assertFalse(attachmentsDir.exists());
+        assertFalse(transientDir.exists());
+    }
+
+    @Test
+    public void clearTransientAttachmentCopiesWipesOnlyTheWorkingCopies() throws Exception {
+        File cacheDir = temp.newFolder("cache2");
+        File attachmentsDir = MediaCacheConfig.attachmentDirectory(cacheDir);
+        File transientDir = MediaCacheConfig.transientAttachmentDirectory(cacheDir);
+        assertTrue(attachmentsDir.mkdirs());
+        assertTrue(transientDir.mkdirs());
+        File encrypted = new File(attachmentsDir, "att-1-pic.png");
+        assertTrue(encrypted.createNewFile());
+        File working = new File(transientDir, "att-1-pic.png");
+        assertTrue(working.createNewFile());
+
+        Context context = Mockito.mock(Context.class);
+        Mockito.when(context.getCacheDir()).thenReturn(cacheDir);
+        Mockito.when(context.getApplicationContext()).thenReturn(context);
+
+        OkHttpClient client = new OkHttpClient.Builder().build();
+        new MediaCacheCleaner(context, client).clearTransientAttachmentCopies().blockingAwait();
+
+        assertFalse(working.exists());
+        assertFalse(transientDir.exists());
+        assertTrue("encrypted store must survive the transient wipe", encrypted.exists());
     }
 }

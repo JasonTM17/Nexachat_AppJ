@@ -7,6 +7,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -64,6 +66,14 @@ public class SummaryService {
     private final SummaryCacheRepository cacheRepository;
     private final ConversationAiOptOuts aiOptOuts;
     /**
+     * Consent re-check collaborators for the post-generation response lock.
+     * Null when the service is constructed directly without them (unit tests
+     * that do not exercise the consent race); the Spring-wired constructor
+     * always passes both, so the production bean always re-checks.
+     */
+    private final SummaryConsentRepository consentRepository;
+    private final TransactionTemplate responseLockTx;
+    /**
      * In-process single-flight sessions, keyed by the cache tuple. The server
      * runs a single node, so this map spans every summary request the node
      * serves. A waiter parks on the current leader's future for at most what
@@ -111,6 +121,20 @@ public class SummaryService {
             ConversationAiOptOuts aiOptOuts,
             Clock clock,
             long singleFlightWaitMs) {
+        this(rateLimiter, windowService, providerSelector, cacheRepository, aiOptOuts,
+                clock, singleFlightWaitMs, null, null);
+    }
+
+    public SummaryService(
+            SummaryRateLimiter rateLimiter,
+            SummaryWindowService windowService,
+            SummaryProviderSelector providerSelector,
+            SummaryCacheRepository cacheRepository,
+            ConversationAiOptOuts aiOptOuts,
+            Clock clock,
+            long singleFlightWaitMs,
+            SummaryConsentRepository consentRepository,
+            PlatformTransactionManager transactionManager) {
         this.rateLimiter = rateLimiter;
         this.windowService = windowService;
         this.providerSelector = providerSelector;
@@ -118,6 +142,8 @@ public class SummaryService {
         this.aiOptOuts = aiOptOuts;
         this.clock = clock;
         this.singleFlightWaitMs = singleFlightWaitMs;
+        this.consentRepository = consentRepository;
+        this.responseLockTx = transactionManager == null ? null : new TransactionTemplate(transactionManager);
     }
 
     @Autowired
@@ -130,11 +156,13 @@ public class SummaryService {
             Clock clock,
             @Value("${nexachat.summary.llm.timeout-ms:30000}") long llmTimeoutMs,
             @Value("${nexachat.summary.llm.local-timeout-ms:60000}") long localLlmTimeoutMs,
-            @Value("${nexachat.summary.llm-fallback.timeout-ms:30000}") long llmFallbackTimeoutMs) {
+            @Value("${nexachat.summary.llm-fallback.timeout-ms:30000}") long llmFallbackTimeoutMs,
+            SummaryConsentRepository consentRepository,
+            PlatformTransactionManager transactionManager) {
         // One generation can spend the primary, fallback and local-server budgets
         // sequentially, so the wait bound is their sum, not one tier's timeout.
         this(rateLimiter, windowService, providerSelector, cacheRepository, aiOptOuts, clock,
-                llmTimeoutMs + localLlmTimeoutMs + llmFallbackTimeoutMs);
+                llmTimeoutMs + localLlmTimeoutMs + llmFallbackTimeoutMs, consentRepository, transactionManager);
     }
 
     public SummaryResponse summarize(UUID conversationId, UUID userId, SummaryRequest request) {
@@ -350,11 +378,50 @@ public class SummaryService {
     }
 
     /**
+     * Post-generation consent re-check, mirroring the ask lane's
+     * {@code AskResponseWriter}: a short transaction takes the {@code FOR SHARE}
+     * row lock via {@link SummaryConsentRepository#lockForResponse(UUID)} and
+     * re-reads the snapshot. A consent revoke uses a conflicting write lock on
+     * the same row, so it either commits before this lock (the snapshot differs
+     * and the generated summary is dropped — never stored, never served) or
+     * after it (the epoch bump already keeps any stored row out of LLM-tier
+     * replay through the content hash, so the cache write needs no lock of its
+     * own, exactly as the ask lane writes its cache outside the response lock).
+     * The check is one locked SELECT: no extra LLM call.
+     */
+    private SummaryResponse generateAndStore(
+            UUID userId,
+            UUID conversationId,
+            SummaryWindow window,
+            SummaryRequest request,
+            SummaryReadContext readContext,
+            PreparedSummaryProvider prepared,
+            SummaryGeneration generated,
+            Set<UUID> optedOut) {
+        if (responseLockTx != null) {
+            responseLockTx.executeWithoutResult(status -> {
+                SummaryConsentRepository.ConsentSnapshot current = consentRepository.lockForResponse(userId);
+                SummaryConsentRepository.ConsentSnapshot atRead = new SummaryConsentRepository.ConsentSnapshot(
+                        readContext.aiSummaryConsent(), readContext.consentEpoch());
+                // A negative epoch is the repository's missing-row sentinel (the
+                // column itself is CHECK >= 0): the account was deleted mid-flight,
+                // which the cache write's own requester lock already reports as
+                // USER_NOT_FOUND, so only a real snapshot change suppresses here.
+                if (current.epoch() >= 0 && !atRead.equals(current)) {
+                    throw ApiException.of(ApiErrorCode.AI_CONSENT_REQUIRED,
+                            "AI summary consent changed while the summary was being generated");
+                }
+            });
+        }
+        return storeGenerated(userId, conversationId, window, request, readContext, prepared, generated, optedOut);
+    }
+
+    /**
      * Stores the passed generation under the engine that actually produced it
      * and reports the response, including the concurrent-fill guards on the
      * save path.
      */
-    private SummaryResponse generateAndStore(
+    private SummaryResponse storeGenerated(
             UUID userId,
             UUID conversationId,
             SummaryWindow window,

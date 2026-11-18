@@ -73,14 +73,16 @@ public class AvatarView extends FrameLayout {
     }
 
     public void setAvatarUrl(@Nullable String avatarUrl) {
-        if (avatarUrl == null || avatarUrl.isBlank()) {
+        String absolute = AppConfig.absoluteMediaUrl(avatarUrl);
+        if (absolute == null) {
+            // Blank, or an absolute URL off the API origin: initials only.
             imageView.setVisibility(GONE);
             initialsView.setVisibility(VISIBLE);
             return;
         }
         initialsView.setVisibility(VISIBLE);
         imageView.setVisibility(VISIBLE);
-        var request = Glide.with(this).load(AppConfig.absoluteMediaUrl(avatarUrl));
+        var request = Glide.with(this).load(absolute);
         if (AvatarPhotoLoadingRules.useCircleCropForPhotoUrl(avatarUrl)) {
             request = request.circleCrop();
         } else {
