@@ -60,10 +60,17 @@ public final class DatabaseEncryption {
      * runs inside {@code create()} — i.e. on Room's database-open thread, immediately
      * before the encrypted open — and only for the production database name, so test
      * databases with other names are untouched. DAOs and repositories are unchanged.
+     *
+     * <p>The passphrase is wrapped in the {@code "x'<64 hex chars>'"} form before being
+     * handed to the factory: a raw byte[] password goes through SQLCipher's PBKDF2
+     * passphrase lane, while the hex-literal form is taken verbatim as the 256-bit
+     * raw key. The plaintext migration below ATTACHes with that same raw-key form —
+     * both lanes must derive the identical key or Room cannot open a migrated file
+     * (device-verified: byte[] open of an x'hex'-keyed file fails with NOTADB).
      */
     public static SupportSQLiteOpenHelper.Factory encryptedFactory(
             @NonNull Context context, @NonNull byte[] passphrase) {
-        SupportOpenHelperFactory delegate = new SupportOpenHelperFactory(passphrase);
+        SupportOpenHelperFactory delegate = new SupportOpenHelperFactory(rawKey(passphrase));
         return configuration -> {
             if (DB_NAME.equals(configuration.name)) {
                 loadNativeLibs(context);
@@ -90,6 +97,12 @@ public final class DatabaseEncryption {
         deleteWithSidecars(tmp);
         SQLiteDatabase plain = null;
         try {
+            // sqlcipher-android does not create the ATTACH target: the staging file
+            // must exist before the database can be attached (device-verified —
+            // a missing file fails ATTACH with SQLITE_CANTOPEN).
+            if (!tmp.createNewFile()) {
+                throw new IOException("Could not create the migration staging file " + tmp);
+            }
             // No key: SQLCipher reads a plaintext file as-is when no PRAGMA key is set.
             // (The 4-arg openDatabase overload is gone in sqlcipher-android; the 6-arg
             // form treats a null password as an empty key, i.e. still no PRAGMA key.)
@@ -100,7 +113,7 @@ public final class DatabaseEncryption {
             // Raw key form: x'<64 hex chars>' — the 32-byte passphrase used directly.
             plain.execSQL("ATTACH DATABASE '" + tmp.getAbsolutePath() + "' AS " + ATTACHED_NAME
                     + " KEY \"x'" + toHex(passphrase) + "'\"");
-            plain.execSQL("SELECT sqlcipher_export('" + ATTACHED_NAME + "')");
+            runStatementReturningRow(plain, "SELECT sqlcipher_export('" + ATTACHED_NAME + "')");
             copyPragmaLong(plain, "user_version");
             copyPragmaLong(plain, "application_id");
             verifySameRowCounts(plain);
@@ -143,7 +156,19 @@ public final class DatabaseEncryption {
     /** Copies a numeric PRAGMA (e.g. user_version) from main to the attached database. */
     private static void copyPragmaLong(SQLiteDatabase db, String pragma) {
         long value = queryLong(db, "PRAGMA main." + pragma);
-        db.execSQL("PRAGMA " + ATTACHED_NAME + "." + pragma + " = " + value);
+        // A PRAGMA assignment still returns a row, so it must run as a query:
+        // execSQL rejects result-producing statements on this library.
+        runStatementReturningRow(db, "PRAGMA " + ATTACHED_NAME + "." + pragma + " = " + value);
+    }
+
+    /** Runs a statement that produces a row: execSQL rejects those on this library. */
+    private static void runStatementReturningRow(SQLiteDatabase db, String sql) {
+        Cursor cursor = db.rawQuery(sql, null);
+        try {
+            cursor.moveToFirst();
+        } finally {
+            cursor.close();
+        }
     }
 
     /** Compares row counts of every user table between main and the attached copy. */
@@ -217,6 +242,11 @@ public final class DatabaseEncryption {
         if (dbFile.exists()) {
             dbFile.delete();
         }
+    }
+
+    /** The passphrase as SQLCipher's raw-key literal: the same bytes the ATTACH uses. */
+    private static byte[] rawKey(byte[] passphrase) {
+        return ("x'" + toHex(passphrase) + "'").getBytes(StandardCharsets.US_ASCII);
     }
 
     /** Package-private for JVM unit tests. */
