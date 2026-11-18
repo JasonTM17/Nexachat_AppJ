@@ -16,6 +16,11 @@ import retrofit2.Call;
  * one HTTP request is in flight, newer intents for the same lane are coalesced
  * and only the latest value is sent after the in-flight call completes. When
  * the latest intent already matches server-confirmed state, no request is sent.
+ *
+ * <p>Every {@link ConversationPreferenceLanes.Ticket} submitted here must be
+ * settled exactly once. Flown versions settle through {@link OutcomeHandler};
+ * versions that never fly (already-satisfied or superseded intents) settle in
+ * this queue via {@link ConversationPreferenceLanes#finish}.
  */
 public final class ConversationPreferenceNetworkQueue {
 
@@ -119,15 +124,18 @@ public final class ConversationPreferenceNetworkQueue {
 
     private final Executor executor;
     private final OutcomeHandler outcomeHandler;
+    private final ConversationPreferenceLanes preferenceLanes;
     private final Map<String, ArchiveLane> archiveLanes = new HashMap<>();
     private final Map<String, MuteLane> muteLanes = new HashMap<>();
     private final Map<String, PinLane> pinLanes = new HashMap<>();
 
     public ConversationPreferenceNetworkQueue(
             @NonNull Executor executor,
-            @NonNull OutcomeHandler outcomeHandler) {
+            @NonNull OutcomeHandler outcomeHandler,
+            @NonNull ConversationPreferenceLanes preferenceLanes) {
         this.executor = Objects.requireNonNull(executor, "executor");
         this.outcomeHandler = Objects.requireNonNull(outcomeHandler, "outcomeHandler");
+        this.preferenceLanes = Objects.requireNonNull(preferenceLanes, "preferenceLanes");
     }
 
     public void seedArchiveIfUnknown(@NonNull String conversationId, boolean archived) {
@@ -223,6 +231,14 @@ public final class ConversationPreferenceNetworkQueue {
         Objects.requireNonNull(conversationId, "conversationId");
         synchronized (archiveLanes) {
             ArchiveLane lane = archiveLane(conversationId);
+            if (lane.pendingArchived != null) {
+                // A still-undelivered intent is superseded before it could fly;
+                // settle its ticket so the lane does not latch inFlight.
+                preferenceLanes.finish(
+                        conversationId,
+                        ConversationPreferenceLanes.Kind.ARCHIVE,
+                        lane.pendingVersion);
+            }
             lane.pendingArchived = archived;
             lane.pendingVersion = ticket.version;
             if (lane.networkBusy) {
@@ -240,6 +256,14 @@ public final class ConversationPreferenceNetworkQueue {
             @NonNull Function<MuteState, Call<Void>> callForState) {
         synchronized (muteLanes) {
             MuteLane lane = muteLane(conversationId);
+            if (lane.pending != null) {
+                // A still-undelivered intent is superseded before it could fly;
+                // settle its ticket so the lane does not latch inFlight.
+                preferenceLanes.finish(
+                        conversationId,
+                        ConversationPreferenceLanes.Kind.MUTE,
+                        lane.pendingVersion);
+            }
             lane.pending = desired;
             lane.pendingVersion = ticket.version;
             if (lane.networkBusy) {
@@ -257,6 +281,14 @@ public final class ConversationPreferenceNetworkQueue {
             @NonNull Function<PinState, Call<Void>> callForState) {
         synchronized (pinLanes) {
             PinLane lane = pinLane(conversationId);
+            if (lane.pending != null) {
+                // A still-undelivered intent is superseded before it could fly;
+                // settle its ticket so the lane does not latch inFlight.
+                preferenceLanes.finish(
+                        conversationId,
+                        ConversationPreferenceLanes.Kind.PIN,
+                        lane.pendingVersion);
+            }
             lane.pending = desired;
             lane.pendingVersion = ticket.version;
             if (lane.networkBusy) {
@@ -283,10 +315,20 @@ public final class ConversationPreferenceNetworkQueue {
         }
         lane.networkBusy = true;
         return executor.execute(callForArchived.apply(target))
-                .flatMap(result -> outcomeHandler.onArchiveNetworkComplete(
-                        conversationId, flightVersion, target, result))
+                .flatMap(result -> {
+                    // Only a real server acknowledgement confirms state. The
+                    // OutcomeHandler may resolve a stale flight to a synthetic
+                    // success; that terminal resolution must not mark confirmed.
+                    if (result instanceof Result.Success<?>) {
+                        synchronized (archiveLanes) {
+                            archiveLane(conversationId).confirmedArchived = target;
+                        }
+                    }
+                    return outcomeHandler.onArchiveNetworkComplete(
+                            conversationId, flightVersion, target, result);
+                })
                 .flatMap(resolved -> afterArchiveFlight(
-                        conversationId, callForArchived, flightVersion, awaitVersion, target,
+                        conversationId, callForArchived, flightVersion, awaitVersion,
                         resolved));
     }
 
@@ -296,14 +338,7 @@ public final class ConversationPreferenceNetworkQueue {
             @NonNull Function<Boolean, Call<Void>> callForArchived,
             long flightVersion,
             long awaitVersion,
-            boolean attempted,
             @NonNull Result<Void> resolved) {
-        if (resolved instanceof Result.Success<?>) {
-            synchronized (archiveLanes) {
-                ArchiveLane lane = archiveLane(conversationId);
-                lane.confirmedArchived = attempted;
-            }
-        }
         synchronized (archiveLanes) {
             ArchiveLane lane = archiveLane(conversationId);
             if (lane.pendingArchived != null) {
@@ -322,6 +357,10 @@ public final class ConversationPreferenceNetworkQueue {
             @NonNull Function<Boolean, Call<Void>> callForArchived,
             long awaitVersion,
             long settledVersion) {
+        // The coalesced intent already matches confirmed state, so no request
+        // flies; the ticket still settles exactly once here.
+        preferenceLanes.finish(
+                conversationId, ConversationPreferenceLanes.Kind.ARCHIVE, settledVersion);
         synchronized (archiveLanes) {
             ArchiveLane lane = archiveLane(conversationId);
             if (lane.pendingArchived != null) {
@@ -352,10 +391,21 @@ public final class ConversationPreferenceNetworkQueue {
         }
         lane.networkBusy = true;
         return executor.execute(callForState.apply(target))
-                .flatMap(result -> outcomeHandler.onMuteNetworkComplete(
-                        conversationId, flightVersion, target, result))
+                .flatMap(result -> {
+                    // Only a real server acknowledgement confirms state. The
+                    // OutcomeHandler may resolve a stale flight to a synthetic
+                    // success; that terminal resolution must not mark confirmed.
+                    if (result instanceof Result.Success<?>) {
+                        synchronized (muteLanes) {
+                            lane.confirmedMuted = target.muted;
+                            lane.confirmedUntil = target.mutedUntilEpochMs;
+                        }
+                    }
+                    return outcomeHandler.onMuteNetworkComplete(
+                            conversationId, flightVersion, target, result);
+                })
                 .flatMap(resolved -> afterMuteFlight(
-                        conversationId, callForState, flightVersion, awaitVersion, target,
+                        conversationId, callForState, flightVersion, awaitVersion,
                         resolved));
     }
 
@@ -365,15 +415,7 @@ public final class ConversationPreferenceNetworkQueue {
             @NonNull Function<MuteState, Call<Void>> callForState,
             long flightVersion,
             long awaitVersion,
-            @NonNull MuteState attempted,
             @NonNull Result<Void> resolved) {
-        if (resolved instanceof Result.Success<?>) {
-            synchronized (muteLanes) {
-                MuteLane lane = muteLane(conversationId);
-                lane.confirmedMuted = attempted.muted;
-                lane.confirmedUntil = attempted.mutedUntilEpochMs;
-            }
-        }
         synchronized (muteLanes) {
             MuteLane lane = muteLane(conversationId);
             if (lane.pending != null) {
@@ -392,6 +434,10 @@ public final class ConversationPreferenceNetworkQueue {
             @NonNull Function<MuteState, Call<Void>> callForState,
             long awaitVersion,
             long settledVersion) {
+        // The coalesced intent already matches confirmed state, so no request
+        // flies; the ticket still settles exactly once here.
+        preferenceLanes.finish(
+                conversationId, ConversationPreferenceLanes.Kind.MUTE, settledVersion);
         synchronized (muteLanes) {
             MuteLane lane = muteLane(conversationId);
             if (lane.pending != null) {
@@ -422,10 +468,21 @@ public final class ConversationPreferenceNetworkQueue {
         }
         lane.networkBusy = true;
         return executor.execute(callForState.apply(target))
-                .flatMap(result -> outcomeHandler.onPinNetworkComplete(
-                        conversationId, flightVersion, target, result))
+                .flatMap(result -> {
+                    // Only a real server acknowledgement confirms state. The
+                    // OutcomeHandler may resolve a stale flight to a synthetic
+                    // success; that terminal resolution must not mark confirmed.
+                    if (result instanceof Result.Success<?>) {
+                        synchronized (pinLanes) {
+                            lane.confirmedPinned = target.pinned;
+                            lane.confirmedPinnedAt = target.pinnedAtEpochMs;
+                        }
+                    }
+                    return outcomeHandler.onPinNetworkComplete(
+                            conversationId, flightVersion, target, result);
+                })
                 .flatMap(resolved -> afterPinFlight(
-                        conversationId, callForState, flightVersion, awaitVersion, target,
+                        conversationId, callForState, flightVersion, awaitVersion,
                         resolved));
     }
 
@@ -435,15 +492,7 @@ public final class ConversationPreferenceNetworkQueue {
             @NonNull Function<PinState, Call<Void>> callForState,
             long flightVersion,
             long awaitVersion,
-            @NonNull PinState attempted,
             @NonNull Result<Void> resolved) {
-        if (resolved instanceof Result.Success<?>) {
-            synchronized (pinLanes) {
-                PinLane lane = pinLane(conversationId);
-                lane.confirmedPinned = attempted.pinned;
-                lane.confirmedPinnedAt = attempted.pinnedAtEpochMs;
-            }
-        }
         synchronized (pinLanes) {
             PinLane lane = pinLane(conversationId);
             if (lane.pending != null) {
@@ -462,6 +511,10 @@ public final class ConversationPreferenceNetworkQueue {
             @NonNull Function<PinState, Call<Void>> callForState,
             long awaitVersion,
             long settledVersion) {
+        // The coalesced intent already matches confirmed state, so no request
+        // flies; the ticket still settles exactly once here.
+        preferenceLanes.finish(
+                conversationId, ConversationPreferenceLanes.Kind.PIN, settledVersion);
         synchronized (pinLanes) {
             PinLane lane = pinLane(conversationId);
             if (lane.pending != null) {
