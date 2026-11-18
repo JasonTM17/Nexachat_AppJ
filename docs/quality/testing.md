@@ -168,6 +168,7 @@ Rows whose capability disposition reads `Runnable with existing helpers`
 | --- | --- |
 | `auth-login` | Seeded sign-in reaches the inbox |
 | `chat-send-receive` | Device send renders; peer sees it via REST/STOMP |
+| `chat-interactions` | Long-press sheet interactions verified on device + peer REST/STOMP: react, reply, edit, recall, forward, read receipt |
 | `calls-injected-notification` | Dead-process injected `CALL_INVITE` surfaces the heads-up notification (API 34+ cannot full-screen or launch the call activity in background) and declines through the real `CallForegroundService` path; no phantom server call-history row |
 | `injected-notifications` | Injected `NEW_MESSAGE`/`REMINDER` posts shade notifications without leaking the payload body |
 
