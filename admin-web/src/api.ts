@@ -99,14 +99,14 @@ export async function api<T>(
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
-export async function login(phone: string, password: string) {
+export async function login(identifier: string, password: string) {
   const body = await api<{
     accessToken: string;
     refreshToken: string;
     user: { id: string };
   }>('/api/v1/auth/login', {
     method: 'POST',
-    body: { phone, password },
+    body: { identifier, password },
     auth: false,
   });
   tokenStore.set(body.accessToken, body.refreshToken);

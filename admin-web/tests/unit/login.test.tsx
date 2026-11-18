@@ -32,7 +32,7 @@ const renderLogin = () =>
 describe('LoginPage', () => {
   it('renders the sign-in form with labels', () => {
     renderLogin();
-    expect(screen.getByLabelText('Phone')).toBeInTheDocument();
+    expect(screen.getByLabelText('Email or phone')).toBeInTheDocument();
     expect(screen.getByLabelText('Password')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
   });
@@ -43,7 +43,7 @@ describe('LoginPage', () => {
     (api as ReturnType<typeof vi.fn>).mockRejectedValue(
       new ApiException(403, 'FORBIDDEN', 'no'),
     );
-    await user.type(screen.getByLabelText('Phone'), '+841234');
+    await user.type(screen.getByLabelText('Email or phone'), '+841234');
     await user.type(screen.getByLabelText('Password'), 'secret');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -54,8 +54,8 @@ describe('LoginPage', () => {
   it('escapes user input — phone typed stays a value, never HTML', async () => {
     const user = userEvent.setup();
     const { container } = renderLogin();
-    await user.type(screen.getByLabelText('Phone'), '<img src=x onerror=alert(1)>');
+    await user.type(screen.getByLabelText('Email or phone'), '<img src=x onerror=alert(1)>');
     expect(container.querySelector('img')).toBeNull();
-    expect(screen.getByLabelText('Phone')).toHaveValue('<img src=x onerror=alert(1)>');
+    expect(screen.getByLabelText('Email or phone')).toHaveValue('<img src=x onerror=alert(1)>');
   });
 });

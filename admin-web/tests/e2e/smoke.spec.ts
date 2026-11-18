@@ -7,13 +7,13 @@ import { expect, test } from '@playwright/test';
 test('unauthenticated user is redirected to login', async ({ page }) => {
   await page.goto('/overview');
   await expect(page).toHaveURL(/\/login/);
-  await expect(page.getByLabel('Phone')).toBeVisible();
+  await expect(page.getByLabel('Email or phone')).toBeVisible();
   await expect(page.getByLabel('Password')).toBeVisible();
 });
 
 test('login form submits with Enter and shows an error without backend', async ({ page }) => {
   await page.goto('/login');
-  await page.getByLabel('Phone').fill('+84900000000');
+  await page.getByLabel('Email or phone').fill('+84900000000');
   await page.getByLabel('Password').fill('wrong-password');
   await page.getByLabel('Password').press('Enter');
   await expect(page.getByRole('alert')).toBeVisible();

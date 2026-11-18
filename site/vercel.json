@@ -7,11 +7,16 @@
       "**": false
     }
   },
-  "ignoreCommand": "bash -c 'p=$VERCEL_GIT_PREVIOUS_SHA; [ -n \"$p\" ] && git cat-file -e \"$p^{commit}\" 2>/dev/null || exit 1; git diff --quiet \"$p\" \"${VERCEL_GIT_COMMIT_SHA:-HEAD}\" -- . 2>/dev/null && exit 0; exit 1'",
+  "ignoreCommand": "bash -c 'cd \"$(git rev-parse --show-toplevel)\" && p=$VERCEL_GIT_PREVIOUS_SHA; [ -n \"$p\" ] && git cat-file -e \"$p^{commit}\" 2>/dev/null || exit 1; git diff --quiet \"$p\" \"${VERCEL_GIT_COMMIT_SHA:-HEAD}\" -- site admin-web && exit 0; exit 1'",
+  "buildCommand": "cd ../admin-web && npm ci --no-audit --no-fund && VITE_API_URL=https://api.nexachat.io.vn npx vite build --base=/admin/ && rm -rf ../site/admin && cp -r dist ../site/admin",
   "rewrites": [
     {
       "source": "/join/:token",
       "destination": "/join/index.html"
+    },
+    {
+      "source": "/admin/:path*",
+      "destination": "/admin/index.html"
     }
   ],
   "redirects": [
@@ -29,7 +34,36 @@
   ],
   "headers": [
     {
-      "source": "/(.*)",
+      "source": "/admin(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=63072000; includeSubDomains; preload"
+        }
+      ]
+    },
+    {
+      "source": "/((?!admin).*)",
       "headers": [
         {
           "key": "X-Content-Type-Options",
