@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <title>NexaChat — Ứng dụng nhắn tin Android</title>
-  <meta name="description" content="NexaChat là ứng dụng nhắn tin Android: trò chuyện 1-1 và nhóm qua ứng dụng di động.">
+  <meta name="description" content="NexaChat là ứng dụng nhắn tin Android: trò chuyện 1-1 và nhóm, gọi thoại, bảng tin, chuỗi ngày trò chuyện và tóm tắt cuộc trò chuyện bằng AI khi bạn đồng ý.">
   <link rel="canonical" href="https://nexachat.io.vn/">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="vi_VN">
@@ -40,22 +40,113 @@
 ]
   </script>
 </head>
-<body>
+<body class="home">
   <a class="skip-link" href="#main">Bỏ qua đến nội dung</a>
-  <main id="main" class="container">
-    <div class="card">
-      <h1 class="brand brand-lockup">
-        <svg class="brand-mark" viewBox="0 0 108 108" aria-hidden="true" focusable="false"><path d="M24 20H36L64 60V20H80V84H66L40 47V72L24 84Z"/></svg>
-        <span>NexaChat</span>
-      </h1>
-      <p class="lead" lang="vi">Ứng dụng nhắn tin Android.</p>
-      <p class="lead" lang="en">Android messaging app.</p>
-      <nav aria-label="Điều hướng chính" class="page-actions">
-        <a class="btn" href="/download.html" aria-label="Tải ứng dụng, Download app">Tải ứng dụng · Download</a>
-      </nav>
+
+  <header class="home-header">
+    <a class="home-brand" href="/" aria-label="NexaChat">
+      <svg class="brand-mark" viewBox="0 0 108 108" aria-hidden="true" focusable="false"><path d="M24 20H36L64 60V20H80V84H66L40 47V72L24 84Z"/></svg>
+      <span>NexaChat</span>
+    </a>
+    <nav class="home-header__nav" aria-label="Ngôn ngữ / Language">
+      <a class="home-lang" href="#lang-vi" lang="vi">VI</a>
+      <a class="home-lang" href="#lang-en" lang="en">EN</a>
+    </nav>
+  </header>
+
+  <main id="main" class="home-main">
+    <div class="home-lang-pane" id="lang-en" lang="en">
+      <section class="hero" aria-labelledby="hero-title-en">
+        <div class="hero__copy">
+          <p class="eyebrow">Android messaging</p>
+          <h1 id="hero-title-en" class="hero__title">Chat the way you already do. Simply.</h1>
+          <p class="hero__lead">Direct and group chats, voice calls, a public feed and daily streaks, all in a fast, offline-ready Android app. AI summaries stay off until you opt in.</p>
+          <div class="hero__actions">
+            <a class="btn btn-lg" href="/download.html#lang-en">Download for Android</a>
+            <a class="btn btn-lg btn-secondary" href="#features-en">See features</a>
+          </div>
+          <p class="hero__note">Android 8.0 or newer · APK with published SHA-256 checksum</p>
+        </div>
+        <div class="hero__visual">
+          <div class="phone"><img src="/assets/chat-dark.webp" width="540" height="1200" alt="A direct chat in NexaChat with a pinned message, merged message bubbles and a quoted reply" fetchpriority="high"></div>
+        </div>
+      </section>
+
+      <section id="features-en" class="section" aria-labelledby="features-title-en">
+        <h2 id="features-title-en" class="section__title">Everything a daily chat app needs</h2>
+        <ul class="feature-grid">
+          <li class="feature-card"><h3>Direct and group chats</h3><p>Real-time messages with delivery and read receipts, replies, reactions, pinned messages, polls and group roles.</p></li>
+          <li class="feature-card"><h3>Works offline</h3><p>Messages you send without a connection wait in a durable outbox and go out as soon as you are back online.</p></li>
+          <li class="feature-card"><h3>Voice and video calls</h3><p>One-to-one calls with a ringing screen, call history and push invitations. Video calls are a preview.</p></li>
+          <li class="feature-card"><h3>Streaks and public feed</h3><p>Keep a daily chat streak with a friend, check in every day, and share posts, photos and reactions on the public feed.</p></li>
+          <li class="feature-card"><h3>AI summaries, only if you agree</h3><p>Catch up on a long thread with a summary of unread, recent or today's messages. A built-in engine works locally; an external AI is used only with your consent.</p></li>
+          <li class="feature-card"><h3>Private by design</h3><p>Rotating sign-in tokens, email-code recovery, self-service account deletion and optional end-to-end encryption for direct chats (preview).</p></li>
+        </ul>
+      </section>
+
+      <section class="section section--tint" aria-labelledby="shots-title-en">
+        <h2 id="shots-title-en" class="section__title">A calm interface in light and dark</h2>
+        <ul class="shots">
+          <li><div class="phone phone--sm"><img src="/assets/inbox-dark.webp" width="540" height="1200" alt="The inbox in dark mode with an active-now strip, filter chips and a compose button" loading="lazy"></div><p>Inbox</p></li>
+          <li><div class="phone phone--sm"><img src="/assets/summary-dark.webp" width="540" height="1200" alt="A conversation summary sheet with an overview and key points" loading="lazy"></div><p>Summary</p></li>
+          <li><div class="phone phone--sm"><img src="/assets/profile-light.webp" width="540" height="1200" alt="The profile screen in light mode with theme chips, language row and privacy switches" loading="lazy"></div><p>Profile</p></li>
+        </ul>
+      </section>
+
+      <section class="cta" aria-labelledby="cta-title-en">
+        <h2 id="cta-title-en" class="cta__title">Ready to try NexaChat?</h2>
+        <p class="cta__lead">Install the APK, verify its checksum and start a conversation.</p>
+        <a class="btn btn-lg btn-light" href="/download.html#lang-en">Download for Android</a>
+      </section>
+    </div>
+
+    <div class="home-lang-pane" id="lang-vi" lang="vi">
+      <section class="hero" aria-labelledby="hero-title-vi">
+        <div class="hero__copy">
+          <p class="eyebrow">Nhắn tin trên Android</p>
+          <h1 id="hero-title-vi" class="hero__title">Trò chuyện thật nhẹ nhàng.</h1>
+          <p class="hero__lead">Nhắn tin 1-1 và nhóm, gọi thoại, bảng tin công khai và chuỗi ngày trò chuyện trong một ứng dụng Android nhanh, dùng được cả khi mất mạng. Tóm tắt bằng AI chỉ bật khi bạn đồng ý.</p>
+          <div class="hero__actions">
+            <a class="btn btn-lg" href="/download.html#lang-vi">Tải ứng dụng Android</a>
+            <a class="btn btn-lg btn-secondary" href="#features-vi">Xem tính năng</a>
+          </div>
+          <p class="hero__note">Android 8.0 trở lên · Tệp APK kèm mã băm SHA-256 được công bố</p>
+        </div>
+        <div class="hero__visual">
+          <div class="phone"><img src="/assets/chat-dark.webp" width="540" height="1200" alt="Cuộc trò chuyện 1-1 trong NexaChat với tin nhắn đã ghim, các bong bóng tin nhắn gộp và tin nhắn trích dẫn" fetchpriority="high"></div>
+        </div>
+      </section>
+
+      <section id="features-vi" class="section" aria-labelledby="features-title-vi">
+        <h2 id="features-title-vi" class="section__title">Mọi thứ một ứng dụng nhắn tin hằng ngày cần</h2>
+        <ul class="feature-grid">
+          <li class="feature-card"><h3>Trò chuyện 1-1 và nhóm</h3><p>Tin nhắn thời gian thực, trạng thái đã nhận và đã xem, trả lời, biểu cảm, ghim tin nhắn, bình chọn và vai trò trong nhóm.</p></li>
+          <li class="feature-card"><h3>Dùng được khi mất mạng</h3><p>Tin nhắn gửi lúc không có kết nối được lưu trong hàng chờ bền vững và tự gửi đi khi bạn trực tuyến trở lại.</p></li>
+          <li class="feature-card"><h3>Gọi thoại và gọi video</h3><p>Cuộc gọi 1-1 có màn hình đổ chuông, lịch sử cuộc gọi và thông báo mời gọi. Gọi video đang ở bản thử nghiệm.</p></li>
+          <li class="feature-card"><h3>Chuỗi ngày và bảng tin</h3><p>Giữ chuỗi ngày trò chuyện với bạn bè, điểm danh mỗi ngày, đăng bài, ảnh và thả biểu cảm trên bảng tin công khai.</p></li>
+          <li class="feature-card"><h3>Tóm tắt AI, chỉ khi bạn đồng ý</h3><p>Bắt kịp một cuộc trò chuyện dài bằng bản tóm tắt tin chưa đọc, tin gần đây hoặc tin hôm nay. Bộ máy tích hợp chạy ngay trên máy; AI bên ngoài chỉ dùng khi bạn cho phép.</p></li>
+          <li class="feature-card"><h3>Riêng tư từ thiết kế</h3><p>Mã đăng nhập xoay vòng, khôi phục bằng mã gửi qua email, tự xóa tài khoản và mã hóa đầu cuối tùy chọn cho trò chuyện 1-1 (bản xem trước).</p></li>
+        </ul>
+      </section>
+
+      <section class="section section--tint" aria-labelledby="shots-title-vi">
+        <h2 id="shots-title-vi" class="section__title">Giao diện dịu mắt, sáng và tối</h2>
+        <ul class="shots">
+          <li><div class="phone phone--sm"><img src="/assets/inbox-dark.webp" width="540" height="1200" alt="Hộp thư ở chế độ tối với dải đang hoạt động, các nhãn lọc và nút soạn tin" loading="lazy"></div><p>Hộp thư</p></li>
+          <li><div class="phone phone--sm"><img src="/assets/summary-dark.webp" width="540" height="1200" alt="Bảng tóm tắt cuộc trò chuyện với phần tổng quan và các ý chính" loading="lazy"></div><p>Tóm tắt</p></li>
+          <li><div class="phone phone--sm"><img src="/assets/profile-light.webp" width="540" height="1200" alt="Màn hình hồ sơ ở chế độ sáng với nhãn giao diện, dòng ngôn ngữ và các công tắc riêng tư" loading="lazy"></div><p>Hồ sơ</p></li>
+        </ul>
+      </section>
+
+      <section class="cta" aria-labelledby="cta-title-vi">
+        <h2 id="cta-title-vi" class="cta__title">Sẵn sàng thử NexaChat?</h2>
+        <p class="cta__lead">Cài đặt APK, kiểm tra mã băm và bắt đầu một cuộc trò chuyện.</p>
+        <a class="btn btn-lg btn-light" href="/download.html#lang-vi">Tải ứng dụng Android</a>
+      </section>
     </div>
   </main>
-  <footer class="site-footer">
+
+  <footer class="site-footer site-footer--wide">
     <nav aria-label="Điều hướng pháp lý / Legal navigation">
       <a href="/download.html#lang-vi" lang="vi">Tải ứng dụng</a>
       <a href="/download.html#lang-en" lang="en">Download</a>

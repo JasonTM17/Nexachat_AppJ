@@ -1,6 +1,8 @@
 package com.nexachat.feature.feed;
 
 import android.content.Context;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.InsetDrawable;
 import android.text.format.DateUtils;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -12,6 +14,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 import androidx.core.widget.TextViewCompat;
 import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.ListAdapter;
@@ -129,8 +132,16 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
         holder.reactions.setVisibility(View.VISIBLE);
         Context context = holder.itemView.getContext();
         int gap = context.getResources().getDimensionPixelSize(R.dimen.space_xs);
-        int minHeight = context.getResources()
+        int pillHeight = context.getResources()
                 .getDimensionPixelSize(R.dimen.feed_reaction_pill_min_height);
+        int touchTarget = context.getResources().getDimensionPixelSize(R.dimen.min_touch_target);
+        int inset = FeedRules.reactionPillInset(touchTarget, pillHeight);
+        // The tap area grows by the inset above the pill; take it from the row margin so the pill stays put.
+        LinearLayout.LayoutParams rowParams =
+                (LinearLayout.LayoutParams) holder.reactions.getLayoutParams();
+        rowParams.topMargin = Math.max(
+                0, context.getResources().getDimensionPixelSize(R.dimen.space_sm) - inset);
+        holder.reactions.setLayoutParams(rowParams);
         int horizontal = context.getResources().getDimensionPixelSize(R.dimen.space_sm);
         for (int i = 0; i < reactions.size(); i++) {
             FeedRepository.Reaction reaction = reactions.get(i);
@@ -142,11 +153,13 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
                     reaction.count(), reaction.emoji(), reaction.count()));
             TextViewCompat.setTextAppearance(pill, R.style.TextAppearance_NexaChat_LabelMedium);
             pill.setGravity(Gravity.CENTER);
-            pill.setMinHeight(minHeight);
-            pill.setPadding(horizontal, 0, horizontal, 0);
-            pill.setBackgroundResource(reaction.mine()
+            pill.setMinHeight(pillHeight + 2 * inset);
+            Drawable look = ContextCompat.getDrawable(context, reaction.mine()
                     ? R.drawable.bg_feed_reaction_pill_mine
                     : R.drawable.bg_feed_reaction_pill);
+            pill.setBackground(new InsetDrawable(look, 0, inset, 0, inset));
+            // After the background: an inset drawable reports padding that setBackground applies.
+            pill.setPadding(horizontal, inset, horizontal, inset);
             pill.setOnClickListener(ignored -> listener.onReactionTap(post, reaction.emoji()));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);

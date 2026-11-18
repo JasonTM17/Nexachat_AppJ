@@ -29,11 +29,37 @@ public final class SummaryRequest {
             SummaryLanguage language,
             boolean refresh,
             String timeZone) {
+        this(scope, limit, language, refresh, timeZone, false);
+    }
+
+    /**
+     * A request that sends no zone, so the server applies its own default day. Used once when
+     * the device zone was rejected.
+     */
+    public static SummaryRequest withoutTimeZone(
+            SummaryScope scope,
+            Integer limit,
+            SummaryLanguage language,
+            boolean refresh) {
+        return new SummaryRequest(scope, limit, language, refresh, null, true);
+    }
+
+    private SummaryRequest(
+            SummaryScope scope,
+            Integer limit,
+            SummaryLanguage language,
+            boolean refresh,
+            String timeZone,
+            boolean omitTimeZone) {
         this.scope = Objects.requireNonNull(scope, "scope");
         this.limit = limit;
         this.language = language == null ? SummaryLanguage.AUTO : language;
         this.refresh = refresh;
-        this.timeZone = timeZone == null || timeZone.trim().isEmpty()
+        this.timeZone = omitTimeZone ? null : resolveTimeZone(timeZone);
+    }
+
+    private static String resolveTimeZone(String timeZone) {
+        return timeZone == null || timeZone.trim().isEmpty()
                 ? TimeZone.getDefault().getID()
                 : timeZone;
     }
@@ -54,7 +80,10 @@ public final class SummaryRequest {
         return refresh;
     }
 
-    /** IANA zone id of the device; the server reads it only for the TODAY scope. */
+    /**
+     * IANA zone id of the device, or null when the request omits it; the server reads it only
+     * for the TODAY scope.
+     */
     public String getTimeZone() {
         return timeZone;
     }

@@ -45,7 +45,7 @@ public final class StreakViewModel extends ViewModel {
         return checkInStreak;
     }
 
-    /** A celebration to show now; consumed through {@link #onCelebrationShown()}. */
+    /** A celebration to show now; consumed through {@link #onCelebrationShown} or {@link #onCelebrationNotShown}. */
     public LiveData<MilestoneTracker.Celebration> getCelebration() {
         return celebration;
     }
@@ -104,9 +104,19 @@ public final class StreakViewModel extends ViewModel {
         });
     }
 
-    /** The screen put the sheet up; clears the one-shot event. */
-    public void onCelebrationShown() {
+    /** The sheet is on screen: clears the one-shot event and persists the celebration. */
+    public void onCelebrationShown(@NonNull MilestoneTracker.Celebration shown) {
         celebration.setValue(null);
+        tracker.shown(shown);
+    }
+
+    /**
+     * The sheet could not be put up (state saved, or one is already attached). The celebration
+     * returns to the queue unpersisted and is offered again on the next trigger, not right away.
+     */
+    public void onCelebrationNotShown(@NonNull MilestoneTracker.Celebration notShown) {
+        celebration.setValue(null);
+        tracker.notShown(notShown);
     }
 
     /** The sheet closed; the next queued celebration may be handed out. */

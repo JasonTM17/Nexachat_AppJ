@@ -67,9 +67,15 @@ public final class SummaryRepositoryTest {
             } else if (call == 5) {
                 SummaryTestServer.respond(exchange, 429,
                         "{\"error\":{\"code\":\"UNEXPECTED_CODE\",\"message\":\"synthetic\"}}");
-            } else {
+            } else if (call == 6) {
                 SummaryTestServer.respond(exchange, 403,
                         "{\"error\":{\"code\":\"UNEXPECTED_CODE\",\"message\":\"synthetic\"}}");
+            } else if (call == 7) {
+                SummaryTestServer.respond(exchange, 409,
+                        "{\"error\":{\"code\":\"E2EE_AI_UNAVAILABLE\",\"message\":\"synthetic\"}}");
+            } else {
+                SummaryTestServer.respond(exchange, 400,
+                        "{\"error\":{\"code\":\"INVALID_TIME_ZONE\",\"message\":\"synthetic\"}}");
             }
         })) {
             SummaryRepository repository = new SummaryRepository(api(server.baseUrl()));
@@ -79,6 +85,8 @@ public final class SummaryRepositoryTest {
             assertEquals(SummaryError.UNKNOWN, requestError(repository));
             assertEquals(SummaryError.RATE_LIMITED, requestError(repository));
             assertEquals(SummaryError.NOT_MEMBER, requestError(repository));
+            assertEquals(SummaryError.E2EE_UNAVAILABLE, requestError(repository));
+            assertEquals(SummaryError.INVALID_TIME_ZONE, requestError(repository));
         }
     }
 

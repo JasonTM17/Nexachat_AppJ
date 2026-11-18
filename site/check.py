@@ -844,7 +844,7 @@ def test_site_pages_and_assets():
             html = f.read()
         if not html.lstrip().startswith("<!DOCTYPE html>"):
             failures.append(f"{rel_page} must start with <!DOCTYPE html>")
-        if "<html" not in html or "<head>" not in html or "<body>" not in html:
+        if "<html" not in html or "<head>" not in html or "<body" not in html:
             failures.append(f"{rel_page} missing basic html/head/body structure")
         if 'name="viewport"' not in html and "name='viewport'" not in html:
             failures.append(f"{rel_page} missing mobile viewport meta tag")
@@ -1468,9 +1468,9 @@ def test_download_page():
     if os.path.isfile(index_path):
         with open(index_path, "r", encoding="utf-8") as f:
             index_html = f.read()
-        if 'href="/download.html"' not in index_html:
+        if 'href="/download.html' not in index_html:
             failures.append("index.html must link to /download.html")
-        if '<nav' not in index_html or 'href="/download.html"' not in index_html:
+        if '<nav' not in index_html or 'href="/download.html' not in index_html:
             failures.append("index.html navigation must link to /download.html")
         # Check footer in index.html
         footer_idx = index_html.find("<footer")

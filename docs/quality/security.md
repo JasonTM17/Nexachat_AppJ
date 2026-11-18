@@ -369,6 +369,84 @@ the implementing source file.
   deletion cascades identity rows in V28; account tombstoning deletes linked
   identities and account-owned link nonces explicitly in the deletion transaction.
 
+## 9. Public feed and streaks
+
+Design notes live in [docs/architecture/public-feed.md](../architecture/public-feed.md)
+and [docs/architecture/streaks.md](../architecture/streaks.md).
+
+### Public feed
+
+- **Plaintext by design.** Feed content is server-readable and visible to every
+  signed-in account; it never joins `messages` or `conversations` and is outside
+  the optional E2EE. Feed routes are under `/api/v1/feed/**`, which is not in the
+  permitAll list, so a Bearer token is required (`SecurityConfig.java`,
+  `FeedController.java`).
+- **One visibility predicate.** A post or comment is visible only when it is not
+  soft-deleted, not staff-hidden, its author is not deleted, and no `user_blocks`
+  edge exists in either direction between the viewer and the author
+  (`FeedStore.java` `POST_VISIBLE`/`COMMENT_VISIBLE`). Reads, comment lists,
+  reactions, deletes and report submission resolve their target through it, so a
+  hidden or blocked row answers `POST_NOT_FOUND`/`COMMENT_NOT_FOUND` like a
+  missing one (`FeedService.java`, `FeedReportTargets.java`). Post and comment
+  creates are idempotent on `(author, client id)`.
+- **Rate limits.** Per user: posts 3/min and 30/day, comments 10/min and
+  200/day, reactions 60/min with at most 8 distinct emojis per post, image
+  uploads 10/min and 100/day plus 20 unattached images; a denial is `429
+  RATE_LIMITED` with `retryAfterSeconds` (`FeedService.java`,
+  `FeedImageService.java`, `FeedRateLimits.java`). Bodies are capped at 1000
+  (post) and 500 (comment) characters. The buckets are the in-memory
+  `RateLimitService`, so they reset on restart and are not shared across nodes.
+- **Image upload hardening.** The sniffed bytes decide the type
+  (`MagicBytes.sniff`), never the declared `Content-Type` or filename; only
+  `image/jpeg`, `image/png` and `image/webp` are accepted, anything else is `415
+  MIME_NOT_ALLOWED`. The 25 MB ceiling and the shared storage pipeline (server
+  minted key under `feed/`) apply, and declared dimensions must be 0–16384
+  (`FeedImageService.java`).
+- **Image read access.** Bytes are served by `GET /api/v1/feed/images/{id}` only
+  to the uploader, or to a viewer who can see the post the image is attached to;
+  otherwise `FILE_NOT_FOUND`. The raw `/api/v1/files/**` path applies the same
+  rule to feed keys through `FeedImageAccess`, so knowing a storage key is not a
+  capability. Responses carry `X-Content-Type-Options: nosniff` and
+  `Content-Disposition: inline` with a private one-hour cache
+  (`FeedController.image`, `FileController.java`).
+- **Staff moderation and audit trail.** `/api/v1/admin/feed/**` requires the
+  `ADMIN` or `MODERATOR` role (`SecurityConfig.java`, `AdminGuard`). Hide, unhide
+  and report resolution each write one `admin_audit_log` row in the same
+  transaction, so an action that cannot be audited does not commit; a hide needs a
+  reason of at most 500 characters, and repeating a hide or unhide writes no
+  second row (`AdminFeedService.java`).
+- **Retention and deletion.** Author delete is a soft delete. Account deletion
+  soft-deletes the account's posts and comments, removes its reactions and its
+  unattached uploads (`AccountDeletionJdbcSupport.java`). Hard purge is the
+  `public-feed` retention job, off by default
+  (`nexachat.retention.jobs.public-feed.enabled=false`,
+  `application.yml:282-285`).
+- **Not protected.** Content is readable by the operator, staff and every
+  account that passes the predicate; there is no automated NSFW, abuse or spam
+  classifier, so harmful content is removed only after a report and a staff
+  action; no code re-encodes images or strips EXIF metadata; image bytes are
+  checked by signature, not decoded or scanned; rate limits bound volume per
+  account, not the number of accounts.
+
+### Streaks
+
+- **Data used.** Streak state is derived from send and check-in dates only; no
+  message content is read or stored in `conversation_streaks` or `user_streaks`.
+- **Visibility.** `GET /api/v1/conversations/{id}/streak` requires conversation
+  membership (`NOT_MEMBER` otherwise, `StreakService.java`); the check-in streak
+  endpoints (`/api/v1/streaks/me`, `/api/v1/streaks/check-in`) only ever address
+  the caller (`StreakController.java`).
+- **Reminder push.** The reminder is opt-in (`streakReminders`, default off),
+  runs only for users with a chain of at least `reminder-min-count`, skips muted
+  chats, blocks in either direction, deleted or suspended accounts and users
+  without a registered device, is claimed once per day with an atomic
+  `reminder_sent_day` update, and carries the conversation id, the peer's display
+  name and the chain count as an FCM data push, with no message text
+  (`StreakReminderJob.java` `dispatch`).
+- **Not protected.** Streak counts are not secret from the two members of a
+  chat, and a chain's day boundary is one server-wide zone
+  (`nexachat.streaks.zone`), not each member's local time.
+
 ## Known limits & future work
 
 - The Android client is pure Java 21 (`android/`, Groovy `build.gradle`, XML

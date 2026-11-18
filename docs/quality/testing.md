@@ -34,6 +34,52 @@ across runs. If both Maven processes use this checkout, also pass a different
 `-Dnexachat.test.build-directory=target/<run-name>` to each command so their
 compiled classes and reports stay separate.
 
+### Public feed, streak and summary-scope tests
+
+Server suites for the three features live next to their packages. The `*Test`
+classes are pure unit tests and need no database; the `*IT` classes extend
+`FeatureItSupport` and need the PostgreSQL setup above.
+
+| Area | Unit (`mvn test`) | Integration (`mvn verify`, Failsafe `*IT`) |
+| --- | --- | --- |
+| Public feed | `server/src/test/java/com/nexachat/feed/FeedServiceTest.java`, `FeedCursorTest.java` | `FeedFlowIT`, `FeedAdminFlowIT` (moderation and audit rows), `FeedRetentionIT` (purge job) |
+| Streaks | `server/src/test/java/com/nexachat/streak/StreakRulesTest.java`, `StreakServiceTest.java` | `StreakFlowIT` |
+| Summary scope | `server/src/test/java/com/nexachat/summary/SummaryPeriodsTest.java`, `SummaryRequestTest.java`, `SummaryServiceTest.java` | `SummaryScopeApiIT`, `SummaryApiIT` |
+
+```powershell
+# Unit tests only, no database
+mvn -q -f server/pom.xml test -Dtest='StreakRulesTest,StreakServiceTest,FeedServiceTest,FeedCursorTest,SummaryPeriodsTest,SummaryRequestTest,SummaryServiceTest'
+
+# Integration tests (IT_DB_URL, IT_DB_USER, IT_DB_PASSWORD set as above);
+# -Dit.test selects the Failsafe classes, -Dtest keeps Surefire to the listed unit classes
+mvn -q -f server/pom.xml verify -Dtest='FeedServiceTest' -Dsurefire.failIfNoSpecifiedTests=false `
+  -Dit.test='FeedFlowIT,FeedAdminFlowIT,FeedRetentionIT,StreakFlowIT,SummaryScopeApiIT,SummaryApiIT'
+```
+
+Android JVM tests for the same features are under
+`android/app/src/test/java/com/nexachat/feature/feed/`,
+`android/app/src/test/java/com/nexachat/feature/streak/` and
+`android/app/src/test/java/com/nexachat/summary/` (scope, header text and
+citation chips also in `feature/summary/`):
+
+```bash
+cd android && ./gradlew :app:testDebugUnitTest \
+  --tests 'com.nexachat.feature.feed.*' \
+  --tests 'com.nexachat.feature.streak.*' \
+  --tests 'com.nexachat.summary.*' \
+  --tests 'com.nexachat.feature.summary.*'
+```
+
+The admin console `/feed` moderation page is covered by
+`admin-web/tests/unit/feed.test.tsx` (Vitest):
+
+```bash
+cd admin-web && npm ci && npm test
+```
+
+These suites use fakes and a local PostgreSQL; they do not prove the feed on a
+deployed backend, the streak reminder push through real FCM, or a device run.
+
 ### Sync cursor rollback drill (opt-in)
 
 `SyncCursorRollbackIT` is skipped in ordinary `mvn verify` runs. Enable it only
