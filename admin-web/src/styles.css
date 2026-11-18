@@ -35,6 +35,7 @@
   --info-container: #d9e4f8;
   --info-text: #1f3a6d;
   --shadow: 0 1px 3px rgba(42, 16, 36, 0.12), 0 4px 14px rgba(42, 16, 36, 0.08);
+  --edge-shadow: rgba(42, 16, 36, 0.18);
   --radius: 16px;
   --radius-pill: 999px;
   --focus: 0 0 0 3px rgba(115, 63, 104, 0.35);
@@ -63,12 +64,17 @@
   --info-container: #273a5c;
   --info-text: #c5d6f5;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);
+  --edge-shadow: rgba(0, 0, 0, 0.5);
   --focus: 0 0 0 3px rgba(229, 174, 217, 0.4);
 }
 
 * { box-sizing: border-box; }
 
 html, body, #root { height: 100%; }
+
+/* html paints var(--bg) so content taller than one viewport never exposes a
+   bare canvas (the index.html pre-CSS colour only covers first paint). */
+html { background: var(--bg); }
 
 body {
   margin: 0;
@@ -123,6 +129,7 @@ button, input, select, textarea {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-height: 2.75rem;
   padding: 9px 12px;
   border-radius: var(--radius-pill);
   color: var(--text-2);
@@ -144,6 +151,7 @@ button, input, select, textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   margin-bottom: 24px;
   gap: 12px;
 }
@@ -167,6 +175,7 @@ button, input, select, textarea {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  min-height: 2.75rem;
   padding: 8px 18px;
   border-radius: var(--radius-pill);
   border: 1px solid transparent;
@@ -187,7 +196,17 @@ button, input, select, textarea {
 .btn.danger:hover { filter: brightness(1.08); }
 .btn.ghost { background: transparent; border-color: var(--border); }
 .btn.ghost:hover { border-color: var(--plum-300); }
-.btn.sm { padding: 4px 12px; font-size: 12px; }
+/* Compact buttons keep the dense visual size; an invisible ::before ring
+   enlarges the hit area to the 44px touch minimum (32px box + 6px bleed —
+   inside the 8px control gap so neighbours never overlap). */
+.btn.sm {
+  position: relative;
+  min-height: 2rem;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+.btn.sm::before { content: ''; position: absolute; inset: -6px; }
+
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .chip {
@@ -197,6 +216,8 @@ button, input, select, textarea {
   border-radius: var(--radius-pill);
   font-size: 12px;
   font-weight: 600;
+  /* Chips carry single short labels; never let one break mid-word. */
+  white-space: nowrap;
   background: var(--surface-2);
   color: var(--text-2);
   border: 1px solid var(--border);
@@ -222,6 +243,7 @@ button, input, select, textarea {
   background: var(--surface);
   color: var(--text);
 }
+.input, .select { min-height: 2.75rem; }
 
 .input:focus, .select:focus, .textarea:focus {
   outline: none;
@@ -234,9 +256,21 @@ button, input, select, textarea {
 
 /* ---------- Tables ---------- */
 
-.table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+/* Edge-fade scroll affordance: surface-coloured covers travel with the
+   content (local); plum shadows stay pinned to the visible edges (scroll). */
+.table-wrap {
+  overflow-x: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(to right, var(--surface) 30%, transparent) left / 40px 100% no-repeat local,
+    linear-gradient(to left, var(--surface) 30%, transparent) right / 40px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, var(--edge-shadow), transparent) left / 14px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, var(--edge-shadow), transparent) right / 14px 100% no-repeat scroll,
+    var(--surface);
+}
 
-table { width: 100%; border-collapse: collapse; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; }
 
 th {
   text-align: left;
@@ -257,11 +291,30 @@ tbody tr { cursor: pointer; transition: background 0.12s; }
 tbody tr:hover { background: var(--surface-2); }
 tbody tr.plain { cursor: default; }
 
+/* Right-pinned action column: stays visible while the table scrolls. */
+td.col-actions {
+  position: sticky;
+  right: 0;
+  background: var(--surface);
+  box-shadow: -10px 0 12px -8px var(--edge-shadow);
+}
+tbody tr:hover td.col-actions { background: var(--surface-2); }
+th.col-actions { position: sticky; right: 0; z-index: 1; box-shadow: -10px 0 12px -8px var(--edge-shadow); }
+
 .pager { display: flex; gap: 8px; justify-content: flex-end; align-items: center; padding: 10px 4px; font-size: 12px; color: var(--text-2); }
 
-.filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+.filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; align-items: flex-end; }
 .filters .input { max-width: 260px; }
 .filters .select { max-width: 170px; width: auto; }
+
+.filter-field { display: flex; flex-direction: column; gap: 4px; }
+.filter-field > span {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-2);
+}
 
 /* ---------- KPI grid ---------- */
 
@@ -347,10 +400,39 @@ tbody tr.plain { cursor: default; }
 
 /* ---------- Misc ---------- */
 
-.empty, .loading, .error-block { padding: 40px; text-align: center; color: var(--text-2); }
-.error-block .btn { margin-top: 12px; }
-.error-block p { color: var(--danger); margin: 0; }
-[data-theme='dark'] .error-block p { color: #ffb3af; }
+.empty, .loading, .error-block { padding: 48px 40px; text-align: center; color: var(--text-2); }
+.empty .btn, .error-block .btn { margin-top: 14px; }
+.error-block .state-title { color: var(--danger); }
+[data-theme='dark'] .error-block .state-title { color: #ffb3af; }
+
+.state-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--container);
+  color: var(--on-container);
+  font-size: 19px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.error-block .state-icon { background: var(--danger-container); color: var(--danger); }
+[data-theme='dark'] .error-block .state-icon { color: #ffc9c6; }
+
+.state-title { font-size: 14px; font-weight: 600; color: var(--text); margin: 0; }
+.state-hint { font-size: 13px; color: var(--text-2); margin: 6px 0 0; }
+
+/* 44px hit area around small checkboxes without changing cell layout. */
+.check-hit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -14px -15px;
+  cursor: pointer;
+}
 
 .muted { color: var(--text-2); }
 .mono { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; font-size: 12px; }
@@ -382,4 +464,14 @@ tbody tr.plain { cursor: default; }
   .navlink { justify-content: center; padding: 10px; }
   .navlink .label { display: none; }
   .main { padding: 16px; }
+
+  /* Low-priority table columns are hidden on small screens; the row drawer
+     carries the full data. */
+  .col-lo { display: none; }
+
+  th, td { padding: 10px; }
+  .truncate { max-width: 120px; }
+
+  td .action-row { flex-direction: column; align-items: stretch; }
+  td .action-row .btn { justify-content: center; }
 }

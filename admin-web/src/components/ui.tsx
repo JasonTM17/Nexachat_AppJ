@@ -6,16 +6,41 @@ export function Loading() {
   return <div className="loading" role="status">{t('common.loading')}</div>;
 }
 
-export function Empty() {
+export function Empty({
+  hint,
+  onClearFilters,
+}: {
+  hint?: string;
+  onClearFilters?: () => void;
+}) {
   const { t } = useI18n();
-  return <div className="empty">{t('common.empty')}</div>;
+  return (
+    <div className="empty">
+      <div className="state-icon" aria-hidden="true">◌</div>
+      <p className="state-title">{t('common.empty')}</p>
+      <p className="state-hint">{hint ?? t('common.empty.hint')}</p>
+      {onClearFilters && (
+        <button className="btn ghost" onClick={onClearFilters}>
+          {t('common.filters.clear')}
+        </button>
+      )}
+    </div>
+  );
 }
 
-export function ErrorBlock({ onRetry }: { onRetry?: () => void }) {
+export function ErrorBlock({
+  onRetry,
+  hint,
+}: {
+  onRetry?: () => void;
+  hint?: string;
+}) {
   const { t } = useI18n();
   return (
     <div className="error-block" role="alert">
-      <p>{t('common.error')}</p>
+      <div className="state-icon" aria-hidden="true">!</div>
+      <p className="state-title">{t('common.error')}</p>
+      <p className="state-hint">{hint ?? t('common.error.hint')}</p>
       {onRetry && (
         <button className="btn ghost" onClick={onRetry}>
           {t('common.retry')}
@@ -186,6 +211,16 @@ export function fmtTime(iso: string | null | undefined): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+// Truncate a serialized JSON string at a token boundary (never mid-token)
+// and append an ellipsis; callers expose the full value via `title`.
+export function truncateJson(value: string, max = 80): string {
+  if (value.length <= max) return value;
+  const head = value.slice(0, max);
+  const cut = Math.max(head.lastIndexOf(','), head.lastIndexOf('{'), head.lastIndexOf('['));
+  const base = cut > 8 ? head.slice(0, cut) : head;
+  return `${base} …`;
 }
 
 export function fmtBytes(bytes: number): string {

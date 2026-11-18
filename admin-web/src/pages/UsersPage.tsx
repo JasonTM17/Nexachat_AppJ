@@ -136,44 +136,53 @@ export default function UsersPage() {
   return (
     <>
       <div className="filters">
-        <input
-          className="input"
-          placeholder={t('common.search')}
-          aria-label={t('common.search')}
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(0);
-          }}
-        />
-        <select
-          className="select"
-          aria-label={t('users.col.status')}
-          value={status}
-          onChange={(e) => {
-            setStatus(e.target.value);
-            setPage(0);
-          }}
-        >
-          <option value="">{t('common.all')}</option>
-          <option value="active">{t('users.status.active')}</option>
-          <option value="suspended">{t('users.status.suspended')}</option>
-          <option value="deleted">{t('users.status.deleted')}</option>
-        </select>
-        <select
-          className="select"
-          aria-label={t('users.col.role')}
-          value={role}
-          onChange={(e) => {
-            setRole(e.target.value);
-            setPage(0);
-          }}
-        >
-          <option value="">{t('common.all')}</option>
-          <option value="USER">USER</option>
-          <option value="MODERATOR">MODERATOR</option>
-          <option value="ADMIN">ADMIN</option>
-        </select>
+        <label className="filter-field">
+          <span>{t('common.search')}</span>
+          <input
+            className="input"
+            placeholder={t('common.search')}
+            aria-label={t('common.search')}
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(0);
+            }}
+          />
+        </label>
+        <label className="filter-field">
+          <span>{t('users.col.status')}</span>
+          <select
+            className="select"
+            aria-label={t('users.col.status')}
+            value={status}
+            onChange={(e) => {
+              setStatus(e.target.value);
+              setPage(0);
+            }}
+          >
+            <option value="">{t('common.all')}</option>
+            <option value="active">{t('users.status.active')}</option>
+            <option value="suspended">{t('users.status.suspended')}</option>
+            <option value="deleted">{t('users.status.deleted')}</option>
+          </select>
+        </label>
+        <label className="filter-field">
+          <span>{t('users.col.role')}</span>
+          <select
+            className="select"
+            aria-label={t('users.col.role')}
+            value={role}
+            onChange={(e) => {
+              setRole(e.target.value);
+              setPage(0);
+            }}
+          >
+            <option value="">{t('common.all')}</option>
+            <option value="USER">USER</option>
+            <option value="MODERATOR">MODERATOR</option>
+            <option value="ADMIN">ADMIN</option>
+          </select>
+        </label>
         <button className="btn ghost" onClick={toggleDeleted}>
           {t('users.deleted')}
         </button>
@@ -210,7 +219,18 @@ export default function UsersPage() {
       ) : !data ? (
         <Loading />
       ) : data.items.length === 0 ? (
-        <Empty />
+        <Empty
+          onClearFilters={
+            search || status || role
+              ? () => {
+                  setSearch('');
+                  setStatus('');
+                  setRole('');
+                  setPage(0);
+                }
+              : undefined
+          }
+        />
       ) : (
         <>
           <div className="table-wrap">
@@ -218,10 +238,10 @@ export default function UsersPage() {
               <thead>
                 <tr>
                   <th>{t('users.col.user')}</th>
-                  <th>{t('users.col.role')}</th>
+                  <th className="col-lo">{t('users.col.role')}</th>
                   <th>{t('users.col.status')}</th>
-                  <th>{t('users.col.joined')}</th>
-                  <th>{t('users.col.lastSeen')}</th>
+                  <th className="col-lo">{t('users.col.joined')}</th>
+                  <th className="col-lo">{t('users.col.lastSeen')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -236,7 +256,7 @@ export default function UsersPage() {
                       <div>{u.displayName ?? '—'}</div>
                       <div className="muted mono">{u.phone ?? u.id}</div>
                     </td>
-                    <td>
+                    <td className="col-lo">
                       <Chip>{u.role}</Chip>
                     </td>
                     <td>
@@ -248,8 +268,8 @@ export default function UsersPage() {
                         {t(statusOf(u))}
                       </Chip>
                     </td>
-                    <td>{fmtTime(u.createdAt)}</td>
-                    <td>{fmtTime(u.lastSeenAt)}</td>
+                    <td className="col-lo">{fmtTime(u.createdAt)}</td>
+                    <td className="col-lo">{fmtTime(u.lastSeenAt)}</td>
                   </tr>
                 ))}
               </tbody>

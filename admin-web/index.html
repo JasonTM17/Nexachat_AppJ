@@ -6,7 +6,11 @@
     <meta name="robots" content="noindex, nofollow" />
     <title>NexaChat Admin</title>
     <style>
-      html { background: #1e1520; }
+      /* Pre-CSS background; styles.css then owns html's background via var(--bg). */
+      html { background: #fdf8fc; }
+      @media (prefers-color-scheme: dark) {
+        html:not([data-theme='light']) { background: #1e1520; }
+      }
     </style>
   </head>
   <body>
