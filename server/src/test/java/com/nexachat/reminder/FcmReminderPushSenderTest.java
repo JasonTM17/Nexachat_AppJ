@@ -143,17 +143,16 @@ class FcmReminderPushSenderTest {
     }
 
     @Test
-    void aSettledTargetExpiresAndIsPushedAgainAfterTheDedupeWindow() {
-        // A zero TTL makes every settled entry born-expired, so the retry
-        // always pushes again regardless of clock granularity: the entry
-        // settled by the accepted push of the retryable first attempt is
-        // already expired by the time the occurrence is retried. A duplicate
-        // push for the same occurrence is suppressed by the client's
-        // occurrence ledger, so this stays invisible to the user; without
-        // the expiry the entry would be retained forever when the occurrence
-        // is abandoned mid-claim.
+    void aSettledTargetExpiresAndIsPushedAgainAfterTheDedupeWindow() throws Exception {
+        // The smallest TTL the sender accepts is 1ms (the constructor clamps
+        // at Math.max(1L, ttl)); sleeping well past it makes the settled entry
+        // deterministically expired before the retry, so the accepted target
+        // is pushed again. A duplicate push for the same occurrence is
+        // suppressed by the client's occurrence ledger, so this stays
+        // invisible to the user; without the expiry the entry would be
+        // retained forever when the occurrence is abandoned mid-claim.
         FcmReminderPushSender ttlSender = new FcmReminderPushSender(
-                tokenRepository, fcmGateway, deviceTokenService, metrics, 1_000, 0L);
+                tokenRepository, fcmGateway, deviceTokenService, metrics, 1_000, 1L);
         UUID recipient = UUID.randomUUID();
         UserDeviceToken accepted = device("token-a", recipient, null);
         UserDeviceToken other = device("token-b", UUID.randomUUID(), null);
@@ -168,6 +167,7 @@ class FcmReminderPushSenderTest {
 
         assertThatThrownBy(() -> ttlSender.send(delivery, List.of(recipient, UUID.randomUUID())))
                 .isInstanceOf(ReminderPushSender.RetryableDeliveryException.class);
+        Thread.sleep(50);
         ttlSender.send(delivery, List.of(recipient, UUID.randomUUID()));
 
         verify(fcmGateway, times(2))
