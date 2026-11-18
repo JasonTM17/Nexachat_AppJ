@@ -57,6 +57,7 @@ public final class MediaViewerFragment extends Fragment {
                 pendingExport = null;
                 if (uri == null || file == null || !isAdded()) return;
                 android.content.Context context = requireContext().getApplicationContext();
+                FragmentMediaViewerBinding exportView = MediaViewerFragment.this.binding;
                 subscriptions.addExport(io.reactivex.rxjava3.core.Completable.fromAction(() -> {
                     try (var input = new java.io.FileInputStream(file);
                          var output = context.getContentResolver().openOutputStream(uri)) {
@@ -68,19 +69,8 @@ public final class MediaViewerFragment extends Fragment {
                         }
                     }
                 }).subscribeOn(Schedulers.io()).observeOn(AndroidSchedulers.mainThread())
-                        .subscribe(() -> {
-                            FragmentMediaViewerBinding ui = MediaViewerFragment.this.binding;
-                            if (isAdded() && ui != null) {
-                                Snackbar.make(ui.getRoot(),
-                                        R.string.media_saved, Snackbar.LENGTH_SHORT).show();
-                            }
-                        }, error -> {
-                            FragmentMediaViewerBinding ui = MediaViewerFragment.this.binding;
-                            if (isAdded() && ui != null) {
-                                Snackbar.make(ui.getRoot(),
-                                        R.string.media_save_failed, Snackbar.LENGTH_SHORT).show();
-                            }
-                        }));
+                        .subscribe(() -> showExportResult(exportView, R.string.media_saved),
+                                error -> showExportResult(exportView, R.string.media_save_failed)));
             });
 
     @Inject
@@ -184,6 +174,17 @@ public final class MediaViewerFragment extends Fragment {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Export work outlives the view by design, so the completion must only render onto the
+     * binding the export was started with — a recreated view would otherwise announce a save
+     * the user no longer has context for.
+     */
+    private void showExportResult(@Nullable FragmentMediaViewerBinding exportView, int message) {
+        if (exportView != null && binding == exportView && isAdded()) {
+            Snackbar.make(exportView.getRoot(), message, Snackbar.LENGTH_SHORT).show();
+        }
     }
 
     private void render(@NonNull MediaViewerViewModel.UiState state) {
