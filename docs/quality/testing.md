@@ -155,6 +155,28 @@ Pass the stack coordinates with `--base-url`, `--db-container`, `--db-user` and
 `python tools/e2e/final/<script>.py --help` for the required environment,
 including the literal `FCM_ENABLED=false`, retention settings and admin phone.
 
+## Device journeys (emulator)
+
+`tools/e2e/device/stable_journeys.py` drives the debug APK on a reserved
+emulator (`--serial emulator-5554` only; it refuses other serials and any
+production base URL) and writes per-attempt evidence — screenshots, UI trees,
+logcat, REST/STOMP transcripts — to an `--evidence-dir` outside the repo.
+Rows whose capability disposition reads `Runnable with existing helpers`
+(`python tools/e2e/device/stable_journeys.py --list`):
+
+| Row | Asserts |
+| --- | --- |
+| `auth-login` | Seeded sign-in reaches the inbox |
+| `chat-send-receive` | Device send renders; peer sees it via REST/STOMP |
+| `calls-injected-notification` | Dead-process injected `CALL_INVITE` surfaces the heads-up notification (API 34+ cannot full-screen or launch the call activity in background) and declines through the real `CallForegroundService` path; no phantom server call-history row |
+| `injected-notifications` | Injected `NEW_MESSAGE`/`REMINDER` posts shade notifications without leaking the payload body |
+
+Every other row is `BLOCKED_CAPABILITY` until its missing driver or oracle is
+built; `--list` prints the exact blocker per row. API 36 notes: runtime
+notification permission must be granted after each `pm clear`, `cmd
+notification cancel` no longer exists (cleanup goes through the DUMP-gated
+debug receiver), and `am broadcast` arrives with an unattributed sender uid.
+
 ## Local development with Mailpit (Email OTP & Account Deletion)
 
 For testing recovery-email verification (`POST /api/v1/users/me/email/request`),
