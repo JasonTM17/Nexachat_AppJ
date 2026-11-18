@@ -65,7 +65,8 @@ public final class RoomV14MigrationInstrumentedTest {
             finally { db.endTransaction(); }
         } finally { db.close(); }
         AppDatabase reopened = TestDatabases.plaintextFile(ApplicationProvider.getApplicationContext(),
-                "room14-fault.db").addCallback(AppDatabase.SYNC_CACHE_CALLBACK).build();
+                "room14-fault.db").addMigrations(AppDatabase.ALL_MIGRATIONS)
+                .addCallback(AppDatabase.SYNC_CACHE_CALLBACK).build();
         try {
             assertNotNull("committed row survives reopen", reopened.messageDao().byId("m").blockingGet());
             assertEquals("committed cursor survives reopen", 1,
