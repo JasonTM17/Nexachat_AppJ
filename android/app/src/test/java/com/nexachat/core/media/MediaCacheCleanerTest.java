@@ -55,16 +55,20 @@ public final class MediaCacheCleanerTest {
     }
 
     @Test
-    public void clearTransientAttachmentCopiesWipesOnlyTheWorkingCopies() throws Exception {
+    public void clearTransientAttachmentCopiesWipesWorkingCopiesAndLegacyOkHttpCache() throws Exception {
         File cacheDir = temp.newFolder("cache2");
         File attachmentsDir = MediaCacheConfig.attachmentDirectory(cacheDir);
         File transientDir = MediaCacheConfig.transientAttachmentDirectory(cacheDir);
+        File legacyOkhttpDir = MediaCacheConfig.okHttpDirectory(cacheDir);
         assertTrue(attachmentsDir.mkdirs());
         assertTrue(transientDir.mkdirs());
+        assertTrue(legacyOkhttpDir.mkdirs());
         File encrypted = new File(attachmentsDir, "att-1-pic.png");
         assertTrue(encrypted.createNewFile());
         File working = new File(transientDir, "att-1-pic.png");
         assertTrue(working.createNewFile());
+        File legacy = new File(legacyOkhttpDir, "legacy-body.bin");
+        assertTrue(legacy.createNewFile());
 
         Context context = Mockito.mock(Context.class);
         Mockito.when(context.getCacheDir()).thenReturn(cacheDir);
@@ -75,6 +79,7 @@ public final class MediaCacheCleanerTest {
 
         assertFalse(working.exists());
         assertFalse(transientDir.exists());
+        assertFalse("legacy plaintext OkHttp cache must be wiped on app start", legacyOkhttpDir.exists());
         assertTrue("encrypted store must survive the transient wipe", encrypted.exists());
     }
 }
