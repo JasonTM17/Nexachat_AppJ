@@ -23,9 +23,16 @@ public class FeedReportTargets {
         this.store = store;
     }
 
-    /** Body of a post the reporter can see; empty when it is gone, hidden or blocked. */
-    public Optional<String> visiblePostBody(UUID viewerId, UUID postId) {
-        return store.visiblePostBody(viewerId, postId);
+    /**
+     * The post the reporter can see; empty when it is gone, hidden or blocked.
+     * Its body is optional because an image-only post carries no text.
+     */
+    public Optional<PostBody> visiblePostBody(UUID viewerId, UUID postId) {
+        return store.findVisiblePost(viewerId, postId).map(row -> new PostBody(row.body()));
+    }
+
+    /** Evidence text for a post report; {@code value} is null on an image-only post. */
+    public record PostBody(String value) {
     }
 
     /** Body of a comment the reporter can see, including its post's visibility. */

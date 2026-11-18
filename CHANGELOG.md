@@ -38,6 +38,24 @@ All notable changes to NexaChat are documented here. The format follows
   "0 minutes ago", a post without comments reads "No comments" instead of
   "0 comments", and the streak milestone sheet no longer leaves a strip of
   the underlying screen showing behind the navigation bar.
+- Feed image uploads are now limited per account (10 per minute, 100 per day)
+  and a backlog of more than 20 unused uploads is refused instead of piling up.
+- A post that only carries an image can be reported; the report queue no
+  longer treats it as missing content.
+- Retrying a feed post request with the same client id returns the stored
+  post even when it carries an image, and a post can no longer go live
+  without the picture it referenced.
+- One user can place at most eight different emoji on a feed post; repeating
+  an emoji already placed stays free.
+- Deleting the account also removes its unused feed image uploads and their
+  stored files.
+- The streak card now correctly shows when a grace day would still save a
+  missed day, and the check-in streak read keeps working if its bookkeeping
+  write fails.
+- Deleting someone else's feed post or comment after they blocked you answers
+  not-found instead of revealing the post exists.
+- Feed image uploads with negative or implausibly large dimensions are
+  rejected.
 
 ## [1.2.15] - 2026-11-17
 

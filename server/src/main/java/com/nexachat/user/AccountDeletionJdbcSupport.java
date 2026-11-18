@@ -131,4 +131,29 @@ class AccountDeletionJdbcSupport {
                 RETURNING attachment.storage_key
                 """, String.class, ownerId);
     }
+
+    /**
+     * Deletes feed uploads that were never bound to a post and returns the
+     * storage keys whose rows this call actually removed. Same lock-order
+     * contract as {@link #deleteUnboundAttachments}: {@code SKIP LOCKED} lets
+     * a concurrent post bind its image instead of making deletion wait.
+     */
+    List<String> deleteUnboundFeedImages(UUID ownerId) {
+        JdbcTemplate jdbcTemplate = jdbc();
+        if (jdbcTemplate == null) {
+            return Collections.emptyList();
+        }
+        return jdbcTemplate.queryForList("""
+                WITH candidates AS (
+                    SELECT id
+                    FROM public_images
+                    WHERE owner_id = ? AND bound_at IS NULL
+                    FOR UPDATE SKIP LOCKED
+                )
+                DELETE FROM public_images image
+                USING candidates
+                WHERE image.id = candidates.id
+                RETURNING image.storage_key
+                """, String.class, ownerId);
+    }
 }

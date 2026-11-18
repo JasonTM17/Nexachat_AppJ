@@ -156,7 +156,8 @@ public class AccountDeletionService {
         // deadlock. SKIP LOCKED makes an in-flight send the winner of its own
         // row instead of making deletion wait for it, and RETURNING keeps the
         // post-commit file cleanup limited to files whose rows were removed.
-        List<String> unboundKeys = jdbcSupport.deleteUnboundAttachments(userId);
+        List<String> unboundKeys = new ArrayList<>(jdbcSupport.deleteUnboundAttachments(userId));
+        unboundKeys.addAll(jdbcSupport.deleteUnboundFeedImages(userId));
 
         // Scrub caches while group memberships still identify every affected
         // conversation. leaveAllGroups removes those lookup rows.
