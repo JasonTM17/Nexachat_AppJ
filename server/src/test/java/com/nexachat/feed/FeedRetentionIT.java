@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.Map;
@@ -19,6 +20,8 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.reset;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -38,7 +41,7 @@ class FeedRetentionIT extends FeatureItSupport {
     private RetentionJobRunner retentionJobRunner;
     @Autowired
     private RetentionProperties retentionProperties;
-    @Autowired
+    @MockitoSpyBean
     private StorageService storageService;
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -54,6 +57,7 @@ class FeedRetentionIT extends FeatureItSupport {
 
     @AfterEach
     void restoreRetentionDefaults() {
+        reset(storageService);
         retentionProperties.setEnabled(false);
         retentionProperties.setDryRun(true);
         retentionProperties.getJobs().getPublicFeed().setEnabled(false);
@@ -194,6 +198,116 @@ class FeedRetentionIT extends FeatureItSupport {
 
         assertThat(countRows("SELECT count(*) FROM public_images WHERE id = ?",
                 UUID.fromString(imageId))).isEqualTo(1);
+    }
+
+    @Test
+    void sweepsABoundImageNoPostReferencesAnyMore() throws Exception {
+        Actor author = newUser("Crash Orphan Author");
+        String imageId = uploadImage(author);
+        String storageKey = storageKeyOf(imageId);
+        UUID postId = createPost(author, "crash victim", imageId);
+        // A crash between the post delete and the image delete leaves the
+        // image bound but referenced by no post.
+        jdbcTemplate.update("DELETE FROM public_posts WHERE id = ?", postId);
+        jdbcTemplate.update(
+                "UPDATE public_images SET created_at = now() - interval '25 hours' WHERE id = ?",
+                UUID.fromString(imageId));
+
+        RetentionJobRunner.JobRunResult result = runFeedRetention();
+
+        assertThat(result.errors()).isZero();
+        assertThat(result.filesDeleted()).isEqualTo(1);
+        assertThat(countRows("SELECT count(*) FROM public_images WHERE id = ?",
+                UUID.fromString(imageId))).isZero();
+        assertThatThrownBy(() -> storageService.open(storageKey))
+                .isInstanceOf(ApiException.class);
+    }
+
+    @Test
+    void aFailedObjectDeleteKeepsTheUnboundImageRowForTheNextRun() throws Exception {
+        Actor author = newUser("Stubborn Upload Author");
+        String imageId = uploadImage(author);
+        String storageKey = storageKeyOf(imageId);
+        jdbcTemplate.update(
+                "UPDATE public_images SET created_at = now() - interval '25 hours' WHERE id = ?",
+                UUID.fromString(imageId));
+        doThrow(new IllegalStateException("injected storage outage"))
+                .when(storageService).deleteIfExists(storageKey);
+
+        RetentionJobRunner.JobRunResult failed = runFeedRetention();
+
+        assertThat(failed.errors()).isEqualTo(1);
+        assertThat(failed.filesDeleted()).isZero();
+        assertThat(countRows("SELECT count(*) FROM public_images WHERE id = ?",
+                UUID.fromString(imageId))).isEqualTo(1);
+        assertThat(storageService.exists(storageKey)).isTrue();
+
+        reset(storageService);
+        RetentionJobRunner.JobRunResult retried = runFeedRetention();
+
+        assertThat(retried.errors()).isZero();
+        assertThat(retried.filesDeleted()).isEqualTo(1);
+        assertThat(countRows("SELECT count(*) FROM public_images WHERE id = ?",
+                UUID.fromString(imageId))).isZero();
+        assertThatThrownBy(() -> storageService.open(storageKey))
+                .isInstanceOf(ApiException.class);
+    }
+
+    @Test
+    void aFailedObjectDeleteKeepsAPurgedPostsImageRowForTheNextRun() throws Exception {
+        Actor author = newUser("Stubborn Purge Author");
+        String imageId = uploadImage(author);
+        String storageKey = storageKeyOf(imageId);
+        UUID postId = createPost(author, "purge me", imageId);
+        deleteAs(author, "/api/v1/feed/posts/" + postId).andExpect(status().isNoContent());
+        jdbcTemplate.update(
+                "UPDATE public_posts SET deleted_at = now() - interval '40 days' WHERE id = ?",
+                postId);
+        jdbcTemplate.update(
+                "UPDATE public_images SET created_at = now() - interval '40 days' WHERE id = ?",
+                UUID.fromString(imageId));
+        doThrow(new IllegalStateException("injected storage outage"))
+                .when(storageService).deleteIfExists(storageKey);
+
+        RetentionJobRunner.JobRunResult failed = runFeedRetention();
+
+        // One failed object delete is one error, even though the sweep sees
+        // the same now-unreferenced image later in the same run.
+        assertThat(failed.errors()).isEqualTo(1);
+        assertThat(failed.filesDeleted()).isZero();
+        assertThat(countRows("SELECT count(*) FROM public_posts WHERE id = ?", postId)).isZero();
+        assertThat(countRows("SELECT count(*) FROM public_images WHERE id = ?",
+                UUID.fromString(imageId))).isEqualTo(1);
+        assertThat(storageService.exists(storageKey)).isTrue();
+
+        reset(storageService);
+        RetentionJobRunner.JobRunResult retried = runFeedRetention();
+
+        assertThat(retried.errors()).isZero();
+        assertThat(retried.filesDeleted()).isEqualTo(1);
+        assertThat(countRows("SELECT count(*) FROM public_images WHERE id = ?",
+                UUID.fromString(imageId))).isZero();
+        assertThatThrownBy(() -> storageService.open(storageKey))
+                .isInstanceOf(ApiException.class);
+    }
+
+    @Test
+    void anAlreadyMissingImageObjectStillLetsTheRowGo() throws Exception {
+        Actor author = newUser("Vanished Object Author");
+        String imageId = uploadImage(author);
+        String storageKey = storageKeyOf(imageId);
+        jdbcTemplate.update(
+                "UPDATE public_images SET created_at = now() - interval '25 hours' WHERE id = ?",
+                UUID.fromString(imageId));
+        assertThat(storageService.deleteIfExists(storageKey)).isTrue();
+
+        RetentionJobRunner.JobRunResult result = runFeedRetention();
+
+        assertThat(result.errors()).isZero();
+        // The object was already absent, so nothing was actually removed.
+        assertThat(result.filesDeleted()).isZero();
+        assertThat(countRows("SELECT count(*) FROM public_images WHERE id = ?",
+                UUID.fromString(imageId))).isZero();
     }
 
     @Test
