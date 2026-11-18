@@ -102,11 +102,12 @@ git init -q "$FIXTURE_REPO"
     git config core.autocrlf false
     git config user.name "NexaChat Test"
     git config user.email "test@nexachat.local"
-    mkdir -p site server
+    mkdir -p site server admin-web
 
     # Commit 1: initial baseline
     echo "<h1>Site v1</h1>" > site/index.html
     echo "class ServerV1 {}" > server/Server.java
+    echo "console.log('admin v1')" > admin-web/app.js
     git add .
     git commit -qm "Commit 1: baseline"
 
@@ -115,15 +116,21 @@ git init -q "$FIXTURE_REPO"
     git add site/index.html
     git commit -qm "Commit 2: site modified"
 
-    # Commit 3: change only in server/ (site unchanged)
+    # Commit 3: change only in server/ (site + admin-web unchanged)
     echo "class ServerV2 {}" > server/Server.java
     git add server/Server.java
     git commit -qm "Commit 3: server only modified"
+
+    # Commit 4: change only in admin-web/ (site unchanged)
+    echo "console.log('admin v2')" > admin-web/app.js
+    git add admin-web/app.js
+    git commit -qm "Commit 4: admin-web only modified"
 )
 
-SHA1="$(git -C "$FIXTURE_REPO" rev-parse HEAD~2)"
-SHA2="$(git -C "$FIXTURE_REPO" rev-parse HEAD~1)"
-SHA3="$(git -C "$FIXTURE_REPO" rev-parse HEAD)"
+SHA1="$(git -C "$FIXTURE_REPO" rev-parse HEAD~3)"
+SHA2="$(git -C "$FIXTURE_REPO" rev-parse HEAD~2)"
+SHA3="$(git -C "$FIXTURE_REPO" rev-parse HEAD~1)"
+SHA4="$(git -C "$FIXTURE_REPO" rev-parse HEAD)"
 
 # ---------------------------------------------------------------------------
 # Test 2: Changed site/ directory
@@ -146,14 +153,24 @@ fi
 pass "Test 3: unchanged site/ exits 0 (skip)"
 
 # ---------------------------------------------------------------------------
+# Test 3b: Changed admin-web/ directory (site/ unchanged — must still build)
+# ---------------------------------------------------------------------------
+code=0
+run_cmd "$FIXTURE_REPO/site" "$SHA3" "$SHA4" || code=$?
+if [[ "$code" -ne 1 ]]; then
+    fail "Test 3b (changed admin-web/): expected exit code 1 (build), got $code"
+fi
+pass "Test 3b: changed admin-web/ exits 1 (build)"
+
+# ---------------------------------------------------------------------------
 # Test 4: Missing object in shallow clone (made with git clone --depth 1 file://...)
 # ---------------------------------------------------------------------------
 SHALLOW_REPO="$WORK_DIR/shallow_repo"
 git clone --depth 1 -q "file://$FIXTURE_REPO" "$SHALLOW_REPO"
 
-# In the shallow repo, only SHA3 exists. SHA1 and SHA2 are missing objects.
+# In the shallow repo, only SHA4 exists. SHA1 and SHA2 are missing objects.
 code=0
-run_cmd "$SHALLOW_REPO/site" "$SHA2" "$SHA3" || code=$?
+run_cmd "$SHALLOW_REPO/site" "$SHA2" "$SHA4" || code=$?
 if [[ "$code" -eq 128 ]]; then
     fail "Test 4 (shallow clone with missing previous SHA): git diff crashed with exit code 128 (bad object). Vercel requires exit 1 to build."
 elif [[ "$code" -ne 1 ]]; then
