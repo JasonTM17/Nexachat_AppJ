@@ -15,6 +15,7 @@ import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
 import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.engine.DiskCacheStrategy;
 import com.nexachat.R;
 import com.nexachat.core.common.AppConfig;
 import com.nexachat.core.media.AttachmentBlurHashRegistry;
@@ -113,6 +114,7 @@ public final class ArchiveMediaAdapter
         }
         Glide.with(binding.archiveThumbnail)
                 .load(absoluteUrl)
+                .diskCacheStrategy(DiskCacheStrategy.NONE)
                 .centerCrop()
                 .placeholder(placeholder)
                 .error(tintedImagePlaceholder(binding.archiveThumbnail))

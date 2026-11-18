@@ -20,6 +20,7 @@ import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
 import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.engine.DiskCacheStrategy;
 import com.google.android.material.button.MaterialButton;
 import com.nexachat.R;
 import com.nexachat.core.common.AppConfig;
@@ -120,6 +121,7 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
         image.setVisibility(View.VISIBLE);
         Glide.with(image)
                 .load(absolute)
+                .diskCacheStrategy(DiskCacheStrategy.NONE)
                 .centerCrop()
                 .into(image);
     }
