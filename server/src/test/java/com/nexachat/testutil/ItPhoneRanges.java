@@ -63,6 +63,7 @@ public final class ItPhoneRanges {
             Map.entry("com.nexachat.summary.SummaryApiIT", "+84862"),
             Map.entry("com.nexachat.rag.AskEditUncitedCacheIT", "+84863"),
             Map.entry("com.nexachat.rag.AskRecallUncitedCacheIT", "+84864"),
+            Map.entry("com.nexachat.rag.RagCitationHashIT", "+84891"),
             Map.entry("com.nexachat.attachment.AvatarOrphanSweepIT", "+84865"),
             Map.entry("com.nexachat.retention.RetentionJobsIT", "+84866"),
             Map.entry("com.nexachat.user.UserSettingsFlowIT", "+84867"),

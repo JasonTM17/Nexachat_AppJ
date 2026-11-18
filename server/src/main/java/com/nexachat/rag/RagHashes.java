@@ -3,6 +3,7 @@ package com.nexachat.rag;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
@@ -32,7 +33,7 @@ public final class RagHashes {
     }
 
     /** Hash of a stored message's original content, used to validate cached citations. */
-    public static String messageContentHash(UUID messageId, Object editedAt, String content) {
+    public static String messageContentHash(UUID messageId, Instant editedAt, String content) {
         return sha256("message:" + messageId + ":" + (editedAt == null ? "" : editedAt.toString())
                 + ":" + (content == null ? "" : content));
     }
