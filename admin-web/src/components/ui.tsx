@@ -53,11 +53,17 @@ export function ErrorBlock({
 export function Chip({
   tone,
   children,
+  label,
 }: {
   tone?: string;
   children: ReactNode;
+  label?: string;
 }) {
-  return <span className={`chip${tone ? ` ${tone}` : ''}`}>{children}</span>;
+  return (
+    <span className={`chip${tone ? ` ${tone}` : ''}`} title={label} aria-label={label}>
+      {children}
+    </span>
+  );
 }
 
 export function Drawer({
