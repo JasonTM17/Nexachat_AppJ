@@ -386,12 +386,15 @@ async def verify_media(peers: list[MediaPeer], media_type: str, seconds: float) 
                 check(recorder.audio_level > 100,
                       f"{peer.label}: received audio is silent (level {recorder.audio_level:.0f})")
                 detail[peer.label]["audio_frames"] = recorder.frames
-            elif media_type == "VIDEO":
+            elif media_type == "VIDEO" and recorder.track.kind == "video":
                 check(recorder.frames >= 15,
                       f"{peer.label}: only {recorder.frames} video frames decoded")
                 check(recorder.video_size == (320, 240),
                       f"{peer.label}: video size {recorder.video_size}")
                 detail[peer.label]["video_frames"] = recorder.frames
+        check("audio_frames" in detail[peer.label], f"{peer.label}: no audio track received")
+        if media_type == "VIDEO":
+            check("video_frames" in detail[peer.label], f"{peer.label}: no video track received")
     return detail
 
 
