@@ -7,6 +7,7 @@ import {
 } from '../api';
 import { useI18n, type StringKey } from '../i18n';
 import { useSession } from '../auth';
+import { useDebouncedValue, useLatestRequest } from '../lib/async';
 import {
   Chip,
   ConfirmDialog,
@@ -47,30 +48,36 @@ export default function UsersPage() {
   const [busy, setBusy] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
   const [deleted, setDeleted] = useState<UserSummary[] | null>(null);
+  const [actionError, setActionError] = useState(false);
+  const searchInput = useDebouncedValue(search, 300);
+  const latest = useLatestRequest();
 
   const params = useMemo(() => {
     const q = new URLSearchParams();
-    if (search.trim()) q.set('search', search.trim());
+    if (searchInput.trim()) q.set('search', searchInput.trim());
     if (status) q.set('status', status);
     if (role) q.set('role', role);
     q.set('page', String(page));
     q.set('size', String(PAGE_SIZE));
     return q.toString();
-  }, [search, status, role, page]);
+  }, [searchInput, status, role, page]);
 
   const load = useCallback(() => {
     setFailed(false);
-    api<Page<UserSummary>>(`/api/v1/admin/users?${params}`)
-      .then(setData)
-      .catch(() => setFailed(true));
-  }, [params]);
+    latest(api<Page<UserSummary>>(`/api/v1/admin/users?${params}`), (data) => {
+      if (data) setData(data);
+      else setFailed(true);
+    });
+  }, [params, latest]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   const openDetail = (id: string) => {
-    api<UserDetail>(`/api/v1/admin/users/${id}`).then(setSelected).catch(() => {});
+    api<UserDetail>(`/api/v1/admin/users/${id}`)
+      .then(setSelected)
+      .catch(() => setActionError(true));
   };
 
   const runAction = async (reason: string) => {
@@ -113,6 +120,9 @@ export default function UsersPage() {
       setAction(null);
       openDetail(id);
       load();
+    } catch {
+      setActionError(true);
+      setAction(null);
     } finally {
       setBusy(false);
     }
@@ -128,7 +138,7 @@ export default function UsersPage() {
         setDeleted(rows);
         setShowDeleted(true);
       })
-      .catch(() => {});
+      .catch(() => setActionError(true));
   };
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
@@ -183,37 +193,47 @@ export default function UsersPage() {
             <option value="ADMIN">ADMIN</option>
           </select>
         </label>
-        <button className="btn ghost" onClick={toggleDeleted}>
+        <button className="btn ghost" onClick={toggleDeleted} aria-pressed={showDeleted}>
           {t('users.deleted')}
         </button>
       </div>
 
-      {showDeleted && deleted ? (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>{t('users.col.user')}</th>
-                <th>{t('users.col.joined')}</th>
-                <th>{t('users.col.status')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {deleted.map((u) => (
-                <tr className="plain" key={u.id}>
-                  <td>
-                    <div>{u.displayName ?? '—'}</div>
-                    <div className="muted mono">{u.phone ?? '—'}</div>
-                  </td>
-                  <td>{fmtTime(u.createdAt)}</td>
-                  <td>
-                    <Chip tone="low">{t('users.status.deleted')}</Chip>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {actionError && (
+        <div className="form-error" role="alert">
+          {t('common.error')}
         </div>
+      )}
+
+      {showDeleted && deleted ? (
+        deleted.length === 0 ? (
+          <Empty />
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">{t('users.col.user')}</th>
+                  <th scope="col">{t('users.col.joined')}</th>
+                  <th scope="col">{t('users.col.status')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deleted.map((u) => (
+                  <tr className="plain" key={u.id}>
+                    <td>
+                      <div>{u.displayName ?? '—'}</div>
+                      <div className="muted mono">{u.phone ?? '—'}</div>
+                    </td>
+                    <td>{fmtTime(u.createdAt)}</td>
+                    <td>
+                      <Chip tone="low">{t('users.status.deleted')}</Chip>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
       ) : failed ? (
         <ErrorBlock onRetry={load} />
       ) : !data ? (
@@ -237,11 +257,11 @@ export default function UsersPage() {
             <table>
               <thead>
                 <tr>
-                  <th>{t('users.col.user')}</th>
-                  <th className="col-lo">{t('users.col.role')}</th>
-                  <th>{t('users.col.status')}</th>
-                  <th className="col-lo">{t('users.col.joined')}</th>
-                  <th className="col-lo">{t('users.col.lastSeen')}</th>
+                  <th scope="col">{t('users.col.user')}</th>
+                  <th scope="col" className="col-lo">{t('users.col.role')}</th>
+                  <th scope="col">{t('users.col.status')}</th>
+                  <th scope="col" className="col-lo">{t('users.col.joined')}</th>
+                  <th scope="col" className="col-lo">{t('users.col.lastSeen')}</th>
                 </tr>
               </thead>
               <tbody>

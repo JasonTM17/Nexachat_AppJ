@@ -66,6 +66,7 @@ export default function AlertsPage() {
   const [pending, setPending] = useState<Pending | null>(null);
   const [revealed, setRevealed] = useState<RevealedMessage[] | null>(null);
   const [noteText, setNoteText] = useState('');
+  const [actionError, setActionError] = useState(false);
 
   const params = useMemo(() => {
     const q = new URLSearchParams();
@@ -127,7 +128,7 @@ export default function AlertsPage() {
       if (detail) openDetail(detail.alert.id);
       load();
     } catch {
-      // keep dialog open on failure? close and let the list reload surface it
+      setActionError(true);
       setPending(null);
       load();
     }
@@ -138,7 +139,9 @@ export default function AlertsPage() {
     api(`/api/v1/admin/alerts/${detail.alert.id}`, {
       method: 'PATCH',
       body: { assigneeId: me.userId },
-    }).then(() => openDetail(detail.alert.id));
+    })
+      .then(() => openDetail(detail.alert.id))
+      .catch(() => setActionError(true));
   };
 
   const addNote = () => {
@@ -146,10 +149,12 @@ export default function AlertsPage() {
     api(`/api/v1/admin/alerts/${detail.alert.id}/notes`, {
       method: 'POST',
       body: { body: noteText.trim() },
-    }).then(() => {
-      setNoteText('');
-      openDetail(detail.alert.id);
-    });
+    })
+      .then(() => {
+        setNoteText('');
+        openDetail(detail.alert.id);
+      })
+      .catch(() => setActionError(true));
   };
 
   const toggle = (id: string) => {
@@ -234,6 +239,12 @@ export default function AlertsPage() {
         )}
       </div>
 
+      {actionError && (
+        <div className="form-error" role="alert">
+          {t('common.error')}
+        </div>
+      )}
+
       {failed ? (
         <ErrorBlock onRetry={load} />
       ) : !data ? (
@@ -257,12 +268,12 @@ export default function AlertsPage() {
             <table>
               <thead>
                 <tr>
-                  <th className="col-lo" aria-label="select" />
-                  <th>{t('alerts.col.severity')}</th>
-                  <th className="col-lo">{t('alerts.col.category')}</th>
-                  <th>{t('alerts.col.snippet')}</th>
-                  <th>{t('alerts.col.status')}</th>
-                  <th className="col-lo">{t('alerts.col.created')}</th>
+                  <th scope="col" className="col-lo" aria-label={t('common.select')} />
+                  <th scope="col">{t('alerts.col.severity')}</th>
+                  <th scope="col" className="col-lo">{t('alerts.col.category')}</th>
+                  <th scope="col">{t('alerts.col.snippet')}</th>
+                  <th scope="col">{t('alerts.col.status')}</th>
+                  <th scope="col" className="col-lo">{t('alerts.col.created')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -278,7 +289,7 @@ export default function AlertsPage() {
                         <input
                           type="checkbox"
                           className="checkbox"
-                          aria-label={`select ${a.id}`}
+                          aria-label={`${t('common.select')} ${a.id}`}
                           checked={checked.has(a.id)}
                           onChange={() => toggle(a.id)}
                         />
@@ -288,7 +299,10 @@ export default function AlertsPage() {
                       <Chip tone={a.severity.toLowerCase()}>{a.severity}</Chip>
                     </td>
                     <td className="col-lo">{a.category}</td>
-                    <td className="truncate">
+                    <td
+                      className="truncate"
+                      title={a.snippetTombstoned ? undefined : (a.snippet ?? undefined)}
+                    >
                       {a.snippetTombstoned ? (
                         <span className="muted">{t('alerts.tombstoned')}</span>
                       ) : (

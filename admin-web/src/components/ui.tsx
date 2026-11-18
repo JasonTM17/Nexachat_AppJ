@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useI18n } from '../i18n';
 
 export function Loading() {
@@ -66,6 +66,37 @@ export function Chip({
   );
 }
 
+// Layers register here on mount so the document-level Escape handler can close
+// only the topmost one (e.g. a ConfirmDialog over a Drawer must not dismiss both).
+const modalStack: { close: () => void }[] = [];
+
+function useEscapeToClose(open: boolean, close: () => void) {
+  // Callers pass inline closures, so `close` changes identity every render — keep
+  // it in a ref and register once per open-cycle, or a re-render would re-push
+  // the layer on top of a dialog stacked above it.
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    if (!open) return;
+    const layer = { close: () => closeRef.current() };
+    modalStack.push(layer);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const top = modalStack[modalStack.length - 1];
+      if (top !== layer) return;
+      e.stopPropagation();
+      modalStack.pop();
+      layer.close();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      const i = modalStack.indexOf(layer);
+      if (i !== -1) modalStack.splice(i, 1);
+    };
+  }, [open]);
+}
+
 export function Drawer({
   title,
   sub,
@@ -77,15 +108,12 @@ export function Drawer({
   onClose: () => void;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
+  useEscapeToClose(true, onClose);
   useEffect(() => {
     ref.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []);
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
@@ -97,7 +125,16 @@ export function Drawer({
         tabIndex={-1}
         ref={ref}
       >
-        <h2>{title}</h2>
+        <div className="drawer-head">
+          <h2>{title}</h2>
+          <button
+            className="btn ghost sm drawer-close"
+            onClick={onClose}
+            aria-label={t('common.close')}
+          >
+            ✕
+          </button>
+        </div>
         {sub && <div className="sub">{sub}</div>}
         {children}
       </div>
@@ -124,21 +161,20 @@ export function ConfirmDialog({
 }) {
   const { t } = useI18n();
   const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const [reasonError, setReasonError] = useState(false);
   const submit = () => {
     const reason = reasonRef.current?.value.trim() ?? '';
     if (requireReason && !reason) {
+      setReasonError(true);
       reasonRef.current?.focus();
       return;
     }
     onConfirm(reason);
   };
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onCancel]);
+    reasonRef.current?.focus();
+  }, []);
+  useEscapeToClose(true, onCancel);
   return (
     <div className="dialog-backdrop">
       <div className="dialog" role="alertdialog" aria-modal="true" aria-label={title}>
@@ -154,7 +190,16 @@ export function ConfirmDialog({
               ref={reasonRef}
               maxLength={maxReasonLength}
               autoFocus
+              required
+              aria-invalid={reasonError || undefined}
+              aria-describedby={reasonError ? 'confirm-reason-error' : undefined}
+              onInput={() => reasonError && setReasonError(false)}
             />
+            {reasonError && (
+              <div className="form-error" id="confirm-reason-error" role="alert">
+                {t('common.reason.required')}
+              </div>
+            )}
           </div>
         )}
         <div className="dialog-actions">
@@ -185,7 +230,7 @@ export function Pager({
   const { t } = useI18n();
   if (totalPages <= 1) return null;
   return (
-    <nav className="pager" aria-label="Pagination">
+    <nav className="pager" aria-label={t('common.pagination')}>
       <button
         className="btn ghost sm"
         disabled={page <= 0}

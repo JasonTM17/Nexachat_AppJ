@@ -44,7 +44,7 @@ export default function Layout() {
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">{t('app.name')}</div>
-        <nav aria-label="Primary">
+        <nav aria-label={t('nav.primary')}>
           {NAV.map((item) => (
             <NavLink
               key={item.to}
@@ -89,7 +89,9 @@ export default function Layout() {
             <button
               className="btn ghost sm"
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              aria-label={`${t('theme.light')}/${t('theme.dark')}`}
+              aria-label={t('theme.toggle')}
+              aria-pressed={theme === 'dark'}
+              title={`${t('theme.light')}/${t('theme.dark')}`}
             >
               {theme === 'dark' ? '☀' : '☾'}
             </button>

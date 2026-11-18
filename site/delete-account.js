@@ -21,7 +21,7 @@
     }
     try {
       var parsed = new URL(value);
-      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      if (parsed.protocol !== 'https:') {
         return '';
       }
       return parsed.origin + parsed.pathname.replace(/\/$/, '');

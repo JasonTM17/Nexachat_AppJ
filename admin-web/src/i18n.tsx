@@ -1,4 +1,11 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 
 export type Lang = 'en' | 'vi';
 
@@ -13,6 +20,7 @@ const STRINGS = {
     'nav.audit': 'Audit',
     'nav.system': 'System',
     'nav.logout': 'Sign out',
+    'nav.primary': 'Primary navigation',
     'login.title': 'Admin sign in',
     'login.phone': 'Email or phone',
     'login.password': 'Password',
@@ -20,6 +28,8 @@ const STRINGS = {
     'login.error.invalid': 'Wrong email, phone or password',
     'login.error.staff': 'This account has no admin access',
     'login.error.suspended': 'Account is suspended',
+    'login.error.network': 'Cannot reach the server. Check your connection and try again.',
+    'login.error.server': 'The server could not process the sign-in. Try again later.',
     'common.loading': 'Loading…',
     'common.empty': 'Nothing here',
     'common.empty.hint': 'No results to show right now.',
@@ -36,6 +46,9 @@ const STRINGS = {
     'common.reason.required': 'A reason is required',
     'common.save': 'Save',
     'common.delete': 'Delete',
+    'common.close': 'Close',
+    'common.select': 'Select',
+    'common.pagination': 'Pagination',
     'common.page.prev': 'Previous',
     'common.page.next': 'Next',
     'common.selected': '{n} selected',
@@ -49,6 +62,9 @@ const STRINGS = {
     'kpi.uploadsBytes': 'Uploads',
     'kpi.errorRate': '5xx rate',
     'kpi.queue': 'Scan queue',
+    'kpi.queue.off': 'off',
+    'kpi.queue.dryRun': 'dry-run',
+    'kpi.queue.detail': '{dropped} dropped / {scanned} scanned',
     'chart.registrations': 'Signups',
     'chart.messages': 'Messages',
     'users.col.user': 'User',
@@ -152,6 +168,7 @@ const STRINGS = {
     'system.unknown': 'Unknown',
     'theme.light': 'Light',
     'theme.dark': 'Dark',
+    'theme.toggle': 'Toggle theme',
     'lang.label': 'Language',
   },
   vi: {
@@ -164,6 +181,7 @@ const STRINGS = {
     'nav.audit': 'Nhật ký',
     'nav.system': 'Hệ thống',
     'nav.logout': 'Đăng xuất',
+    'nav.primary': 'Điều hướng chính',
     'login.title': 'Đăng nhập quản trị',
     'login.phone': 'Email hoặc số điện thoại',
     'login.password': 'Mật khẩu',
@@ -171,6 +189,8 @@ const STRINGS = {
     'login.error.invalid': 'Sai email, số điện thoại hoặc mật khẩu',
     'login.error.staff': 'Tài khoản không có quyền quản trị',
     'login.error.suspended': 'Tài khoản đã bị đình chỉ',
+    'login.error.network': 'Không thể kết nối máy chủ. Kiểm tra kết nối và thử lại.',
+    'login.error.server': 'Máy chủ không xử lý được đăng nhập. Vui lòng thử lại sau.',
     'common.loading': 'Đang tải…',
     'common.empty': 'Không có dữ liệu',
     'common.empty.hint': 'Hiện chưa có kết quả để hiển thị.',
@@ -187,6 +207,9 @@ const STRINGS = {
     'common.reason.required': 'Cần nhập lý do',
     'common.save': 'Lưu',
     'common.delete': 'Xóa',
+    'common.close': 'Đóng',
+    'common.select': 'Chọn',
+    'common.pagination': 'Phân trang',
     'common.page.prev': 'Trước',
     'common.page.next': 'Sau',
     'common.selected': 'Đã chọn {n}',
@@ -200,6 +223,9 @@ const STRINGS = {
     'kpi.uploadsBytes': 'Tệp tải lên',
     'kpi.errorRate': 'Tỉ lệ 5xx',
     'kpi.queue': 'Hàng đợi quét',
+    'kpi.queue.off': 'tắt',
+    'kpi.queue.dryRun': 'chạy thử',
+    'kpi.queue.detail': '{dropped} đã bỏ / {scanned} đã quét',
     'chart.registrations': 'Đăng ký',
     'chart.messages': 'Tin nhắn',
     'users.col.user': 'Người dùng',
@@ -303,6 +329,7 @@ const STRINGS = {
     'system.unknown': 'Không rõ',
     'theme.light': 'Sáng',
     'theme.dark': 'Tối',
+    'theme.toggle': 'Đổi giao diện',
     'lang.label': 'Ngôn ngữ',
   },
 } as const;
@@ -319,6 +346,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(
     () => (localStorage.getItem('admin.lang') as Lang) || 'en',
   );
+  // Keep <html lang> in sync so assistive tech reads the right language.
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
   const value = useMemo(
     () => ({
       lang,
