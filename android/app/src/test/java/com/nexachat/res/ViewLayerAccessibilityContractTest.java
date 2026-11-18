@@ -45,6 +45,16 @@ public final class ViewLayerAccessibilityContractTest {
             {"fragment_inbox.xml", "inboxSearchPill"}
     };
 
+    /**
+     * Progress indicators whose content description is assigned at bind time in
+     * MessageBubbleBinder (sending spinner, translation spinner); the XML stays
+     * label-free so the binder owns the contextual label.
+     */
+    private static final String[][] CODE_LABELED_PROGRESS = {
+            {"include_message_bubble_meta.xml", "sendingProgress"},
+            {"include_message_translation.xml", "translationProgress"}
+    };
+
     private File resDir;
 
     @Before
@@ -136,6 +146,63 @@ public final class ViewLayerAccessibilityContractTest {
                 }
             }
         }
+    }
+
+    /**
+     * A progress indicator is visible to accessibility services by default, so it must
+     * either name itself (contentDescription) or be explicitly decorative. The only
+     * exceptions are the indicators whose label the binder assigns per state.
+     */
+    @Test
+    public void progressIndicatorsAreAnnouncedOrDecorative() throws Exception {
+        List<String> violations = new ArrayList<>();
+        scanProgressIndicatorsForLabels(new File(resDir, "layout"), violations);
+        File layoutLand = new File(resDir, "layout-land");
+        if (layoutLand.isDirectory()) {
+            scanProgressIndicatorsForLabels(layoutLand, violations);
+        }
+        if (!violations.isEmpty()) {
+            fail("Progress indicators missing from the accessibility tree without a label:\n"
+                    + String.join("\n", violations));
+        }
+    }
+
+    private void scanProgressIndicatorsForLabels(File dir, List<String> violations) throws Exception {
+        File[] files = dir.listFiles((d, name) -> name.endsWith(".xml"));
+        if (files == null) {
+            return;
+        }
+        for (File file : files) {
+            Document doc = parse(file);
+            NodeList elements = doc.getElementsByTagName("*");
+            for (int i = 0; i < elements.getLength(); i++) {
+                Element element = (Element) elements.item(i);
+                String tag = element.getTagName();
+                if (!tag.endsWith("ProgressIndicator") && !"ProgressBar".equals(tag)) {
+                    continue;
+                }
+                String id = attr(element, "id");
+                if (isCodeLabeled(file.getName(), id)) {
+                    continue;
+                }
+                String importance = attr(element, "importantForAccessibility");
+                String description = attr(element, "contentDescription");
+                if (!"no".equals(importance) && description.isEmpty()) {
+                    violations.add(file.getName() + ": " + tag + " " + id
+                            + " is neither labeled nor importantForAccessibility=\"no\"");
+                }
+            }
+        }
+    }
+
+    private static boolean isCodeLabeled(String layout, String id) {
+        String bareId = id.replace("@+id/", "").replace("@id/", "");
+        for (String[] entry : CODE_LABELED_PROGRESS) {
+            if (entry[0].equals(layout) && entry[1].equals(bareId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

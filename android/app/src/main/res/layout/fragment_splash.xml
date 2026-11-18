@@ -41,6 +41,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="@dimen/space_xl"
+        android:contentDescription="@string/loading_status"
         android:indeterminate="true"
         app:indicatorColor="?attr/colorPrimary"
         app:layout_constraintEnd_toEndOf="parent"
