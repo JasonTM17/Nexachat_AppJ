@@ -128,39 +128,57 @@ public class AdminFeedService {
         }
     }
 
-    /** Hides a comment; idempotent, audited. */
+    /**
+     * Hides a comment; idempotent, audited, and moves the post's comment count.
+     * A comment its author already deleted is left alone: the delete already
+     * moved the count, so hiding it must not decrement a second time.
+     */
     @Transactional
     public void hideComment(UUID actorId, User.Role actorRole, UUID commentId, String reason,
                             String ip) {
         String cleanReason = requireReason(reason);
-        int updated = jdbc.update("""
+        List<UUID> changed = jdbc.queryForList("""
                         UPDATE public_comments
                         SET hidden_at = now(), hidden_by = ?, hidden_reason = ?
-                        WHERE id = ? AND hidden_at IS NULL
-                        """, actorId, cleanReason, commentId);
-        requireTargetExists(updated, "public_comments", commentId, ApiErrorCode.COMMENT_NOT_FOUND);
-        if (updated == 1) {
-            auditService.record(actorId, actorRole, "FEED_COMMENT_HIDE", "COMMENT",
-                    commentId.toString(), cleanReason, Map.of("reason", cleanReason), ip);
-            log.info("Feed comment {} hidden by {}", commentId, actorId);
+                        WHERE id = ? AND hidden_at IS NULL AND deleted_at IS NULL
+                        RETURNING post_id
+                        """, UUID.class, actorId, cleanReason, commentId);
+        if (changed.isEmpty()) {
+            requireTargetExists(0, "public_comments", commentId, ApiErrorCode.COMMENT_NOT_FOUND);
+            return;
         }
+        jdbc.update("""
+                        UPDATE public_posts
+                        SET comment_count = GREATEST(comment_count - 1, 0)
+                        WHERE id = ?
+                        """, changed.get(0));
+        auditService.record(actorId, actorRole, "FEED_COMMENT_HIDE", "COMMENT",
+                commentId.toString(), cleanReason, Map.of("reason", cleanReason), ip);
+        log.info("Feed comment {} hidden by {}", commentId, actorId);
     }
 
-    /** Unhides a comment; idempotent, audited. */
+    /**
+     * Unhides a comment; idempotent, audited, and moves the post's comment
+     * count. Like hide, it skips comments the author already deleted.
+     */
     @Transactional
     public void unhideComment(UUID actorId, User.Role actorRole, UUID commentId, String reason,
                               String ip) {
-        int updated = jdbc.update("""
+        List<UUID> changed = jdbc.queryForList("""
                         UPDATE public_comments
                         SET hidden_at = NULL, hidden_by = NULL, hidden_reason = NULL
-                        WHERE id = ? AND hidden_at IS NOT NULL
-                        """, commentId);
-        requireTargetExists(updated, "public_comments", commentId, ApiErrorCode.COMMENT_NOT_FOUND);
-        if (updated == 1) {
-            auditService.record(actorId, actorRole, "FEED_COMMENT_UNHIDE", "COMMENT",
-                    commentId.toString(), reason, null, ip);
-            log.info("Feed comment {} unhidden by {}", commentId, actorId);
+                        WHERE id = ? AND hidden_at IS NOT NULL AND deleted_at IS NULL
+                        RETURNING post_id
+                        """, UUID.class, commentId);
+        if (changed.isEmpty()) {
+            requireTargetExists(0, "public_comments", commentId, ApiErrorCode.COMMENT_NOT_FOUND);
+            return;
         }
+        jdbc.update("UPDATE public_posts SET comment_count = comment_count + 1 WHERE id = ?",
+                changed.get(0));
+        auditService.record(actorId, actorRole, "FEED_COMMENT_UNHIDE", "COMMENT",
+                commentId.toString(), reason, null, ip);
+        log.info("Feed comment {} unhidden by {}", commentId, actorId);
     }
 
     /** Resolves a feed report to {@code REVIEWED} or {@code DISMISSED}; audited. */
