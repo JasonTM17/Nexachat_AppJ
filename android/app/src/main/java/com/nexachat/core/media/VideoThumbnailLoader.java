@@ -167,7 +167,7 @@ public final class VideoThumbnailLoader {
                 throws IOException {
             if (length == 0) {
                 return 0;
-            }"
+            }
             long total = getSize();
             if (total >= 0 && position >= total) {
                 return -1;
