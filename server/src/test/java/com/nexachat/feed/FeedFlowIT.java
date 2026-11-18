@@ -472,4 +472,22 @@ class FeedFlowIT extends FeatureItSupport {
                 .file(new MockMultipartFile("file", "photo.png", "image/png", PNG_BYTES))
                 .header("Authorization", bearer(uploader)));
     }
+
+    @Test
+    void reportingAnImageOnlyPostIsAcceptedWithANullSnapshot() throws Exception {
+        Actor author = newUser("Image Poster");
+        Actor reporter = newUser("Image Reporter");
+        UUID imageId = UUID.fromString(json(uploadImage(author)
+                        .andExpect(status().isCreated()).andReturn())
+                .get("imageId").asText());
+        String postId = json(postAs(author, "/api/v1/feed/posts", Map.of(
+                        "imageId", imageId.toString(),
+                        "clientPostId", UUID.randomUUID().toString()))
+                        .andExpect(status().isCreated()).andReturn())
+                .get("id").asText();
+
+        postAs(reporter, "/api/v1/reports", Map.of(
+                        "targetType", "POST", "targetId", postId, "reason", "OTHER"))
+                .andExpect(status().isCreated());
+    }
 }

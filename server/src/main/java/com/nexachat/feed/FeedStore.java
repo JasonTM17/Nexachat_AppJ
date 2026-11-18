@@ -375,13 +375,6 @@ class FeedStore {
 
     // ------------------------------------------------------- report snapshots
 
-    /** The body of a post the reporter can see; empty when it is gone, hidden or blocked. */
-    Optional<String> visiblePostBody(UUID viewerId, UUID postId) {
-        return Optional.ofNullable(named.query(POST_COLUMNS + POST_VISIBLE + " AND p.id = :postId",
-                new MapSqlParameterSource("viewer", viewerId).addValue("postId", postId),
-                single(postMapper()))).map(PostRow::body);
-    }
-
     /** The body of a comment the reporter can see, including its post's visibility. */
     Optional<String> visibleCommentBody(UUID viewerId, UUID commentId) {
         return Optional.ofNullable(named.query(COMMENT_COLUMNS + COMMENT_VISIBLE + """
