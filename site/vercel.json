@@ -7,8 +7,7 @@
       "**": false
     }
   },
-  "ignoreCommand": "bash -c 'p=$VERCEL_GIT_PREVIOUS_SHA; [ -n \"$p\" ] && git cat-file -e \"$p^{commit}\" 2>/dev/null || exit 1; git diff --quiet \"$p\" \"${VERCEL_GIT_COMMIT_SHA:-HEAD}\" -- :/site :/admin-web 2>/dev/null && exit 0; exit 1'",
-  "buildCommand": "ROOT=$(git rev-parse --show-toplevel) && cd \"$ROOT/admin-web\" && npm ci --no-audit --no-fund && VITE_API_URL=https://api.nexachat.io.vn npx vite build --base=/admin/ && rm -rf \"$ROOT/site/admin\" && cp -r dist \"$ROOT/site/admin\"",
+  "ignoreCommand": "bash -c 'p=$VERCEL_GIT_PREVIOUS_SHA; [ -n \"$p\" ] && git cat-file -e \"$p^{commit}\" 2>/dev/null || exit 1; git diff --quiet \"$p\" \"${VERCEL_GIT_COMMIT_SHA:-HEAD}\" -- :/site 2>/dev/null && exit 0; exit 1'",
   "rewrites": [
     {
       "source": "/join/:token",
@@ -16,7 +15,7 @@
     },
     {
       "source": "/admin/:path*",
-      "destination": "/admin/index.html"
+      "destination": "https://nexachat-admin-nguyensonbmt06-6377s-projects.vercel.app/admin/:path*"
     }
   ],
   "redirects": [

@@ -153,14 +153,15 @@ fi
 pass "Test 3: unchanged site/ exits 0 (skip)"
 
 # ---------------------------------------------------------------------------
-# Test 3b: Changed admin-web/ directory (site/ unchanged — must still build)
+# Test 3b: Changed admin-web/ directory (site/ unchanged — admin has its own
+# Vercel project since the /admin proxy switch, so site must SKIP)
 # ---------------------------------------------------------------------------
 code=0
 run_cmd "$FIXTURE_REPO/site" "$SHA3" "$SHA4" || code=$?
-if [[ "$code" -ne 1 ]]; then
-    fail "Test 3b (changed admin-web/): expected exit code 1 (build), got $code"
+if [[ "$code" -ne 0 ]]; then
+    fail "Test 3b (changed admin-web/): expected exit code 0 (skip), got $code"
 fi
-pass "Test 3b: changed admin-web/ exits 1 (build)"
+pass "Test 3b: changed admin-web/ exits 0 (skip)"
 
 # ---------------------------------------------------------------------------
 # Test 4: Missing object in shallow clone (made with git clone --depth 1 file://...)
