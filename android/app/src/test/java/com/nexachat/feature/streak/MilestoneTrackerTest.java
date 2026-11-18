@@ -35,6 +35,7 @@ public final class MilestoneTrackerTest {
         assertEquals(7, celebration.getCount());
         assertEquals("checkin", celebration.getScope());
         assertEquals("2026-03-01", celebration.getStartedOn());
+        tracker.shown(celebration);
         assertTrue(store.isCelebrated(celebration.key()));
 
         tracker.dismissed();
@@ -42,9 +43,62 @@ public final class MilestoneTrackerTest {
         assertNull(tracker.next());
     }
 
-    @Test public void aNewChainCelebratesTheSameMilestoneAgain() {
+    @Test public void aHandedOutCelebrationIsNotPersistedUntilItIsShown() {
+        tracker.offer("checkin", streak(7, 7, "2026-03-01"));
+
+        MilestoneTracker.Celebration celebration = tracker.next();
+
+        assertFalse(store.isCelebrated(celebration.key()));
+    }
+
+    @Test public void aHandedOutCelebrationSurvivesProcessDeathBeforeItIsShown() {
         tracker.offer("checkin", streak(7, 7, "2026-03-01"));
         tracker.next();
+
+        MilestoneTracker afterRestart = new MilestoneTracker(store);
+        afterRestart.offer("checkin", streak(7, 7, "2026-03-01"));
+
+        assertEquals(7, afterRestart.next().getMilestone());
+    }
+
+    @Test public void aShownCelebrationIsPersistedAndNotOfferedAgain() {
+        tracker.offer("checkin", streak(7, 7, "2026-03-01"));
+        MilestoneTracker.Celebration celebration = tracker.next();
+
+        tracker.shown(celebration);
+        tracker.dismissed();
+
+        assertTrue(store.isCelebrated(celebration.key()));
+        tracker.offer("checkin", streak(7, 7, "2026-03-01"));
+        assertNull(tracker.next());
+    }
+
+    @Test public void aCelebrationThatWasNotShownReturnsToTheQueueUnpersisted() {
+        tracker.offer("checkin", streak(7, 7, "2026-03-01"));
+        MilestoneTracker.Celebration celebration = tracker.next();
+
+        tracker.notShown(celebration);
+
+        assertFalse(store.isCelebrated(celebration.key()));
+        assertEquals(celebration, tracker.next());
+    }
+
+    @Test public void aCelebrationNotShownKeepsTheWholeQueueEligible() {
+        tracker.offer("checkin", streak(3, 3, "2026-03-01"));
+        tracker.offer("checkin", streak(7, 7, "2026-03-01"));
+        tracker.offer("checkin", streak(30, 30, "2026-03-01"));
+
+        MilestoneTracker.Celebration first = tracker.next();
+        tracker.notShown(first);
+
+        assertEquals(30, first.getMilestone());
+        assertEquals(0, store.celebrated.size());
+        assertEquals(30, tracker.next().getMilestone());
+    }
+
+    @Test public void aNewChainCelebratesTheSameMilestoneAgain() {
+        tracker.offer("checkin", streak(7, 7, "2026-03-01"));
+        tracker.shown(tracker.next());
         tracker.dismissed();
 
         tracker.offer("checkin", streak(7, 7, "2026-04-01"));
@@ -56,7 +110,9 @@ public final class MilestoneTrackerTest {
         tracker.offer("checkin", streak(3, 3, "2026-03-01"));
         tracker.offer("checkin", streak(30, 30, "2026-03-01"));
 
-        assertEquals(30, tracker.next().getMilestone());
+        MilestoneTracker.Celebration first = tracker.next();
+        assertEquals(30, first.getMilestone());
+        tracker.shown(first);
         tracker.dismissed();
         assertEquals(3, tracker.next().getMilestone());
     }
@@ -100,7 +156,7 @@ public final class MilestoneTrackerTest {
 
     @Test public void clearForgetsQueuedAndShowingState() {
         tracker.offer("checkin", streak(7, 7, "2026-03-01"));
-        tracker.next();
+        tracker.shown(tracker.next());
 
         tracker.clear();
 

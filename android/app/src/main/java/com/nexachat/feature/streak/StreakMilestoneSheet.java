@@ -57,10 +57,10 @@ public final class StreakMilestoneSheet extends NexaBottomSheetFragment {
             if (celebration == null) {
                 return;
             }
-            boolean shown = show(host.getChildFragmentManager(), celebration);
-            viewModel.onCelebrationShown();
-            if (!shown) {
-                viewModel.onCelebrationDismissed();
+            if (show(host.getChildFragmentManager(), celebration)) {
+                viewModel.onCelebrationShown(celebration);
+            } else {
+                viewModel.onCelebrationNotShown(celebration);
             }
         });
     }
