@@ -381,6 +381,46 @@ class CallFlowIT {
     }
 
     @Test
+    void inviteAfterAnActiveCallWithoutEndSupersedesTheStaleCall() throws Exception {
+        UUID conversationId = openDirect(alice, bob);
+        Connection caller = connect(alice);
+        Connection callee = connect(bob);
+        UUID staleCallId = UUID.randomUUID();
+        send(caller, conversationId, new CallSignal(CallSignal.Type.INVITE, staleCallId, null, null));
+        awaitEvent(callee, "CALL_INVITE");
+        send(callee, conversationId, new CallSignal(CallSignal.Type.ACCEPT, staleCallId, null, null));
+        awaitEvent(caller, "CALL_ACCEPTED");
+        awaitEvent(callee, "CALL_ACCEPTED");
+
+        UUID freshCallId = UUID.randomUUID();
+        send(caller, conversationId, new CallSignal(CallSignal.Type.INVITE, freshCallId, null, null));
+
+        JsonNode calleeEnded = awaitEvent(callee, "CALL_ENDED");
+        assertThat(calleeEnded.path("callId").asText()).isEqualTo(staleCallId.toString());
+        assertThat(calleeEnded.path("payload").path("reason").asText()).isEqualTo("FAILED");
+        assertThat(awaitEvent(caller, "CALL_ENDED").path("callId").asText()).isEqualTo(staleCallId.toString());
+        assertThat(awaitEvent(callee, "CALL_INVITE").path("callId").asText()).isEqualTo(freshCallId.toString());
+        assertThat(callRecordStates(staleCallId, freshCallId)).containsExactlyInAnyOrder(
+                staleCallId + ":ENDED:FAILED", freshCallId + ":RINGING:null");
+
+        send(callee, conversationId, new CallSignal(CallSignal.Type.ACCEPT, freshCallId, null, null));
+        awaitEvent(caller, "CALL_ACCEPTED");
+        awaitEvent(callee, "CALL_ACCEPTED");
+        send(caller, conversationId, new CallSignal(CallSignal.Type.END, freshCallId, null, null));
+        awaitEvent(caller, "CALL_ENDED");
+        awaitEvent(callee, "CALL_ENDED");
+        assertThat(callRecordStates(staleCallId, freshCallId)).containsExactlyInAnyOrder(
+                staleCallId + ":ENDED:FAILED", freshCallId + ":ENDED:COMPLETED");
+    }
+
+    private List<String> callRecordStates(UUID firstCallId, UUID secondCallId) {
+        return jdbcTemplate.query(
+                "SELECT call_id, state, end_reason FROM call_records WHERE call_id IN (?, ?)",
+                (rs, row) -> rs.getString("call_id") + ":" + rs.getString("state") + ":"
+                        + rs.getString("end_reason"), firstCallId, secondCallId);
+    }
+
+    @Test
     void rejectsNonMembersGroupsAndOversizedSdp() throws Exception {
         UUID conversationId = openDirect(alice, bob);
         Connection caller = connect(alice);

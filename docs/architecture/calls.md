@@ -74,8 +74,16 @@ relayed verbatim only after acceptance.
 
 A second invite to a callee already in another call creates a terminal `BUSY`
 record, sends `CALL_BUSY` only to the caller, and does not notify the callee.
-A caller already in a call cannot start another call. Each transition and
-per-user reservation is guarded atomically by the in-memory registry.
+A caller whose own call is still `RINGING` cannot start another call (the
+45-second timeout frees it). A caller whose earlier call is `ACTIVE` is, by
+definition, no longer in it, because a client holds one call at a time; this
+covers media setup that failed without either side sending `END`. The new
+`INVITE` therefore first ends that call as `ENDED(FAILED)` exactly as a
+disconnect would: both reservations are released, the record and history line
+are written, and the other participant receives `CALL_ENDED`. The supersede and
+the new call share one transaction and roll back together. A callee in a
+different `ACTIVE` call still answers `BUSY`. Each transition and per-user
+reservation is guarded atomically by the in-memory registry.
 
 ## STOMP frames
 
