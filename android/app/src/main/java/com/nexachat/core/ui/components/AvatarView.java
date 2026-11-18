@@ -15,6 +15,7 @@ import androidx.annotation.ColorInt;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.engine.DiskCacheStrategy;
 import com.nexachat.R;
 import com.nexachat.core.common.AppConfig;
 import com.nexachat.core.ui.AvatarInitialsSizing;
@@ -82,7 +83,9 @@ public class AvatarView extends FrameLayout {
         }
         initialsView.setVisibility(VISIBLE);
         imageView.setVisibility(VISIBLE);
-        var request = Glide.with(this).load(absolute);
+        var request = Glide.with(this)
+                .load(absolute)
+                .diskCacheStrategy(DiskCacheStrategy.NONE);
         if (AvatarPhotoLoadingRules.useCircleCropForPhotoUrl(avatarUrl)) {
             request = request.circleCrop();
         } else {
