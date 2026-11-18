@@ -419,7 +419,6 @@
     <string name="ask_title">Ask this chat</string>
     <string name="ask_question_hint">Question</string>
     <string name="ask_send">Ask</string>
-    <string name="ask_send_accessibility">Send question</string>
     <string name="ask_cancel">Cancel</string>
     <string name="ask_retry">Retry</string>
     <string name="ask_close_accessibility">Close ask this chat</string>

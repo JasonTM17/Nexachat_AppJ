@@ -417,7 +417,6 @@
     <string name="ask_title">Hỏi trong trò chuyện</string>
     <string name="ask_question_hint">Câu hỏi</string>
     <string name="ask_send">Hỏi</string>
-    <string name="ask_send_accessibility">Gửi câu hỏi</string>
     <string name="ask_cancel">Hủy</string>
     <string name="ask_retry">Thử lại</string>
     <string name="ask_close_accessibility">Đóng hỏi đáp</string>
