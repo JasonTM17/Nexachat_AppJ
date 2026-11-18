@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Guarded coordinator for the phase 08 stable-journey campaign.
 
-Runnable rows are seeded login, send/receive, and the two injected-push
-journeys. Every other matrix row stays BLOCKED_CAPABILITY with the gap that
-still prevents that row from producing its evidence.
+Runnable rows are seeded login, send/receive, chat-interactions, summary-ask,
+and the two injected-push journeys. Every other matrix row stays
+BLOCKED_CAPABILITY with the gap that still prevents that row from producing
+its evidence.
 """
 
 from __future__ import annotations
@@ -296,15 +297,33 @@ ROWS: tuple[JourneyRow, ...] = (
         id="summary-ask",
         title="Conversation summary and Ask this chat",
         matrix_refs=("phase-08:Summary and ask", "c1-5:Summary/Ask"),
-        preconditions=("Local extractive engine and consent fixture are enabled", "Known-fact conversation is seeded"),
-        steps=("Request summary and Ask answer", "Open cited message and exercise consent/opt-out"),
-        assertions=("Citation resolves to source", "No fabricated citation or request without consent"),
-        captures=("summary/ask/citation screenshots", "redacted REST transcripts", "logcat.txt", "summary.json"),
-        cleanup=("Revert only consent and opt-out settings created by the row"),
-        rest_plan=(("POST", "/api/v1/conversations/{id}/summary"),
-                   ("POST", "/api/v1/conversations/{id}/ask")),
-        capability_gap=("No existing driver seeds and identifies citation UI state. Live model/provider quality is "
-                        "explicitly outside local-engine evidence."),
+        preconditions=("The seeded An↔Binh DIRECT conversation is not E2EE",
+                       "An is signed in on the device; aiSummaryConsent is fixture-enabled and restored",
+                       "The local extractive engines are enabled (no LLM provider keys required)"),
+        steps=("Seed a unique lookup fact plus fillers as Binh and mark the conversation read as An",
+               "Open the summary sheet from the chat overflow, switch to Last N and read the LOCAL summary",
+               "Tap a summary citation chip, then drive Ask this chat: type the fact question, read the "
+               "extractive answer, tap the Sources chip and land on the cited message",
+               "Verify the ask through peer REST cache replay and exercise the ai-opt-out exclusion "
+               "round-trip as Binh"),
+        assertions=("The summary sheet renders LOCAL engine sections and a jumpable citation chip; the "
+                    "chip tap dismisses the sheet through the real jump listener",
+                    "Ask this chat answers EXTRACTIVE quoting the seeded fact with a Sources chip",
+                    "The citation tap dismisses the sheet and renders the cited messageBody",
+                    "Peer REST replays the same question as CACHE citing the seeded message id",
+                    "Binh ai-opt-out drops the fact citation (contextOmitted) and opt back in restores it"),
+        captures=("summary-ask-*.png", "ui-tree.txt", "logcat.txt",
+                  "rest-transcript.json", "summary.json"),
+        cleanup=("Soft-delete only the seeded fact/filler messages",
+                 "Restore An aiSummaryConsent and Binh ai-opt-out to their pre-run values"),
+        rest_plan=(("PATCH", "/api/v1/users/me/settings"),
+                   ("POST", "/api/v1/conversations/{id}/messages"),
+                   ("POST", "/api/v1/conversations/{id}/read"),
+                   ("POST", "/api/v1/conversations/{id}/summary"),
+                   ("POST", "/api/v1/conversations/{id}/ask"),
+                   ("PUT", "/api/v1/conversations/{id}/ai-opt-out"),
+                   ("DELETE", "/api/v1/conversations/{id}/ai-opt-out"),
+                   ("DELETE", "/api/v1/conversations/{id}/messages/{messageId}")),
     ),
     JourneyRow(
         id="offline-sync",
@@ -445,6 +464,27 @@ HELPER_CALLS = {
         {"helper": "inject_push.main", "kind": "call", "serial": SERIAL},
         {"helper": "adb_ui.Device.tap_node", "target": "text Decline or Từ chối"},
     ),
+    "summary-ask": (
+        {"helper": "adb_ui.Device.tap_node", "target": "resource-id moreButton"},
+        {"helper": "adb_ui.Device.tap_node", "target": "text Summarize conversation",
+         "opens": "resource-id summarySheetRoot"},
+        {"helper": "adb_ui.Device.tap_node", "target": "summary scope chip Last N",
+         "assert": "resource-id summaryResultHeader/summaryBulletText render the LOCAL summary"},
+        {"helper": "adb_ui.Device.tap_node", "target": "resource-id citationChip (↗ …)",
+         "assert": "summary sheet dismisses through the citation jump listener"},
+        {"helper": "adb_ui.Device.tap_node", "target": "text Ask this chat",
+         "opens": "resource-id askSheetRoot"},
+        {"helper": "adb_ui.Device.type_text", "target": "resource-id askQuestion",
+         "value": "lookup question with a unique codename"},
+        {"helper": "adb_ui.Device.tap_node", "target": "resource-id askSend",
+         "assert": "resource-id askAnswer/askModeBadge/citationButton render the EXTRACTIVE answer"},
+        {"helper": "adb_ui.Device.tap_node", "target": "resource-id citationButton",
+         "assert": "sheet dismisses and the cited messageBody renders"},
+        {"helper": "e2e_common.Client.post", "path": "/api/v1/conversations/{id}/ask",
+         "actor": "An", "assert": "CACHE replay cites the seeded fact message id"},
+        {"helper": "e2e_common.Client.put", "path": "/api/v1/conversations/{id}/ai-opt-out",
+         "actor": "Binh", "assert": "ask drops the fact citation and reports contextOmitted"},
+    ),
     "injected-notifications": (
         {"helper": "e2e_common.send_text", "actor": "Binh", "assert": "real message id and seq"},
         {"helper": "inject_push.main", "kind": "message", "serial": SERIAL},
@@ -488,7 +528,15 @@ UI_MARKERS = {
     "labels-lifecycle": ("text:unique label name", "text:one label render after recreation"),
     "calls-signaling": ("text:call state", "text:call history"),
     "calls-injected-notification": ("text:Incoming voice call", "text:Accept", "text:Decline"),
-    "summary-ask": ("text:summary heading", "text:citation source message"),
+    "summary-ask": (
+        "resource-id:moreButton", "resource-id:summarySheetRoot",
+        "resource-id:summaryScopeChips", "resource-id:summaryResultHeader",
+        "resource-id:summaryBulletText", "resource-id:citationChip",
+        "resource-id:askSheetRoot", "resource-id:askQuestion",
+        "resource-id:askSend", "resource-id:askAnswer",
+        "resource-id:askModeBadge", "resource-id:citationButton",
+        "resource-id:messageBody",
+    ),
     "offline-sync": ("text:unique offline message", "text:converged message order"),
     "injected-notifications": (
         "text:You have a new message", "text:Tin nhắn mới",
@@ -1509,6 +1557,486 @@ def run_chat_interactions(row: JourneyRow, context: dict[str, Any]) -> dict[str,
     return result
 
 
+# --- summary-ask ---------------------------------------------------------------
+# Conversation summary sheet + Ask this chat on the seeded An↔Binh direct.
+# The summary's scope chips are rendered client-side; the deterministic path is
+# "Last N" (UNREAD depends on the peer-read watermark). Ask uses a lookup-style
+# question against a seeded unique fact, so the local extractive engine answers
+# deterministically and cites the fact message itself.
+_SUMMARY_MENU_ITEM = ("Summarize conversation", "Tóm tắt trò chuyện")
+_SUMMARY_SCOPE_LAST_N = ("Last N", "N tin gần nhất")
+_SUMMARY_LOCAL_BADGE = ("Local", "Cục bộ")
+_SUMMARY_CHIP_PREFIX = "↗"  # summary_citation_chip "↗ <label>" is the jumpable form
+_SUMMARY_CHIP_UNAVAILABLE = ("Unavailable", "Không khả dụng")
+_ASK_MENU_ITEM = ("Ask this chat", "Hỏi trong trò chuyện")
+_ASK_MODE_BADGE = ("From a message", "Từ tin nhắn")
+_ASK_CONSENT_TITLE = ("Use AI to answer?", "Bật AI để trả lời?")
+_ASK_CONSENT_CONFIRM = ("Agree", "Đồng ý")
+_ASK_FILLER_COUNT = 14  # pushes the fact bubble off the initial viewport
+_ASK_RESULT_TIMEOUT = 45.0
+
+
+def _node_visible(node: Any) -> bool:
+    box = getattr(node, "box", None)
+    return box is not None and box[2] > box[0] and box[3] > box[1]
+
+
+def _codename(nonce: str, salt: str) -> str:
+    """Letters-only distinctive token; the same shape ai_privacy_e2e probes with."""
+    alphabet = "bcdfghjklmnpqrstvwxz"
+    seed = uuid.uuid5(uuid.NAMESPACE_URL, nonce + "|" + salt).hex
+    return "zq" + "".join(alphabet[int(ch, 16) % len(alphabet)] for ch in seed[:9])
+
+
+def _open_chat_overflow(context: dict[str, Any], item_labels: tuple[str, ...]) -> None:
+    """Tap the chat toolbar overflow and pick the menu row matching item_labels."""
+    ui = context["device"]
+    more = _wait_ui_node(
+        context,
+        lambda node: _rid_ends(node, "moreButton"),
+        "the chat overflow button was not exposed",
+    )
+    ui.tap_node(more)
+    item = _wait_ui_node(
+        context,
+        lambda node: node.text.strip() in item_labels,
+        f"the chat overflow menu did not offer {item_labels!r}",
+    )
+    ui.tap_node(item)
+
+
+def _user_settings(recorder: RecordingClient, token: str) -> dict[str, Any]:
+    response = recorder.get("/api/v1/users/me/settings", token=token)
+    if response.status != 200:
+        raise EnvironmentFailure(f"GET /api/v1/users/me/settings returned HTTP {response.status}")
+    return dict(response.json() or {})
+
+
+def _set_ai_consent(recorder: RecordingClient, token: str, value: bool) -> None:
+    response = recorder.patch(
+        "/api/v1/users/me/settings", token=token, body={"aiSummaryConsent": value},
+    )
+    if response.status != 200 or (response.json() or {}).get("aiSummaryConsent") is not value:
+        raise ProductFailure("the aiSummaryConsent settings PATCH did not echo the requested value")
+
+
+def _ai_opt_out_path(conversation_id: str) -> str:
+    return f"/api/v1/conversations/{conversation_id}/ai-opt-out"
+
+
+def _ai_opt_out_read(recorder: RecordingClient, token: str, conversation_id: str) -> bool:
+    response = recorder.get(_ai_opt_out_path(conversation_id), token=token)
+    if response.status != 200:
+        raise EnvironmentFailure(f"ai-opt-out GET returned HTTP {response.status}")
+    return bool((response.json() or {}).get("aiOptOut"))
+
+
+def _ai_opt_out_write(recorder: RecordingClient, token: str,
+                      conversation_id: str, value: bool) -> None:
+    call = recorder.put if value else recorder.delete
+    response = call(_ai_opt_out_path(conversation_id), token=token)
+    if response.status != 200 or (response.json() or {}).get("aiOptOut") is not value:
+        raise ProductFailure(
+            f"ai-opt-out {'PUT' if value else 'DELETE'} did not persist {value}")
+
+
+def _call_minute_retry(call: Callable[[], Any]) -> Any:
+    """One retry when the per-minute AI bucket answers 429 (rag/summary rate)."""
+    response = call()
+    if getattr(response, "status", None) == 429:
+        time.sleep(62 - (time.time() % 60))
+        response = call()
+    return response
+
+
+def _ask_question(recorder: RecordingClient, token: str,
+                  conversation_id: str, question: str) -> dict[str, Any]:
+    response = _call_minute_retry(lambda: recorder.post(
+        f"/api/v1/conversations/{conversation_id}/ask",
+        token=token, body={"question": question},
+    ))
+    if response.status != 200:
+        raise ProductFailure(f"ask returned HTTP {response.status}")
+    return dict(response.json() or {})
+
+
+def _ask_cited_ids(payload: dict[str, Any]) -> list[str]:
+    return [str(citation.get("messageId"))
+            for citation in (payload or {}).get("citations") or []
+            if isinstance(citation, dict) and citation.get("messageId")]
+
+
+def _wait_summary_ready(context: dict[str, Any]) -> Any:
+    """Wait for the summary sheet's READY body; report the last visible error."""
+    deadline = time.monotonic() + _ASK_RESULT_TIMEOUT
+    last_error = ""
+    while True:
+        nodes = _ui_nodes(context)
+        bullets = [node for node in nodes
+                   if _rid_ends(node, "summaryBulletText") and _node_visible(node)]
+        header = next((node for node in nodes
+                       if _rid_ends(node, "summaryResultHeader")
+                       and node.text.strip() and _node_visible(node)), None)
+        if bullets and header is not None:
+            return header
+        error = next((node for node in nodes
+                      if _rid_ends(node, "summaryErrorText")
+                      and node.text.strip() and _node_visible(node)), None)
+        last_error = error.text.strip() if error is not None else last_error
+        if time.monotonic() >= deadline:
+            detail = f" (error card: {last_error!r})" if last_error else ""
+            raise ProductFailure(f"the LOCAL summary did not render its content{detail}")
+        time.sleep(0.5)
+
+
+def _summary_citation_chip(context: dict[str, Any]) -> Any:
+    """Find a jumpable summary citation chip, scrolling the sheet to reveal one."""
+    ui = context["device"]
+    unavailable = 0
+    for _ in range(8):
+        nodes = _ui_nodes(context)
+        for node in nodes:
+            if not (_rid_ends(node, "citationChip") and node.clickable and _node_visible(node)):
+                continue
+            if node.text.strip().startswith(_SUMMARY_CHIP_PREFIX):
+                return node
+            if node.text.strip() in _SUMMARY_CHIP_UNAVAILABLE:
+                unavailable += 1
+        scroll = next((node for node in nodes if _rid_ends(node, "summarySheetScroll")), None)
+        box = getattr(scroll, "box", None) or (0, 0, 320, 640)
+        ui.swipe((box[0] + box[2]) // 2, box[3] - 30, (box[0] + box[2]) // 2,
+                 box[1] + (box[3] - box[1]) // 3, 350)
+        time.sleep(0.6)
+    raise ProductFailure(
+        f"the LOCAL summary rendered no jumpable citation chip ({unavailable} unavailable chips)")
+
+
+def _wait_ask_answer(context: dict[str, Any], send_labels: tuple[str, ...]) -> tuple[Any, list[Any]]:
+    """Wait for the ask sheet's rendered answer; handle the consent dialog once.
+
+    Returns (askAnswer node, citationButton nodes). A missing send tap is
+    retried once — the IME can cover the button on small viewports.
+    """
+    ui = context["device"]
+    deadline = time.monotonic() + _ASK_RESULT_TIMEOUT
+    consent_tapped_at: float | None = None
+    send_retried = 0
+    idle_since = time.monotonic()
+    while True:
+        nodes = _ui_nodes(context)
+        if any(node.text.strip() in _ASK_CONSENT_TITLE for node in nodes):
+            if consent_tapped_at is None:
+                agree = next((node for node in nodes
+                              if node.text.strip() in _ASK_CONSENT_CONFIRM), None)
+                if agree is not None:
+                    consent_tapped_at = time.monotonic()
+                    ui.tap_node(agree)
+                    time.sleep(0.5)
+                    continue
+        status = next((node for node in nodes
+                       if _rid_ends(node, "askStatusMessage")
+                       and node.text.strip() and _node_visible(node)), None)
+        answer = next((node for node in nodes
+                       if _rid_ends(node, "askAnswer")
+                       and node.text.strip() and _node_visible(node)), None)
+        chips = [node for node in nodes
+                 if _rid_ends(node, "citationButton") and _node_visible(node)]
+        if answer is not None and chips:
+            return answer, chips
+        # After agreeing to consent the consent-required status can linger for
+        # a beat while the sheet re-requests; do not report it as terminal yet.
+        consent_grace = (consent_tapped_at is not None
+                         and time.monotonic() - consent_tapped_at < 4)
+        if status is not None and not consent_grace:
+            raise ProductFailure(f"the ask sheet surfaced an error: {status.text.strip()!r}")
+        loading = any(_rid_ends(node, "askSkeleton") and _node_visible(node) for node in nodes)
+        if loading:
+            idle_since = time.monotonic()
+        elif send_retried < 1 and time.monotonic() - idle_since > 5:
+            send = next((node for node in nodes
+                         if _rid_ends(node, "askSend")
+                         and node.text.strip() in send_labels), None)
+            if send is not None:
+                send_retried += 1
+                ui.tap_node(send)
+                idle_since = time.monotonic()
+        if time.monotonic() >= deadline:
+            raise ProductFailure("the ask sheet never rendered an answer or a terminal state")
+        time.sleep(0.5)
+
+
+def run_summary_ask(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Summary sheet + Ask this chat over the seeded An↔Binh direct.
+
+    The device runs as seeded An; Binh authors the unique lookup fact and its
+    filler over REST so the extractive engine has a deterministic hit. Summary
+    and ask are asserted on the device UI first; the ask is then verified
+    server-side through the shared cache replay, and Binh's ai-opt-out is
+    exercised as a REST round-trip (it removes the fact citation).
+    """
+    _campaign_serial(context)
+    _campaign_base_url(context)
+    _prepare_seeded_an(context)
+    api, _adb_ui, patch = context["helpers"]
+    recorder: RecordingClient = context["client"]
+    ui = context["device"]
+    an, binh, conversation_id, _an_user_id, _binh_user_id = _seed_pair(context)
+    _, conversation = api.direct_conversation(recorder, an["accessToken"], api.USER_C["phone"])
+    if conversation.get("e2eeEnabled"):
+        raise EnvironmentFailure(
+            "the seeded An↔Binh conversation is E2EE; summary/ask are unavailable by design")
+
+    original_consent = bool(_user_settings(recorder, an["accessToken"]).get("aiSummaryConsent"))
+    original_opt_out = _ai_opt_out_read(recorder, binh["accessToken"], conversation_id)
+
+    row_dir = Path(context["row_dir"])
+    tag = uuid.uuid4().hex[:10]
+    code = _codename(tag, "code")
+    secret = _codename(tag, "secret")
+    fact_content = f"The {code} locker passphrase is {secret} for the north warehouse."
+    question = f"What is the {code} locker passphrase?"
+    seeded: list[str] = []
+    result: dict[str, Any] = {}
+    primary_error: Exception | None = None
+    try:
+        # Consent fixture: the asker consents and neither member is opted out.
+        _set_ai_consent(recorder, an["accessToken"], True)
+        _ai_opt_out_write(recorder, binh["accessToken"], conversation_id, False)
+        _ai_opt_out_write(recorder, an["accessToken"], conversation_id, False)
+
+        fact = api.send_text(recorder, binh["accessToken"], conversation_id, fact_content)
+        fact_id = str(fact.get("id") or "")
+        if not fact_id:
+            raise EnvironmentFailure("Binh's seeded fact did not return a message id")
+        fact_seq = int(fact.get("seq") or 0)
+        seeded.append(fact_id)
+        last_seq = fact_seq
+        for index in range(_ASK_FILLER_COUNT):
+            filler = api.send_text(
+                recorder, binh["accessToken"], conversation_id,
+                f"sj-ask filler {index} {tag}")
+            seeded.append(str(filler.get("id") or ""))
+            last_seq = max(last_seq, int(filler.get("seq") or 0))
+        if not all(seeded):
+            raise EnvironmentFailure("a seeded filler did not return a message id")
+        # Marking read settles the unread banner and opens the chat at the
+        # bottom, so the fact bubble is genuinely off the initial viewport.
+        read = recorder.post(
+            f"/api/v1/conversations/{conversation_id}/read",
+            token=an["accessToken"], body={"upToSeq": last_seq},
+        )
+        if read.status not in (200, 204):
+            raise EnvironmentFailure(f"conversation read returned HTTP {read.status}")
+
+        row_node = patch.named_conversation_row(_ui_nodes(context), "Binh")
+        if row_node is None:
+            raise EnvironmentFailure("seed An↔Binh conversation is not visible in the device inbox")
+        ui.tap_node(row_node)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "messageInput"),
+            "the seeded direct conversation did not open its composer",
+        )
+
+        # --- conversation summary sheet -----------------------------------
+        _open_chat_overflow(context, _SUMMARY_MENU_ITEM)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "summarySheetRoot"),
+            "the summary sheet did not open",
+        )
+        last_n = _wait_ui_node(
+            context,
+            lambda node: node.text.strip() in _SUMMARY_SCOPE_LAST_N and node.clickable,
+            "the summary scope chips did not offer Last N",
+        )
+        ui.tap_node(last_n)
+        header = _wait_summary_ready(context)
+        header_text = header.text.strip()
+        if not any(badge in header_text for badge in _SUMMARY_LOCAL_BADGE):
+            raise ProductFailure(
+                f"the summary header did not name the LOCAL engine: {header_text!r}")
+        bullets = [node for node in _ui_nodes(context)
+                   if _rid_ends(node, "summaryBulletText") and _node_visible(node)]
+        ui.screenshot(str(row_dir / "summary-ask-summary.png"))
+
+        chip = _summary_citation_chip(context)
+        chip_label = chip.text.strip()
+        ui.tap_node(chip)
+        _wait_ui_absent(
+            context,
+            lambda node: _rid_ends(node, "summarySheetRoot"),
+            "the summary citation chip did not dismiss the sheet",
+        )
+        ui.screenshot(str(row_dir / "summary-ask-citation-jump.png"))
+
+        # Peer-side REST verify of the same summary contract the sheet used.
+        summary_verify = _call_minute_retry(lambda: recorder.post(
+            f"/api/v1/conversations/{conversation_id}/summary",
+            token=an["accessToken"],
+            body={"scope": "LAST_N", "limit": 50, "refresh": False},
+        ))
+        if summary_verify.status != 200:
+            raise ProductFailure(f"peer REST summary returned HTTP {summary_verify.status}")
+        summary_body = dict(summary_verify.json() or {})
+        if summary_body.get("generatedBy") != "LOCAL":
+            raise ProductFailure(
+                f"peer REST summary was not produced by the LOCAL engine: "
+                f"{summary_body.get('generatedBy')!r}")
+        if int(summary_body.get("messageCount") or 0) < 5:
+            raise ProductFailure("peer REST summary covered fewer than 5 messages")
+
+        # --- ask this chat -------------------------------------------------
+        fact_visible_before = any(
+            _rid_ends(node, "messageBody") and code in (node.text or "")
+            for node in _ui_nodes(context))
+        _open_chat_overflow(context, _ASK_MENU_ITEM)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "askSheetRoot"),
+            "the ask sheet did not open",
+        )
+        field = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "askQuestion"),
+            "the ask question field was not exposed",
+        )
+        ui.tap_node(field)
+        ui.type_text(question)
+        send = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "askSend") and node.clickable,
+            "the ask send control was not exposed",
+        )
+        ui.tap_node(send)
+        answer_node, chips = _wait_ask_answer(context, ("Ask", "Hỏi"))
+        answer_text = answer_node.text.strip()
+        if secret not in answer_text:
+            raise ProductFailure("the ask answer did not quote the seeded fact")
+        fact_chip = next(
+            (chip for chip in chips
+             if code in (chip.text or "") or code in (chip.desc or "")), None)
+        if fact_chip is None:
+            raise ProductFailure("no Sources chip cited the seeded fact snippet")
+        badge = next((node for node in _ui_nodes(context)
+                      if _rid_ends(node, "askModeBadge")
+                      and node.text.strip() in _ASK_MODE_BADGE
+                      and _node_visible(node)), None)
+        if badge is None:
+            raise ProductFailure("the EXTRACTIVE 'From a message' badge did not render")
+        ui.screenshot(str(row_dir / "summary-ask-answer.png"))
+
+        # Peer REST verify: the same question must now replay the device ask's
+        # cached answer — proof the sheet's request reached the server.
+        verify = _ask_question(recorder, an["accessToken"], conversation_id, question)
+        if verify.get("mode") != "CACHE" or (verify.get("usage") or {}).get("cached") is not True:
+            raise ProductFailure(
+                f"the device ask did not populate the shared cache (mode {verify.get('mode')!r})")
+        verify_citation = next(
+            (citation for citation in verify.get("citations") or []
+             if str(citation.get("messageId")) == fact_id), None)
+        if verify_citation is None:
+            raise ProductFailure("the cached ask did not cite the seeded fact message")
+        if int(verify_citation.get("seq") or -1) != fact_seq:
+            raise ProductFailure("the cached citation seq did not match the fact message")
+
+        # Citation tap: the sheet dismisses and the cited bubble renders. The
+        # fillers pushed the fact off the initial viewport, so its appearance
+        # is real jump evidence.
+        ui.tap_node(fact_chip)
+        _wait_ui_absent(
+            context,
+            lambda node: _rid_ends(node, "askSheetRoot"),
+            "the ask sheet did not dismiss after the citation tap",
+        )
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "messageBody") and code in (node.text or ""),
+            "the cited message did not render after the ask citation jump",
+        )
+        ui.screenshot(str(row_dir / "summary-ask-jump.png"))
+
+        # Consent/opt-out exercise over REST: Binh's opt-out must drop the
+        # fact from AI context (contextOmitted + no citation); opting back in
+        # restores it.
+        _ai_opt_out_write(recorder, binh["accessToken"], conversation_id, True)
+        omitted = _ask_question(recorder, an["accessToken"], conversation_id, question)
+        if omitted.get("contextOmitted") is not True:
+            raise ProductFailure("the ask did not report contextOmitted while Binh was opted out")
+        if fact_id in _ask_cited_ids(omitted):
+            raise ProductFailure("the ask still cited the opted-out author's fact message")
+        if secret in (omitted.get("answer") or "") or secret in json.dumps(
+                omitted.get("citations") or []):
+            raise ProductFailure("the ask leaked the opted-out author's text")
+        _ai_opt_out_write(recorder, binh["accessToken"], conversation_id, False)
+        restored: dict[str, Any] = {}
+        for _ in range(3):
+            restored = _ask_question(recorder, an["accessToken"], conversation_id, question)
+            if fact_id in _ask_cited_ids(restored):
+                break
+            time.sleep(1.5)
+        if fact_id not in _ask_cited_ids(restored):
+            raise ProductFailure("opting back in did not restore the fact citation")
+        if restored.get("contextOmitted") is not False:
+            raise ProductFailure("contextOmitted stayed true after opting back in")
+
+        result = {
+            "summary": "LOCAL sheet rendered + citation chip jump dismissed it",
+            "summary_header": header_text,
+            "summary_chip": chip_label,
+            "summary_rest": {"generatedBy": summary_body.get("generatedBy"),
+                             "cached": summary_body.get("cached"),
+                             "messageCount": summary_body.get("messageCount")},
+            "ask_answer": "EXTRACTIVE badge + answer quotes the seeded fact",
+            "ask_rest_verify": "CACHE replay cites the seeded message id and seq",
+            "citation_jump": "sheet dismissed; cited messageBody rendered",
+            "fact_visible_before_jump": fact_visible_before,
+            "opt_out": "fact citation dropped (contextOmitted) and restored",
+        }
+    except Exception as error:
+        primary_error = error
+    finally:
+        cleanup_errors: list[str] = []
+        # Best-effort UI restore: leave any open sheet/dialog before the next row.
+        try:
+            for _ in range(3):
+                nodes = _ui_nodes(context)
+                if any(_rid_ends(node, suffix) for node in nodes
+                       for suffix in ("askSheetRoot", "summarySheetRoot")):
+                    ui.key("KEYCODE_BACK")
+                    time.sleep(0.4)
+                else:
+                    break
+        except Exception as error:
+            cleanup_errors.append(type(error).__name__)
+        try:
+            _ai_opt_out_write(recorder, binh["accessToken"], conversation_id, original_opt_out)
+        except Exception as error:
+            cleanup_errors.append(f"opt-out restore: {type(error).__name__}")
+        try:
+            _set_ai_consent(recorder, an["accessToken"], original_consent)
+        except Exception as error:
+            cleanup_errors.append(f"consent restore: {type(error).__name__}")
+        for message_id in seeded:
+            try:
+                deleted = recorder.delete(
+                    f"/api/v1/conversations/{conversation_id}/messages/{message_id}",
+                    token=binh["accessToken"],
+                )
+                if deleted.status not in (200, 204):
+                    cleanup_errors.append(f"HTTP {deleted.status}")
+            except Exception as error:
+                cleanup_errors.append(type(error).__name__)
+        if cleanup_errors:
+            context["cleanup_errors"] = cleanup_errors
+    if primary_error is not None:
+        raise primary_error
+    if context.get("cleanup_errors"):
+        raise HarnessError("summary-ask cleanup could not restore settings or delete fixtures")
+    result["cleanup"] = "seeded messages soft-deleted; consent and opt-out restored"
+    return result
+
+
 SEED_PHONES = frozenset({
     "+84900000001", "+84900000002", "+84900000003",
     "+84900000101", "+84900000102",
@@ -2156,6 +2684,7 @@ def run_registered_row(row: JourneyRow, context: dict[str, Any]) -> dict[str, An
         "auth-login": run_auth_login,
         "chat-send-receive": run_chat_send_receive,
         "chat-interactions": run_chat_interactions,
+        "summary-ask": run_summary_ask,
         "calls-injected-notification": run_calls_injected_notification,
         "injected-notifications": run_injected_notifications,
     }

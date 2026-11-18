@@ -1620,8 +1620,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         boolean dividerShown = showDivider;
         adapter.submitList(rows, () -> {
             if (binding == null || rows.isEmpty()) return;
-            if (wasAtBottom) binding.messageList.scrollToPosition(rows.size() - 1);
-            else if (stableAnchor != null) {
+            // A pending jump owns the scroll position: re-rendering for the
+            // pulse highlight must not yank the list back under it.
+            if (wasAtBottom && pulsingMessageId == null)
+                binding.messageList.scrollToPosition(rows.size() - 1);
+            else if (stableAnchor != null && pulsingMessageId == null) {
                 for (int i = 0; i < rows.size(); i++) if (stableAnchor.equals(rows.get(i).getStableId())) {
                     manager.scrollToPositionWithOffset(i, stableAnchorOffset);
                     break;

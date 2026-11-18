@@ -56,7 +56,7 @@ class MatrixAndDryRunTest(unittest.TestCase):
         self.assertTrue(expected.issubset(refs), sorted(expected - refs))
         runnable = {row.id for row in journeys.ROWS if row.capability_gap is None}
         self.assertEqual(runnable, {
-            "auth-login", "chat-send-receive", "chat-interactions",
+            "auth-login", "chat-send-receive", "chat-interactions", "summary-ask",
             "calls-injected-notification", "injected-notifications",
         })
         self.assertEqual(journeys.ROWS[-1].id, "account-deletion")
@@ -292,7 +292,7 @@ class WiringDecisionTest(unittest.TestCase):
                 runnable.append(row_id)
         self.assertEqual(runnable, [
             "auth-login", "chat-send-receive", "chat-interactions",
-            "calls-injected-notification", "injected-notifications",
+            "calls-injected-notification", "summary-ask", "injected-notifications",
         ])
         self.assertEqual(len(runnable) + len(blocked), len(journeys.ROWS))
         self.assertIn("STOMP", blocked["auth-session-lifecycle"])
@@ -304,10 +304,11 @@ class WiringDecisionTest(unittest.TestCase):
         self.assertIn("seed user", blocked["account-deletion"])
         self.assertNotIn("calls-injected-notification", blocked)
         self.assertNotIn("injected-notifications", blocked)
+        self.assertNotIn("summary-ask", blocked)
         for row_id in (
             "media", "groups-contacts", "polls-reminders",
             "archive-preferences", "labels-lifecycle", "calls-signaling",
-            "summary-ask", "offline-sync", "accessibility-sweep",
+            "offline-sync", "accessibility-sweep",
         ):
             self.assertIn("BLOCKED_CAPABILITY:", blocked[row_id])
 
@@ -342,6 +343,7 @@ class WiringDecisionTest(unittest.TestCase):
     def test_executors_refuse_a_non_reserved_serial(self):
         cases = (
             journeys.run_chat_interactions,
+            journeys.run_summary_ask,
             journeys.run_calls_injected_notification,
             journeys.run_injected_notifications,
             journeys.run_otp_forgot_password,
@@ -1343,6 +1345,375 @@ class ChatInteractionsExecutorTest(unittest.TestCase):
         # though the reaction assertion failed.
         self.assertEqual(len(store.messages[direct_id]), 1)
         self.assertTrue(store.messages[direct_id][0]["deletedAt"])
+
+
+class SummaryAskExecutorTest(unittest.TestCase):
+    """Offline fake device+REST world for run_summary_ask.
+
+    The world model mirrors the real surfaces probed on emulator-5554: the
+    overflow menu entries, the summary sheet's UNREAD->LAST_N scope switch,
+    its "-> jump" citationChip, the ask sheet's answer card + Sources
+    citationButton + EXTRACTIVE badge, and the server-side ask cache +
+    ai-opt-out exclusion contract. Taps mutate the world so a wrong tap
+    stalls a wait instead of faking a pass.
+    """
+
+    class Node:
+        def __init__(self, text="", desc="", rid="", box=(0, 0, 320, 48), clickable=True):
+            self.text = text
+            self.desc = desc
+            self.attrs = {"resource-id": ("com.nexachat.debug:id/" + rid) if rid else ""}
+            self.box = box
+            self.clickable = clickable
+            self.cls = "android.widget.TextView"
+
+    class Store:
+        """Server truth: messages, the ask cache, consent and ai-opt-out."""
+        def __init__(self):
+            self.seq = 100
+            self.next_id = 0
+            self.messages = []
+            self.consent = False       # An's aiSummaryConsent
+            self.binh_opt_out = False  # Binh's per-conversation ai-opt-out
+            self.asks = 0
+
+        def create(self, cid, content, sender_id, sender_name):
+            self.next_id += 1
+            self.seq += 1
+            msg = {
+                "id": f"m-{self.next_id}", "conversationId": cid, "seq": self.seq,
+                "senderId": sender_id, "senderDisplayName": sender_name,
+                "type": "TEXT", "content": content,
+                "createdAt": "2026-01-01T00:00:00Z", "deletedAt": None,
+            }
+            self.messages.append(msg)
+            return msg
+
+        def live(self):
+            return [m for m in self.messages if not m["deletedAt"]]
+
+        def fact(self):
+            return next((m for m in self.messages
+                         if m["content"] and "locker passphrase" in m["content"]), None)
+
+        def ask(self, cid, question):
+            self.asks += 1
+            fact = self.fact()
+            if self.binh_opt_out or fact is None or not fact["content"]:
+                return {
+                    "mode": "NOT_FOUND", "answer": None, "citations": [],
+                    "contextOmitted": self.binh_opt_out,
+                    "usage": {"cached": False, "llmCalls": 0},
+                }
+            return {
+                "mode": "CACHE", "answer": fact["content"],
+                "citations": [{"messageId": fact["id"], "seq": fact["seq"],
+                               "snippet": fact["content"]}],
+                "contextOmitted": False,
+                "usage": {"cached": True, "llmCalls": 0},
+            }
+
+    class World:
+        """Device surface state re-read by every uiautomator dump."""
+        def __init__(self, store, direct_id):
+            self.store = store
+            self.direct_id = direct_id
+            self.screen = "inbox"
+            self.menu_open = False
+            self.summary_open = False
+            self.summary_scope = "UNREAD"
+            self.ask_open = False
+            self.ask_draft = ""
+            self.ask_answered = False
+            self.ask_errors = False   # failure variant: send surfaces NOT_FOUND text
+            self.fact_visible = False
+
+        def tree(self):
+            N = SummaryAskExecutorTest.Node
+            if self.screen == "inbox":
+                return [N(text="Binh"), N(text="NexaChat Team")]
+            nodes = [N(text="Binh"), N(desc="Message actions", rid="moreButton")]
+            # Only the tail of the list is "rendered"; the seeded fact (index 0)
+            # stays off-screen until a citation jump lands on it.
+            live = self.store.live()
+            visible = live[-5:]
+            if self.fact_visible:
+                visible = live[:1] + [m for m in visible if m not in live[:1]]
+            for msg in visible:
+                text = "This message was deleted" if msg["deletedAt"] else msg["content"]
+                nodes.append(N(text=text, rid="messageBody"))
+            nodes.append(N(text="Message", rid="messageInput", box=(60, 580, 260, 628)))
+            if self.menu_open:
+                for label in ("Ask this chat", "Summarize conversation",
+                              "Search in chat", "Mute notifications"):
+                    nodes.append(N(text=label, rid="menuLabel"))
+            if self.summary_open:
+                nodes.append(N(rid="summarySheetRoot", box=(0, 60, 320, 640)))
+                nodes.append(N(text="Conversation summary", rid="summaryTitle"))
+                for scope in ("Unread", "Last N", "Today"):
+                    nodes.append(N(text=scope, rid="summaryScopeChip"))
+                if self.summary_scope == "LAST_N":
+                    nodes.append(N(text="Last 50 · Local", rid="summaryResultHeader"))
+                    nodes.append(N(text="Key points from the conversation",
+                                   rid="summaryBulletText"))
+                    nodes.append(N(text="↗ Binh · 9:00 AM", rid="citationChip"))
+                else:
+                    nodes.append(N(text="At least 5 messages are required",
+                                   rid="summaryErrorText"))
+            if self.ask_open:
+                nodes.append(N(rid="askSheetRoot", box=(0, 60, 320, 640)))
+                nodes.append(N(text="Ask this chat", rid="askTitle"))
+                nodes.append(N(desc="Close ask this chat", rid="askClose"))
+                nodes.append(N(text=self.ask_draft, rid="askQuestion",
+                               box=(16, 528, 232, 624)))
+                nodes.append(N(text="Ask", rid="askSend"))
+                if self.ask_errors:
+                    nodes.append(N(text="No matching message was found.",
+                                   rid="askStatusMessage"))
+                elif self.ask_answered:
+                    fact = self.store.fact()
+                    nodes.append(N(text=fact["content"], rid="askAnswer"))
+                    nodes.append(N(text="Sources", rid="askCitationsLabel"))
+                    nodes.append(N(text=fact["content"],
+                                   desc="Open message: " + fact["content"],
+                                   rid="citationButton"))
+                    nodes.append(N(text="From a message", rid="askModeBadge"))
+            return nodes
+
+    class Device:
+        def __init__(self, world):
+            self.world = world
+
+        def nodes(self):
+            return self.world.tree()
+
+        def tap_node(self, node):
+            w = self.world
+            rid = node.attrs["resource-id"]
+            if w.screen == "inbox" and node.text == "Binh":
+                w.screen = "chat"
+                return
+            if rid.endswith("/moreButton"):
+                w.menu_open = True
+                return
+            if w.menu_open:
+                w.menu_open = False
+                if node.text == "Summarize conversation":
+                    w.summary_open = True
+                    w.summary_scope = "UNREAD"
+                elif node.text == "Ask this chat":
+                    w.ask_open = True
+                return
+            if w.summary_open:
+                if node.text == "Last N":
+                    w.summary_scope = "LAST_N"
+                elif rid.endswith("/citationChip"):
+                    w.summary_open = False  # real jump lands on an unread row
+                return
+            if w.ask_open:
+                if rid.endswith("/askQuestion"):
+                    return
+                if rid.endswith("/askSend"):
+                    if w.ask_draft.strip():
+                        if w.ask_errors:
+                            pass  # status text is already rendered
+                        else:
+                            w.ask_answered = True
+                    return
+                if rid.endswith("/citationButton"):
+                    w.ask_open = False
+                    w.fact_visible = True
+                    return
+
+        def type_text(self, value):
+            if self.world.ask_open:
+                self.world.ask_draft += value
+
+        def swipe(self, x1, y1, x2, y2, duration_ms=300):
+            return None
+
+        def screenshot(self, path):
+            Path(path).write_bytes(b"png")
+
+        def key(self, code):
+            w = self.world
+            if w.menu_open:
+                w.menu_open = False
+            elif w.ask_open:
+                w.ask_open = False
+            elif w.summary_open:
+                w.summary_open = False
+
+    class Patch:
+        @staticmethod
+        def ui_nodes(device, timeout=8):
+            return device.nodes()
+
+        @staticmethod
+        def named_conversation_row(nodes, display_name):
+            return next((n for n in nodes
+                         if n.text.strip() == display_name or n.desc.strip() == display_name),
+                        None)
+
+        @staticmethod
+        def grant_test_permissions():
+            return {}
+
+        @staticmethod
+        def filtered_logcat(baseline):
+            return [], False
+
+    class Adb:
+        serial = "emulator-5554"
+
+        def command(self, *args, **kwargs):
+            return ""
+
+    class Response:
+        def __init__(self, status, body=None):
+            self.status = status
+            self._body = body
+
+        def json(self):
+            return self._body
+
+    class Client:
+        base_url = "http://127.0.0.1:18093"
+        timeout = 30
+
+        def __init__(self, store, direct_id):
+            self.store = store
+            self.direct_id = direct_id
+
+        def _opt_out_path(self, path):
+            return path == f"/api/v1/conversations/{self.direct_id}/ai-opt-out"
+
+        def get(self, path, token=None, params=None, headers=None):
+            R = SummaryAskExecutorTest.Response
+            if path == "/api/v1/users/me/settings":
+                return R(200, {"aiSummaryConsent": self.store.consent})
+            if self._opt_out_path(path):
+                return R(200, {"aiOptOut": self.store.binh_opt_out,
+                               "conversationId": self.direct_id})
+            return R(404)
+
+        def patch(self, path, token=None, body=None, headers=None):
+            R = SummaryAskExecutorTest.Response
+            if path == "/api/v1/users/me/settings":
+                self.store.consent = bool((body or {}).get("aiSummaryConsent"))
+                return R(200, {"aiSummaryConsent": self.store.consent})
+            return R(404)
+
+        def put(self, path, token=None, body=None, headers=None):
+            R = SummaryAskExecutorTest.Response
+            if self._opt_out_path(path):
+                self.store.binh_opt_out = True
+                return R(200, {"aiOptOut": True, "conversationId": self.direct_id})
+            return R(404)
+
+        def post(self, path, token=None, body=None, headers=None):
+            R = SummaryAskExecutorTest.Response
+            if path.endswith("/read"):
+                return R(204)
+            if path.endswith("/summary"):
+                return R(200, {
+                    "summaryId": "sum-1", "conversationId": self.direct_id,
+                    "generatedBy": "LOCAL", "cached": False, "contextOmitted": False,
+                    "messageCount": len(self.store.live()), "keyPoints": ["point"],
+                    "decisions": [], "actionItems": [], "questions": [],
+                    "topics": [], "participants": ["An", "Binh"],
+                    "createdAt": "2026-01-01T00:01:00Z",
+                })
+            if path.endswith("/ask"):
+                return R(200, self.store.ask(self.direct_id, (body or {}).get("question", "")))
+            return R(404)
+
+        def delete(self, path, token=None, params=None, headers=None):
+            R = SummaryAskExecutorTest.Response
+            if self._opt_out_path(path):
+                self.store.binh_opt_out = False
+                return R(200, {"aiOptOut": False, "conversationId": self.direct_id})
+            parts = path.split("/")
+            if len(parts) == 7 and parts[5] == "messages":
+                msg = next((m for m in self.store.messages if m["id"] == parts[6]), None)
+                if msg is not None:
+                    msg["deletedAt"] = "2026-01-01T00:03:00Z"
+                    msg["content"] = None
+                return R(204)
+            return R(404)
+
+    def _fixture(self, ask_errors=False):
+        direct_id = "conv-an-binh"
+        store = self.Store()
+        world = self.World(store, direct_id)
+        world.ask_errors = ask_errors
+        client = self.Client(store, direct_id)
+
+        class Api:
+            USER_A = {"phone": "+84900000001"}
+            USER_C = {"phone": "+84900000002"}
+
+            @staticmethod
+            def direct_conversation(client_obj, token, phone):
+                return 200, {"id": direct_id}
+
+            @staticmethod
+            def send_text(client_obj, token, cid, content):
+                return store.create(cid, content, "user-binh", "Binh")
+
+        def session(api, recorder, phone):
+            if phone.endswith("0001"):
+                return {"accessToken": "tok-an", "user": {"id": "user-an", "phone": phone}}
+            return {"accessToken": "tok-binh", "user": {"id": "user-binh", "phone": phone}}
+
+        context = {
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "row": journeys.ROW_BY_ID["summary-ask"],
+            "row_dir": Path(tempfile.mkdtemp()),
+            "adb": self.Adb(),
+            "device": self.Device(world),
+            "helpers": (Api(), None, self.Patch()),
+            "client": client,
+            "ui_timeout": 2,
+        }
+        return store, world, client, context, session
+
+    def test_executor_drives_summary_ask_citation_jump_and_opt_out(self):
+        store, world, client, context, session = self._fixture()
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session):
+            result = journeys.run_summary_ask(journeys.ROW_BY_ID["summary-ask"], context)
+
+        self.assertIn("LOCAL", result["summary"])
+        self.assertIn("EXTRACTIVE", result["ask_answer"])
+        self.assertEqual(result["ask_rest_verify"],
+                         "CACHE replay cites the seeded message id and seq")
+        self.assertIn("cited messageBody", result["citation_jump"])
+        # The whole flow ran: consent was enabled, the fact+fillers were seeded,
+        # the opt-out round-trip asked three times (verify/omitted/restored).
+        self.assertTrue(world.fact_visible)       # ask citation jump rendered the fact
+        self.assertEqual(store.asks, 3)
+        # Cleanup: seeded rows tombstoned, consent + opt-out restored to pre-run.
+        self.assertTrue(all(m["deletedAt"] for m in store.messages))
+        self.assertFalse(store.consent)
+        self.assertFalse(store.binh_opt_out)
+        self.assertFalse(world.summary_open or world.ask_open or world.menu_open)
+
+    def test_executor_restores_state_and_sweeps_after_an_ask_failure(self):
+        store, world, client, context, session = self._fixture(ask_errors=True)
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session):
+            with self.assertRaises(journeys.ProductFailure) as caught:
+                journeys.run_summary_ask(journeys.ROW_BY_ID["summary-ask"], context)
+        self.assertIn("ask sheet surfaced an error", str(caught.exception))
+        # The seed happened before the failure, so every row-owned message and
+        # both settings must still be cleaned up / restored.
+        self.assertEqual(len(store.messages), journeys._ASK_FILLER_COUNT + 1)
+        self.assertTrue(all(m["deletedAt"] for m in store.messages))
+        self.assertFalse(store.consent)
+        self.assertFalse(store.binh_opt_out)
+        self.assertFalse(world.ask_open)
 
 
 if __name__ == "__main__":
