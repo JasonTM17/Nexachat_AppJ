@@ -53,7 +53,7 @@ public class CallController {
     @MessageExceptionHandler(Exception.class)
     @SendToUser(value = "/queue/errors", broadcast = false)
     public WsErrorResponse onUnexpected(Exception exception, Message<?> message) {
-        log.warn("Unexpected error while handling a call signal", exception);
+        log.warn("Unexpected error while handling a call signal ({})", exception.getClass().getSimpleName());
         return new WsErrorResponse("VALIDATION_FAILED", null,
                 extractCallId(message), extractConversationId(message));
     }
