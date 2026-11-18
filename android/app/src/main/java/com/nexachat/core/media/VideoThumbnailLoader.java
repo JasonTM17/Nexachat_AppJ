@@ -163,10 +163,11 @@ public final class VideoThumbnailLoader {
             return size;
         }
 
-        int readAt(long position, byte[] buffer, int offset, int length) throws IOException {
+        synchronized int readAt(long position, byte[] buffer, int offset, int length)
+                throws IOException {
             if (length == 0) {
                 return 0;
-            }
+            }"
             long total = getSize();
             if (total >= 0 && position >= total) {
                 return -1;
