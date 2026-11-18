@@ -48,6 +48,7 @@ public final class AuthViewModel extends ViewModel {
             new MutableLiveData<>(new EmailSignupState());
     private EmailSignupState emailSignupState = mutableEmailSignup.getValue();
     private final Clock clock;
+    private volatile int codeRequestGeneration;
 
     @Inject
     public AuthViewModel(
@@ -203,9 +204,10 @@ public final class AuthViewModel extends ViewModel {
             return;
         }
         updateState(current -> current.withLoading(true, null));
+        int requestGeneration = codeRequestGeneration;
         disposables.add(authRepository.requestEmailSignupCode(email)
                 .subscribeOn(Schedulers.io())
-                .subscribe(this::finishCodeRequest, this::failLoading));
+                .subscribe(result -> finishCodeRequest(requestGeneration, result), this::failLoading));
     }
 
     public void resendSignupCode() {
@@ -215,13 +217,15 @@ public final class AuthViewModel extends ViewModel {
             return;
         }
         updateState(current -> current.withLoading(true, null));
+        int requestGeneration = codeRequestGeneration;
         disposables.add(authRepository.requestEmailSignupCode(signup.getEmail().trim())
                 .subscribeOn(Schedulers.io())
-                .subscribe(this::finishCodeRequest, this::failLoading));
+                .subscribe(result -> finishCodeRequest(requestGeneration, result), this::failLoading));
     }
 
     /** Back to the form so a mistyped address can be corrected. */
     public void changeSignupEmail() {
+        codeRequestGeneration++;
         updateEmailSignup(current -> current.backToForm());
         updateState(current -> current.withLoading(false, null));
     }
@@ -244,7 +248,10 @@ public final class AuthViewModel extends ViewModel {
                 .subscribe(this::finishEmailRegister, this::failLoading));
     }
 
-    private void finishCodeRequest(Result<Unit> result) {
+    private void finishCodeRequest(int requestGeneration, Result<Unit> result) {
+        if (requestGeneration != codeRequestGeneration) {
+            return;
+        }
         if (result instanceof Result.Success<?>) {
             long until = clock.millis() + EmailSignupState.RESEND_COOLDOWN_MS;
             updateEmailSignup(current -> current.withCodeSent(until));

@@ -61,6 +61,7 @@ public final class BlockedUsersViewModel extends ViewModel {
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final MutableLiveData<UiState> uiState =
             new MutableLiveData<>(new UiState(List.of(), false, false, null));
+    private int listGeneration;
 
     @Inject
     public BlockedUsersViewModel(SafetyRepository safetyRepository) {
@@ -85,6 +86,7 @@ public final class BlockedUsersViewModel extends ViewModel {
         if (state == null) {
             return;
         }
+        listGeneration++;
         List<SafetyRepository.BlockedUser> remaining = new ArrayList<>();
         for (SafetyRepository.BlockedUser row : state.items) {
             if (!userId.equals(row.userId())) {
@@ -99,6 +101,7 @@ public final class BlockedUsersViewModel extends ViewModel {
     }
 
     public void refresh() {
+        listGeneration++;
         uiState.setValue(new UiState(List.of(), true, false, null));
         loadFirstPage();
     }
@@ -112,10 +115,14 @@ public final class BlockedUsersViewModel extends ViewModel {
     }
 
     private void loadPage(@Nullable String cursor) {
+        int requestGeneration = listGeneration;
         disposables.add(safetyRepository.listBlocked(PAGE_SIZE, cursor)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(page -> {
+                    if (requestGeneration != listGeneration) {
+                        return;
+                    }
                     UiState state = uiState.getValue();
                     List<SafetyRepository.BlockedUser> merged = new ArrayList<>();
                     if (cursor != null && state != null) {
@@ -124,6 +131,9 @@ public final class BlockedUsersViewModel extends ViewModel {
                     merged.addAll(page.items());
                     uiState.setValue(new UiState(merged, false, false, page.nextCursor()));
                 }, error -> {
+                    if (requestGeneration != listGeneration) {
+                        return;
+                    }
                     UiState state = uiState.getValue();
                     uiState.setValue(new UiState(
                             state == null ? List.of() : state.items, false, true, null));
