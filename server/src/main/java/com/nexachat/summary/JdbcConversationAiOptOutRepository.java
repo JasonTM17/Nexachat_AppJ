@@ -97,10 +97,17 @@ public class JdbcConversationAiOptOutRepository implements ConversationAiOptOuts
      * the summary overview is never citation-bound), so the whole
      * conversation's caches are the smallest set that is guaranteed to be
      * free of it.
+     *
+     * @return the member's message ids in the conversation, so listeners can
+     *         purge the same set from in-memory caches
      */
     @Transactional
-    public void optOut(UUID conversationId, UUID userId) {
+    public Set<UUID> optOut(UUID conversationId, UUID userId) {
         JdbcTemplate jdbcTemplate = requireJdbcTemplate();
+        Set<UUID> messageIds = Set.copyOf(jdbcTemplate.queryForList("""
+                SELECT m.id FROM messages m
+                WHERE m.conversation_id = ? AND m.sender_id = ?
+                """, UUID.class, conversationId, userId));
         jdbcTemplate.update("""
                 INSERT INTO conversation_ai_opt_outs (conversation_id, user_id)
                 VALUES (?, ?)
@@ -134,6 +141,7 @@ public class JdbcConversationAiOptOutRepository implements ConversationAiOptOuts
                   AND m.conversation_id = ?
                   AND m.sender_id = ?
                 """, conversationId, userId);
+        return messageIds;
     }
 
     @Transactional

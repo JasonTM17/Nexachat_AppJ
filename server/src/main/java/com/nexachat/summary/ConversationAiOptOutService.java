@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -45,8 +46,8 @@ public class ConversationAiOptOutService {
     @Transactional
     public ConversationAiOptOutResponse optOut(UUID conversationId, UUID userId) {
         requireMember(conversationId, userId);
-        repository.optOut(conversationId, userId);
-        eventPublisher.publishEvent(new ConversationAiOptOutEvent(conversationId, userId));
+        Set<UUID> messageIds = repository.optOut(conversationId, userId);
+        eventPublisher.publishEvent(new ConversationAiOptOutEvent(conversationId, userId, messageIds));
         return new ConversationAiOptOutResponse(conversationId, true);
     }
 

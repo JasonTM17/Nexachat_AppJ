@@ -87,10 +87,6 @@ public class FeedImageService {
     @Transactional
     public FeedImageResponse upload(UUID ownerId, MultipartFile file, Integer width,
                                     Integer height) {
-        rateLimits.consume("feed:image:minute:" + ownerId, IMAGES_PER_MINUTE,
-                Duration.ofMinutes(1), "Too many image uploads");
-        rateLimits.consume("feed:image:day:" + ownerId, IMAGES_PER_DAY,
-                Duration.ofDays(1), "Daily image upload limit reached");
         if (store.countUnboundImages(ownerId) >= MAX_UNBOUND_IMAGES) {
             throw ApiException.of(ApiErrorCode.RATE_LIMITED,
                     "Too many unattached feed images; bind or let them expire first");
@@ -119,6 +115,12 @@ public class FeedImageService {
             if (sniffed == null || !ALLOWED_MIME_TYPES.contains(sniffed)) {
                 throw ApiException.of(ApiErrorCode.MIME_NOT_ALLOWED);
             }
+            // Quota is consumed only once the file passed validation, matching
+            // the post/comment ordering: a rejected upload must not burn a token.
+            rateLimits.consume("feed:image:minute:" + ownerId, IMAGES_PER_MINUTE,
+                    Duration.ofMinutes(1), "Too many image uploads");
+            rateLimits.consume("feed:image:day:" + ownerId, IMAGES_PER_DAY,
+                    Duration.ofDays(1), "Daily image upload limit reached");
             StorageService.StoredFile stored = storageService.store(
                     STORAGE_SUBDIR, file.getOriginalFilename(), file.getContentType(), bytes);
             UUID imageId = UUID.randomUUID();

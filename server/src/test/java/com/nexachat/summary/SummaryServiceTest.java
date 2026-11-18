@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -33,6 +35,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -49,6 +52,10 @@ class SummaryServiceTest {
     private SummaryProviderSelector providerSelector;
     @Mock
     private SummaryCacheRepository cacheRepository;
+    @Mock
+    private SummaryConsentRepository consentRepository;
+    @Mock
+    private PlatformTransactionManager transactionManager;
 
     private final UUID userId = UUID.randomUUID();
     private final UUID conversationId = UUID.randomUUID();
@@ -57,7 +64,13 @@ class SummaryServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new SummaryService(rateLimiter, windowService, providerSelector, cacheRepository);
+        // The response-lock transaction runs the callback inline in unit tests.
+        lenient().when(transactionManager.getTransaction(any())).thenReturn(mock(TransactionStatus.class));
+        // By default the locked re-read sees the same snapshot the window load saw.
+        lenient().when(consentRepository.lockForResponse(any()))
+                .thenReturn(new SummaryConsentRepository.ConsentSnapshot(true, 0L));
+        service = new SummaryService(rateLimiter, windowService, providerSelector, cacheRepository,
+                ConversationAiOptOuts.none(), Clock.systemUTC(), 120_000L, consentRepository, transactionManager);
     }
 
     @Test
@@ -142,6 +155,113 @@ class SummaryServiceTest {
         assertThat(response.fallbackReason()).isEqualTo("NO_CONSENT");
         verify(providerSelector, never()).generate(org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void consentRevokedDuringGenerationSuppressesTheResponseAndSkipsTheCacheWrite() {
+        SummaryRequest request = request(false);
+        PreparedSummaryProvider prepared = new PreparedSummaryProvider(new StubProvider("LLM"), "LLM", null);
+        SummaryGeneration generated = generation("LLM", "External output", null);
+        when(windowService.load(conversationId, userId, request))
+                .thenReturn(new SummaryReadContext(window, true, 0L, null));
+        when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
+        when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
+                hash("LLM"), "LLM", SummaryLanguage.EN)).thenReturn(Optional.empty());
+        when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(generated);
+        // The revoke landed while the provider call was in flight: the locked
+        // re-read under FOR SHARE sees the new snapshot.
+        when(consentRepository.lockForResponse(userId))
+                .thenReturn(new SummaryConsentRepository.ConsentSnapshot(false, 1L));
+
+        assertThatThrownBy(() -> service.summarize(conversationId, userId, request))
+                .isInstanceOfSatisfying(ApiException.class,
+                        ex -> assertThat(ex.getCode()).isEqualTo(ApiErrorCode.AI_CONSENT_REQUIRED));
+
+        // The generated summary is neither served nor cached.
+        verify(cacheRepository, never()).saveIfAbsent(any(), any(), any(), anyString(), anyString(),
+                any(), any());
+        verify(cacheRepository, never()).replace(any(), any(), any(), anyString(), anyString(),
+                any(), any());
+    }
+
+    @Test
+    void consentRevokedDuringARefreshSuppressesTheResponseAndSkipsTheReplace() {
+        SummaryRequest request = request(true);
+        PreparedSummaryProvider prepared = new PreparedSummaryProvider(new StubProvider("LLM"), "LLM", null);
+        SummaryGeneration generated = generation("LLM", "External output", null);
+        when(windowService.load(conversationId, userId, request))
+                .thenReturn(new SummaryReadContext(window, true, 0L, null));
+        when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
+        when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(generated);
+        when(consentRepository.lockForResponse(userId))
+                .thenReturn(new SummaryConsentRepository.ConsentSnapshot(false, 1L));
+
+        assertThatThrownBy(() -> service.summarize(conversationId, userId, request))
+                .isInstanceOfSatisfying(ApiException.class,
+                        ex -> assertThat(ex.getCode()).isEqualTo(ApiErrorCode.AI_CONSENT_REQUIRED));
+
+        verify(cacheRepository, never()).replace(any(), any(), any(), anyString(), anyString(),
+                any(), any());
+        verify(cacheRepository, never()).saveIfAbsent(any(), any(), any(), anyString(), anyString(),
+                any(), any());
+    }
+
+    @Test
+    void unchangedConsentUnderTheResponseLockStoresAndServesTheGeneration() {
+        SummaryRequest request = request(false);
+        PreparedSummaryProvider prepared = new PreparedSummaryProvider(new StubProvider("LLM"), "LLM", null);
+        SummaryGeneration generated = generation("LLM", "External output", null);
+        SummaryCacheEntry entry = cacheEntry(generated, "LLM");
+        when(windowService.load(conversationId, userId, request))
+                .thenReturn(new SummaryReadContext(window, true, 0L, null));
+        when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
+        when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
+                hash("LLM"), "LLM", SummaryLanguage.EN)).thenReturn(Optional.empty());
+        when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(generated);
+        when(cacheRepository.saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(hash("LLM")),
+                eq("LLM"), eq(SummaryLanguage.EN), eq(generated)))
+                .thenReturn(new SummaryCacheRepository.SavedSummary(entry, true));
+        when(consentRepository.lockForResponse(userId))
+                .thenReturn(new SummaryConsentRepository.ConsentSnapshot(true, 0L));
+
+        SummaryResponse response = service.summarize(conversationId, userId, request);
+
+        assertThat(response.overview()).isEqualTo("External output");
+        assertThat(response.cached()).isFalse();
+        verify(consentRepository).lockForResponse(userId);
+        verify(cacheRepository).saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(hash("LLM")),
+                eq("LLM"), eq(SummaryLanguage.EN), eq(generated));
+    }
+
+    @Test
+    void aDeletedAccountMidFlightIsNotTreatedAsAConsentChange() {
+        SummaryRequest request = request(false);
+        PreparedSummaryProvider prepared = new PreparedSummaryProvider(new StubProvider("LLM"), "LLM", null);
+        SummaryGeneration generated = generation("LLM", "External output", null);
+        SummaryCacheEntry entry = cacheEntry(generated, "LLM");
+        when(windowService.load(conversationId, userId, request))
+                .thenReturn(new SummaryReadContext(window, true, 0L, null));
+        when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
+        when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
+                hash("LLM"), "LLM", SummaryLanguage.EN)).thenReturn(Optional.empty());
+        when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(generated);
+        when(cacheRepository.saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(hash("LLM")),
+                eq("LLM"), eq(SummaryLanguage.EN), eq(generated)))
+                .thenReturn(new SummaryCacheRepository.SavedSummary(entry, true));
+        // The missing-row sentinel (epoch < 0): the cache write's own requester
+        // lock reports USER_NOT_FOUND, so the re-check must not fire here.
+        when(consentRepository.lockForResponse(userId))
+                .thenReturn(new SummaryConsentRepository.ConsentSnapshot(false, -1L));
+
+        SummaryResponse response = service.summarize(conversationId, userId, request);
+
+        assertThat(response.overview()).isEqualTo("External output");
+        verify(cacheRepository).saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(hash("LLM")),
+                eq("LLM"), eq(SummaryLanguage.EN), eq(generated));
     }
 
     @Test
@@ -237,6 +357,8 @@ class SummaryServiceTest {
                 SummaryLanguage.EN, "LOCAL", null, null);
         when(windowService.load(conversationId, userId, request))
                 .thenReturn(new SummaryReadContext(window, false, 0L, null));
+        when(consentRepository.lockForResponse(userId))
+                .thenReturn(new SummaryConsentRepository.ConsentSnapshot(false, 0L));
         when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(false), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
         when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
@@ -266,6 +388,8 @@ class SummaryServiceTest {
         SummaryReadContext context = new SummaryReadContext(window, true, 4L, period);
         String hash = SummaryService.contentHash(window, request, period, 4L);
         when(windowService.load(conversationId, userId, request)).thenReturn(context);
+        when(consentRepository.lockForResponse(userId))
+                .thenReturn(new SummaryConsentRepository.ConsentSnapshot(true, 4L));
         when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
         when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(), hash, "LLM",
@@ -292,6 +416,8 @@ class SummaryServiceTest {
         SummaryGeneration generated = generation("LOCAL", "Local", null);
         String hash = SummaryService.contentHash(window, request, null, -1L);
         when(windowService.load(conversationId, userId, request)).thenReturn(new SummaryReadContext(window, false, 0L, null));
+        when(consentRepository.lockForResponse(userId))
+                .thenReturn(new SummaryConsentRepository.ConsentSnapshot(false, 0L));
         when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(false), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);
         when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(), hash, "LOCAL",
