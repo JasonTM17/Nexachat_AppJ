@@ -202,7 +202,6 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="@dimen/space_sm"
-            android:contentDescription="@string/ask_send_accessibility"
             android:minHeight="@dimen/min_touch_target"
             android:text="@string/ask_send" />
     </LinearLayout>

@@ -145,7 +145,7 @@
             android:layout_marginHorizontal="@dimen/space_md"
             android:layout_marginTop="@dimen/space_md"
             android:accessibilityLiveRegion="polite"
-            android:contentDescription="@string/voice_status_loading"
+            android:contentDescription="@string/loading_status"
             android:indeterminate="true"
             android:visibility="gone"
             app:indicatorColor="?attr/colorError" />

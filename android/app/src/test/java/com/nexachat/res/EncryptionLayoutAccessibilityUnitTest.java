@@ -54,7 +54,9 @@ public final class EncryptionLayoutAccessibilityUnitTest {
         Element el = findElementById(
                 parseLayout("fragment_encryption.xml").getDocumentElement(), "e2eeLoading");
         assertNotNull("fragment_encryption.xml must contain @e2eeLoading", el);
-        assertEquals("@string/voice_status_loading", getAttr(el, "contentDescription"));
+        // The shared loading label, not the voice-player status string: the indicator
+        // reports a screen-level wait, and every other progress indicator names it the same way.
+        assertEquals("@string/loading_status", getAttr(el, "contentDescription"));
         assertEquals("e2eeLoading must use the Material indicator",
                 "com.google.android.material.progressindicator.CircularProgressIndicator",
                 el.getTagName());
