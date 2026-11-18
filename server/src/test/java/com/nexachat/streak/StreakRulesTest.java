@@ -103,6 +103,128 @@ class StreakRulesTest {
     }
 
     @Test
+    void aStaleDayFromACrossMidnightRaceStillCompletes() {
+        // Both sides sent on day 1 and day 2, but A's day-2 record was stored
+        // first (A crossed midnight while B's day-1 send waited on the
+        // conversation lock). B's day-1 record then lands on a side whose
+        // stored day is already ahead, so day 1 must still complete.
+        State state = both(State.EMPTY, day(0));
+        state = StreakRules.record(state, Side.A, day(1));
+        state = StreakRules.record(state, Side.A, day(2));
+        state = StreakRules.record(state, Side.B, day(1));
+        state = StreakRules.record(state, Side.B, day(2));
+
+        assertThat(state.count()).isEqualTo(3);
+        assertThat(state.lastDay()).isEqualTo(day(2));
+        assertThat(state.freezeUsedOn()).isNull();
+    }
+
+    @Test
+    void replayingAStaleDayThatAlreadyCompletedChangesNothing() {
+        State state = both(State.EMPTY, day(0));
+        state = StreakRules.record(state, Side.A, day(1));
+        state = StreakRules.record(state, Side.A, day(2));
+        state = StreakRules.record(state, Side.B, day(1));
+        state = StreakRules.record(state, Side.B, day(2));
+
+        // B's day-1 record already completed its day; a second delayed copy of
+        // it must not complete or un-complete anything.
+        assertThat(StreakRules.record(state, Side.B, day(1))).isSameAs(state);
+        assertThat(StreakRules.record(state, Side.A, day(1))).isSameAs(state);
+        assertThat(StreakRules.record(state, Side.A, day(2))).isSameAs(state);
+    }
+
+    @Test
+    void aStaleDayOlderThanTheGraceWindowNeitherCompletesNorSpendsGrace() {
+        // A jumped from day 1 to day 4 (days 2-3 skipped) and B's first record
+        // is day 4, so day 4 completes as a restart. B's long-stale day-1
+        // record then arrives far outside anything the grace day could
+        // bridge: it must not resurrect an old day or spend the grace day.
+        State state = both(State.EMPTY, day(0));
+        state = StreakRules.record(state, Side.A, day(1));
+        state = StreakRules.record(state, Side.A, day(4));
+        state = StreakRules.record(state, Side.B, day(4));
+
+        assertThat(state.count()).isEqualTo(1);
+        assertThat(state.startedOn()).isEqualTo(day(4));
+        assertThat(state.freezeUsedOn()).isNull();
+
+        assertThat(StreakRules.record(state, Side.B, day(1))).isSameAs(state);
+        assertThat(state.count()).isEqualTo(1);
+        assertThat(state.freezeUsedOn()).isNull();
+    }
+
+    @Test
+    void aStaleRecordForADayAlreadyBridgedByGraceDoesNotCompleteItAgain() {
+        // A and B were both on day 1, then both jumped to day 3 (day 2
+        // skipped): day 3 completes across the one-day gap and spends the
+        // grace day on day 2. B's day-2 send was real but its record lands
+        // only now — day 2 must not complete (or count) a second time.
+        State state = both(both(State.EMPTY, day(0)), day(1));
+        state = StreakRules.record(state, Side.A, day(3));
+        state = StreakRules.record(state, Side.B, day(3));
+
+        assertThat(state.count()).isEqualTo(3);
+        assertThat(state.freezeUsedOn()).isEqualTo(day(2));
+
+        state = StreakRules.record(state, Side.B, day(2));
+
+        assertThat(state.count()).isEqualTo(3);
+        assertThat(state.lastDay()).isEqualTo(day(3));
+        assertThat(state.freezeUsedOn()).isEqualTo(day(2));
+    }
+
+    @Test
+    void theReverseSideOfTheCrossMidnightRaceStillCompletes() {
+        State state = both(State.EMPTY, day(0));
+        state = StreakRules.record(state, Side.B, day(1));
+        state = StreakRules.record(state, Side.B, day(2));
+        state = StreakRules.record(state, Side.A, day(1));
+        state = StreakRules.record(state, Side.A, day(2));
+
+        assertThat(state.count()).isEqualTo(3);
+        assertThat(state.lastDay()).isEqualTo(day(2));
+        assertThat(state.freezeUsedOn()).isNull();
+    }
+
+    @Test
+    void bothSidesTakeTurnsBeingStaleAndEveryDayStillCompletes() {
+        // Two back-to-back races: first A's records run ahead of B's day 1,
+        // then B's run ahead of A's day 3. Every day was sent by both sides.
+        State state = both(State.EMPTY, day(0));
+        state = StreakRules.record(state, Side.A, day(1));
+        state = StreakRules.record(state, Side.A, day(2));
+        state = StreakRules.record(state, Side.B, day(1));   // B stale on day 1
+        state = StreakRules.record(state, Side.B, day(2));
+        state = StreakRules.record(state, Side.B, day(3));
+        state = StreakRules.record(state, Side.B, day(4));
+        state = StreakRules.record(state, Side.A, day(3));   // A stale on day 3
+        state = StreakRules.record(state, Side.A, day(4));
+
+        assertThat(state.count()).isEqualTo(5);
+        assertThat(state.lastDay()).isEqualTo(day(4));
+        assertThat(state.freezeUsedOn()).isNull();
+    }
+
+    @Test
+    void aRealSkipStillDoesNotCompleteEvenWhenTheOtherSideSentTheAloneDay() {
+        // A skipped day 1 entirely; B sent it. Day 1 must stay incomplete no
+        // matter that B's record is fresh, and completing day 2 later bridges
+        // day 1 with the grace day instead of counting it.
+        State state = both(State.EMPTY, day(0));
+        state = StreakRules.record(state, Side.A, day(2));
+        state = StreakRules.record(state, Side.B, day(1));
+
+        assertThat(state.count()).isEqualTo(1);
+        assertThat(state.lastDay()).isEqualTo(day(0));
+
+        state = StreakRules.record(state, Side.B, day(2));
+
+        assertThat(state.count()).isEqualTo(2);
+        assertThat(state.freezeUsedOn()).isEqualTo(day(1));
+    }
+
+    @Test
     void oneMissedDayIsBridgedByTheGraceDayAndNotCounted() {
         State state = both(both(State.EMPTY, day(0)), day(1));
 
@@ -260,7 +382,7 @@ class StreakRulesTest {
         // The grace day was spent on day 2. Today (day 8) is six days later,
         // but the completing send lands on day 9 — outside the cooldown — so
         // a miss today would still be bridged and the flag must say so.
-        State state = new State(day(7), day(7), 4, 4, day(7), day(0), day(2));
+        State state = new State(day(7), day(7), 4, 4, day(7), day(0), day(2), day(0), day(0));
 
         assertThat(StreakRules.view(state, day(8)).freezeAvailable()).isTrue();
     }
@@ -270,7 +392,7 @@ class StreakRulesTest {
         // The grace day was spent on day 3. A miss today would be completed
         // on day 9 — exactly the strict-cooldown boundary — so it would not
         // be bridged.
-        State state = new State(day(7), day(7), 4, 4, day(7), day(0), day(3));
+        State state = new State(day(7), day(7), 4, 4, day(7), day(0), day(3), day(0), day(0));
 
         assertThat(StreakRules.view(state, day(8)).freezeAvailable()).isFalse();
     }

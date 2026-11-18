@@ -103,18 +103,20 @@ class StreakStore {
             jdbc.update("""
                     UPDATE conversation_streaks
                     SET low_day = ?, high_day = ?, count = ?, best_count = ?, last_day = ?,
-                        started_on = ?, freeze_used_on = ?, updated_at = now()
+                        started_on = ?, freeze_used_on = ?, low_cont = ?, high_cont = ?,
+                        updated_at = now()
                     WHERE conversation_id = ?
                     """, ps -> {
                 bindState(ps, 1, next);
-                ps.setObject(8, conversationId);
+                ps.setObject(10, conversationId);
             });
         }
     }
 
     private State lockChain(UUID conversationId) {
         return jdbc.query("""
-                SELECT low_day, high_day, count, best_count, last_day, started_on, freeze_used_on
+                SELECT low_day, high_day, count, best_count, last_day, started_on, freeze_used_on,
+                       low_cont, high_cont
                 FROM conversation_streaks WHERE conversation_id = ? FOR UPDATE
                 """, rs -> rs.next() ? readState(rs) : null, conversationId);
     }
@@ -123,21 +125,21 @@ class StreakStore {
         return jdbc.update("""
                 INSERT INTO conversation_streaks
                     (low_day, high_day, count, best_count, last_day, started_on, freeze_used_on,
-                     conversation_id, user_low_id, user_high_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     low_cont, high_cont, conversation_id, user_low_id, user_high_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (conversation_id) DO NOTHING
                 """, ps -> {
             bindState(ps, 1, state);
-            ps.setObject(8, conversationId);
-            ps.setObject(9, low);
-            ps.setObject(10, high);
+            ps.setObject(10, conversationId);
+            ps.setObject(11, low);
+            ps.setObject(12, high);
         });
     }
 
     Optional<ChainRow> findChain(UUID conversationId) {
         return Optional.ofNullable(jdbc.query("""
                 SELECT user_low_id, user_high_id, low_day, high_day, count, best_count, last_day,
-                       started_on, freeze_used_on
+                       started_on, freeze_used_on, low_cont, high_cont
                 FROM conversation_streaks WHERE conversation_id = ?
                 """, rs -> rs.next() ? readChain(rs) : null, conversationId));
     }
@@ -150,7 +152,7 @@ class StreakStore {
         }
         named.query("""
                 SELECT conversation_id, user_low_id, user_high_id, low_day, high_day, count,
-                       best_count, last_day, started_on, freeze_used_on
+                       best_count, last_day, started_on, freeze_used_on, low_cont, high_cont
                 FROM conversation_streaks WHERE conversation_id IN (:ids)
                 """, new MapSqlParameterSource("ids", conversationIds), rs -> {
             result.put(rs.getObject("conversation_id", UUID.class), readChain(rs));
@@ -167,12 +169,12 @@ class StreakStore {
             int inserted = jdbc.update("""
                     INSERT INTO user_streaks
                         (open_day, sent_day, count, best_count, last_day, started_on,
-                         freeze_used_on, user_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                         freeze_used_on, open_cont, sent_cont, user_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT (user_id) DO NOTHING
                     """, ps -> {
                 bindState(ps, 1, created);
-                ps.setObject(8, userId);
+                ps.setObject(10, userId);
             });
             if (inserted == 1) {
                 return;
@@ -187,11 +189,12 @@ class StreakStore {
             jdbc.update("""
                     UPDATE user_streaks
                     SET open_day = ?, sent_day = ?, count = ?, best_count = ?, last_day = ?,
-                        started_on = ?, freeze_used_on = ?, updated_at = now()
+                        started_on = ?, freeze_used_on = ?, open_cont = ?, sent_cont = ?,
+                        updated_at = now()
                     WHERE user_id = ?
                     """, ps -> {
                 bindState(ps, 1, next);
-                ps.setObject(8, userId);
+                ps.setObject(10, userId);
             });
         }
     }
@@ -199,7 +202,7 @@ class StreakStore {
     private State lockUser(UUID userId) {
         return jdbc.query("""
                 SELECT open_day AS low_day, sent_day AS high_day, count, best_count, last_day,
-                       started_on, freeze_used_on
+                       started_on, freeze_used_on, open_cont AS low_cont, sent_cont AS high_cont
                 FROM user_streaks WHERE user_id = ? FOR UPDATE
                 """, rs -> rs.next() ? readState(rs) : null, userId);
     }
@@ -208,7 +211,7 @@ class StreakStore {
     State findUser(UUID userId) {
         State state = jdbc.query("""
                 SELECT open_day AS low_day, sent_day AS high_day, count, best_count, last_day,
-                       started_on, freeze_used_on
+                       started_on, freeze_used_on, open_cont AS low_cont, sent_cont AS high_cont
                 FROM user_streaks WHERE user_id = ?
                 """, rs -> rs.next() ? readState(rs) : null, userId);
         return state == null ? State.EMPTY : state;
@@ -239,14 +242,14 @@ class StreakStore {
     private static State readState(ResultSet rs) throws SQLException {
         return new State(date(rs, "low_day"), date(rs, "high_day"), rs.getInt("count"),
                 rs.getInt("best_count"), date(rs, "last_day"), date(rs, "started_on"),
-                date(rs, "freeze_used_on"));
+                date(rs, "freeze_used_on"), date(rs, "low_cont"), date(rs, "high_cont"));
     }
 
     private static LocalDate date(ResultSet rs, String column) throws SQLException {
         return rs.getObject(column, LocalDate.class);
     }
 
-    /** Binds the seven state columns starting at {@code index}. */
+    /** Binds the nine state columns starting at {@code index}. */
     private static void bindState(PreparedStatement ps, int index, State state) throws SQLException {
         setDate(ps, index, state.dayA());
         setDate(ps, index + 1, state.dayB());
@@ -255,6 +258,8 @@ class StreakStore {
         setDate(ps, index + 4, state.lastDay());
         setDate(ps, index + 5, state.startedOn());
         setDate(ps, index + 6, state.freezeUsedOn());
+        setDate(ps, index + 7, state.contA());
+        setDate(ps, index + 8, state.contB());
     }
 
     private static void setDate(PreparedStatement ps, int index, LocalDate value) throws SQLException {
