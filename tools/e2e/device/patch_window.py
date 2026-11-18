@@ -697,6 +697,9 @@ def outside_repository(path: Path) -> bool:
 
 
 def main() -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default=DEVICE_API_BASE)
     parser.add_argument("--serial", default=SERIAL, choices=(SERIAL,))
