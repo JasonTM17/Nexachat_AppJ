@@ -90,8 +90,10 @@ public final class PostAdapter extends ListAdapter<FeedRepository.Post, PostAdap
         bindImage(holder.image, post.image());
         bindReactions(holder, post);
 
-        holder.comments.setText(context.getResources().getQuantityString(
-                R.plurals.feed_comment_count, post.commentCount(), post.commentCount()));
+        holder.comments.setText(post.commentCount() == 0
+                ? context.getString(R.string.feed_comment_count_zero)
+                : context.getResources().getQuantityString(R.plurals.feed_comment_count,
+                        post.commentCount(), post.commentCount()));
         holder.comments.setOnClickListener(ignored -> listener.onOpenPost(post));
         holder.itemView.setOnClickListener(ignored -> listener.onOpenPost(post));
         holder.react.setOnClickListener(ignored -> listener.onReact(post));
