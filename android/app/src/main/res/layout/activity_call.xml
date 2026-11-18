@@ -102,7 +102,7 @@
             android:layout_height="0dp"
             android:layout_weight="1.5" />
 
-        <!-- Square action controls (60dp mute/speaker/camera/switch, 72dp red end) -->
+        <!-- Square action controls on one row (60dp mute/speaker/camera/switch, 72dp red end) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -263,41 +263,40 @@
                     android:visibility="gone" />
             </LinearLayout>
 
-            <!-- End call Column -->
+            <!-- End call Column: wraps the 72dp button so five video-call columns still fit a 360dp screen -->
             <LinearLayout
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
                 android:gravity="center"
                 android:orientation="vertical">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/call_hang_up"
-                android:layout_width="@dimen/call_end_size"
-                android:layout_height="@dimen/call_end_size"
-                app:backgroundTint="@color/call_end_background"
-                android:contentDescription="@string/call_hang_up"
-                android:insetLeft="0dp"
-                android:insetTop="0dp"
-                android:insetRight="0dp"
-                android:insetBottom="0dp"
-                android:padding="0dp"
-                android:textColor="@android:color/transparent"
-                app:icon="@drawable/ic_call_end"
-                app:iconGravity="textStart"
-                app:iconPadding="0dp"
-                app:iconSize="32dp"
-                app:iconTint="@color/call_icon_on_control" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/call_hang_up"
+                    android:layout_width="@dimen/call_end_size"
+                    android:layout_height="@dimen/call_end_size"
+                    app:backgroundTint="@color/call_end_background"
+                    android:contentDescription="@string/call_hang_up"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
+                    android:padding="0dp"
+                    android:textColor="@android:color/transparent"
+                    app:icon="@drawable/ic_call_end"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="32dp"
+                    app:iconTint="@color/call_icon_on_control" />
 
-            <TextView
-                android:id="@+id/call_hang_up_label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:importantForAccessibility="no"
-                android:text="@string/call_hang_up"
-                android:textAppearance="?attr/textAppearanceLabelMedium"
-                android:textColor="@color/call_action_decline_text" />
+                <TextView
+                    android:id="@+id/call_hang_up_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:importantForAccessibility="no"
+                    android:text="@string/call_hang_up"
+                    android:textAppearance="?attr/textAppearanceLabelMedium"
+                    android:textColor="@color/call_action_decline_text" />
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>
