@@ -331,6 +331,10 @@ test.describe('feed moderation', () => {
     await page.goto('/feed');
 
     await row(page, SPAM_TEXT).getByRole('button', { name: 'Mark reviewed' }).click();
+    await page
+      .getByRole('alertdialog', { name: 'Mark reviewed' })
+      .getByRole('button', { name: 'Confirm' })
+      .click();
 
     await expect(row(page, SPAM_TEXT)).toHaveCount(0);
     await expect(page.getByRole('row')).toHaveCount(4);
@@ -354,6 +358,10 @@ test.describe('feed moderation', () => {
     await page.goto('/feed');
 
     await row(page, ABUSE_TEXT).getByRole('button', { name: 'Dismiss' }).click();
+    await page
+      .getByRole('alertdialog', { name: 'Dismiss' })
+      .getByRole('button', { name: 'Confirm' })
+      .click();
 
     await expect(row(page, ABUSE_TEXT)).toHaveCount(0);
     expect(mock.calls).toEqual([
@@ -380,6 +388,10 @@ test.describe('feed moderation', () => {
     await page.goto('/feed');
 
     await row(page, SPAM_TEXT).getByRole('button', { name: 'Mark reviewed' }).click();
+    await page
+      .getByRole('alertdialog', { name: 'Mark reviewed' })
+      .getByRole('button', { name: 'Confirm' })
+      .click();
     await expect(page.getByRole('alert')).toContainText('Something went wrong');
     await expect(row(page, SPAM_TEXT)).toBeVisible();
   });
