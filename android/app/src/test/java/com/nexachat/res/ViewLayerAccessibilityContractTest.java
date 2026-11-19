@@ -281,6 +281,18 @@ public final class ViewLayerAccessibilityContractTest {
     }
 
     /**
+     * The unread-summary banner text is swapped asynchronously as messages arrive;
+     * without a live region a screen reader never announces the new count.
+     */
+    @Test
+    public void unreadBannerAnnouncesCountChanges() throws Exception {
+        Element text = findById(parse("include_unread_banner.xml"), "unreadBannerText");
+        assertNotNull("include_unread_banner.xml: missing @id/unreadBannerText", text);
+        assertEquals("unreadBannerText live region", "polite",
+                attr(text, "accessibilityLiveRegion"));
+    }
+
+    /**
      * The group name is the only place the screen states which group it is, so the
      * admin-only rename affordance must not replace it in the announced name.
      */
