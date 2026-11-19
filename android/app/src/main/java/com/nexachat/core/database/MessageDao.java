@@ -64,6 +64,10 @@ public interface MessageDao {
     @Query("DELETE FROM messages WHERE conversationId = :conversationId")
     Completable deleteForConversation(String conversationId);
 
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @Query("DELETE FROM messages WHERE conversationId = :conversationId")
+    void deleteForConversationInTransaction(String conversationId);
+
     /** Explicit server downgrade invalidates revision authority without deleting cached history. */
     @Query("UPDATE messages SET changeVersion = 0, generation = 0 WHERE conversationId = :conversationId")
     void clearSyncVersionsForConversation(String conversationId);

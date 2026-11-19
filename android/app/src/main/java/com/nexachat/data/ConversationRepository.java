@@ -1208,7 +1208,11 @@ public final class ConversationRepository implements AutoCloseable {
         if (!isInboxPageGenerationCurrent(generation)) {
             return Completable.complete();
         }
-        return conversationDao.inboxFlow().firstOrError().flatMapCompletable(localRows -> {
+        // inboxFlow() emits on Room's shared query executor; without observeOn
+        // the confirm fetch and the prune runInTransaction would occupy that
+        // two-thread pool while holding the writer connection (issue #184).
+        return conversationDao.inboxFlow().firstOrError().observeOn(Schedulers.io())
+                .flatMapCompletable(localRows -> {
             Set<String> pageIdSet = new HashSet<>(pageIds);
             Set<String> walkIdSet;
             synchronized (inboxPagingLock) {

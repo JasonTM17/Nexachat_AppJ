@@ -132,6 +132,14 @@ public interface ConversationDao {
     @Query("DELETE FROM conversations WHERE id = :conversationId")
     Completable deleteById(String conversationId);
 
+    /**
+     * Synchronous variant for {@code AppDatabase.runInTransaction} bodies:
+     * parking the caller on a Completable inside a held writer transaction
+     * starves the single SQLCipher connection (issue #184).
+     */
+    @Query("DELETE FROM conversations WHERE id = :conversationId")
+    void deleteByIdInTransaction(String conversationId);
+
     /** Clears only the default inbox rows, leaving archived rows intact. */
     @Query("DELETE FROM conversations WHERE archived = 0")
     Completable clearInbox();
