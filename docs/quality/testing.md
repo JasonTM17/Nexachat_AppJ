@@ -186,9 +186,10 @@ debug receiver), and `am broadcast` arrives with an unattributed sender uid.
 
 ## Local development with Mailpit (Email OTP & Account Deletion)
 
-For testing recovery-email verification (`POST /api/v1/users/me/email/request`),
-password reset (`POST /api/v1/auth/recovery/reset-password/request`), and
-self-service account deletion (`POST /api/v1/account-deletion/request`)
+For testing recovery-email verification (`PUT /api/v1/users/me/email` +
+`POST /api/v1/users/me/email/verify`), password reset
+(`POST /api/v1/auth/password-reset/request` + `/confirm`), and self-service
+account deletion (`POST /api/v1/account-deletion/request` + `/confirm`)
 without external email service credentials, use [Mailpit](https://github.com/axllent/mailpit)
 as a local SMTP sink:
 
