@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type AlertRule } from '../api';
 import { useI18n } from '../i18n';
+import { useLatestRequest } from '../lib/async';
 import { Chip, ConfirmDialog, Empty, ErrorBlock, Loading } from '../components/ui';
 import { useSession } from '../auth';
 
@@ -52,6 +53,7 @@ export default function RulesPage() {
   );
   const [testError, setTestError] = useState(false);
   const [testBusy, setTestBusy] = useState(false);
+  const latest = useLatestRequest();
   const [pendingPatch, setPendingPatch] = useState<{
     rule: AlertRule;
     body: { enabled?: boolean; severity?: string };
@@ -156,17 +158,20 @@ export default function RulesPage() {
     setTestBusy(true);
     setTestResult(null);
     setTestError(false);
-    api<{ matched: boolean; matches: TestHit[] }>('/api/v1/admin/rules/test', {
+    // Only the newest response may write state: a second click on Run must not
+    // be overwritten by a slower earlier result.
+    latest(api<{ matched: boolean; matches: TestHit[] }>('/api/v1/admin/rules/test', {
       method: 'POST',
       body: {
         patternType: testType,
         pattern: testType === 'CARD' ? undefined : testPattern,
         sampleText: testSample,
       },
-    })
-      .then(setTestResult)
-      .catch(() => setTestError(true))
-      .finally(() => setTestBusy(false));
+    }), (res) => {
+      setTestBusy(false);
+      if (res) setTestResult(res);
+      else setTestError(true);
+    });
   };
 
   if (failed) return <ErrorBlock onRetry={load} />;
