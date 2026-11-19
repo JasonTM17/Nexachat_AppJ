@@ -34,7 +34,14 @@
   function init() {
     var validSection = document.getElementById('invite-valid');
     var invalidSection = document.getElementById('invite-invalid');
+    var pendingSection = document.getElementById('invite-pending');
     var openBtn = document.getElementById('btn-open-app');
+
+    // The pending state is the default markup so first paint is never blank;
+    // whichever outcome resolves replaces it.
+    if (pendingSection) {
+      pendingSection.setAttribute('hidden', '');
+    }
 
     var token = extractToken(
       window.location.pathname,
