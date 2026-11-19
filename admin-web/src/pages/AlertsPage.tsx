@@ -67,6 +67,7 @@ export default function AlertsPage() {
   const [revealed, setRevealed] = useState<RevealedMessage[] | null>(null);
   const [noteText, setNoteText] = useState('');
   const [actionError, setActionError] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const params = useMemo(() => {
     const q = new URLSearchParams();
@@ -94,13 +95,16 @@ export default function AlertsPage() {
 
   const openDetail = (id: string) => {
     setRevealed(null);
+    setActionError(false);
     api<AlertDetail>(`/api/v1/admin/alerts/${id}`)
       .then(setDetail)
-      .catch(() => {});
+      .catch(() => setActionError(true));
   };
 
   const confirm = async (reason: string) => {
     if (!pending) return;
+    setBusy(true);
+    setActionError(false);
     let revealedMessages: RevealedMessage[] | null = null;
     try {
       if (pending.kind === 'status' && detail) {
@@ -135,11 +139,14 @@ export default function AlertsPage() {
       setActionError(true);
       setPending(null);
       load();
+    } finally {
+      setBusy(false);
     }
   };
 
   const assignMe = () => {
     if (!detail || !me) return;
+    setActionError(false);
     api(`/api/v1/admin/alerts/${detail.alert.id}`, {
       method: 'PATCH',
       body: { assigneeId: me.userId },
@@ -150,6 +157,7 @@ export default function AlertsPage() {
 
   const addNote = () => {
     if (!detail || !noteText.trim()) return;
+    setActionError(false);
     api(`/api/v1/admin/alerts/${detail.alert.id}/notes`, {
       method: 'POST',
       body: { body: noteText.trim() },
@@ -272,7 +280,7 @@ export default function AlertsPage() {
             <table>
               <thead>
                 <tr>
-                  <th scope="col" className="col-lo" aria-label={t('common.select')} />
+                  <th scope="col" aria-label={t('common.select')} />
                   <th scope="col">{t('alerts.col.severity')}</th>
                   <th scope="col" className="col-lo">{t('alerts.col.category')}</th>
                   <th scope="col">{t('alerts.col.snippet')}</th>
@@ -288,7 +296,7 @@ export default function AlertsPage() {
                     onClick={() => openDetail(a.id)}
                     onKeyDown={(e) => e.key === 'Enter' && openDetail(a.id)}
                   >
-                    <td className="col-lo" onClick={(e) => e.stopPropagation()}>
+                    <td onClick={(e) => e.stopPropagation()}>
                       <label className="check-hit">
                         <input
                           type="checkbox"
@@ -463,9 +471,14 @@ export default function AlertsPage() {
           title={pendingTitle}
           requireReason={pending.kind !== 'status'}
           confirmDanger={pending.kind === 'bulk'}
+          busy={busy}
           onConfirm={(reason) => void confirm(reason)}
           onCancel={() => setPending(null)}
-        />
+        >
+          {pending.kind === 'reveal' && (
+            <p className="muted">{t('alerts.reveal.reason')}</p>
+          )}
+        </ConfirmDialog>
       )}
     </>
   );
