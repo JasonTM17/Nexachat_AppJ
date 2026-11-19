@@ -27,6 +27,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:ellipsize="end"
+            android:importantForAccessibility="no"
             android:maxLines="1"
             android:textAppearance="?attr/textAppearanceTitleSmall"
             android:textColor="?attr/colorOnSurface" />
@@ -35,6 +36,7 @@
             android:id="@+id/commentBody"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:importantForAccessibility="no"
             android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="?attr/colorOnSurface" />
 
@@ -42,6 +44,7 @@
             android:id="@+id/commentTime"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:importantForAccessibility="no"
             android:textAppearance="?attr/textAppearanceBodySmall"
             android:textColor="?attr/colorOnSurfaceVariant" />
     </LinearLayout>
