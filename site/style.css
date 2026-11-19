@@ -816,6 +816,7 @@ body:has(#lang-en :target) .home-lang[href="#lang-en"] {
   grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   list-style: none;
+  counter-reset: feature-card;
 }
 
 @media (min-width: 40rem) {
@@ -836,6 +837,18 @@ body:has(#lang-en :target) .home-lang[href="#lang-en"] {
   background-color: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
+  counter-increment: feature-card;
+}
+
+.feature-card h3::before {
+  content: counter(feature-card, decimal-leading-zero);
+  display: block;
+  margin-bottom: 0.75rem;
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
 }
 
 .feature-card h3 {
@@ -888,6 +901,7 @@ body:has(#lang-en :target) .home-lang[href="#lang-en"] {
     overflow-x: auto;
     scroll-snap-type: x mandatory;
     scrollbar-width: thin;
+    scrollbar-color: var(--secondary-hover) transparent;
   }
 
   .shots > li {
@@ -913,6 +927,11 @@ body:has(#lang-en :target) .home-lang[href="#lang-en"] {
   padding: 3rem 1.5rem;
   color: var(--logo-on-brand);
   background-color: var(--btn-bg);
+  background-image: radial-gradient(
+    110% 130% at 85% -10%,
+    color-mix(in srgb, var(--primary) 22%, transparent),
+    transparent 55%
+  );
   border-radius: 1.5rem;
   text-align: center;
 }
