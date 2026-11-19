@@ -33,42 +33,42 @@
 
         <com.google.android.material.chip.Chip
             android:id="@+id/reasonSpam"
-            style="@style/Widget.Material3.Chip.Filter"
+            style="@style/Widget.NexaChat.Chip.Filter"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/report_reason_spam" />
 
         <com.google.android.material.chip.Chip
             android:id="@+id/reasonHarassment"
-            style="@style/Widget.Material3.Chip.Filter"
+            style="@style/Widget.NexaChat.Chip.Filter"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/report_reason_harassment" />
 
         <com.google.android.material.chip.Chip
             android:id="@+id/reasonViolence"
-            style="@style/Widget.Material3.Chip.Filter"
+            style="@style/Widget.NexaChat.Chip.Filter"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/report_reason_violence" />
 
         <com.google.android.material.chip.Chip
             android:id="@+id/reasonSexual"
-            style="@style/Widget.Material3.Chip.Filter"
+            style="@style/Widget.NexaChat.Chip.Filter"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/report_reason_sexual" />
 
         <com.google.android.material.chip.Chip
             android:id="@+id/reasonScam"
-            style="@style/Widget.Material3.Chip.Filter"
+            style="@style/Widget.NexaChat.Chip.Filter"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/report_reason_scam" />
 
         <com.google.android.material.chip.Chip
             android:id="@+id/reasonOther"
-            style="@style/Widget.Material3.Chip.Filter"
+            style="@style/Widget.NexaChat.Chip.Filter"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/report_reason_other" />
