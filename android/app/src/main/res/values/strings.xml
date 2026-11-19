@@ -377,9 +377,11 @@
     <string name="message_notification_title">NexaChat</string>
     <string name="message_notification_generic">You have a new message</string>
     <string name="message_notification_channel">Messages</string>
+    <string name="message_notification_channel_description">New messages in your conversations</string>
     <string name="reminder_notification_title">NexaChat</string>
     <string name="reminder_notification_generic">A reminder is due</string>
     <string name="reminder_notification_channel">Reminders</string>
+    <string name="reminder_notification_channel_description">Reminders and streak check-ins</string>
     <string name="theme_system">System default</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
