@@ -289,6 +289,12 @@ public final class InboxFragment extends Fragment {
             Chip all = new Chip(requireContext(), null, R.style.Widget_NexaChat_Chip_Filter);
             all.setId(View.generateViewId());
             all.setCheckable(true);
+            // Chips built in code never pick up android:clickable from the
+            // style (the constructor arg is a defStyleAttr, not a style), and
+            // setCheckable alone does not make them clickable — without this
+            // every tap is swallowed by the scroll container and the label
+            // filter can never be selected.
+            all.setClickable(true);
             all.setCheckedIconVisible(true);
             all.setText(R.string.label_filter_all);
             all.setTag(ALL_LABEL_FILTER);
@@ -299,6 +305,7 @@ public final class InboxFragment extends Fragment {
                 Chip chip = new Chip(requireContext(), null, R.style.Widget_NexaChat_Chip_Filter);
                 chip.setId(View.generateViewId());
                 chip.setCheckable(true);
+                chip.setClickable(true);
                 chip.setCheckedIconVisible(true);
                 chip.setCheckedIconTint(ColorStateList.valueOf(Color.WHITE));
                 chip.setText(label.getName());

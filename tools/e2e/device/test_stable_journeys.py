@@ -57,7 +57,7 @@ class MatrixAndDryRunTest(unittest.TestCase):
         runnable = {row.id for row in journeys.ROWS if row.capability_gap is None}
         self.assertEqual(runnable, {
             "auth-login", "chat-send-receive", "chat-interactions", "summary-ask",
-            "archive-preferences", "groups-contacts",
+            "archive-preferences", "groups-contacts", "labels-lifecycle",
             "calls-injected-notification", "injected-notifications",
         })
         self.assertEqual(journeys.ROWS[-1].id, "account-deletion")
@@ -293,7 +293,7 @@ class WiringDecisionTest(unittest.TestCase):
                 runnable.append(row_id)
         self.assertEqual(runnable, [
             "auth-login", "chat-send-receive", "chat-interactions",
-            "groups-contacts", "archive-preferences",
+            "groups-contacts", "archive-preferences", "labels-lifecycle",
             "calls-injected-notification", "summary-ask", "injected-notifications",
         ])
         self.assertEqual(len(runnable) + len(blocked), len(journeys.ROWS))
@@ -309,9 +309,10 @@ class WiringDecisionTest(unittest.TestCase):
         self.assertNotIn("summary-ask", blocked)
         self.assertNotIn("archive-preferences", blocked)
         self.assertNotIn("groups-contacts", blocked)
+        self.assertNotIn("labels-lifecycle", blocked)
         for row_id in (
             "media", "polls-reminders",
-            "labels-lifecycle", "calls-signaling",
+            "calls-signaling",
             "offline-sync", "accessibility-sweep",
         ):
             self.assertIn("BLOCKED_CAPABILITY:", blocked[row_id])
@@ -349,6 +350,7 @@ class WiringDecisionTest(unittest.TestCase):
             journeys.run_chat_interactions,
             journeys.run_summary_ask,
             journeys.run_archive_preferences,
+            journeys.run_labels_lifecycle,
             journeys.run_groups_contacts,
             journeys.run_calls_injected_notification,
             journeys.run_injected_notifications,
@@ -3089,6 +3091,588 @@ class GroupsContactsExecutorTest(unittest.TestCase):
                 journeys.ROW_BY_ID["groups-contacts"], {"serial": "emulator-5554"})
         self.assertEqual(result, {"summary": "ok"})
         sentinel.assert_called_once()
+
+    def test_registered_dispatch_routes_labels_lifecycle(self):
+        sentinel = mock.Mock(return_value={"summary": "ok"})
+        with mock.patch.object(journeys, "run_labels_lifecycle", sentinel):
+            result = journeys.run_registered_row(
+                journeys.ROW_BY_ID["labels-lifecycle"], {"serial": "emulator-5554"})
+        self.assertEqual(result, {"summary": "ok"})
+        sentinel.assert_called_once()
+
+
+class LabelsLifecycleExecutorTest(unittest.TestCase):
+    """Offline fake device+REST world for run_labels_lifecycle.
+
+    The world mirrors the surfaces probed on emulator-5554: the inbox long-press
+    actions sheet, the 'Conversation labels' assignment dialog (CheckBox per
+    fetched label, 'Manage labels'/'Done' buttons), the manage mode (per-label
+    'Label: X'/'Edit label X'/'Delete label X' rows + 'Create label'), the
+    'New label' editor (hint-desc EditText, color RadioButtons, Save/Cancel),
+    the 'Delete label?' confirm, and the inbox labelFilterChips carousel that
+    only renders while labels exist. Per-conversation label ids live in the
+    store keyed by caller so REST /labels, entry.labels and ?labelId= agree
+    with what the UI toggles — including the peer's empty views.
+
+    Recreation is modelled honestly: rotate() only re-renders the same dialog,
+    HOME + `am start` resumes it, `am force-stop` drops it, and a reopened
+    dialog refetches the store labels (the post-#181 contract). Failure
+    variants duplicate the rendered surface after rotation or keep the reopen
+    stale, and the run must classify them as ProductFailure and still sweep
+    the labels it created.
+    """
+
+    class Node:
+        def __init__(self, text="", desc="", rid="", box=(0, 0, 320, 48),
+                     clickable=True, cls="android.widget.TextView", checked=None):
+            self.text = text
+            self.desc = desc
+            self.attrs = {"resource-id": ("com.nexachat.debug:id/" + rid) if rid else ""}
+            if checked is not None:
+                self.attrs["checked"] = "true" if checked else "false"
+            self.box = box
+            self.clickable = clickable
+            self.cls = cls
+
+        @property
+        def center(self):
+            left, top, right, bottom = self.box
+            return (left + right) // 2, (top + bottom) // 2
+
+    class Store:
+        """Server truth: per-caller label lists and per-conversation label ids."""
+
+        CONVS = ("conv-an-binh", "conv-team", "conv-chi")
+
+        def __init__(self):
+            self.next_label_id = 0
+            self.labels = {"an": [], "binh": []}
+            self.conv_labels = {
+                cid: {"an": set(), "binh": set()} for cid in self.CONVS}
+            self.types = {"conv-an-binh": "DIRECT", "conv-team": "GROUP",
+                          "conv-chi": "DIRECT"}
+
+        def create_label(self, caller, name, color="INDIGO"):
+            self.next_label_id += 1
+            lab = {"id": f"lab-{self.next_label_id}", "name": name,
+                   "colorId": color}
+            self.labels[caller].append(lab)
+            return lab
+
+        def delete_label(self, caller, label_id):
+            self.labels[caller] = [
+                lab for lab in self.labels[caller] if lab["id"] != label_id]
+            for per in self.conv_labels.values():
+                per[caller].discard(label_id)
+
+        def by_name(self, caller, name):
+            return next((lab for lab in self.labels[caller]
+                         if lab["name"] == name), None)
+
+        def entry(self, caller, cid):
+            return {"id": cid, "type": self.types[cid],
+                    "archived": False, "muted": False, "mutedUntil": None,
+                    "pinned": False, "pinnedAt": None, "aiOptOut": False,
+                    "labels": sorted(self.conv_labels[cid][caller]),
+                    "peerPresence": {"online": True,
+                                     "lastSeenAt": "2026-01-01T00:00:00Z"}}
+
+        def filtered(self, caller, label_id):
+            return [cid for cid in self.CONVS
+                    if label_id in self.conv_labels[cid][caller]]
+
+    class World:
+        """Device surface state re-read by every uiautomator dump."""
+
+        def __init__(self, store, direct_id):
+            self.store = store
+            self.direct_id = direct_id
+            self.screen = "inbox"
+            self.app_running = True
+            self.foreground = True
+            self.inbox_dialog = False
+            self.label_dialog = False
+            self.dialog_mode = "assign"
+            self.editor_dialog = False
+            self.editor_text = ""
+            self.ime = False
+            self.delete_dialog = False
+            self.delete_target = None
+            self.label_filter = None        # None or set(conv ids)
+            self.rotation = 0
+            self.logcat = ["D NexaChat: app start"]
+            # Labels the activity-scoped view-model has fetched; UI mutations
+            # publish into it immediately, a reopen refetches the whole store
+            # (unless the world simulates the pre-#181 stale cache).
+            self.fetched = {lab["id"] for lab in store.labels["an"]}
+            self.stale_reopen = False       # failure variant
+            self.duplicate_after_rotate = False  # failure variant
+            self.rotation_leak = False      # failure variant
+            self._duplicated = False
+
+        def open_label_dialog(self):
+            self.label_dialog = True
+            self.dialog_mode = "assign"
+            if not self.stale_reopen:
+                self.fetched = {lab["id"] for lab in self.store.labels["an"]}
+
+        def _fetched_labels(self):
+            return [lab for lab in self.store.labels["an"]
+                    if lab["id"] in self.fetched]
+
+        def _visible_convs(self):
+            convs = LabelsLifecycleExecutorTest.Store.CONVS
+            if self.label_filter is None:
+                return list(convs)
+            return [cid for cid in convs if cid in self.label_filter]
+
+        def tree(self):
+            N = LabelsLifecycleExecutorTest.Node
+            s = self.store
+            nodes = []
+            if not self.app_running or not self.foreground:
+                return nodes
+            if self.screen == "inbox":
+                nodes.append(N(rid="inboxUserAvatar"))
+                nodes.append(N(rid="inboxFilterScroll", box=(0, 291, 320, 347)))
+                # 'Active now' presence strip above the list (same 'Binh' text)
+                nodes.append(N(text="Binh", desc="Binh, Active now",
+                               box=(100, 196, 184, 283)))
+                if s.labels["an"]:
+                    nodes.append(N(text="All labels",
+                                   cls="android.widget.RadioButton",
+                                   box=(8, 295, 96, 343)))
+                    for index, lab in enumerate(s.labels["an"]):
+                        left = 100 + index * 110
+                        nodes.append(N(
+                            text=lab["name"],
+                            desc=f"Filter inbox by {lab['name']}",
+                            cls="android.widget.RadioButton",
+                            box=(left, 295, min(left + 100, 312), 343)))
+                    nodes.append(N(text="Manage labels",
+                                   desc="Manage conversation labels",
+                                   cls="android.widget.Button",
+                                   box=(214, 295, 312, 343)))
+                nodes.append(N(rid="conversationList", box=(0, 347, 320, 620)))
+                visible = self._visible_convs()
+                if "conv-an-binh" in visible:
+                    nodes.append(N(text="Binh", desc="Binh, Online",
+                                   box=(76, 355, 263, 379)))
+                if "conv-team" in visible:
+                    nodes.append(N(text="NexaChat Team", box=(76, 427, 263, 451)))
+                if "conv-chi" in visible:
+                    nodes.append(N(text="Chi", box=(76, 499, 260, 523)))
+                if self.label_filter is not None and not visible:
+                    nodes.append(N(text='No conversations have the "x" label.'))
+            if self.inbox_dialog:
+                for text in ("Pin conversation", "For 1 hour", "For 4 hours",
+                             "Until 8:00 AM", "Until turned back on",
+                             "Archive", "Assign labels"):
+                    nodes.append(N(text=text, rid="text1",
+                                   cls="android.widget.CheckedTextView"))
+            if self.label_dialog:
+                copies = 2 if self._duplicated else 1
+                for _ in range(copies):
+                    if self.dialog_mode == "assign":
+                        nodes.append(N(text="Conversation labels"))
+                        labels = self._fetched_labels()
+                        if not labels:
+                            nodes.append(N(text="Create a label before assigning it."))
+                        for lab in labels:
+                            nodes.append(N(
+                                text=lab["name"],
+                                desc=f"Assign label {lab['name']}",
+                                cls="android.widget.CheckBox",
+                                checked=(lab["id"] in
+                                         s.conv_labels[self.direct_id]["an"])))
+                        nodes.append(N(text="Manage labels",
+                                       cls="android.widget.Button"))
+                    else:
+                        nodes.append(N(text="Manage labels"))
+                        for lab in self._fetched_labels():
+                            nodes.append(N(text=lab["name"],
+                                           desc=f"Label: {lab['name']}"))
+                            nodes.append(N(desc=f"Edit label {lab['name']}",
+                                           cls="android.widget.Button"))
+                            nodes.append(N(desc=f"Delete label {lab['name']}",
+                                           cls="android.widget.Button"))
+                        nodes.append(N(text="Back to conversation",
+                                       cls="android.widget.Button"))
+                        nodes.append(N(text="Create label",
+                                       cls="android.widget.Button"))
+                    nodes.append(N(text="Done", cls="android.widget.Button"))
+            if self.editor_dialog:
+                nodes.append(N(text="New label"))
+                nodes.append(N(text=self.editor_text,
+                               desc="Label name (1–30 characters)",
+                               cls="android.widget.EditText",
+                               box=(24, 200, 296, 252)))
+                for color in ("Indigo", "Blue", "Teal"):
+                    nodes.append(N(text=color, cls="android.widget.RadioButton"))
+                nodes.append(N(text="Save", cls="android.widget.Button"))
+                nodes.append(N(text="Cancel", cls="android.widget.Button"))
+            if self.delete_dialog:
+                nodes.append(N(text="Delete label?"))
+                nodes.append(N(text="Delete", cls="android.widget.Button"))
+                nodes.append(N(text="Cancel", cls="android.widget.Button"))
+            return nodes
+
+    class Device:
+        def __init__(self, world):
+            self.world = world
+
+        def nodes(self):
+            return self.world.tree()
+
+        def _assign_toggle(self, name):
+            w = self.world
+            lab = next((lab for lab in w._fetched_labels()
+                        if lab["name"] == name), None)
+            if lab is None:
+                return
+            ids = w.store.conv_labels[w.direct_id]["an"]
+            if lab["id"] in ids:
+                ids.discard(lab["id"])
+            else:
+                ids.add(lab["id"])
+
+        def tap_node(self, node):
+            w = self.world
+            s = w.store
+            text = node.text.strip()
+            desc = node.desc.strip()
+            rid = node.attrs["resource-id"]
+            if w.delete_dialog:
+                w.delete_dialog = False
+                if text == "Delete" and w.delete_target:
+                    s.delete_label("an", w.delete_target)
+                    w.fetched.discard(w.delete_target)
+                w.delete_target = None
+                return
+            if w.editor_dialog:
+                if desc == "Label name (1–30 characters)":
+                    w.ime = True
+                    return
+                if "RadioButton" in node.cls:
+                    return            # color pick keeps the editor open
+                if text in ("Save", "Cancel"):
+                    w.editor_dialog = False
+                    w.ime = False
+                    if text == "Save":
+                        lab = s.create_label("an", w.editor_text or "unnamed",
+                                             color="BLUE")
+                        w.fetched.add(lab["id"])
+                        w.editor_text = ""
+                return
+            if w.inbox_dialog:
+                w.inbox_dialog = False
+                if text == "Assign labels":
+                    w.open_label_dialog()
+                return
+            if w.label_dialog:
+                if w.dialog_mode == "assign":
+                    if "CheckBox" in node.cls and desc.startswith("Assign label "):
+                        self._assign_toggle(desc[len("Assign label "):])
+                    elif text == "Manage labels" and "Button" in node.cls:
+                        w.dialog_mode = "manage"
+                    elif text == "Done":
+                        w.label_dialog = False
+                    return
+                if text == "Create label":
+                    w.editor_dialog = True
+                    w.editor_text = ""
+                elif desc.startswith("Delete label "):
+                    name = desc[len("Delete label "):]
+                    lab = s.by_name("an", name)
+                    w.delete_dialog = True
+                    w.delete_target = lab["id"] if lab else None
+                elif text == "Back to conversation":
+                    w.dialog_mode = "assign"
+                elif text == "Done":
+                    w.label_dialog = False
+                return
+            if w.screen == "inbox":
+                if desc.startswith("Filter inbox by "):
+                    lab = s.by_name("an", desc[len("Filter inbox by "):])
+                    if lab is not None:
+                        w.label_filter = set(s.filtered("an", lab["id"]))
+                elif text == "All labels":
+                    w.label_filter = None
+                elif text == "Binh" and node.box and node.box[1] >= 347:
+                    w.screen = "chat"
+                return
+
+        def long_press(self, node, duration_ms=800):
+            w = self.world
+            if (w.screen == "inbox" and node.box and node.box[1] >= 347
+                    and node.text.strip() == "Binh"):
+                w.inbox_dialog = True
+
+        def swipe(self, x1, y1, x2, y2, duration_ms=300):
+            return None
+
+        def type_text(self, value):
+            self.world.editor_text = value
+
+        def screenshot(self, path):
+            Path(path).write_bytes(b"png")
+
+        def rotate(self, rotation):
+            w = self.world
+            w.rotation = rotation
+            if w.duplicate_after_rotate:
+                w._duplicated = True
+            if w.rotation_leak:
+                w.logcat.append(
+                    "E WindowManager: android.view.WindowLeaked: Activity "
+                    "com.nexachat.MainActivity has leaked window "
+                    "DecorView@abc[MainActivity] that was originally added here")
+
+        def key(self, code):
+            w = self.world
+            if code == "KEYCODE_HOME":
+                w.foreground = False
+                return
+            if w.ime:
+                w.ime = False
+                return
+            if w.delete_dialog:
+                w.delete_dialog = False
+            elif w.editor_dialog:
+                w.editor_dialog = False
+            elif w.label_dialog:
+                w.label_dialog = False
+            elif w.inbox_dialog:
+                w.inbox_dialog = False
+            elif w.screen == "chat":
+                w.screen = "inbox"
+
+    class Patch:
+        @staticmethod
+        def ui_nodes(device, timeout=8):
+            return device.nodes()
+
+        @staticmethod
+        def named_conversation_row(nodes, display_name):
+            return next((n for n in nodes
+                         if n.text.strip() == display_name
+                         or n.desc.strip() == display_name), None)
+
+        @staticmethod
+        def grant_test_permissions():
+            return {}
+
+        @staticmethod
+        def filtered_logcat(baseline):
+            return [], False
+
+    class Adb:
+        serial = "emulator-5554"
+
+        def __init__(self, world):
+            self.world = world
+            self.settings = {"accelerometer_rotation": "1", "user_rotation": "0"}
+
+        def command(self, *args, timeout=None, check=True, **kwargs):
+            w = self.world
+            if args[:4] == ("shell", "settings", "get", "system"):
+                return self.settings.get(args[4], "")
+            if args[:4] == ("shell", "settings", "put", "system"):
+                self.settings[args[4]] = args[5]
+                return ""
+            if args[:3] == ("shell", "am", "force-stop"):
+                w.app_running = False
+                w.label_dialog = w.inbox_dialog = False
+                w.editor_dialog = w.delete_dialog = False
+                return ""
+            if args[:3] == ("shell", "am", "start"):
+                if w.app_running:
+                    w.foreground = True        # resume: dialog surface stays
+                else:                          # cold start: fresh task, inbox
+                    w.app_running = True
+                    w.foreground = True
+                    w.screen = "inbox"
+                return "Starting: Intent { cmp=com.nexachat.debug/.MainActivity }"
+            if args[:3] == ("shell", "logcat", "-d"):
+                return "\n".join(w.logcat)
+            if args[:2] == ("shell", "cmd"):
+                return ""
+            return ""
+
+    class Response:
+        def __init__(self, status, body=None):
+            self.status = status
+            self._body = body
+
+        def json(self):
+            return self._body
+
+    class Client:
+        base_url = "http://127.0.0.1:18093"
+        timeout = 30
+
+        def __init__(self, store):
+            self.store = store
+
+        @staticmethod
+        def _caller(token):
+            return "an" if token == "tok-an" else "binh"
+
+        def request(self, method, path, token=None, body=None,
+                    params=None, raw_body=None, headers=None):
+            handler = {"GET": self.get, "POST": self.post, "PATCH": self.patch,
+                       "PUT": self.put, "DELETE": self.delete}[method]
+            return handler(path, token=token, body=body, params=params,
+                           headers=headers)
+
+        def get(self, path, token=None, params=None, headers=None):
+            R = LabelsLifecycleExecutorTest.Response
+            caller = self._caller(token)
+            if path == "/api/v1/labels":
+                return R(200, [dict(lab) for lab in self.store.labels[caller]])
+            if path == "/api/v1/conversations":
+                params = params or {}
+                if "labelId" in params:
+                    ids = self.store.filtered(caller, params["labelId"])
+                    return R(200, [self.store.entry(caller, cid) for cid in ids])
+                # All seeded conversations are unarchived, so both
+                # archived=true and the implicit archived=false reads see them.
+                if params.get("archived") == "true":
+                    return R(200, [])
+                return R(200, [self.store.entry(caller, cid)
+                               for cid in LabelsLifecycleExecutorTest.Store.CONVS])
+            return R(404)
+
+        def post(self, path, token=None, body=None, params=None, headers=None):
+            R = LabelsLifecycleExecutorTest.Response
+            caller = self._caller(token)
+            if path == "/api/v1/labels":
+                lab = self.store.create_label(
+                    caller, (body or {}).get("name"),
+                    color=(body or {}).get("colorId") or "INDIGO")
+                return R(201, dict(lab))
+            return R(404)
+
+        def patch(self, path, token=None, body=None, params=None, headers=None):
+            return LabelsLifecycleExecutorTest.Response(404)
+
+        def put(self, path, token=None, body=None, params=None, headers=None):
+            R = LabelsLifecycleExecutorTest.Response
+            caller = self._caller(token)
+            parts = path.split("/")
+            if len(parts) == 7 and parts[3] == "conversations" and parts[5] == "labels":
+                self.store.conv_labels[parts[4]][caller].add(parts[6])
+                return R(204)
+            return R(404)
+
+        def delete(self, path, token=None, params=None, headers=None):
+            R = LabelsLifecycleExecutorTest.Response
+            caller = self._caller(token)
+            parts = path.split("/")
+            if len(parts) == 7 and parts[3] == "conversations" and parts[5] == "labels":
+                self.store.conv_labels[parts[4]][caller].discard(parts[6])
+                return R(204)
+            if path.startswith("/api/v1/labels/"):
+                self.store.delete_label(caller, path.rsplit("/", 1)[1])
+                return R(204)
+            return R(404)
+
+    def _fixture(self, stale_reopen=False, duplicate_after_rotate=False,
+                 rotation_leak=False):
+        direct_id = "conv-an-binh"
+        store = self.Store()
+        world = self.World(store, direct_id)
+        world.stale_reopen = stale_reopen
+        world.duplicate_after_rotate = duplicate_after_rotate
+        world.rotation_leak = rotation_leak
+        client = self.Client(store)
+
+        class Api:
+            USER_A = {"phone": "+84900000001"}
+            USER_C = {"phone": "+84900000002"}
+
+            @staticmethod
+            def direct_conversation(client_obj, token, phone):
+                return 200, {"id": direct_id, "e2eeEnabled": False}
+
+        def session(api, recorder, phone):
+            if phone.endswith("0001"):
+                return {"accessToken": "tok-an",
+                        "user": {"id": "user-an", "phone": phone}}
+            return {"accessToken": "tok-binh",
+                    "user": {"id": "user-binh", "phone": phone}}
+
+        context = {
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "row": journeys.ROW_BY_ID["labels-lifecycle"],
+            "row_dir": Path(tempfile.mkdtemp()),
+            "adb": self.Adb(world),
+            "device": self.Device(world),
+            "helpers": (Api(), None, self.Patch()),
+            "client": client,
+            "ui_timeout": 2,
+        }
+        return store, world, client, context, session
+
+    def test_executor_drives_label_crud_filter_recreation_and_cleanup(self):
+        store, world, client, context, session = self._fixture()
+        row = journeys.ROW_BY_ID["labels-lifecycle"]
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session):
+            result = journeys.run_labels_lifecycle(row, context)
+
+        self.assertIn("REST /labels agrees", result["create"])
+        self.assertIn("peer clean", result["assign"])
+        self.assertIn("?labelId= agrees", result["filter"])
+        self.assertIn("one dialog surface", result["recreate"])
+        self.assertIn("force-stop drops the dialog", result["restart"])
+        self.assertIn("refetches REST-created labels", result["refetch"])
+        self.assertIn("hides the filter chip row", result["delete_last"])
+        # The row swept only what it created; no labels or assignments remain.
+        self.assertEqual(store.labels["an"], [])
+        self.assertEqual(store.labels["binh"], [])
+        self.assertTrue(all(not per["an"] for per in store.conv_labels.values()))
+        # Rotation ran and the settings were restored to the captured values.
+        self.assertEqual(world.rotation, 0)
+        self.assertEqual(context["adb"].settings["accelerometer_rotation"], "1")
+        self.assertEqual(context["adb"].settings["user_rotation"], "0")
+        # World ended on a sane surface for the next row.
+        self.assertEqual(world.screen, "inbox")
+        self.assertFalse(world.label_dialog or world.inbox_dialog
+                         or world.editor_dialog or world.delete_dialog)
+        # Six run-scoped captures were written under the row dir.
+        for name in ("label-created.png", "label-assigned.png",
+                     "label-filtered.png", "label-dialog-landscape.png",
+                     "label-reopen-refetch.png", "label-deleted.png",
+                     "labels-cleared.png"):
+            self.assertTrue((context["row_dir"] / name).exists(), name)
+
+    def test_executor_sweeps_labels_when_rotation_renders_two_surfaces(self):
+        store, world, client, context, session = self._fixture(
+            duplicate_after_rotate=True)
+        row = journeys.ROW_BY_ID["labels-lifecycle"]
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session):
+            with self.assertRaises(journeys.ProductFailure) as caught:
+                journeys.run_labels_lifecycle(row, context)
+        self.assertIn("exactly one label-dialog title", str(caught.exception))
+        # label A was already created+assigned when the duplicate surfaced;
+        # the sweep must still unassign and delete it.
+        self.assertEqual(store.labels["an"], [])
+        self.assertTrue(all(not per["an"] for per in store.conv_labels.values()))
+
+    def test_stale_reopen_is_a_product_failure_and_cleanup_runs(self):
+        store, world, client, context, session = self._fixture(stale_reopen=True)
+        row = journeys.ROW_BY_ID["labels-lifecycle"]
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session):
+            with self.assertRaises(journeys.ProductFailure) as caught:
+                journeys.run_labels_lifecycle(row, context)
+        self.assertIn("did not appear when the dialog reopened",
+                      str(caught.exception))
+        self.assertEqual(store.labels["an"], [])
+        self.assertTrue(all(not per["an"] for per in store.conv_labels.values()))
 
 
 if __name__ == "__main__":
