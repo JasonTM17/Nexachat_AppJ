@@ -88,7 +88,10 @@ public final class ProfileFragment extends Fragment {
     public ProfileFragment() {
         avatarPicker = registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> { if (uri != null && viewModel != null) viewModel.uploadAvatar(uri); });
         notificationPermissionRequest = registerForActivityResult(
-                new ActivityResultContracts.RequestPermission(), granted -> { });
+                new ActivityResultContracts.RequestPermission(),
+                // The first tap only asked for the permission; whichever way the
+                // user answered, continue into the settings screen they wanted.
+                granted -> openNotificationSettings());
     }
 
     @Nullable @Override public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle state) {

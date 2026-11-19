@@ -152,6 +152,16 @@
           android:visibility="gone" />
 
         <com.google.android.material.button.MaterialButton
+          android:id="@+id/completeProfileRetry"
+          style="@style/Widget.NexaChat.Button.Text"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_gravity="center_horizontal"
+          android:minHeight="@dimen/min_touch_target"
+          android:text="@string/action_retry"
+          android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
           android:id="@+id/completeProfileContinue"
           android:layout_width="match_parent"
           android:layout_height="wrap_content"

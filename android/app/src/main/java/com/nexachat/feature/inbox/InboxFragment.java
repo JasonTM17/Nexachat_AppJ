@@ -498,7 +498,10 @@ public final class InboxFragment extends Fragment {
 
         binding.loadingState.setVisibility(showLoading ? View.VISIBLE : View.GONE);
         binding.conversationList.setVisibility(showList ? View.VISIBLE : View.GONE);
-        binding.swipeRefresh.setVisibility(showList ? View.VISIBLE : View.GONE);
+        // swipeRefresh stays visible even when empty: the empty/error/loading
+        // overlays in the FrameLayout do not consume touches, so pull-to-refresh
+        // still works on an empty inbox.
+        binding.swipeRefresh.setVisibility(View.VISIBLE);
         binding.emptyState.setVisibility(showEmpty ? View.VISIBLE : View.GONE);
         binding.errorState.setVisibility(showError ? View.VISIBLE : View.GONE);
         if (showRefreshError) {

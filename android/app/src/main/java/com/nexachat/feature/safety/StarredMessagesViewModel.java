@@ -76,6 +76,24 @@ public final class StarredMessagesViewModel extends ViewModel {
         loadPage(state.nextCursor);
     }
 
+    /** Reloads from scratch after a failure (error state retry). */
+    public void retry() {
+        UiState state = uiState.getValue();
+        if (state != null && state.loading) {
+            return;
+        }
+        uiState.setValue(new UiState(List.of(), true, false, null));
+        loadPage(null);
+    }
+
+    /** Clears the one-shot error flag after the UI has surfaced it. */
+    public void consumeError() {
+        UiState state = uiState.getValue();
+        if (state != null && state.error) {
+            uiState.setValue(new UiState(state.items, state.loading, false, state.nextCursor));
+        }
+    }
+
     private void loadPage(@Nullable String cursor) {
         disposables.add(safetyRepository.listStarred(PAGE_SIZE, cursor)
                 .subscribeOn(Schedulers.io())
@@ -90,8 +108,10 @@ public final class StarredMessagesViewModel extends ViewModel {
                     uiState.setValue(new UiState(merged, false, false, page.nextCursor()));
                 }, error -> {
                     UiState state = uiState.getValue();
+                    // Keep nextCursor so a failed next-page load can be retried.
                     uiState.setValue(new UiState(
-                            state == null ? List.of() : state.items, false, true, null));
+                            state == null ? List.of() : state.items, false, true,
+                            state == null ? null : state.nextCursor));
                 }));
     }
 

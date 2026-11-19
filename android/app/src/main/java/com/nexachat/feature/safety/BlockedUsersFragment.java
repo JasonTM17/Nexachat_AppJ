@@ -55,17 +55,26 @@ public final class BlockedUsersFragment extends Fragment {
                 }
             }
         });
+        binding.blockedError.setOnRetry(() -> viewModel.refresh());
         viewModel.getUiState().observe(getViewLifecycleOwner(), state -> {
             adapter.submit(state.getItems());
             binding.blockedProgress.setVisibility(
                     state.isLoading() ? View.VISIBLE : View.GONE);
+            // A failed fetch shows the error surface with retry, not the
+            // "no blocked users" empty label.
+            boolean showError = state.isError() && state.getItems().isEmpty();
+            binding.blockedError.setVisibility(showError ? View.VISIBLE : View.GONE);
+            if (showError) {
+                binding.blockedError.setMessage(getString(R.string.safety_error_generic));
+            }
             binding.blockedEmpty.setVisibility(
-                    !state.isLoading() && state.getItems().isEmpty()
+                    !state.isLoading() && !state.isError() && state.getItems().isEmpty()
                             ? View.VISIBLE
                             : View.GONE);
-            if (state.isError() && binding != null) {
+            if (state.isError() && !state.getItems().isEmpty() && binding != null) {
                 Snackbar.make(binding.getRoot(), R.string.safety_error_generic,
                         Snackbar.LENGTH_SHORT).show();
+                viewModel.consumeError();
             }
         });
     }

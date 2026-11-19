@@ -1504,7 +1504,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                 : (pin.getContent() == null
                         ? pin.getType()
                         : SharedContentUi.previewText(requireContext(), pin.getContent()));
-        ChatInteractionsViews.bindPinnedBanner(root, pinText, () -> { viewModel.jumpToMessage(pin.getId()); pinIndex++; renderPinned(); });
+        ChatInteractionsViews.bindPinnedBanner(root, pinText, pinIndex % pins.size(), pins.size(),
+                () -> { viewModel.jumpToMessage(pin.getId()); pinIndex++; renderPinned(); });
     }
 
     private void renderReplyEditBanner() {
@@ -1546,6 +1547,19 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                         attachmentLabel, Math.round(item.getProgress() * 100)));
             }
             row.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            if (item.getState() == com.nexachat.feature.media.PendingAttachment.PendingState.FAILED) {
+                // Failed uploads keep the Uri, so a tap can re-run the send.
+                TextView retry = new TextView(requireContext());
+                retry.setText(R.string.ui_retry_symbol);
+                retry.setTextSize(24f);
+                retry.setGravity(android.view.Gravity.CENTER);
+                retry.setContentDescription(getString(R.string.action_retry));
+                retry.setMinWidth(getResources().getDimensionPixelSize(R.dimen.min_touch_target));
+                retry.setMinHeight(getResources().getDimensionPixelSize(R.dimen.min_touch_target));
+                retry.setOnClickListener(v -> viewModel.retryPendingAttachment(item.getLocalId()));
+                row.addView(retry, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            }
             TextView remove = new TextView(requireContext());
             remove.setText(R.string.ui_remove_symbol);
             remove.setTextSize(24f);
@@ -2061,7 +2075,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         args.putString("peerName", state != null ? state.getPeerName() : null);
         try {
             NavHostFragment.findNavController(this).navigate(R.id.encryptionFragment, args);
-        } catch (IllegalStateException ignored) { }
+        } catch (IllegalStateException ignored) {
+            if (binding != null) {
+                Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
+            }
+        }
     }
 
     private void showConversationSettings() {
@@ -2286,6 +2304,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             NavHostFragment.findNavController(this)
                     .navigate(R.id.starredMessagesFragment);
         } catch (RuntimeException ignored) {
+            if (binding != null) {
+                Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
+            }
         }
     }
 
@@ -2425,7 +2446,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
 
     private void openConversation(String id) {
         Bundle args = new Bundle(); args.putString(ARG_CONVERSATION_ID, id);
-        try { NavHostFragment.findNavController(this).navigate(R.id.chatFragment, args); } catch (IllegalStateException ignored) { }
+        try { NavHostFragment.findNavController(this).navigate(R.id.chatFragment, args); } catch (IllegalStateException ignored) {
+            if (binding != null) {
+                Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
+            }
+        }
     }
 
     @Nullable private ChatMessage resolveOriginal(String id) {
@@ -2503,7 +2528,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                 break;
             }
         }
-        try { NavHostFragment.findNavController(this).navigate(R.id.mediaViewerFragment, args); } catch (RuntimeException ignored) { }
+        try { NavHostFragment.findNavController(this).navigate(R.id.mediaViewerFragment, args); } catch (RuntimeException ignored) {
+            if (binding != null) {
+                Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
+            }
+        }
     }
     @Override public void onOpenFile(@NonNull String messageId, @NonNull AttachmentDto attachment) {
         subscriptions.add(
