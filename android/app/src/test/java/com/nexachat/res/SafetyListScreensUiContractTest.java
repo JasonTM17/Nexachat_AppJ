@@ -8,6 +8,7 @@ import static org.junit.Assert.fail;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import javax.xml.parsers.DocumentBuilder;
@@ -127,12 +128,10 @@ public final class SafetyListScreensUiContractTest {
         for (String key : keys) {
             assertTrue("values/strings_safety.xml missing " + key, en.containsKey(key));
             assertTrue("values-vi/strings_safety.xml missing " + key, vi.containsKey(key));
-        }
-        String enUnblock = en.get("cd_unblock_user_named");
-        String viUnblock = vi.get("cd_unblock_user_named");
-        if (!viUnblock.equals(enUnblock)) {
-            fail("cd_unblock_user_named must be translated: EN \"" + enUnblock
-                    + "\" VI \"" + viUnblock + "\"");
+            String enText = en.get(key);
+            String viText = vi.get(key);
+            assertTrue(key + " must not be blank in either locale",
+                    !enText.trim().isEmpty() && !viText.trim().isEmpty());
         }
     }
 
@@ -174,15 +173,17 @@ public final class SafetyListScreensUiContractTest {
     }
 
     private static String readSource(String relative) throws Exception {
-        File javaDir = new File(resDir.getParentFile().getParentFile(), "java");
-        File candidate = new File(javaDir, "com/nexachat/" + relative);
-        if (!candidate.isFile()) {
-            candidate = new File("android/app/src/main/java/com/nexachat", relative);
+        Path[] candidates = new Path[] {
+                Path.of("src/main/java/com/nexachat", relative),
+                Path.of("app/src/main/java/com/nexachat", relative),
+                Path.of("android/app/src/main/java/com/nexachat", relative),
+        };
+        for (Path path : candidates) {
+            if (Files.isRegularFile(path)) {
+                return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
+            }
         }
-        if (!candidate.isFile()) {
-            throw new AssertionError("Could not locate source " + relative);
-        }
-        return new String(Files.readAllBytes(candidate.toPath()), StandardCharsets.UTF_8);
+        throw new AssertionError("Missing " + relative);
     }
 
     private static Map<String, String> loadStrings(File file) throws Exception {
