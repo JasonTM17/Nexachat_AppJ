@@ -31,6 +31,19 @@ public final class InboxFilterScrollContractTest {
     }
 
     @Test
+    public void runtimeLabelChipsMustBeClickable() throws Exception {
+        // Chips built via `new Chip(context, null, R.style.X)` never apply the
+        // style's android:clickable (the ctor arg is a defStyleAttr), and
+        // setCheckable alone leaves them non-clickable, so taps are swallowed
+        // by the scroll container and the label filter can never be selected.
+        String source = readSource();
+        assertTrue("the 'All labels' chip must be clickable",
+                source.contains("all.setClickable(true)"));
+        assertTrue("each label filter chip must be clickable",
+                source.contains("chip.setClickable(true)"));
+    }
+
+    @Test
     public void chipRowWrapsOntoMultipleLinesAtLargeFontScales() throws Exception {
         Element row = requireId("inboxFilterRow");
         assertTrue("filter row must host the two chip groups",

@@ -2,7 +2,8 @@
 """Guarded coordinator for the phase 08 stable-journey campaign.
 
 Runnable rows are seeded login, send/receive, chat-interactions, summary-ask,
-archive/preferences, groups-contacts, and the two injected-push journeys.
+archive/preferences, groups-contacts, labels-lifecycle, and the two
+injected-push journeys.
 Every other matrix row stays BLOCKED_CAPABILITY with the gap that still
 prevents that row from producing its evidence.
 """
@@ -324,15 +325,49 @@ ROWS: tuple[JourneyRow, ...] = (
         id="labels-lifecycle",
         title="Labels and dialog recreation/stop-start",
         matrix_refs=("phase-08:Labels", "c1-5:Archive/labels/preferences"),
-        preconditions=("Integrated label-observer fix and a disposable conversation are installed"),
-        steps=("Create/assign/filter/delete labels", "Recreate dialog and stop/start with one observer/render"),
-        assertions=("No duplicate render/observer", "Label assignment and inbox filter agree with REST"),
-        captures=("label/dialog/filter screenshots", "redacted REST transcripts", "logcat.txt", "summary.json"),
-        cleanup=("Delete only labels and assignments created by the row"),
+        preconditions=("An is signed in on the device",
+                       "The seeded An↔Binh DIRECT conversation plus at least one other "
+                       "conversation are in the inbox (the label filter must hide the rest)",
+                       "The integrated build contains the label-observer and "
+                       "dialog-reopen-refetch fixes"),
+        steps=("Open the inbox long-press 'Assign labels' dialog, switch to manage mode "
+               "and create a label through the editor (name + color + Save)",
+               "Back to assignment, check the new label; verify the REST entry, the "
+               "?labelId= filter and the peer's privacy boundary",
+               "Select the inbox label filter chip; verify only the labeled row renders "
+               "and REST ?labelId= agrees; reset with 'All labels'",
+               "Reopen the dialog, rotate to landscape and back, then HOME + relaunch "
+               "(stop/start): assert exactly one title/one checkbox row per label and "
+               "that toggles land exactly one REST write; scan logcat for leaked windows",
+               "Force-stop + relaunch: dialog is gone, assignment persists, and the "
+               "reopened dialog refetches a REST-created label",
+               "Delete the REST-created label through manage mode, unassign and delete "
+               "the UI-created label, and watch the filter chip row disappear"),
+        assertions=("The UI-created label lands in GET /api/v1/labels and its checkbox "
+                    "assignment lands on An's inbox entry while Binh's entry and label "
+                    "list stay clean",
+                    "The inbox filter chip renders only the labeled conversation and "
+                    "GET /conversations?labelId= returns exactly that id",
+                    "After rotation and after HOME + relaunch the dialog exposes exactly "
+                    "one title and one checkbox row per label — no duplicate surface — "
+                    "and each toggle still lands exactly one REST write; logcat reports "
+                    "no leaked window (the LiveData observer count itself is JVM-pinned "
+                    "by LabelDialogFragmentObserverTest; uiautomator cannot read it)",
+                    "Reopening the dialog after an out-of-band REST create refetches "
+                    "the new label; deleting through manage mode removes it in REST "
+                    "and hides the filter chip row when none remain"),
+        captures=("label-created.png", "label-assigned.png", "label-filtered.png",
+                  "label-dialog-landscape.png", "label-reopen-refetch.png",
+                  "label-deleted.png", "labels-cleared.png",
+                  "ui-tree.txt", "logcat.txt", "rest-transcript.json", "summary.json"),
+        cleanup=("Unassign and delete only the row-created labels over REST",
+                 "Restore accelerometer/user rotation to the pre-run values",
+                 "Return the device to the inbox"),
         rest_plan=(("GET", "/api/v1/labels"), ("POST", "/api/v1/labels"),
-                   ("PUT", "/api/v1/conversations/{id}/labels/{labelId}")),
-        capability_gap=("The phase-06 label observer fix is not in this base and no existing device helper "
-                        "asserts dialog recreation or exactly one render."),
+                   ("PUT", "/api/v1/conversations/{id}/labels/{labelId}"),
+                   ("DELETE", "/api/v1/conversations/{id}/labels/{labelId}"),
+                   ("GET", "/api/v1/conversations?labelId={labelId}"),
+                   ("DELETE", "/api/v1/labels/{labelId}")),
     ),
     JourneyRow(
         id="calls-signaling",
@@ -611,6 +646,28 @@ HELPER_CALLS = {
         {"helper": "realtime_probe.FrameReader", "actor": "Binh",
          "assert": "MESSAGE_READ frame gated by the device toggle"},
     ),
+    "labels-lifecycle": (
+        {"helper": "adb_ui.Device.long_press + tap_node",
+         "target": "inbox row Binh -> 'Assign labels' -> 'Conversation labels' dialog",
+         "assert": "assign-mode title + empty state render once"},
+        {"helper": "adb_ui.Device.tap_node + type_text",
+         "target": "'Manage labels' -> 'Create label' -> name field -> color chip -> 'Save'",
+         "assert": "manage row 'Label: sj-lab-*' renders; GET /api/v1/labels agrees"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "'Back to conversation' -> label CheckBox",
+         "assert": "An entry.labels gains the id; ?labelId= returns the conversation; peer clean"},
+        {"helper": "adb_ui.Device.swipe + tap_node",
+         "target": "inboxFilterScroll carousel -> 'Filter inbox by sj-lab-*' chip",
+         "assert": "only the labeled row renders; 'All labels' restores the full list"},
+        {"helper": "adb_ui.Device.rotate + adb shell am start",
+         "target": "landscape/portrait rotation, KEYCODE_HOME -> am start, am force-stop",
+         "assert": "exactly one title + one CheckBox per label; toggles land one write; "
+                  "no leaked-window logcat; process death drops the dialog"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "reopened dialog -> 'Manage labels' -> 'Delete label sj-lab-b' -> 'Delete'",
+         "assert": "REST-created label renders on reopen (refetch) then deletes; "
+                  "the last delete hides the filter chip row"},
+    ),
     "injected-notifications": (
         {"helper": "e2e_common.send_text", "actor": "Binh", "assert": "real message id and seq"},
         {"helper": "inject_push.main", "kind": "message", "serial": SERIAL},
@@ -678,7 +735,17 @@ UI_MARKERS = {
         "text:Conversation labels", "text:<sj-lab label checkbox>",
         "resource-id:showSeen", "resource-id:showPresence",
     ),
-    "labels-lifecycle": ("text:unique label name", "text:one label render after recreation"),
+    "labels-lifecycle": (
+        "resource-id:conversationList", "text:Assign labels",
+        "text:Conversation labels", "text:Manage labels",
+        "text:Create label", "text:New label",
+        "desc:Label name (1–30 characters)", "text:Save",
+        "text:Back to conversation", "text:Done",
+        "desc:Assign label <sj-lab checkbox>", "text:All labels",
+        "desc:Filter inbox by <sj-lab>", "desc:Manage conversation labels",
+        "desc:Label: <sj-lab>", "desc:Delete label <sj-lab>",
+        "text:Delete label?", "text:Delete",
+    ),
     "calls-signaling": ("text:call state", "text:call history"),
     "calls-injected-notification": ("text:Incoming voice call", "text:Accept", "text:Decline"),
     "summary-ask": (
@@ -3169,6 +3236,632 @@ def run_archive_preferences(row: JourneyRow, context: dict[str, Any]) -> dict[st
     return result
 
 
+# --- labels-lifecycle -------------------------------------------------------
+# Caller-owned label CRUD through the real surfaces: the inbox long-press
+# "Assign labels" dialog (assignment mode CheckBoxes + the manage-mode
+# create/edit/delete controls), the LabelEditorDialogFragment name/color form,
+# the inbox labelFilterChips carousel, and the server-backed ?labelId= filter.
+# "One observer/one render" is asserted through the device-visible surface:
+# after rotation and after a HOME + am start stop/start cycle the dialog must
+# still expose exactly one title and exactly one row per label, the retained
+# surface must land exactly one REST write per toggle, and logcat must not
+# report a leaked window or fragment exception. The literal LiveData observer
+# count is JVM-pinned by LabelDialogFragmentObserverTest and cannot be read
+# through uiautomator; the row asserts its observable consequences instead.
+_LBL_MENU_ITEM = ("Assign labels", "Gán nhãn")
+_LBL_ASSIGN_TITLE = ("Conversation labels", "Nhãn trò chuyện")
+_LBL_MANAGE_TITLE = ("Manage labels", "Quản lý nhãn")
+_LBL_MODE_MANAGE = ("Manage labels", "Quản lý nhãn")       # assign-mode toggle button
+_LBL_MODE_BACK = ("Back to conversation", "Quay lại")      # manage-mode toggle button
+_LBL_CREATE = ("Create label", "Tạo nhãn")
+_LBL_EDITOR_TITLE = ("New label", "Nhãn mới")
+_LBL_NAME_HINT = ("Label name (1–30 characters)", "Tên nhãn (1–30 ký tự)")
+_LBL_SAVE = ("Save", "Lưu")
+_LBL_DONE = ("Done", "Hoàn tất")
+_LBL_DELETE_TITLE = ("Delete label?", "Xóa nhãn?")
+_LBL_DELETE_BUTTON = ("Delete", "Xóa")
+_LBL_FILTER_ALL = ("All labels", "Tất cả nhãn")
+_LBL_MANAGE_CHIP_DESC = ("Manage conversation labels", "Quản lý nhãn trò chuyện")
+_LBL_COLOR = ("Blue", "Xanh dương")
+_LBL_EMPTY_FILTER = ("No conversations have the", "Chưa có cuộc trò chuyện")
+_LBL_EMPTY_ASSIGN = ("Create a label before assigning it.", "Tạo nhãn trước khi gán.")
+_LBL_WINDOW_LEAK = ("has leaked window", "WindowLeaked")
+
+
+def _desc_variants(label: str, en: str, vi: str) -> set[str]:
+    return {en.replace("{name}", label), vi.replace("{name}", label)}
+
+
+def _lbl_filter_desc(name: str) -> set[str]:
+    return _desc_variants(name, "Filter inbox by {name}", "Lọc theo nhãn {name}")
+
+
+def _lbl_assign_desc(name: str) -> set[str]:
+    return _desc_variants(name, "Assign label {name}", "Gán nhãn {name}")
+
+
+def _lbl_chip_desc(name: str) -> set[str]:
+    return _desc_variants(name, "Label: {name}", "Nhãn: {name}")
+
+
+def _lbl_delete_desc(name: str) -> set[str]:
+    return _desc_variants(name, "Delete label {name}", "Xóa nhãn {name}")
+
+
+def _rest_labels(recorder: RecordingClient, token: str) -> list[dict[str, Any]]:
+    response = recorder.get("/api/v1/labels", token=token)
+    if response.status != 200:
+        raise ProductFailure(f"GET /api/v1/labels returned HTTP {response.status}")
+    body = response.json() or []
+    return [dict(item) for item in body] if isinstance(body, list) else []
+
+
+def _wait_rest_label(recorder: RecordingClient, token: str, name: str,
+                     timeout: float = 15.0) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    while True:
+        match = next((item for item in _rest_labels(recorder, token)
+                      if item.get("name") == name), None)
+        if match is not None:
+            return match
+        if time.monotonic() >= deadline:
+            raise ProductFailure(f"REST /api/v1/labels never listed {name!r}")
+        time.sleep(0.5)
+
+
+def _filtered_ids(recorder: RecordingClient, token: str, label_id: str) -> set[str]:
+    response = recorder.get("/api/v1/conversations", token=token,
+                            params={"labelId": label_id})
+    if response.status != 200:
+        raise ProductFailure(f"GET /conversations?labelId= returned HTTP {response.status}")
+    body = response.json() or []
+    items = body if isinstance(body, list) else (body.get("items") or [])
+    return {str(item.get("id")) for item in items}
+
+
+def _open_assign_dialog(context: dict[str, Any]) -> None:
+    """Inbox long-press on the seeded Binh row -> 'Assign labels' -> assign dialog."""
+    _open_inbox_actions(context)
+    _tap_dialog_item(
+        context, _LBL_MENU_ITEM,
+        "the inbox actions sheet did not offer 'Assign labels'")
+    _wait_ui_node(
+        context,
+        lambda node: node.text.strip() in _LBL_ASSIGN_TITLE and not node.desc.strip(),
+        "the conversation-labels dialog did not open")
+
+
+def _tap_dialog_button(context: dict[str, Any], labels: tuple[str, ...],
+                       what: str | None = None, timeout: float | None = None) -> Any:
+    """Tap a Button inside the label dialog. The inbox 'Manage labels' chip
+    shares the same text, so the match requires an empty content-desc — the
+    chip always carries 'Manage conversation labels'/'Quản lý nhãn trò chuyện'."""
+    ui = context["device"]
+    deadline = time.monotonic() + float(timeout or _ui_timeout(context))
+    while True:
+        nodes = _ui_nodes(context)
+        match = next((node for node in nodes
+                      if node.text.strip() in labels
+                      and "Button" in node.cls and not node.desc.strip()), None)
+        if match is not None:
+            ui.tap_node(match)
+            return match
+        if time.monotonic() >= deadline:
+            raise ProductFailure(what or f"the label dialog button {labels!r} was not offered")
+        time.sleep(0.4)
+
+
+def _label_dialog_titles(context: dict[str, Any], title_labels: tuple[str, ...]) -> list[Any]:
+    """Nodes carrying a dialog title: bare text with no content-desc, so the
+    inbox 'Manage labels' chip (desc='Manage conversation labels') is excluded."""
+    return [node for node in _ui_nodes(context)
+            if node.text.strip() in title_labels and not node.desc.strip()]
+
+
+def _assert_single_label_dialog(context: dict[str, Any], label_name: str,
+                                *, checked: bool | None = None,
+                                title_labels: tuple[str, ...] = _LBL_ASSIGN_TITLE,
+                                checkboxes: int = 1) -> None:
+    """Exactly one dialog surface: one title node and one CheckBox row per
+    expected label — a second observer/render surface would duplicate either."""
+    titles = _label_dialog_titles(context, title_labels)
+    if len(titles) != 1:
+        raise ProductFailure(
+            f"expected exactly one label-dialog title, found {len(titles)}")
+    nodes = _ui_nodes(context)
+    boxes = [node for node in nodes
+             if "CheckBox" in node.cls and node.text.strip() == label_name]
+    if len(boxes) != checkboxes:
+        raise ProductFailure(
+            f"expected {checkboxes} CheckBox row(s) for {label_name!r}, found {len(boxes)}")
+    if checked is not None:
+        wanted = "true" if checked else "false"
+        if boxes[0].attrs.get("checked") != wanted:
+            raise ProductFailure(
+                f"the {label_name!r} checkbox did not render checked={wanted}")
+
+
+def _carousel_node(context: dict[str, Any],
+                   predicate: Callable[[Any], bool], what: str,
+                   *, swipes: int = 14) -> Any:
+    """Scroll the inbox chip carousel horizontally until predicate matches a
+    node whose center is inside the inboxFilterScroll viewport, then return it.
+    swipe left (x2<x1) reveals chips to the right; swipe right returns."""
+    ui = context["device"]
+    for attempt in range(swipes):
+        nodes = _ui_nodes(context)
+        scroll = next((node for node in nodes if _rid_ends(node, "inboxFilterScroll")), None)
+        box = getattr(scroll, "box", None) or (0, 0, 320, 640)
+        viewport_left, viewport_right = box[0], box[2]
+        for node in nodes:
+            if not predicate(node) or not node.box:
+                continue
+            cx, cy = node.center
+            if viewport_left <= cx <= viewport_right:
+                return node
+        mid_y = (box[1] + box[3]) // 2
+        # Alternate: first reveal chips to the right, then sweep back left.
+        if attempt % 3 == 2:
+            ui.swipe(box[0] + int((box[2] - box[0]) * 0.10), mid_y,
+                     box[2] - int((box[2] - box[0]) * 0.10), mid_y, 350)
+        else:
+            ui.swipe(box[2] - int((box[2] - box[0]) * 0.10), mid_y,
+                     box[0] + int((box[2] - box[0]) * 0.10), mid_y, 350)
+        time.sleep(0.7)
+    raise ProductFailure(what)
+
+
+def _label_chip(context: dict[str, Any], name: str) -> Any:
+    """The inbox filter chip for a label, found through its localized desc."""
+    wanted = _lbl_filter_desc(name)
+    return _carousel_node(
+        context,
+        lambda node: node.desc.strip() in wanted,
+        f"the inbox label filter chip for {name!r} never appeared")
+
+
+def _inbox_row_visible(context: dict[str, Any], title: str) -> bool:
+    return _inbox_conversation_row(context, title) is not None
+
+
+def _wait_inbox_row_absent(context: dict[str, Any], title: str, what: str,
+                         timeout: float = 12.0) -> None:
+    deadline = time.monotonic() + timeout
+    while True:
+        if not _inbox_row_visible(context, title):
+            return
+        if time.monotonic() >= deadline:
+            raise ProductFailure(what)
+        time.sleep(0.4)
+
+
+def _logcat_window_leaks(context: dict[str, Any], baseline: set[str]) -> list[str]:
+    raw = context["adb"].command(
+        "shell", "logcat", "-d", "-v", "brief", timeout=30, check=False)
+    delta = set(raw.splitlines()) - baseline
+    return sorted(line for line in delta
+                  if any(marker in line for marker in _LBL_WINDOW_LEAK))
+
+
+def _device_rotation(context: dict[str, Any]) -> dict[str, str]:
+    adb = context["adb"]
+    return {
+        "accelerometer_rotation": adb.command(
+            "shell", "settings", "get", "system", "accelerometer_rotation", timeout=15),
+        "user_rotation": adb.command(
+            "shell", "settings", "get", "system", "user_rotation", timeout=15),
+    }
+
+
+def _restore_rotation(context: dict[str, Any], before: dict[str, str]) -> None:
+    adb = context["adb"]
+    wanted_auto = before.get("accelerometer_rotation") or "1"
+    wanted_user = before.get("user_rotation") or "0"
+    try:
+        adb.command("shell", "settings", "put", "system", "user_rotation",
+                    wanted_user if wanted_user.isdigit() else "0", timeout=15)
+        adb.command("shell", "settings", "put", "system", "accelerometer_rotation",
+                    wanted_auto if wanted_auto.isdigit() else "1", timeout=15)
+    except Exception as error:
+        errors = context.setdefault("cleanup_errors", [])
+        errors.append(f"rotation restore: {type(error).__name__}")
+
+
+def _set_label_checked(context: dict[str, Any], name: str, want: bool) -> None:
+    """Tap the assignment CheckBox until its rendered state matches `want`."""
+    ui = context["device"]
+    wanted = "true" if want else "false"
+    wanted_desc = _lbl_assign_desc(name)
+    for _ in range(3):
+        node = _wait_ui_node(
+            context,
+            lambda n: "CheckBox" in n.cls and n.text.strip() == name
+            and (not n.desc.strip() or n.desc.strip() in wanted_desc),
+            f"the assignment checkbox for {name!r} did not render")
+        if node.attrs.get("checked") == wanted:
+            return
+        ui.tap_node(node)
+        time.sleep(0.8)
+    raise ProductFailure(f"the {name!r} checkbox never reached checked={wanted}")
+
+
+def _manage_row(context: dict[str, Any], name: str, timeout: float | None = None) -> Any:
+    wanted = _lbl_chip_desc(name)
+    return _wait_ui_node(
+        context,
+        lambda node: node.desc.strip() in wanted or node.text.strip() == name,
+        f"the manage row for {name!r} did not render",
+        timeout=timeout)
+
+
+def _delete_label_ui(context: dict[str, Any], name: str) -> None:
+    """Manage-mode row -> delete icon -> 'Delete label?' -> 'Delete'."""
+    wanted = _lbl_delete_desc(name)
+    icon = _wait_ui_node(
+        context,
+        lambda node: node.desc.strip() in wanted,
+        f"the delete control for {name!r} was not offered")
+    context["device"].tap_node(icon)
+    _wait_ui_node(
+        context,
+        lambda node: node.text.strip() in _LBL_DELETE_TITLE,
+        "the delete confirmation did not open")
+    _tap_dialog_button(
+        context, _LBL_DELETE_BUTTON,
+        "the delete confirmation did not offer 'Delete'")
+
+
+def _labels_rest_sweep(context: dict[str, Any], an_token: str,
+                       conversation_id: str, created: set[str]) -> None:
+    """Unassign + delete only the labels this row created."""
+    errors: list[str] = context.setdefault("cleanup_errors", [])
+    recorder: RecordingClient = context["client"]
+    try:
+        remaining = {str(item.get("id")) for item in _rest_labels(recorder, an_token)}
+    except Exception:
+        remaining = set()
+    for label_id in sorted(created):
+        if not label_id or label_id not in remaining:
+            continue
+        try:
+            recorder.delete(
+                f"/api/v1/conversations/{conversation_id}/labels/{label_id}",
+                token=an_token)
+        except Exception as error:
+            errors.append(f"label unassign {label_id[:8]}: {type(error).__name__}")
+        try:
+            deleted = recorder.delete(f"/api/v1/labels/{label_id}", token=an_token)
+            if deleted.status not in (200, 204):
+                errors.append(f"label delete {label_id[:8]} HTTP {deleted.status}")
+        except Exception as error:
+            errors.append(f"label delete {label_id[:8]}: {type(error).__name__}")
+
+
+def run_labels_lifecycle(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Create/assign/filter/delete a caller-private label through the UI, then
+    recreate the dialog by rotation and by a HOME + am start stop/start and by
+    a force-stop relaunch — asserting one render surface, one REST write per
+    toggle, and agreement with GET /api/v1/labels + ?labelId= throughout."""
+    _campaign_serial(context)
+    _campaign_base_url(context)
+    _prepare_seeded_an(context)
+    api, _adb_ui, patch = context["helpers"]
+    recorder: RecordingClient = context["client"]
+    ui = context["device"]
+    an, binh, conversation_id, _an_user_id, _binh_user_id = _seed_pair(context)
+    row_dir = Path(context["row_dir"])
+    tag = uuid.uuid4().hex[:8]
+    label_a = f"sj-lab-{tag}"
+    label_b = f"sj-lab-b-{tag}"
+    rotation_before = _device_rotation(context)
+    created_ids: set[str] = set()
+    label_a_id = ""
+    result: dict[str, Any] = {}
+    primary_error: Exception | None = None
+    try:
+        # === phase 1: create through the editor dialog ======================
+        _open_assign_dialog(context)
+        _assert_single_label_dialog(context, label_a, checkboxes=0)
+        _tap_dialog_button(
+            context, _LBL_MODE_MANAGE,
+            "the assignment dialog did not offer the manage-mode toggle")
+        _wait_ui_node(
+            context,
+            lambda node: node.text.strip() in _LBL_MANAGE_TITLE and not node.desc.strip(),
+            "the label dialog did not switch to manage mode")
+        _tap_dialog_button(
+            context, _LBL_CREATE,
+            "manage mode did not offer 'Create label'")
+        _wait_ui_node(
+            context,
+            lambda node: node.text.strip() in _LBL_EDITOR_TITLE,
+            "the label editor dialog did not open")
+        name_input = _wait_ui_node(
+            context,
+            lambda node: node.desc.strip() in _LBL_NAME_HINT
+            and "EditText" in node.cls,
+            "the label name field did not render")
+        ui.tap_node(name_input)
+        ui.type_text(label_a)
+        # The IME covers the color chips; one BACK drops the keyboard without
+        # dismissing the editor (the form is a real DialogFragment).
+        ui.key("KEYCODE_BACK")
+        color = _wait_ui_node(
+            context,
+            lambda node: node.text.strip() in _LBL_COLOR
+            and "RadioButton" in node.cls,
+            "the editor color chips did not render")
+        ui.tap_node(color)
+        _tap_dialog_button(
+            context, _LBL_SAVE, "the editor did not offer 'Save'")
+        _manage_row(context, label_a)
+        created = _wait_rest_label(recorder, an["accessToken"], label_a)
+        label_a_id = str(created.get("id") or "")
+        if not label_a_id:
+            raise ProductFailure("REST /api/v1/labels listed the UI-created label without an id")
+        created_ids.add(label_a_id)
+        ui.screenshot(str(row_dir / "label-created.png"))
+        result["create"] = "label created through the editor; REST /labels agrees"
+
+        # === phase 2: assign through the checkbox ===========================
+        _tap_dialog_button(
+            context, _LBL_MODE_BACK,
+            "manage mode did not offer 'Back to conversation'")
+        _assert_single_label_dialog(context, label_a, checked=False)
+        _set_label_checked(context, label_a, True)
+        _wait_inbox_entry(
+            recorder, an["accessToken"], conversation_id,
+            lambda entry: entry is not None
+            and label_a_id.casefold() in _entry_labels(entry),
+            "the UI label assignment never persisted on An's inbox entry")
+        _assert_single_label_dialog(context, label_a, checked=True)
+        ui.screenshot(str(row_dir / "label-assigned.png"))
+        filtered = _filtered_ids(recorder, an["accessToken"], label_a_id)
+        if filtered != {conversation_id}:
+            raise ProductFailure(
+                f"REST ?labelId= agreed {sorted(filtered)!r}, expected only the seeded conversation")
+        peer_entry = _inbox_entry(recorder, binh["accessToken"], conversation_id,
+                                  archived=False)
+        if label_a_id.casefold() in _entry_labels(peer_entry):
+            raise ProductFailure("the private label leaked into Binh's inbox entry")
+        if any(str(item.get("id")).casefold() == label_a_id.casefold()
+               for item in _rest_labels(recorder, binh["accessToken"])):
+            raise ProductFailure("the private label leaked into Binh's label list")
+        _tap_dialog_button(
+            context, _LBL_DONE, "the assignment dialog did not offer 'Done'")
+        _wait_ui_absent(
+            context,
+            lambda node: node.text.strip() in _LBL_ASSIGN_TITLE and not node.desc.strip(),
+            "the assignment dialog did not dismiss")
+        result["assign"] = "checkbox landed on An's entry; ?labelId= agrees; peer clean"
+
+        # === phase 3: inbox label filter chip ===============================
+        chip = _label_chip(context, label_a)
+        ui.tap_node(chip)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "conversationList"),
+            "the inbox list vanished under the label filter")
+        deadline = time.monotonic() + _ui_timeout(context)
+        while not _inbox_row_visible(context, "Binh"):
+            if time.monotonic() >= deadline:
+                raise ProductFailure("the labeled conversation never rendered under its filter")
+            time.sleep(0.4)
+        _wait_inbox_row_absent(
+            context, "NexaChat Team",
+            "an unlabeled group row stayed visible under the label filter")
+        _wait_inbox_row_absent(
+            context, "Chi",
+            "an unlabeled direct row stayed visible under the label filter")
+        ui.screenshot(str(row_dir / "label-filtered.png"))
+        result["filter"] = "label chip shows only the labeled row; REST ?labelId= agrees"
+        all_chip = _carousel_node(
+            context,
+            lambda node: node.text.strip() in _LBL_FILTER_ALL and not node.desc.strip(),
+            "the 'All labels' filter chip never appeared")
+        ui.tap_node(all_chip)
+        deadline = time.monotonic() + _ui_timeout(context)
+        while not _inbox_row_visible(context, "NexaChat Team"):
+            if time.monotonic() >= deadline:
+                raise ProductFailure("unlabeled rows did not return after 'All labels'")
+            time.sleep(0.4)
+        if not _inbox_row_visible(context, "Binh"):
+            raise ProductFailure("the labeled row did not return after 'All labels'")
+        result["unfilter"] = "All labels restores the full inbox"
+
+        # === phase 4: dialog recreation — rotation + stop/start =============
+        _open_assign_dialog(context)
+        _assert_single_label_dialog(context, label_a, checked=True)
+        leak_baseline: set[str] = set()
+        try:
+            raw = context["adb"].command(
+                "shell", "logcat", "-d", "-v", "brief", timeout=30, check=False)
+            leak_baseline = set(raw.splitlines())
+        except Exception:
+            leak_baseline = set()
+        ui.rotate(1)
+        _wait_ui_node(
+            context,
+            lambda node: node.text.strip() in _LBL_ASSIGN_TITLE and not node.desc.strip(),
+            "the assignment dialog did not re-render after rotation to landscape",
+            timeout=25)
+        _assert_single_label_dialog(context, label_a, checked=True)
+        ui.screenshot(str(row_dir / "label-dialog-landscape.png"))
+        ui.rotate(0)
+        _wait_ui_node(
+            context,
+            lambda node: node.text.strip() in _LBL_ASSIGN_TITLE and not node.desc.strip(),
+            "the assignment dialog did not re-render after rotation to portrait",
+            timeout=25)
+        _assert_single_label_dialog(context, label_a, checked=True)
+        ui.key("KEYCODE_HOME")
+        context["adb"].command("shell", "am", "start", "-n",
+                               f"{PACKAGE}/{MAIN_ACTIVITY}", timeout=30)
+        _wait_ui_node(
+            context,
+            lambda node: node.text.strip() in _LBL_ASSIGN_TITLE and not node.desc.strip(),
+            "the assignment dialog did not survive the HOME + relaunch stop/start",
+            timeout=25)
+        _assert_single_label_dialog(context, label_a, checked=True)
+        leaks = _logcat_window_leaks(context, leak_baseline)
+        if leaks:
+            raise ProductFailure(
+                "logcat reported a leaked window across dialog recreation: "
+                + sanitize_text(leaks[0])[:300])
+        # The retained surface still drives exactly one write per toggle.
+        _set_label_checked(context, label_a, False)
+        _wait_inbox_entry(
+            recorder, an["accessToken"], conversation_id,
+            lambda entry: entry is not None
+            and label_a_id.casefold() not in _entry_labels(entry),
+            "the post-recreation unassign never persisted on An's inbox entry")
+        _set_label_checked(context, label_a, True)
+        _wait_inbox_entry(
+            recorder, an["accessToken"], conversation_id,
+            lambda entry: entry is not None
+            and label_a_id.casefold() in _entry_labels(entry),
+            "the post-recreation re-assign never persisted on An's inbox entry")
+        result["recreate"] = ("rotation + HOME/relaunch keep exactly one dialog surface; "
+                              "one REST write per toggle; no leaked window")
+        _tap_dialog_button(
+            context, _LBL_DONE, "the assignment dialog did not offer 'Done'")
+        _wait_ui_absent(
+            context,
+            lambda node: node.text.strip() in _LBL_ASSIGN_TITLE and not node.desc.strip(),
+            "the assignment dialog did not dismiss after recreation checks")
+
+        # Process death: the dialog is gone, the assignment persists in Room,
+        # and reopening refetches from REST (post-#181 contract).
+        context["adb"].command("shell", "am", "force-stop", PACKAGE, timeout=20)
+        context["adb"].command("shell", "am", "start", "-n",
+                               f"{PACKAGE}/{MAIN_ACTIVITY}", timeout=30)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "inboxUserAvatar"),
+            "the inbox did not render after the force-stop relaunch",
+            timeout=30)
+        if _label_dialog_titles(context, _LBL_ASSIGN_TITLE):
+            raise ProductFailure("a label dialog survived process death")
+        _open_assign_dialog(context)
+        _assert_single_label_dialog(context, label_a, checked=True)
+        result["restart"] = "force-stop drops the dialog; assignment persists; reopen refetches"
+
+        # === phase 5: reopen refetch + unassign + delete ====================
+        # A label created over REST while the app runs is invisible until a
+        # refresh — reopening the dialog must refetch it (the merged fix).
+        response = recorder.post(
+            "/api/v1/labels", token=an["accessToken"],
+            body={"name": label_b, "colorId": "TEAL"})
+        if response.status not in (200, 201):
+            raise EnvironmentFailure(f"REST label B create returned HTTP {response.status}")
+        label_b_id = str((response.json() or {}).get("id") or "")
+        if not label_b_id:
+            raise EnvironmentFailure("REST label B create did not return an id")
+        created_ids.add(label_b_id)
+        _tap_dialog_button(
+            context, _LBL_DONE, "the reopened dialog did not offer 'Done'")
+        _wait_ui_absent(
+            context,
+            lambda node: node.text.strip() in _LBL_ASSIGN_TITLE and not node.desc.strip(),
+            "the reopened dialog did not dismiss")
+        _open_assign_dialog(context)
+        _wait_ui_node(
+            context,
+            lambda node: "CheckBox" in node.cls and node.text.strip() == label_b,
+            "a REST-created label did not appear when the dialog reopened (stale labels)")
+        ui.screenshot(str(row_dir / "label-reopen-refetch.png"))
+        result["refetch"] = "reopened dialog refetches REST-created labels"
+
+        _tap_dialog_button(
+            context, _LBL_MODE_MANAGE,
+            "the assignment dialog did not offer the manage-mode toggle")
+        _wait_ui_node(
+            context,
+            lambda node: node.text.strip() in _LBL_MANAGE_TITLE and not node.desc.strip(),
+            "the label dialog did not switch to manage mode")
+        _manage_row(context, label_b)
+        _delete_label_ui(context, label_b)
+        _wait_ui_absent(
+            context,
+            lambda node: node.desc.strip() in _lbl_chip_desc(label_b),
+            "the manage row for the deleted REST label did not disappear")
+        deadline = time.monotonic() + _ui_timeout(context)
+        while label_b_id in {str(item.get("id")) for item in _rest_labels(recorder, an["accessToken"])}:
+            if time.monotonic() >= deadline:
+                raise ProductFailure("the UI-deleted label survived in REST /api/v1/labels")
+            time.sleep(0.5)
+        ui.screenshot(str(row_dir / "label-deleted.png"))
+        result["delete"] = "manage-mode delete removed the label in UI and REST"
+
+        _tap_dialog_button(
+            context, _LBL_MODE_BACK,
+            "manage mode did not offer 'Back to conversation'")
+        _set_label_checked(context, label_a, False)
+        _wait_inbox_entry(
+            recorder, an["accessToken"], conversation_id,
+            lambda entry: entry is not None
+            and label_a_id.casefold() not in _entry_labels(entry),
+            "the UI unassign never persisted on An's inbox entry")
+        result["unassign"] = "unchecking removed the assignment on REST"
+
+        _tap_dialog_button(
+            context, _LBL_MODE_MANAGE,
+            "the assignment dialog did not offer the manage-mode toggle")
+        _wait_ui_node(
+            context,
+            lambda node: node.text.strip() in _LBL_MANAGE_TITLE and not node.desc.strip(),
+            "the label dialog did not switch to manage mode")
+        _delete_label_ui(context, label_a)
+        deadline = time.monotonic() + _ui_timeout(context)
+        while label_a_id in {str(item.get("id")) for item in _rest_labels(recorder, an["accessToken"])}:
+            if time.monotonic() >= deadline:
+                raise ProductFailure("the UI-deleted label survived in REST /api/v1/labels")
+            time.sleep(0.5)
+        created_ids.discard(label_a_id)
+        # With zero labels left the whole filter row must disappear.
+        _tap_dialog_button(
+            context, _LBL_DONE, "the emptied dialog did not offer 'Done'")
+        _wait_ui_absent(
+            context,
+            lambda node: (node.text.strip() in _LBL_ASSIGN_TITLE
+                          or node.text.strip() in _LBL_MANAGE_TITLE)
+            and not node.desc.strip(),
+            "the label dialog did not dismiss")
+        _wait_ui_absent(
+            context,
+            lambda node: node.text.strip() in _LBL_FILTER_ALL
+            or node.desc.strip() in _LBL_MANAGE_CHIP_DESC,
+            "the label filter chip row stayed visible after the last label was deleted")
+        ui.screenshot(str(row_dir / "labels-cleared.png"))
+        result["delete_last"] = "deleting the final label hides the filter chip row"
+    except Exception as error:
+        primary_error = error
+    finally:
+        _restore_rotation(context, rotation_before)
+        _labels_rest_sweep(context, an["accessToken"], conversation_id, created_ids)
+        try:
+            ui.key("KEYCODE_BACK")
+            ui.key("KEYCODE_BACK")
+            _wait_ui_node(
+                context,
+                lambda node: _rid_ends(node, "inboxUserAvatar"),
+                "the UI did not return to the inbox",
+                timeout=10)
+        except Exception:
+            try:
+                context["adb"].command("shell", "am", "force-stop", PACKAGE, timeout=20)
+                context["adb"].command("shell", "am", "start", "-n",
+                                       f"{PACKAGE}/{MAIN_ACTIVITY}", timeout=30)
+            except Exception:
+                pass
+    if primary_error is not None:
+        raise primary_error
+    if context.get("cleanup_errors"):
+        raise HarnessError("labels-lifecycle cleanup could not restore fixtures")
+    result["cleanup"] = "row-created labels unassigned+deleted; rotation restored; inbox reached"
+    return result
+
+
 _GROUPS_DUNG_PHONE = "+84900000004"  # seeded Dung; never a member until the UI adds him
 _GROUPS_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{43}")
 
@@ -4649,6 +5342,7 @@ def run_registered_row(row: JourneyRow, context: dict[str, Any]) -> dict[str, An
         "chat-interactions": run_chat_interactions,
         "summary-ask": run_summary_ask,
         "archive-preferences": run_archive_preferences,
+        "labels-lifecycle": run_labels_lifecycle,
         "groups-contacts": run_groups_contacts,
         "calls-injected-notification": run_calls_injected_notification,
         "injected-notifications": run_injected_notifications,
