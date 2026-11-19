@@ -11,6 +11,7 @@ public final class AskResponse {
     @Nullable private final List<AskCitation> citations;
     @Nullable private final String mode;
     @Nullable private final AskUsage usage;
+    private final boolean contextOmitted;
 
     AskResponse() {
         this(null, Collections.emptyList(), null, null);
@@ -21,12 +22,22 @@ public final class AskResponse {
             @Nullable List<AskCitation> citations,
             @Nullable String mode,
             @Nullable AskUsage usage) {
+        this(answer, citations, mode, usage, false);
+    }
+
+    public AskResponse(
+            @Nullable String answer,
+            @Nullable List<AskCitation> citations,
+            @Nullable String mode,
+            @Nullable AskUsage usage,
+            boolean contextOmitted) {
         this.answer = answer;
         this.citations = citations == null
                 ? Collections.emptyList()
                 : Collections.unmodifiableList(new ArrayList<>(citations));
         this.mode = mode;
         this.usage = usage;
+        this.contextOmitted = contextOmitted;
     }
 
     @Nullable
@@ -46,5 +57,13 @@ public final class AskResponse {
     @Nullable
     public AskUsage getUsage() {
         return usage;
+    }
+
+    /**
+     * Neutral flag from the server: some eligible messages were left out of the
+     * retrieval context. It never identifies the member whose messages were omitted.
+     */
+    public boolean isContextOmitted() {
+        return contextOmitted;
     }
 }

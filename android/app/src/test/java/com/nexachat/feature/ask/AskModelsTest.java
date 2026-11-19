@@ -1,6 +1,7 @@
 package com.nexachat.feature.ask;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -32,6 +33,24 @@ public final class AskModelsTest {
         assertEquals("message-12", cited.getCitations().get(0).getMessageId());
         assertEquals(Long.valueOf(12L), cited.getCitations().get(0).getSeq());
         assertEquals("Migration starts Friday", cited.getCitations().get(0).getSnippet());
+    }
+
+    @Test
+    public void parsesContextOmittedAndDefaultsToFalse() throws Exception {
+        JsonAdapter<AskResponse> adapter = new Moshi.Builder().build().adapter(AskResponse.class);
+
+        AskResponse omitted = adapter.fromJson(
+                "{\"answer\":null,\"citations\":[],\"mode\":\"NOT_FOUND\","
+                        + "\"contextOmitted\":true,\"usage\":{\"llmCalls\":0,"
+                        + "\"inputChars\":0,\"cached\":false}}");
+        assertNotNull(omitted);
+        assertTrue(omitted.isContextOmitted());
+
+        AskResponse absent = adapter.fromJson(
+                "{\"answer\":\"Friday\",\"citations\":[],\"mode\":\"EXTRACTIVE\","
+                        + "\"usage\":{\"llmCalls\":0,\"inputChars\":0,\"cached\":false}}");
+        assertNotNull(absent);
+        assertFalse(absent.isContextOmitted());
     }
 
     @Test
