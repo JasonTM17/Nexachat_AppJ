@@ -46,6 +46,19 @@
       openBtn.setAttribute('href', 'nexachat://join/' + token);
       openBtn.setAttribute('rel', 'noreferrer');
       validSection.removeAttribute('hidden');
+
+      // The custom scheme has no handler on devices without the app. If the
+      // page is still visible a moment after the click, tell the user the
+      // app did not open instead of failing silently.
+      openBtn.addEventListener('click', function () {
+        var fallback = document.getElementById('app-fallback');
+        if (!fallback) return;
+        setTimeout(function () {
+          if (!document.hidden && document.visibilityState === 'visible') {
+            fallback.removeAttribute('hidden');
+          }
+        }, 2500);
+      });
     } else {
       invalidSection.removeAttribute('hidden');
     }

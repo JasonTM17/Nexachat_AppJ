@@ -75,6 +75,7 @@ export default function UsersPage() {
   }, [load]);
 
   const openDetail = (id: string) => {
+    setActionError(false);
     api<UserDetail>(`/api/v1/admin/users/${id}`)
       .then(setSelected)
       .catch(() => setActionError(true));
@@ -83,6 +84,7 @@ export default function UsersPage() {
   const runAction = async (reason: string) => {
     if (!selected || !action) return;
     setBusy(true);
+    setActionError(false);
     const id = selected.user.id;
     try {
       switch (action.kind) {
@@ -404,12 +406,17 @@ export default function UsersPage() {
                   ? t('users.action.revoke')
                   : action.kind === 'warn'
                     ? t('users.action.warn')
-                    : `${t('users.action.role')} → ${action.role}`
+                    : t('users.action.role.to', { role: action.role })
           }
           requireReason={action.kind !== 'revoke' && action.kind !== 'unsuspend'}
-          confirmDanger={action.kind === 'suspend' || action.kind === 'revoke'}
+          confirmDanger={
+            action.kind === 'suspend' ||
+            action.kind === 'revoke' ||
+            (action.kind === 'role' && action.role === 'ADMIN')
+          }
+          busy={busy}
           onConfirm={(reason) => void runAction(reason)}
-          onCancel={() => (busy ? null : setAction(null))}
+          onCancel={() => setAction(null)}
         />
       )}
     </>

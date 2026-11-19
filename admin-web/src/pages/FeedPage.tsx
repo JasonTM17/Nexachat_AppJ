@@ -131,7 +131,7 @@ export default function FeedPage() {
         </label>
       </div>
 
-      {actionFailed && <ErrorBlock />}
+      {actionFailed && <ErrorBlock onRetry={load} />}
 
       {failed ? (
         <ErrorBlock onRetry={load} />
