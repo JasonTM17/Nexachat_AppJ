@@ -55,6 +55,9 @@ export default function FeedPage() {
 
   const load = useCallback(() => {
     setFailed(false);
+    // A new list can reuse report ids from a previous view; drop stale
+    // per-report expansion so a row never renders open by accident.
+    setExpanded(new Set());
     api<Page<FeedReport>>(feedReportsPath(status, page, PAGE_SIZE))
       .then(setData)
       .catch(() => setFailed(true));
