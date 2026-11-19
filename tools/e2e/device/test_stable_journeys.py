@@ -59,7 +59,7 @@ class MatrixAndDryRunTest(unittest.TestCase):
         self.assertEqual(runnable, {
             "auth-login", "chat-send-receive", "chat-interactions", "summary-ask",
             "archive-preferences", "groups-contacts", "labels-lifecycle",
-            "polls-reminders",
+            "polls-reminders", "offline-sync",
             "calls-injected-notification", "injected-notifications",
         })
         self.assertEqual(journeys.ROWS[-1].id, "account-deletion")
@@ -297,7 +297,8 @@ class WiringDecisionTest(unittest.TestCase):
             "auth-login", "chat-send-receive", "chat-interactions",
             "groups-contacts", "polls-reminders", "archive-preferences",
             "labels-lifecycle",
-            "calls-injected-notification", "summary-ask", "injected-notifications",
+            "calls-injected-notification", "summary-ask", "offline-sync",
+            "injected-notifications",
         ])
         self.assertEqual(len(runnable) + len(blocked), len(journeys.ROWS))
         self.assertIn("STOMP", blocked["auth-session-lifecycle"])
@@ -314,10 +315,11 @@ class WiringDecisionTest(unittest.TestCase):
         self.assertNotIn("groups-contacts", blocked)
         self.assertNotIn("labels-lifecycle", blocked)
         self.assertNotIn("polls-reminders", blocked)
+        self.assertNotIn("offline-sync", blocked)
         for row_id in (
             "media",
             "calls-signaling",
-            "offline-sync", "accessibility-sweep",
+            "accessibility-sweep",
         ):
             self.assertIn("BLOCKED_CAPABILITY:", blocked[row_id])
 
@@ -4471,6 +4473,735 @@ class PollsRemindersExecutorTest(unittest.TestCase):
         # disposable group is left behind empty.
         self.assertIsNone(store.poll)
         self.assertEqual(store.members, {})
+
+
+class OfflineSyncExecutorTest(unittest.TestCase):
+    """Offline fake device+REST world for run_offline_sync.
+
+    The world mirrors the surfaces probed on emulator-5554: the paged inbox
+    list (8 more rows per swipe-up, pull-down refresh), the chat screen
+    (composer, send button, message bubbles, long-press action sheet with
+    the Like tile and the optimistic chip), the profile -> logoutRow ->
+    Sign out confirm -> login form path, and force-stop/relaunch. One Store
+    backs REST and the device render so REST/UI agreement assertions are
+    real; the world emits scripted OkHttp '--> POST /api/v1/sync' lines
+    whose count and body size scale with the caller's conversation set, so
+    the >100-watermark multi-batch assertion is exercised, and outbox flush
+    happens exactly once on network restore.
+    """
+
+    USERS = {
+        "user-an": ("An", "+84900000001", "tok-an"),
+        "user-binh": ("Binh", "+84900000002", "tok-binh"),
+        "user-chi": ("Chi", "+84900000003", "tok-chi"),
+    }
+    PHONE_TO_UID = {"+84900000001": "user-an", "+84900000002": "user-binh",
+                    "+84900000003": "user-chi"}
+
+    class Node:
+        def __init__(self, text="", desc="", rid="", box=(0, 0, 320, 48),
+                     clickable=True, cls="android.widget.TextView"):
+            self.text = text
+            self.desc = desc
+            self.attrs = {"resource-id": ("com.nexachat.debug:id/" + rid) if rid else "",
+                          "enabled": "true"}
+            self.box = box
+            self.clickable = clickable
+            self.cls = cls
+
+        @property
+        def center(self):
+            left, top, right, bottom = self.box
+            return (left + right) // 2, (top + bottom) // 2
+
+    class Store:
+        """Server truth: conversations, membership, and message rows."""
+
+        def __init__(self):
+            self.conversations = {
+                "conv-ab": {"id": "conv-ab", "type": "DIRECT", "title": None,
+                            "members": {"user-an", "user-binh"}, "created": 0},
+            }
+            self.group_seq = 0
+            self.msg_seq = 0
+            self.messages = {"conv-ab": []}
+
+        def create_group(self, caller, title, member_ids):
+            self.group_seq += 1
+            cid = f"grp-{self.group_seq - 1:03d}"
+            self.conversations[cid] = {
+                "id": cid, "type": "GROUP", "title": title,
+                "members": {caller} | set(member_ids or []),
+                "created": self.group_seq}
+            self.messages[cid] = []
+            # The real server posts a system message on creation, so the group
+            # lands in the messaged block ordered by activity, not the empty
+            # tail block.
+            self.send(caller, cid, "created the group")
+            return {"id": cid, "type": "GROUP", "title": title}
+
+        def inbox(self, caller):
+            return [conv for conv in self.conversations.values()
+                    if caller in conv["members"]]
+
+        def conversation_of(self, path, prefix, suffix=""):
+            tail = path.split(prefix, 1)[1]
+            return tail.split(suffix, 1)[0] if suffix else tail.split("/", 1)[0]
+
+        def send(self, caller, cid, content, client_message_id=None):
+            conv = self.conversations.get(cid)
+            if conv is None or caller not in conv["members"]:
+                return None
+            self.msg_seq += 1
+            msg = {"id": f"m-{self.msg_seq}", "conversationId": cid,
+                   "senderId": caller, "content": content,
+                   "clientMessageId": client_message_id or f"cm-{self.msg_seq}",
+                   "editedAt": None, "deletedAt": None, "reactions": []}
+            self.messages.setdefault(cid, []).append(msg)
+            return msg
+
+        def edit(self, caller, cid, mid, content):
+            msg = self.find(cid, mid)
+            if msg is None or msg["senderId"] != caller or msg["deletedAt"]:
+                return None
+            msg["content"] = content
+            msg["editedAt"] = "now"
+            return msg
+
+        def delete(self, caller, cid, mid):
+            msg = self.find(cid, mid)
+            if msg is None or msg["senderId"] != caller:
+                return 403
+            if msg["deletedAt"]:
+                return 404
+            msg["deletedAt"] = "now"
+            return 204
+
+        def find(self, cid, mid):
+            return next((m for m in self.messages.get(cid, [])
+                         if m["id"] == mid), None)
+
+        def add_reaction(self, cid, mid, emoji):
+            msg = self.find(cid, mid)
+            if msg is None:
+                return
+            existing = next((r for r in msg["reactions"]
+                             if r["emoji"] == emoji), None)
+            if existing is not None:
+                existing["count"] += 1
+            else:
+                msg["reactions"].append({"emoji": emoji, "count": 1})
+
+        def remove_member(self, cid, uid):
+            conv = self.conversations.get(cid)
+            if conv is not None:
+                conv["members"].discard(uid)
+
+    class World:
+        """Device-side state: process, screen stack, Room mirror, outbox."""
+
+        def __init__(self, store):
+            self.store = store
+            self.account = "user-an"
+            self.offline = False
+            self.screen = "inbox"
+            self.history = []
+            self.open_conv = None
+            self.loaded = 30
+            self.pending_texts = []      # {"conv", "content"} queued offline
+            self.pending_reactions = []  # {"conv", "mid", "emoji"}
+            self.chip_msgs = set()       # mids with the optimistic chip
+            self.action_target = None    # content of the long-pressed bubble
+            self.confirm_logout = False
+            self.login_inputs = {}
+            self.sync_log = []
+            self.cold_start()
+
+        def go(self, screen):
+            self.history.append(self.screen)
+            self.screen = screen
+
+        def conv_count(self):
+            return len(self.store.inbox(self.account)) if self.account else 0
+
+        def emit_sync(self):
+            if not self.account or self.offline:
+                return
+            count = self.conv_count()
+            batches = max(1, (count + 99) // 100)
+            body = 60 + count * 60
+            for _ in range(batches):
+                self.sync_log.append(
+                    "I/okhttp.OkHttpClient: --> POST "
+                    f"http://10.0.2.2:8080/api/v1/sync ({body}-byte body)")
+
+        def cold_start(self):
+            self.screen = "inbox" if self.account else "login"
+            self.history = []
+            self.open_conv = None
+            self.loaded = 30
+            self.action_target = None
+            self.confirm_logout = False
+            self.flush()
+            self.emit_sync()
+
+        def flush(self):
+            """The outbox drains exactly once on reconnect/cold start."""
+            if self.offline or not self.account:
+                return
+            for item in list(self.pending_texts):
+                self.store.send(self.account, item["conv"], item["content"])
+                self.pending_texts.remove(item)
+            for item in list(self.pending_reactions):
+                self.store.add_reaction(item["conv"], item["mid"], item["emoji"])
+                self.pending_reactions.remove(item)
+
+        def inbox_rows(self):
+            """[(title, cid)] in Room inbox order: message-bearing rows by
+            lastMessageAt DESC first, then the lastMessageAt=0 block by id ASC
+            (ConversationDao.inboxFlow). A group that gains a message jumps
+            out of the id-sorted tail block, like the marker conversation."""
+            messaged = []
+            empty = []
+            for conv in self.store.inbox(self.account):
+                msgs = self.store.messages.get(conv["id"], [])
+                if msgs:
+                    last = max(int(m["id"].split("-")[1]) for m in msgs)
+                    messaged.append((-last, conv))
+                else:
+                    empty.append(conv)
+
+            def title_of(conv):
+                if conv["type"] == "DIRECT":
+                    peer = next(uid for uid in conv["members"]
+                                if uid != self.account)
+                    return OfflineSyncExecutorTest.USERS[peer][0]
+                return conv["title"]
+
+            rows = [(title_of(conv), conv["id"])
+                    for _last, conv in sorted(messaged,
+                                              key=lambda item: item[0])]
+            rows.extend((title_of(conv), conv["id"])
+                        for conv in sorted(empty, key=lambda c: c["id"]))
+            return rows
+
+        def tail_messages(self):
+            return self.store.messages.get(self.open_conv, [])[-10:]
+
+        def tree(self):
+            N = OfflineSyncExecutorTest.Node
+            nodes = []
+            if self.screen == "login":
+                nodes.append(N(text=self.login_inputs.get("phoneInput", ""),
+                               rid="phoneInput", cls="android.widget.EditText"))
+                nodes.append(N(text=self.login_inputs.get("passwordInput", ""),
+                               rid="passwordInput", cls="android.widget.EditText"))
+                nodes.append(N(text="Sign in"))
+                nodes.append(N(text="Sign in", rid="primaryAction",
+                               cls="android.widget.Button"))
+            elif self.screen == "inbox":
+                nodes.append(N(rid="inboxUserAvatar"))
+                nodes.append(N(rid="conversationList", box=(0, 300, 320, 620)))
+                for index, (title, _cid) in enumerate(
+                        self.inbox_rows()[:self.loaded]):
+                    nodes.append(N(text=title,
+                                   box=(10, 310 + index * 2, 310, 312 + index * 2)))
+            elif self.screen == "chat":
+                nodes.append(N(rid="chatToolbar"))
+                nodes.append(N(text="Message", rid="messageInput",
+                               cls="android.widget.EditText"))
+                nodes.append(N(rid="sendButton"))
+                for msg in self.tail_messages():
+                    if msg["deletedAt"]:
+                        nodes.append(N(text="This message was deleted",
+                                       rid="messageBody",
+                                       box=(0, 400, 320, 430)))
+                        continue
+                    nodes.append(N(text=msg["content"], rid="messageBody",
+                                   box=(0, 400, 320, 430)))
+                    if msg["editedAt"]:
+                        nodes.append(N(text="Edited", box=(0, 430, 320, 450)))
+                    if msg["reactions"] or msg["id"] in self.chip_msgs:
+                        nodes.append(N(desc="👍, 1, yours",
+                                       box=(0, 450, 320, 470)))
+                for item in self.pending_texts:
+                    if item["conv"] == self.open_conv:
+                        nodes.append(N(text=item["content"], rid="messageBody",
+                                       box=(0, 460, 320, 490)))
+            elif self.screen == "profile":
+                name = OfflineSyncExecutorTest.USERS[self.account][0]
+                nodes.append(N(text=name, rid="profileName"))
+                nodes.append(N(rid="profileColumn", box=(0, 0, 320, 640)))
+                nodes.append(N(text="Sign out", rid="logoutRow"))
+            if self.action_target is not None:
+                nodes.append(N(text=self.action_target,
+                               rid="messageActionsTitle"))
+                nodes.append(N(desc="Like", rid="reactionLike"))
+                nodes.append(N(rid="messageActionList",
+                               box=(0, 300, 320, 620)))
+            if self.confirm_logout:
+                nodes.append(N(text="Sign out", clickable=False))
+                nodes.append(N(text="Sign out of this account on this device?"))
+                nodes.append(N(text="Sign out", cls="android.widget.Button"))
+                nodes.append(N(text="Cancel", cls="android.widget.Button"))
+            return nodes
+
+        def login(self):
+            uid = OfflineSyncExecutorTest.PHONE_TO_UID.get(
+                self.login_inputs.get("phoneInput", ""))
+            if uid is None:
+                return
+            self.account = uid
+            self.cold_start()
+
+    class Device:
+        def __init__(self, world):
+            self.world = world
+
+        def nodes(self):
+            return self.world.tree()
+
+        def tap_node(self, node):
+            w = self.world
+            rid = node.attrs["resource-id"]
+            text = node.text.strip()
+            if w.confirm_logout:
+                w.confirm_logout = False
+                if text == "Sign out" and node.clickable and "Button" in node.cls:
+                    w.account = None
+                    w.screen = "login"
+                    w.history.clear()   # login starts a new task root
+                    w.login_inputs = {}
+                return
+            if w.action_target is not None:
+                target = w._sheet_target
+                w.action_target = None
+                if node.desc.strip() == "Like":
+                    store = w.store
+                    msg = next((m for m in
+                                store.messages.get(w.open_conv, [])
+                                if m["content"] == target), None)
+                    if msg is not None:
+                        if w.offline:
+                            w.pending_reactions.append(
+                                {"conv": w.open_conv, "mid": msg["id"],
+                                 "emoji": "👍"})
+                        else:
+                            store.add_reaction(w.open_conv, msg["id"], "👍")
+                        w.chip_msgs.add(msg["id"])
+                return
+            if w.screen == "inbox":
+                if rid.endswith("inboxUserAvatar"):
+                    w.go("profile")
+                    return
+                for title, cid in w.inbox_rows():
+                    if title == text:
+                        w.open_conv = cid
+                        w.go("chat")
+                        return
+                return
+            if w.screen == "chat":
+                if rid.endswith("sendButton"):
+                    content = getattr(w, "typed", "")
+                    w.typed = ""
+                    if content:
+                        if w.offline:
+                            w.pending_texts.append(
+                                {"conv": w.open_conv, "content": content})
+                        else:
+                            w.store.send(w.account, w.open_conv, content)
+                return
+            if w.screen == "profile":
+                if rid.endswith("logoutRow"):
+                    w.confirm_logout = True
+                return
+            if w.screen == "login" and rid.endswith("primaryAction"):
+                w.login()
+
+        def long_press(self, node):
+            w = self.world
+            if w.screen == "chat" and \
+                    node.attrs["resource-id"].endswith("messageBody"):
+                w.action_target = node.text.strip()
+                w._sheet_target = node.text.strip()
+
+        def type_text(self, value):
+            self.world.typed = getattr(self.world, "typed", "") + value
+
+        def swipe(self, x1, y1, x2, y2, duration_ms=300):
+            w = self.world
+            if w.screen != "inbox":
+                return
+            if y2 < y1:
+                w.loaded = min(len(w.inbox_rows()), w.loaded + 8)
+            else:
+                w.loaded = max(30, w.loaded)
+
+        def key(self, code):
+            w = self.world
+            if w.screen == "login":
+                return  # hardware back only dismisses the keyboard
+            if w.confirm_logout:
+                w.confirm_logout = False
+            elif w.action_target is not None:
+                w.action_target = None
+            elif w.history:
+                w.screen = w.history.pop()
+            elif w.screen == "chat":
+                w.screen = "inbox"
+                w.open_conv = None
+            elif w.screen == "profile":
+                w.screen = "inbox"
+
+        def screenshot(self, path):
+            Path(path).write_bytes(b"png")
+
+    class Patch:
+        PASSWORD = "password123"
+
+        class ProductDefect(Exception):
+            pass
+
+        @staticmethod
+        def ui_nodes(device, timeout=8):
+            return device.nodes()
+
+        @staticmethod
+        def node_by_id(nodes, suffix):
+            return next((node for node in nodes
+                         if node.attrs.get("resource-id", "")
+                         .endswith("/" + suffix)), None)
+
+        @staticmethod
+        def text_matches(node, candidates):
+            value = (node.text + " " + node.desc).casefold()
+            return any(candidate.casefold() in value
+                       for candidate in candidates)
+
+        @staticmethod
+        def login_form_visible(nodes):
+            ids = {node.attrs.get("resource-id", "").rsplit("/", 1)[-1]
+                   for node in nodes}
+            return {"phoneInput", "passwordInput"} <= ids and any(
+                OfflineSyncExecutorTest.Patch.text_matches(
+                    node, ("Sign in", "Đăng nhập")) for node in nodes)
+
+        @staticmethod
+        def inbox_visible(nodes):
+            return OfflineSyncExecutorTest.Patch.node_by_id(
+                nodes, "inboxUserAvatar") is not None
+
+        @staticmethod
+        def fill_login_field(ui, field_id, value):
+            ui.world.login_inputs[field_id] = value
+
+        @staticmethod
+        def settings_snapshot():
+            return {"wifi_on": "1", "mobile_data": "1",
+                    "airplane_mode_on": "0", "font_scale": "1.0",
+                    "system_locales": "en-US"}
+
+        @staticmethod
+        def cut_network():
+            raise RuntimeError("replaced by bound fake")
+
+        @staticmethod
+        def restore_test_network(before):
+            raise RuntimeError("replaced by bound fake")
+
+        @staticmethod
+        def restore_device_settings(before):
+            return dict(before or {})
+
+        @staticmethod
+        def queue_offline_text(ui, content):
+            ui.world.pending_texts.append(
+                {"conv": ui.world.open_conv, "content": content})
+            deadline = 10
+            while deadline and not any(
+                    node.text.strip() == content for node in ui.world.tree()):
+                deadline -= 1
+            if not deadline:
+                raise OfflineSyncExecutorTest.Patch.ProductDefect(
+                    "offline text was not rendered")
+
+        @staticmethod
+        def wait_server_rows(container, db_name, contents, timeout=40):
+            raise RuntimeError("replaced by bound fake")
+
+        @staticmethod
+        def grant_test_permissions():
+            return {}
+
+        @staticmethod
+        def sign_in_as_device_account(ui, evidence_dir):
+            w = ui.world
+            if w.screen == "inbox":
+                return
+            w.login_inputs["phoneInput"] = "+84900000001"
+            w.login_inputs["passwordInput"] = "password123"
+            w.login()
+
+        @staticmethod
+        def ensure_device_account(ui, evidence_dir, *, fresh_login):
+            w = ui.world
+            if w.screen == "inbox":
+                return
+            if w.screen == "login":
+                OfflineSyncExecutorTest.Patch.sign_in_as_device_account(
+                    ui, evidence_dir)
+                return
+            w.cold_start()
+
+        @staticmethod
+        def filtered_logcat(baseline):
+            return [], False
+
+    class Adb:
+        serial = "emulator-5554"
+
+        def __init__(self, world):
+            self.world = world
+
+        def command(self, *args, **kwargs):
+            if "force-stop" in args:
+                return ""
+            if args[:2] == ("shell", "am") and "start" in args:
+                self.world.cold_start()
+                return ""
+            if args[:1] == ("logcat",):
+                return "\n".join(self.world.sync_log)
+            return ""
+
+    class Response:
+        def __init__(self, status, body=None):
+            self.status = status
+            self._body = body
+
+        def json(self):
+            return self._body
+
+    class Client:
+        base_url = "http://127.0.0.1:18093"
+
+        def __init__(self, store):
+            self.store = store
+
+        @staticmethod
+        def _caller(token):
+            return {"tok-an": "user-an", "tok-binh": "user-binh",
+                    "tok-chi": "user-chi"}.get(token)
+
+        @staticmethod
+        def _segments(path):
+            return [part for part in path.split("/") if part]
+
+        def get(self, path, token=None, params=None, headers=None):
+            R = OfflineSyncExecutorTest.Response
+            s = self.store
+            caller = self._caller(token)
+            if caller is None:
+                return R(401)
+            if path == "/api/v1/conversations":
+                return R(200, [{"id": conv["id"], "type": conv["type"],
+                                "title": conv["title"],
+                                "members": sorted(conv["members"])}
+                               for conv in s.inbox(caller)])
+            seg = self._segments(path)
+            if seg[:3] == ["api", "v1", "conversations"] and len(seg) == 5 \
+                    and seg[4] == "messages":
+                cid = seg[3]
+                if caller not in s.conversations.get(cid, {}).get("members", set()):
+                    return R(403)
+                limit = int((params or {}).get("limit") or 50)
+                items = list(reversed(s.messages.get(cid, [])))[:limit]
+                return R(200, {"items": items})
+            return R(404)
+
+        def post(self, path, token=None, body=None, headers=None):
+            R = OfflineSyncExecutorTest.Response
+            s = self.store
+            caller = self._caller(token)
+            if caller is None:
+                return R(401)
+            if path == "/api/v1/conversations/group":
+                group = s.create_group(caller, (body or {}).get("title"),
+                                       (body or {}).get("memberIds"))
+                return R(201, group)
+            seg = self._segments(path)
+            if seg[:3] == ["api", "v1", "conversations"] and len(seg) == 5:
+                cid = seg[3]
+                if seg[4] == "messages":
+                    msg = s.send(caller, cid, (body or {}).get("content"),
+                                 (body or {}).get("clientMessageId"))
+                    return R(201, msg) if msg else R(403)
+                if seg[4] == "leave":
+                    s.remove_member(cid, caller)
+                    return R(204)
+            return R(404)
+
+        def patch(self, path, token=None, body=None, headers=None):
+            R = OfflineSyncExecutorTest.Response
+            s = self.store
+            caller = self._caller(token)
+            seg = self._segments(path)
+            if len(seg) == 6 and seg[:3] == ["api", "v1", "conversations"] \
+                    and seg[4] == "messages":
+                msg = s.edit(caller, seg[3], seg[5],
+                             (body or {}).get("content"))
+                return R(200, msg) if msg else R(404)
+            return R(404)
+
+        def delete(self, path, token=None, params=None, headers=None):
+            R = OfflineSyncExecutorTest.Response
+            s = self.store
+            caller = self._caller(token)
+            seg = self._segments(path)
+            if len(seg) == 6 and seg[:3] == ["api", "v1", "conversations"]:
+                if seg[4] == "messages":
+                    return R(s.delete(caller, seg[3], seg[5]))
+                if seg[4] == "members":
+                    s.remove_member(seg[3], seg[5])
+                    return R(204)
+            return R(404)
+
+        def put(self, path, token=None, body=None, headers=None):
+            return OfflineSyncExecutorTest.Response(404)
+
+    def _fixture(self, variant=None):
+        store = self.Store()
+        world = self.World(store)
+        world.variant = variant
+        client = self.Client(store)
+        patch = self.Patch()
+        patch.cut_network = lambda: setattr(world, "offline", True)
+
+        def restore(before):
+            world.offline = False
+            world.flush()
+            world.emit_sync()
+
+        patch.restore_test_network = restore
+
+        def server_rows(container, db_name, contents, timeout=40):
+            rows = []
+            for msgs in store.messages.values():
+                for msg in msgs:
+                    if msg["content"] in contents:
+                        rows.append({"content": msg["content"],
+                                     "client_message_id": msg["clientMessageId"],
+                                     "count": 1})
+            return rows
+
+        patch.wait_server_rows = server_rows
+
+        class Api:
+            USER_A = {"phone": "+84900000001"}
+            USER_B = {"phone": "+84900000003"}
+            USER_C = {"phone": "+84900000002"}
+            PASSWORD = "password123"
+
+            @staticmethod
+            def direct_conversation(client_obj, token, peer_phone):
+                return 200, {"id": "conv-ab", "type": "DIRECT"}
+
+            @staticmethod
+            def login(client_obj, phone):
+                uid = OfflineSyncExecutorTest.PHONE_TO_UID[phone]
+                return {"accessToken": OfflineSyncExecutorTest.USERS[uid][2],
+                        "user": {"id": uid, "phone": phone}}
+
+        def session(api, recorder, phone):
+            uid = self.PHONE_TO_UID[phone]
+            return {"accessToken": self.USERS[uid][2],
+                    "user": {"id": uid, "phone": phone}}
+
+        context = {
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "row": journeys.ROW_BY_ID["offline-sync"],
+            "row_dir": Path(tempfile.mkdtemp()),
+            "adb": self.Adb(world),
+            "device": self.Device(world),
+            "helpers": (Api(), None, patch),
+            "client": client,
+            "ui_timeout": 2,
+        }
+        return store, world, client, context, session
+
+    def _run(self, context, session):
+        row = journeys.ROW_BY_ID["offline-sync"]
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session",
+                                  side_effect=session), \
+                mock.patch.object(journeys.time, "sleep"):
+            return journeys.run_offline_sync(row, context)
+
+    def test_executor_drives_offline_queue_reconcile_and_account_switch(self):
+        store, world, client, context, session = self._fixture()
+        result = self._run(context, session)
+
+        self.assertIn("process death", result["offline_queue"])
+        self.assertIn("distinct clientMessageIds", result["exact_once"])
+        self.assertIn("one server row", result["exact_once"])
+        self.assertIn("chip", result["offline_reaction"])
+        self.assertIn("105 seeded groups", result["large_set"])
+        self.assertIn("30 edits + 30 recalls", result["reconcile"])
+        self.assertIn("POST /api/v1/sync", result["multi_batch"])
+        self.assertIn("reconverged", result["account_switch"])
+        self.assertTrue(result["second_chunk_marker"])
+
+        # Server truth after the journey + sweep: run fixtures tombstoned,
+        # the 106 seeded groups are all orphaned, and the device ends on An.
+        fixture_msgs = [m for msgs in store.messages.values() for m in msgs
+                        if str(m["content"]).startswith("sj-")]
+        self.assertTrue(fixture_msgs)
+        self.assertTrue(all(m["deletedAt"] for m in fixture_msgs))
+        self.assertTrue(all(conv["members"] == set()
+                            for conv in store.conversations.values()
+                            if conv["type"] == "GROUP"))
+        self.assertEqual(world.account, "user-an")
+        self.assertEqual(world.screen, "inbox")
+        # The >100 sync fan-out really happened on the scripted logcat.
+        self.assertGreaterEqual(len(world.sync_log), 4)
+        # Queued work landed exactly once with two distinct identities.
+        ot = [m for m in store.messages["conv-ab"]
+              if m["content"].startswith("sj-ot")]
+        self.assertEqual(len(ot), 2)
+        self.assertEqual(len({m["clientMessageId"] for m in ot}), 2)
+
+    def test_executor_flags_a_single_batch_sync_as_a_defect(self):
+        store, world, client, context, session = self._fixture()
+        original = world.emit_sync
+
+        def single_batch():
+            world.sync_log.append(
+                "I/okhttp.OkHttpClient: --> POST "
+                "http://10.0.2.2:8080/api/v1/sync (80-byte body)")
+
+        world.emit_sync = single_batch
+        with self.assertRaises(journeys.ProductFailure) as caught:
+            self._run(context, session)
+        self.assertIn("at least two bounded batches", str(caught.exception))
+        world.emit_sync = original
+
+    def test_executor_flags_a_seeded_row_that_never_converges(self):
+        store, world, client, context, session = self._fixture()
+        # Never let the chunk-2 marker row render: keep the inbox capped.
+        original_rows = world.inbox_rows
+        world.inbox_rows = lambda: [
+            row for row in original_rows()
+            if not row[0].startswith("sj-os-")]
+        with self.assertRaises(journeys.ProductFailure):
+            self._run(context, session)
+
+    def test_registered_dispatch_routes_offline_sync(self):
+        sentinel = mock.Mock(return_value={"summary": "ok"})
+        with mock.patch.object(journeys, "run_offline_sync", sentinel):
+            result = journeys.run_registered_row(
+                journeys.ROW_BY_ID["offline-sync"], {"serial": "emulator-5554"})
+        self.assertEqual(result, {"summary": "ok"})
+        sentinel.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -2,8 +2,8 @@
 """Guarded coordinator for the phase 08 stable-journey campaign.
 
 Runnable rows are seeded login, send/receive, chat-interactions, summary-ask,
-archive/preferences, groups-contacts, labels-lifecycle, polls-reminders, and
-the two injected-push journeys.
+archive/preferences, groups-contacts, labels-lifecycle, polls-reminders,
+offline-sync, and the two injected-push journeys.
 Every other matrix row stays BLOCKED_CAPABILITY with the gap that still
 prevents that row from producing its evidence.
 """
@@ -477,14 +477,51 @@ ROWS: tuple[JourneyRow, ...] = (
         id="offline-sync",
         title="Offline outbox, reconnect sync and gap recovery",
         matrix_refs=("phase-08:Sync/offline", "c1-5:Offline/sync O1/O2"),
-        preconditions=("Phase-03 sync consumer and local disposable stack are integrated"),
-        steps=("Queue offline text/reaction, restart, reconnect", "Reconcile 60 edits/recalls and >100 conversations", "Switch A→B/ABA"),
-        assertions=("One final row per clientMessageId", "Bounded pages converge after restart and account switch"),
-        captures=("offline/after-reconnect screenshots", "REST/DB oracle transcripts", "logcat.txt", "summary.json"),
-        cleanup=("Restore connectivity/settings and remove only generated fixture rows"),
-        rest_plan=(("POST", "/api/v1/sync"), ("GET", "/api/v1/conversations/{id}/messages")),
-        capability_gap=("The available patch_window helper covers a smaller two-message reconnect smoke only; "
-                        "phase-03's integrated Room 14 client and the >100-conversation DB oracle are absent."),
+        preconditions=("An is signed in on the device",
+                       "The seeded An↔Binh DIRECT conversation exists",
+                       "The local stack accepts >100 REST-created conversations"),
+        steps=("Open An↔Binh; interleave-seed 30 peer-edit + 30 recall sources "
+               "plus a reaction target over REST",
+               "Cut wifi/data; queue two texts and a 👍 through the real UI; "
+               "force-stop and relaunch while still offline",
+               "Restore the network; the outbox flushes exactly once per "
+               "clientMessageId and the reaction lands",
+               "Seed 105 disposable An+Binh groups plus one An/Chi-only group; "
+               "walk the paged inbox to the oldest seeded row",
+               "Force-stop; land 30 edits + 30 recalls plus a marker message in "
+               "a conversation that sorts into the second 100-watermark batch; "
+               "relaunch and watch the marker converge",
+               "Sign out to the login form, sign in as Binh (A→B), then sign "
+               "out and back in as An (ABA)"),
+        assertions=("Queued texts and the offline reaction land exactly once "
+                    "(REST history + server DB row count)",
+                    "The inbox pager appends >100 conversations and logcat "
+                    "shows the post-restart sync fanning into more than one "
+                    "bounded POST /api/v1/sync batch",
+                    "The tail edit, its Edited marker, a recall tombstone and "
+                    "the second-batch marker all render on the device",
+                    "Binh's session never shows the An-only fixture; the ABA "
+                    "re-login reconverges An's inbox and a fresh peer message"),
+        captures=("offline-queue.png", "offline-after-restart.png",
+                  "reconnect-sync.png", "inbox-bottom.png", "chunk2-marker.png",
+                  "post-restart-tail.png", "switch-b-inbox.png",
+                  "switch-aba-inbox.png", "ui-tree.txt", "logcat.txt",
+                  "rest-transcript.json", "summary.json"),
+        cleanup=("Restore wifi/data/font/locale to the pre-row snapshot",
+                 "Soft-delete only this run's unique messages as their authors",
+                 "Remove the second member and leave all 106 seeded groups "
+                 "(orphaned)",
+                 "Leave the device signed back in as An on the inbox"),
+        rest_plan=(("POST", "/api/v1/conversations/group"),
+                   ("GET", "/api/v1/conversations"),
+                   ("POST", "/api/v1/conversations/direct"),
+                   ("GET", "/api/v1/conversations/{id}/messages"),
+                   ("POST", "/api/v1/conversations/{id}/messages"),
+                   ("PATCH", "/api/v1/conversations/{id}/messages/{messageId}"),
+                   ("DELETE", "/api/v1/conversations/{id}/messages/{messageId}"),
+                   ("DELETE", "/api/v1/conversations/{id}/members/{userId}"),
+                   ("POST", "/api/v1/conversations/{id}/leave"),
+                   ("POST", "/api/v1/sync")),
     ),
     JourneyRow(
         id="injected-notifications",
@@ -696,6 +733,28 @@ HELPER_CALLS = {
          "target": "reminderMenu -> Delete -> confirm",
          "assert": "card + REST row are gone"},
     ),
+    "offline-sync": (
+        {"helper": "patch_window.settings_snapshot + cut_network",
+         "assert": "two UI sends + one 👍 queue while the radios are off"},
+        {"helper": "adb", "args": ["shell", "am", "force-stop", PACKAGE],
+         "then": ["shell", "am", "start", "-n", f"{PACKAGE}/{MAIN_ACTIVITY}"],
+         "assert": "queued texts + the optimistic chip survive process death"},
+        {"helper": "patch_window.restore_test_network + wait_server_rows",
+         "assert": "exactly one server row per flushed clientMessageId; "
+                  "the 👍 reaches REST on its target"},
+        {"helper": "e2e_common.Client.post",
+         "path": "POST /api/v1/conversations/group x105 + one An/Chi group",
+         "assert": "the paged inbox walk reaches sj-os-<tag>-001 (Room >100)"},
+        {"helper": "e2e_common.Client.patch+delete+post", "actor": "Binh+An",
+         "assert": "30 edits + 30 recalls + a second-chunk marker land while "
+                  "the process is dead"},
+        {"helper": "adb", "args": ["logcat", "-d", "-v", "brief"],
+         "assert": ">1 POST /api/v1/sync batch; a ~100-watermark body"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "inboxUserAvatar -> logoutRow -> Sign out -> "
+                   "phoneInput/passwordInput/primaryAction",
+         "assert": "A→B hides the An-only fixture; ABA reconverges An's inbox"},
+    ),
     "archive-preferences": (
         {"helper": "e2e_common.Client.request",
          "path": "POST /api/v1/attachments + /messages", "actor": "Binh+An",
@@ -851,7 +910,18 @@ UI_MARKERS = {
         "resource-id:askModeBadge", "resource-id:citationButton",
         "resource-id:messageBody",
     ),
-    "offline-sync": ("text:unique offline message", "text:converged message order"),
+    "offline-sync": (
+        "resource-id:conversationList", "text:Binh",
+        "resource-id:messageInput", "resource-id:sendButton",
+        "resource-id:messageBody", "desc:Like", "desc:👍 reaction chip",
+        "resource-id:messageActionsTitle", "text:<sj-ot queued texts>",
+        "text:sj-os-<tag>-001", "text:<sj-ose edited tail>",
+        "text:Edited", "text:This message was deleted",
+        "resource-id:inboxUserAvatar", "resource-id:profileName",
+        "resource-id:logoutRow", "text:Sign out",
+        "resource-id:phoneInput", "resource-id:passwordInput",
+        "resource-id:primaryAction", "text:An",
+    ),
     "injected-notifications": (
         "text:You have a new message", "text:Tin nhắn mới",
         "text:A reminder is due", "text:Nhắc nhở", "label:INJECTED",
@@ -5586,6 +5656,793 @@ def run_polls_reminders(row: JourneyRow, context: dict[str, Any]) -> dict[str, A
     return result
 
 
+# --- offline-sync -------------------------------------------------------------
+# O1/O2: the device queues text sends plus a reaction while the radios are off,
+# the queued work survives process death and flushes exactly once on reconnect,
+# the bounded watermark sync reconciles a >100-conversation set plus a burst of
+# peer edits/recalls across a cold restart, and a real A->B->A sign-in switch
+# re-establishes each caller's truth.
+
+_OFFLINE_GROUP_COUNT = 105      # pushes the caller's conversation set past 100
+_OFFLINE_SEEN_MIN = 100         # rendered rows the paged inbox walk must surface
+_OFFLINE_FIXTURE_EACH = 30      # 30 edits + 30 recalls = 60 reconciled changes
+_OFFLINE_SEND_GAP_S = 0.4       # keeps fixture sends under the write rate bucket
+# OkHttp Level.BASIC logs "--> POST <url> (<bytes>-byte body)"; ~100 watermarks
+# cannot fit inside a body smaller than this floor.
+_OFFLINE_SYNC_POST_RE = re.compile(r"--> POST \S+/api/v1/sync")
+_OFFLINE_SYNC_BYTES_RE = re.compile(r"--> POST \S+/api/v1/sync[^\n]*?\((\d+)-byte body\)")
+_OFFLINE_FULL_BATCH_BYTES = 3000
+_OFFLINE_SIGN_OUT_LABELS = ("Sign out", "Đăng xuất")
+
+
+def _offline_patch(context: dict[str, Any], fn: str, *args: Any, **kwargs: Any) -> Any:
+    """Run a patch_window step, translating its product defect into ours."""
+    patch = context["helpers"][2]
+    try:
+        return getattr(patch, fn)(*args, **kwargs)
+    except Exception as error:
+        defect = getattr(patch, "ProductDefect", None)
+        if defect is not None and isinstance(error, defect):
+            raise ProductFailure(str(error)) from error
+        raise
+
+
+def _offline_rest_once(make_call: Callable[[], Any], allowed: set[int],
+                       what: str) -> Any:
+    """One REST fixture call; a single 429 retry keeps the seeded write burst
+    honest, and a second rate-limit is an environment signal, not a defect."""
+    response = make_call()
+    if response.status == 429:
+        details = ((response.json() or {}).get("error") or {}).get("details") or {}
+        try:
+            retry_after = int(details.get("retryAfterSeconds") or 5)
+        except (TypeError, ValueError):
+            retry_after = 5
+        time.sleep(min(60, max(2, retry_after + 1)))
+        response = make_call()
+    if response.status == 429:
+        raise EnvironmentFailure(f"the local stack rate-limited {what}")
+    _expect_status(response, allowed, what)
+    return response
+
+
+def _offline_send_rest(recorder: RecordingClient, token: str,
+                       conversation_id: str, content: str) -> dict[str, Any]:
+    response = _offline_rest_once(
+        lambda: recorder.post(
+            f"/api/v1/conversations/{conversation_id}/messages", token=token,
+            body={"clientMessageId": str(uuid.uuid4()), "type": "TEXT",
+                  "content": content, "attachmentIds": []}),
+        {200, 201}, f"fixture send of {content!r}")
+    return dict(response.json() or {})
+
+
+def _offline_history(recorder: RecordingClient, token: str,
+                     conversation_id: str) -> list[dict[str, Any]]:
+    """Newest 100 history rows — the 60-fixture burst stays inside one page."""
+    response = recorder.get(
+        f"/api/v1/conversations/{conversation_id}/messages",
+        token=token, params={"limit": 100})
+    _expect_status(response, {200}, "the direct-conversation history")
+    return list((response.json() or {}).get("items") or [])
+
+
+def _offline_inbox_ids(recorder: RecordingClient, token: str) -> set[str]:
+    """Every unarchived conversation id in the caller's REST inbox."""
+    response = recorder.get("/api/v1/conversations", token=token,
+                            params={"archived": "false"})
+    _expect_status(response, {200}, "the caller inbox list")
+    body = response.json() or []
+    items = body.get("items") if isinstance(body, dict) else body
+    return {str(item.get("id")) for item in items or [] if item.get("id")}
+
+
+def _offline_chunk_tail(recorder: RecordingClient, token: str,
+                        seeded_ids: set[str]) -> str:
+    """The seeded group id sorting deepest in the caller's conversation set.
+
+    SyncV2Consumer orders watermarks by conversation id and batches 100 per
+    POST /api/v1/sync, so an id past position 100 cannot ride in the first
+    batch; a marker landing there proves the second batch was applied.
+    """
+    ids = sorted(_offline_inbox_ids(recorder, token))
+    if len(ids) <= 100:
+        raise EnvironmentFailure(
+            f"the caller inbox holds {len(ids)} conversations; >100 are required")
+    tail = [cid for index, cid in enumerate(ids)
+            if index >= 100 and cid in seeded_ids]
+    if not tail:
+        raise EnvironmentFailure("no seeded group sorts into the second sync batch")
+    return tail[-1]
+
+
+def _offline_force_stop(context: dict[str, Any]) -> None:
+    context["adb"].command("shell", "am", "force-stop", PACKAGE, timeout=20)
+
+
+def _offline_relaunch(context: dict[str, Any]) -> None:
+    context["adb"].command("shell", "am", "start", "-n",
+                           f"{PACKAGE}/{MAIN_ACTIVITY}", timeout=30)
+    time.sleep(4)
+
+
+def _offline_wait_inbox(context: dict[str, Any], what: str,
+                        timeout: float | None = None) -> None:
+    _wait_ui_node(context, lambda node: _rid_ends(node, "inboxUserAvatar"),
+                  what, timeout=timeout)
+
+
+def _offline_wait_inbox_row(context: dict[str, Any], title: str, what: str,
+                            timeout: float | None = None) -> Any:
+    """Pull-refresh the inbox until a title row renders, then return it."""
+    deadline = time.monotonic() + float(timeout or _ui_timeout(context))
+    while True:
+        row = _inbox_conversation_row(context, title)
+        if row is not None:
+            return row
+        if time.monotonic() >= deadline:
+            raise ProductFailure(what)
+        _pull_refresh_inbox(context)
+        time.sleep(0.7)
+
+
+def _offline_open_direct(context: dict[str, Any]) -> None:
+    """Inbox -> the seeded An<->Binh chat through the real row tap."""
+    row = _offline_wait_inbox_row(
+        context, "Binh", "the seeded Binh row was not on the inbox")
+    context["device"].tap_node(row)
+    _wait_ui_node(context, lambda node: _rid_ends(node, "messageInput"),
+                  "the An-Binh conversation did not open", timeout=30)
+
+
+def _offline_inbox_scroll(context: dict[str, Any]) -> None:
+    """One scroll-up gesture inside the conversation list's middle band.
+
+    Swiping from the list's bottom edge lands inside the gesture-nav strip on
+    this 640px screen and the system sends the app home — the walk then scrolls
+    the launcher. Staying between 22% and 76% of the list's height keeps the
+    gesture a real list scroll."""
+    nodes = _ui_nodes(context)
+    container = next((node for node in nodes
+                      if _rid_ends(node, "conversationList")), None)
+    box = getattr(container, "box", None) or (0, 0, 320, 640)
+    cx = (box[0] + box[2]) // 2
+    height = box[3] - box[1]
+    context["device"].swipe(cx, box[1] + int(height * 0.76),
+                            cx, box[1] + int(height * 0.22), 350)
+
+
+def _offline_walk_inbox(context: dict[str, Any], title: str,
+                        swipes: int = 60) -> None:
+    """Scroll the inbox until the oldest seeded group row renders — the pager
+    must have appended every 30-row page above it into Room."""
+    for _ in range(swipes):
+        if _inbox_conversation_row(context, title) is not None:
+            return
+        _offline_inbox_scroll(context)
+        time.sleep(1.0)
+    raise ProductFailure(f"the inbox never reached the oldest seeded row {title!r}")
+
+
+def _offline_wait_sync_quiet(context: dict[str, Any], timeout: float = 240) -> None:
+    """Wait until the device stops issuing POST /api/v1/sync calls.
+
+    After a >100-conversation seed the SyncV2 consumer drains its delta pages
+    as a burst of small requests; pulling a fresh inbox generation mid-burst
+    supersedes the in-flight write before it lands. The quiet window lets the
+    watermark drain finish so the next refresh lands."""
+    deadline = time.monotonic() + timeout
+    last_count = -1
+    stable = 0
+    while time.monotonic() < deadline:
+        posts, _bodies = _offline_sync_requests(context)
+        if posts == last_count:
+            stable += 1
+            if stable >= 2:
+                return
+        else:
+            stable = 0
+            last_count = posts
+        time.sleep(4)
+
+
+def _offline_pull_until_seed(context: dict[str, Any], prefix: str,
+                             timeout: float = 150) -> None:
+    """Pull once, then give the landed generation time to render.
+
+    Re-pulling inside the window restarts the generation race, so a second
+    pull only happens once after the first half of the deadline passes."""
+    _pull_refresh_inbox(context)
+    deadline = time.monotonic() + timeout
+    repulled = False
+    while time.monotonic() < deadline:
+        time.sleep(2.5)
+        if any((node.text or "").strip().startswith(prefix)
+               for node in _ui_nodes(context)):
+            return
+        if not repulled and time.monotonic() > deadline - timeout / 2:
+            _pull_refresh_inbox(context)
+            repulled = True
+
+
+def _offline_collect_inbox_titles(context: dict[str, Any], prefix: str,
+                                  need: int, swipes: int = 70) -> set[str]:
+    """Accumulate distinct inbox row titles matching `prefix` while paging down.
+
+    Each viewport renders ~5-7 rows; sweeping the whole seeded block while
+    collecting proves >100 conversations paged through the UI even when the
+    exact tail row is hard to name (display order follows lastMessageAt)."""
+    seen: set[str] = set()
+    stall = 0
+    last = 0
+    for _ in range(swipes):
+        for node in _ui_nodes(context):
+            text = (node.text or "").strip()
+            if text.startswith(prefix):
+                seen.add(text)
+        if len(seen) >= need:
+            return seen
+        stall = stall + 1 if len(seen) == last else 0
+        last = len(seen)
+        if stall >= 15:
+            # Long quiet stall: the page-1 write may have been superseded
+            # before landing — one extra refresh is the last resort.
+            _pull_refresh_inbox(context)
+            stall = 0
+            time.sleep(1.5)
+            continue
+        _offline_inbox_scroll(context)
+        time.sleep(1.0)
+    return seen
+
+
+def _offline_restore_an(context: dict[str, Any]) -> None:
+    """Leave the device signed in as seed An through the real UI.
+
+    A failure mid A->B->A switch would otherwise strand the emulator on the
+    login form or inside Binh's session and poison every following row."""
+    api, _adb_ui, patch = context["helpers"]
+    ui = context["device"]
+    patch.ensure_device_account(
+        ui, Path(context["row_dir"]), fresh_login=False)
+    profile = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "inboxUserAvatar"),
+        "the inbox profile entry point was not visible during restore",
+        timeout=30)
+    ui.tap_node(profile)
+    name = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "profileName"),
+        "the profile name did not render during restore", timeout=20)
+    if name.text.strip() == "An":
+        ui.key("KEYCODE_BACK")
+        _offline_wait_inbox(context, "the inbox did not return after restore")
+        return
+    ui.key("KEYCODE_BACK")
+    _offline_wait_inbox(context, "the wrong-account inbox did not return")
+    _offline_sign_out(context)
+    _offline_sign_in(context, api.USER_A["phone"], "An")
+
+
+def _offline_sync_requests(context: dict[str, Any]) -> tuple[int, list[int]]:
+    """(count, body sizes) of POST /api/v1/sync lines in the logcat buffer."""
+    raw = context["adb"].command("logcat", "-d", "-v", "brief", timeout=40,
+                               check=False)
+    posts = 0
+    bodies: list[int] = []
+    for line in raw.splitlines():
+        if not _OFFLINE_SYNC_POST_RE.search(line):
+            continue
+        posts += 1
+        match = _OFFLINE_SYNC_BYTES_RE.search(line)
+        if match:
+            bodies.append(int(match.group(1)))
+    return posts, bodies
+
+
+def _offline_sign_out(context: dict[str, Any]) -> None:
+    """Profile -> Sign out -> confirm, landing on the login form."""
+    ui = context["device"]
+    patch = context["helpers"][2]
+    avatar = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "inboxUserAvatar"),
+        "the inbox profile entry point was not visible")
+    ui.tap_node(avatar)
+    _scroll_profile_until(context, "logoutRow")
+    logout = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "logoutRow"),
+        "the Sign out row was not rendered")
+    ui.tap_node(logout)
+    confirm = _wait_ui_node(
+        context,
+        lambda node: node.text.strip() in _OFFLINE_SIGN_OUT_LABELS
+                     and node.clickable and not _rid_ends(node, "logoutRow"),
+        "the Sign out confirmation was not rendered")
+    ui.tap_node(confirm)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        if patch.login_form_visible(_ui_nodes(context)):
+            return
+        time.sleep(0.7)
+    raise EnvironmentFailure("the login form did not appear after Sign out")
+
+
+def _offline_sign_in(context: dict[str, Any], phone: str,
+                     display_name: str) -> None:
+    """Drive the real login form for a seeded account, then prove the profile
+    identifies that account — the same probe _assert_device_account_an uses."""
+    patch = context["helpers"][2]
+    ui = context["device"]
+    deadline = time.monotonic() + 45
+    while True:
+        if patch.login_form_visible(_ui_nodes(context)):
+            break
+        if time.monotonic() >= deadline:
+            raise EnvironmentFailure(
+                f"the login form never appeared for {display_name}")
+        time.sleep(0.7)
+    patch.fill_login_field(ui, "phoneInput", phone)
+    ui.key("KEYCODE_BACK")
+    patch.fill_login_field(
+        ui, "passwordInput", getattr(patch, "PASSWORD", "password123"))
+    context["adb"].command("shell", "input", "keyevent", "4",
+                           timeout=15, check=False)
+    time.sleep(1)
+    nodes = _ui_nodes(context)
+    action = patch.node_by_id(nodes, "primaryAction") or next(
+        (node for node in nodes
+         if patch.text_matches(node, ("Sign in", "Đăng nhập"))), None)
+    if action is None:
+        raise EnvironmentFailure("the sign-in control was not exposed")
+    ui.tap_node(action)
+    _offline_wait_inbox(context, f"{display_name} did not reach the inbox",
+                        timeout=90)
+    avatar = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "inboxUserAvatar"),
+        "the profile entry point was not visible after sign-in")
+    ui.tap_node(avatar)
+    _wait_ui_node(
+        context,
+        lambda node: _rid_ends(node, "profileName")
+                     and node.text.strip() == display_name,
+        f"the signed-in profile did not identify {display_name}", timeout=15)
+    ui.key("KEYCODE_BACK")
+    _offline_wait_inbox(context, "the inbox did not return after the profile check")
+
+
+def run_offline_sync(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Offline queue -> restart -> reconnect reconcile on the seeded device.
+
+    Scope, kept honest:
+      * The Room oracle degrades to UI assertions: nexachat.db is SQLCipher
+        and the device image carries no sqlite3 binary, so the outbox is
+        proven through rendered bubbles and the server-side exact-once query
+        instead of raw rows.
+      * The >100-conversation claim is proven two ways: the paged inbox walk
+        reaches the oldest seeded row (every page above it lives in Room),
+        and OkHttp request lines show the post-restart watermark sync fanning
+        out into more than one bounded POST /api/v1/sync batch; a marker
+        message sent to a conversation that sorts into the second batch is
+        then rendered from its inbox row.
+      * Account switch clears Room (clearAccountDataPreservingOutbox), so the
+        post-ABA assertion is a fresh bounded convergence: the inbox repages
+        and a brand-new peer message lands.
+
+    Every violated product assertion raises ProductFailure; fixture failures
+    (network toggling, REST seeding, sign-in surfaces) stay harness errors.
+    """
+    _campaign_serial(context)
+    _campaign_base_url(context)
+    _prepare_seeded_an(context)
+    api, _adb_ui, patch = context["helpers"]
+    recorder: RecordingClient = context["client"]
+    ui = context["device"]
+    an = _actor_session(api, recorder, api.USER_A["phone"])
+    binh = _actor_session(api, recorder, api.USER_C["phone"])
+    chi = _actor_session(api, recorder, api.USER_B["phone"])
+    an_token = an["accessToken"]
+    binh_token = binh["accessToken"]
+    an_id = str((an.get("user") or {}).get("id") or "")
+    binh_id = str((binh.get("user") or {}).get("id") or "")
+    chi_id = str((chi.get("user") or {}).get("id") or "")
+    if not an_id or not binh_id or not chi_id:
+        raise EnvironmentFailure("seed actor sessions did not expose user ids")
+    try:
+        _, conversation = api.direct_conversation(
+            recorder, an_token, api.USER_C["phone"])
+    except Exception as error:
+        raise EnvironmentFailure(
+            "the seeded An-Binh conversation could not be opened") from error
+    conversation_id = str(conversation.get("id") or "")
+    if not conversation_id:
+        raise EnvironmentFailure("the seeded conversation returned no id")
+
+    row_dir = Path(context["row_dir"])
+    tag = uuid.uuid4().hex[:8]
+    ot_texts = [f"sj-ot1-{tag}", f"sj-ot2-{tag}"]
+    react_target = f"sj-osr-{tag}"
+    edit_src = [f"sj-osm-{tag}-e{i:02d}"
+                for i in range(1, _OFFLINE_FIXTURE_EACH + 1)]
+    recall_src = [f"sj-osm-{tag}-r{i:02d}"
+                  for i in range(1, _OFFLINE_FIXTURE_EACH + 1)]
+    edited_to = {content: f"sj-ose-{tag}-{index + 1:02d}"
+                 for index, content in enumerate(edit_src)}
+    marker_text = f"sj-osm2-{tag}"
+    final_text = f"sj-osf-{tag}"
+    aonly_title = f"sj-os-{tag}-aonly"
+
+    seeded: dict[str, str] = {}                  # title -> conversation id
+    group_members: list[tuple[str, str]] = []    # (conv id, member uid to sweep)
+    created: list[tuple[str, str, str]] = []  # (conv, msg, author phone)
+    edit_ids: list[str] = []
+    recall_ids: list[str] = []
+    aonly_id = ""
+    marker_conv_id = ""
+    marker_title = ""
+    cleanup_errors: list[str] = []
+    result: dict[str, Any] = {}
+    primary_error: Exception | None = None
+    before = _offline_patch(context, "settings_snapshot")
+    try:
+        # --- fixture: 60 interleaved mutation sources + a reaction target ----
+        # Interleaving authors keeps each 30/10s write bucket honest and leaves
+        # one edited and one recalled message inside the rendered tail after
+        # the restart (tail order follows original seq, not the edit time).
+        _offline_open_direct(context)
+        for index in range(_OFFLINE_FIXTURE_EACH):
+            e_msg = _offline_send_rest(
+                recorder, binh_token, conversation_id, edit_src[index])
+            created.append((conversation_id, str(e_msg.get("id")), api.USER_C["phone"]))
+            edit_ids.append(str(e_msg.get("id")))
+            time.sleep(_OFFLINE_SEND_GAP_S / 2)
+            r_msg = _offline_send_rest(
+                recorder, an_token, conversation_id, recall_src[index])
+            created.append((conversation_id, str(r_msg.get("id")), api.USER_A["phone"]))
+            recall_ids.append(str(r_msg.get("id")))
+            time.sleep(_OFFLINE_SEND_GAP_S / 2)
+        target_msg = _offline_send_rest(
+            recorder, binh_token, conversation_id, react_target)
+        created.append((conversation_id, str(target_msg.get("id")), api.USER_C["phone"]))
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "messageBody")
+                         and node.text.strip() == react_target,
+            "the seeded fixture burst did not reach the open conversation",
+            timeout=40)
+
+        # --- Phase O: queue two texts + one reaction while offline ----------
+        _offline_patch(context, "cut_network")
+        for content in ot_texts:
+            _offline_patch(context, "queue_offline_text", ui, content)
+        _open_action_sheet(context, react_target)
+        tile = _wait_ui_node(
+            context,
+            lambda node: (node.desc or "").strip() in _CHAT_REACTION_TILE,
+            "the Like reaction tile was not offered while offline")
+        ui.tap_node(tile)
+        _wait_sheet_closed(context)
+        _wait_ui_node(
+            context,
+            lambda node: _CHAT_REACTION_EMOJI in (node.desc or "")
+                         and ("yours" in node.desc or "của bạn" in node.desc),
+            "the offline reaction did not render its optimistic chip")
+        ui.screenshot(str(row_dir / "offline-queue.png"))
+
+        # Queued work survives process death: cold-relaunch while still cut.
+        _offline_force_stop(context)
+        _offline_relaunch(context)
+        _offline_wait_inbox(context,
+                            "the inbox did not return after the offline restart")
+        _offline_open_direct(context)
+        for content in ot_texts:
+            _wait_ui_node(
+                context,
+                lambda node, c=content: _rid_ends(node, "messageBody")
+                                        and c in node.text,
+                f"queued message {content!r} did not survive the offline restart")
+        ui.screenshot(str(row_dir / "offline-after-restart.png"))
+
+        # --- Phase R1: reconnect flush, exactly once per clientMessageId -----
+        _offline_patch(context, "restore_test_network", before)
+        flushed: list[dict[str, Any]] = []
+        deadline = time.monotonic() + 45
+        while True:
+            items = _history_items(recorder, binh_token, conversation_id)
+            flushed = [item for item in items
+                       if item.get("content") in set(ot_texts)]
+            if len(flushed) >= 2:
+                break
+            if time.monotonic() >= deadline:
+                raise ProductFailure(
+                    "the reconnect flush did not land both queued texts on REST")
+            time.sleep(0.8)
+        if {item.get("content") for item in flushed} != set(ot_texts) \
+                or len(flushed) != 2:
+            raise ProductFailure(
+                "the flush produced a duplicate or missing queued text")
+        client_ids = {str(item.get("clientMessageId") or "")
+                      for item in flushed}
+        if len(client_ids) != 2 or "" in client_ids:
+            raise ProductFailure(
+                "the flushed texts did not carry two distinct clientMessageIds")
+        for item in flushed:
+            created.append((conversation_id, str(item.get("id")), api.USER_A["phone"]))
+        db_note = "server-db oracle unavailable"
+        try:
+            db_rows = _offline_patch(
+                context, "wait_server_rows",
+                os.environ.get("NEXACHAT_E2E_DB_CONTAINER", "nexachat-db-1"),
+                os.environ.get("NEXACHAT_E2E_DB_NAME", "nexachat"),
+                ot_texts)
+        except Exception:
+            db_rows = None
+        if db_rows:
+            matched = {row_db.get("content"): int(row_db.get("count") or 0)
+                       for row_db in db_rows
+                       if row_db.get("content") in set(ot_texts)}
+            if any(count != 1 for count in matched.values()):
+                raise ProductFailure(
+                    "the server database holds a duplicate row for a queued "
+                    "clientMessageId")
+            if set(matched) == set(ot_texts):
+                db_note = "exactly one server row per queued text"
+            else:
+                db_note = f"server-db matched {len(matched)}/{len(ot_texts)} texts"
+        _history_wait(
+            recorder, binh_token, conversation_id,
+            lambda item: item.get("content") == react_target and any(
+                entry.get("emoji") == _CHAT_REACTION_EMOJI
+                and int(entry.get("count") or 0) >= 1
+                for entry in (item.get("reactions") or [])),
+            "the offline reaction never landed on its REST target", timeout=30)
+        ui.screenshot(str(row_dir / "reconnect-sync.png"))
+
+        # --- Phase R2: >100 conversations into Room via the paged inbox ------
+        ui.key("KEYCODE_BACK")
+        _offline_wait_inbox(context, "the inbox did not return for seeding")
+        for index in range(1, _OFFLINE_GROUP_COUNT + 1):
+            title = f"sj-os-{tag}-{index:03d}"
+            created_group = _offline_rest_once(
+                lambda t=title: recorder.post(
+                    "/api/v1/conversations/group", token=an_token,
+                    body={"title": t, "memberIds": [binh_id]}),
+                {200, 201}, f"seeded group {title}")
+            cid = str((created_group.json() or {}).get("id") or "")
+            if not cid:
+                raise EnvironmentFailure("a seeded group create returned no id")
+            seeded[title] = cid
+            group_members.append((cid, binh_id))
+        created_group = _offline_rest_once(
+            lambda: recorder.post(
+                "/api/v1/conversations/group", token=an_token,
+                body={"title": aonly_title, "memberIds": [chi_id]}),
+            {200, 201}, "the An/Chi-only group")
+        aonly_id = str((created_group.json() or {}).get("id") or "")
+        if not aonly_id:
+            raise EnvironmentFailure("the An/Chi group create returned no id")
+        group_members.append((aonly_id, chi_id))
+
+        # Group creation writes a system message, so every seeded group carries
+        # lastMessageSeq=1 and ranks by createdAt DESC under the messaged
+        # direct chat — the last-created group is the page-1 probe for Binh.
+        top_title = f"sj-os-{tag}-{_OFFLINE_GROUP_COUNT:03d}"
+        _offline_wait_sync_quiet(context)
+        _offline_pull_until_seed(context, f"sj-os-{tag}-")
+        seen = _offline_collect_inbox_titles(
+            context, f"sj-os-{tag}-", _OFFLINE_SEEN_MIN)
+        # The walk is only done when the oldest seeded row itself renders:
+        # sj-os-<tag>-001 sorts deepest, so reaching it proves every paged
+        # inbox row above it was appended into Room.
+        try:
+            _offline_walk_inbox(context, f"sj-os-{tag}-001")
+        finally:
+            ui.screenshot(str(row_dir / "inbox-bottom.png"))
+        if len(seen) < _OFFLINE_SEEN_MIN:
+            raise ProductFailure(
+                f"the paged inbox walk surfaced only {len(seen)} seeded "
+                f"conversation rows; the >{_OFFLINE_SEEN_MIN}-conversation set "
+                "must all render from Room")
+        marker_conv_id = _offline_chunk_tail(
+            recorder, an_token, set(seeded.values()))
+        marker_title = next(title for title, cid in seeded.items()
+                            if cid == marker_conv_id)
+
+        # --- Phase R3: restart, 60 reconciled deltas, second-batch marker ----
+        posts_before, bodies_before = _offline_sync_requests(context)
+        _offline_force_stop(context)
+        for index, message_id in enumerate(edit_ids):
+            _offline_rest_once(
+                lambda mid=message_id, i=index: recorder.patch(
+                    f"/api/v1/conversations/{conversation_id}/messages/{mid}",
+                    token=binh_token,
+                    body={"content": edited_to[edit_src[i]]}),
+                {200}, f"peer edit {index + 1}")
+        for index, message_id in enumerate(recall_ids):
+            _offline_rest_once(
+                lambda mid=message_id: recorder.delete(
+                    f"/api/v1/conversations/{conversation_id}/messages/{mid}",
+                    token=an_token),
+                {200, 204}, f"fixture recall {index + 1}")
+        marker_msg = _offline_send_rest(
+            recorder, binh_token, marker_conv_id, marker_text)
+        created.append((marker_conv_id, str(marker_msg.get("id")), api.USER_C["phone"]))
+        _offline_relaunch(context)
+        _offline_wait_inbox(context,
+                            "the inbox did not return after the reconcile restart")
+        marker_row = _offline_wait_inbox_row(
+            context, marker_title,
+            "the second-batch marker conversation never converged", timeout=60)
+        ui.tap_node(marker_row)
+        _wait_ui_node(context, lambda node: _rid_ends(node, "messageInput"),
+                      "the marker conversation did not open", timeout=30)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "messageBody")
+                         and marker_text in node.text,
+            "the marker message was not rendered in the second-batch conversation")
+        ui.screenshot(str(row_dir / "chunk2-marker.png"))
+        posts_after, bodies_after = _offline_sync_requests(context)
+        new_posts = posts_after - posts_before
+        if new_posts < 2:
+            raise ProductFailure(
+                f"the reconnect sync issued {new_posts} POST /api/v1/sync "
+                "requests; the >100-watermark set must fan into at least two "
+                "bounded batches")
+        new_bodies = bodies_after[len(bodies_before):]
+        if new_bodies and len(new_bodies) == new_posts \
+                and max(new_bodies) <= _OFFLINE_FULL_BATCH_BYTES:
+            raise ProductFailure(
+                "no POST /api/v1/sync body was large enough to carry a "
+                "~100-watermark batch")
+        ui.key("KEYCODE_BACK")
+        _offline_wait_inbox(context, "the inbox did not return from the marker chat")
+        # With >100 fresh groups ranking above it, the direct row sits far down
+        # the inbox; a new peer text bumps it to the top AND proves a
+        # post-restart new-message delta landed.
+        probe_text = f"sj-osp-{tag}"
+        probe_msg = _offline_send_rest(
+            recorder, binh_token, conversation_id, probe_text)
+        created.append((conversation_id, str(probe_msg.get("id")),
+                        api.USER_C["phone"]))
+        _offline_open_direct(context)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "messageBody")
+                         and probe_text in node.text,
+            "the post-restart peer text did not render in the direct chat",
+            timeout=40)
+        last_edit = edited_to[edit_src[-1]]
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "messageBody")
+                         and node.text.strip() == last_edit,
+            "the reconciled tail edit was not rendered", timeout=40)
+        _wait_ui_node(
+            context,
+            lambda node: node.text.strip() in _CHAT_EDITED_MARKERS,
+            "the Edited marker did not render after the reconcile")
+        _wait_ui_node(
+            context,
+            lambda node: node.text.strip() in _CHAT_TOMBSTONE_MARKERS,
+            "no recalled tombstone rendered after the reconcile")
+        ui.screenshot(str(row_dir / "post-restart-tail.png"))
+        history = _offline_history(recorder, binh_token, conversation_id)
+        edited_rows = [item for item in history
+                       if item.get("content") in set(edited_to.values())]
+        if len(edited_rows) != _OFFLINE_FIXTURE_EACH or not all(
+                item.get("editedAt") for item in edited_rows):
+            raise ProductFailure(
+                "the 30 peer edits did not all persist on REST history")
+        recalled_rows = [item for item in history
+                         if str(item.get("id") or "") in set(recall_ids)]
+        if len(recalled_rows) != _OFFLINE_FIXTURE_EACH or not all(
+                item.get("deletedAt") for item in recalled_rows):
+            raise ProductFailure(
+                "the 30 fixture recalls did not all persist on REST history")
+
+        # --- Phase X: account switch A -> B -> A ------------------------------
+        ui.key("KEYCODE_BACK")
+        _offline_wait_inbox(context, "the inbox did not return for the switch")
+        _offline_sign_out(context)
+        _offline_sign_in(context, api.USER_C["phone"], "Binh")
+        _offline_wait_inbox_row(
+            context, top_title,
+            "Binh's session did not converge the shared seeded groups",
+            timeout=60)
+        if aonly_id in _offline_inbox_ids(recorder, binh_token):
+            raise ProductFailure(
+                "the An/Chi-only fixture leaked into Binh's inbox")
+        ui.screenshot(str(row_dir / "switch-b-inbox.png"))
+        _offline_sign_out(context)
+        _offline_sign_in(context, api.USER_A["phone"], "An")
+        final_msg = _offline_send_rest(
+            recorder, binh_token, conversation_id, final_text)
+        created.append((conversation_id, str(final_msg.get("id")), api.USER_C["phone"]))
+        _offline_open_direct(context)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "messageBody")
+                         and node.text.strip() == final_text,
+            "a fresh peer message did not land after the ABA switch", timeout=40)
+        ui.screenshot(str(row_dir / "switch-aba-inbox.png"))
+        ui.key("KEYCODE_BACK")
+        _offline_wait_inbox(context, "the inbox did not return at row end")
+        result = {
+            "offline_queue": "two texts + one Like survived process death",
+            "exact_once": ("two flushed texts, distinct clientMessageIds; "
+                           + db_note),
+            "offline_reaction": "Like chip rendered offline and landed on REST",
+            "large_set": (f"{_OFFLINE_GROUP_COUNT} seeded groups paged into "
+                          "Room; oldest row rendered"),
+            "reconcile": ("30 edits + 30 recalls verified on REST; tail edit, "
+                          "Edited marker and tombstone rendered"),
+            "multi_batch": (f"{new_posts} POST /api/v1/sync requests after "
+                            "restart" +
+                            (f"; largest body {max(new_bodies)} bytes"
+                             if new_bodies else "")),
+            "second_chunk_marker": f"{marker_title} rendered {marker_text!r}",
+            "account_switch": "A->B hid the An-only fixture; ABA reconverged",
+        }
+    except Exception as error:
+        primary_error = error
+    finally:
+        try:
+            _offline_patch(context, "restore_device_settings", before)
+        except Exception as error:
+            cleanup_errors.append(f"settings restore: {type(error).__name__}")
+        # Row phases outlive the JWT lifetime, so fixture sweep re-auths
+        # through the cached/validated login helper instead of the start-of-row
+        # tokens (first live run: every delete returned 401).
+        sweep_tokens: dict[str, str] = {}
+        for phone in {author_phone
+                      for _c, _m, author_phone in created} | {
+                      api.USER_A["phone"]}:
+            try:
+                session = api.login(recorder, phone)
+                token = str(session.get("accessToken") or "")
+                if token:
+                    sweep_tokens[phone] = token
+            except Exception:
+                continue
+        for conv_id, message_id, author_phone in created:
+            token = sweep_tokens.get(author_phone) or (
+                an_token if author_phone == api.USER_A["phone"] else binh_token)
+            try:
+                deleted = recorder.delete(
+                    f"/api/v1/conversations/{conv_id}/messages/{message_id}",
+                    token=token)
+                if deleted.status not in (200, 204, 404):
+                    cleanup_errors.append(f"message delete HTTP {deleted.status}")
+            except Exception as error:
+                cleanup_errors.append(f"message sweep: {type(error).__name__}")
+        sweep_an = sweep_tokens.get(api.USER_A["phone"], an_token)
+        for conv_id, member_id in group_members:
+            try:
+                _remove_member_rest(recorder, sweep_an, conv_id, member_id)
+            except Exception as error:
+                cleanup_errors.append(f"member sweep: {type(error).__name__}")
+            try:
+                left = recorder.post(
+                    f"/api/v1/conversations/{conv_id}/leave", token=sweep_an)
+                if left.status not in (200, 204, 400, 403, 404):
+                    cleanup_errors.append(f"leave HTTP {left.status}")
+            except Exception as error:
+                cleanup_errors.append(f"leave: {type(error).__name__}")
+        try:
+            _offline_restore_an(context)
+        except Exception as error:
+            cleanup_errors.append(
+                f"device account restore: {type(error).__name__}")
+        if cleanup_errors:
+            context["cleanup_errors"] = cleanup_errors
+    if primary_error is not None:
+        raise primary_error
+    if context.get("cleanup_errors"):
+        raise HarnessError("offline-sync cleanup could not release its fixtures")
+    result["cleanup"] = ("queued/fixture messages soft-deleted; 106 groups "
+                         "orphaned (member removed, An left); settings restored")
+    return result
+
+
 SEED_PHONES = frozenset({
     "+84900000001", "+84900000002", "+84900000003",
     "+84900000101", "+84900000102",
@@ -6238,6 +7095,7 @@ def run_registered_row(row: JourneyRow, context: dict[str, Any]) -> dict[str, An
         "labels-lifecycle": run_labels_lifecycle,
         "groups-contacts": run_groups_contacts,
         "polls-reminders": run_polls_reminders,
+        "offline-sync": run_offline_sync,
         "calls-injected-notification": run_calls_injected_notification,
         "injected-notifications": run_injected_notifications,
     }
