@@ -93,8 +93,10 @@ import retrofit2.Response;
  * that are provably older than the walk or that the delta endpoint confirms
  * are no longer accessible. Equal/newer activity, rows without a sequence, and
  * locally-created conversations are retained because Room does not store the
- * server cursor's creation-time tie-breaker. Reconnect resync requests perform
- * the same page-one pull.
+ * server cursor's creation-time tie-breaker. Reconnect resync requests fan
+ * into the same debounced trigger, and a trigger that lands while a pull is
+ * running supersedes it: the superseded pull is disposed rather than queued,
+ * so a burst never leaves a backlog of serialized redundant pulls.
  *
  * <p>Mute, archive and AI opt-out are caller-scoped server preferences. Writes
  * go through the REST endpoints first and are written through to Room only on
@@ -135,7 +137,7 @@ public final class ConversationRepository implements AutoCloseable {
     private final Context context;
     private final JsonAdapter<ConversationsPageDto> pageAdapter;
     private final JsonAdapter<List<ConversationInboxDto>> listAdapter;
-    /** Small fan-in that coalesces bursts of push events into one inbox pull. */
+    /** Small fan-in that coalesces push events and resync requests into one inbox pull. */
     private final FlowableProcessor<Boolean> refreshRequests = PublishProcessor.<Boolean>create().toSerialized();
     /** Group ids updated by the server, consumed only by currently-open detail screens. */
     private final FlowableProcessor<String> groupUpdateIds = PublishProcessor.<String>create().toSerialized();
@@ -814,18 +816,29 @@ public final class ConversationRepository implements AutoCloseable {
     /**
      * Realtime events are refresh triggers only; they are never rendered
      * directly. Reconnect requests also pull REST because it is the source
-     * of truth after a disconnected interval.
+     * of truth after a disconnected interval, and they fan into the same
+     * debounced stream so a reconnect burst cannot enqueue uncoalesced pulls.
+     *
+     * <p>A trigger that lands while a pull is running supersedes it: page one
+     * always carries the newest server state, so the in-flight pull is
+     * disposed mid-flight rather than queued. switchMapSingle keeps at most
+     * one pull in flight and folds a burst into the newest pull; concatMap
+     * would serialize one stale redundant pull per trigger, and dropping
+     * triggers instead would lose the burst's last message until the next
+     * push. Cancellation is safe because the Retrofit call is cancelled, the
+     * operation tracker drops the disposed pull, and every paging-state write
+     * is generation-guarded.
      */
     private void watchPushTriggers() {
         subscriptions.add(session.getEvents()
                 .subscribe(this::handlePushEvent, RxJavaPlugins::onError));
+        subscriptions.add(session.getResyncRequests()
+                .subscribe(ignored -> refreshRequests.onNext(Boolean.TRUE),
+                        RxJavaPlugins::onError));
         subscriptions.add(refreshRequests
                 .onBackpressureBuffer(4, () -> { }, BackpressureOverflowStrategy.DROP_OLDEST)
                 .debounce(PUSH_REFRESH_DEBOUNCE_MS, TimeUnit.MILLISECONDS)
-                .concatMapSingle(ignored -> refreshInbox())
-                .subscribe(ignored -> { }, RxJavaPlugins::onError));
-        subscriptions.add(session.getResyncRequests()
-                .concatMapSingle(ignored -> refreshInbox())
+                .switchMapSingle(ignored -> refreshInbox())
                 .subscribe(ignored -> { }, RxJavaPlugins::onError));
     }
 

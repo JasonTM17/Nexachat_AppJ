@@ -35,6 +35,7 @@ import com.nexachat.core.network.dto.ConversationDto;
 import com.nexachat.core.network.dto.ConversationAiOptOutDto;
 import com.nexachat.core.network.dto.ConversationInboxDto;
 import com.nexachat.core.network.dto.InboxLastMessageDto;
+import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.core.network.dto.ConversationMemberDto;
 import com.nexachat.core.network.dto.MuteRequest;
 import com.nexachat.core.network.dto.SyncRequest;
@@ -52,6 +53,7 @@ import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import io.reactivex.rxjava3.schedulers.TestScheduler;
 import io.reactivex.rxjava3.processors.BehaviorProcessor;
 import io.reactivex.rxjava3.processors.PublishProcessor;
 import io.reactivex.rxjava3.subscribers.TestSubscriber;
@@ -67,6 +69,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import okhttp3.Headers;
 import okhttp3.MultipartBody;
 import okhttp3.Request;
@@ -110,6 +113,7 @@ public final class ConversationRepositoryTest {
             BehaviorProcessor.createDefault(Collections.emptyMap());
     private final Moshi moshi = new Moshi.Builder().build();
     private final PublishProcessor<ChatEvent> chatEvents = PublishProcessor.create();
+    private final PublishProcessor<Object> resyncRequests = PublishProcessor.create();
     private final com.squareup.moshi.JsonAdapter<List<ConversationInboxDto>> inboxAdapter =
             moshi.adapter(Types.newParameterizedType(List.class, ConversationInboxDto.class));
 
@@ -124,7 +128,7 @@ public final class ConversationRepositoryTest {
                 messageDao, reactionDao, pinDao, outboxDao, presenceRepository);
         conversationDao.clear().blockingAwait();
         when(session.getEvents()).thenReturn(chatEvents);
-        when(session.getResyncRequests()).thenReturn(Flowable.empty());
+        when(session.getResyncRequests()).thenReturn(resyncRequests);
         when(presenceRepository.getPresences()).thenReturn(presenceFlow);
         when(tokenStore.readTokens()).thenReturn(
                 Maybe.just(new Tokens(jwtFor(MY_ID), Long.MAX_VALUE, "refresh")));
@@ -902,6 +906,91 @@ public final class ConversationRepositoryTest {
 
         assertEquals("one-shot removal subscriptions must not be retained",
                 baseline, repository.subscriptionCount());
+    }
+
+    @Test
+    public void messageCreatedBurstCollapsesToOneRefresh() throws Exception {
+        TestScheduler clock = virtualClock();
+        buildRepository();
+        stubInbox(List.of());
+
+        for (int index = 0; index < 60; index++) {
+            emitMessageCreated("conv-burst", index);
+        }
+        clock.advanceTimeBy(1, TimeUnit.SECONDS);
+
+        verify(messageApi, times(1)).getConversations(eq(30), isNull());
+    }
+
+    @Test
+    public void sustainedMessageBurstKeepsAtMostOneRefreshInFlight() throws Exception {
+        TestScheduler clock = virtualClock();
+        when(tokenStore.readTokens()).thenReturn(
+                Maybe.just(new Tokens(jwtFor(MY_ID), Long.MAX_VALUE, "refresh"))
+                        .delay(1, TimeUnit.SECONDS, clock));
+        buildRepository();
+        stubInbox(List.of());
+
+        for (int index = 0; index < 60; index++) {
+            emitMessageCreated("conv-storm", index);
+            clock.advanceTimeBy(500, TimeUnit.MILLISECONDS);
+        }
+        clock.advanceTimeBy(2, TimeUnit.SECONDS);
+
+        verify(messageApi, times(1)).getConversations(eq(30), isNull());
+    }
+
+    @Test
+    public void resyncRequestBurstCoalescesToOneRefresh() throws Exception {
+        TestScheduler clock = virtualClock();
+        buildRepository();
+        stubInbox(List.of());
+
+        for (int index = 0; index < 10; index++) {
+            resyncRequests.onNext(new Object());
+        }
+        clock.advanceTimeBy(1, TimeUnit.SECONDS);
+
+        verify(messageApi, times(1)).getConversations(eq(30), isNull());
+    }
+
+    @Test
+    public void resyncAndPushBurstsShareOneRefresh() throws Exception {
+        TestScheduler clock = virtualClock();
+        buildRepository();
+        stubInbox(List.of());
+
+        for (int index = 0; index < 30; index++) {
+            emitMessageCreated("conv-fanin", index);
+            resyncRequests.onNext(new Object());
+        }
+        clock.advanceTimeBy(1, TimeUnit.SECONDS);
+
+        verify(messageApi, times(1)).getConversations(eq(30), isNull());
+    }
+
+    @Test
+    public void singleMessageCreatedStillTriggersOneRefresh() throws Exception {
+        TestScheduler clock = virtualClock();
+        buildRepository();
+        stubInbox(List.of());
+
+        emitMessageCreated("conv-single", 0);
+        clock.advanceTimeBy(1, TimeUnit.SECONDS);
+
+        verify(messageApi, times(1)).getConversations(eq(30), isNull());
+    }
+
+    @Test
+    public void singleResyncRequestStillTriggersOneRefresh() throws Exception {
+        TestScheduler clock = virtualClock();
+        buildRepository();
+        stubInbox(List.of());
+
+        resyncRequests.onNext(new Object());
+        clock.advanceTimeBy(1, TimeUnit.SECONDS);
+
+        verify(messageApi, times(1)).getConversations(eq(30), isNull());
     }
 
     @Test
@@ -1984,6 +2073,25 @@ public final class ConversationRepositoryTest {
 
     private FakeConversationDao dao() {
         return (FakeConversationDao) conversationDao;
+    }
+
+    /**
+     * Runs debounce timers and refresh subscriptions on virtual time; must be
+     * installed before {@link #buildRepository()} so the trigger pipeline is
+     * assembled against the clock.
+     */
+    private TestScheduler virtualClock() {
+        TestScheduler clock = new TestScheduler();
+        RxJavaPlugins.setIoSchedulerHandler(ignored -> clock);
+        RxJavaPlugins.setComputationSchedulerHandler(ignored -> clock);
+        return clock;
+    }
+
+    private void emitMessageCreated(String conversationId, long seq) {
+        chatEvents.onNext(new ChatEvent.MessageCreated(
+                new MessageDto("m-" + seq, seq, conversationId, "u-other",
+                        "TEXT", "m-" + seq, "2026-11-03T09:12:04Z"),
+                conversationId, null));
     }
 
     private ConversationEntity conversation(String id) {
