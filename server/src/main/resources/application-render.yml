@@ -37,6 +37,12 @@ spring:
 # not keep the Neon compute awake. RAG indexes lazily at query time; expired
 # refresh-replay payloads are already unusable.
 nexachat:
+  admin:
+    # The production admin console is served as static files from the public
+    # site itself (site/admin/ bundle, PR #175), so its browser origin is the
+    # site origin. Default it here so a fresh Render deploy works even if the
+    # env var is not set; NEXACHAT_ADMIN_ALLOWED_ORIGINS still wins when set.
+    allowed-origins: ${NEXACHAT_ADMIN_ALLOWED_ORIGINS:https://nexachat.io.vn}
   reminders:
     # Let Neon suspend while ensuring this instance rechecks for work created elsewhere.
     max-idle-ms: 1800000
