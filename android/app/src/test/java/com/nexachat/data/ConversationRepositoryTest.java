@@ -1365,10 +1365,10 @@ public final class ConversationRepositoryTest {
                 "conv-a", "MEMBER_REMOVED", List.of("other-member"))).blockingGet();
 
         assertFalse(dao().rows.containsKey("conv-a"));
-        verify(messageDao).deleteForConversation("conv-a");
-        verify(reactionDao).deleteForConversation("conv-a");
-        verify(pinDao).deleteForConversation("conv-a");
-        verify(outboxDao).deleteForConversation("conv-a", MY_ID);
+        verify(messageDao).deleteForConversationInTransaction("conv-a");
+        verify(reactionDao).deleteForConversationInTransaction("conv-a");
+        verify(pinDao).deleteForConversationInTransaction("conv-a");
+        verify(outboxDao).deleteForConversationInTransaction("conv-a", MY_ID);
     }
 
     @Test
@@ -1890,10 +1890,11 @@ public final class ConversationRepositoryTest {
                 MY_ID, "group-left", 1, 4, null, null, null, false));
         cursors.put(MY_ID + ":group-kept", new SyncCursorEntity(
                 MY_ID, "group-kept", 1, 9, null, null, null, false));
-        when(messageDao.deleteForConversation(any())).thenAnswer(invocation -> Completable.fromAction(() -> {
+        doAnswer(invocation -> {
             String id = invocation.getArgument(0);
             messages.values().removeIf(row -> id.equals(row.getConversationId()));
-        }));
+            return null;
+        }).when(messageDao).deleteForConversationInTransaction(any());
         SyncCursorDao cursorDao = org.mockito.Mockito.mock(SyncCursorDao.class);
         when(appDatabase.syncCursorDao()).thenReturn(cursorDao);
         doAnswer(invocation -> {
@@ -2241,6 +2242,12 @@ public final class ConversationRepositoryTest {
                 rows.remove(conversationId);
                 publish();
             });
+        }
+
+        @Override
+        public void deleteByIdInTransaction(String conversationId) {
+            rows.remove(conversationId);
+            publish();
         }
 
         @Override

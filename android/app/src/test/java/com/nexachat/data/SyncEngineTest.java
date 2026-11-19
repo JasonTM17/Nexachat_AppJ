@@ -870,12 +870,12 @@ public final class SyncEngineTest {
 
         syncEngine.sync().blockingAwait();
 
-        verify(conversationDao).deleteById("c2");
-        verify(messageDao).deleteForConversation("c2");
-        verify(reactionDao).deleteForConversation("c2");
-        verify(pinDao).deleteForConversation("c2");
-        verify(outboxDao).deleteForConversation("c2", "user-1");
-        verify(conversationDao, never()).deleteById("c1");
+        verify(conversationDao).deleteByIdInTransaction("c2");
+        verify(messageDao).deleteForConversationInTransaction("c2");
+        verify(reactionDao).deleteForConversationInTransaction("c2");
+        verify(pinDao).deleteForConversationInTransaction("c2");
+        verify(outboxDao).deleteForConversationInTransaction("c2", "user-1");
+        verify(conversationDao, never()).deleteByIdInTransaction("c1");
         verify(tokenStore).saveSyncServerTime("user-1", "cursor-end");
     }
 
