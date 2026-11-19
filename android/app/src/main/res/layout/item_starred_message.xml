@@ -14,7 +14,7 @@
         android:layout_width="@dimen/icon_size"
         android:layout_height="@dimen/icon_size"
         android:layout_marginEnd="@dimen/space_md"
-        android:contentDescription="@string/cd_starred_message"
+        android:importantForAccessibility="no"
         android:src="@drawable/ic_star"
         app:tint="?attr/colorPrimary" />
 

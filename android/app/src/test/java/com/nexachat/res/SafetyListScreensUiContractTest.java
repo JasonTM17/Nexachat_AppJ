@@ -120,6 +120,27 @@ public final class SafetyListScreensUiContractTest {
     }
 
     @Test
+    public void starredRowStarIconIsDecorative() throws Exception {
+        Document doc = parse("item_starred_message.xml");
+        NodeList images = doc.getDocumentElement().getElementsByTagName("ImageView");
+        boolean foundDecorativeStar = false;
+        for (int i = 0; i < images.getLength(); i++) {
+            Element image = (Element) images.item(i);
+            if (!"@drawable/ic_star".equals(attr(image, "src"))) {
+                continue;
+            }
+            assertEquals("the leading star is decorative: the row already announces"
+                            + " sender and snippet",
+                    "no", attr(image, "importantForAccessibility"));
+            assertTrue("a decorative icon must not carry a content description",
+                    attr(image, "contentDescription").isEmpty());
+            foundDecorativeStar = true;
+        }
+        assertTrue("item_starred_message.xml must keep its leading star icon",
+                foundDecorativeStar);
+    }
+
+    @Test
     public void newSafetyStringsExistInBothLocales() throws Exception {
         String[] keys = {
                 "cd_unblock_user_named", "user_unblocked_with_name", "cd_starred_message_row"};
