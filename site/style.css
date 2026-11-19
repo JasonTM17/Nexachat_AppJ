@@ -150,9 +150,23 @@ a:focus-visible {
   display: inline-flex;
   align-items: center;
   min-height: 2.75rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0.25rem 0.75rem;
   color: var(--primary);
-  text-underline-offset: 2px;
+  text-decoration: none;
+  border-radius: 999px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.language-switch a:hover {
+  color: var(--primary-hover);
+}
+
+/* The primary (VI) language is active by default; English is active while its
+   section is the current anchor target. Mirrors the home header pills. */
+body:not(:has(#lang-en:target)) .language-switch a[href='#lang-vi'],
+body:has(#lang-en:target) .language-switch a[href='#lang-en'] {
+  color: var(--logo-on-brand);
+  background-color: var(--btn-bg);
 }
 
 .language-switch a:focus-visible {
