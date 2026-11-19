@@ -127,7 +127,7 @@
             <div class="form-field">
               <label class="form-label" for="deletion-phone" lang="vi">Số điện thoại</label>
               <label class="form-label" for="deletion-phone" lang="en">Phone number</label>
-              <input class="form-input" type="tel" id="deletion-phone" name="phone" autocomplete="tel" inputmode="tel" required aria-describedby="deletion-phone-error">
+              <input class="form-input" type="tel" id="deletion-phone" name="phone" autocomplete="tel" inputmode="tel" enterkeyhint="send" required aria-describedby="deletion-phone-error">
               <p class="form-error" id="deletion-phone-error" role="alert" hidden>
                 <span lang="vi">Nhập số điện thoại.</span>
                 <span lang="en">Enter your phone number.</span>
@@ -148,7 +148,7 @@
               <div class="form-field">
                 <label class="form-label" for="deletion-code" lang="vi">Mã 6 chữ số</label>
                 <label class="form-label" for="deletion-code" lang="en">6-digit code</label>
-                <input class="form-input" type="text" id="deletion-code" name="code" inputmode="numeric" pattern="\d{6}" maxlength="6" autocomplete="one-time-code" aria-describedby="deletion-code-error">
+                <input class="form-input" type="text" id="deletion-code" name="code" inputmode="numeric" pattern="\d{6}" maxlength="6" enterkeyhint="go" autocomplete="one-time-code" aria-describedby="deletion-code-error">
                 <p class="form-error" id="deletion-code-error" role="alert" hidden>
                   <span lang="vi">Mã không hợp lệ hoặc đã hết hạn.</span>
                   <span lang="en">Invalid or expired code.</span>
