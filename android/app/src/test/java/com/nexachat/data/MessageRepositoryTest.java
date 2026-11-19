@@ -1901,6 +1901,48 @@ public class MessageRepositoryTest {
                 nullable(Long.class), anyInt());
     }
 
+    @Test public void openConversationEnsuresSocketAndWatchesTopic() {
+        when(messageApi.getPins(CONVERSATION_ID)).thenReturn(responseCall(Response.success(body("[]"))));
+        await(repository.openConversation(CONVERSATION_ID));
+        verify(session, times(1)).ensureConnected();
+        verify(session, times(1)).watchConversation(CONVERSATION_ID);
+    }
+
+    @Test public void liveMessageCreatedPersistsAndRendersThroughMessagesFlow() {
+        TestSubscriber<List<ChatMessage>> rendered = repository.messagesFlow(CONVERSATION_ID).test();
+        events.onNext(new ChatEvent.MessageCreated(dto("m-live", null, "u-other", 1L),
+                CONVERSATION_ID, null));
+        assertTrue(messages.containsKey("m-live"));
+        List<ChatMessage> latest = rendered.values().get(rendered.values().size() - 1);
+        assertEquals(1, latest.size());
+        assertEquals("m-live", latest.get(0).getId());
+        rendered.cancel();
+    }
+
+    @Test public void oneFailedLiveEventDoesNotSilenceLiveRouting() {
+        // A single transient storage failure must not permanently kill the
+        // live-event pump: the next MESSAGE_CREATED still has to reach Room.
+        when(messageDao.byId("m-bad")).thenReturn(Maybe.error(new RuntimeException("db hiccup")));
+        events.onNext(new ChatEvent.MessageCreated(dto("m-bad", null, "u-other", 1L),
+                CONVERSATION_ID, null));
+
+        events.onNext(new ChatEvent.MessageCreated(dto("m-good", null, "u-other", 2L),
+                CONVERSATION_ID, null));
+
+        assertTrue("a failed event must not stop routing of later live events",
+                messages.containsKey("m-good"));
+    }
+
+    @Test public void oneFailedReconnectResyncDoesNotSilenceLaterResyncs() {
+        when(outboxDao.pendingList(anyString()))
+                .thenReturn(Single.error(new IOException("transient")), Single.just(List.of()));
+
+        resyncRequests.onNext(new Object());
+        resyncRequests.onNext(new Object());
+
+        verify(outboxDao, times(2)).pendingList("me-1");
+    }
+
     private void useReconnectRepository(SyncEngine syncEngine, SessionOperationTracker tracker) {
         repository.dispose();
         repository = new MessageRepository(messageApi, messageDao, conversationDao, outboxDao,
