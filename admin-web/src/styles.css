@@ -349,6 +349,13 @@ th.col-actions { position: sticky; right: 0; z-index: 1; box-shadow: -10px 0 12p
 .spark .fill { fill: var(--primary); opacity: 0.12; stroke: none; }
 .spark text { fill: var(--text-2); font-size: 10px; }
 
+/* ---------- Overview page head ---------- */
+
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+.page-head-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); }
+/* Delta chip sits inline next to the KPI value without inflating its line. */
+.kpi .value .chip { margin-left: 8px; vertical-align: middle; }
+
 /* ---------- Drawer ---------- */
 
 .drawer-backdrop {
