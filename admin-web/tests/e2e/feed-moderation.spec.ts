@@ -178,7 +178,8 @@ test.describe('feed moderation', () => {
     const post = row(page, SPAM_TEXT);
     await expect(post.getByRole('cell', { name: 'Post', exact: true })).toBeVisible();
     await expect(post.getByRole('cell', { name: 'Mai', exact: true })).toBeVisible();
-    await expect(post.getByText('SPAM', { exact: true })).toBeVisible();
+    // reason appears in its column and in the mobile-only meta block
+    await expect(post.getByText('SPAM', { exact: true })).toHaveCount(2);
     await expect(post.getByRole('cell', { name: 'Visible', exact: true })).toBeVisible();
     await expect(post.getByRole('button', { name: 'Hide', exact: true })).toBeVisible();
     await expect(post.getByRole('button', { name: 'Dismiss' })).toBeVisible();
@@ -187,7 +188,7 @@ test.describe('feed moderation', () => {
     const comment = row(page, ABUSE_TEXT);
     await expect(comment.getByRole('cell', { name: 'Comment', exact: true })).toBeVisible();
     await expect(comment.getByRole('cell', { name: 'Bao', exact: true })).toBeVisible();
-    await expect(comment.getByText('HARASSMENT', { exact: true })).toBeVisible();
+    await expect(comment.getByText('HARASSMENT', { exact: true })).toHaveCount(2);
 
     const hidden = row(page, HIDDEN_TEXT);
     await expect(hidden.getByRole('cell', { name: 'Hidden', exact: true })).toBeVisible();
@@ -242,7 +243,7 @@ test.describe('feed moderation', () => {
     const image = row(page, 'Linh');
     await expect(image.getByRole('cell', { name: 'Post', exact: true })).toBeVisible();
     await expect(image.getByRole('cell', { name: '—', exact: true }).first()).toBeVisible();
-    await expect(image.getByText('SEXUAL', { exact: true })).toBeVisible();
+    await expect(image.getByText('SEXUAL', { exact: true })).toHaveCount(2);
     await expect(image.getByRole('button', { name: 'Hide', exact: true })).toBeVisible();
     await expect(image.getByText(/null|undefined/)).toHaveCount(0);
   });

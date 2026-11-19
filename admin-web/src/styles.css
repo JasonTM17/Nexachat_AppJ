@@ -38,7 +38,9 @@
   --edge-shadow: rgba(42, 16, 36, 0.18);
   --radius: 16px;
   --radius-pill: 999px;
-  --focus: 0 0 0 3px rgba(115, 63, 104, 0.35);
+  /* Solid focus ring: a translucent alpha dropped below the 3:1 contrast
+     minimum against both themes' backgrounds. */
+  --focus: 0 0 0 3px var(--plum-500);
 }
 
 [data-theme='dark'] {
@@ -65,7 +67,7 @@
   --info-text: #c5d6f5;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);
   --edge-shadow: rgba(0, 0, 0, 0.5);
-  --focus: 0 0 0 3px rgba(229, 174, 217, 0.4);
+  --focus: 0 0 0 3px var(--primary);
 }
 
 * { box-sizing: border-box; }
@@ -481,6 +483,7 @@ th.col-actions { position: sticky; right: 0; z-index: 1; box-shadow: -10px 0 12p
 }
 
 .feed-mobile-state { display: none; }
+.feed-mobile-meta { display: none; }
 
 .status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
 .status-item { padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -500,9 +503,11 @@ th.col-actions { position: sticky; right: 0; z-index: 1; box-shadow: -10px 0 12p
   .main { padding: 16px; }
 
   /* Low-priority table columns are hidden on small screens; the row drawer
-     carries the full data. */
+     carries the full data, and the feed's inline meta block repeats its
+     dropped columns (that table has no drawer). */
   .col-lo { display: none; }
   .feed-mobile-state { display: block; margin-bottom: 6px; }
+  .feed-mobile-meta { display: block; margin-top: 8px; }
 
   th, td { padding: 10px; }
   .truncate { max-width: 120px; }

@@ -185,6 +185,55 @@ describe('RulesPage', () => {
     );
   });
 
+  it('ignores a double-click on save while the create is in flight', async () => {
+    const user = userEvent.setup();
+    stubRoutes();
+    renderPage();
+    await screen.findByText('phish-en');
+
+    await user.click(screen.getByRole('button', { name: 'New rule' }));
+    const nameInput = screen.getByLabelText('Name');
+    const formCard = nameInput.closest('.card') as HTMLElement;
+    await user.type(nameInput, 'my-rule');
+    await user.type(within(formCard).getByLabelText('Pattern'), 'seed phrase');
+
+    let resolveCreate!: () => void;
+    apiMock.mockImplementationOnce(() => new Promise<void>((res) => { resolveCreate = res; }));
+    const save = within(formCard).getByRole('button', { name: 'Save' });
+    await user.dblClick(save);
+    expect(save).toBeDisabled();
+
+    resolveCreate();
+    await waitFor(() => {
+      const posts = apiMock.mock.calls.filter(
+        ([p, o]) => p === '/api/v1/admin/rules' && o?.method === 'POST',
+      );
+      expect(posts).toHaveLength(1);
+    });
+  });
+
+  it('ignores a double-confirm while the delete is in flight', async () => {
+    const user = userEvent.setup();
+    stubRoutes();
+    renderPage();
+    await screen.findByText('phish-en');
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    let resolveDelete!: () => void;
+    apiMock.mockImplementationOnce(() => new Promise<void>((res) => { resolveDelete = res; }));
+    const confirm = within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Confirm' });
+    await user.dblClick(confirm);
+    expect(confirm).toBeDisabled();
+
+    resolveDelete();
+    await waitFor(() => {
+      const deletes = apiMock.mock.calls.filter(
+        ([p, o]) => p === '/api/v1/admin/rules/r1' && o?.method === 'DELETE',
+      );
+      expect(deletes).toHaveLength(1);
+    });
+  });
+
   it('runs a pattern test and shows the match snippet', async () => {
     const user = userEvent.setup();
     stubRoutes();

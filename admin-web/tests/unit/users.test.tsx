@@ -226,4 +226,38 @@ describe('UsersPage', () => {
     const row = (await screen.findByText('Gone')).closest('tr') as HTMLElement;
     expect(within(row).getByText('Deleted')).toBeInTheDocument();
   });
+
+  it('shows the failure on the clicked row when the detail request fails', async () => {
+    const userEvt = userEvent.setup();
+    stubRoutes({ fail: ['/api/v1/admin/users/u1'] });
+    renderPage();
+
+    const row = (await screen.findByText('Mai')).closest('tr') as HTMLElement;
+    await userEvt.click(row);
+    expect(await within(row).findByRole('alert')).toHaveTextContent('Something went wrong');
+    // the drawer never opens and no banner duplicates the row-level error
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+  });
+
+  it('opens the drawer from the keyboard with Enter and Space', async () => {
+    const userEvt = userEvent.setup();
+    stubRoutes();
+    renderPage();
+
+    const row = (await screen.findByText('Mai')).closest('tr') as HTMLElement;
+    row.focus();
+    await userEvt.keyboard('{Enter}');
+    const drawer = await screen.findByRole('dialog', { name: 'Mai' });
+    // the drawer carries the fields dropped from narrow-screen tables
+    expect(within(drawer).getByText('Joined')).toBeInTheDocument();
+    expect(within(drawer).getByText('Last seen')).toBeInTheDocument();
+    await userEvt.click(screen.getByRole('button', { name: 'Close' }));
+
+    // Space also activates the row (userEvent needs the [Space] code
+    // reference — {Space} maps to a literal 'Space' key name)
+    row.focus();
+    await userEvt.keyboard('[Space]');
+    expect(await screen.findByRole('dialog', { name: 'Mai' })).toBeInTheDocument();
+  });
 });

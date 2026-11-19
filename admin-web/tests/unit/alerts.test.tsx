@@ -68,14 +68,20 @@ const page = (items: AlertSummary[]): Page<AlertSummary> => ({
 const stubRoutes = ({
   list = page([alert()]),
   alertDetail = detail(),
+  failDetail = false,
 }: {
   list?: Page<AlertSummary>;
   alertDetail?: AlertDetail;
+  failDetail?: boolean;
 } = {}) =>
   apiMock.mockImplementation((path: string) => {
     if (path === '/api/v1/admin/me') return Promise.resolve(me);
     if (path.startsWith('/api/v1/admin/alerts?')) return Promise.resolve(list);
-    if (path === '/api/v1/admin/alerts/a1') return Promise.resolve(alertDetail);
+    if (path === '/api/v1/admin/alerts/a1') {
+      return failDetail
+        ? Promise.reject(new ApiException(500, 'X', 'boom'))
+        : Promise.resolve(alertDetail);
+    }
     return Promise.reject(new ApiException(404, 'NO_ROUTE', `unstubbed ${path}`));
   });
 
@@ -151,6 +157,8 @@ describe('AlertsPage', () => {
     expect(within(drawer).getByText('Quân')).toBeInTheDocument();
     expect(within(drawer).getByText('phish-en')).toBeInTheDocument();
     expect(within(drawer).getByText('looking into it')).toBeInTheDocument();
+    // the drawer carries the raised time (dropped from narrow-screen tables)
+    expect(within(drawer).getByText(/^Raised/)).toBeInTheDocument();
 
     apiMock.mockResolvedValueOnce(undefined);
     await user.click(within(drawer).getByRole('button', { name: 'Assign to me' }));
@@ -250,7 +258,7 @@ describe('AlertsPage', () => {
     await screen.findByText('send me your password');
 
     await user.click(screen.getByRole('checkbox', { name: 'Select a1' }));
-    await user.click(screen.getByRole('button', { name: /Dismiss selected \(1\)/ }));
+    await user.click(screen.getByRole('button', { name: /Dismiss selected · 1 selected/ }));
     const dialog = screen.getByRole('alertdialog', { name: 'Dismiss selected' });
 
     // empty reason is rejected locally
@@ -266,5 +274,111 @@ describe('AlertsPage', () => {
         body: { ids: ['a1'], reason: 'duplicates' },
       }),
     );
+  });
+
+  it('opens the drawer from the keyboard with Enter and Space', async () => {
+    const user = userEvent.setup();
+    stubRoutes();
+    renderPage();
+
+    const row = (await screen.findByText('send me your password')).closest(
+      'tr',
+    ) as HTMLElement;
+    row.focus();
+    await user.keyboard('{Enter}');
+    expect(
+      await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    // Space also activates the row without scrolling the page
+    // (userEvent needs the [Space] code reference — {Space} maps to a
+    // literal 'Space' key name that no browser produces).
+    row.focus();
+    await user.keyboard('[Space]');
+    expect(
+      await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' }),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps Space for the row checkbox instead of opening the drawer', async () => {
+    const user = userEvent.setup();
+    stubRoutes();
+    renderPage();
+    await screen.findByText('send me your password');
+
+    const check = screen.getByRole('checkbox', { name: 'Select a1' });
+    check.focus();
+    await user.keyboard('[Space]');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(apiMock).not.toHaveBeenCalledWith('/api/v1/admin/alerts/a1');
+  });
+
+  it('shows the failure on the clicked row when the detail request fails', async () => {
+    const user = userEvent.setup();
+    stubRoutes({ failDetail: true });
+    renderPage();
+
+    const row = (await screen.findByText('send me your password')).closest(
+      'tr',
+    ) as HTMLElement;
+    await user.click(row);
+    expect(await within(row).findByRole('alert')).toHaveTextContent(
+      'Something went wrong',
+    );
+    // the drawer never opens and no banner duplicates the row-level error
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+  });
+
+  it('guards the add-note button while the request is in flight', async () => {
+    const user = userEvent.setup();
+    stubRoutes();
+    renderPage();
+
+    await user.click(await screen.findByText('send me your password'));
+    const drawer = await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' });
+    await user.type(within(drawer).getByLabelText('Add a note'), 'contacted sender');
+
+    let resolveNote!: () => void;
+    apiMock.mockImplementationOnce(
+      () => new Promise<void>((res) => { resolveNote = res; }),
+    );
+    const add = within(drawer).getByRole('button', { name: 'Add' });
+    await user.dblClick(add);
+    expect(add).toBeDisabled();
+
+    resolveNote();
+    await waitFor(() => {
+      const notes = apiMock.mock.calls.filter(
+        ([p, o]) => p === '/api/v1/admin/alerts/a1/notes' && o?.method === 'POST',
+      );
+      expect(notes).toHaveLength(1);
+    });
+  });
+
+  it('guards the assign button while the request is in flight', async () => {
+    const user = userEvent.setup();
+    stubRoutes();
+    renderPage();
+
+    await user.click(await screen.findByText('send me your password'));
+    const drawer = await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' });
+    const assign = within(drawer).getByRole('button', { name: 'Assign to me' });
+
+    let resolveAssign!: () => void;
+    apiMock.mockImplementationOnce(
+      () => new Promise<void>((res) => { resolveAssign = res; }),
+    );
+    await user.dblClick(assign);
+    expect(assign).toBeDisabled();
+
+    resolveAssign();
+    await waitFor(() => {
+      const assigns = apiMock.mock.calls.filter(
+        ([p, o]) => p === '/api/v1/admin/alerts/a1' && o?.method === 'PATCH',
+      );
+      expect(assigns).toHaveLength(1);
+    });
   });
 });
