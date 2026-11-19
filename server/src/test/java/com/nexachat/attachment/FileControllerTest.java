@@ -219,6 +219,40 @@ class FileControllerTest {
     }
 
     @Test
+    void serve_markupBytes_neverEmitsAnActiveContentType() throws Exception {
+        // Stored bytes are re-sniffed on the way out; markup has no magic-byte
+        // signature, so HTML/SVG-looking content degrades to octet-stream and
+        // can never be rendered inline as text/html or image/svg+xml.
+        byte[] html = "<html><script>alert(1)</script></html>"
+                .getBytes(StandardCharsets.UTF_8);
+        byte[] svg = "<?xml version=\"1.0\"?><svg xmlns=\"http://www.w3.org/2000/svg\"/>"
+                .getBytes(StandardCharsets.UTF_8);
+
+        for (byte[] hostile : new byte[][] {html, svg}) {
+            when(storageService.open("attachments/evil.bin"))
+                    .thenReturn(handle(hostile));
+            when(storageService.readPrefix("attachments/evil.bin", SNIFF_WINDOW))
+                    .thenReturn(prefix(hostile));
+            when(storageService.openRange("attachments/evil.bin", 0, hostile.length))
+                    .thenReturn(handle(hostile));
+
+            ResponseEntity<?> whole = fileController.serve(
+                    mappedTo("/api/v1/files/attachments/evil.bin"), new JwtPrincipal(userId));
+            assertThat(whole.getHeaders().getContentType().toString())
+                    .as("whole-object content type for %d bytes", hostile.length)
+                    .isEqualTo("application/octet-stream");
+            assertThat(whole.getHeaders().getFirst("X-Content-Type-Options")).isEqualTo("nosniff");
+
+            ResponseEntity<?> ranged = fileController.serve(
+                    mappedTo("/api/v1/files/attachments/evil.bin", "bytes=0-"),
+                    new JwtPrincipal(userId));
+            assertThat(ranged.getHeaders().getContentType().toString())
+                    .as("range content type for %d bytes", hostile.length)
+                    .isEqualTo("application/octet-stream");
+        }
+    }
+
+    @Test
     void serve_noMappingAttribute_fallsBackToRequestUri() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRequestURI("/api/v1/files/avatars/x.png");
