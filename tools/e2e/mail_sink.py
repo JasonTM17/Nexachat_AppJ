@@ -28,6 +28,13 @@ DEFAULT_MAIL_FROM = "noreply@nexachat.io.vn"
 _POLL_INTERVAL_SEC = 0.25
 
 _OTP_PATTERNS = (
+    # OtpMailContent text bodies: "Your code: 123456" / "Mã của bạn: 123456".
+    re.compile(r"Your code:\s*(\d{6})", re.IGNORECASE),
+    re.compile(r"Mã của bạn:\s*(\d{6})", re.IGNORECASE),
+    # Preheader phrasing: "Your code is 123456" / "Mã của bạn là 123456".
+    re.compile(r"Your code is\s*(\d{6})", re.IGNORECASE),
+    re.compile(r"Mã của bạn là\s*(\d{6})", re.IGNORECASE),
+    # Legacy templates kept for older evidence snapshots.
     re.compile(r"NexaChat security code:\s*(\d{6})", re.IGNORECASE),
     re.compile(r"Mã bảo mật NexaChat:\s*(\d{6})", re.IGNORECASE),
     re.compile(r"<strong>(\d{6})</strong>", re.IGNORECASE),
@@ -208,23 +215,33 @@ def server_env() -> dict[str, str]:
         "NEXACHAT_MAIL_PROVIDER": "smtp",
         "MAIL_SMTP_HOST": smtp_host,
         "MAIL_SMTP_PORT": str(smtp_port),
-        "MAIL_SMTP_USERNAME": "",
-        "MAIL_SMTP_PASSWORD": "",
+        # SmtpMailSender.isAvailable() refuses blank credentials; Mailpit
+        # accepts any AUTH, so the sink advertises explicit throwaway creds.
+        "MAIL_SMTP_USERNAME": "e2e-mailpit",
+        "MAIL_SMTP_PASSWORD": "e2e-mailpit",
         "MAIL_FROM": DEFAULT_MAIL_FROM,
+        # application.yml pins mail.smtp.starttls.required=true; Mailpit speaks
+        # plaintext SMTP, so a sink-pointed server must not require STARTTLS.
+        "SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE": "false",
+        "SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_REQUIRED": "false",
     }
 
 
-def _http_json(method: str, url: str, timeout: float = 10.0) -> Any:
+def _http_request(method: str, url: str, timeout: float = 10.0) -> bytes:
     request = urllib.request.Request(url, method=method)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            body = response.read()
+            return response.read()
     except urllib.error.HTTPError as error:
         body = error.read()
         raise MailSinkError(f"{method} {url} failed with HTTP {error.code}: {body[:200]!r}") from error
     except urllib.error.URLError as error:
         raise MailSinkError(f"{method} {url} failed: {error}") from error
-    if not body:
+
+
+def _http_json(method: str, url: str, timeout: float = 10.0) -> Any:
+    body = _http_request(method, url, timeout)
+    if not body or not body.strip():
         return None
     return json.loads(body.decode("utf-8"))
 
@@ -334,7 +351,8 @@ def extract_otp(message: dict[str, Any] | str) -> str:
 def clear() -> None:
     """Delete all messages in the Mailpit inbox."""
     base = http_base()
-    _http_json("DELETE", f"{base}/api/v1/messages")
+    # Mailpit answers with an empty/plain body on success, not JSON.
+    _http_request("DELETE", f"{base}/api/v1/messages")
 
 
 def _print_env() -> None:

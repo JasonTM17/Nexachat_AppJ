@@ -1009,6 +1009,26 @@ class TestSeedViaStack(TempRunDirMixin, unittest.TestCase):
             stack.seed([("+84900000001", "An")])
 
 
+class TestSql(TempRunDirMixin, unittest.TestCase):
+    def test_sql_targets_the_provisioned_database_by_default(self):
+        runner = FakePsqlRunner()
+        stack, _state = provision_stack(self.run_dir, runner=runner)
+        stack.sql("UPDATE email_otps SET expires_at = now()")
+        self.assertEqual(runner.queries[-1]["db_name"], "nexachat_e2e_t1")
+        self.assertIn("email_otps", runner.queries[-1]["sql"])
+
+    def test_sql_allows_an_explicit_named_database(self):
+        runner = FakePsqlRunner()
+        stack, _state = provision_stack(self.run_dir, runner=runner)
+        stack.sql("SELECT 1", db_name="nexachat_e2e_other")
+        self.assertEqual(runner.queries[-1]["db_name"], "nexachat_e2e_other")
+
+    def test_sql_requires_state(self):
+        stack = make_stack(self.run_dir)
+        with self.assertRaises(StateError):
+            stack.sql("SELECT 1")
+
+
 class TestDropdbSafety(TempRunDirMixin, unittest.TestCase):
     def test_dropdb_drops_only_recorded_db(self):
         runner = FakePsqlRunner()

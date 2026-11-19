@@ -59,7 +59,7 @@ class MatrixAndDryRunTest(unittest.TestCase):
         runnable = {row.id for row in journeys.ROWS if row.capability_gap is None}
         self.assertEqual(runnable, {
             "auth-login", "auth-session-lifecycle", "chat-send-receive",
-            "chat-interactions", "summary-ask",
+            "chat-interactions", "summary-ask", "otp-forgot-password",
             "archive-preferences", "groups-contacts", "labels-lifecycle",
             "polls-reminders", "offline-sync",
             "calls-injected-notification", "injected-notifications",
@@ -296,16 +296,14 @@ class WiringDecisionTest(unittest.TestCase):
             else:
                 runnable.append(row_id)
         self.assertEqual(runnable, [
-            "auth-login", "auth-session-lifecycle", "chat-send-receive",
-            "chat-interactions",
+            "auth-login", "auth-session-lifecycle", "otp-forgot-password",
+            "chat-send-receive", "chat-interactions",
             "groups-contacts", "polls-reminders", "archive-preferences",
             "labels-lifecycle",
             "calls-injected-notification", "summary-ask", "offline-sync",
             "injected-notifications",
         ])
         self.assertEqual(len(runnable) + len(blocked), len(journeys.ROWS))
-        self.assertIn("expired", blocked["otp-forgot-password"])
-        self.assertIn("server_env()", blocked["otp-forgot-password"])
         self.assertIn("Room 14", blocked["room-13-14-upgrade"])
         self.assertIn("Room 14", blocked["v111-rc-upgrade"])
         self.assertIn("seed user", blocked["account-deletion"])
@@ -346,8 +344,20 @@ class WiringDecisionTest(unittest.TestCase):
             def start(self):
                 raise AssertionError("blocked row started a helper")
 
-        for row_id in ("otp-forgot-password", "account-deletion",
-                       "room-13-14-upgrade", "v111-rc-upgrade"):
+        # Mail rows now have executors: with no apply_server_env they must raise
+        # CapabilityBlocked inside the mail-sink gate, before Boom.start() runs.
+        mail_context = {
+            "mail_sink": Boom(),
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "selected_ids": ("account-deletion",),
+        }
+        for row_id in ("otp-forgot-password", "account-deletion"):
+            with self.subTest(row_id=row_id):
+                with self.assertRaises(journeys.CapabilityBlocked):
+                    journeys.run_registered_row(
+                        journeys.ROW_BY_ID[row_id], dict(mail_context))
+        for row_id in ("room-13-14-upgrade", "v111-rc-upgrade"):
             with self.subTest(row_id=row_id):
                 with self.assertRaises(journeys.CapabilityBlocked):
                     journeys.run_registered_row(journeys.ROW_BY_ID[row_id], {"mail_sink": Boom()})
@@ -857,6 +867,138 @@ class WiringDecisionTest(unittest.TestCase):
         self.assertIn("cache", str(caught.exception))
         for code in mail.codes:
             self.assertNotIn(code, str(caught.exception))
+
+    def test_otp_flow_passes_on_a_stack_handle_and_proves_expiry(self):
+        row = journeys.ROW_BY_ID["otp-forgot-password"]
+        phone = "+84991112233"
+
+        class Mail:
+            def __init__(self):
+                self.codes = ["482910", "193847", "550012", "778899"]
+                self.n = 0
+                self.stopped = False
+
+            def start(self):
+                return None
+
+            def stop(self):
+                self.stopped = True
+
+            def server_env(self):
+                return {"NEXACHAT_MAIL_PROVIDER": "smtp", "MAIL_SMTP_HOST": "127.0.0.1",
+                        "MAIL_SMTP_PORT": "1025", "MAIL_SMTP_USERNAME": "",
+                        "MAIL_SMTP_PASSWORD": "", "MAIL_FROM": "noreply@nexachat.io.vn"}
+
+            def wait_for_message(self, to, subject_contains=None, timeout=60):
+                code = self.codes[self.n]
+                self.n += 1
+                return {"Text": code}
+
+            def extract_otp(self, message):
+                return message["Text"]
+
+            def clear(self):
+                return None
+
+        class Response:
+            def __init__(self, status, body=None):
+                self.status = status
+                self._body = body
+
+            def json(self):
+                return {} if self._body is None else self._body
+
+        class Client:
+            def __init__(self):
+                self.used = set()
+                self.expired_attempts = []
+
+            def post(self, path, token=None, body=None, headers=None):
+                body = body or {}
+                if path.endswith("/register"):
+                    return Response(201, {"accessToken": "old-token", "user": {"id": "u1", "phone": body["phone"]}})
+                if path.endswith("/email/verify"):
+                    return Response(200, {"verified": True})
+                if path.endswith("/password-reset/request"):
+                    return Response(202, {})
+                if path.endswith("/password-reset/confirm"):
+                    code = body["code"]
+                    if code in {"000000", "111111"} or code in self.used:
+                        return Response(400, {})
+                    if code == "778899":
+                        self.expired_attempts.append(code)
+                        return Response(400, {})
+                    self.used.add(code)
+                    return Response(204, None)
+                if path.endswith("/login"):
+                    if body["password"] == journeys.DISPOSABLE_PASSWORD:
+                        return Response(401, {})
+                    return Response(200, {"accessToken": "new-token"})
+                raise AssertionError(path)
+
+            def put(self, path, token=None, body=None, headers=None):
+                return Response(202, {})
+
+            def get(self, path, token=None, params=None, headers=None):
+                return Response(401, {})
+
+            def request(self, method, path, token=None, body=None, headers=None):
+                return self.post(path, token=token, body=body)
+
+        mail = Mail()
+        shared_client = Client()
+        stack_client = Client()
+        sql_calls = []
+        closed = []
+
+        def apply_env(env):
+            return {
+                "client": stack_client,
+                "base_url": "http://127.0.0.1:19000",
+                "sql": sql_calls.append,
+                "close": lambda: closed.append(True),
+            }
+
+        context = {
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "row": row,
+            "disposable_phone": phone,
+            "disposable_email": "otp@example.test",
+            "mail_sink": mail,
+            "client": shared_client,
+            "sleep": lambda seconds: None,
+            "apply_server_env": apply_env,
+        }
+        result = journeys.run_otp_forgot_password(row, context)
+        self.assertEqual(result["expired_code"], "aged OTP was refused by the disposable stack")
+        # The action ran against the stack client, and the context was restored.
+        self.assertEqual(stack_client.expired_attempts, ["778899"])
+        self.assertIs(context["client"], shared_client)
+        self.assertEqual(context["base_url"], "http://127.0.0.1:18093")
+        self.assertNotIn("dstack_handle", context)
+        # The expiry proof rewrote expires_at on the disposable database.
+        self.assertTrue(any("expires_at" in stmt for stmt in sql_calls))
+        self.assertEqual(closed, [True])
+        self.assertTrue(mail.stopped)
+        for code in mail.codes:
+            self.assertNotIn(code, str(result))
+
+    def test_otp_flow_without_apply_env_never_starts_the_sink(self):
+        row = journeys.ROW_BY_ID["otp-forgot-password"]
+
+        class Boom:
+            def start(self):
+                raise AssertionError("mail sink started without a server hook")
+
+        with self.assertRaises(journeys.CapabilityBlocked):
+            journeys.run_otp_forgot_password(row, {
+                "serial": "emulator-5554",
+                "base_url": "http://127.0.0.1:18093",
+                "row": row,
+                "disposable_phone": "+84991112233",
+                "mail_sink": Boom(),
+            })
 
     def test_upgrade_executors_do_not_fetch_or_install(self):
         for row_id, executor in (

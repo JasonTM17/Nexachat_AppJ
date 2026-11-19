@@ -148,11 +148,7 @@ ROWS: tuple[JourneyRow, ...] = (
         rest_plan=(("PUT", "/api/v1/users/me/email"), ("POST", "/api/v1/users/me/email/verify"),
                    ("POST", "/api/v1/auth/password-reset/request"),
                    ("POST", "/api/v1/auth/password-reset/confirm")),
-        capability_gap=("mail_sink can start Mailpit and server_env() names the SMTP settings, but this "
-                        "coordinator does not restart the already-running local server, so those settings are "
-                        "not applied. EmailOtpService.CODE_TTL is 10 minutes with no test clock, so an expired "
-                        "code cannot be asserted. Wrong, reused, and resend therefore have no delivered-mail "
-                        "evidence yet."),
+        capability_gap=None,
     ),
     JourneyRow(
         id="chat-send-receive",
@@ -588,11 +584,10 @@ ROWS: tuple[JourneyRow, ...] = (
         cleanup=("Deletion itself is the cleanup; never use seed/owner accounts"),
         rest_plan=(("DELETE", "/api/v1/users/me"), ("POST", "/api/v1/account-deletion/request"),
                    ("POST", "/api/v1/account-deletion/confirm")),
-        capability_gap=("mail_sink can read a deletion OTP, but this coordinator does not restart the local "
-                        "server with server_env(), and no helper binds a disposable account into the debug UI. "
-                        "Wrong-password refusal on device, in-app confirmation, the deleted-account cache, "
-                        "peer-neutral history, and phone reuse on device stay unproven. The row stays last and "
-                        "must never target a seed user."),
+        capability_gap=("the mail/REST deletion flow runs against a disposable stack (--dstack), but no "
+                        "helper binds a disposable account into the debug UI: in-app confirmation, the "
+                        "deleted-account cache, and peer UI stay unproven. The row stays last and must "
+                        "never target a seed user."),
     ),
 )
 
@@ -6948,9 +6943,77 @@ def _complete_password_reset(context: dict[str, Any], mail: Any, phone: str, ema
     _expect_status(fresh, {204}, "resent reset code")
 
 
-def _with_mail_sink(context: dict[str, Any], row: JourneyRow, action: Callable[[Any], None]) -> None:
+def _import_disposable_stack():
+    if str(E2E_DIR) not in sys.path:
+        sys.path.insert(0, str(E2E_DIR))
+    return importlib.import_module("disposable_stack")
+
+
+def _dstack_apply_server_env(context: dict[str, Any], api: Any) -> Callable[[dict[str, str]], dict[str, Any]]:
+    """apply_server_env backed by disposable_stack: provision + start a private server.
+
+    The returned handle carries the stack base_url, a sql() bound to the
+    disposable database, and close() that stops the backend and drops the DB.
+    The stack lives under the row's attempt dir so repeated attempts and
+    neighbouring mail rows each get a fresh database.
+    """
+    def apply(env: dict[str, str]) -> dict[str, Any]:
+        dstack = _import_disposable_stack()
+        row_dir = context.get("row_dir") or Path(context["evidence_root"]) / "dstack-row"
+        stack = dstack.DisposableStack(
+            str(Path(row_dir) / "dstack"),
+            server_target=str(context.get("dstack_server_target")
+                              or dstack.DEFAULT_SERVER_TARGET))
+        state = stack.provision(
+            extra_env=dict(env),
+            extra_java_args=[
+                # Mailpit is plaintext SMTP; the default config requires STARTTLS.
+                "--spring.mail.properties.mail.smtp.starttls.enable=false",
+                "--spring.mail.properties.mail.smtp.starttls.required=false",
+            ])
+        try:
+            stack.start()
+        except Exception:
+            try:
+                stack.stop()
+            except Exception:
+                pass
+            stack.dropdb()
+            raise
+        base_url = str(state.get("base_url") or dstack.base_url_for(int(state["app_port"])))
+
+        def close() -> None:
+            try:
+                stack.stop()
+            finally:
+                stack.dropdb()
+
+        return {"base_url": base_url, "stack": stack, "state": state,
+                "sql": stack.sql, "close": close}
+
+    return apply
+
+
+def _with_mail_sink(context: dict[str, Any], row: JourneyRow,
+                    action: Callable[[Any], None]) -> dict[str, Any] | None:
+    """Start Mailpit, hand its env to context["apply_server_env"], run action.
+
+    apply_server_env may return a disposable-server handle carrying "base_url"
+    (or a ready "client"), a "sql" callable, and "close". When a handle is
+    returned the action runs against that server: context["client"] and
+    context["base_url"] are swapped for the action (the stack recorder aliases
+    the campaign transcript) and restored afterwards, then close() and
+    mail.stop() run in that order.
+    """
+    apply_env = context.get("apply_server_env")
+    if apply_env is None:
+        raise CapabilityBlocked(
+            row.capability_gap
+            or "mail sink is not applied to the local server; rerun with --dstack")
     mail = context.get("mail_sink") or _import_mail_sink()
     started = False
+    handle: dict[str, Any] | None = None
+    previous: dict[str, Any] = {}
     try:
         mail.start()
         started = True
@@ -6960,22 +7023,68 @@ def _with_mail_sink(context: dict[str, Any], row: JourneyRow, action: Callable[[
             raise HarnessError("mail sink server_env() did not point at an SMTP sink")
         if PRODUCTION_HOST.casefold() in host.casefold():
             raise HarnessError("mail sink host looks like production")
-        apply_env = context.get("apply_server_env")
-        if apply_env is None:
-            raise CapabilityBlocked(row.capability_gap or "mail sink is not applied to the local server")
-        apply_env(env)
+        handle = apply_env(env)
+        if handle and (handle.get("base_url") or handle.get("client")):
+            previous = {"client": context["client"],
+                        "base_url": context.get("base_url")}
+            stack_client = handle.get("client")
+            if stack_client is None:
+                helpers = context.get("helpers") or _load_helpers()
+                stack_client = RecordingClient(
+                    helpers[0].Client(handle["base_url"], timeout=30))
+            if hasattr(stack_client, "records"):
+                stack_client.records = previous["client"].records
+            context["client"] = stack_client
+            context["base_url"] = str(handle.get("base_url") or previous["base_url"]).rstrip("/")
+            context["dstack_handle"] = handle
         action(mail)
+        return handle
     finally:
+        if previous:
+            context["client"] = previous["client"]
+            context["base_url"] = previous["base_url"]
+            context.pop("dstack_handle", None)
+        if handle and callable(handle.get("close")):
+            try:
+                handle["close"]()
+            except Exception as error:
+                context.setdefault("cleanup_errors", []).append(
+                    f"disposable stack teardown: {error}")
         if started:
             mail.stop()
 
 
-def run_otp_forgot_password(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
-    """Start the mail sink and reset a disposable password when the server can be pointed at it.
+def _prove_expired_reset_code(context: dict[str, Any], mail: Any, phone: str, email: str) -> None:
+    """Age a fresh reset code inside the disposable DB, then confirm it is refused.
 
-    The campaign does not restart an already-running server, and OTP expiry has
-    no test clock, so this executor always ends BLOCKED_CAPABILITY. It is not
-    registered for a device run.
+    EmailOtpService.CODE_TTL is fixed at 10 minutes, so expiry is proven by
+    rewinding expires_at on the disposable database rather than by waiting.
+    """
+    handle = context.get("dstack_handle") or {}
+    sql = handle.get("sql")
+    if sql is None:
+        raise CapabilityBlocked(
+            "expired-code proof needs a disposable database; rerun with --dstack")
+    if "'" in email or '"' in email:
+        raise HarnessError("disposable email must not contain quotes")
+    client = context["client"]
+    mail.clear()
+    context.get("sleep", time.sleep)(61)
+    requested = client.post("/api/v1/auth/password-reset/request", body={"phone": phone})
+    _expect_status(requested, {202}, "password reset expiry request")
+    code = _read_otp(mail, email)
+    sql("UPDATE email_otps SET expires_at = now() - interval '5 minutes' "
+        f"WHERE purpose = 'RESET_PASSWORD' AND email = '{email}' AND consumed_at IS NULL")
+    expired = _confirm_reset(client, phone, code, REPLACEMENT_PASSWORD + "-3")
+    _expect_status(expired, {400}, "expired reset code")
+
+
+def run_otp_forgot_password(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Reset a disposable password on a disposable stack pointed at Mailpit.
+
+    Requires context["apply_server_env"] (--dstack provisions a private
+    backend); without it the row stays BLOCKED_CAPABILITY before Mailpit or a
+    database is touched.
     """
     _campaign_serial(context)
     _campaign_base_url(context)
@@ -6984,10 +7093,11 @@ def run_otp_forgot_password(row: JourneyRow, context: dict[str, Any]) -> dict[st
 
     def action(mail: Any) -> None:
         _complete_password_reset(context, mail, phone, email)
-        raise CapabilityBlocked(row.capability_gap)
+        _prove_expired_reset_code(context, mail, phone, email)
 
     _with_mail_sink(context, row, action)
-    raise CapabilityBlocked(row.capability_gap)
+    return {"password_reset": "request/wrong/confirm/reuse/resend all behaved",
+            "expired_code": "aged OTP was refused by the disposable stack"}
 
 
 def _require_deletion_last(context: dict[str, Any]) -> None:
@@ -7024,10 +7134,10 @@ def _complete_account_deletion(context: dict[str, Any], mail: Any, phone: str, e
 
 
 def run_account_deletion(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
-    """OTP-delete a disposable account only. In-app cache and peer UI stay blocked.
+    """OTP-delete a disposable account on a disposable stack; in-app cache and peer UI stay blocked.
 
-    Not registered for a device run: the local server is not restarted with
-    server_env(), and no helper signs the disposable account into the debug UI.
+    The mail/REST flow runs when context["apply_server_env"] exists (--dstack);
+    the row still ends BLOCKED_CAPABILITY for the unproven in-app assertions.
     """
     _campaign_serial(context)
     _campaign_base_url(context)
@@ -7504,27 +7614,35 @@ def _capability_runner(row: JourneyRow, context: dict[str, Any]) -> dict[str, An
     raise HarnessError(f"no row executor is registered for {row.id}")
 
 
+_ROW_EXECUTOR_NAMES: dict[str, str] = {
+    "auth-login": "run_auth_login",
+    "chat-send-receive": "run_chat_send_receive",
+    "chat-interactions": "run_chat_interactions",
+    "summary-ask": "run_summary_ask",
+    "archive-preferences": "run_archive_preferences",
+    "labels-lifecycle": "run_labels_lifecycle",
+    "groups-contacts": "run_groups_contacts",
+    "polls-reminders": "run_polls_reminders",
+    "offline-sync": "run_offline_sync",
+    "auth-session-lifecycle": "run_auth_session_lifecycle",
+    "calls-injected-notification": "run_calls_injected_notification",
+    "injected-notifications": "run_injected_notifications",
+    "otp-forgot-password": "run_otp_forgot_password",
+    "account-deletion": "run_account_deletion",
+}
+
+
 def run_registered_row(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    # Registered executors decide their own capability gate: a row whose gap is
+    # only the missing apply_server_env hook still runs its mail/REST portion
+    # when --dstack supplies one, then reports the residual gap itself. The
+    # lookup stays dynamic so tests can patch the executor by name.
+    executor = globals().get(_ROW_EXECUTOR_NAMES.get(row.id, ""))
+    if executor is not None:
+        return executor(row, context)
     if row.capability_gap:
         raise CapabilityBlocked(row.capability_gap)
-    executors = {
-        "auth-login": run_auth_login,
-        "chat-send-receive": run_chat_send_receive,
-        "chat-interactions": run_chat_interactions,
-        "summary-ask": run_summary_ask,
-        "archive-preferences": run_archive_preferences,
-        "labels-lifecycle": run_labels_lifecycle,
-        "groups-contacts": run_groups_contacts,
-        "polls-reminders": run_polls_reminders,
-        "offline-sync": run_offline_sync,
-        "auth-session-lifecycle": run_auth_session_lifecycle,
-        "calls-injected-notification": run_calls_injected_notification,
-        "injected-notifications": run_injected_notifications,
-    }
-    executor = executors.get(row.id)
-    if executor is None:
-        return _capability_runner(row, context)
-    return executor(row, context)
+    return _capability_runner(row, context)
 
 
 def _status_for_error(error: Exception) -> str:
@@ -7726,6 +7844,7 @@ def with_settings_restored(action: Callable[[], Any], restore: Callable[[], Any]
 
 def run_campaign(rows: Iterable[JourneyRow], *, base_url: str, serial: str,
                  apk: Path, evidence_dir: Path, reset_app_data: bool = False,
+                 dstack: bool = False,
                  adb_adapter: Adb | None = None,
                  runner: Callable[[JourneyRow, dict[str, Any]], dict[str, Any]] | None = None) -> dict[str, Any]:
     selected = tuple(rows)
@@ -7754,6 +7873,8 @@ def run_campaign(rows: Iterable[JourneyRow], *, base_url: str, serial: str,
                                "reset_app_data": reset_app_data, "helpers": helpers,
                                "frame_reader": None, "stomp_events": [],
                                "serial": serial, "base_url": base_url.rstrip("/")}
+    if dstack:
+        context["apply_server_env"] = _dstack_apply_server_env(context, api)
     before: dict[str, str] | None = None
     device = helpers[1].Device(serial)
     context["device"] = device
@@ -7871,6 +7992,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--apk", default=str(DEFAULT_APK), help="debug APK to install")
     parser.add_argument("--reset-app-data", action="store_true",
                         help="clear only com.nexachat.debug on emulator-5554 before sign-in")
+    parser.add_argument("--dstack", action="store_true",
+                        help="let mail/OTP rows provision a disposable backend via "
+                             "tools/e2e/disposable_stack.py instead of staying blocked")
     return parser
 
 
@@ -7896,6 +8020,7 @@ def main(argv: list[str] | None = None) -> int:
         summary = run_campaign(
             selected, base_url=args.base_url, serial=args.serial, apk=Path(args.apk),
             evidence_dir=Path(args.evidence_dir), reset_app_data=args.reset_app_data,
+            dstack=args.dstack,
         )
         print(render_summary(summary))
         return 0 if summary["status"] == "PASS" else 1

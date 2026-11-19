@@ -292,6 +292,14 @@ assembling a broadcast. `auth-session-lifecycle`, `otp-forgot-password`,
 expiry, in-app deletion, the missing Room 14 build, and STOMP through the
 REST-only barrier).
 
+With `--dstack` the mail rows provision a disposable backend via
+`disposable_stack.py`: `otp-forgot-password` then runs the full
+request/wrong/expired/reused/resend flow to PASS (expiry is proven by rewinding
+`expires_at` inside the disposable database), and `account-deletion` executes
+its mail/REST portion but still reports `BLOCKED_CAPABILITY` for the in-app
+assertions (sign-in UI, deleted-account cache, peer view). Without `--dstack`
+both rows raise `CapabilityBlocked` before Mailpit or a database is touched.
+
 ```bash
 python tools/e2e/device/stable_journeys.py --list
 python tools/e2e/device/stable_journeys.py --dry-run --rows auth-login,chat-send-receive

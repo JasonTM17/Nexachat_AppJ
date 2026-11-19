@@ -184,6 +184,15 @@ notification permission must be granted after each `pm clear`, `cmd
 notification cancel` no longer exists (cleanup goes through the DUMP-gated
 debug receiver), and `am broadcast` arrives with an unattributed sender uid.
 
+`--dstack` wires the mail rows to a disposable backend provisioned by
+`tools/e2e/disposable_stack.py`: `otp-forgot-password` runs its full
+request/wrong/expired/reused/resend flow to PASS on the private stack (OTP
+expiry is proven by rewinding `expires_at` in the disposable database), and
+`account-deletion` executes its mail/REST portion there but still reports
+`BLOCKED_CAPABILITY` for the in-app assertions (sign-in UI, deleted-account
+cache, peer view). Without `--dstack` both rows refuse before Mailpit or a
+database is touched.
+
 ## Local development with Mailpit (Email OTP & Account Deletion)
 
 For testing recovery-email verification (`PUT /api/v1/users/me/email` +

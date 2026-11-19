@@ -1202,6 +1202,16 @@ class DisposableStack:
         save_state(self.run_dir, state)
         return state
 
+    def sql(self, sql: str, *, db_name: Optional[str] = None) -> str:
+        """Runs psql against the provisioned database (or an explicitly named one).
+
+        The default target is the database recorded in the run dir state, so
+        callers cannot accidentally hit the shared development database.
+        """
+        state = self.load_state_required()
+        target = db_name or self._validated_state_db_name(state)
+        return self._psql(sql, db_name=target)
+
 
 # --- CLI. ---
 
