@@ -212,9 +212,12 @@ public final class ActiveNowStripBinder {
     private void maybePlayEntranceAnimation() {
         float durationScale = Settings.Global.getFloat(
                 context.getContentResolver(), Settings.Global.ANIMATOR_DURATION_SCALE, 1f);
-        boolean animatorsEnabled = androidx.core.view.ViewCompat.isAttachedToWindow(strip)
-                ? android.animation.ValueAnimator.areAnimatorsEnabled()
-                : android.animation.ValueAnimator.areAnimatorsEnabled();
+        // The one-shot entrance must not be consumed by a bind that runs
+        // before the strip is attached to the window (e.g. a state delivery
+        // at onStart); deferring keeps the animation for the first attached
+        // bind, where the user can actually see it.
+        boolean animatorsEnabled = strip.isAttachedToWindow()
+                && android.animation.ValueAnimator.areAnimatorsEnabled();
         if (!ActiveNowEntranceAnimationPolicy.shouldPlayEntrance(
                 durationScale, animatorsEnabled, entrancePlayed)) {
             return;
