@@ -171,6 +171,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     private boolean unreadDividerWasVisible;
     private int cachedUnreadDividerAdapterPos = -1;
     private int cachedFirstUnreadAdapterPos = -1;
+    private final ChatRowRenderInputs rowRenderInputs = new ChatRowRenderInputs();
     private final ActivityResultLauncher<PickVisualMediaRequest> visualPicker =
             registerForActivityResult(
                     new ActivityResultContracts.PickMultipleVisualMedia(10),
@@ -307,6 +308,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         DateFormat timeFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
         adapter = new MessageListAdapter(
                 timeFormat, this::resolveOriginal, this, getViewLifecycleOwner(), this);
+        // A fresh adapter starts empty; the render memo must not claim the
+        // current rows are already submitted.
+        rowRenderInputs.invalidate();
         adapter.setTranslationRetry(id -> {
             ChatMessage m = resolveOriginal(id);
             if (m != null) {
@@ -1617,6 +1621,19 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                         unreadCount, unreadDividerDismissed, firstUnreadVisible, inboxUnread);
         int dividerIndex = showDivider ? unreadBeforeIndex : -1;
         int dividerCount = showDivider ? unreadCount : 0;
+        long nowEpochMs = System.currentTimeMillis();
+        if (!rowRenderInputs.requiresRebuild(
+                messages,
+                state.isGroup(),
+                effectivePeerReadSeq,
+                state.getPeerDeliveredSeq(),
+                pulsingMessageId,
+                dividerIndex,
+                dividerCount,
+                starredIds,
+                nowEpochMs)) {
+            return;
+        }
         List<MessageListItem> rows = MessageListMapper.buildDisplayItems(
                 messages,
                 state.isGroup(),
@@ -1624,7 +1641,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                 state.getPeerDeliveredSeq(),
                 pulsingMessageId,
                 new DateSeparatorLabels(getString(R.string.time_today), getString(R.string.time_yesterday)),
-                System.currentTimeMillis(),
+                nowEpochMs,
                 dividerIndex,
                 dividerCount,
                 starredIds);
@@ -1833,6 +1850,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         for (ChatMessage message : results) rows.add(MessageListItem.message(message,
                 com.nexachat.core.ui.components.MessageGroupPosition.SINGLE, false, false, false));
         adapter.submitList(rows);
+        // The adapter no longer holds the memoed rows; restoring them must not
+        // be skipped as a duplicate render.
+        rowRenderInputs.invalidate();
         binding.messageList.setVisibility(showLoading || showEmpty || showError ? View.GONE : View.VISIBLE);
     }
 
