@@ -219,7 +219,11 @@ export function ConfirmDialog({
     onConfirm(reason);
   };
   useEffect(() => {
-    reasonRef.current?.focus();
+    // With a required reason the textarea takes focus; without one there is
+    // no field at all, so land focus on the dialog container (mirroring the
+    // Drawer) — otherwise focus never enters the dialog.
+    if (reasonRef.current) reasonRef.current.focus();
+    else dialogRef.current?.focus();
   }, []);
   useModalFocus(dialogRef);
   useEscapeToClose(true, () => {
@@ -233,6 +237,7 @@ export function ConfirmDialog({
         aria-modal="true"
         aria-label={title}
         aria-busy={busy || undefined}
+        tabIndex={-1}
         ref={dialogRef}
       >
         <h3>{title}</h3>

@@ -36,6 +36,21 @@ describe('i18n', () => {
     expect(result.current.t('common.selected', { n: 3 })).toBe('3 selected');
   });
 
+  it('has the rule toggle and match-hit strings in both locales', () => {
+    const { result } = renderHook(() => useI18n(), { wrapper });
+    expect(result.current.t('common.off')).toBe('off');
+    expect(result.current.t('common.on')).toBe('on');
+    expect(result.current.t('rules.test.hit', { offset: 14, length: 8 })).toBe(
+      'offset 14 · len 8',
+    );
+    act(() => result.current.setLang('vi'));
+    expect(result.current.t('common.off')).toBe('Tắt');
+    expect(result.current.t('common.on')).toBe('Bật');
+    expect(result.current.t('rules.test.hit', { offset: 14, length: 8 })).toBe(
+      'vị trí 14 · độ dài 8',
+    );
+  });
+
   it('falls back to the key for missing strings', () => {
     const { result } = renderHook(() => useI18n(), { wrapper });
     expect(result.current.t('nonexistent.key' as never)).toBe('nonexistent.key');

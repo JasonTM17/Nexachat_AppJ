@@ -102,6 +102,18 @@ jobs:
     steps:
       # Full commit SHA pins are paired with the upstream release tags.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Reject AI attribution trailers in branch commits
+        if: github.event_name == 'pull_request'
+        run: |
+          # Squash-merge bodies are assembled from branch commit messages, so
+          # trailers in the range land on main regardless of repo settings.
+          if git log "origin/${{ github.base_ref }}..HEAD" --format='%B%nauthor:%an <%ae>%ncommitter:%cn <%ce>%n---' \
+            | grep -Ein 'co-authored-by|generated[ -]with|generated-by|devin-ai-integration|vibe@mistral\.ai|noreply.*\[bot\]'; then
+            echo "::error::Branch commits carry AI/agent attribution trailers or bot identities; rewrite them before merge."
+            exit 1
+          fi
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:

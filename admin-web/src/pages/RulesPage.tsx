@@ -56,6 +56,8 @@ export default function RulesPage() {
     title: string;
   } | null>(null);
   const [patchBusy, setPatchBusy] = useState(false);
+  const [createBusy, setCreateBusy] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const load = useCallback(() => {
     setFailed(false);
@@ -93,7 +95,7 @@ export default function RulesPage() {
     setPendingPatch({
       rule,
       body: { enabled: !rule.enabled },
-      title: `${rule.name} — ${t('rules.col.enabled')}: ${rule.enabled ? 'off' : 'on'}`,
+      title: `${rule.name} — ${t('rules.col.enabled')}: ${rule.enabled ? t('common.off') : t('common.on')}`,
     });
 
   const changeSeverity = (rule: AlertRule, severity: string) => {
@@ -106,6 +108,8 @@ export default function RulesPage() {
   };
 
   const create = async () => {
+    if (createBusy) return;
+    setCreateBusy(true);
     setFormError('');
     try {
       await api('/api/v1/admin/rules', {
@@ -125,17 +129,25 @@ export default function RulesPage() {
       load();
     } catch {
       setFormError(t('common.error'));
+    } finally {
+      setCreateBusy(false);
     }
   };
 
-  const remove = () => {
-    if (!confirmDelete) return;
-    api(`/api/v1/admin/rules/${confirmDelete.id}`, { method: 'DELETE' })
-      .then(() => {
-        setConfirmDelete(null);
-        load();
-      })
-      .catch(() => setActionError(true));
+  const remove = async () => {
+    if (!confirmDelete || deleteBusy) return;
+    setDeleteBusy(true);
+    setActionError(false);
+    try {
+      await api(`/api/v1/admin/rules/${confirmDelete.id}`, { method: 'DELETE' });
+      setConfirmDelete(null);
+      load();
+    } catch {
+      setActionError(true);
+      setConfirmDelete(null);
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   const runTest = () => {
@@ -244,6 +256,7 @@ export default function RulesPage() {
               className="btn primary"
               onClick={() => void create()}
               disabled={
+                createBusy ||
                 !form.name.trim() ||
                 (form.patternType !== 'CARD' && !form.pattern.trim())
               }
@@ -379,7 +392,7 @@ export default function RulesPage() {
               <div className="snippet" key={i}>
                 {m.snippet}
                 <div className="muted" style={{ fontSize: 11 }}>
-                  offset {m.offset} · len {m.length}
+                  {t('rules.test.hit', { offset: m.offset, length: m.length })}
                 </div>
               </div>
             ))}
@@ -392,7 +405,8 @@ export default function RulesPage() {
           title={`${t('common.delete')} ${confirmDelete.name}`}
           requireReason={false}
           confirmDanger
-          onConfirm={() => remove()}
+          busy={deleteBusy}
+          onConfirm={() => void remove()}
           onCancel={() => setConfirmDelete(null)}
         />
       )}

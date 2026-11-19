@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type SystemHealth } from '../api';
 import { useI18n, type StringKey } from '../i18n';
 import { Chip, ErrorBlock, Loading, fmtTime } from '../components/ui';
+
+// Poll cadence: healthy checks every 30s; consecutive failures back off to
+// 60s then 120s so a struggling server is not hammered.
+const BACKOFF_MS = [30_000, 60_000, 120_000];
 
 // Map a service status string to a chip tone + localized label. Anything that
 // is not a known-healthy value must not render as healthy: unknown statuses
@@ -33,18 +37,52 @@ export default function SystemPage() {
   const { t } = useI18n();
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [failed, setFailed] = useState(false);
+  // Consecutive poll failures drive the retry cadence (BACKOFF_MS).
+  const failuresRef = useRef(0);
 
   const load = useCallback(() => {
     setFailed(false);
-    api<SystemHealth>('/api/v1/admin/system/health')
-      .then(setHealth)
-      .catch(() => setFailed(true));
+    return api<SystemHealth>('/api/v1/admin/system/health')
+      .then((h) => {
+        failuresRef.current = 0;
+        setHealth(h);
+      })
+      .catch(() => {
+        failuresRef.current += 1;
+        setFailed(true);
+      });
   }, []);
 
   useEffect(() => {
-    load();
-    const id = setInterval(load, 30_000);
-    return () => clearInterval(id);
+    void load();
+    // Ticks skip the request while the tab is hidden; returning to the tab
+    // refreshes immediately via the visibilitychange handler. Each completed
+    // poll schedules the next at the delay implied by the failure count.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancelled = false;
+    const schedule = () => {
+      const delay = BACKOFF_MS[Math.min(failuresRef.current, BACKOFF_MS.length - 1)];
+      timer = setTimeout(tick, delay);
+    };
+    const tick = () => {
+      if (document.visibilityState !== 'visible') {
+        schedule();
+        return;
+      }
+      void load().then(() => {
+        if (!cancelled) schedule();
+      });
+    };
+    timer = setTimeout(tick, BACKOFF_MS[0]);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [load]);
 
   // A transient poll failure must not blank a monitoring dashboard that

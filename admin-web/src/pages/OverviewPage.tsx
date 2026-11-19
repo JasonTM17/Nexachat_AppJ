@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type Overview } from '../api';
 import { useI18n, type StringKey } from '../i18n';
+import { timeLocale } from '../lib/locale';
 import { Chip, ErrorBlock, Loading, fmtBytes } from '../components/ui';
 
 const POLL_MS = 60_000;
@@ -39,6 +40,16 @@ function deltaVsYesterday(
     text: delta > 0 ? `+${delta}` : String(delta),
     tone: delta > 0 ? 'success' : delta < 0 ? 'critical' : 'low',
   };
+}
+
+// Rates format through Intl so the decimal separator follows the display
+// locale instead of a hardcoded en-US percent string.
+function fmtPercent(rate: number): string {
+  return new Intl.NumberFormat(timeLocale(), {
+    style: 'percent',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(rate);
 }
 
 export default function OverviewPage() {
@@ -117,7 +128,7 @@ export default function OverviewPage() {
     },
     { key: 'kpi.databaseBytes', value: fmtBytes(k.databaseBytes) },
     { key: 'kpi.uploadsBytes', value: fmtBytes(k.uploadsBytes) },
-    { key: 'kpi.errorRate', value: `${(k.errorRate * 100).toFixed(2)}%` },
+    { key: 'kpi.errorRate', value: fmtPercent(k.errorRate) },
     {
       key: 'kpi.queue',
       value: String(k.queue.depth),

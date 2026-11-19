@@ -83,7 +83,9 @@ describe('FeedPage', () => {
     renderPage();
     expect(await screen.findByText('Mai')).toBeInTheDocument();
     expect(apiMock).toHaveBeenCalledWith('/api/v1/admin/feed/reports?status=OPEN&page=0&size=25');
-    expect(screen.getByText('SPAM')).toBeInTheDocument();
+    // The reason shows in its column and repeats in the mobile-only meta
+    // block (CSS keeps one visible per viewport).
+    expect(screen.getAllByText('SPAM')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Hide' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mark reviewed' })).toBeInTheDocument();
@@ -297,5 +299,47 @@ describe('FeedPage', () => {
     expect(nextToggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('button', { name: 'Show less' })).toBeNull();
     expect(screen.queryByText('page-two details')).toBeNull();
+  });
+
+  it('steps back to the last non-empty page when the current page empties', async () => {
+    const user = userEvent.setup();
+    // Two pages of open reports; resolving the last one on the final page
+    // shrinks the list while the pager sits on that now-empty page.
+    apiMock.mockImplementation((path: string) =>
+      Promise.resolve(
+        path.includes('page=1')
+          ? { ...page([]), total: 25 }
+          : { ...page([report()]), total: 26 },
+      ),
+    );
+    renderPage();
+    await screen.findByText('Mai');
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+
+    // page 1 came back empty: the clamp reloads page 0 instead of stranding
+    // the pager on an empty "Nothing here" screen.
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenLastCalledWith(
+        '/api/v1/admin/feed/reports?status=OPEN&page=0&size=25',
+      ),
+    );
+    expect(await screen.findByText('Mai')).toBeInTheDocument();
+  });
+
+  it('renders a single error surface even when the list and an action fail', async () => {
+    const user = userEvent.setup();
+    apiMock.mockResolvedValueOnce(page([report()]));
+    renderPage();
+    await screen.findByText('Mai');
+
+    apiMock.mockRejectedValueOnce(new ApiException(500, 'X', 'boom'));
+    await user.click(screen.getByRole('button', { name: 'Mark reviewed' }));
+    expect(await screen.findAllByRole('alert')).toHaveLength(1);
+
+    // the retry reload fails too — the two failures collapse into one block
+    apiMock.mockRejectedValueOnce(new ApiException(500, 'X', 'boom'));
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(1));
+    expect(screen.queryByText('Mai')).toBeNull();
   });
 });

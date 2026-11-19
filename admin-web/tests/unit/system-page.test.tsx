@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import SystemPage from '../../src/pages/SystemPage';
 import { I18nProvider } from '../../src/i18n';
@@ -75,6 +75,81 @@ describe('SystemPage', () => {
     apiMock.mockResolvedValueOnce(health());
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Services')).toBeInTheDocument();
+    expect(apiMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+// jsdom keeps visibilityState on the prototype; shadow it per test so the
+// polling tests can flip the tab between visible and hidden.
+const setVisibility = (state: 'visible' | 'hidden') => {
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    get: () => state,
+  });
+};
+
+describe('SystemPage live refresh', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete (document as unknown as Record<string, unknown>).visibilityState;
+  });
+
+  it('polls every 30 seconds while visible and backs off after failures', async () => {
+    apiMock.mockResolvedValue(health());
+    renderPage();
+    await act(async () => {});
+    expect(apiMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(apiMock).toHaveBeenCalledTimes(2);
+
+    apiMock.mockRejectedValue(new ApiException(500, 'X', 'boom'));
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(apiMock).toHaveBeenCalledTimes(3);
+    // one consecutive failure → the next poll waits 60s
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(apiMock).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(apiMock).toHaveBeenCalledTimes(4);
+    // two consecutive failures → the next poll waits 120s
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(apiMock).toHaveBeenCalledTimes(4);
+    await act(async () => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(apiMock).toHaveBeenCalledTimes(5);
+  });
+
+  it('pauses polling while the tab is hidden and refreshes on return', async () => {
+    apiMock.mockResolvedValue(health());
+    renderPage();
+    await act(async () => {});
+    expect(apiMock).toHaveBeenCalledTimes(1);
+
+    setVisibility('hidden');
+    await act(async () => {
+      vi.advanceTimersByTime(300_000);
+    });
+    expect(apiMock).toHaveBeenCalledTimes(1);
+
+    setVisibility('visible');
+    await act(async () => {
+      fireEvent(document, new Event('visibilitychange'));
+    });
     expect(apiMock).toHaveBeenCalledTimes(2);
   });
 });

@@ -8,6 +8,7 @@ import {
 } from '../api';
 import { useI18n, type StringKey } from '../i18n';
 import { useSession } from '../auth';
+import { useLatestRequest } from '../lib/async';
 import {
   Chip,
   ConfirmDialog,
@@ -68,6 +69,10 @@ export default function AlertsPage() {
   const [noteText, setNoteText] = useState('');
   const [actionError, setActionError] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [noteBusy, setNoteBusy] = useState(false);
+  const [assignBusy, setAssignBusy] = useState(false);
+  const [detailBusy, setDetailBusy] = useState<string | null>(null);
+  const [detailFailed, setDetailFailed] = useState<string | null>(null);
 
   const params = useMemo(() => {
     const q = new URLSearchParams();
@@ -79,26 +84,44 @@ export default function AlertsPage() {
     return q.toString();
   }, [status, severity, category, page]);
 
+  const latest = useLatestRequest();
+  const latestDetail = useLatestRequest();
+
   const load = useCallback(() => {
     setFailed(false);
-    api<Page<AlertSummary>>(`/api/v1/admin/alerts?${params}`)
-      .then((res) => {
-        setData(res);
-        setChecked(new Set());
-      })
-      .catch(() => setFailed(true));
-  }, [params]);
+    latest(api<Page<AlertSummary>>(`/api/v1/admin/alerts?${params}`), (res) => {
+      if (!res) {
+        setFailed(true);
+        return;
+      }
+      setData(res);
+      setChecked(new Set());
+      // Acting on the last rows of a page can leave it empty past the end of
+      // the list; step back to the last page that still has rows.
+      if (res.items.length === 0 && page > 0) {
+        setPage(Math.max(0, Math.ceil(res.total / PAGE_SIZE) - 1));
+      }
+    });
+  }, [params, page, latest]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  // Fetching the detail is guarded per row: the clicked row shows progress and,
+  // if the request fails, an inline error right where the click happened —
+  // a banner above the (possibly scrolled-away) table would read as a dead
+  // click. `latestDetail` drops responses for anything but the newest click.
   const openDetail = (id: string) => {
     setRevealed(null);
     setActionError(false);
-    api<AlertDetail>(`/api/v1/admin/alerts/${id}`)
-      .then(setDetail)
-      .catch(() => setActionError(true));
+    setDetailFailed(null);
+    setDetailBusy(id);
+    latestDetail(api<AlertDetail>(`/api/v1/admin/alerts/${id}`), (res) => {
+      setDetailBusy(null);
+      if (res) setDetail(res);
+      else setDetailFailed(id);
+    });
   };
 
   const confirm = async (reason: string) => {
@@ -145,18 +168,21 @@ export default function AlertsPage() {
   };
 
   const assignMe = () => {
-    if (!detail || !me) return;
+    if (!detail || !me || assignBusy) return;
+    setAssignBusy(true);
     setActionError(false);
     api(`/api/v1/admin/alerts/${detail.alert.id}`, {
       method: 'PATCH',
       body: { assigneeId: me.userId },
     })
       .then(() => openDetail(detail.alert.id))
-      .catch(() => setActionError(true));
+      .catch(() => setActionError(true))
+      .finally(() => setAssignBusy(false));
   };
 
   const addNote = () => {
-    if (!detail || !noteText.trim()) return;
+    if (!detail || !noteText.trim() || noteBusy) return;
+    setNoteBusy(true);
     setActionError(false);
     api(`/api/v1/admin/alerts/${detail.alert.id}/notes`, {
       method: 'POST',
@@ -166,7 +192,8 @@ export default function AlertsPage() {
         setNoteText('');
         openDetail(detail.alert.id);
       })
-      .catch(() => setActionError(true));
+      .catch(() => setActionError(true))
+      .finally(() => setNoteBusy(false));
   };
 
   const toggle = (id: string) => {
@@ -246,7 +273,7 @@ export default function AlertsPage() {
         </label>
         {checked.size > 0 && (
           <button className="btn danger sm" onClick={() => setPending({ kind: 'bulk' })}>
-            {t('alerts.action.dismissBulk')} ({checked.size})
+            {t('alerts.action.dismissBulk')} · {t('common.selected', { n: checked.size })}
           </button>
         )}
       </div>
@@ -293,8 +320,16 @@ export default function AlertsPage() {
                   <tr
                     key={a.id}
                     tabIndex={0}
+                    aria-busy={detailBusy === a.id || undefined}
                     onClick={() => openDetail(a.id)}
-                    onKeyDown={(e) => e.key === 'Enter' && openDetail(a.id)}
+                    onKeyDown={(e) => {
+                      // Inner controls (the select checkbox) keep their own
+                      // key semantics; only the row itself activates.
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key !== 'Enter' && e.key !== ' ') return;
+                      e.preventDefault();
+                      openDetail(a.id);
+                    }}
                   >
                     <td onClick={(e) => e.stopPropagation()}>
                       <label className="check-hit">
@@ -309,6 +344,16 @@ export default function AlertsPage() {
                     </td>
                     <td>
                       <Chip tone={a.severity.toLowerCase()}>{a.severity}</Chip>
+                      {detailBusy === a.id && (
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          {t('common.loading')}
+                        </div>
+                      )}
+                      {detailFailed === a.id && (
+                        <div className="form-error" role="alert">
+                          {t('common.error')}
+                        </div>
+                      )}
                     </td>
                     <td className="col-lo">{a.category}</td>
                     <td
@@ -348,7 +393,7 @@ export default function AlertsPage() {
           <div className="action-row">
             {detail.alert.status === 'OPEN' && (
               <>
-                <button className="btn ghost sm" onClick={assignMe}>
+                <button className="btn ghost sm" onClick={assignMe} disabled={assignBusy}>
                   {t('alerts.action.assign')}
                 </button>
                 <button
@@ -404,6 +449,9 @@ export default function AlertsPage() {
             </Chip>{' '}
             {detail.alert.escalated && <Chip tone="high">{t('alerts.escalated')}</Chip>}{' '}
             {detail.alert.dryRun && <Chip tone="medium">{t('alerts.dryRun')}</Chip>}
+            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+              {t('alerts.col.created')}: {fmtTime(detail.alert.createdAt)}
+            </div>
           </section>
 
           <section>
@@ -459,7 +507,11 @@ export default function AlertsPage() {
                 onChange={(e) => setNoteText(e.target.value)}
               />
             </div>
-            <button className="btn ghost sm" onClick={addNote} disabled={!noteText.trim()}>
+            <button
+              className="btn ghost sm"
+              onClick={addNote}
+              disabled={!noteText.trim() || noteBusy}
+            >
               {t('alerts.note.add')}
             </button>
           </section>

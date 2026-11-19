@@ -10,6 +10,7 @@ import {
   type Page,
 } from '../api';
 import { useI18n, type StringKey } from '../i18n';
+import { useLatestRequest } from '../lib/async';
 import {
   Chip,
   ConfirmDialog,
@@ -52,16 +53,27 @@ export default function FeedPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [hiding, setHiding] = useState<FeedReport | null>(null);
+  const latest = useLatestRequest();
 
   const load = useCallback(() => {
     setFailed(false);
+    setActionFailed(false);
     // A new list can reuse report ids from a previous view; drop stale
     // per-report expansion so a row never renders open by accident.
     setExpanded(new Set());
-    api<Page<FeedReport>>(feedReportsPath(status, page, PAGE_SIZE))
-      .then(setData)
-      .catch(() => setFailed(true));
-  }, [status, page]);
+    latest(api<Page<FeedReport>>(feedReportsPath(status, page, PAGE_SIZE)), (res) => {
+      if (!res) {
+        setFailed(true);
+        return;
+      }
+      setData(res);
+      // Acting on the last row of a page can leave it empty past the end of
+      // the list; step back to the last page that still has rows.
+      if (res.items.length === 0 && page > 0) {
+        setPage(Math.max(0, Math.ceil(res.total / PAGE_SIZE) - 1));
+      }
+    });
+  }, [status, page, latest]);
 
   useEffect(() => {
     load();
@@ -131,11 +143,9 @@ export default function FeedPage() {
         </label>
       </div>
 
-      {actionFailed && <ErrorBlock onRetry={load} />}
+      {(actionFailed || failed) && <ErrorBlock onRetry={load} />}
 
-      {failed ? (
-        <ErrorBlock onRetry={load} />
-      ) : !data ? (
+      {failed ? null : !data ? (
         <Loading />
       ) : data.items.length === 0 ? (
         <Empty
@@ -197,6 +207,17 @@ export default function FeedPage() {
                             {t(open ? 'feed.collapse' : 'feed.expand')}
                           </button>
                         )}
+                        {/* Low-priority columns are dropped on narrow
+                            screens; repeat their data here so phones lose
+                            nothing (shown via .feed-mobile-meta). */}
+                        <div className="feed-mobile-meta">
+                          <div className="muted" style={{ fontSize: 12 }}>
+                            {t(r.targetType === 'POST' ? 'feed.type.post' : 'feed.type.comment')} · {r.authorName ?? r.authorId ?? '—'} · {fmtTime(r.createdAt)}
+                          </div>
+                          <div style={{ marginTop: 6 }}>
+                            <Chip>{r.reason}</Chip>
+                          </div>
+                        </div>
                       </td>
                       <td className="col-lo">
                         <Chip>{r.reason}</Chip>

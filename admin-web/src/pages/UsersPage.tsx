@@ -49,8 +49,11 @@ export default function UsersPage() {
   const [showDeleted, setShowDeleted] = useState(false);
   const [deleted, setDeleted] = useState<UserSummary[] | null>(null);
   const [actionError, setActionError] = useState(false);
+  const [detailBusy, setDetailBusy] = useState<string | null>(null);
+  const [detailFailed, setDetailFailed] = useState<string | null>(null);
   const searchInput = useDebouncedValue(search, 300);
   const latest = useLatestRequest();
+  const latestDetail = useLatestRequest();
 
   const params = useMemo(() => {
     const q = new URLSearchParams();
@@ -64,21 +67,38 @@ export default function UsersPage() {
 
   const load = useCallback(() => {
     setFailed(false);
-    latest(api<Page<UserSummary>>(`/api/v1/admin/users?${params}`), (data) => {
-      if (data) setData(data);
-      else setFailed(true);
+    latest(api<Page<UserSummary>>(`/api/v1/admin/users?${params}`), (res) => {
+      if (!res) {
+        setFailed(true);
+        return;
+      }
+      setData(res);
+      // Acting on the last row of a page (e.g. suspending the only match of
+      // a filtered status) can leave it empty past the end of the list; step
+      // back to the last page that still has rows.
+      if (res.items.length === 0 && page > 0) {
+        setPage(Math.max(0, Math.ceil(res.total / PAGE_SIZE) - 1));
+      }
     });
-  }, [params, latest]);
+  }, [params, page, latest]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  // The clicked row carries its own busy/error feedback: a failure here must
+  // not surface only in a banner above the (possibly scrolled-away) table,
+  // where the click would read as dead. `latestDetail` drops responses for
+  // anything but the newest click.
   const openDetail = (id: string) => {
     setActionError(false);
-    api<UserDetail>(`/api/v1/admin/users/${id}`)
-      .then(setSelected)
-      .catch(() => setActionError(true));
+    setDetailFailed(null);
+    setDetailBusy(id);
+    latestDetail(api<UserDetail>(`/api/v1/admin/users/${id}`), (res) => {
+      setDetailBusy(null);
+      if (res) setSelected(res);
+      else setDetailFailed(id);
+    });
   };
 
   const runAction = async (reason: string) => {
@@ -271,12 +291,28 @@ export default function UsersPage() {
                   <tr
                     key={u.id}
                     tabIndex={0}
+                    aria-busy={detailBusy === u.id || undefined}
                     onClick={() => openDetail(u.id)}
-                    onKeyDown={(e) => e.key === 'Enter' && openDetail(u.id)}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key !== 'Enter' && e.key !== ' ') return;
+                      e.preventDefault();
+                      openDetail(u.id);
+                    }}
                   >
                     <td>
                       <div>{u.displayName ?? '—'}</div>
                       <div className="muted mono">{u.phone ?? '—'}</div>
+                      {detailBusy === u.id && (
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          {t('common.loading')}
+                        </div>
+                      )}
+                      {detailFailed === u.id && (
+                        <div className="form-error" role="alert">
+                          {t('common.error')}
+                        </div>
+                      )}
                     </td>
                     <td className="col-lo">
                       <Chip>{u.role}</Chip>
@@ -388,6 +424,16 @@ export default function UsersPage() {
                 <tr className="plain">
                   <td className="muted">{t('users.detail.alerts')}</td>
                   <td>{selected.alertCount}</td>
+                </tr>
+                {/* Joined/Last seen are dropped from the table on narrow
+                    screens; the drawer must still carry them. */}
+                <tr className="plain">
+                  <td className="muted">{t('users.col.joined')}</td>
+                  <td>{fmtTime(selected.user.createdAt)}</td>
+                </tr>
+                <tr className="plain">
+                  <td className="muted">{t('users.col.lastSeen')}</td>
+                  <td>{fmtTime(selected.user.lastSeenAt)}</td>
                 </tr>
               </tbody>
             </table>
