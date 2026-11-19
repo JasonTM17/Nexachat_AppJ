@@ -139,6 +139,7 @@ def settings_snapshot() -> dict[str, str]:
         ("airplane_mode_on", "global", "airplane_mode_on"),
         ("font_scale", "system", "font_scale"),
         ("system_locales", "system", "system_locales"),
+        ("navigation_mode", "secure", "navigation_mode"),
     ):
         result[key] = adb("shell", "settings", "get", namespace, name, timeout=15)
     return result
@@ -155,6 +156,13 @@ def prepare_network(before: dict[str, str]) -> None:
             "--ez", "state", "false", check_result=False)
     set_service("wifi", True)
     set_service("data", True)
+    # Gesture navigation's system "swipe-up" monitor claims our injected
+    # scroll drags before the app sees them — under run-17 every inbox-walk
+    # drag was stolen (148 InputDispatcher steals) and several became swipe-
+    # home gestures that backgrounded the app mid-walk. Three-button mode
+    # removes that monitor so drags reach the list deterministically.
+    if before.get("navigation_mode") not in (None, "", "null", "0"):
+        adb("shell", "settings", "put", "secure", "navigation_mode", "0")
     time.sleep(2)
 
 
@@ -182,6 +190,11 @@ def restore_device_settings(before: dict[str, str]) -> dict[str, str]:
         current_locale = adb("shell", "settings", "get", "system", "system_locales")
         if current_locale != before["system_locales"]:
             adb("shell", "cmd", "locale", "set", before["system_locales"], check_result=False)
+    if before.get("navigation_mode") not in (None, "", "null"):
+        current_nav = adb("shell", "settings", "get", "secure", "navigation_mode")
+        if current_nav != before["navigation_mode"]:
+            adb("shell", "settings", "put", "secure", "navigation_mode",
+                before["navigation_mode"], check_result=False)
     return settings_snapshot()
 
 

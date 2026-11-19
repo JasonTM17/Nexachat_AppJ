@@ -107,20 +107,51 @@ class Device:
     def __init__(self, serial: str = DEFAULT_SERIAL):
         self.serial = serial
 
-    def shell(self, *args: str) -> str:
-        return adb(self.serial, "shell", *args)
+    def shell(self, *args: str, binary: bool = False,
+              timeout: float = 60.0):
+        return adb(self.serial, "shell", *args, binary=binary,
+                   timeout=timeout)
 
     def nodes(self) -> list[Node]:
         # `uiautomator dump` fails (exit 0, no file) while the window animates,
-        # so retry a few times before giving up.
+        # so retry a few times before giving up. The output file is removed
+        # first: a crashed or host-killed dump must never resurface the
+        # previous hierarchy — a stale tree made an ANR'd app look frozen
+        # mid-row (run-20 attempt-2). A host-side timeout also leaves the
+        # on-device dump holding its UiAutomation registration, crashing
+        # every later dump with 'UiAutomationService already registered',
+        # so the orphan is reaped before the next try.
         for _ in range(5):
-            self.shell("uiautomator", "dump", "/sdcard/ui.xml")
-            xml = adb(self.serial, "exec-out", "cat", "/sdcard/ui.xml")
+            self.shell("rm", "-f", "/sdcard/ui.xml")
+            xml = ""
+            try:
+                self.shell("uiautomator", "dump", "/sdcard/ui.xml",
+                           timeout=20)
+                xml = adb(self.serial, "exec-out", "cat", "/sdcard/ui.xml")
+            except Exception:
+                pass
             if xml.lstrip().startswith("<?xml") or xml.lstrip().startswith("<hierarchy"):
                 root = ET.fromstring(xml)
                 return [Node(element) for element in root.iter("node")]
+            self.reap_uiautomator()
             time.sleep(1.0)
         raise RuntimeError("uiautomator dump did not produce a hierarchy")
+
+    def reap_uiautomator(self) -> None:
+        """Kill leftover `uiautomator dump` processes on the device.
+
+        Their UiAutomation registration survives the host-side adb timeout
+        and makes every later dump crash with 'already registered'."""
+        try:
+            pids = self.shell("pidof", "uiautomator").strip()
+        except Exception:
+            return
+        for pid in pids.split():
+            if pid.isdigit():
+                try:
+                    self.shell("kill", pid, timeout=10)
+                except Exception:
+                    pass
 
     def find(self, text: str | None = None, desc: str | None = None,
              cls: str | None = None) -> list[Node]:
