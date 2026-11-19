@@ -37,6 +37,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -55,6 +56,8 @@ import javax.inject.Singleton;
 public final class FirebaseEphemeralStateSource implements EphemeralStateSource {
     private static final long RENEW_INTERVAL_SECONDS = 60L;
     private static final long CONNECT_TIMEOUT_SECONDS = 15L;
+    private static final int MAX_DENIED_LISTENER_RETRIES = 5;
+    private static final PeerPresence OFFLINE_PRESENCE = new PeerPresence(false, null);
     private static final Disposable DISPOSED_SUBSCRIPTION = new Disposable() {
         @Override public void dispose() { }
         @Override public boolean isDisposed() { return true; }
@@ -73,6 +76,7 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
     private final Map<String, ValueEventListener> typingListeners = new LinkedHashMap<>();
     private final Map<String, PeerPresence> currentPresence = new LinkedHashMap<>();
     private final Map<String, TypingEvent> currentTyping = new LinkedHashMap<>();
+    private final Set<String> deniedListenerKeys = new HashSet<>();
     private final Set<FirebaseDatabase> persistenceConfigured =
             Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<CallStatusRegistration> callStatusListeners =
@@ -98,6 +102,8 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
     private long scopeRevision;
     private long configuredScopeRevision = Long.MIN_VALUE;
     private long lastTypingElapsedMs = -1L;
+    private int deniedListenerRetries;
+    private long deniedListenerRetriesRevision = Long.MIN_VALUE;
     private boolean active;
     private boolean bootstrapping;
     private boolean connected;
@@ -347,6 +353,7 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
             ownPresenceDisconnect = null;
             currentPresence.clear();
             currentTyping.clear();
+            deniedListenerKeys.clear();
         }
         notifyCallStatusUnavailable(unavailableCallStatusListeners);
         Completable cleanup = Completable.complete();
@@ -483,6 +490,7 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
                 removeScopeListenersLocked();
                 currentPresence.clear();
                 currentTyping.clear();
+                deniedListenerKeys.clear();
                 for (String user : requestedScope.getPresenceConversationByUser().keySet()) {
                     targets.add(new ListenerTarget(
                             "presence:" + user,
@@ -538,8 +546,18 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
-                        if (!emitter.isDisposed()) emitter.onError(
-                                new IllegalStateException("Firebase listener denied or cancelled"));
+                        // A cancelled scope listener is a per-path authorization outcome
+                        // (for example a peer whose session has not leased this
+                        // conversation yet), not a bridge failure: settle the target so
+                        // the initial snapshot can complete and keep the bridge alive.
+                        if (firstValue.compareAndSet(false, true)
+                                && remaining.decrementAndGet() == 0
+                                && initialSnapshotsComplete.compareAndSet(false, true)
+                                && !emitter.isDisposed()) {
+                            emitter.onComplete();
+                        }
+                        settleDeniedTarget(
+                                target, error, expectedEpoch, expectedGeneration, requestedRevision);
                     }
                 };
                 installed.put(target.key, listener);
@@ -575,6 +593,53 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
         }).timeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS, Schedulers.computation());
     }
 
+    private void settleDeniedTarget(
+            ListenerTarget target, DatabaseError error,
+            long expectedEpoch, long expectedGeneration, long requestedRevision) {
+        final boolean publishOffline;
+        synchronized (lock) {
+            if (!isCurrentLocked(expectedEpoch, expectedGeneration)
+                    || scopeRevision != requestedRevision) {
+                return;
+            }
+            if (error.getCode() == DatabaseError.PERMISSION_DENIED) {
+                deniedListenerKeys.add(target.key);
+            }
+            if (target.kind == TargetKind.PRESENCE) {
+                currentPresence.put(target.userId, OFFLINE_PRESENCE);
+            }
+            publishOffline = ready && target.kind == TargetKind.PRESENCE;
+        }
+        if (publishOffline) {
+            presenceEvents.onNext(new Stamped<>(expectedEpoch, expectedGeneration,
+                    new PresenceUpdate(target.userId, OFFLINE_PRESENCE)));
+        }
+    }
+
+    private Completable retryDeniedScopeListeners(long expectedEpoch, long expectedGeneration) {
+        final EphemeralScope retryScope;
+        final long retryRevision;
+        synchronized (lock) {
+            if (!isCurrentLocked(expectedEpoch, expectedGeneration)
+                    || !ready || deniedListenerKeys.isEmpty()) {
+                return Completable.complete();
+            }
+            if (deniedListenerRetriesRevision != scopeRevision) {
+                deniedListenerRetriesRevision = scopeRevision;
+                deniedListenerRetries = 0;
+            }
+            if (deniedListenerRetries >= MAX_DENIED_LISTENER_RETRIES) {
+                return Completable.complete();
+            }
+            deniedListenerRetries++;
+            retryScope = scope;
+            retryRevision = scopeRevision;
+        }
+        return installScope(retryScope, expectedEpoch, expectedGeneration, retryRevision)
+                .subscribeOn(Schedulers.io())
+                .onErrorComplete();
+    }
+
     private Completable startLeaseRenewal(long expectedEpoch, long expectedGeneration) {
         synchronized (lock) {
             if (leaseRenewal != null) leaseRenewal.dispose();
@@ -588,7 +653,9 @@ public final class FirebaseEphemeralStateSource implements EphemeralStateSource 
                                 .flatMapCompletable(lease -> isCurrentScope(
                                                 expectedEpoch, expectedGeneration, renewalRevision)
                                         ? activateLease(lease,
-                                                expectedEpoch, expectedGeneration)
+                                                        expectedEpoch, expectedGeneration)
+                                                .andThen(retryDeniedScopeListeners(
+                                                        expectedEpoch, expectedGeneration))
                                         : Completable.complete());
                     })
                     .subscribeOn(Schedulers.io())
