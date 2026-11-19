@@ -143,6 +143,11 @@ export default function UsersPage() {
       openDetail(id);
       load();
     } catch {
+      // The page-top alert renders behind the open drawer scrim, so the
+      // failure is shown inside the drawer instead (see below). Refetch the
+      // detail as well: the server may have applied part of the action
+      // before failing, and the drawer must not stay stale.
+      openDetail(id);
       setActionError(true);
       setAction(null);
     } finally {
@@ -220,7 +225,9 @@ export default function UsersPage() {
         </button>
       </div>
 
-      {actionError && (
+      {/* With the drawer open, its scrim covers the page, so the page-top
+          alert is only for failures that happen without a drawer. */}
+      {actionError && !selected && (
         <div className="form-error" role="alert">
           {t('common.error')}
         </div>
@@ -262,6 +269,7 @@ export default function UsersPage() {
         <Loading />
       ) : data.items.length === 0 ? (
         <Empty
+          hint={search || status || role ? t('common.empty.filtered') : undefined}
           onClearFilters={
             search || status || role
               ? () => {
@@ -292,6 +300,7 @@ export default function UsersPage() {
                     key={u.id}
                     tabIndex={0}
                     aria-busy={detailBusy === u.id || undefined}
+                    className={detailBusy === u.id ? 'row-loading' : undefined}
                     onClick={() => openDetail(u.id)}
                     onKeyDown={(e) => {
                       if (e.target !== e.currentTarget) return;
@@ -343,6 +352,11 @@ export default function UsersPage() {
           sub={selected.user.id}
           onClose={() => setSelected(null)}
         >
+          {actionError && (
+            <div className="form-error" role="alert">
+              {t('common.error')}
+            </div>
+          )}
           <div className="action-row">
             {!selected.user.suspendedAt ? (
               <button

@@ -75,7 +75,8 @@ describe('AuditPage', () => {
     apiMock.mockResolvedValue(page([]));
     renderPage();
     expect(await screen.findByText('Nothing here')).toBeInTheDocument();
-    // no filters are set, so there is nothing to clear
+    // no filters are set: generic hint, nothing to clear
+    expect(screen.getByText('No results to show right now.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
   });
 
@@ -116,6 +117,8 @@ describe('AuditPage', () => {
         ),
       { timeout: 2000 },
     );
+    // filters are active, so the empty state says so instead of "no data"
+    expect(await screen.findByText('No results match the current filters.')).toBeInTheDocument();
 
     await user.click(await screen.findByRole('button', { name: 'Clear filters' }));
     await waitFor(

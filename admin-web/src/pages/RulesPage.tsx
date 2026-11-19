@@ -42,6 +42,7 @@ export default function RulesPage() {
     description: '',
   });
   const [formError, setFormError] = useState('');
+  const [createBusy, setCreateBusy] = useState(false);
 
   const [testType, setTestType] = useState('KEYWORD');
   const [testPattern, setTestPattern] = useState('');
@@ -50,13 +51,13 @@ export default function RulesPage() {
     null,
   );
   const [testError, setTestError] = useState(false);
+  const [testBusy, setTestBusy] = useState(false);
   const [pendingPatch, setPendingPatch] = useState<{
     rule: AlertRule;
     body: { enabled?: boolean; severity?: string };
     title: string;
   } | null>(null);
   const [patchBusy, setPatchBusy] = useState(false);
-  const [createBusy, setCreateBusy] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
   const load = useCallback(() => {
@@ -151,6 +152,8 @@ export default function RulesPage() {
   };
 
   const runTest = () => {
+    if (testBusy) return;
+    setTestBusy(true);
     setTestResult(null);
     setTestError(false);
     api<{ matched: boolean; matches: TestHit[] }>('/api/v1/admin/rules/test', {
@@ -162,7 +165,8 @@ export default function RulesPage() {
       },
     })
       .then(setTestResult)
-      .catch(() => setTestError(true));
+      .catch(() => setTestError(true))
+      .finally(() => setTestBusy(false));
   };
 
   if (failed) return <ErrorBlock onRetry={load} />;
@@ -249,7 +253,11 @@ export default function RulesPage() {
             </div>
           )}
           <div className="dialog-actions">
-            <button className="btn ghost" onClick={() => setShowNew(false)}>
+            <button
+              className="btn ghost"
+              onClick={() => setShowNew(false)}
+              disabled={createBusy}
+            >
               {t('common.cancel')}
             </button>
             <button
@@ -261,7 +269,7 @@ export default function RulesPage() {
                 (form.patternType !== 'CARD' && !form.pattern.trim())
               }
             >
-              {t('common.save')}
+              {createBusy ? t('common.loading') : t('common.save')}
             </button>
           </div>
         </div>
@@ -309,7 +317,9 @@ export default function RulesPage() {
                     )}
                   </td>
                   <td className="col-lo">{r.patternType}</td>
-                  <td className="mono truncate col-lo">{r.pattern ?? '—'}</td>
+                  <td className="mono truncate col-lo" title={r.pattern ?? undefined}>
+                    {r.pattern ?? '—'}
+                  </td>
                   <td>
                     <label className="check-hit">
                       <input
@@ -374,9 +384,11 @@ export default function RulesPage() {
         <button
           className="btn"
           onClick={runTest}
-          disabled={!testSample.trim() || (testType !== 'CARD' && !testPattern.trim())}
+          disabled={
+            testBusy || !testSample.trim() || (testType !== 'CARD' && !testPattern.trim())
+          }
         >
-          {t('rules.test.run')}
+          {testBusy ? t('common.loading') : t('rules.test.run')}
         </button>
         {testError && (
           <div className="form-error" role="alert" style={{ marginTop: 12 }}>

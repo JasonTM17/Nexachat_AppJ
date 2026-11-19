@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, type Overview } from '../api';
 import { useI18n, type StringKey } from '../i18n';
+import { useLatestRequest } from '../lib/async';
 import { timeLocale } from '../lib/locale';
-import { Chip, ErrorBlock, Loading, fmtBytes } from '../components/ui';
+import { Chip, ErrorBlock, Loading, fmtBytes, fmtClock, fmtNum } from '../components/ui';
 
 const POLL_MS = 60_000;
 
@@ -37,7 +39,7 @@ function deltaVsYesterday(
   if (series.length < 2) return null;
   const delta = today - series[series.length - 2];
   return {
-    text: delta > 0 ? `+${delta}` : String(delta),
+    text: delta > 0 ? `+${fmtNum(delta)}` : fmtNum(delta),
     tone: delta > 0 ? 'success' : delta < 0 ? 'critical' : 'low',
   };
 }
@@ -58,26 +60,32 @@ export default function OverviewPage() {
   const [failed, setFailed] = useState(false);
   const [stale, setStale] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   // load() is stable so it cannot close over `data`; this ref mirrors it so the
-  // catch can tell an initial-load failure from a failed refresh.
+  // failure branch can tell an initial-load failure from a failed refresh.
   const hasData = useRef(false);
+  // The poll, the visibility handler and the manual button can overlap; only
+  // the newest response may write state.
+  const latest = useLatestRequest();
 
   const load = useCallback(() => {
-    api<Overview>('/api/v1/admin/overview')
-      .then((d) => {
-        hasData.current = true;
-        setData(d);
-        setUpdatedAt(new Date());
-        setFailed(false);
-        setStale(false);
-      })
-      .catch(() => {
+    setRefreshing(true);
+    latest(api<Overview>('/api/v1/admin/overview'), (d) => {
+      setRefreshing(false);
+      if (!d) {
         // A failed poll must not wipe the last good data: keep it and flag the
         // header as stale instead of swapping in the error block.
         if (hasData.current) setStale(true);
         else setFailed(true);
-      });
-  }, []);
+        return;
+      }
+      hasData.current = true;
+      setData(d);
+      setUpdatedAt(new Date());
+      setFailed(false);
+      setStale(false);
+    });
+  }, [latest]);
 
   useEffect(() => {
     load();
@@ -107,31 +115,34 @@ export default function OverviewPage() {
     value: string;
     sub?: string;
     delta?: { text: string; tone: string };
+    link?: string;
   }[] = [
     {
       key: 'kpi.registrationsToday',
-      value: String(k.registrationsToday),
+      value: fmtNum(k.registrationsToday),
       delta: deltaVsYesterday(k.registrationsToday, regSeries) ?? undefined,
     },
-    { key: 'kpi.dau', value: String(k.dau) },
-    { key: 'kpi.wau', value: String(k.wau) },
+    { key: 'kpi.dau', value: fmtNum(k.dau) },
+    { key: 'kpi.wau', value: fmtNum(k.wau) },
     {
       key: 'kpi.messagesToday',
-      value: String(k.messagesToday),
+      value: fmtNum(k.messagesToday),
       delta: deltaVsYesterday(k.messagesToday, msgSeries) ?? undefined,
     },
-    { key: 'kpi.activeCalls', value: String(k.activeCalls) },
+    { key: 'kpi.activeCalls', value: fmtNum(k.activeCalls) },
     {
       key: 'kpi.pendingAlerts',
-      value: String(k.pendingAlerts),
+      value: fmtNum(k.pendingAlerts),
       sub: k.queue.dryRun ? t('kpi.queue.dryRun') : undefined,
+      // The most common moderator jump deep-links straight to the queue.
+      link: '/alerts',
     },
     { key: 'kpi.databaseBytes', value: fmtBytes(k.databaseBytes) },
     { key: 'kpi.uploadsBytes', value: fmtBytes(k.uploadsBytes) },
     { key: 'kpi.errorRate', value: fmtPercent(k.errorRate) },
     {
       key: 'kpi.queue',
-      value: String(k.queue.depth),
+      value: fmtNum(k.queue.depth),
       sub: t('kpi.queue.detail', {
         dropped: k.queue.dropped,
         scanned: k.queue.scanned,
@@ -145,40 +156,47 @@ export default function OverviewPage() {
         <div className="page-head-meta">
           {updatedAt && (
             <span>
-              {t('overview.updatedAt', {
-                time: updatedAt.toLocaleTimeString(undefined, {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                }),
-              })}
+              {t('overview.updatedAt', { time: fmtClock(updatedAt) })}
             </span>
           )}
           {stale && <Chip tone="high">{t('overview.stale')}</Chip>}
         </div>
-        <button className="btn ghost sm" onClick={load}>
+        <button className="btn ghost sm" onClick={load} disabled={refreshing}>
           {t('overview.refresh')}
         </button>
       </div>
       <div className="kpi-grid">
-        {tiles.map((tile) => (
-          <div className="card kpi" key={tile.key}>
-            <div className="label">
-              {t(tile.key)}{' '}
-              {tile.key === 'kpi.queue' && !k.queue.enabled && (
-                <Chip tone="medium">{t('kpi.queue.off')}</Chip>
-              )}
+        {tiles.map((tile) => {
+          const body = (
+            <>
+              <div className="label">
+                {t(tile.key)}{' '}
+                {tile.key === 'kpi.queue' && !k.queue.enabled && (
+                  <Chip tone="medium">{t('kpi.queue.off')}</Chip>
+                )}
+              </div>
+              <div className="value">
+                {tile.value}
+                {tile.delta && (
+                  <Chip tone={tile.delta.tone} label={t('overview.delta.yesterday')}>
+                    {tile.delta.text}
+                  </Chip>
+                )}
+              </div>
+              {tile.sub && <div className="sub">{tile.sub}</div>}
+            </>
+          );
+          // Linked tiles keep the KPI look; only the wrapper changes.
+          return tile.link ? (
+            <Link key={tile.key} to={tile.link} className="card kpi kpi-link">
+              {body}
+            </Link>
+          ) : (
+            <div className="card kpi" key={tile.key}>
+              {body}
             </div>
-            <div className="value">
-              {tile.value}
-              {tile.delta && (
-                <Chip tone={tile.delta.tone} label={t('overview.delta.yesterday')}>
-                  {tile.delta.text}
-                </Chip>
-              )}
-            </div>
-            {tile.sub && <div className="sub">{tile.sub}</div>}
-          </div>
-        ))}
+          );
+        })}
       </div>
       <div className="chart-row">
         <div className="card">

@@ -22,6 +22,9 @@
   --text: #241221;
   --text-2: #6d5470;
   --border: #e5d2e3;
+  /* Input boundaries must clear the WCAG 1.4.11 3:1 non-text floor against
+     the field surface: plum-300 on #ffffff = 3.52:1 (old --border was 1.43:1). */
+  --input-border: #a97a9d;
   --primary: #733f68;
   --on-primary: #ffffff;
   --primary-hover: #643b59;
@@ -53,6 +56,8 @@
   --text: #f4e9f2;
   --text-2: #c9aec7;
   --border: #4d3a4d;
+  /* plum-300 on the dark surface #2a1f2b = 4.48:1 (old --border was 1.53:1). */
+  --input-border: #a97a9d;
   --primary: #e5aed9;
   --on-primary: #43203c;
   --primary-hover: #f0c4e6;
@@ -92,8 +97,13 @@ button, input, select, textarea {
   color: inherit;
 }
 
+/* Solid primary outline on top of the soft halo: --primary contrasts the
+   page background >= 7:1 in both themes, so the generic ring clears the 3:1
+   non-text floor (the translucent shadow alone was ~1.8-2.5:1). The
+   .btn.primary/.btn.danger rule below still overrides with its own ring. */
 :focus-visible {
-  outline: none;
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
   box-shadow: var(--focus);
   border-radius: 8px;
 }
@@ -201,6 +211,9 @@ button, input, select, textarea {
 }
 
 .btn:hover { background: var(--container); color: var(--on-container); }
+/* Press feedback via filter, not transform: stays instant under
+   prefers-reduced-motion, which only neutralizes animation/transition. */
+.btn:active:not(:disabled) { filter: brightness(0.94); }
 
 .btn.primary { background: var(--primary); color: var(--on-primary); }
 .btn.primary:hover { background: var(--primary-hover); }
@@ -220,6 +233,14 @@ button, input, select, textarea {
 .btn.sm::before { content: ''; position: absolute; inset: -6px; }
 
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Disabled form controls (busy login, busy dialog) need a visible state too,
+   not just the browser default. */
+.input:disabled, .select:disabled, .textarea:disabled {
+  opacity: 0.65;
+  background: var(--surface-2);
+  cursor: not-allowed;
+}
 
 .chip {
   display: inline-flex;
@@ -251,7 +272,7 @@ button, input, select, textarea {
 .input, .select, .textarea {
   width: 100%;
   padding: 9px 14px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--input-border);
   border-radius: 12px;
   background: var(--surface);
   color: var(--text);
@@ -303,6 +324,8 @@ tbody tr:last-child td { border-bottom: none; }
 tbody tr { cursor: pointer; transition: background 0.12s; }
 tbody tr:hover { background: var(--surface-2); }
 tbody tr.plain { cursor: default; }
+/* Cheap busy affordance while a row's detail drawer is loading. */
+tbody tr.row-loading { opacity: 0.55; }
 
 /* Right-pinned action column: stays visible while the table scrolls. */
 td.col-actions {
@@ -342,6 +365,10 @@ th.col-actions { position: sticky; right: 0; z-index: 1; box-shadow: -10px 0 12p
 .kpi .label { font-size: 12px; color: var(--text-2); font-weight: 600; }
 .kpi .value { font-size: 26px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .kpi .sub { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+
+/* A KPI tile that is also a link keeps the card look, gains a hover edge. */
+a.kpi-link { display: block; color: inherit; text-decoration: none; }
+a.kpi-link:hover { border-color: var(--plum-300); }
 
 .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 900px) { .chart-row { grid-template-columns: 1fr; } }

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
@@ -29,6 +29,10 @@ const renderLogin = () =>
     </MemoryRouter>,
   );
 
+beforeEach(() => {
+  sessionStorage.clear();
+});
+
 describe('LoginPage', () => {
   it('renders the sign-in form with labels', () => {
     renderLogin();
@@ -49,6 +53,16 @@ describe('LoginPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'This account has no admin access',
     );
+  });
+
+  it('shows a session-expired notice once when api.ts flagged it', () => {
+    sessionStorage.setItem('admin.sessionExpired', '1');
+    renderLogin();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Your session has expired — please sign in again.',
+    );
+    // the flag is consumed, not shown again on the next visit
+    expect(sessionStorage.getItem('admin.sessionExpired')).toBeNull();
   });
 
   it('escapes user input — phone typed stays a value, never HTML', async () => {

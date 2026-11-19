@@ -53,6 +53,12 @@ export default function FeedPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [hiding, setHiding] = useState<FeedReport | null>(null);
+  // Dismiss / mark-reviewed are irreversible one-click status changes, so
+  // they go through the same confirm pattern as the reason-guarded hide.
+  const [resolving, setResolving] = useState<{
+    report: FeedReport;
+    next: 'REVIEWED' | 'DISMISSED';
+  } | null>(null);
   const latest = useLatestRequest();
 
   const load = useCallback(() => {
@@ -62,16 +68,14 @@ export default function FeedPage() {
     // per-report expansion so a row never renders open by accident.
     setExpanded(new Set());
     latest(api<Page<FeedReport>>(feedReportsPath(status, page, PAGE_SIZE)), (res) => {
-      if (!res) {
-        setFailed(true);
-        return;
-      }
-      setData(res);
-      // Acting on the last row of a page can leave it empty past the end of
-      // the list; step back to the last page that still has rows.
-      if (res.items.length === 0 && page > 0) {
-        setPage(Math.max(0, Math.ceil(res.total / PAGE_SIZE) - 1));
-      }
+      if (res) {
+        setData(res);
+        // A mutation (resolve/hide) can shrink the list so the requested page
+        // no longer exists; clamp and let the effect refetch once so the
+        // pager never reads "page > total".
+        const totalPages = Math.max(1, Math.ceil(res.total / PAGE_SIZE));
+        if (page > totalPages - 1) setPage(totalPages - 1);
+      } else setFailed(true);
     });
   }, [status, page, latest]);
 
@@ -133,7 +137,9 @@ export default function FeedPage() {
             onChange={(e) => {
               setStatus(e.target.value as FeedReportStatus);
               setPage(0);
-              setData(null);
+              // Keep the previous list while the refetch is in flight (the
+              // stale-until-replaced pattern used by Users/Alerts/Audit)
+              // instead of flashing the full loading state.
             }}
           >
             {STATUSES.map((s) => (
@@ -149,6 +155,7 @@ export default function FeedPage() {
         <Loading />
       ) : data.items.length === 0 ? (
         <Empty
+          hint={status !== 'OPEN' ? t('common.empty.filtered') : undefined}
           onClearFilters={
             status !== 'OPEN'
               ? () => {
@@ -192,7 +199,12 @@ export default function FeedPage() {
                         <div className="feed-mobile-state">
                           <Chip tone={STATE_TONE[targetState]}>{t(STATE_KEY[targetState])}</Chip>
                         </div>
-                        <div className={open ? 'snippet' : 'truncate'}>{text}</div>
+                        <div
+                          className={open ? 'snippet' : 'truncate'}
+                          title={open ? undefined : text}
+                        >
+                          {text}
+                        </div>
                         {((open && r.details) || (!body && r.details)) && (
                           <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
                             {r.details}
@@ -254,14 +266,14 @@ export default function FeedPage() {
                               <button
                                 className="btn ghost sm"
                                 disabled={busy === r.id}
-                                onClick={() => resolve(r, 'DISMISSED')}
+                                onClick={() => setResolving({ report: r, next: 'DISMISSED' })}
                               >
                                 {t('feed.action.dismiss')}
                               </button>
                               <button
                                 className="btn primary sm"
                                 disabled={busy === r.id}
-                                onClick={() => resolve(r, 'REVIEWED')}
+                                onClick={() => setResolving({ report: r, next: 'REVIEWED' })}
                               >
                                 {t('feed.action.review')}
                               </button>
@@ -287,6 +299,23 @@ export default function FeedPage() {
           maxReasonLength={MAX_REASON}
           onConfirm={(reason) => hide(hiding, reason)}
           onCancel={() => setHiding(null)}
+        />
+      )}
+
+      {resolving && (
+        <ConfirmDialog
+          title={t(
+            resolving.next === 'DISMISSED' ? 'feed.action.dismiss' : 'feed.action.review',
+          )}
+          requireReason={false}
+          confirmDanger={resolving.next === 'DISMISSED'}
+          busy={busy === resolving.report.id}
+          onConfirm={() => {
+            const { report, next } = resolving;
+            setResolving(null);
+            resolve(report, next);
+          }}
+          onCancel={() => setResolving(null)}
         />
       )}
     </>

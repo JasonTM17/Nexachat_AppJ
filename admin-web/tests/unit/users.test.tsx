@@ -125,18 +125,28 @@ describe('UsersPage', () => {
     expect(await screen.findByText('Nothing here')).toBeInTheDocument();
   });
 
-  it('shows an error when an action fails', async () => {
+  it('shows an action error inside the open drawer and refetches the detail', async () => {
     const userEvt = userEvent.setup();
     stubRoutes({ fail: ['/api/v1/admin/users/u1/suspend'] });
     renderPage();
 
     await userEvt.click(await screen.findByText('Mai'));
     const drawer = await screen.findByRole('dialog', { name: 'Mai' });
+    const detailCalls = () =>
+      apiMock.mock.calls.filter(([p]) => p === '/api/v1/admin/users/u1').length;
+    expect(detailCalls()).toBe(1);
+
     await userEvt.click(within(drawer).getByRole('button', { name: 'Suspend' }));
     const dialog = screen.getByRole('alertdialog', { name: 'Suspend' });
     await userEvt.type(within(dialog).getByLabelText(/Reason/), 'spam farm');
     await userEvt.click(within(dialog).getByRole('button', { name: 'Confirm' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong');
+
+    // The failure renders inside the drawer (the page-top alert sits behind
+    // the scrim); the confirm dialog closed but the drawer stayed open.
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent('Something went wrong');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    // The detail is refetched after the failed action instead of going stale.
+    await waitFor(() => expect(detailCalls()).toBeGreaterThan(1));
   });
 
   it('opens the detail drawer and suspends with a required reason', async () => {
@@ -199,6 +209,30 @@ describe('UsersPage', () => {
     const drawer = await screen.findByRole('dialog', { name: 'Mai' });
     expect(within(drawer).getByRole('button', { name: 'Suspend' })).toBeInTheDocument();
     expect(within(drawer).queryByLabelText('Change role')).toBeNull();
+  });
+
+  it('opens the row with Space and marks it busy while the detail loads', async () => {
+    let resolveDetail: (d: UserDetail) => void = () => {};
+    apiMock.mockImplementation((path: string) => {
+      if (path === '/api/v1/admin/me') return Promise.resolve(me);
+      if (path === '/api/v1/admin/users/deleted?limit=50') return Promise.resolve([]);
+      if (path.startsWith('/api/v1/admin/users?')) return Promise.resolve(page([user()]));
+      if (path === '/api/v1/admin/users/u1') {
+        return new Promise<UserDetail>((res) => (resolveDetail = res));
+      }
+      return Promise.reject(new ApiException(404, 'NO_ROUTE', `unstubbed ${path}`));
+    });
+    renderPage();
+    const row = (await screen.findByText('Mai')).closest('tr') as HTMLElement;
+
+    // Space activates the row like Enter, with immediate busy feedback
+    row.focus();
+    await userEvent.keyboard(' ');
+    expect(row).toHaveAttribute('aria-busy', 'true');
+
+    resolveDetail(detail());
+    expect(await screen.findByRole('dialog', { name: 'Mai' })).toBeInTheDocument();
+    await waitFor(() => expect(row).not.toHaveAttribute('aria-busy'));
   });
 
   it('filters by status and reloads from page 0', async () => {

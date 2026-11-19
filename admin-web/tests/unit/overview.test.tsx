@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import OverviewPage from '../../src/pages/OverviewPage';
 import { I18nProvider } from '../../src/i18n';
 import { ApiException, type Overview } from '../../src/api';
@@ -45,9 +46,11 @@ const overview = (over: Partial<Overview> = {}): Overview => ({
 
 const renderPage = () =>
   render(
-    <I18nProvider>
-      <OverviewPage />
-    </I18nProvider>,
+    <MemoryRouter>
+      <I18nProvider>
+        <OverviewPage />
+      </I18nProvider>
+    </MemoryRouter>,
   );
 
 const tile = (label: string) =>
@@ -67,7 +70,7 @@ describe('OverviewPage', () => {
     expect(apiMock).toHaveBeenCalledWith('/api/v1/admin/overview');
     expect(tile('Signups today')).toHaveTextContent('12');
     expect(tile('Active today')).toHaveTextContent('345');
-    expect(tile('Messages today')).toHaveTextContent('9876');
+    expect(tile('Messages today')).toHaveTextContent('9,876');
     expect(tile('Open alerts')).toHaveTextContent('7');
     // bytes and rates are formatted, not raw numbers
     expect(tile('Database')).toHaveTextContent('2.0 MB');
@@ -78,6 +81,19 @@ describe('OverviewPage', () => {
     expect(tile('Scan queue')).toHaveTextContent('2 dropped / 300 scanned');
     // i18n keys are resolved, not leaked raw
     expect(container.textContent).not.toMatch(/\b(kpi|chart|common)\.[a-z]/);
+  });
+
+  it('deep-links the open-alerts KPI to /alerts while keeping the tile look', async () => {
+    apiMock.mockResolvedValue(overview());
+    renderPage();
+    const tileEl = await screen.findByText('Open alerts');
+    const link = tileEl.closest('a');
+    expect(link).not.toBeNull();
+    expect(link).toHaveAttribute('href', '/alerts');
+    expect(link).toHaveClass('card', 'kpi', 'kpi-link');
+    expect(link).toHaveTextContent('7');
+    // other tiles stay plain cards
+    expect(tile('Signups today').closest('a')).toBeNull();
   });
 
   it('renders the two series charts', async () => {
@@ -209,16 +225,27 @@ describe('OverviewPage live refresh', () => {
     await act(async () => {});
     expect(screen.getByText(/^Updated /)).toBeInTheDocument();
   });
+
+  it('formats the updated stamp in the app locale, not the browser locale', async () => {
+    localStorage.setItem('admin.lang', 'vi');
+    apiMock.mockResolvedValue(overview());
+    renderPage();
+    await act(async () => {});
+    const stamp = screen.getByText(/^Cập nhật /);
+    // vi-VN has no AM/PM marker; the browser-locale fallback would render one
+    expect(stamp.textContent).not.toMatch(/[AP]M/);
+    expect(stamp.textContent).toMatch(/^Cập nhật \d{1,2}:\d{2}$/);
+  });
 });
 
 describe('OverviewPage trend chips', () => {
   it('renders delta chips vs yesterday on the signups and messages tiles', async () => {
     apiMock.mockResolvedValue(overview());
     renderPage();
-    // series is [3, 9] so yesterday is 3: signups 12 -> +9, messages 9876 vs 400 -> +9476
+    // series is [3, 9] so yesterday is 3: signups 12 -> +9, messages 9876 vs 400 -> +9,476
     expect(await screen.findByText('Signups today')).toBeInTheDocument();
     expect(tile('Signups today').querySelector('.chip.success')).toHaveTextContent('+9');
-    expect(tile('Messages today').querySelector('.chip.success')).toHaveTextContent('+9476');
+    expect(tile('Messages today').querySelector('.chip.success')).toHaveTextContent('+9,476');
   });
 
   it('renders a negative delta with the down tone', async () => {

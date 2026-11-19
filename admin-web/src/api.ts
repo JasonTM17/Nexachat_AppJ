@@ -53,6 +53,18 @@ async function parseError(res: Response): Promise<ApiException> {
 
 let refreshing: Promise<boolean> | null = null;
 
+// A failed refresh means the session is gone, not merely one bad request:
+// clear the tokens and notify the app shell (auth.tsx drops to /login;
+// LoginPage reads the flag and shows a notice).
+export const SESSION_EXPIRED_EVENT = 'admin:session-expired';
+const SESSION_EXPIRED_KEY = 'admin.sessionExpired';
+
+function expireSession() {
+  tokenStore.clear();
+  sessionStorage.setItem(SESSION_EXPIRED_KEY, '1');
+  window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+}
+
 async function tryRefresh(): Promise<boolean> {
   if (!tokenStore.refresh) return false;
   refreshing ??= (async () => {
@@ -62,11 +74,15 @@ async function tryRefresh(): Promise<boolean> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken: tokenStore.refresh }),
       });
-      if (!res.ok) return false;
+      if (!res.ok) {
+        expireSession();
+        return false;
+      }
       const body = await res.json();
       tokenStore.set(body.accessToken, body.refreshToken);
       return true;
     } catch {
+      expireSession();
       return false;
     } finally {
       refreshing = null;

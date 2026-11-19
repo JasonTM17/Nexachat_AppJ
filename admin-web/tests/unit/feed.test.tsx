@@ -203,23 +203,46 @@ describe('FeedPage', () => {
     expect(screen.queryByRole('button', { name: 'Mark reviewed' })).toBeNull();
   });
 
-  it('resolves a report as reviewed and as dismissed', async () => {
+  it('resolves a report as reviewed and as dismissed after confirmation', async () => {
     const user = userEvent.setup();
     apiMock.mockResolvedValue(page([report()]));
     renderPage();
     await user.click(await screen.findByRole('button', { name: 'Mark reviewed' }));
+    // the irreversible status change asks first
+    const reviewDialog = screen.getByRole('alertdialog', { name: 'Mark reviewed' });
+    await user.click(within(reviewDialog).getByRole('button', { name: 'Confirm' }));
     await waitFor(() =>
       expect(apiMock).toHaveBeenCalledWith('/api/v1/admin/feed/reports/r1/resolve', {
         method: 'POST',
         body: { status: 'REVIEWED' },
       }),
     );
+
     await user.click(await screen.findByRole('button', { name: 'Dismiss' }));
+    const dismissDialog = screen.getByRole('alertdialog', { name: 'Dismiss' });
+    expect(
+      within(dismissDialog).getByRole('button', { name: 'Confirm' }),
+    ).toHaveClass('btn danger');
+    await user.click(within(dismissDialog).getByRole('button', { name: 'Confirm' }));
     await waitFor(() =>
       expect(apiMock).toHaveBeenCalledWith('/api/v1/admin/feed/reports/r1/resolve', {
         method: 'POST',
         body: { status: 'DISMISSED' },
       }),
+    );
+  });
+
+  it('cancelling the resolve confirmation sends no request', async () => {
+    const user = userEvent.setup();
+    apiMock.mockResolvedValue(page([report()]));
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Dismiss' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Dismiss' });
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(apiMock).not.toHaveBeenCalledWith(
+      '/api/v1/admin/feed/reports/r1/resolve',
+      expect.anything(),
     );
   });
 
@@ -229,7 +252,61 @@ describe('FeedPage', () => {
     renderPage();
     apiMock.mockRejectedValueOnce(new ApiException(404, 'POST_NOT_FOUND', 'gone'));
     await user.click(await screen.findByRole('button', { name: 'Mark reviewed' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Mark reviewed' });
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong');
+  });
+
+  it('clamps the pager back when hiding the last report of a page', async () => {
+    const user = userEvent.setup();
+    let hidden = false;
+    apiMock.mockImplementation((path: string) => {
+      if (path === feedTargetPath('POST', 'p2', 'hide')) {
+        hidden = true;
+        return Promise.resolve(undefined);
+      }
+      if (path.startsWith('/api/v1/admin/feed/reports?')) {
+        if (path.includes('page=1')) {
+          // after the hide, the last page is gone: 25 remain on page 0
+          if (hidden) {
+            return Promise.resolve({ items: [], page: 1, size: 25, total: 25, hasMore: false });
+          }
+          return Promise.resolve({
+            items: [report({ id: 'r2', targetId: 'p2' })],
+            page: 1,
+            size: 25,
+            total: 26,
+            hasMore: false,
+          });
+        }
+        return Promise.resolve({
+          items: [report()],
+          page: 0,
+          size: 25,
+          total: hidden ? 25 : 26,
+          hasMore: false,
+        });
+      }
+      return Promise.reject(new ApiException(404, 'NO_ROUTE', `unstubbed ${path}`));
+    });
+    renderPage();
+    await screen.findByText('Mai');
+
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await user.click(await screen.findByRole('button', { name: 'Hide' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Hide post' });
+    await user.type(within(dialog).getByLabelText(/Reason/), 'spam');
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+
+    // the emptied page=1 response clamps the pager to page 0 and refetches
+    await waitFor(() => {
+      const page0Calls = apiMock.mock.calls.filter(
+        ([p]) => p === '/api/v1/admin/feed/reports?status=OPEN&page=0&size=25',
+      );
+      expect(page0Calls.length).toBe(2);
+    });
+    expect(await screen.findByText('Mai')).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Pagination' })).toBeNull();
   });
 
   it('switches the status filter and reloads from page 0', async () => {
@@ -243,6 +320,25 @@ describe('FeedPage', () => {
         '/api/v1/admin/feed/reports?status=DISMISSED&page=0&size=25',
       ),
     );
+  });
+
+  it('keeps the stale list while a filter refetch is in flight', async () => {
+    const user = userEvent.setup();
+    let resolveSecond: (value: Page<FeedReport>) => void = () => {};
+    apiMock.mockImplementationOnce(() => Promise.resolve(page([report()])));
+    apiMock.mockImplementationOnce(
+      () => new Promise<Page<FeedReport>>((res) => (resolveSecond = res)),
+    );
+    renderPage();
+    await screen.findByText('Mai');
+
+    await user.selectOptions(screen.getByLabelText('Status'), 'DISMISSED');
+    // the previous list stays instead of flashing the loading state
+    expect(screen.getByText('Mai')).toBeInTheDocument();
+    expect(screen.queryByText('Loading…')).toBeNull();
+
+    resolveSecond(page([report({ id: 'r2', status: 'DISMISSED', authorName: 'Lan' })]));
+    expect(await screen.findByText('Lan')).toBeInTheDocument();
   });
 
   it('closes the expanded detail of a same-id report after the status filter changes', async () => {
@@ -334,6 +430,8 @@ describe('FeedPage', () => {
 
     apiMock.mockRejectedValueOnce(new ApiException(500, 'X', 'boom'));
     await user.click(screen.getByRole('button', { name: 'Mark reviewed' }));
+    const reviewDialog = screen.getByRole('alertdialog', { name: 'Mark reviewed' });
+    await user.click(within(reviewDialog).getByRole('button', { name: 'Confirm' }));
     expect(await screen.findAllByRole('alert')).toHaveLength(1);
 
     // the retry reload fails too — the two failures collapse into one block

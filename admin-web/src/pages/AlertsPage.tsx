@@ -90,19 +90,19 @@ export default function AlertsPage() {
   const load = useCallback(() => {
     setFailed(false);
     latest(api<Page<AlertSummary>>(`/api/v1/admin/alerts?${params}`), (res) => {
-      if (!res) {
+      if (res) {
+        setData(res);
+        setChecked(new Set());
+        // A mutation (e.g. bulk-dismiss) can shrink the list so the requested
+        // page no longer exists; clamp and let the params effect refetch once
+        // so the pager never reads "page > total".
+        const totalPages = Math.max(1, Math.ceil(res.total / PAGE_SIZE));
+        if (page > totalPages - 1) setPage(totalPages - 1);
+      } else {
         setFailed(true);
-        return;
-      }
-      setData(res);
-      setChecked(new Set());
-      // Acting on the last rows of a page can leave it empty past the end of
-      // the list; step back to the last page that still has rows.
-      if (res.items.length === 0 && page > 0) {
-        setPage(Math.max(0, Math.ceil(res.total / PAGE_SIZE) - 1));
       }
     });
-  }, [params, page, latest]);
+  }, [params, latest, page]);
 
   useEffect(() => {
     load();
@@ -159,6 +159,12 @@ export default function AlertsPage() {
       if (revealedMessages) setRevealed(revealedMessages);
       load();
     } catch {
+      // The page-top alert renders behind the open drawer scrim, so the
+      // failure is shown inside the drawer instead (see below). Refetch the
+      // detail too: the server may have applied part of the action before
+      // failing, and the drawer must not stay stale. openDetail() clears
+      // actionError synchronously, so the error is re-set after it.
+      if (detail) openDetail(detail.alert.id);
       setActionError(true);
       setPending(null);
       load();
@@ -278,7 +284,9 @@ export default function AlertsPage() {
         )}
       </div>
 
-      {actionError && (
+      {/* With the drawer open, its scrim covers the page, so the page-top
+          alert is only for failures that happen without a drawer. */}
+      {actionError && !detail && (
         <div className="form-error" role="alert">
           {t('common.error')}
         </div>
@@ -290,6 +298,7 @@ export default function AlertsPage() {
         <Loading />
       ) : data.items.length === 0 ? (
         <Empty
+          hint={status !== 'OPEN' || severity || category ? t('common.empty.filtered') : undefined}
           onClearFilters={
             status !== 'OPEN' || severity || category
               ? () => {
@@ -321,6 +330,7 @@ export default function AlertsPage() {
                     key={a.id}
                     tabIndex={0}
                     aria-busy={detailBusy === a.id || undefined}
+                    className={detailBusy === a.id ? 'row-loading' : undefined}
                     onClick={() => openDetail(a.id)}
                     onKeyDown={(e) => {
                       // Inner controls (the select checkbox) keep their own
@@ -390,6 +400,11 @@ export default function AlertsPage() {
           sub={detail.alert.id}
           onClose={() => setDetail(null)}
         >
+          {actionError && (
+            <div className="form-error" role="alert">
+              {t('common.error')}
+            </div>
+          )}
           <div className="action-row">
             {detail.alert.status === 'OPEN' && (
               <>

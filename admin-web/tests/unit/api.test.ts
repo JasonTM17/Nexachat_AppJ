@@ -68,4 +68,36 @@ describe('api', () => {
     await expect(api('/api/v1/admin/me')).rejects.toBeInstanceOf(ApiException);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it('treats a failed refresh as an expired session: clears tokens and signals', async () => {
+    tokenStore.set('old', 'bad-refresh');
+    const events: string[] = [];
+    const onExpired = () => events.push('expired');
+    window.addEventListener('admin:session-expired', onExpired);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(401, { error: { code: 'TOKEN_EXPIRED' } }))
+      .mockResolvedValueOnce(jsonResponse(401, { error: { code: 'INVALID_REFRESH' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(api('/api/v1/admin/me')).rejects.toBeInstanceOf(ApiException);
+    expect(tokenStore.access).toBeNull();
+    expect(tokenStore.refresh).toBeNull();
+    expect(events).toEqual(['expired']);
+    expect(sessionStorage.getItem('admin.sessionExpired')).toBe('1');
+    window.removeEventListener('admin:session-expired', onExpired);
+    sessionStorage.clear();
+  });
+
+  it('does not signal expiry when there is no refresh token at all', async () => {
+    const events: string[] = [];
+    const onExpired = () => events.push('expired');
+    window.addEventListener('admin:session-expired', onExpired);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse(401, { error: { code: 'TOKEN_EXPIRED' } })),
+    );
+    await expect(api('/x')).rejects.toBeInstanceOf(ApiException);
+    expect(events).toEqual([]);
+    window.removeEventListener('admin:session-expired', onExpired);
+  });
 });

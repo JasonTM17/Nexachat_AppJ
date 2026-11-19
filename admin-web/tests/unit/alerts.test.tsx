@@ -131,6 +131,29 @@ describe('AlertsPage', () => {
     expect(await screen.findByText('Nothing here')).toBeInTheDocument();
   });
 
+  it('opens the row with Space and marks it busy while the detail loads', async () => {
+    let resolveDetail: (d: AlertDetail) => void = () => {};
+    apiMock.mockImplementation((path: string) => {
+      if (path === '/api/v1/admin/me') return Promise.resolve(me);
+      if (path.startsWith('/api/v1/admin/alerts?')) return Promise.resolve(page([alert()]));
+      if (path === '/api/v1/admin/alerts/a1') {
+        return new Promise<AlertDetail>((res) => (resolveDetail = res));
+      }
+      return Promise.reject(new ApiException(404, 'NO_ROUTE', `unstubbed ${path}`));
+    });
+    renderPage();
+    const row = (await screen.findByText('send me your password')).closest('tr') as HTMLElement;
+
+    // Space activates the row like Enter, with immediate busy feedback
+    row.focus();
+    await userEvent.keyboard(' ');
+    expect(row).toHaveAttribute('aria-busy', 'true');
+
+    resolveDetail(detail());
+    expect(await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' })).toBeInTheDocument();
+    await waitFor(() => expect(row).not.toHaveAttribute('aria-busy'));
+  });
+
   it('filters by severity and reloads from page 0', async () => {
     const user = userEvent.setup();
     stubRoutes();
@@ -168,6 +191,42 @@ describe('AlertsPage', () => {
         body: { assigneeId: 'me-mod' },
       }),
     );
+  });
+
+  it('shows a failed status change inside the open drawer and refetches detail and list', async () => {
+    const user = userEvent.setup();
+    // Only the PATCH fails; the detail GET and the list keep working.
+    apiMock.mockImplementation((path: string, opts?: { method?: string }) => {
+      if (path === '/api/v1/admin/me') return Promise.resolve(me);
+      if (path === '/api/v1/admin/alerts/a1' && opts?.method === 'PATCH') {
+        return Promise.reject(new ApiException(500, 'X', 'boom'));
+      }
+      if (path.startsWith('/api/v1/admin/alerts?')) return Promise.resolve(page([alert()]));
+      if (path === '/api/v1/admin/alerts/a1') return Promise.resolve(detail());
+      return Promise.reject(new ApiException(404, 'NO_ROUTE', `unstubbed ${path}`));
+    });
+    renderPage();
+
+    await user.click(await screen.findByText('send me your password'));
+    const drawer = await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' });
+    const detailCalls = () =>
+      apiMock.mock.calls.filter(([p]) => p === '/api/v1/admin/alerts/a1').length;
+    const listCalls = () =>
+      apiMock.mock.calls.filter(([p]) => String(p).startsWith('/api/v1/admin/alerts?')).length;
+    expect(detailCalls()).toBe(1);
+    expect(listCalls()).toBe(1);
+
+    await user.click(within(drawer).getByRole('button', { name: 'Resolve' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Resolved' });
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+
+    // The failure renders inside the drawer (the page-top alert sits behind
+    // the scrim); the confirm dialog closed but the drawer stayed open.
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent('Something went wrong');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    // Both the detail and the list are refetched after the failed action.
+    await waitFor(() => expect(detailCalls()).toBe(3));
+    await waitFor(() => expect(listCalls()).toBe(2));
   });
 
   it('resolves an alert from the drawer without a reason', async () => {
@@ -249,6 +308,63 @@ describe('AlertsPage', () => {
         body: { body: 'contacted sender' },
       }),
     );
+  });
+
+  it('clamps the pager back when a bulk-dismiss empties the current page', async () => {
+    const user = userEvent.setup();
+    let dismissed = false;
+    apiMock.mockImplementation((path: string) => {
+      if (path === '/api/v1/admin/me') return Promise.resolve(me);
+      if (path === '/api/v1/admin/alerts/bulk-dismiss') {
+        dismissed = true;
+        return Promise.resolve(undefined);
+      }
+      if (path.startsWith('/api/v1/admin/alerts?')) {
+        if (path.includes('page=1')) {
+          // after the dismiss, the last page is gone: 25 items remain on page 0
+          if (dismissed) {
+            return Promise.resolve({ items: [], page: 1, size: 25, total: 25, hasMore: false });
+          }
+          return Promise.resolve({
+            items: [alert({ id: 'a2' })],
+            page: 1,
+            size: 25,
+            total: 26,
+            hasMore: false,
+          });
+        }
+        return Promise.resolve({
+          items: [alert()],
+          page: 0,
+          size: 25,
+          total: dismissed ? 25 : 26,
+          hasMore: false,
+        });
+      }
+      if (path === '/api/v1/admin/alerts/a1') return Promise.resolve(detail());
+      return Promise.reject(new ApiException(404, 'NO_ROUTE', `unstubbed ${path}`));
+    });
+    renderPage();
+    await screen.findByText('send me your password');
+
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await screen.findByRole('checkbox', { name: 'Select a2' });
+    await user.click(screen.getByRole('checkbox', { name: 'Select a2' }));
+    await user.click(screen.getByRole('button', { name: /Dismiss selected · 1 selected/ }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Dismiss selected' });
+    await user.type(within(dialog).getByLabelText(/Reason/), 'duplicates');
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+
+    // the emptied page=1 response clamps the pager to page 0 and refetches
+    await waitFor(() => {
+      const page0Calls = apiMock.mock.calls.filter(
+        ([p]) => p === '/api/v1/admin/alerts?status=OPEN&page=0&size=25',
+      );
+      expect(page0Calls.length).toBe(2);
+    });
+    expect(await screen.findByText('send me your password')).toBeInTheDocument();
+    // total is now 25 -> a single page -> no pager at all
+    expect(screen.queryByRole('navigation', { name: 'Pagination' })).toBeNull();
   });
 
   it('bulk-dismisses selected alerts with a required reason', async () => {

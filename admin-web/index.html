@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex, nofollow" />
     <title>NexaChat Admin</title>
+    <!-- Same favicon as the public site; the bundle is served same-origin
+         under /admin, so the root path stays valid in production. -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <style>
       /* Pre-CSS background; styles.css then owns html's background via var(--bg). */
       html { background: #fdf8fc; }

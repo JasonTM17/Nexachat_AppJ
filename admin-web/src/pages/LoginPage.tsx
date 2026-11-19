@@ -13,6 +13,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // Set by api.ts when a mid-session refresh fails; consumed once here.
+  const [sessionExpired] = useState(() => {
+    if (sessionStorage.getItem('admin.sessionExpired')) {
+      sessionStorage.removeItem('admin.sessionExpired');
+      return true;
+    }
+    return false;
+  });
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -54,6 +62,11 @@ export default function LoginPage() {
         </div>
         <div className="sub">{t('login.title')}</div>
         <form onSubmit={submit} aria-busy={busy}>
+          {sessionExpired && (
+            <div className="form-error" role="status">
+              {t('login.notice.sessionExpired')}
+            </div>
+          )}
           {error && (
             <div className="form-error" role="alert">
               {error}
