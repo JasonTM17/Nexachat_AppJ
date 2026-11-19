@@ -120,6 +120,16 @@ All notable changes to NexaChat are documented here. The format follows
   pragmas run through the query path the library accepts, and the Room open
   uses the same raw-key form the migration attaches with — verified on a
   real device, including a plaintext database carrying rows.
+- Android: the Ask sheet reads "Some messages in this chat were not
+  included." when the server leaves eligible messages out of the context
+  behind an answer or a not-found result.
+- Admin console: on the feed moderation page, a report's expanded details
+  collapse when the status filter or page changes instead of staying open
+  on the reloaded list.
+- Android: an inbox conversation no longer disappears with its messages,
+  pins and cursors when an archive lands while the inbox is syncing; the
+  single-page reconcile now confirms the prune through the delta endpoint
+  before deleting local rows.
 
 ## [1.2.15] - 2026-11-17
 
