@@ -46,9 +46,11 @@ public class TranslateRateLimiter {
     }
 
     /**
-     * Non-throwing variant: returns {@code false} when a limit is exhausted so a
-     * caller already inside a transaction (the batch path) can report the
-     * refusal per item without marking its transaction rollback-only.
+     * Non-throwing variant: returns {@code false} when a limit is exhausted
+     * so a batch can report the refusal per item without aborting the rest of
+     * the batch. A refusal spends nothing: the minute window is refunded when
+     * the daily window refuses, and the daily window is never touched when the
+     * minute window refuses.
      */
     @Transactional
     public boolean tryConsume(UUID userId, int count) {
@@ -66,7 +68,15 @@ public class TranslateRateLimiter {
                 properties.getRateLimitPerMinute(), count)) {
             return false;
         }
-        return repository.tryConsume(userId, "DAY", dayStart, properties.getRateLimitPerDay(), count);
+        if (repository.tryConsume(userId, "DAY", dayStart, properties.getRateLimitPerDay(), count)) {
+            return true;
+        }
+        // The daily window refused after the minute window already consumed:
+        // return the minute tokens so a refusal still spends nothing. The
+        // refund runs in the same transaction as the consume above, and the
+        // upsert already locked the row, so it cannot race another consumer.
+        repository.refund(userId, "MINUTE", minuteStart, count);
+        return false;
     }
 
     /** Single-token convenience overload for the per-item batch path. */
