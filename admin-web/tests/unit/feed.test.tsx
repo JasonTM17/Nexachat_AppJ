@@ -242,4 +242,60 @@ describe('FeedPage', () => {
       ),
     );
   });
+
+  it('closes the expanded detail of a same-id report after the status filter changes', async () => {
+    const user = userEvent.setup();
+    apiMock.mockResolvedValueOnce(page([report({ id: 'r1', details: 'open-view details' })]));
+    renderPage();
+    const toggle = await screen.findByRole('button', { name: 'Show full' });
+    await user.click(toggle);
+    expect(screen.getByRole('button', { name: 'Show less' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(screen.getByText('open-view details')).toBeInTheDocument();
+
+    apiMock.mockResolvedValue(
+      page([
+        report({
+          id: 'r1',
+          status: 'DISMISSED',
+          details: 'dismissed-view details',
+          authorName: 'Lan',
+        }),
+      ]),
+    );
+    await user.selectOptions(screen.getByLabelText('Status'), 'DISMISSED');
+    await screen.findByText('Lan');
+    const nextToggle = screen.getByRole('button', { name: 'Show full' });
+    expect(nextToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: 'Show less' })).toBeNull();
+    expect(screen.queryByText('dismissed-view details')).toBeNull();
+  });
+
+  it('closes the expanded detail of a same-id report after the page changes', async () => {
+    const user = userEvent.setup();
+    apiMock.mockResolvedValueOnce({ ...page([report({ id: 'r1' })]), total: 50 });
+    renderPage();
+    const toggle = await screen.findByRole('button', { name: 'Show full' });
+    await user.click(toggle);
+    expect(screen.getByRole('button', { name: 'Show less' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+
+    apiMock.mockResolvedValue({
+      ...page([
+        report({ id: 'r1', details: 'page-two details', authorName: 'Lan' }),
+      ]),
+      page: 1,
+      total: 50,
+    });
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await screen.findByText('Lan');
+    const nextToggle = screen.getByRole('button', { name: 'Show full' });
+    expect(nextToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: 'Show less' })).toBeNull();
+    expect(screen.queryByText('page-two details')).toBeNull();
+  });
 });

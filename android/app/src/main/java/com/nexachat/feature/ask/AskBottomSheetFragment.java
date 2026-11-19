@@ -171,6 +171,8 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
         boolean retryVisible = state.getStatus() == AskUiState.Status.ERROR
                 || state.getStatus() == AskUiState.Status.RATE_LIMITED;
         binding.askRetry.setVisibility(retryVisible ? View.VISIBLE : View.GONE);
+        binding.askContextOmitted.setVisibility(
+                state.isContextOmitted() ? View.VISIBLE : View.GONE);
         if (state.getStatus() == AskUiState.Status.CONSENT_REQUIRED) {
             showConsentDialog();
         }

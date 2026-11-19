@@ -1176,9 +1176,13 @@ public final class ConversationRepository implements AutoCloseable {
      * 2. However, a first-page refresh must converge so removed/inaccessible conversations
      *    do not stay as stale rows in Room until the next delta sync or realtime push.
      * 3. Single-page complete inbox (firstPage && isComplete):
-     *    The server returned the authoritative full set in a single request without paging.
-     *    No conversation could have moved pages. Any local row of this variant omitted
-     *    from this set (and not locally created) is definitively gone and is safely removed.
+     *    The server returned the authoritative full set in a single request without
+     *    paging, but that set was evaluated when the request reached the server. A
+     *    concurrent archive/unarchive or removal in between makes a stale page
+     *    omission indistinguishable from a real loss, so omitted rows of this
+     *    variant (and not locally created) are only suspects: they are confirmed
+     *    against the delta endpoint exactly like the paged cases and pruned only
+     *    on confirmed membership loss.
      * 4. Paged inboxes (firstPage && !isComplete, or completed multi-page walks):
      *    Any local row of this variant absent from the fetched items whose sequence is
      *    equal to or newer than the oldest sequence fetched could either be removed or
@@ -1219,25 +1223,19 @@ public final class ConversationRepository implements AutoCloseable {
                 walkIdSet = new HashSet<>(inboxWalkIds);
             }
 
-            // Case 1: First page and complete (single-page full inbox)
+            // Case 1: First page and complete (single-page full inbox).
+            // A stale page is still not a deletion oracle — the confirm call
+            // runs before the prune transaction, exactly like the paged cases.
             if (firstPage && isComplete) {
-                List<ConversationEntity> toDelete = new ArrayList<>();
+                List<ConversationEntity> suspects = new ArrayList<>();
                 for (ConversationEntity row : localRows) {
                     if (row.isArchived() != archived) continue;
                     if (!pageIdSet.contains(row.getId()) && !locallyCreatedIds.contains(row.getId())) {
-                        toDelete.add(row);
+                        suspects.add(row);
                     }
                 }
-                if (toDelete.isEmpty()) return Completable.complete();
-                return Completable.fromAction(() -> {
-                    appDatabase.runInTransaction(() -> {
-                        for (ConversationEntity row : toDelete) {
-                            LocalConversationCleaner.deleteInTransaction(
-                                    appDatabase, row.getId(), ownerUserId);
-                        }
-                    });
-                }).andThen(Completable.fromAction(() -> locallyCreatedIds.removeAll(pageIdSet)))
-                        .andThen(notifyConfirmedRemovals(toDelete));
+                return confirmAbsenceAndPrune(suspects, ownerUserId)
+                        .andThen(Completable.fromAction(() -> locallyCreatedIds.removeAll(pageIdSet)));
             }
 
             // Case 2: Multi-page walk completion

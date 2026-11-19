@@ -150,6 +150,16 @@
             </com.google.android.material.card.MaterialCardView>
 
             <TextView
+                android:id="@+id/askContextOmitted"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:text="@string/ask_context_omitted"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:visibility="gone" />
+
+            <TextView
                 android:id="@+id/askCitationsLabel"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

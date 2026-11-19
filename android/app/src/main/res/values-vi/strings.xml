@@ -435,6 +435,7 @@
     <string name="ask_from_message">Từ tin nhắn</string>
     <string name="ask_citations_label">Nguồn</string>
     <string name="ask_citation_accessibility">Mở tin nhắn: %1$s</string>
+    <string name="ask_context_omitted">Một số tin nhắn trong trò chuyện này đã không được đưa vào.</string>
     <string name="mention_all_picker">@all · Mọi người</string>
     <string name="mention_person_picker">Nhắc %1$s</string>
     <string name="mention_limit_exceeded">Chỉ nhắc tối đa 20 người mỗi tin nhắn. Nội dung đã được xóa.</string>
