@@ -1,5 +1,6 @@
 :root {
   color-scheme: dark light;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --logo-mark: #dda7cc;
   --logo-ink: #f6dff0;
   --logo-plate: #733f68;
@@ -240,7 +241,7 @@ body:has(#lang-en:target) .language-switch a[href='#lang-en'] {
 }
 
 .install-hint code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
 }
 
@@ -327,8 +328,12 @@ body:has(#lang-en:target) .language-switch a[href='#lang-en'] {
 
 .prose h2 {
   font-size: 1.125rem;
-  margin: 1.25rem 0 0.5rem;
+  margin: 1.75rem 0 0.625rem;
   text-wrap: balance;
+}
+
+.prose strong {
+  color: var(--text-main);
 }
 
 .prose p,
@@ -344,13 +349,30 @@ body:has(#lang-en:target) .language-switch a[href='#lang-en'] {
 }
 
 .prose code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   background-color: var(--secondary-bg);
   padding: 0.125rem 0.375rem;
   border-radius: 4px;
   word-break: break-word;
   overflow-wrap: anywhere;
+}
+
+.prose pre {
+  margin: 0 0 0.75rem;
+  padding: 0.625rem 0.875rem;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.prose pre code {
+  padding: 0;
+  background-color: transparent;
+  word-break: normal;
+  overflow-wrap: normal;
+  white-space: pre;
 }
 
 .prose a {
