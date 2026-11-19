@@ -74,7 +74,7 @@ public final class RecoveryEmailManageFragment extends Fragment {
             binding.recoveryEmailAdd.setVisibility(View.GONE);
             binding.recoveryEmailRetry.setVisibility(View.VISIBLE);
         } else if (initialLoading) {
-            binding.recoveryEmailStatus.setText(R.string.voice_status_loading);
+            binding.recoveryEmailStatus.setText(R.string.loading_status);
             binding.recoveryEmailChange.setVisibility(View.GONE);
             binding.recoveryEmailRemove.setVisibility(View.GONE);
             binding.recoveryEmailAdd.setVisibility(View.GONE);

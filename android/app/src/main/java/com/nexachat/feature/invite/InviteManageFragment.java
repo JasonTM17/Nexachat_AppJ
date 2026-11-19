@@ -86,8 +86,9 @@ public final class InviteManageFragment extends Fragment {
         if (binding == null) return;
         boolean loadingVisible = state.isLoading();
         binding.loading.setVisibility(loadingVisible ? View.VISIBLE : View.GONE);
+        // The XML already labels the indicator with loading_status; keep it.
         binding.loading.setContentDescription(
-                loadingVisible ? getString(R.string.voice_status_loading) : null);
+                loadingVisible ? getString(R.string.loading_status) : null);
         InviteLinkResponse link = state.getLink();
         boolean hasLink = link != null;
         binding.linkStatus.setVisibility(state.isLoaded() ? View.VISIBLE : View.GONE);
