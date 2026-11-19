@@ -38,6 +38,8 @@ IDENTICAL_LOCALE_ALLOWLIST = frozenset(
         "time_duration_mm_ss",
         "complete_profile_google_chip",
         "sign_in_method_google",
+        "cd_contact_row",
+        "cd_contact_row_name_only",
     }
 )
 
