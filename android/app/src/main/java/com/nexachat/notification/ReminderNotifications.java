@@ -53,7 +53,7 @@ public final class ReminderNotifications {
         PendingIntent contentIntent = PendingIntent.getActivity(context, notificationId, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_chat_bubble_outline)
+                .setSmallIcon(R.drawable.ic_hourglass_top)
                 .setContentTitle(context.getString(R.string.reminder_notification_title))
                 .setContentText(context.getString(R.string.reminder_notification_generic))
                 .setCategory(NotificationCompat.CATEGORY_EVENT)
