@@ -5666,7 +5666,12 @@ def run_polls_reminders(row: JourneyRow, context: dict[str, Any]) -> dict[str, A
 _OFFLINE_GROUP_COUNT = 105      # pushes the caller's conversation set past 100
 _OFFLINE_SEEN_MIN = 100         # rendered rows the paged inbox walk must surface
 _OFFLINE_FIXTURE_EACH = 30      # 30 edits + 30 recalls = 60 reconciled changes
-_OFFLINE_SEND_GAP_S = 0.4       # keeps fixture sends under the write rate bucket
+# Each STOMP MessageCreated frame also queues a full page-1 inbox refresh on
+# the device; a ~2 msg/s REST burst serialized ~60 refreshes and pegged the
+# debug app at >130% CPU until the system showed its ANR dialog (run-6
+# attempt-1 logcat). ~1 msg/s stays far under the write rate bucket while
+# letting each refresh finish before the next push lands.
+_OFFLINE_SEND_GAP_S = 1.2       # keeps fixture sends under the write rate bucket
 # OkHttp Level.BASIC logs "--> POST <url> (<bytes>-byte body)"; ~100 watermarks
 # cannot fit inside a body smaller than this floor.
 _OFFLINE_SYNC_POST_RE = re.compile(r"--> POST \S+/api/v1/sync")
@@ -5796,20 +5801,41 @@ def _offline_open_direct(context: dict[str, Any]) -> None:
 
 
 def _offline_inbox_scroll(context: dict[str, Any]) -> None:
-    """One scroll-up gesture inside the conversation list's middle band.
+    """One overlapping scroll-up drag inside the conversation list.
 
-    Swiping from the list's bottom edge lands inside the gesture-nav strip on
-    this 640px screen and the system sends the app home — the walk then scrolls
-    the launcher. Staying between 22% and 76% of the list's height keeps the
-    gesture a real list scroll."""
+    The gesture has to satisfy two constraints on this 320x640 gesture-nav
+    emulator. It must start far enough above the screen's bottom edge that the
+    system does not steal it as a swipe-home (the earlier edge-band swipe
+    repeatedly sent the app to the launcher mid-walk). And it must be short
+    and slow enough that fling momentum cannot skip a whole viewport between
+    a11y dumps — skipped rows never enter the collector's distinct-title set,
+    which is how a fully paged inbox still "surfaced" only a fraction of its
+    rows. ~28% of the list height over 650ms advances roughly two rows per
+    drag, so consecutive viewports always overlap."""
     nodes = _ui_nodes(context)
     container = next((node for node in nodes
                       if _rid_ends(node, "conversationList")), None)
     box = getattr(container, "box", None) or (0, 0, 320, 640)
     cx = (box[0] + box[2]) // 2
     height = box[3] - box[1]
-    context["device"].swipe(cx, box[1] + int(height * 0.76),
-                            cx, box[1] + int(height * 0.22), 350)
+    context["device"].swipe(cx, box[1] + int(height * 0.68),
+                            cx, box[1] + int(height * 0.40), 650)
+
+
+def _offline_ensure_all_filter(context: dict[str, Any]) -> None:
+    """Re-select the 'All' inbox chip when a persisted filter survived.
+
+    InboxViewModel restores selectedFilter from saved state across process
+    death; a leftover 'Unread'/'Groups'/'Archived' selection shrinks the
+    rendered set and the >100-row walk then fails for the wrong reason."""
+    chip = next((node for node in _ui_nodes(context)
+                 if _rid_ends(node, "filterAllChip")), None)
+    if chip is None or not chip.box:
+        return
+    if chip.attrs.get("checked") == "true":
+        return
+    context["device"].tap_node(chip)
+    time.sleep(0.8)
 
 
 def _offline_walk_inbox(context: dict[str, Any], title: str,
@@ -5852,6 +5878,7 @@ def _offline_pull_until_seed(context: dict[str, Any], prefix: str,
 
     Re-pulling inside the window restarts the generation race, so a second
     pull only happens once after the first half of the deadline passes."""
+    _offline_ensure_all_filter(context)
     _pull_refresh_inbox(context)
     deadline = time.monotonic() + timeout
     repulled = False
@@ -5866,17 +5893,37 @@ def _offline_pull_until_seed(context: dict[str, Any], prefix: str,
 
 
 def _offline_collect_inbox_titles(context: dict[str, Any], prefix: str,
-                                  need: int, swipes: int = 70) -> set[str]:
+                                  need: int, swipes: int = 170) -> set[str]:
     """Accumulate distinct inbox row titles matching `prefix` while paging down.
 
     Each viewport renders ~5-7 rows; sweeping the whole seeded block while
     collecting proves >100 conversations paged through the UI even when the
-    exact tail row is hard to name (display order follows lastMessageAt)."""
+    exact tail row is hard to name (display order follows lastMessageAt).
+    When the dump loses the conversationList node entirely the app has been
+    backgrounded — relaunching costs less than swiping the launcher for the
+    rest of the budget."""
+    _offline_ensure_all_filter(context)
     seen: set[str] = set()
     stall = 0
     last = 0
+    missing = 0
     for _ in range(swipes):
-        for node in _ui_nodes(context):
+        nodes = _ui_nodes(context)
+        container = next((node for node in nodes
+                          if _rid_ends(node, "conversationList")), None)
+        if container is None or not container.box:
+            missing += 1
+            if missing >= 2:
+                _offline_relaunch(context)
+                _offline_wait_inbox(
+                    context,
+                    "the inbox did not return during the seeded walk")
+                _offline_ensure_all_filter(context)
+                missing = 0
+            time.sleep(1.0)
+            continue
+        missing = 0
+        for node in nodes:
             text = (node.text or "").strip()
             if text.startswith(prefix):
                 seen.add(text)
