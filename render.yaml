@@ -80,6 +80,13 @@ services:
       # from https://nexachat.io.vn. Android sends no Origin header.
       - key: NEXACHAT_CORS_ALLOWED_ORIGINS
         value: https://nexachat.io.vn
+      # Browser origin of the deployed admin console (admin-web is served as
+      # static files under site/admin/ — the SPA calls api.nexachat.io.vn
+      # cross-origin, so this exact origin is required for /api/v1/admin/**,
+      # /auth/login and /auth/refresh). Distinct from the public CORS list;
+      # application-render.yml carries the same default as a fallback.
+      - key: NEXACHAT_ADMIN_ALLOWED_ORIGINS
+        value: https://nexachat.io.vn
       # Render terminates TLS at its edge and the container is not directly
       # reachable. Render publishes no proxy CIDR, but its load balancer reaches
       # the service over the private network and peers are observed in
