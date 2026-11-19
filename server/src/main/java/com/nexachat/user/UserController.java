@@ -12,8 +12,10 @@ import com.nexachat.user.dto.UpdateProfileRequest;
 import com.nexachat.user.dto.UserResponse;
 import com.nexachat.user.dto.VerifyEmailRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -34,6 +36,7 @@ import java.util.UUID;
  * {@link UserSearchRateLimitInterceptor}).
  */
 @RestController
+@Validated
 @RequestMapping("/api/v1/users")
 public class UserController {
 
@@ -115,9 +118,9 @@ public class UserController {
      */
     @GetMapping("/search")
     public List<UserResponse> search(@AuthenticationPrincipal JwtPrincipal principal,
-                                     @RequestParam(name = "phone", required = false) String phone,
-                                     @RequestParam(name = "email", required = false) String email,
-                                     @RequestParam(name = "q", required = false) String q) {
+                                     @RequestParam(name = "phone", required = false) @Size(max = 32) String phone,
+                                     @RequestParam(name = "email", required = false) @Size(max = 254) String email,
+                                     @RequestParam(name = "q", required = false) @Size(max = 60) String q) {
         return userService.search(requireUserId(principal), phone, email, q);
     }
 

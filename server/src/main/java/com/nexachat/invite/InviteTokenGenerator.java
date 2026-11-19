@@ -1,5 +1,6 @@
 package com.nexachat.invite;
 
+import com.nexachat.common.error.ValidationException;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -33,7 +34,7 @@ public class InviteTokenGenerator {
      */
     public String hashToken(String rawToken) {
         if (rawToken == null || rawToken.isBlank()) {
-            throw new IllegalArgumentException("Token must not be blank");
+            throw new ValidationException("Token must not be blank");
         }
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

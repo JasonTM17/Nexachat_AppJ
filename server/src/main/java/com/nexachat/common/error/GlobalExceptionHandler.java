@@ -1,5 +1,6 @@
 package com.nexachat.common.error;
 
+import com.nexachat.attachment.RangeNotSatisfiableException;
 import com.nexachat.call.CallException;
 import com.nexachat.common.dto.ErrorResponse;
 import jakarta.validation.ConstraintViolationException;
@@ -79,11 +80,9 @@ public class GlobalExceptionHandler {
             case RATE_LIMITED -> ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(ErrorResponse.of(
                     ApiErrorCode.RATE_LIMITED, ex.getMessage()));
             case CALL_NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                    new ErrorResponse(new ErrorResponse.ErrorBody(
-                            CallException.Code.CALL_NOT_FOUND.name(), ex.getMessage(), null)));
+                    ErrorResponse.of(ApiErrorCode.CALL_NOT_FOUND, ex.getMessage()));
             case CALL_STATE_INVALID -> ResponseEntity.status(HttpStatus.CONFLICT).body(
-                    new ErrorResponse(new ErrorResponse.ErrorBody(
-                            CallException.Code.CALL_STATE_INVALID.name(), ex.getMessage(), null)));
+                    ErrorResponse.of(ApiErrorCode.CALL_STATE_INVALID, ex.getMessage()));
         };
     }
 
@@ -177,15 +176,29 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Safety net for argument-level validation raised from services (e.g. phone
-     * normalization). Expected-domain IllegalArgumentExceptions should normally be
-     * translated to {@link ApiException} at the call site; this keeps the contract
-     * if one slips through. Only the exception class is logged; its message may
-     * contain user input (e.g. a rejected phone string).
+     * Unsatisfiable or malformed {@code Range} header: 416 with the standard
+     * envelope, keeping the {@code Content-Range: bytes &#42;/size} header RFC 9110
+     * expects so range-aware clients can resync.
      */
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
-        log.warn("IllegalArgumentException reached advice ({})", ex.getClass().getSimpleName());
+    @ExceptionHandler(RangeNotSatisfiableException.class)
+    public ResponseEntity<ErrorResponse> handleRangeNotSatisfiable(RangeNotSatisfiableException ex) {
+        return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                .header(HttpHeaders.CONTENT_RANGE, "bytes */" + ex.getSizeBytes())
+                .body(ErrorResponse.of(ex));
+    }
+
+    /**
+     * KNOWN domain-validation failures (client input rejected by a domain
+     * rule, e.g. phone normalization) keep the 400 contract. A plain
+     * {@link IllegalArgumentException} is NOT handled here: it is a server-side
+     * bug and falls through to {@link #handleGeneric} as 500 INTERNAL_ERROR.
+     * Only the exception class is logged; its message may contain user input
+     * (e.g. a rejected phone string).
+     */
+    @ExceptionHandler(ValidationException.class)
+    public ResponseEntity<ErrorResponse> handleValidation(ValidationException ex) {
+        log.warn("Domain validation rejected the request ({})", ex.getClass().getSimpleName());
         return ResponseEntity.badRequest().body(ErrorResponse.of(
                 ApiErrorCode.VALIDATION_FAILED, "Invalid request"));
     }

@@ -1,5 +1,6 @@
 package com.nexachat.recovery;
 
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -21,7 +22,7 @@ public class PasswordResetController {
 
     @PostMapping("/request")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public Map<String, Object> request(@RequestBody(required = false) RequestRecoveryCode request) {
+    public Map<String, Object> request(@Valid @RequestBody(required = false) RequestRecoveryCode request) {
         recoveryService.requestPasswordReset(
                 request == null ? null : request.phone(), request == null ? null : request.email());
         return Map.of();
@@ -29,7 +30,7 @@ public class PasswordResetController {
 
     @PostMapping("/confirm")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void confirm(@RequestBody(required = false) ConfirmPasswordReset request) {
+    public void confirm(@Valid @RequestBody(required = false) ConfirmPasswordReset request) {
         recoveryService.confirmPasswordReset(
                 request == null ? null : request.phone(),
                 request == null ? null : request.email(),

@@ -93,16 +93,17 @@ public class AlertRepository {
         StringBuilder where = new StringBuilder(" WHERE TRUE");
         List<Object> params = new ArrayList<>();
         if (status != null && !status.isBlank()) {
+            // Parsed against the enum so a typo is a 400, not an empty page.
             where.append(" AND a.status = ?");
-            params.add(status.trim().toUpperCase(java.util.Locale.ROOT));
+            params.add(AlertStatus.parse(status).name());
         }
         if (severity != null && !severity.isBlank()) {
             where.append(" AND a.severity = ?");
-            params.add(severity.trim().toUpperCase(java.util.Locale.ROOT));
+            params.add(AlertSeverity.parse(severity).name());
         }
         if (category != null && !category.isBlank()) {
             where.append(" AND a.category = ?");
-            params.add(category.trim().toUpperCase(java.util.Locale.ROOT));
+            params.add(AlertCategory.parse(category).name());
         }
         if (from != null) {
             where.append(" AND a.created_at >= ?");

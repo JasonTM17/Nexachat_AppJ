@@ -1,5 +1,6 @@
 package com.nexachat.recovery;
 
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -21,14 +22,14 @@ public class AccountDeletionController {
 
     @PostMapping("/request")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public Map<String, Object> request(@RequestBody(required = false) RequestRecoveryCode request) {
+    public Map<String, Object> request(@Valid @RequestBody(required = false) RequestRecoveryCode request) {
         recoveryService.requestAccountDeletion(request == null ? null : request.phone());
         return Map.of();
     }
 
     @PostMapping("/confirm")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void confirm(@RequestBody(required = false) ConfirmRecoveryCode request) {
+    public void confirm(@Valid @RequestBody(required = false) ConfirmRecoveryCode request) {
         recoveryService.confirmAccountDeletion(
                 request == null ? null : request.phone(), request == null ? null : request.code());
     }

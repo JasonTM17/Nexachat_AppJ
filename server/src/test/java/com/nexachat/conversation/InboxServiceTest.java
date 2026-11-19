@@ -268,10 +268,12 @@ class InboxServiceTest {
     }
 
     @Test
-    void listInbox_cursorWithoutLimitDefaultsToNonArchivedRows() {
+    void listInbox_cursorWithoutLimitPagesAtMaxLimitInsteadOfUnbounded() {
         UUID nextId = UUID.randomUUID();
-        when(memberRepository.findInboxConversationsAfterCursor(
-                userId, false, 42L, Instant.parse("2026-01-02T00:00:00Z"), conversationId, false))
+        Instant cursorCreatedAt = Instant.parse("2026-01-02T00:00:00Z");
+        when(memberRepository.findInboxConversationsPage(
+                userId, false, 42L, cursorCreatedAt, conversationId, false,
+                PageRequest.of(0, InboxService.MAX_INBOX_PAGE_LIMIT + 1)))
                 .thenReturn(List.of(row(nextId, 40L, false, null, false)));
         when(memberRepository.findInboxMemberViews(List.of(nextId))).thenReturn(List.of());
         when(memberRepository.countUnreadByConversation(userId, List.of(nextId))).thenReturn(List.of());
@@ -283,6 +285,29 @@ class InboxServiceTest {
 
         assertThat(page.items()).extracting(InboxEntry::id).containsExactly(nextId);
         assertThat(page.nextCursor()).isNull();
+    }
+
+    @Test
+    void listInbox_cursorWithoutLimitStillEmitsNextCursorWhenMoreRowsRemain() {
+        Instant cursorCreatedAt = Instant.parse("2026-01-02T00:00:00Z");
+        List<InboxConversationRow> rows = new java.util.ArrayList<>();
+        for (int i = 0; i < InboxService.MAX_INBOX_PAGE_LIMIT + 1; i++) {
+            rows.add(row(UUID.randomUUID(), 40L - i, false, null, false));
+        }
+        when(memberRepository.findInboxConversationsPage(
+                userId, false, 42L, cursorCreatedAt, conversationId, false,
+                PageRequest.of(0, InboxService.MAX_INBOX_PAGE_LIMIT + 1)))
+                .thenReturn(rows);
+        when(memberRepository.findInboxMemberViews(any())).thenReturn(List.of());
+        when(memberRepository.countUnreadByConversation(any(), any())).thenReturn(List.of());
+        String cursor = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
+                ("v1|42|2026-01-02T00:00:00Z|" + conversationId)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        InboxService.InboxPage page = inboxService.listInbox(userId, null, cursor, null);
+
+        assertThat(page.items()).hasSize(InboxService.MAX_INBOX_PAGE_LIMIT);
+        assertThat(page.nextCursor()).isNotBlank();
     }
 
     @Test

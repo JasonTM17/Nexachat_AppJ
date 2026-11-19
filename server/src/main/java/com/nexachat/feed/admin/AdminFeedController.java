@@ -65,7 +65,7 @@ public class AdminFeedController {
     @PostMapping("/posts/{postId}/unhide")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void unhidePost(@PathVariable UUID postId,
-                           @RequestBody(required = false) ReasonRequest body,
+                           @Valid @RequestBody(required = false) ReasonRequest body,
                            HttpServletRequest request) {
         JwtPrincipal actor = AdminGuard.requireStaff();
         service.unhidePost(actor.userId(), AdminGuard.role(), postId,
@@ -85,7 +85,7 @@ public class AdminFeedController {
     @PostMapping("/comments/{commentId}/unhide")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void unhideComment(@PathVariable UUID commentId,
-                              @RequestBody(required = false) ReasonRequest body,
+                              @Valid @RequestBody(required = false) ReasonRequest body,
                               HttpServletRequest request) {
         JwtPrincipal actor = AdminGuard.requireStaff();
         service.unhideComment(actor.userId(), AdminGuard.role(), commentId,

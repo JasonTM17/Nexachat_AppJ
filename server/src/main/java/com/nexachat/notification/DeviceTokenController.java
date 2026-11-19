@@ -42,7 +42,7 @@ public class DeviceTokenController {
     public ResponseEntity<Void> unregisterToken(
             @AuthenticationPrincipal JwtPrincipal principal,
             @RequestParam(value = "token", required = false) String paramToken,
-            @RequestBody(required = false) DeviceTokenRequest bodyRequest) {
+            @Valid @RequestBody(required = false) DeviceTokenRequest bodyRequest) {
         UUID userId = requireUserId(principal);
         String token = paramToken != null && !paramToken.isBlank()
                 ? paramToken

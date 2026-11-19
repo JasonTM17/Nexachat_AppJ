@@ -9,6 +9,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,6 +31,7 @@ import java.util.UUID;
  * per-action splits are enforced inside {@link AdminUserService}.
  */
 @RestController
+@Validated
 @RequestMapping("/api/v1/admin/users")
 public class AdminUserController {
 
@@ -52,9 +54,9 @@ public class AdminUserController {
 
     @GetMapping
     public AdminAuditService.Page<AdminUserService.UserSummary> list(
-            @RequestParam(required = false) String search,
-            @RequestParam(required = false) String status,
-            @RequestParam(required = false) String role,
+            @RequestParam(required = false) @Size(max = 254) String search,
+            @RequestParam(required = false) @Size(max = 20) String status,
+            @RequestParam(required = false) @Size(max = 20) String role,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant createdFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant createdTo,
             @RequestParam(defaultValue = "0") int page,
@@ -88,7 +90,7 @@ public class AdminUserController {
     @PostMapping("/{userId}/unsuspend")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void unsuspend(@PathVariable UUID userId,
-                          @RequestBody(required = false) ReasonRequest body,
+                          @Valid @RequestBody(required = false) ReasonRequest body,
                           HttpServletRequest request) {
         JwtPrincipal actor = AdminGuard.requireStaff();
         service.unsuspend(userId, body == null ? null : body.reason(),
@@ -98,7 +100,7 @@ public class AdminUserController {
     @PostMapping("/{userId}/revoke-sessions")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void revokeSessions(@PathVariable UUID userId,
-                               @RequestBody(required = false) ReasonRequest body,
+                               @Valid @RequestBody(required = false) ReasonRequest body,
                                HttpServletRequest request) {
         JwtPrincipal actor = AdminGuard.requireStaff();
         service.revokeSessions(userId, body == null ? null : body.reason(),

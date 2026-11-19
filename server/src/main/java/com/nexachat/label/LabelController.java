@@ -3,6 +3,7 @@ package com.nexachat.label;
 import com.nexachat.common.dto.JwtPrincipal;
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -37,7 +38,7 @@ public class LabelController {
     @PostMapping
     public ResponseEntity<LabelResponse> create(
             @AuthenticationPrincipal JwtPrincipal principal,
-            @RequestBody(required = false) CreateLabelRequest request) {
+            @Valid @RequestBody(required = false) CreateLabelRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(labelService.create(requireUserId(principal), request));
     }
@@ -45,7 +46,7 @@ public class LabelController {
     @PatchMapping("/{labelId}")
     public LabelResponse patch(@AuthenticationPrincipal JwtPrincipal principal,
                                @PathVariable UUID labelId,
-                               @RequestBody(required = false) PatchLabelRequest request) {
+                               @Valid @RequestBody(required = false) PatchLabelRequest request) {
         return labelService.patch(requireUserId(principal), labelId, request);
     }
 

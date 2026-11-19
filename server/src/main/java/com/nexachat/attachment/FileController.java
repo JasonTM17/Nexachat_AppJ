@@ -57,7 +57,8 @@ import java.util.UUID;
  * only the first range of a multi-range request is honoured (RFC 9110 allows
  * a server to ignore the rest). A missing range returns {@code 200} with
  * {@code Accept-Ranges: bytes}; an unsatisfiable or malformed range returns
- * {@code 416} with {@code Content-Range: bytes &#42;/size}.</p>
+ * {@code 416} with {@code Content-Range: bytes &#42;/size} and the standard
+ * error envelope.</p>
  *
  * <p><b>Bounded upstream work:</b> the storage service is asked only for the
  * windows this class needs — a bounded leading sniff, an optional bounded
@@ -154,11 +155,9 @@ public class FileController {
             range = parseRange(rangeHeader, size);
         } catch (IllegalArgumentException ex) {
             // Nothing beyond the bounded sniff was read, and no body handle
-            // was opened: respond 416 without touching the rest of the file.
-            return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
-                    .header(HttpHeaders.ACCEPT_RANGES, BYTES_UNIT)
-                    .header(HttpHeaders.CONTENT_RANGE, "bytes */" + size)
-                    .build();
+            // was opened: reject through the error envelope. The advice keeps
+            // the 416 status and re-emits Content-Range: bytes */size.
+            throw new RangeNotSatisfiableException(size, "Requested range not satisfiable");
         }
         byte[] suffix = sniffSuffix(storageKey, size, prefix.bytes());
         String contentType = contentType(prefix.bytes(), suffix);

@@ -3,6 +3,7 @@ package com.nexachat.common;
 import com.google.i18n.phonenumbers.NumberParseException;
 import com.google.i18n.phonenumbers.PhoneNumberUtil;
 import com.google.i18n.phonenumbers.Phonenumber.PhoneNumber;
+import com.nexachat.common.error.ValidationException;
 
 /**
  * Normalizes phone numbers to E.164 using Google's {@code libphonenumber}.
@@ -49,7 +50,7 @@ public final class PhoneNormalizer {
     public static String toE164(String raw, String defaultRegion) {
         PhoneNumber number = parse(raw, defaultRegion);
         if (!UTIL.isValidNumber(number)) {
-            throw new IllegalArgumentException(
+            throw new ValidationException(
                     "Invalid phone number for region " + defaultRegion + ": " + raw);
         }
         return UTIL.format(number, PhoneNumberUtil.PhoneNumberFormat.E164);
@@ -89,12 +90,12 @@ public final class PhoneNormalizer {
 
     private static PhoneNumber parse(String raw, String region) {
         if (raw == null || raw.isBlank()) {
-            throw new IllegalArgumentException("Phone number must not be null or blank");
+            throw new ValidationException("Phone number must not be null or blank");
         }
         try {
             return UTIL.parse(raw, region);
         } catch (NumberParseException ex) {
-            throw new IllegalArgumentException("Unparseable phone number: " + raw, ex);
+            throw new ValidationException("Unparseable phone number: " + raw, ex);
         }
     }
 }

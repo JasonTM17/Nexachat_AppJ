@@ -1,6 +1,8 @@
 package com.nexachat.admin;
 
+import jakarta.validation.constraints.Size;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -11,6 +13,7 @@ import java.util.UUID;
 
 /** Read-only, filtered view over the append-only admin audit log. */
 @RestController
+@Validated
 @RequestMapping("/api/v1/admin/audit")
 public class AdminAuditController {
 
@@ -23,9 +26,9 @@ public class AdminAuditController {
     @GetMapping
     public AdminAuditService.Page<AdminAuditService.Entry> list(
             @RequestParam(required = false) UUID actorId,
-            @RequestParam(required = false) String action,
-            @RequestParam(required = false) String targetType,
-            @RequestParam(required = false) String targetId,
+            @RequestParam(required = false) @Size(max = 50) String action,
+            @RequestParam(required = false) @Size(max = 50) String targetType,
+            @RequestParam(required = false) @Size(max = 64) String targetId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
             @RequestParam(defaultValue = "0") int page,

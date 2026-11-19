@@ -125,9 +125,10 @@ public class InboxService {
 
     /**
      * Optional keyset pagination. Omitting both parameters preserves the
-     * existing unbounded inbox; a cursor without a limit returns all remaining
-     * entries, while a limit returns at most 100 and supplies a next cursor.
-     * The {@code archived} filter applies to every shape so a client paging the
+     * existing unbounded inbox; any other combination pages. A cursor without
+     * a limit is still bounded — it pages at {@link #MAX_INBOX_PAGE_LIMIT} and
+     * supplies a next cursor, like every other paged endpoint. The
+     * {@code archived} filter applies to every shape so a client paging the
      * archived view cannot fall back to the default view mid-walk.
      */
     @Transactional(readOnly = true)
@@ -143,22 +144,7 @@ public class InboxService {
             return new InboxPage(listInbox(userId, includeArchived, labelId), null);
         }
         Cursor cursor = cursorToken == null ? null : decodeCursor(cursorToken);
-        if (limit == null) {
-            List<InboxConversationRow> rows = labelId == null
-                    ? memberRepository.findInboxConversationsAfterCursor(
-                            userId, cursor == null ? null : cursor.pinned(),
-                            cursor == null ? null : cursor.lastMessageSeq(),
-                            cursor == null ? null : cursor.createdAt(),
-                            cursor == null ? null : cursor.conversationId(), includeArchived)
-                    : memberRepository.findInboxConversationsAfterCursorByLabel(
-                            userId, cursor == null ? null : cursor.pinned(),
-                            cursor == null ? null : cursor.lastMessageSeq(),
-                            cursor == null ? null : cursor.createdAt(),
-                            cursor == null ? null : cursor.conversationId(), includeArchived, labelId);
-            return new InboxPage(toEntries(userId, rows), null);
-        }
-
-        int pageSize = normalizeLimit(limit);
+        int pageSize = limit == null ? MAX_INBOX_PAGE_LIMIT : normalizeLimit(limit);
         List<InboxConversationRow> rows = labelId == null
                 ? memberRepository.findInboxConversationsPage(
                         userId, cursor == null ? null : cursor.pinned(),

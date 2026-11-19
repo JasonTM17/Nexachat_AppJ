@@ -2,15 +2,20 @@ package com.nexachat.call;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.ws.StompUserPrincipal;
 import com.nexachat.ws.dto.WsErrorResponse;
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.convert.ConversionException;
 import org.springframework.messaging.Message;
+import org.springframework.messaging.converter.MessageConversionException;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.handler.annotation.support.MethodArgumentNotValidException;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.stereotype.Controller;
@@ -53,9 +58,31 @@ public class CallController {
     @MessageExceptionHandler(Exception.class)
     @SendToUser(value = "/queue/errors", broadcast = false)
     public WsErrorResponse onUnexpected(Exception exception, Message<?> message) {
-        log.warn("Unexpected error while handling a call signal ({})", exception.getClass().getSimpleName());
-        return new WsErrorResponse("VALIDATION_FAILED", null,
+        // Same classification as WsMessageController: only payload
+        // conversion/validation failures are client errors; anything else is
+        // a server bug and must not masquerade as VALIDATION_FAILED.
+        ApiErrorCode code = isPayloadValidationFailure(exception)
+                ? ApiErrorCode.VALIDATION_FAILED
+                : ApiErrorCode.INTERNAL_ERROR;
+        if (code == ApiErrorCode.VALIDATION_FAILED) {
+            log.warn("Rejected invalid call signal payload");
+        } else {
+            log.error("Unhandled call signal exception ({})", exception.getClass().getSimpleName());
+        }
+        return new WsErrorResponse(code.getCode(), null,
                 extractCallId(message), extractConversationId(message));
+    }
+
+    private static boolean isPayloadValidationFailure(Throwable exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof MessageConversionException
+                    || cause instanceof MethodArgumentNotValidException
+                    || cause instanceof ConstraintViolationException
+                    || cause instanceof ConversionException) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private UUID extractCallId(Message<?> message) {

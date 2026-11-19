@@ -56,8 +56,13 @@ class CallControllerTest {
         assertThat(controller.onCallError(CallException.validation("invalid"), send).code())
                 .isEqualTo("VALIDATION_FAILED");
         assertThat(controller.onCallError(CallException.notFound(), send).code()).isEqualTo("CALL_NOT_FOUND");
+        // A server bug must not masquerade as a client validation error.
         assertThat(controller.onUnexpected(new RuntimeException(), send).code())
-                .isEqualTo("VALIDATION_FAILED");
+                .isEqualTo("INTERNAL_ERROR");
+        // Only payload conversion/validation failures stay VALIDATION_FAILED.
+        assertThat(controller.onUnexpected(
+                new org.springframework.messaging.converter.MessageConversionException("bad frame"), send)
+                .code()).isEqualTo("VALIDATION_FAILED");
     }
 
     @Test

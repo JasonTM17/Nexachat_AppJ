@@ -412,22 +412,19 @@ class FileControllerTest {
     }
 
     @Test
-    void serve_unsatisfiableRanges_return416WithoutBodyRead() {
+    void serve_unsatisfiableRanges_throwRangeNotSatisfiableWithoutBodyRead() {
         byte[] body = "0123456789".getBytes();
         when(storageService.readPrefix("attachments/x.txt", SNIFF_WINDOW))
                 .thenReturn(prefix(body));
 
         for (String bad : new String[] {"bytes=10-", "bytes=99-100", "bytes=-0", "bytes=5-3"}) {
-            ResponseEntity<?> response = fileController.serve(
-                    mappedTo("/api/v1/files/attachments/x.txt", bad),
-                    new JwtPrincipal(userId));
+            RangeNotSatisfiableException ex = catchThrowableOfType(RangeNotSatisfiableException.class,
+                    () -> fileController.serve(
+                            mappedTo("/api/v1/files/attachments/x.txt", bad),
+                            new JwtPrincipal(userId)));
 
-            assertThat(response.getStatusCodeValue())
-                    .as("range %s", bad)
-                    .isEqualTo(416);
-            assertThat(response.getHeaders().getFirst("Content-Range")).isEqualTo("bytes */10");
-            assertThat(response.getHeaders().getFirst("Accept-Ranges")).isEqualTo("bytes");
-            assertThat(response.getBody()).isNull();
+            assertThat(ex.getCode()).as("range %s", bad).isEqualTo(ApiErrorCode.RANGE_NOT_SATISFIABLE);
+            assertThat(ex.getSizeBytes()).as("range %s", bad).isEqualTo(10);
         }
         // 416 is decided from the bounded sniff alone; the body range is never opened.
         verify(storageService, never()).openRange(anyString(), anyLong(), anyLong());
@@ -435,35 +432,35 @@ class FileControllerTest {
     }
 
     @Test
-    void serve_malformedRange_returns416WithoutBodyRead() {
+    void serve_malformedRange_throwsRangeNotSatisfiableWithoutBodyRead() {
         byte[] body = "0123456789".getBytes();
         when(storageService.readPrefix("attachments/x.txt", SNIFF_WINDOW))
                 .thenReturn(prefix(body));
 
         for (String bad : new String[] {"bytes=abc-def", "items=0-1", "bytes=-", "bytes=1"}) {
-            ResponseEntity<?> response = fileController.serve(
-                    mappedTo("/api/v1/files/attachments/x.txt", bad),
-                    new JwtPrincipal(userId));
+            RangeNotSatisfiableException ex = catchThrowableOfType(RangeNotSatisfiableException.class,
+                    () -> fileController.serve(
+                            mappedTo("/api/v1/files/attachments/x.txt", bad),
+                            new JwtPrincipal(userId)));
 
-            assertThat(response.getStatusCodeValue())
-                    .as("range %s", bad)
-                    .isEqualTo(416);
-            assertThat(response.getHeaders().getFirst("Content-Range")).isEqualTo("bytes */10");
+            assertThat(ex.getCode()).as("range %s", bad).isEqualTo(ApiErrorCode.RANGE_NOT_SATISFIABLE);
+            assertThat(ex.getSizeBytes()).as("range %s", bad).isEqualTo(10);
         }
         verify(storageService, never()).openRange(anyString(), anyLong(), anyLong());
     }
 
     @Test
-    void serve_rangeOnEmptyFile_returns416() {
+    void serve_rangeOnEmptyFile_throwsRangeNotSatisfiable() {
         when(storageService.readPrefix("attachments/empty.txt", SNIFF_WINDOW))
                 .thenReturn(new StorageService.PrefixRead(new byte[0], 0));
 
-        ResponseEntity<?> response = fileController.serve(
-                mappedTo("/api/v1/files/attachments/empty.txt", "bytes=0-0"),
-                new JwtPrincipal(userId));
+        RangeNotSatisfiableException ex = catchThrowableOfType(RangeNotSatisfiableException.class,
+                () -> fileController.serve(
+                        mappedTo("/api/v1/files/attachments/empty.txt", "bytes=0-0"),
+                        new JwtPrincipal(userId)));
 
-        assertThat(response.getStatusCodeValue()).isEqualTo(416);
-        assertThat(response.getHeaders().getFirst("Content-Range")).isEqualTo("bytes */0");
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.RANGE_NOT_SATISFIABLE);
+        assertThat(ex.getSizeBytes()).isEqualTo(0);
         verify(storageService, never()).openRange(anyString(), anyLong(), anyLong());
     }
 

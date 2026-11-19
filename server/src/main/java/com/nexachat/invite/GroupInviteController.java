@@ -7,6 +7,7 @@ import com.nexachat.invite.dto.CreateInviteLinkRequest;
 import com.nexachat.invite.dto.InviteLinkResponse;
 import com.nexachat.invite.dto.JoinRequestResponse;
 import com.nexachat.invite.dto.PatchInviteLinkRequest;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -41,7 +42,7 @@ public class GroupInviteController {
     public ResponseEntity<InviteLinkResponse> createOrRotateInviteLink(
             @AuthenticationPrincipal JwtPrincipal principal,
             @PathVariable UUID conversationId,
-            @RequestBody(required = false) CreateInviteLinkRequest request) {
+            @Valid @RequestBody(required = false) CreateInviteLinkRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(inviteService.createOrRotateInviteLink(requireUserId(principal), conversationId, request));
     }
