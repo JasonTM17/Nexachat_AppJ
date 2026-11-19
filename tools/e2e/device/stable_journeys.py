@@ -7115,6 +7115,38 @@ def _status_for_error(error: Exception) -> str:
     return "FAIL_HARNESS_OR_ENVIRONMENT"
 
 
+def _uiautomator_pids(ps_output: str) -> list[str]:
+    """PIDs of `uiautomator` shell processes listed in `ps -A` output."""
+    pids: list[str] = []
+    for line in ps_output.splitlines():
+        fields = line.split()
+        if len(fields) >= 2 and fields[1].isdigit() and "uiautomator" in line:
+            pids.append(fields[1])
+    return pids
+
+
+def _kill_orphan_uiautomators(adb: Adb) -> list[str]:
+    """Kill stale `uiautomator` shell processes left over from earlier rows.
+
+    A dump that was still shutting down holds the UiAutomationService
+    registration; the next `uiautomator dump` then FATALs inside the shell
+    process. Housekeeping must never decide a row's verdict, so every adb
+    failure is swallowed and the killed pids are only reported back.
+    """
+    try:
+        pids = _uiautomator_pids(adb.command("shell", "ps", "-A", timeout=15, check=False))
+    except Exception:
+        return []
+    killed: list[str] = []
+    for pid in pids:
+        try:
+            adb.command("shell", "kill", "-9", pid, timeout=15, check=False)
+            killed.append(pid)
+        except Exception:
+            pass
+    return killed
+
+
 def execute_rows(rows: Iterable[JourneyRow], context: dict[str, Any],
                  runner: Callable[[JourneyRow, dict[str, Any]], dict[str, Any]] | None = None,
                  *, max_attempts: int = ATTEMPTS_PER_ROW) -> list[dict[str, Any]]:
@@ -7142,6 +7174,7 @@ def execute_rows(rows: Iterable[JourneyRow], context: dict[str, Any],
             adb: Adb = context["adb"]
             device = context["device"]
             patch = context["helpers"][2]
+            _kill_orphan_uiautomators(adb)
             try:
                 raw = adb.command("logcat", "-d", "-v", "brief", check=False)
                 baseline = set(raw.splitlines())

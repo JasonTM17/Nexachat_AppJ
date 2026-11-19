@@ -273,6 +273,31 @@ def ensure_apk_installed(apk: Path) -> None:
     check(result.returncode == 0, f"debug APK install failed: {result.stderr.strip()[:240]}")
 
 
+def kill_orphan_uiautomators() -> list[str]:
+    """Kill `uiautomator` shell processes still holding a UiAutomationService.
+
+    A dump that lingers past its adb call keeps the registration; the next
+    dump then FATALs inside the shell process and each dead dump leaves a
+    zombie registration until binder death is swept — so a first crash
+    cascades into every retry. Killing the leftovers forces the release.
+    Housekeeping only: failures are swallowed and killed pids returned.
+    """
+    try:
+        ps = adb("shell", "ps", "-A", check_result=False, timeout=15)
+    except Exception:
+        return []
+    killed: list[str] = []
+    for line in ps.splitlines():
+        fields = line.split()
+        if len(fields) >= 2 and fields[1].isdigit() and "uiautomator" in line:
+            try:
+                adb("shell", "kill", "-9", fields[1], check_result=False, timeout=15)
+                killed.append(fields[1])
+            except Exception:
+                pass
+    return killed
+
+
 def ui_nodes(ui: Device, timeout: float = 60) -> list[Node]:
     deadline = time.monotonic() + timeout
     last_error: Exception | None = None
@@ -281,6 +306,7 @@ def ui_nodes(ui: Device, timeout: float = 60) -> list[Node]:
             return ui.nodes()
         except Exception as error:
             last_error = error
+            kill_orphan_uiautomators()
             time.sleep(1)
     raise RuntimeError(f"could not read emulator-5554 UI hierarchy: {last_error}")
 
@@ -681,6 +707,48 @@ def find_text_node(ui: Device, content: str, timeout: float = 15) -> Node:
     raise ProductDefect(f"message text {content!r} was not visible after reopening the conversation")
 
 
+PROCESS_LINE_RE = re.compile(r"Process:\s*([^,\s]+),\s*PID:\s*(\d+)")
+PID_ONLY_RE = re.compile(r"AndroidRuntime\(\s*\d+\):\s*PID:\s*\d+\s*$")
+APP_STACK_FRAME_RE = re.compile(r"\bat\s+com\.nexachat\.")
+FATAL_TRACE_LINES = 60
+
+
+def fatal_exception_in_app(new_lines: list[str]) -> bool:
+    """True when a FATAL EXCEPTION block is attributable to the app process.
+
+    A crash of the app always reports `Process: com.nexachat.debug, PID:` —
+    the app's process name is bound before its code can crash — so any
+    `Process:` line names the crashed process authoritatively: the app
+    package (or a `:<subprocess>` of it) is a defect, any other name is not.
+    Shell `app_process` commands (uiautomator dumps) have no process name and
+    print a bare `PID: <n>` instead; that shape can never be the app. Without
+    either, `at com.nexachat.` frames still prove the app crashed. Anything
+    else stays fatal: an unattributed FATAL can never be proven foreign, and
+    masking it would hide a real app defect.
+    """
+    for index, line in enumerate(new_lines):
+        if "FATAL EXCEPTION" not in line:
+            continue
+        block = []
+        for entry in new_lines[index + 1:index + 1 + FATAL_TRACE_LINES]:
+            if "FATAL EXCEPTION" in entry:
+                break
+            block.append(entry)
+        process = next((match for entry in block
+                        if (match := PROCESS_LINE_RE.search(entry))), None)
+        if process is not None:
+            name = process.group(1)
+            if name == PACKAGE or name.startswith(PACKAGE + ":"):
+                return True
+            continue
+        if any(APP_STACK_FRAME_RE.search(entry) for entry in block):
+            return True
+        if any(PID_ONLY_RE.search(entry) for entry in block):
+            continue
+        return True
+    return False
+
+
 def filtered_logcat(baseline: set[str]) -> tuple[list[str], bool]:
     result = run(["adb", "-s", SERIAL, "logcat", "-d", "-v", "brief"],
                  check_result=False, timeout=40)
@@ -705,7 +773,8 @@ def filtered_logcat(baseline: set[str]) -> tuple[list[str], bool]:
         line = JWT_RE.sub("[REDACTED_JWT]", line)
         line = JSON_TOKEN_RE.sub(r"\1[REDACTED]\2", line)
         redacted.append(line)
-    defect = any("FATAL EXCEPTION" in line or "ANR in" in line for line in new_lines)
+    defect = any("ANR in" in line for line in new_lines) \
+        or fatal_exception_in_app(new_lines)
     return redacted, defect
 
 

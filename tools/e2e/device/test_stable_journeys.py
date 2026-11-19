@@ -13,6 +13,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import stable_journeys as journeys
+import patch_window
 
 
 class SerialAndProductionGuardsTest(unittest.TestCase):
@@ -5202,6 +5203,202 @@ class OfflineSyncExecutorTest(unittest.TestCase):
                 journeys.ROW_BY_ID["offline-sync"], {"serial": "emulator-5554"})
         self.assertEqual(result, {"summary": "ok"})
         sentinel.assert_called_once()
+
+
+class ScopedFatalDetectionTest(unittest.TestCase):
+    """`logcat -d -v brief` excerpts for the FATAL-scoping decision.
+
+    The app block is the standard AndroidRuntime report; the shell block is
+    the DumpCommand crash a slow `uiautomator dump` leaves behind when a
+    previous dump still holds the UiAutomationService registration.
+    """
+
+    APP_FATAL = """\
+E/AndroidRuntime( 5123): FATAL EXCEPTION: main
+E/AndroidRuntime( 5123): Process: com.nexachat.debug, PID: 5123
+E/AndroidRuntime( 5123): java.lang.IllegalStateException: seeded crash
+E/AndroidRuntime( 5123): \tat com.nexachat.feature.inbox.InboxFragment.onStart(InboxFragment.java:88)
+E/AndroidRuntime( 5123): \tat android.app.Fragment.performStart(Fragment.java:2637)
+E/AndroidRuntime( 5123): \tat android.os.Handler.handleCallback(Handler.java:938)
+D/NexaChat( 5123): sync finished
+"""
+
+    # Real capture from emulator-5554 (API 36): shell app_process crashes
+    # print a bare `PID: <n>` — only named app processes print `Process:`.
+    SHELL_FATAL = """\
+E/AndroidRuntime( 8871): FATAL EXCEPTION: main
+E/AndroidRuntime( 8871): PID: 8871
+E/AndroidRuntime( 8871): java.lang.IllegalStateException: UiAutomationService android.accessibilityservice.IAccessibilityServiceClient$Stub$Proxy@9f3ab12 already registered!
+E/AndroidRuntime( 8871): \tat android.os.Parcel.createExceptionOrNull(Parcel.java:3381)
+E/AndroidRuntime( 8871): \tat android.app.UiAutomation.connect(UiAutomation.java:335)
+E/AndroidRuntime( 8871): \tat com.android.uiautomator.core.UiAutomationShellWrapper.connect(UiAutomationShellWrapper.java:36)
+"""
+
+    OTHER_PROCESS_FATAL = """\
+E/AndroidRuntime( 6102): FATAL EXCEPTION: main
+E/AndroidRuntime( 6102): Process: com.android.systemui, PID: 6102
+E/AndroidRuntime( 6102): java.lang.RuntimeException: fixture
+"""
+
+    UNATTRIBUTED_FATAL = """\
+E/AndroidRuntime( 9902): FATAL EXCEPTION: main
+E/AndroidRuntime( 9902): java.lang.IllegalStateException: truncated dump
+"""
+
+    class _Completed:
+        def __init__(self, stdout):
+            self.stdout = stdout
+            self.returncode = 0
+
+    def _filtered_logcat(self, logcat):
+        def fake_run(command, **kwargs):
+            return self._Completed(logcat)
+
+        with mock.patch.object(patch_window, "run", fake_run):
+            return patch_window.filtered_logcat(set())
+
+    def test_app_process_fatal_is_a_product_defect(self):
+        lines = self.APP_FATAL.splitlines()
+        self.assertTrue(patch_window.fatal_exception_in_app(lines))
+
+    def test_uiautomator_shell_fatal_is_not_a_product_defect(self):
+        self.assertFalse(patch_window.fatal_exception_in_app(self.SHELL_FATAL.splitlines()))
+
+    def test_named_foreign_process_fatal_is_not_a_product_defect(self):
+        self.assertFalse(patch_window.fatal_exception_in_app(
+            self.OTHER_PROCESS_FATAL.splitlines()))
+
+    def test_unattributable_fatal_fails_safe_to_defect(self):
+        # A FATAL the filter cannot prove is foreign may still be the app
+        # after a crash/restart raced `pidof`; masking it would silently
+        # drop evidence of a real app crash.
+        self.assertTrue(patch_window.fatal_exception_in_app(
+            self.UNATTRIBUTED_FATAL.splitlines()))
+
+    def test_app_stack_frames_flag_a_fatal_missing_its_process_line(self):
+        lines = [
+            "E/AndroidRuntime( 9902): FATAL EXCEPTION: main",
+            "E/AndroidRuntime( 9902): java.lang.IllegalStateException: boom",
+            "E/AndroidRuntime( 9902): \tat com.nexachat.core.sync.SyncWorker.run(SyncWorker.java:41)",
+        ]
+        self.assertTrue(patch_window.fatal_exception_in_app(lines))
+
+    def test_app_subprocess_fatal_is_a_product_defect(self):
+        lines = [
+            "E/AndroidRuntime( 5123): FATAL EXCEPTION: main",
+            "E/AndroidRuntime( 5123): Process: com.nexachat.debug:work, PID: 5123",
+            "E/AndroidRuntime( 5123): java.lang.IllegalStateException: boom",
+        ]
+        self.assertTrue(patch_window.fatal_exception_in_app(lines))
+
+    def test_filtered_logcat_scopes_the_defect_flag(self):
+        lines, defect = self._filtered_logcat(self.SHELL_FATAL)
+        self.assertFalse(defect)
+        # The shell crash stays in the evidence excerpt; it just cannot
+        # flip the verdict.
+        self.assertTrue(any("FATAL EXCEPTION" in line for line in lines))
+
+    def test_filtered_logcat_still_flags_an_app_fatal(self):
+        lines, defect = self._filtered_logcat(self.APP_FATAL)
+        self.assertTrue(defect)
+
+
+class FatalVerdictAndOrphanDumpTest(unittest.TestCase):
+    PS_WITH_ORPHAN = """\
+USER           PID   PPID     VSZ    RSS WCHAN            ADDR S NAME
+root             1      0  100000    900 0                   0 S init
+shell         8871    320 2200000  40000 0                   0 S com.android.commands.uiautomator.DumpCommand
+u0_a123       5123    320 3300000  90000 0                   0 S com.nexachat.debug
+"""
+
+    class FakeAdb:
+        def __init__(self, ps_output=""):
+            self.calls = []
+            self.ps_output = ps_output
+
+        def command(self, *args, **kwargs):
+            self.calls.append(args)
+            if args[:3] == ("shell", "ps", "-A"):
+                return self.ps_output
+            return ""
+
+    class FakeDevice:
+        def screenshot(self, path):
+            Path(path).write_bytes(b"evidence")
+
+    def _context(self, root, ps_output="", fatal=False):
+        class Patch:
+            @staticmethod
+            def ui_nodes(device, timeout=8):
+                return []
+
+            @staticmethod
+            def filtered_logcat(baseline):
+                return [], fatal
+
+        return {
+            "evidence_root": Path(root),
+            "adb": self.FakeAdb(ps_output),
+            "device": self.FakeDevice(),
+            "helpers": (None, None, Patch()),
+            "client": ResultClassificationTest.FakeClient(),
+            "stomp_events": [],
+            "frame_reader": None,
+        }
+
+    @staticmethod
+    def _ok(row, context):
+        return {"summary": "ok"}
+
+    def test_uiautomator_pids_parses_ps_output(self):
+        self.assertEqual(journeys._uiautomator_pids(self.PS_WITH_ORPHAN), ["8871"])
+        self.assertEqual(journeys._uiautomator_pids(""), [])
+        self.assertEqual(journeys._uiautomator_pids(
+            "u0_a123 5123 320 3300000 90000 0 0 S com.nexachat.debug\n"), [])
+
+    def test_orphaned_uiautomator_dump_is_killed_before_the_row(self):
+        with tempfile.TemporaryDirectory() as directory:
+            context = self._context(Path(directory) / "evidence",
+                                    ps_output=self.PS_WITH_ORPHAN)
+            results = journeys.execute_rows(
+                [journeys.ROW_BY_ID["auth-login"]], context, self._ok)
+            self.assertEqual(results[0]["status"], "PASS")
+            calls = context["adb"].calls
+            kills = [call for call in calls if call[:3] == ("shell", "kill", "-9")]
+            self.assertEqual(kills, [("shell", "kill", "-9", "8871")])
+            ps_index = calls.index(("shell", "ps", "-A"))
+            logcat_index = calls.index(("logcat", "-d", "-v", "brief"))
+            self.assertLess(ps_index, logcat_index)
+
+    def test_kill_orphan_uiautomators_kills_only_uiautomator_pids(self):
+        calls = []
+
+        def fake_adb(*args, **kwargs):
+            calls.append(args)
+            if args[:3] == ("shell", "ps", "-A"):
+                return self.PS_WITH_ORPHAN
+            return ""
+
+        with mock.patch.object(patch_window, "adb", fake_adb):
+            killed = patch_window.kill_orphan_uiautomators()
+        self.assertEqual(killed, ["8871"])
+        self.assertEqual(
+            [call for call in calls if call[:3] == ("shell", "kill", "-9")],
+            [("shell", "kill", "-9", "8871")])
+
+    def test_scoped_shell_crash_leaves_the_row_verdict_alone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            context = self._context(Path(directory) / "evidence", fatal=False)
+            results = journeys.execute_rows(
+                [journeys.ROW_BY_ID["auth-login"]], context, self._ok)
+            self.assertEqual(results[0]["status"], "PASS")
+
+    def test_app_fatal_still_flips_the_row_to_fail_product(self):
+        with tempfile.TemporaryDirectory() as directory:
+            context = self._context(Path(directory) / "evidence", fatal=True)
+            results = journeys.execute_rows(
+                [journeys.ROW_BY_ID["auth-login"]], context, self._ok)
+            self.assertEqual(results[0]["status"], "FAIL_PRODUCT")
 
 
 if __name__ == "__main__":
