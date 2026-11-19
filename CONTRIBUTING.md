@@ -105,6 +105,9 @@ tools/                                    release signing, link checks, E2E and 
   `fix`, `docs`, `chore`, `ci`, optionally with a scope — e.g.
   `feat(server/auth): …`, `fix(app/chat): …`.
 - One concern per commit; keep the diff reviewable.
+- Applied Flyway migrations are immutable: never edit a `V*.sql` file that has
+  been merged. Ship schema changes as a new forward migration — `repo-hygiene`
+  enforces this in CI (`tools/checks/check-migrations-immutable.py`).
 - Commit authorship is the repository owner only: do **not** add
   `Co-authored-by`, `Generated with`, or any AI-tool attribution trailers.
   Tool/bot co-author lines make the bot appear in GitHub Contributors and
