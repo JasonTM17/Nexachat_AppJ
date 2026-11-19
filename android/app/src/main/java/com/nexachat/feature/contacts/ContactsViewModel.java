@@ -37,6 +37,7 @@ public final class ContactsViewModel extends ViewModel {
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final MutableLiveData<UiState> mutableUiState;
     private final OneShotLiveData<Event> events = new OneShotLiveData<>();
+    private long searchGeneration;
     private UiState currentState;
     private List<Contact> currentContacts = Collections.emptyList();
 
@@ -97,6 +98,7 @@ public final class ContactsViewModel extends ViewModel {
     public void onQueryChange(String value) {
         Objects.requireNonNull(value, "value");
         savedStateHandle.set(KEY_SEARCH_QUERY, value);
+        searchGeneration++;
         updateState(state -> state
                 .withQuery(value)
                 .withError(null)
@@ -134,17 +136,23 @@ public final class ContactsViewModel extends ViewModel {
         } else {
             request = contactsRepository.searchByName(query);
         }
+        long generation = ++searchGeneration;
         disposables.add(request.subscribeOn(Schedulers.io())
                 .subscribe(
-                        result -> updateState(current -> result instanceof Result.Success<?> success
-                                ? current.withLoading(false)
-                                        .withSearchResults((List<UserDto>) success.getValue())
-                                : current.withLoading(false)
-                                        .withError(((Result.Failure<?>) result).getError())
-                                        .withSearchResults(Collections.emptyList())),
-                        error -> updateState(current -> current.withLoading(false)
-                                .withError(new ApiError.Network(error.getMessage()))
-                                .withSearchResults(Collections.emptyList()))));
+                        result -> updateState(current -> {
+                            UiState base = current.withLoading(false);
+                            if (generation != searchGeneration) return base;
+                            return result instanceof Result.Success<?> success
+                                    ? base.withSearchResults((List<UserDto>) success.getValue())
+                                    : base.withError(((Result.Failure<?>) result).getError())
+                                            .withSearchResults(Collections.emptyList());
+                        }),
+                        error -> updateState(current -> {
+                            UiState base = current.withLoading(false);
+                            if (generation != searchGeneration) return base;
+                            return base.withError(new ApiError.Network(error.getMessage()))
+                                    .withSearchResults(Collections.emptyList());
+                        })));
     }
 
     public void onAddPhoneChange(String value) {
