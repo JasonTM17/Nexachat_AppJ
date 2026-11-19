@@ -85,14 +85,15 @@ public final class MessageListMapper {
         if (chronological.isEmpty()) {
             return Collections.emptyList();
         }
+        // One calendar-day probe per adjacent pair: the loop below previously
+        // re-derived the same boundary up to three times (separator check plus
+        // both neighbour probes inside grouping), which pegged the main thread
+        // on large histories.
+        boolean[] dateBoundaries = MessageGroupingRules.dateSeparatorBoundaries(chronological);
         List<MessageListItem> rows = new ArrayList<>();
         for (int index = 0; index < chronological.size(); index++) {
             ChatMessage message = chronological.get(index);
-            ChatMessage previous = index > 0 ? chronological.get(index - 1) : null;
-            if (ChatUiRules.shouldShowDateSeparator(
-                    previous != null ? previous.getCreatedAtEpochMs() : null,
-                    message.getCreatedAtEpochMs()
-            )) {
+            if (dateBoundaries[index]) {
                 String label = ChatUiRules.resolveDateSeparatorLabel(
                         message.getCreatedAtEpochMs(),
                         nowEpochMs,
@@ -104,7 +105,8 @@ public final class MessageListMapper {
                 rows.add(MessageListItem.unreadDivider(unreadDividerCount));
             }
 
-            MessageGroupPosition groupPosition = MessageGroupingRules.resolveGroupPosition(chronological, index);
+            MessageGroupPosition groupPosition =
+                    MessageGroupingRules.resolveGroupPosition(chronological, index, dateBoundaries);
             boolean showSender = isGroup
                     && !message.getMine()
                     && !MessageViewTypeMapper.isSystemMessage(message)
