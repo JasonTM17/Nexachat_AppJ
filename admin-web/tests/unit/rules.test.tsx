@@ -85,18 +85,26 @@ describe('RulesPage', () => {
     expect(await screen.findByText('Nothing here')).toBeInTheDocument();
   });
 
-  it('disables a rule and reloads', async () => {
+  it('disables a rule after confirmation and reloads', async () => {
     const user = userEvent.setup();
     stubRoutes();
     renderPage();
 
-    apiMock.mockResolvedValueOnce(undefined);
     await user.click(await screen.findByRole('checkbox', { name: 'Enabled phish-en' }));
+    const dialog = await screen.findByRole('alertdialog', {
+      name: 'phish-en — Enabled: off',
+    });
+
+    apiMock.mockResolvedValueOnce(undefined);
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
     await waitFor(() =>
-      expect(apiMock).toHaveBeenCalledWith('/api/v1/admin/rules/r1', {
-        method: 'PATCH',
-        body: { enabled: false },
-      }),
+      expect(apiMock).toHaveBeenCalledWith(
+        '/api/v1/admin/rules/r1',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: expect.objectContaining({ enabled: false }),
+        }),
+      ),
     );
     // reload after the PATCH
     await waitFor(() =>
@@ -104,18 +112,26 @@ describe('RulesPage', () => {
     );
   });
 
-  it('changes severity inline', async () => {
+  it('changes severity after confirmation', async () => {
     const user = userEvent.setup();
     stubRoutes();
     renderPage();
 
-    apiMock.mockResolvedValueOnce(undefined);
     await user.selectOptions(await screen.findByLabelText('Severity phish-en'), 'CRITICAL');
+    const dialog = await screen.findByRole('alertdialog', {
+      name: 'phish-en — Severity: CRITICAL',
+    });
+
+    apiMock.mockResolvedValueOnce(undefined);
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
     await waitFor(() =>
-      expect(apiMock).toHaveBeenCalledWith('/api/v1/admin/rules/r1', {
-        method: 'PATCH',
-        body: { severity: 'CRITICAL' },
-      }),
+      expect(apiMock).toHaveBeenCalledWith(
+        '/api/v1/admin/rules/r1',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: expect.objectContaining({ severity: 'CRITICAL' }),
+        }),
+      ),
     );
   });
 

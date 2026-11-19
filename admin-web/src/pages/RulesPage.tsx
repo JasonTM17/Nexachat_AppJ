@@ -49,6 +49,13 @@ export default function RulesPage() {
   const [testResult, setTestResult] = useState<{ matched: boolean; matches: TestHit[] } | null>(
     null,
   );
+  const [testError, setTestError] = useState(false);
+  const [pendingPatch, setPendingPatch] = useState<{
+    rule: AlertRule;
+    body: { enabled?: boolean; severity?: string };
+    title: string;
+  } | null>(null);
+  const [patchBusy, setPatchBusy] = useState(false);
 
   const load = useCallback(() => {
     setFailed(false);
@@ -61,22 +68,41 @@ export default function RulesPage() {
     load();
   }, [load]);
 
-  const toggle = (rule: AlertRule) => {
-    api(`/api/v1/admin/rules/${rule.id}`, {
-      method: 'PATCH',
-      body: { enabled: !rule.enabled },
-    })
-      .then(load)
-      .catch(() => setActionError(true));
+  // Rule mutations change safety-alert routing, so they go through the same
+  // confirm-with-reason dialog as every other admin action.
+  const applyPatch = async (reason: string) => {
+    if (!pendingPatch) return;
+    setPatchBusy(true);
+    setActionError(false);
+    try {
+      await api(`/api/v1/admin/rules/${pendingPatch.rule.id}`, {
+        method: 'PATCH',
+        body: { ...pendingPatch.body, reason: reason || undefined },
+      });
+      setPendingPatch(null);
+      load();
+    } catch {
+      setActionError(true);
+      setPendingPatch(null);
+    } finally {
+      setPatchBusy(false);
+    }
   };
 
+  const toggle = (rule: AlertRule) =>
+    setPendingPatch({
+      rule,
+      body: { enabled: !rule.enabled },
+      title: `${rule.name} — ${t('rules.col.enabled')}: ${rule.enabled ? 'off' : 'on'}`,
+    });
+
   const changeSeverity = (rule: AlertRule, severity: string) => {
-    api(`/api/v1/admin/rules/${rule.id}`, {
-      method: 'PATCH',
+    if (severity === rule.severity) return;
+    setPendingPatch({
+      rule,
       body: { severity },
-    })
-      .then(load)
-      .catch(() => setActionError(true));
+      title: `${rule.name} — ${t('rules.col.severity')}: ${severity}`,
+    });
   };
 
   const create = async () => {
@@ -114,6 +140,7 @@ export default function RulesPage() {
 
   const runTest = () => {
     setTestResult(null);
+    setTestError(false);
     api<{ matched: boolean; matches: TestHit[] }>('/api/v1/admin/rules/test', {
       method: 'POST',
       body: {
@@ -123,7 +150,7 @@ export default function RulesPage() {
       },
     })
       .then(setTestResult)
-      .catch(() => setTestResult({ matched: false, matches: [] }));
+      .catch(() => setTestError(true));
   };
 
   if (failed) return <ErrorBlock onRetry={load} />;
@@ -216,7 +243,10 @@ export default function RulesPage() {
             <button
               className="btn primary"
               onClick={() => void create()}
-              disabled={!form.name.trim()}
+              disabled={
+                !form.name.trim() ||
+                (form.patternType !== 'CARD' && !form.pattern.trim())
+              }
             >
               {t('common.save')}
             </button>
@@ -328,9 +358,18 @@ export default function RulesPage() {
             onChange={(e) => setTestSample(e.target.value)}
           />
         </div>
-        <button className="btn" onClick={runTest} disabled={!testSample}>
+        <button
+          className="btn"
+          onClick={runTest}
+          disabled={!testSample.trim() || (testType !== 'CARD' && !testPattern.trim())}
+        >
           {t('rules.test.run')}
         </button>
+        {testError && (
+          <div className="form-error" role="alert" style={{ marginTop: 12 }}>
+            {t('common.error')}
+          </div>
+        )}
         {testResult && (
           <div style={{ marginTop: 12 }}>
             <Chip tone={testResult.matched ? 'high' : 'success'}>
@@ -355,6 +394,16 @@ export default function RulesPage() {
           confirmDanger
           onConfirm={() => remove()}
           onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+
+      {pendingPatch && (
+        <ConfirmDialog
+          title={pendingPatch.title}
+          requireReason={false}
+          busy={patchBusy}
+          onConfirm={(reason) => void applyPatch(reason)}
+          onCancel={() => setPendingPatch(null)}
         />
       )}
     </>

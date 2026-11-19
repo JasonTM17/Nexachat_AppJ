@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useI18n } from '../i18n';
+import { timeLocale } from '../lib/locale';
 
 export function Loading() {
   const { t } = useI18n();
@@ -85,7 +86,10 @@ function useEscapeToClose(open: boolean, close: () => void) {
       const top = modalStack[modalStack.length - 1];
       if (top !== layer) return;
       e.stopPropagation();
-      modalStack.pop();
+      // Do NOT pop before close(): if close() is a guarded no-op (e.g. busy
+      // dialog), the layer must stay on top or the next Escape reaches the
+      // layer underneath while this one is still rendered. The unmount
+      // cleanup below removes the layer once close() actually fires.
       layer.close();
     };
     document.addEventListener('keydown', onKey);
@@ -95,6 +99,42 @@ function useEscapeToClose(open: boolean, close: () => void) {
       if (i !== -1) modalStack.splice(i, 1);
     };
   }, [open]);
+}
+
+const FOCUSABLE =
+  'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])';
+
+// Keep Tab cycling inside the layer and hand focus back to whatever opened it.
+function useModalFocus(ref: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const items = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (n) => n.offsetParent !== null,
+      );
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!el.contains(document.activeElement)) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      previous?.focus?.();
+    };
+  }, [ref]);
 }
 
 export function Drawer({
@@ -111,6 +151,7 @@ export function Drawer({
   const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   useEscapeToClose(true, onClose);
+  useModalFocus(ref);
   useEffect(() => {
     ref.current?.focus();
   }, []);
@@ -149,6 +190,7 @@ export function ConfirmDialog({
   onCancel,
   confirmDanger,
   maxReasonLength,
+  busy,
   children,
 }: {
   title: string;
@@ -157,12 +199,17 @@ export function ConfirmDialog({
   onConfirm: (reason: string) => void;
   onCancel: () => void;
   confirmDanger?: boolean;
+  busy?: boolean;
   children?: ReactNode;
 }) {
   const { t } = useI18n();
   const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const [reasonError, setReasonError] = useState(false);
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
   const submit = () => {
+    if (busyRef.current) return;
     const reason = reasonRef.current?.value.trim() ?? '';
     if (requireReason && !reason) {
       setReasonError(true);
@@ -174,10 +221,20 @@ export function ConfirmDialog({
   useEffect(() => {
     reasonRef.current?.focus();
   }, []);
-  useEscapeToClose(true, onCancel);
+  useModalFocus(dialogRef);
+  useEscapeToClose(true, () => {
+    if (!busyRef.current) onCancel();
+  });
   return (
     <div className="dialog-backdrop">
-      <div className="dialog" role="alertdialog" aria-modal="true" aria-label={title}>
+      <div
+        className="dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-label={title}
+        aria-busy={busy || undefined}
+        ref={dialogRef}
+      >
         <h3>{title}</h3>
         {children}
         {requireReason !== false && (
@@ -191,6 +248,7 @@ export function ConfirmDialog({
               maxLength={maxReasonLength}
               autoFocus
               required
+              disabled={busy}
               aria-invalid={reasonError || undefined}
               aria-describedby={reasonError ? 'confirm-reason-error' : undefined}
               onInput={() => reasonError && setReasonError(false)}
@@ -203,12 +261,13 @@ export function ConfirmDialog({
           </div>
         )}
         <div className="dialog-actions">
-          <button className="btn ghost" onClick={onCancel}>
+          <button className="btn ghost" onClick={onCancel} disabled={busy}>
             {t('common.cancel')}
           </button>
           <button
             className={`btn ${confirmDanger ? 'danger' : 'primary'}`}
             onClick={submit}
+            disabled={busy}
           >
             {t('common.confirm')}
           </button>
@@ -256,7 +315,7 @@ export function fmtTime(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return String(iso);
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString(timeLocale(), {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
