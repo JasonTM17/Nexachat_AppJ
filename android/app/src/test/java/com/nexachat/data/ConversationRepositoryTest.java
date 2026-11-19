@@ -277,6 +277,9 @@ public final class ConversationRepositoryTest {
         dao().upsertAll(List.of(conversation("conv-a", 20), conversation("conv-removed", 2)))
                 .blockingAwait();
         stubInbox(List.of(inboxDto("conv-a", 20)));
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(
+                        new SyncResponse(List.of(), "2026-11-08T10:00:00Z"))));
 
         repository.refreshInbox().blockingGet();
 
@@ -289,6 +292,9 @@ public final class ConversationRepositoryTest {
         dao().upsertAll(List.of(conversation("conv-a", 20), conversation("conv-removed", 25)))
                 .blockingAwait();
         stubInbox(List.of(inboxDto("conv-a", 20)));
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(
+                        new SyncResponse(List.of(), "2026-11-08T10:00:00Z"))));
 
         repository.refreshInbox().blockingGet();
 
@@ -340,6 +346,9 @@ public final class ConversationRepositoryTest {
         buildRepository();
         dao().upsertAll(List.of(conversation("conv-a"), conversation("conv-b"))).blockingAwait();
         stubInbox(Collections.emptyList());
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(
+                        new SyncResponse(List.of(), "2026-11-08T10:00:00Z"))));
 
         repository.refreshInbox().blockingGet();
 
@@ -423,6 +432,9 @@ public final class ConversationRepositoryTest {
         repository.refreshInbox().blockingGet();
 
         assertEquals(java.util.Set.of("conv-old", "conv-new"), dao().rows.keySet());
+        // A locally created row is not even a suspect, so the delta endpoint
+        // is never asked about it.
+        verify(messageApi, never()).syncDeltas(any());
     }
 
     @Test
@@ -436,6 +448,9 @@ public final class ConversationRepositoryTest {
         repository.refreshInbox().blockingGet();
         dao().upsert(conversation("conv-new", 2)).blockingAwait();
         stubInbox(List.of(inboxDto("conv-old", 20)));
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(
+                        new SyncResponse(List.of(), "2026-11-08T10:00:00Z"))));
         repository.refreshInbox().blockingGet();
 
         assertEquals(java.util.Set.of("conv-old"), dao().rows.keySet());
@@ -509,6 +524,9 @@ public final class ConversationRepositoryTest {
     public void zeroOneAndExactlyPageSizeInboxesAreHandledWithoutExtraRequests() throws Exception {
         buildRepository();
         dao().upsert(conversation("stale", 1)).blockingAwait();
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(
+                        new SyncResponse(List.of(), "2026-11-08T10:00:00Z"))));
 
         stubInboxPage(null, null, "[]");
         Result<Boolean> empty = repository.refreshInboxPage().blockingGet();
@@ -1285,6 +1303,9 @@ public final class ConversationRepositoryTest {
                 withPreferences(conversation("conv-arch"), false, null, true, false)))
                 .blockingAwait();
         stubInbox(List.of());
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(
+                        new SyncResponse(List.of(), "2026-11-08T10:00:00Z"))));
 
         repository.refreshInboxPage(false).blockingGet();
 
@@ -1534,15 +1555,17 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
-    public void singlePagePruneOfAnArchivedRowDoesNotAnnounceARemoval() throws Exception {
+    public void singlePageOmissionKeepsARowTheDeltaEndpointStillLists() throws Exception {
         buildRepository();
         dao().upsertAll(List.of(
                 conversation("conv-a", 20), conversation("conv-arch", 25))).blockingAwait();
         TestSubscriber<ConversationRepository.SelfRemovalNotice> notices =
                 repository.selfRemovals().test();
-        // The authoritative page omits conv-arch, so the local row converges —
-        // but the delta endpoint still lists it because an archive keeps the
-        // caller's membership. No removal, no notice.
+        // The stale page omits conv-arch — e.g. the request was evaluated while
+        // the conversation sat in the archived variant and a local undo landed
+        // before the reconcile ran — but the delta endpoint still lists it
+        // because an archive keeps the caller's membership. A page omission
+        // alone must never delete a row: it survives, no removal, no notice.
         stubInbox(List.of(inboxDto("conv-a", 20)));
         SyncResponse deltaResponse = new SyncResponse(List.of(
                 new SyncResponse.ConversationDeltaDto(
@@ -1553,8 +1576,34 @@ public final class ConversationRepositoryTest {
 
         repository.refreshInbox().blockingGet();
 
-        assertEquals(java.util.Set.of("conv-a"), dao().rows.keySet());
+        assertEquals(java.util.Set.of("conv-a", "conv-arch"), dao().rows.keySet());
         notices.assertNoValues();
+    }
+
+    @Test
+    public void singlePagePruneDeletesOnlyAfterDeltaConfirmedMembershipLoss() throws Exception {
+        buildRepository();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 20), conversation("conv-gone", 25))).blockingAwait();
+        stubInbox(List.of(inboxDto("conv-a", 20)));
+        // While the delta endpoint still lists the omitted row it survives;
+        // the identical page deletes it once the server confirms the loss.
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(new SyncResponse(List.of(
+                        new SyncResponse.ConversationDeltaDto("conv-gone",
+                                List.of(), List.of(), List.of(), List.of(), 25L, false)),
+                        "2026-11-08T10:00:00Z"))));
+
+        repository.refreshInbox().blockingGet();
+        assertTrue(dao().rows.containsKey("conv-gone"));
+
+        stubInbox(List.of(inboxDto("conv-a", 20)));
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(
+                        new SyncResponse(List.of(), "2026-11-08T10:00:00Z"))));
+        repository.refreshInbox().blockingGet();
+
+        assertEquals(java.util.Set.of("conv-a"), dao().rows.keySet());
     }
 
     @Test
@@ -1769,17 +1818,26 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
-    public void singlePagePruneOfOnlyDirectRowsSkipsTheDeltaConfirmation() throws Exception {
+    public void singlePagePruneOfDirectRowsConfirmsViaTheDeltaEndpoint() throws Exception {
         buildRepository();
         dao().upsertAll(List.of(
                 conversation("conv-a", 20), directConversation("conv-direct", 25)))
                 .blockingAwait();
         stubInbox(List.of(inboxDto("conv-a", 20)));
+        when(messageApi.syncDeltas(any(SyncRequest.class)))
+                .thenReturn(asCall(Response.success(
+                        new SyncResponse(List.of(), "2026-11-08T10:00:00Z"))));
 
         repository.refreshInbox().blockingGet();
 
         assertFalse(dao().rows.containsKey("conv-direct"));
-        verify(messageApi, never()).syncDeltas(any());
+        ArgumentCaptor<SyncRequest> captor = ArgumentCaptor.forClass(SyncRequest.class);
+        verify(messageApi).syncDeltas(captor.capture());
+        List<String> confirmed = new ArrayList<>();
+        for (SyncRequest.Watermark watermark : captor.getValue().getWatermarks()) {
+            confirmed.add(watermark.getConversationId());
+        }
+        assertEquals(List.of("conv-direct"), confirmed);
     }
 
     @Test
