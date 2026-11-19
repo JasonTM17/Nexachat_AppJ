@@ -2,9 +2,9 @@
 """Guarded coordinator for the phase 08 stable-journey campaign.
 
 Runnable rows are seeded login, send/receive, chat-interactions, summary-ask,
-and the two injected-push journeys. Every other matrix row stays
-BLOCKED_CAPABILITY with the gap that still prevents that row from producing
-its evidence.
+archive/preferences, groups-contacts, and the two injected-push journeys.
+Every other matrix row stays BLOCKED_CAPABILITY with the gap that still
+prevents that row from producing its evidence.
 """
 
 from __future__ import annotations
@@ -213,17 +213,47 @@ ROWS: tuple[JourneyRow, ...] = (
     ),
     JourneyRow(
         id="groups-contacts",
-        title="Groups, board, invites and contacts",
+        title="Groups, invites and contacts",
         matrix_refs=("phase-08:Groups", "c1-5:Groups", "c1-5:Invites", "c1-5:Contacts"),
-        preconditions=("Integrated RC and disposable A/B/C fixtures are available"),
-        steps=("Create/rename/add/remove/leave group", "Exercise contacts and invite preview/join/approval", "Verify member and non-member state"),
-        assertions=("REST membership agrees with UI", "Removed user is denied", "Invite destination and approval state are correct"),
-        captures=("group/member/invite screenshots", "redacted REST/STOMP transcripts", "logcat.txt", "summary.json"),
-        cleanup=("Remove only groups, links, contacts and accounts created by the row"),
-        rest_plan=(("POST", "/api/v1/conversations/group"), ("POST", "/api/v1/conversations/{id}/members"),
-                   ("POST", "/api/v1/conversations/{id}/invite-link"), ("GET", "/api/v1/contacts")),
-        capability_gap=("The available device helpers do not drive the group/member picker, approval queue or "
-                        "invite return path. A REST-only membership result cannot pass the UI journey."),
+        preconditions=("An is signed in on the device",
+                       "Seeded contacts Binh/Chi/Dung are on An's contact list "
+                       "(mutual seed contacts)"),
+        steps=("Browse the contacts list and enter group creation from the contacts surface",
+               "Create a unique group through the UI picker (An + Binh), then open its chat",
+               "Rename via the group-detail title dialog; add Chi and remove Chi through "
+               "the member list; assert REST members after every mutation",
+               "Create an approval-required invite link on the invite screen; Dung previews "
+               "and requests over REST; approve the queued request on-device",
+               "Open the invite deep link on the device (already-member -> open group chat), "
+               "revoke the link through the UI, then remove the remaining members and "
+               "leave the group as the last member"),
+        assertions=("The contacts list agrees with GET /contacts and every group mutation "
+                    "is mirrored by the UI member list and An's inbox entry members",
+                    "Removed Chi loses the inbox entry, message access and link rejoin "
+                    "(banned); Dung's request moves PENDING -> APPROVED through the UI "
+                    "queue and he joins",
+                    "The nexachat://join/{token} deep link resolves to the group, the "
+                    "member path offers Open group chat, and after the last member "
+                    "leaves the row is denied for every participant"),
+        captures=("contacts.png", "group-create.png", "group-detail.png",
+                  "member-added.png", "member-removed.png", "invite-link.png",
+                  "invite-approve.png", "invite-return.png", "group-left.png",
+                  "ui-tree.txt", "logcat.txt", "rest-transcript.json", "summary.json"),
+        cleanup=("Revoke the row's invite link if one is still active",
+                 "Remove remaining row-group members, then An leaves so the disposable "
+                 "group is orphaned with no participants",
+                 "Return the device to the inbox"),
+        rest_plan=(("GET", "/api/v1/contacts"),
+                   ("GET", "/api/v1/conversations"),
+                   ("GET", "/api/v1/conversations/{id}/messages"),
+                   ("DELETE", "/api/v1/conversations/{id}/members/{userId}"),
+                   ("POST", "/api/v1/conversations/{id}/leave"),
+                   ("GET", "/api/v1/conversations/{id}/invite-link"),
+                   ("DELETE", "/api/v1/conversations/{id}/invite-link"),
+                   ("GET", "/api/v1/conversations/{id}/join-requests"),
+                   ("GET", "/api/v1/conversations/{id}/join-requests/me"),
+                   ("GET", "/api/v1/invite-links/{token}"),
+                   ("POST", "/api/v1/invite-links/{token}/join")),
     ),
     JourneyRow(
         id="polls-reminders",
@@ -521,6 +551,37 @@ HELPER_CALLS = {
         {"helper": "e2e_common.Client.put", "path": "/api/v1/conversations/{id}/ai-opt-out",
          "actor": "Binh", "assert": "ask drops the fact citation and reports contextOmitted"},
     ),
+    "groups-contacts": (
+        {"helper": "adb_ui.Device.tap_node", "target": "resource-id inboxContactsButton",
+         "assert": "contactList renders Binh/Chi/Dung and agrees with GET /contacts"},
+        {"helper": "adb_ui.Device.tap_node + type_text",
+         "target": "createGroupEntry -> groupNameInput, memberPickerList rows, createButton",
+         "assert": "unique group opens its chat; REST inbox entry lists An ADMIN + Binh"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "chatToolbar -> groupTitle rename dialog -> Save",
+         "assert": "groupTitle and the REST entry title both carry the new name"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "addMemberButton -> addMemberList Chi -> addMemberConfirm; "
+                   "member row content-desc 'Remove Chi from this group?' -> Remove",
+         "assert": "memberList and REST members gain then drop Chi; Chi inbox/messages denied"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "inviteLinkButton -> approvalSwitch -> createLinkButton",
+         "assert": "shareUrl shows nexachat://join/<token>; REST link requiresApproval"},
+        {"helper": "e2e_common.Client.get+post", "actor": "Dung",
+         "path": "/api/v1/invite-links/{token} + /join",
+         "assert": "preview names the group, request goes PENDING"},
+        {"helper": "e2e_common.Client.post", "actor": "Chi",
+         "path": "/api/v1/invite-links/{token}/join",
+         "assert": "removed member rejoin is denied (ban)"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "refreshRequestsButton -> approveButton on the Dung row",
+         "assert": "request leaves the queue; REST shows APPROVED and Dung is a member"},
+        {"helper": "adb shell am start -a VIEW -d nexachat://join/{token}",
+         "assert": "statusText already-member -> openChatButton returns to the group chat"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "revokeButton -> Revoke link; leaveGroupButton -> Leave group",
+         "assert": "REST link 404; empty group drops every inbox entry and denies reads"},
+    ),
     "archive-preferences": (
         {"helper": "e2e_common.Client.request",
          "path": "POST /api/v1/attachments + /messages", "actor": "Binh+An",
@@ -587,7 +648,21 @@ UI_MARKERS = {
         "content-desc:Read",
     ),
     "media": ("text:unique media fixture name", "text:voice duration"),
-    "groups-contacts": ("text:unique group name", "text:member list", "text:invite destination"),
+    "groups-contacts": (
+        "resource-id:inboxContactsButton", "resource-id:contactList",
+        "resource-id:createGroupEntry", "resource-id:groupNameInput",
+        "resource-id:memberPickerList", "resource-id:createButton",
+        "resource-id:chatToolbar", "resource-id:groupTitle",
+        "resource-id:memberList", "resource-id:addMemberButton",
+        "resource-id:addMemberList", "resource-id:addMemberConfirm",
+        "content-desc:Remove <member> from this group?",
+        "resource-id:inviteLinkButton", "resource-id:approvalSwitch",
+        "resource-id:createLinkButton", "resource-id:shareUrl",
+        "resource-id:requestList", "resource-id:approveButton",
+        "resource-id:statusText", "resource-id:openChatButton",
+        "resource-id:revokeButton", "resource-id:leaveGroupButton",
+        "text:You are already a member.", "text:Create group",
+    ),
     "polls-reminders": ("text:unique poll question", "text:unique reminder title"),
     "archive-preferences": (
         "resource-id:archiveTabs", "resource-id:archiveList",
@@ -3094,6 +3169,837 @@ def run_archive_preferences(row: JourneyRow, context: dict[str, Any]) -> dict[st
     return result
 
 
+_GROUPS_DUNG_PHONE = "+84900000004"  # seeded Dung; never a member until the UI adds him
+_GROUPS_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{43}")
+
+
+def _node_enabled(node: Any) -> bool:
+    return getattr(node, "attrs", {}).get("enabled") == "true"
+
+
+def _node_checked(node: Any) -> bool:
+    return getattr(node, "attrs", {}).get("checked") == "true"
+
+
+def _list_children(context: dict[str, Any], container_rid: str) -> list[Any]:
+    """A11y nodes fully inside the bounds of a list container."""
+    nodes = _ui_nodes(context)
+    container = next((node for node in nodes if _rid_ends(node, container_rid)), None)
+    if container is None or not container.box:
+        return []
+    top, bottom = container.box[1], container.box[3]
+    return [node for node in nodes
+            if node.box and top <= node.box[1] and node.box[3] <= bottom]
+
+
+def _list_row(context: dict[str, Any], container_rid: str, *, rid: str | None = None,
+              text: str | None = None, desc: str | None = None) -> Any | None:
+    """First node inside a list container matching the given selectors."""
+    for node in _list_children(context, container_rid):
+        if rid is not None and not _rid_ends(node, rid):
+            continue
+        if text is not None and node.text.strip() != text:
+            continue
+        if desc is not None and node.desc.strip() != desc:
+            continue
+        if rid is None and text is None and desc is None:
+            continue
+        return node
+    return None
+
+
+def _wait_list_row(context: dict[str, Any], container_rid: str, what: str,
+                   *, present: bool = True, timeout: float | None = None,
+                   rid: str | None = None, text: str | None = None,
+                   desc: str | None = None) -> Any | None:
+    deadline = time.monotonic() + float(timeout or _ui_timeout(context))
+    while True:
+        node = _list_row(context, container_rid, rid=rid, text=text, desc=desc)
+        if present and node is not None:
+            return node
+        if not present and node is None:
+            return None
+        if time.monotonic() >= deadline:
+            raise ProductFailure(what)
+        time.sleep(0.4)
+
+
+def _group_entry(recorder: RecordingClient, token: str, conversation_id: str) -> dict[str, Any] | None:
+    return _inbox_entry(recorder, token, conversation_id, archived=False)
+
+
+def _group_roles(entry: dict[str, Any] | None) -> dict[str, str]:
+    """member display name -> role from an inbox entry projection."""
+    roles: dict[str, str] = {}
+    for member in (entry or {}).get("members") or []:
+        name = str(member.get("displayName") or member.get("phone")
+                   or member.get("userId") or "")
+        if name:
+            roles[name] = str(member.get("role") or "")
+    return roles
+
+
+def _wait_group_roles(recorder: RecordingClient, token: str, conversation_id: str,
+                      expected: dict[str, str], what: str,
+                      timeout: float = 15.0) -> dict[str, Any]:
+    """Poll the caller's inbox entry until its member map equals expected."""
+    deadline = time.monotonic() + timeout
+    entry: dict[str, Any] | None = None
+    while True:
+        entry = _group_entry(recorder, token, conversation_id)
+        if _group_roles(entry) == expected:
+            return dict(entry or {})
+        if time.monotonic() >= deadline:
+            raise ProductFailure(
+                f"{what}: inbox members {_group_roles(entry)!r} != {expected!r}")
+        time.sleep(0.6)
+
+
+def _member_names_ui(context: dict[str, Any]) -> set[str]:
+    return {node.text.strip() for node in _list_children(context, "memberList")
+            if _rid_ends(node, "memberName") and node.text.strip()}
+
+
+def _screen_size(context: dict[str, Any]) -> tuple[int, int]:
+    cached = context.get("_screen_size")
+    if isinstance(cached, tuple):
+        return cached
+    size = (320, 640)
+    try:
+        out = context["device"].shell("wm", "size")
+        match = re.search(r"(\d+)x(\d+)", out or "")
+        if match:
+            size = (int(match.group(1)), int(match.group(2)))
+    except Exception:
+        pass
+    context["_screen_size"] = size
+    return size
+
+
+def _on_screen(node: Any, size: tuple[int, int]) -> bool:
+    """A node is tappable only while its bounds intersect the real window —
+    NestedScrollView children keep a11y bounds even below the fold."""
+    if node is None or not node.box:
+        return False
+    width, height = size
+    left, top, right, bottom = node.box
+    return left < width and right > 0 and top < height and bottom > 0
+
+
+def _scroll_screen_down(context: dict[str, Any]) -> None:
+    width, height = _screen_size(context)
+    context["device"].swipe(
+        width // 2, int(height * 0.72), width // 2, int(height * 0.30), 350)
+
+
+def _scroll_until_on_screen(context: dict[str, Any], rid: str, what: str,
+                          swipes: int = 8) -> Any:
+    """Swipe the scroll container down until the rid is inside the window."""
+    size = _screen_size(context)
+    for _ in range(swipes):
+        match = next((node for node in _ui_nodes(context)
+                      if _rid_ends(node, rid)), None)
+        if _on_screen(match, size):
+            return match
+        _scroll_screen_down(context)
+        time.sleep(0.6)
+    raise ProductFailure(what)
+
+
+def _tap_dialog_text(context: dict[str, Any], label: str,
+                     exclude_rid: str | None = None, timeout: float | None = None) -> Any:
+    """Tap a confirmation label inside a dialog, never the same-labelled
+    screen button left behind the modal (Leave group, Revoke link) or the
+    dialog's own title TextView — the leave dialog's title is also
+    'Leave group', so only a clickable control qualifies."""
+    node = _wait_ui_node(
+        context,
+        lambda item: item.text.strip() == label and item.clickable
+        and (exclude_rid is None or not _rid_ends(item, exclude_rid)),
+        f"the {label} confirmation was not rendered",
+        timeout=timeout)
+    context["device"].tap_node(node)
+    return node
+
+
+def _remove_member_rest(recorder: RecordingClient, token: str, conversation_id: str,
+                        user_id: str) -> None:
+    response = recorder.delete(
+        f"/api/v1/conversations/{conversation_id}/members/{user_id}", token=token)
+    _expect_status(response, {200, 204, 403, 404},
+                   f"remove member {user_id}")
+
+
+def run_groups_contacts(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Group lifecycle + invite approval on a disposable group.
+
+    The device runs as seeded An. Every mutation is driven through the Android
+    UI and cross-checked against REST truth: contacts list -> group create
+    picker -> chat -> group detail (rename, member add/remove) -> invite
+    manage (approval link create, join-request approval, revoke) -> invite
+    join deep link -> leave as last member. Chi is the removed member who must
+    be denied everywhere; Dung requests to join and is approved on-device.
+    """
+    _campaign_serial(context)
+    _campaign_base_url(context)
+    _prepare_seeded_an(context)
+    api, _adb_ui, _patch = context["helpers"]
+    recorder: RecordingClient = context["client"]
+    ui = context["device"]
+    an = _actor_session(api, recorder, api.USER_A["phone"])
+    _actor_session(api, recorder, api.USER_C["phone"])  # Binh warms the session cache
+    chi = _actor_session(api, recorder, api.USER_B["phone"])
+    dung = _actor_session(api, recorder, _GROUPS_DUNG_PHONE)
+    an_token = an["accessToken"]
+    chi_token = chi["accessToken"]
+    dung_token = dung["accessToken"]
+    an_id = str((an.get("user") or {}).get("id") or "")
+    if not an_id:
+        raise EnvironmentFailure("the An session did not expose a user id")
+    row_dir = Path(context["row_dir"])
+    tag = uuid.uuid4().hex[:8]
+    title = f"sj-grp-{tag}"
+    title_renamed = f"{title}-r"
+    conversation_id = ""
+    link_revoked = False
+    result: dict[str, Any] = {}
+    primary_error: Exception | None = None
+    try:
+        contacts = recorder.get("/api/v1/contacts", token=an_token)
+        _expect_status(contacts, {200}, "contacts list")
+        contact_names = {str((item or {}).get("displayName") or "")
+                         for item in (contacts.json() or [])}
+        for needed in ("Binh", "Chi", "Dung"):
+            if needed not in contact_names:
+                raise EnvironmentFailure(
+                    f"seeded contact {needed} is missing from An's REST contacts")
+        contact_ids = {str((item or {}).get("displayName") or ""):
+                       str((item or {}).get("contactUserId") or "")
+                       for item in (contacts.json() or [])}
+        binh_id = contact_ids.get("Binh", "")
+        chi_id = contact_ids.get("Chi", "")
+        dung_id = contact_ids.get("Dung", "")
+        if not all((binh_id, chi_id, dung_id)):
+            raise EnvironmentFailure("seeded contacts did not expose user ids")
+
+        # === contacts surface ==============================================
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "inboxContactsButton"),
+            "the inbox contacts entry point was not visible")
+        ui.tap_node(next(node for node in _ui_nodes(context)
+                         if _rid_ends(node, "inboxContactsButton")))
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "contactList"),
+            "the contacts screen did not render contactList")
+        deadline = time.monotonic() + _ui_timeout(context)
+        while True:
+            ui_names = {node.text.strip()
+                        for node in _list_children(context, "contactList")
+                        if _rid_ends(node, "name") and node.text.strip()}
+            if {"Binh", "Chi", "Dung"}.issubset(ui_names):
+                break
+            if time.monotonic() >= deadline:
+                raise ProductFailure(
+                    f"the contacts list did not render every seeded contact: {sorted(ui_names)!r}")
+            time.sleep(0.4)
+        missing_on_server = {"Binh", "Chi", "Dung"} - contact_names
+        if missing_on_server:
+            raise ProductFailure(
+                f"contacts rendered on-device but missing from REST: {sorted(missing_on_server)}")
+        ui.screenshot(str(row_dir / "contacts.png"))
+        result["contacts"] = ("contactList rendered Binh/Chi/Dung and every name "
+                              "agreed with GET /contacts")
+
+        entry_point = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "createGroupEntry"),
+            "the contacts surface did not expose createGroupEntry")
+        ui.tap_node(entry_point)
+
+        # === create through the UI picker ==================================
+        name_input = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "groupNameInput"),
+            "the group-create screen did not open")
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "memberPickerList"),
+            "the member picker did not render")
+        ui.tap_node(name_input)
+        ui.type_text(title)
+        # The opened IME covers createButton, so dismiss it once the text is
+        # in — but only while the button is genuinely hidden, otherwise a BACK
+        # would navigate away from this screen.
+        for _ in range(6):
+            if any(_rid_ends(node, "createButton") for node in _ui_nodes(context)):
+                break
+            ui.key("KEYCODE_BACK")
+            time.sleep(0.5)
+        picker_row = _wait_list_row(
+            context, "memberPickerList",
+            "the picker did not list Binh",
+            rid="name", text="Binh")
+        ui.tap_node(picker_row)
+        deadline = time.monotonic() + _ui_timeout(context)
+        while True:
+            # The CheckBox is accessibility-hidden; the row itself carries the
+            # checkable/checked state through rowContent's a11y delegate.
+            selected = [node for node in _list_children(context, "memberPickerList")
+                        if _rid_ends(node, "rowContent") and _node_checked(node)]
+            create_button = next((node for node in _ui_nodes(context)
+                                  if _rid_ends(node, "createButton")), None)
+            if selected and create_button is not None and _node_enabled(create_button):
+                break
+            if time.monotonic() >= deadline:
+                raise ProductFailure("picking Binh never enabled the Create button")
+            time.sleep(0.4)
+        ui.screenshot(str(row_dir / "group-create.png"))
+        ui.tap_node(create_button)
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "messageInput"),
+            "the created group did not land on its chat composer",
+            timeout=30)
+
+        # The new group must surface in An's REST inbox with the picked member.
+        deadline = time.monotonic() + 15
+        entry = None
+        while time.monotonic() < deadline:
+            response = recorder.get("/api/v1/conversations", token=an_token,
+                                    params={"archived": "false"})
+            _expect_status(response, {200}, "inbox read after create")
+            body = response.json() or []
+            items = body.get("items") if isinstance(body, dict) else body
+            for item in items or []:
+                if str(item.get("title") or "") == title:
+                    entry = item
+                    conversation_id = str(item.get("id") or "")
+            if entry is not None:
+                break
+            time.sleep(0.6)
+        if not conversation_id:
+            raise ProductFailure(
+                f"the UI-created group {title!r} never appeared in An's inbox")
+        entry = _wait_group_roles(
+            recorder, an_token, conversation_id,
+            {"An": "ADMIN", "Binh": "MEMBER"},
+            "the created group's REST members disagree with the picker selection")
+        if str(entry.get("type") or "") != "GROUP":
+            raise ProductFailure("the created conversation is not type GROUP")
+        result["create"] = ("groupNameInput + memberPickerList created the group; "
+                            "REST members are An ADMIN + Binh")
+
+        # === group detail: members agree ==================================
+        toolbar = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "chatToolbar") and node.clickable,
+            "the group chat toolbar was not clickable",
+            timeout=10)
+        ui.tap_node(toolbar)
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "memberList"),
+            "the group detail member list did not open")
+        title_node = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "groupTitle"),
+            "the group detail title did not render")
+        if title_node.text.strip() != title:
+            raise ProductFailure(
+                f"group detail title {title_node.text.strip()!r} != {title!r}")
+        deadline = time.monotonic() + _ui_timeout(context)
+        while True:
+            names = _member_names_ui(context)
+            if names == {"An", "Binh"}:
+                break
+            if time.monotonic() >= deadline:
+                raise ProductFailure(
+                    f"member list {sorted(names)!r} != ['An', 'Binh']")
+            time.sleep(0.4)
+        admins = [node for node in _list_children(context, "memberList")
+                  if _rid_ends(node, "memberRole") and node.text.strip()]
+        if [node.text.strip() for node in admins] != ["Admin"]:
+            raise ProductFailure(
+                f"expected exactly one Admin badge, saw {[n.text for n in admins]!r}")
+        ui.screenshot(str(row_dir / "group-detail.png"))
+        result["member_list"] = ("group detail rendered An(Admin)+Binh and agreed "
+                                 "with the REST member map")
+
+        # === rename through the title dialog ===============================
+        ui.tap_node(title_node)
+        _wait_ui_node(
+            context, lambda node: node.text.strip() == "Rename group",
+            "the rename dialog did not open")
+        editor = _wait_ui_node(
+            context, lambda node: "EditText" in node.cls,
+            "the rename dialog did not expose an editor")
+        ui.tap_node(editor)
+        ui.move_end()
+        ui.delete_chars(len(title))
+        ui.type_text(title_renamed)
+        _tap_dialog_text(context, "Save")
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "groupTitle")
+            and node.text.strip() == title_renamed,
+            "the group title did not update on the detail screen")
+        _wait_inbox_entry(
+            recorder, an_token, conversation_id,
+            lambda item: item is not None
+            and str(item.get("title") or "") == title_renamed,
+            "the rename never reached An's REST inbox entry")
+        result["rename"] = "the title dialog renamed the group on UI and REST"
+
+        # === add a member through the bottom sheet =========================
+        add_button = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "addMemberButton"),
+            "the add-member button was not visible for the admin")
+        ui.tap_node(add_button)
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "addMemberList"),
+            "the add-member sheet did not open")
+        sheet_row = _wait_list_row(
+            context, "addMemberList",
+            "the add-member sheet did not list Chi",
+            rid="name", text="Chi")
+        ui.tap_node(sheet_row)
+        confirm = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "addMemberConfirm") and _node_enabled(node),
+            "selecting Chi never enabled the sheet confirm button")
+        ui.tap_node(confirm)
+        _wait_ui_absent(
+            context, lambda node: _rid_ends(node, "addMemberList"),
+            "the add-member sheet did not close after confirm")
+        _wait_list_row(
+            context, "memberList",
+            "Chi did not appear in the member list after the sheet add",
+            rid="memberName", text="Chi")
+        ui.screenshot(str(row_dir / "member-added.png"))
+        _wait_group_roles(
+            recorder, an_token, conversation_id,
+            {"An": "ADMIN", "Binh": "MEMBER", "Chi": "MEMBER"},
+            "REST members did not gain Chi after the UI add")
+        result["add_member"] = "the sheet added Chi; member list and REST agree"
+
+        # === remove the member through the row button ======================
+        remove_button = _wait_ui_node(
+            context,
+            lambda node: node.desc.strip() == "Remove Chi from this group?",
+            "the member row did not expose Chi's remove button")
+        ui.tap_node(remove_button)
+        _wait_ui_node(
+            context, lambda node: node.text.strip() == "Remove Chi from this group?",
+            "the remove confirmation did not open")
+        _tap_dialog_text(context, "Remove")
+        _wait_ui_absent(
+            context,
+            lambda node: _rid_ends(node, "memberName")
+            and node.text.strip() == "Chi",
+            "Chi stayed in the member list after the confirmed remove")
+        ui.screenshot(str(row_dir / "member-removed.png"))
+        _wait_group_roles(
+            recorder, an_token, conversation_id,
+            {"An": "ADMIN", "Binh": "MEMBER"},
+            "REST members still carried Chi after the UI remove")
+
+        # Removed user denial: inbox row gone, history read refused.
+        _wait_inbox_entry(
+            recorder, chi_token, conversation_id,
+            lambda item: item is None,
+            "the removed member kept the group in her inbox")
+        denied = recorder.get(
+            f"/api/v1/conversations/{conversation_id}/messages", token=chi_token,
+            params={"limit": 1})
+        _expect_status(denied, {403},
+                       "the removed member's message read")
+        result["remove_member"] = ("Chi was removed through the member row; her "
+                                   "inbox dropped the group and history reads 403")
+
+        # === invite link through the manage screen =========================
+        invite_entry = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "inviteLinkButton"),
+            "the invite-link entry point was not visible for the admin")
+        ui.tap_node(invite_entry)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "linkStatus")
+            and node.text.strip() == "No active link.",
+            "the invite screen did not open on the no-link state")
+        switch = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "approvalSwitch"),
+            "the approval switch was not exposed")
+        ui.tap_node(switch)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "approvalSwitch") and _node_checked(node),
+            "the approval switch did not stay on")
+        create_link = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "createLinkButton")
+            and _node_enabled(node),
+            "the create-link button never enabled")
+        ui.tap_node(create_link)
+        share_node = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "shareUrl")
+            and _GROUPS_TOKEN_RE.search(node.text or "") is not None,
+            "the created invite link never rendered a share URL",
+            timeout=30)
+        share_match = _GROUPS_TOKEN_RE.search(share_node.text or "")
+        assert share_match is not None  # guaranteed by the wait predicate
+        token = share_match.group(0)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "linkStatus")
+            and node.text.strip() == "Active invite link",
+            "the invite status never flipped to active")
+        ui.screenshot(str(row_dir / "invite-link.png"))
+        link_read = recorder.get(
+            f"/api/v1/conversations/{conversation_id}/invite-link", token=an_token)
+        _expect_status(link_read, {200}, "invite-link read")
+        link_body = link_read.json() or {}
+        if link_body.get("requiresApproval") is not True:
+            raise ProductFailure(
+                "the UI-created invite link did not persist requiresApproval")
+        result["invite_link"] = ("approval switch + Create link produced a share URL; "
+                                 "REST agrees requiresApproval=true")
+
+        # The removed member is banned from every link (no link was active at
+        # removal -> conversation-wide ban row); her join attempt must 403.
+        banned = recorder.post(
+            f"/api/v1/invite-links/{token}/join", token=chi_token)
+        _expect_status(banned, {403},
+                       "the removed member's invite rejoin")
+
+        # Dung previews then requests to join; approval is required.
+        preview = recorder.get(f"/api/v1/invite-links/{token}", token=dung_token)
+        _expect_status(preview, {200}, "invite preview")
+        preview_body = preview.json() or {}
+        if (str(preview_body.get("conversationId") or "") != conversation_id
+                or str(preview_body.get("title") or "") != title_renamed
+                or preview_body.get("requiresApproval") is not True
+                or preview_body.get("isMember") is not False):
+            raise ProductFailure(
+                f"invite preview lied about destination/state: {preview_body!r}")
+        if int(preview_body.get("memberCount") or 0) != 2:
+            raise ProductFailure(
+                f"invite preview memberCount {preview_body.get('memberCount')!r} != 2")
+        joined = recorder.post(
+            f"/api/v1/invite-links/{token}/join", token=dung_token)
+        _expect_status(joined, {200, 201}, "invite join request")
+        join_body = joined.json() or {}
+        if str(join_body.get("status") or "") != "PENDING":
+            raise ProductFailure(
+                f"the approval-required join returned {join_body.get('status')!r}")
+        if str(join_body.get("conversationId") or "") != conversation_id:
+            raise ProductFailure("the join request targeted the wrong conversation")
+
+        # === approval queue on-device ======================================
+        # The requests section sits below the fold of the screen's
+        # NestedScrollView; off-screen children keep a11y bounds, so scroll
+        # until the refresh control is inside the window before tapping.
+        refresh = _scroll_until_on_screen(
+            context, "refreshRequestsButton",
+            "the request section could not be scrolled into view")
+        ui.tap_node(refresh)
+        _scroll_screen_down(context)  # requestList binds rows only in view
+        time.sleep(0.6)
+        _wait_list_row(
+            context, "requestList",
+            "Dung's pending request never reached the on-device queue",
+            rid="requestName", text="Dung", timeout=30)
+        size = _screen_size(context)
+        approve = None
+        for _ in range(8):
+            approve = _list_row(context, "requestList", rid="approveButton")
+            if _on_screen(approve, size):
+                break
+            _scroll_screen_down(context)
+            time.sleep(0.6)
+        else:
+            raise ProductFailure("the approve control could not be scrolled on-screen")
+        ui.screenshot(str(row_dir / "invite-approve.png"))
+        ui.tap_node(approve)
+        _wait_ui_absent(
+            context,
+            lambda node: _rid_ends(node, "requestName")
+            and node.text.strip() == "Dung",
+            "the approved request stayed in the queue",
+            timeout=30)
+        deadline = time.monotonic() + 15
+        mine = None
+        while time.monotonic() < deadline:
+            own = recorder.get(
+                f"/api/v1/conversations/{conversation_id}/join-requests/me",
+                token=dung_token)
+            if own.status == 200:
+                mine = own.json() or {}
+                if str(mine.get("status") or "") == "APPROVED":
+                    break
+            time.sleep(0.6)
+        if not mine or str(mine.get("status") or "") != "APPROVED":
+            raise ProductFailure("Dung's request did not become APPROVED after the UI tap")
+        _wait_group_roles(
+            recorder, an_token, conversation_id,
+            {"An": "ADMIN", "Binh": "MEMBER", "Dung": "MEMBER"},
+            "REST members did not gain the approved joiner")
+        pending_left = recorder.get(
+            f"/api/v1/conversations/{conversation_id}/join-requests",
+            token=an_token, params={"status": "PENDING"})
+        _expect_status(pending_left, {200}, "pending request list")
+        if (pending_left.json() or []):
+            raise ProductFailure("a pending request remained after the approval")
+        dung_entry = _wait_inbox_entry(
+            recorder, dung_token, conversation_id,
+            lambda item: item is not None,
+            "the approved joiner never received the inbox entry")
+        result["approval"] = ("the on-device queue approved Dung: PENDING -> APPROVED, "
+                              "member list + joiner inbox agree")
+
+        # === invite return path: deep link -> already-member -> chat =======
+        context["adb"].command(
+            "shell", "am", "start", "-a", "android.intent.action.VIEW",
+            "-d", f"nexachat://join/{token}", PACKAGE, timeout=30)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "statusText")
+            and node.text.strip() == "You are already a member.",
+            "the invite deep link did not resolve to the already-member state",
+            timeout=30)
+        join_title = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "groupTitle"),
+            "the invite join screen did not render a group title")
+        if join_title.text.strip() != title_renamed:
+            raise ProductFailure(
+                f"invite join previewed {join_title.text.strip()!r}, "
+                f"not {title_renamed!r}")
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "openChatButton"),
+            "the already-member state exposed no Open group chat action")
+        ui.screenshot(str(row_dir / "invite-return.png"))
+        ui.tap_node(next(node for node in _ui_nodes(context)
+                         if _rid_ends(node, "openChatButton")))
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "messageInput"),
+            "Open group chat did not return to the group composer",
+            timeout=30)
+        result["invite_return"] = ("nexachat://join/<token> resolved to this group; "
+                                   "Open group chat landed on its composer")
+
+        # === revoke through the UI =========================================
+        # The VIEW deep link launched a second MainActivity on top of the
+        # running task (standard launchMode), so BACK-walking races two back
+        # stacks and can finish through to the launcher — observed live as the
+        # row landing on the home screen. Cold-start the app instead, then
+        # re-open the group the same way the journey first did:
+        # inbox -> conversation row -> chat toolbar -> detail -> invite entry.
+        context["adb"].command("shell", "am", "force-stop", PACKAGE, timeout=20)
+        context["adb"].command("shell", "am", "start", "-n",
+                               f"{PACKAGE}/{MAIN_ACTIVITY}", timeout=30)
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "inboxUserAvatar"),
+            "the inbox did not reload after the invite-return deep link",
+            timeout=30)
+        row_for_revoke = _inbox_conversation_row(context, title_renamed)
+        if row_for_revoke is None:
+            raise ProductFailure("the group row vanished before the revoke step")
+        ui.tap_node(row_for_revoke)
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "messageInput"),
+            "reopening the group chat failed before revoke",
+            timeout=30)
+        toolbar_revoke = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "chatToolbar") and node.clickable,
+            "the group chat toolbar was not clickable before revoke",
+            timeout=10)
+        ui.tap_node(toolbar_revoke)
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "memberList"),
+            "the group detail did not reopen for the revoke step")
+        invite_entry2 = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "inviteLinkButton"),
+            "the invite screen could not be reopened for revoke")
+        ui.tap_node(invite_entry2)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "linkStatus")
+            and node.text.strip() == "Active invite link",
+            "the reopened invite screen did not show the active link")
+        revoke = None
+        for _ in range(8):
+            candidate = next(
+                (node for node in _ui_nodes(context)
+                 if _rid_ends(node, "revokeButton") and _node_enabled(node)), None)
+            if _on_screen(candidate, _screen_size(context)):
+                revoke = candidate
+                break
+            _scroll_screen_down(context)
+            time.sleep(0.6)
+        if revoke is None:
+            raise ProductFailure("the revoke button could not be scrolled on-screen")
+        ui.tap_node(revoke)
+        _wait_ui_node(
+            context, lambda node: node.text.strip() == "Revoke this invite link?",
+            "the revoke confirmation did not open")
+        _tap_dialog_text(context, "Revoke link", exclude_rid="revokeButton")
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "linkStatus")
+            and node.text.strip() == "No active link.",
+            "the invite link stayed active after the confirmed revoke",
+            timeout=30)
+        gone = recorder.get(
+            f"/api/v1/conversations/{conversation_id}/invite-link", token=an_token)
+        _expect_status(gone, {404}, "invite-link read after revoke")
+        dead = recorder.get(f"/api/v1/invite-links/{token}", token=dung_token)
+        _expect_status(dead, {404}, "invite preview after revoke")
+        link_revoked = True
+        result["revoke"] = ("the revoke dialog killed the link: UI no-link state, "
+                            "admin read 404, Dung's preview 404")
+
+        # === leave as the last member ======================================
+        _remove_member_rest(recorder, an_token, conversation_id, binh_id)
+        _remove_member_rest(recorder, an_token, conversation_id, dung_id)
+        _wait_group_roles(
+            recorder, an_token, conversation_id, {"An": "ADMIN"},
+            "REST still listed other members before the leave")
+        # Cold-start again: by this point the running app has processed a
+        # long Room write backlog (contacts, create, member + invite events,
+        # two relaunches), which once deadlocked the post-leave cleanup for
+        # minutes; a fresh process binds the member list from a cold fetch
+        # instead of a stale render of the removed members.
+        context["adb"].command("shell", "am", "force-stop", PACKAGE, timeout=20)
+        context["adb"].command("shell", "am", "start", "-n",
+                               f"{PACKAGE}/{MAIN_ACTIVITY}", timeout=30)
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "inboxUserAvatar"),
+            "the inbox did not reload before the leave step",
+            timeout=30)
+        group_row = _inbox_conversation_row(context, title_renamed)
+        if group_row is None:
+            raise ProductFailure("the group row vanished before the leave step")
+        ui.tap_node(group_row)
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "messageInput"),
+            "reopening the group chat failed before leave",
+            timeout=30)
+        toolbar2 = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "chatToolbar") and node.clickable,
+            "the group chat toolbar was not clickable before leave",
+            timeout=10)
+        ui.tap_node(toolbar2)
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "memberList"),
+            "the group detail did not reopen for the leave step")
+        deadline = time.monotonic() + _ui_timeout(context)
+        while True:
+            names = _member_names_ui(context)
+            if names == {"An"}:
+                break
+            if time.monotonic() >= deadline:
+                raise ProductFailure(
+                    f"member list still shows {sorted(names)!r} before leave")
+            time.sleep(0.4)
+        leave = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "leaveGroupButton") and _node_enabled(node),
+            "the leave button was not enabled for the last member")
+        ui.tap_node(leave)
+        _wait_ui_node(
+            context, lambda node: node.text.strip() == "Leave this group?",
+            "the leave confirmation did not open")
+        _tap_dialog_text(context, "Leave group", exclude_rid="leaveGroupButton")
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "inboxUserAvatar"),
+            "leaving did not return the device to the inbox",
+            timeout=30)
+        deadline = time.monotonic() + 30
+        while True:
+            if _inbox_conversation_row(context, title_renamed) is None:
+                break
+            if time.monotonic() >= deadline:
+                raise ProductFailure("the left group still renders a conversation row")
+            time.sleep(0.5)
+        ui.screenshot(str(row_dir / "group-left.png"))
+        _wait_inbox_entry(
+            recorder, an_token, conversation_id,
+            lambda item: item is None,
+            "An kept the emptied group in her inbox")
+        empty_read = recorder.get(
+            f"/api/v1/conversations/{conversation_id}/messages", token=an_token,
+            params={"limit": 1})
+        _expect_status(empty_read, {403},
+                       "the last member's read after leaving")
+        result["leave"] = ("last member left through the UI; the row vanished from "
+                           "the inbox and history reads deny everyone")
+        result["summary"] = "all phases passed"
+    except Exception as error:
+        primary_error = error
+    finally:
+        cleanup_errors: list[str] = []
+        try:
+            for _ in range(6):
+                nodes = _ui_nodes(context)
+                if any(_rid_ends(node, "inboxUserAvatar") for node in nodes):
+                    break
+                ui.key("KEYCODE_BACK")
+                time.sleep(0.5)
+        except Exception as error:
+            cleanup_errors.append(f"ui restore: {type(error).__name__}")
+        if conversation_id:
+            try:
+                entry = _group_entry(recorder, an_token, conversation_id)
+            except Exception as error:
+                entry = None
+                cleanup_errors.append(f"member read: {type(error).__name__}")
+            try:
+                if not link_revoked:
+                    recorder.delete(
+                        f"/api/v1/conversations/{conversation_id}/invite-link",
+                        token=an_token)
+            except Exception as error:
+                cleanup_errors.append(f"invite revoke: {type(error).__name__}")
+            try:
+                pending = recorder.get(
+                    f"/api/v1/conversations/{conversation_id}/join-requests",
+                    token=an_token, params={"status": "PENDING"})
+                if pending.status == 200:
+                    for request in pending.json() or []:
+                        request_id = str((request or {}).get("id") or "")
+                        if request_id:
+                            recorder.post(
+                                f"/api/v1/conversations/{conversation_id}"
+                                f"/join-requests/{request_id}/reject",
+                                token=an_token)
+            except Exception as error:
+                cleanup_errors.append(f"request sweep: {type(error).__name__}")
+            try:
+                for member in (entry or {}).get("members") or []:
+                    member_id = str(member.get("userId") or "")
+                    if member_id and member_id != an_id:
+                        removed = recorder.delete(
+                            f"/api/v1/conversations/{conversation_id}/members/{member_id}",
+                            token=an_token)
+                        if removed.status not in (200, 204, 403, 404):
+                            cleanup_errors.append(
+                                f"member sweep HTTP {removed.status}")
+                    elif not member_id:
+                        cleanup_errors.append("member sweep: member without userId")
+            except Exception as error:
+                cleanup_errors.append(f"member sweep: {type(error).__name__}")
+            try:
+                left = recorder.post(
+                    f"/api/v1/conversations/{conversation_id}/leave", token=an_token)
+                if left.status not in (200, 204, 400, 403, 404):
+                    cleanup_errors.append(f"leave HTTP {left.status}")
+            except Exception as error:
+                cleanup_errors.append(f"leave: {type(error).__name__}")
+        if cleanup_errors:
+            context["cleanup_errors"] = cleanup_errors
+    if primary_error is not None:
+        raise primary_error
+    if context.get("cleanup_errors"):
+        raise HarnessError("groups-contacts cleanup could not release the fixture")
+    result["cleanup"] = ("invite link revoked, requests swept, remaining members "
+                         "removed and An left the disposable group")
+    return result
+
+
 SEED_PHONES = frozenset({
     "+84900000001", "+84900000002", "+84900000003",
     "+84900000101", "+84900000102",
@@ -3743,6 +4649,7 @@ def run_registered_row(row: JourneyRow, context: dict[str, Any]) -> dict[str, An
         "chat-interactions": run_chat_interactions,
         "summary-ask": run_summary_ask,
         "archive-preferences": run_archive_preferences,
+        "groups-contacts": run_groups_contacts,
         "calls-injected-notification": run_calls_injected_notification,
         "injected-notifications": run_injected_notifications,
     }

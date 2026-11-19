@@ -57,7 +57,7 @@ class MatrixAndDryRunTest(unittest.TestCase):
         runnable = {row.id for row in journeys.ROWS if row.capability_gap is None}
         self.assertEqual(runnable, {
             "auth-login", "chat-send-receive", "chat-interactions", "summary-ask",
-            "archive-preferences",
+            "archive-preferences", "groups-contacts",
             "calls-injected-notification", "injected-notifications",
         })
         self.assertEqual(journeys.ROWS[-1].id, "account-deletion")
@@ -293,7 +293,7 @@ class WiringDecisionTest(unittest.TestCase):
                 runnable.append(row_id)
         self.assertEqual(runnable, [
             "auth-login", "chat-send-receive", "chat-interactions",
-            "archive-preferences",
+            "groups-contacts", "archive-preferences",
             "calls-injected-notification", "summary-ask", "injected-notifications",
         ])
         self.assertEqual(len(runnable) + len(blocked), len(journeys.ROWS))
@@ -308,8 +308,9 @@ class WiringDecisionTest(unittest.TestCase):
         self.assertNotIn("injected-notifications", blocked)
         self.assertNotIn("summary-ask", blocked)
         self.assertNotIn("archive-preferences", blocked)
+        self.assertNotIn("groups-contacts", blocked)
         for row_id in (
-            "media", "groups-contacts", "polls-reminders",
+            "media", "polls-reminders",
             "labels-lifecycle", "calls-signaling",
             "offline-sync", "accessibility-sweep",
         ):
@@ -348,6 +349,7 @@ class WiringDecisionTest(unittest.TestCase):
             journeys.run_chat_interactions,
             journeys.run_summary_ask,
             journeys.run_archive_preferences,
+            journeys.run_groups_contacts,
             journeys.run_calls_injected_notification,
             journeys.run_injected_notifications,
             journeys.run_otp_forgot_password,
@@ -2419,6 +2421,674 @@ class ArchivePreferencesExecutorTest(unittest.TestCase):
         self.assertEqual(store.labels["an"], [])
         self.assertEqual(store.flags["an"]["archived"], False)
         self.assertEqual(store.flags["an"]["labels"], set())
+
+
+class GroupsContactsExecutorTest(unittest.TestCase):
+    """Offline fake device+REST world for run_groups_contacts.
+
+    The world mirrors the surfaces probed on emulator-5554: the contacts list
+    and its create-group entry point, the create-group member picker, the
+    group chat toolbar, group detail (member list, rename/remove/leave
+    dialogs), the add-member bottom sheet, the invite-manage screen (approval
+    switch, share URL, join-request queue, revoke) and the invite-join deep
+    link's already-member state. One Store backs both the fake REST client
+    and the UI mutations so REST/UI agreement assertions are real.
+    """
+
+    USERS = {
+        "user-an": ("An", "+84900000001", "tok-an"),
+        "user-binh": ("Binh", "+84900000002", "tok-binh"),
+        "user-chi": ("Chi", "+84900000003", "tok-chi"),
+        "user-dung": ("Dung", "+84900000004", "tok-dung"),
+    }
+
+    class Node:
+        def __init__(self, text="", desc="", rid="", box=(0, 0, 320, 48),
+                     clickable=True, cls="android.widget.TextView", checked=None,
+                     enabled=None):
+            self.text = text
+            self.desc = desc
+            self.attrs = {"resource-id": ("com.nexachat.debug:id/" + rid) if rid else ""}
+            if checked is not None:
+                self.attrs["checked"] = "true" if checked else "false"
+            self.attrs["enabled"] = "true" if enabled is None or enabled else "false"
+            self.box = box
+            self.clickable = clickable
+            self.cls = cls
+
+        @property
+        def center(self):
+            left, top, right, bottom = self.box
+            return (left + right) // 2, (top + bottom) // 2
+
+    class Store:
+        """Server truth: one disposable group, its invite link, join requests,
+        removal bans and the per-caller inbox projection."""
+
+        CONTACTS = [
+            {"contactUserId": "user-binh", "displayName": "Binh",
+             "phone": "+84900000002"},
+            {"contactUserId": "user-chi", "displayName": "Chi",
+             "phone": "+84900000003"},
+            {"contactUserId": "user-dung", "displayName": "Dung",
+             "phone": "+84900000004"},
+        ]
+        NAME_TO_ID = {"An": "user-an", "Binh": "user-binh", "Chi": "user-chi",
+                      "Dung": "user-dung"}
+
+        def __init__(self):
+            self.cid = "grp-1"
+            self.created = False
+            self.title = ""
+            self.members = {}      # uid -> {"displayName", "role"}
+            self.banned = set()
+            self.link = None       # {"token", "requiresApproval", "revoked"}
+            self.requests = []     # {"id", "userId", "displayName", "status"}
+            self.next_request = 0
+
+        def create_group(self, title, picked_names):
+            self.created = True
+            self.title = title
+            self.members = {"user-an": {"displayName": "An", "role": "ADMIN"}}
+            for name in picked_names:
+                uid = self.NAME_TO_ID[name]
+                self.members[uid] = {"displayName": name, "role": "MEMBER"}
+
+        def add_member(self, name):
+            uid = self.NAME_TO_ID[name]
+            self.members[uid] = {"displayName": name, "role": "MEMBER"}
+            self.banned.discard(uid)
+
+        def remove_member(self, uid, banned=True):
+            self.members.pop(uid, None)
+            if banned:
+                self.banned.add(uid)
+
+        def create_link(self, requires_approval):
+            self.link = {"token": "t" * 43, "requiresApproval": requires_approval,
+                         "revoked": False}
+
+        def join(self, uid):
+            if self.link is None or self.link["revoked"]:
+                return 404, None
+            if uid in self.members:
+                return 200, {"status": "ALREADY_MEMBER", "conversationId": self.cid}
+            if uid in self.banned:
+                return 403, {"error": "removed member"}
+            if self.link["requiresApproval"]:
+                for request in self.requests:
+                    if request["userId"] == uid and request["status"] == "PENDING":
+                        return 200, {"status": "PENDING", "conversationId": self.cid,
+                                     "requestId": request["id"]}
+                self.next_request += 1
+                request = {"id": f"req-{self.next_request}", "userId": uid,
+                           "displayName": self.NAME_TO_ID and
+                           next(n for n, i in self.NAME_TO_ID.items() if i == uid),
+                           "status": "PENDING"}
+                self.requests.append(request)
+                return 201, {"status": "PENDING", "conversationId": self.cid,
+                             "requestId": request["id"]}
+            self.members[uid] = {"displayName": next(
+                n for n, i in self.NAME_TO_ID.items() if i == uid), "role": "MEMBER"}
+            return 201, {"status": "JOINED", "conversationId": self.cid}
+
+        def member_entries(self):
+            return [{"userId": uid, "displayName": member["displayName"],
+                     "phone": GroupsContactsExecutorTest.USERS[uid][1],
+                     "avatarUrl": None, "role": member["role"]}
+                    for uid, member in self.members.items()]
+
+        def inbox_entry(self):
+            return {"id": self.cid, "type": "GROUP", "title": self.title,
+                    "members": self.member_entries()}
+
+    class World:
+        def __init__(self, store):
+            self.store = store
+            self.screen = "inbox"
+            self.history = []
+            self.name_input = ""
+            self.rename_input = ""
+            self.picked = set()
+            self.sheet_selected = set()
+            self.approval_draft = False
+            self.share_url = None
+            self.rename_dialog = False
+            self.remove_dialog = None
+            self.leave_dialog = False
+            self.revoke_dialog = False
+            self.add_sheet = False
+            self.hide_added_members = False  # failure variant
+
+        def go(self, screen):
+            self.history.append(self.screen)
+            self.screen = screen
+
+        def cold_start(self):
+            """Force-stop + relaunch: a fresh task landing on the inbox."""
+            self.screen = "inbox"
+            self.history.clear()
+            self.name_input = ""
+            self.rename_input = ""
+            self.picked = set()
+            self.sheet_selected = set()
+            self.rename_dialog = False
+            self.remove_dialog = None
+            self.leave_dialog = False
+            self.revoke_dialog = False
+            self.add_sheet = False
+
+        def tree(self):
+            N = GroupsContactsExecutorTest.Node
+            s = self.store
+            nodes = []
+            if self.screen == "inbox":
+                nodes.append(N(rid="inboxUserAvatar"))
+                nodes.append(N(rid="inboxContactsButton"))
+                nodes.append(N(rid="conversationList", box=(0, 300, 320, 620)))
+                if "user-an" in s.members:
+                    nodes.append(N(text=s.title, box=(76, 360, 300, 390)))
+            elif self.screen == "contacts":
+                nodes.append(N(rid="createGroupEntry"))
+                nodes.append(N(rid="contactList", box=(0, 200, 320, 620)))
+                for contact in s.CONTACTS:
+                    nodes.append(N(text=contact["displayName"], rid="name",
+                                   box=(60, 210 + 60 * s.CONTACTS.index(contact), 300, 260)))
+            elif self.screen == "group-create":
+                nodes.append(N(text=self.name_input, rid="groupNameInput",
+                               cls="android.widget.EditText"))
+                nodes.append(N(rid="memberPickerList", box=(0, 200, 320, 560)))
+                for index, contact in enumerate(s.CONTACTS):
+                    top = 210 + 60 * index
+                    nodes.append(N(rid="rowContent",
+                                   checked=contact["displayName"] in self.picked,
+                                   box=(0, top, 320, top + 56)))
+                    nodes.append(N(text=contact["displayName"], rid="name",
+                                   box=(60, top, 300, top + 50)))
+                nodes.append(N(text="Create group", rid="createButton",
+                               enabled=bool(self.name_input.strip()) and bool(self.picked)))
+            elif self.screen == "chat":
+                nodes.append(N(text=s.title))
+                nodes.append(N(rid="chatToolbar", box=(0, 0, 320, 56)))
+                nodes.append(N(text="Message", rid="messageInput"))
+            elif self.screen == "group-detail":
+                nodes.append(N(text=s.title, rid="groupTitle"))
+                nodes.append(N(rid="memberList", box=(0, 200, 320, 620)))
+                top = 210
+                for uid, member in s.members.items():
+                    if self.hide_added_members and uid == "user-chi":
+                        continue
+                    nodes.append(N(text=member["displayName"], rid="memberName",
+                                   box=(60, top, 200, top + 40)))
+                    if member["role"] == "ADMIN":
+                        nodes.append(N(text="Admin", rid="memberRole",
+                                       box=(210, top, 300, top + 40)))
+                    else:
+                        nodes.append(N(desc=f"Remove {member['displayName']} from this group?",
+                                       rid="removeMember",
+                                       box=(270, top, 318, top + 40)))
+                    top += 60
+                nodes.append(N(text="Add members", rid="addMemberButton"))
+                nodes.append(N(text="Invite link", rid="inviteLinkButton"))
+                nodes.append(N(text="Leave group", rid="leaveGroupButton"))
+            elif self.screen == "invite-manage":
+                has_link = s.link is not None and not s.link["revoked"]
+                nodes.append(N(text="Active invite link" if has_link else "No active link.",
+                               rid="linkStatus"))
+                nodes.append(N(rid="approvalSwitch",
+                               checked=(s.link["requiresApproval"] if has_link
+                                        else self.approval_draft)))
+                nodes.append(N(text="Rotate link" if has_link else "Create link",
+                               rid="createLinkButton"))
+                if self.share_url:
+                    nodes.append(N(text=self.share_url, rid="shareUrl"))
+                nodes.append(N(text="Revoke link", rid="revokeButton", enabled=has_link))
+                nodes.append(N(text="Refresh requests", rid="refreshRequestsButton"))
+                nodes.append(N(rid="requestList", box=(0, 300, 320, 620)))
+                pending = [r for r in s.requests if r["status"] == "PENDING"]
+                if not pending:
+                    nodes.append(N(text="No pending requests.", rid="emptyRequests"))
+                for index, request in enumerate(pending):
+                    top = 310 + 80 * index
+                    nodes.append(N(text=request["displayName"], rid="requestName",
+                                   box=(60, top, 200, top + 40)))
+                    nodes.append(N(text="Approve", rid="approveButton",
+                                   box=(60, top + 40, 150, top + 78)))
+                    nodes.append(N(text="Reject", rid="rejectButton",
+                                   box=(160, top + 40, 240, top + 78)))
+            elif self.screen == "invite-join":
+                nodes.append(N(text=s.title, rid="groupTitle"))
+                if s.link and s.link["requiresApproval"]:
+                    nodes.append(N(text="An admin must approve your request.",
+                                   rid="approvalNote"))
+                nodes.append(N(text="You are already a member.", rid="statusText"))
+                nodes.append(N(text="Open group chat", rid="openChatButton"))
+            if self.add_sheet:
+                nodes.append(N(rid="addMemberSheetRoot"))
+                nodes.append(N(rid="addMemberList", box=(0, 300, 320, 620)))
+                addable = [c for c in s.CONTACTS
+                           if c["contactUserId"] not in s.members]
+                for index, contact in enumerate(addable):
+                    top = 310 + 60 * index
+                    nodes.append(N(rid="rowContent",
+                                   checked=contact["displayName"] in self.sheet_selected,
+                                   box=(0, top, 320, top + 56)))
+                    nodes.append(N(text=contact["displayName"], rid="name",
+                                   box=(60, top, 300, top + 50)))
+                nodes.append(N(text="Add", rid="addMemberConfirm",
+                               enabled=bool(self.sheet_selected)))
+                nodes.append(N(text="Invite via link", rid="addMemberInviteLink"))
+            if self.rename_dialog:
+                nodes.append(N(text="Rename group"))
+                nodes.append(N(text=self.rename_input, cls="android.widget.EditText"))
+                nodes.append(N(text="Save"))
+                nodes.append(N(text="Cancel"))
+            if self.remove_dialog is not None:
+                nodes.append(N(text="Remove member"))
+                nodes.append(N(text=f"Remove {self.remove_dialog} from this group?"))
+                nodes.append(N(text="Remove"))
+                nodes.append(N(text="Cancel"))
+            if self.leave_dialog:
+                # The live AlertDialog title repeats the button label; tapping
+                # the non-clickable title must not fire the leave.
+                nodes.append(N(text="Leave group", clickable=False))
+                nodes.append(N(text="Leave this group?"))
+                nodes.append(N(text="Leave group", cls="android.widget.Button"))
+                nodes.append(N(text="Cancel"))
+            if self.revoke_dialog:
+                nodes.append(N(text="Revoke this invite link?"))
+                nodes.append(N(text="Revoke link", cls="android.widget.Button"))
+                nodes.append(N(text="Cancel"))
+            return nodes
+
+    class Device:
+        def __init__(self, world):
+            self.world = world
+
+        def nodes(self):
+            return self.world.tree()
+
+        def _dialog(self, node, rid, text):
+            w = self.world
+            s = w.store
+            if w.rename_dialog:
+                if "EditText" in node.cls:
+                    return True  # focusing the field keeps the dialog open
+                if text == "Save":
+                    s.title = w.rename_input
+                    w.rename_dialog = False
+                elif text == "Cancel":
+                    w.rename_dialog = False
+                return True
+            if w.remove_dialog is not None:
+                if text == "Remove":
+                    s.remove_member(s.NAME_TO_ID[w.remove_dialog])
+                w.remove_dialog = None
+                return True
+            if w.leave_dialog:
+                w.leave_dialog = False
+                if (text == "Leave group" and node.clickable
+                        and "Button" in node.cls
+                        and not rid.endswith("leaveGroupButton")):
+                    s.remove_member("user-an", banned=False)
+                    w.screen = "inbox"
+                    w.history.clear()
+                return True
+            if w.revoke_dialog:
+                w.revoke_dialog = False
+                if text == "Revoke link" and not rid.endswith("revokeButton"):
+                    s.link["revoked"] = True
+                return True
+            return False
+
+        def tap_node(self, node):
+            w = self.world
+            s = w.store
+            rid = node.attrs["resource-id"]
+            text = node.text.strip()
+            if self._dialog(node, rid, text):
+                return
+            if w.add_sheet:
+                w.add_sheet = False
+                if rid.endswith("/name"):
+                    name = text
+                    if name in w.sheet_selected:
+                        w.sheet_selected.discard(name)
+                    else:
+                        w.sheet_selected.add(name)
+                    w.add_sheet = True
+                elif rid.endswith("addMemberConfirm"):
+                    for name in w.sheet_selected:
+                        s.add_member(name)
+                    w.sheet_selected = set()
+                elif rid.endswith("addMemberInviteLink"):
+                    w.go("invite-manage")
+                else:
+                    w.add_sheet = True  # tapped elsewhere: sheet stays
+                return
+            if w.screen == "inbox":
+                if rid.endswith("inboxContactsButton"):
+                    w.go("contacts")
+                elif text == w.store.title and node.box and node.box[1] >= 300:
+                    w.go("chat")
+                return
+            if w.screen == "contacts":
+                if rid.endswith("createGroupEntry"):
+                    w.go("group-create")
+                return
+            if w.screen == "group-create":
+                if rid.endswith("groupNameInput"):
+                    return
+                if rid.endswith("/name"):
+                    name = text
+                    if name in w.picked:
+                        w.picked.discard(name)
+                    else:
+                        w.picked.add(name)
+                elif rid.endswith("createButton") and w.picked and w.name_input.strip():
+                    s.create_group(w.name_input.strip(), set(w.picked))
+                    w.go("chat")
+                return
+            if w.screen == "chat":
+                if rid.endswith("chatToolbar"):
+                    w.go("group-detail")
+                return
+            if w.screen == "group-detail":
+                if rid.endswith("groupTitle"):
+                    w.rename_input = s.title
+                    w.rename_dialog = True
+                elif rid.endswith("addMemberButton"):
+                    w.add_sheet = True
+                elif rid.endswith("removeMember"):
+                    w.remove_dialog = node.desc.replace("Remove ", "").replace(
+                        " from this group?", "")
+                elif rid.endswith("inviteLinkButton"):
+                    w.share_url = None  # fresh load: plaintext token is not re-served
+                    w.go("invite-manage")
+                elif rid.endswith("leaveGroupButton"):
+                    w.leave_dialog = True
+                return
+            if w.screen == "invite-manage":
+                if rid.endswith("approvalSwitch"):
+                    current = (s.link["requiresApproval"]
+                               if s.link and not s.link["revoked"] else w.approval_draft)
+                    w.approval_draft = not current
+                    if s.link and not s.link["revoked"]:
+                        s.link["requiresApproval"] = w.approval_draft
+                elif rid.endswith("createLinkButton"):
+                    s.create_link(w.approval_draft)
+                    w.share_url = f"nexachat://join/{s.link['token']}"
+                elif rid.endswith("approveButton"):
+                    pending = next((r for r in s.requests if r["status"] == "PENDING"), None)
+                    if pending:
+                        pending["status"] = "APPROVED"
+                        s.add_member(pending["displayName"])
+                elif rid.endswith("rejectButton"):
+                    pending = next((r for r in s.requests if r["status"] == "PENDING"), None)
+                    if pending:
+                        pending["status"] = "REJECTED"
+                elif rid.endswith("revokeButton"):
+                    w.revoke_dialog = True
+                return
+            if w.screen == "invite-join":
+                if rid.endswith("openChatButton"):
+                    w.go("chat")
+                return
+
+        def type_text(self, value):
+            w = self.world
+            if w.rename_dialog:
+                w.rename_input += value
+            elif w.screen == "group-create":
+                w.name_input += value
+
+        def delete_chars(self, count):
+            w = self.world
+            if w.rename_dialog:
+                w.rename_input = w.rename_input[:-count] if count else w.rename_input
+            elif w.screen == "group-create":
+                w.name_input = w.name_input[:-count] if count else w.name_input
+
+        def move_end(self):
+            return None
+
+        def swipe(self, x1, y1, x2, y2, duration_ms=300):
+            return None  # the fake renders the request section without scrolling
+
+        def key(self, code):
+            w = self.world
+            if w.rename_dialog:
+                w.rename_dialog = False
+            elif w.remove_dialog is not None:
+                w.remove_dialog = None
+            elif w.leave_dialog:
+                w.leave_dialog = False
+            elif w.revoke_dialog:
+                w.revoke_dialog = False
+            elif w.add_sheet:
+                w.add_sheet = False
+            elif w.history:
+                w.screen = w.history.pop()
+            else:
+                w.screen = "inbox"
+
+        def screenshot(self, path):
+            Path(path).write_bytes(b"png")
+
+    class Patch:
+        @staticmethod
+        def ui_nodes(device, timeout=8):
+            return device.nodes()
+
+        @staticmethod
+        def grant_test_permissions():
+            return {}
+
+        @staticmethod
+        def filtered_logcat(baseline):
+            return [], False
+
+    class Adb:
+        serial = "emulator-5554"
+
+        def __init__(self, world):
+            self.world = world
+
+        def command(self, *args, **kwargs):
+            if args[:2] != ("shell", "am") or "start" not in args:
+                return ""
+            if "-d" in args:
+                # ACTION_VIEW deep link -> the invite join surface.
+                self.world.go("invite-join")
+            else:
+                # Explicit MainActivity relaunch -> cold start on the inbox.
+                self.world.cold_start()
+            return ""
+
+    class Response:
+        def __init__(self, status, body=None):
+            self.status = status
+            self._body = body
+
+        def json(self):
+            return self._body
+
+    class Client:
+        base_url = "http://127.0.0.1:18093"
+        timeout = 30
+
+        def __init__(self, store):
+            self.store = store
+
+        @staticmethod
+        def _caller(token):
+            return {"tok-an": "user-an", "tok-binh": "user-binh",
+                    "tok-chi": "user-chi", "tok-dung": "user-dung"}.get(token)
+
+        def request(self, method, path, token=None, body=None,
+                    params=None, raw_body=None, headers=None):
+            handler = {"GET": self.get, "POST": self.post, "PATCH": self.patch,
+                       "PUT": self.put, "DELETE": self.delete}[method]
+            return handler(path, token=token, body=body, params=params, headers=headers)
+
+        def get(self, path, token=None, params=None, headers=None):
+            R = GroupsContactsExecutorTest.Response
+            s = self.store
+            caller = self._caller(token)
+            if path == "/api/v1/contacts":
+                return R(200, [dict(c) for c in s.CONTACTS])
+            if path == "/api/v1/conversations":
+                if caller in s.members:
+                    return R(200, [s.inbox_entry()])
+                return R(200, [])
+            if "/api/v1/conversations/" in path and path.endswith("/messages"):
+                return R(200, {"items": []}) if caller in s.members else R(403)
+            if "/api/v1/conversations/" in path and path.endswith("/invite-link"):
+                if s.link and not s.link["revoked"]:
+                    return R(200, {"id": "lnk-1", "token": None,
+                                   "requiresApproval": s.link["requiresApproval"]})
+                return R(404)
+            if "/api/v1/conversations/" in path and path.endswith("/join-requests/me"):
+                mine = [r for r in s.requests if r["userId"] == caller]
+                if not mine:
+                    return R(404)
+                latest = mine[-1]
+                return R(200, {"id": latest["id"], "status": latest["status"],
+                               "user": {"id": caller,
+                                        "displayName": latest["displayName"]}})
+            if "/api/v1/conversations/" in path and path.endswith("/join-requests"):
+                status = (params or {}).get("status")
+                rows = [r for r in s.requests
+                        if status is None or r["status"] == status]
+                return R(200, [{"id": r["id"], "status": r["status"],
+                                "user": {"id": r["userId"],
+                                         "displayName": r["displayName"]}}
+                               for r in rows])
+            if path.startswith("/api/v1/invite-links/"):
+                if s.link is None or s.link["revoked"]:
+                    return R(404)
+                return R(200, {"conversationId": s.cid, "title": s.title,
+                               "memberCount": len(s.members),
+                               "requiresApproval": s.link["requiresApproval"],
+                               "isMember": caller in s.members})
+            return R(404)
+
+        def post(self, path, token=None, body=None, headers=None):
+            R = GroupsContactsExecutorTest.Response
+            s = self.store
+            caller = self._caller(token)
+            if path.startswith("/api/v1/invite-links/") and path.endswith("/join"):
+                status, payload = s.join(caller)
+                return R(status, payload)
+            if "/api/v1/conversations/" in path and path.endswith("/leave"):
+                s.members.pop(caller, None)
+                return R(204)
+            if "/api/v1/conversations/" in path and "/join-requests/" in path \
+                    and path.endswith("/reject"):
+                rid = path.rsplit("/", 2)[1]
+                for request in s.requests:
+                    if request["id"] == rid:
+                        request["status"] = "REJECTED"
+                        return R(200, {"id": rid, "status": "REJECTED"})
+                return R(404)
+            return R(404)
+
+        def patch(self, path, token=None, body=None, headers=None):
+            return GroupsContactsExecutorTest.Response(404)
+
+        def put(self, path, token=None, body=None, headers=None):
+            return GroupsContactsExecutorTest.Response(404)
+
+        def delete(self, path, token=None, params=None, headers=None):
+            R = GroupsContactsExecutorTest.Response
+            s = self.store
+            if "/api/v1/conversations/" in path and "/members/" in path:
+                uid = path.rsplit("/", 1)[1]
+                s.remove_member(uid)
+                return R(204)
+            if "/api/v1/conversations/" in path and path.endswith("/invite-link"):
+                if s.link:
+                    s.link["revoked"] = True
+                    return R(204)
+                return R(404)
+            return R(404)
+
+    def _fixture(self, hide_added_members=False):
+        store = self.Store()
+        world = self.World(store)
+        world.hide_added_members = hide_added_members
+        client = self.Client(store)
+
+        class Api:
+            USER_A = {"phone": "+84900000001"}
+            USER_C = {"phone": "+84900000002"}
+            USER_B = {"phone": "+84900000003"}
+
+        def session(api, recorder, phone):
+            uid = {"+84900000001": "user-an", "+84900000002": "user-binh",
+                   "+84900000003": "user-chi", "+84900000004": "user-dung"}[phone]
+            return {"accessToken": self.USERS[uid][2],
+                    "user": {"id": uid, "phone": phone}}
+
+        context = {
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "row": journeys.ROW_BY_ID["groups-contacts"],
+            "row_dir": Path(tempfile.mkdtemp()),
+            "adb": self.Adb(world),
+            "device": self.Device(world),
+            "helpers": (Api(), None, self.Patch()),
+            "client": client,
+            "ui_timeout": 2,
+        }
+        return store, world, client, context, session
+
+    def test_executor_drives_group_invite_and_contact_surfaces(self):
+        store, world, client, context, session = self._fixture()
+        row = journeys.ROW_BY_ID["groups-contacts"]
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session):
+            result = journeys.run_groups_contacts(row, context)
+
+        self.assertIn("agreed with GET /contacts", result["contacts"])
+        self.assertIn("An ADMIN + Binh", result["create"])
+        self.assertIn("UI and REST", result["rename"])
+        self.assertIn("member list and REST agree", result["add_member"])
+        self.assertIn("history reads 403", result["remove_member"])
+        self.assertIn("requiresApproval=true", result["invite_link"])
+        self.assertIn("PENDING -> APPROVED", result["approval"])
+        self.assertIn("Open group chat landed on its composer", result["invite_return"])
+        self.assertIn("admin read 404", result["revoke"])
+        self.assertIn("last member left", result["leave"])
+        # Server truth after the full journey: the disposable group is orphaned.
+        self.assertEqual(store.members, {})
+        self.assertTrue(store.link["revoked"])
+        self.assertEqual([r["status"] for r in store.requests], ["APPROVED"])
+        self.assertTrue(store.title.startswith("sj-grp-") and store.title.endswith("-r"))
+        # Every participant's inbox projection is empty.
+        self.assertEqual(store.inbox_entry()["members"], [])
+        self.assertEqual(world.screen, "inbox")
+
+    def test_executor_sweeps_the_group_when_the_member_list_lies(self):
+        store, world, client, context, session = self._fixture(hide_added_members=True)
+        row = journeys.ROW_BY_ID["groups-contacts"]
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session):
+            with self.assertRaises(journeys.ProductFailure) as caught:
+                journeys.run_groups_contacts(row, context)
+        self.assertIn("Chi did not appear in the member list", str(caught.exception))
+        # The REST side really added Chi, so the sweep must remove her plus the
+        # other members and An must leave the disposable group behind.
+        self.assertEqual(store.members, {})
+        self.assertIn("user-chi", store.banned)
+
+    def test_registered_dispatch_routes_groups_contacts(self):
+        sentinel = mock.Mock(return_value={"summary": "ok"})
+        with mock.patch.object(journeys, "run_groups_contacts", sentinel):
+            result = journeys.run_registered_row(
+                journeys.ROW_BY_ID["groups-contacts"], {"serial": "emulator-5554"})
+        self.assertEqual(result, {"summary": "ok"})
+        sentinel.assert_called_once()
 
 
 if __name__ == "__main__":
