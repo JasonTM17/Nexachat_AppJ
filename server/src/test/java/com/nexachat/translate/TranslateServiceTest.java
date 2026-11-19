@@ -311,6 +311,21 @@ class TranslateServiceTest {
     }
 
     @Test
+    void consentRevokedDuringGenerationIsRefusedAndNotCached() {
+        stubTarget(row("xin chào"));
+        when(provider.translate(any())).thenReturn(completion("hello", "vi"));
+        // The entry check consents; the post-generation re-check sees the revoke.
+        when(consentRepository.isConsented(userId)).thenReturn(true).thenReturn(false);
+
+        assertThatThrownBy(() -> service.translate(userId, messageId, "en"))
+                .satisfies(error -> assertThat(((ApiException) error).getCode())
+                        .isEqualTo(ApiErrorCode.AI_CONSENT_REQUIRED));
+        verify(provider).translate(any());
+        verify(cacheRepository, never()).save(any(), anyLong(), anyString(), anyString(),
+                any(), any(), anyInt());
+    }
+
+    @Test
     void rateLimitExceededRejectsBeforeProvider() {
         stubTarget(row("xin chào"));
         doThrow(ApiException.of(ApiErrorCode.RATE_LIMITED, "limited"))
@@ -460,6 +475,30 @@ class TranslateServiceTest {
 
         assertThat(results.get(0).error()).isEqualTo(ApiErrorCode.AI_CONSENT_REQUIRED.getCode());
         verify(rateLimiter, never()).tryConsume(any(), anyInt());
+    }
+
+    @Test
+    void batchConsentRevokedDuringGenerationRefusesAndSkipsTheCache() {
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+        Instant created = Instant.parse("2026-11-16T09:00:00Z");
+        when(contextRepository.findTargets(eq(conversationId), any()))
+                .thenReturn(List.of(
+                        new TargetRow(a, 1L, senderId, "A", "tối nay", 0L, created, "TEXT", null, null, false),
+                        new TargetRow(b, 2L, senderId, "A", "mai nhé", 0L, created, "TEXT", null, null, false)));
+        when(provider.translate(any())).thenReturn(completion("tonight", "vi"));
+        when(rateLimiter.tryConsume(userId, 1)).thenReturn(true);
+        // The lazy entry check consents; both post-generation re-checks see the revoke.
+        when(consentRepository.isConsented(userId)).thenReturn(true).thenReturn(false);
+
+        List<TranslateBatchItem> results = service.translateBatch(
+                userId, conversationId, List.of(a, b), "en");
+
+        assertThat(results).allSatisfy(item -> assertThat(item.error())
+                .isEqualTo(ApiErrorCode.AI_CONSENT_REQUIRED.getCode()));
+        verify(provider, times(2)).translate(any());
+        verify(cacheRepository, never()).save(any(), anyLong(), anyString(), anyString(),
+                any(), any(), anyInt());
     }
 
     @Test

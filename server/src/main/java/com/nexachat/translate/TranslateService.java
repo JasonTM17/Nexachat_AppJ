@@ -171,6 +171,16 @@ public class TranslateService {
             throw ApiException.of(ApiErrorCode.TRANSLATION_UNAVAILABLE,
                     "Translation is temporarily unavailable");
         }
+        // Post-generation re-check, the same lane gate the summary and ask
+        // paths apply: a consent revoke committed while the provider call was
+        // in flight must win the race — the result is neither returned nor
+        // cached. Unlocked like the ask lane's pre-call re-check; the residual
+        // window to the cache write is milliseconds, not the provider call.
+        if (!consentRepository.isConsented(userId)) {
+            metrics.recordTranslateRequest("REFUSED", "none");
+            throw ApiException.of(ApiErrorCode.AI_CONSENT_REQUIRED,
+                    "External AI consent is required to translate messages");
+        }
         String text = target.code().equals(generation.output().sourceLang())
                 ? content : generation.output().text();
         cacheRepository.save(messageId, row.changeVersion(), target.code(), glossaryHash,
@@ -264,6 +274,15 @@ public class TranslateService {
                 metrics.recordTranslateRequest("FAILURE", "none");
                 items.add(TranslateBatchItem.failed(id, target.code(),
                         ApiErrorCode.TRANSLATION_UNAVAILABLE.getCode()));
+                continue;
+            }
+            // Same post-generation lane gate as the single-message path: a
+            // revoke committed while this item's provider call was in flight
+            // wins, and the result is neither returned nor cached.
+            if (!consentRepository.isConsented(userId)) {
+                metrics.recordTranslateRequest("REFUSED", "none");
+                items.add(TranslateBatchItem.failed(id, target.code(),
+                        ApiErrorCode.AI_CONSENT_REQUIRED.getCode()));
                 continue;
             }
             String text = target.code().equals(generation.output().sourceLang())
