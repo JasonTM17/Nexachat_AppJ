@@ -6229,7 +6229,13 @@ def run_offline_sync(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]
         _offline_pull_until_seed(context, f"sj-os-{tag}-")
         seen = _offline_collect_inbox_titles(
             context, f"sj-os-{tag}-", _OFFLINE_SEEN_MIN)
-        ui.screenshot(str(row_dir / "inbox-bottom.png"))
+        # The walk is only done when the oldest seeded row itself renders:
+        # sj-os-<tag>-001 sorts deepest, so reaching it proves every paged
+        # inbox row above it was appended into Room.
+        try:
+            _offline_walk_inbox(context, f"sj-os-{tag}-001")
+        finally:
+            ui.screenshot(str(row_dir / "inbox-bottom.png"))
         if len(seen) < _OFFLINE_SEEN_MIN:
             raise ProductFailure(
                 f"the paged inbox walk surfaced only {len(seen)} seeded "
