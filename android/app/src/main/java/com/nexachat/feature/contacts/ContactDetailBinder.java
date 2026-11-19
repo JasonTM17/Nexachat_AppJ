@@ -246,7 +246,7 @@ final class ContactDetailBinder {
             secondary.setOnClickListener(v -> FormDialogs.markDestructive(
                     new MaterialAlertDialogBuilder(fragment.requireContext())
                             .setMessage(R.string.confirm_remove_contact)
-                            .setNegativeButton(android.R.string.cancel, null)
+                            .setNegativeButton(R.string.action_cancel, null)
                             .setPositiveButton(
                                     R.string.action_remove_contact,
                                     (d, w) -> viewModel.removeSelectedContact())
