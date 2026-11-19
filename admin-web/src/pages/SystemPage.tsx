@@ -47,11 +47,21 @@ export default function SystemPage() {
     return () => clearInterval(id);
   }, [load]);
 
-  if (failed) return <ErrorBlock onRetry={load} />;
+  // A transient poll failure must not blank a monitoring dashboard that
+  // already holds data — only the never-loaded state gets the full block.
+  if (failed && !health) return <ErrorBlock onRetry={load} />;
   if (!health) return <Loading />;
 
   return (
     <>
+      {failed && (
+        <div className="form-error" role="alert">
+          {t('system.stale', { time: fmtTime(health.checkedAt) })}{' '}
+          <button className="btn ghost sm" onClick={load}>
+            {t('common.retry')}
+          </button>
+        </div>
+      )}
       <div className="kpi-grid">
         <div className="card kpi">
           <div className="label">{t('system.status')}</div>

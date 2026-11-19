@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { setTimeLang } from './lib/locale';
 
 export type Lang = 'en' | 'vi';
 
@@ -80,6 +81,7 @@ const STRINGS = {
     'users.action.revoke': 'Revoke sessions',
     'users.action.role': 'Change role',
     'users.action.warn': 'Warn user',
+    'users.action.role.to': 'Change role → {role}',
     'users.deleted': 'Deleted accounts',
     'users.detail.sessions': 'Sessions',
     'users.detail.devices': 'Devices',
@@ -166,6 +168,7 @@ const STRINGS = {
     'system.degraded': 'Degraded',
     'system.down': 'DOWN',
     'system.unknown': 'Unknown',
+    'system.stale': 'Data may be stale — last updated {time}',
     'theme.light': 'Light',
     'theme.dark': 'Dark',
     'theme.toggle': 'Toggle theme',
@@ -217,7 +220,7 @@ const STRINGS = {
     'kpi.dau': 'Hoạt động hôm nay',
     'kpi.wau': 'Hoạt động 7 ngày',
     'kpi.messagesToday': 'Tin nhắn hôm nay',
-    'kpi.activeCalls': 'Cuộc gọi',
+    'kpi.activeCalls': 'Cuộc gọi hiện tại',
     'kpi.pendingAlerts': 'Cảnh báo mở',
     'kpi.databaseBytes': 'CSDL',
     'kpi.uploadsBytes': 'Tệp tải lên',
@@ -241,6 +244,7 @@ const STRINGS = {
     'users.action.revoke': 'Thu hồi phiên',
     'users.action.role': 'Đổi vai trò',
     'users.action.warn': 'Cảnh cáo',
+    'users.action.role.to': 'Đổi vai trò → {role}',
     'users.deleted': 'Tài khoản đã xóa',
     'users.detail.sessions': 'Phiên',
     'users.detail.devices': 'Thiết bị',
@@ -257,7 +261,7 @@ const STRINGS = {
     'alerts.status.dismissed': 'Đã bỏ qua',
     'alerts.action.assign': 'Nhận xử lý',
     'alerts.action.ack': 'Xác nhận',
-    'alerts.action.resolve': 'Đã xử lý',
+    'alerts.action.resolve': 'Xử lý',
     'alerts.action.dismiss': 'Bỏ qua',
     'alerts.action.dismissBulk': 'Bỏ qua đã chọn',
     'alerts.action.escalate': 'Báo cấp trên',
@@ -293,7 +297,7 @@ const STRINGS = {
     'feed.action.hide': 'Ẩn',
     'feed.action.unhide': 'Hiện lại',
     'feed.action.dismiss': 'Bỏ qua',
-    'feed.action.review': 'Đã xem xét',
+    'feed.action.review': 'Đánh dấu đã xem',
     'feed.expand': 'Xem đầy đủ',
     'feed.collapse': 'Thu gọn',
     'rules.col.name': 'Quy tắc',
@@ -327,6 +331,7 @@ const STRINGS = {
     'system.degraded': 'Suy giảm',
     'system.down': 'LỖI',
     'system.unknown': 'Không rõ',
+    'system.stale': 'Dữ liệu có thể đã cũ — cập nhật lần cuối {time}',
     'theme.light': 'Sáng',
     'theme.dark': 'Tối',
     'theme.toggle': 'Đổi giao diện',
@@ -346,9 +351,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(
     () => (localStorage.getItem('admin.lang') as Lang) || 'en',
   );
-  // Keep <html lang> in sync so assistive tech reads the right language.
+  // Keep <html lang> in sync so assistive tech reads the right language,
+  // and keep pure formatters (fmtTime) on the same display locale.
   useEffect(() => {
     document.documentElement.lang = lang;
+    setTimeLang(lang);
   }, [lang]);
   const value = useMemo(
     () => ({
