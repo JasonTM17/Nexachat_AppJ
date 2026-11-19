@@ -285,6 +285,7 @@
     <string name="group_role_admin">Quản trị viên</string>
     <string name="group_member_self">%1$s (bạn)</string>
     <string name="group_remove_member_confirm">Xóa %1$s khỏi nhóm này?</string>
+    <string name="cd_remove_member_named">Xóa %1$s khỏi nhóm</string>
     <string name="group_leave_confirm">Rời khỏi nhóm này?</string>
     <string name="action_create_group">Tạo nhóm</string>
     <string name="action_add_member">Thêm thành viên</string>

@@ -38,7 +38,7 @@ public final class GroupMemberAdapter extends ListAdapter<GroupMember, GroupMemb
     }
 
     public static int removeMemberContentDescriptionRes() {
-        return R.string.group_remove_member_confirm;
+        return R.string.cd_remove_member_named;
     }
 
     private static final DiffUtil.ItemCallback<GroupMember> DIFF = new DiffUtil.ItemCallback<GroupMember>() {

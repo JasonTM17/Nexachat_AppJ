@@ -288,6 +288,7 @@
     <string name="group_role_admin">Admin</string>
     <string name="group_member_self">%1$s (you)</string>
     <string name="group_remove_member_confirm">Remove %1$s from this group?</string>
+    <string name="cd_remove_member_named">Remove %1$s from the group</string>
     <string name="group_leave_confirm">Leave this group?</string>
     <string name="action_create_group">Create group</string>
     <string name="action_add_member">Add member</string>
