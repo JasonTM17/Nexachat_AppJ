@@ -188,7 +188,7 @@ debug receiver), and `am broadcast` arrives with an unattributed sender uid.
 
 For testing recovery-email verification (`POST /api/v1/users/me/email/request`),
 password reset (`POST /api/v1/auth/recovery/reset-password/request`), and
-self-service account deletion (`POST /api/v1/auth/recovery/delete-account/request`)
+self-service account deletion (`POST /api/v1/account-deletion/request`)
 without external email service credentials, use [Mailpit](https://github.com/axllent/mailpit)
 as a local SMTP sink:
 

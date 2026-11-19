@@ -611,7 +611,7 @@ When `GOOGLE_WEB_CLIENT_ID` is empty, Google sign-in UI buttons are automaticall
 
 NexaChat supports self-service account deletion across two channels:
 1. **In-app deletion:** Authenticated user navigates to Profile / Settings -> Delete account, confirms with their password (`DELETE /api/v1/users/me`).
-2. **Web self-service deletion:** For users without device access, `site/delete-account.html` enables deletion using a 6-digit OTP sent to their verified recovery email (`POST /api/v1/auth/recovery/delete-account/request` and `confirm`).
+2. **Web self-service deletion:** For users without device access, `site/delete-account.html` enables deletion using a 6-digit OTP sent to their verified recovery email (`POST /api/v1/account-deletion/request` and `confirm`).
 
 #### What is deleted and what is preserved:
 - **Tombstoned / Deleted:** User row is soft-deleted (`users.deleted_at = now()`, Flyway V26), `users.phone` is set to `NULL` (freeing the E.164 phone number for re-registration), display name resets to `Deleted account`, and avatar URL is cleared. Active sessions are revoked via `users.tokens_valid_after` and refresh token families are cleared. The user automatically leaves all group chats (promoting a successor admin if needed). Contacts, push device tokens, private labels, group join requests, linked Google identities, email OTPs, unbound uploads, and AI caches are scrubbed. The unreferenced avatar object is deleted from the configured storage provider after commit.
