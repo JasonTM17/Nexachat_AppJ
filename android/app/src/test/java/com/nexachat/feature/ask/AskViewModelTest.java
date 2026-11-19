@@ -1,6 +1,7 @@
 package com.nexachat.feature.ask;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
@@ -40,6 +41,26 @@ public final class AskViewModelTest {
 
         assertEquals(AskUiState.Status.NOT_FOUND, viewModel.state().getValue().getStatus());
         assertNull(viewModel.state().getValue().getResponse());
+        assertFalse(viewModel.state().getValue().isContextOmitted());
+    }
+
+    @Test
+    public void contextOmittedSurvivesAnswerAndNotFoundStates() {
+        FakeAskApi api = new FakeAskApi();
+        AskViewModel viewModel = createViewModel(api, new SessionEvents());
+        viewModel.updateDraft("Question?");
+        viewModel.submit();
+        api.lastCall().succeed(response(null, "NOT_FOUND", true));
+
+        assertEquals(AskUiState.Status.NOT_FOUND, viewModel.state().getValue().getStatus());
+        assertTrue(viewModel.state().getValue().isContextOmitted());
+
+        viewModel.updateDraft("Another question?");
+        viewModel.submit();
+        api.lastCall().succeed(response("It is on Friday.", "LLM", true));
+
+        assertEquals(AskUiState.Status.ANSWER, viewModel.state().getValue().getStatus());
+        assertTrue(viewModel.state().getValue().isContextOmitted());
     }
 
     @Test
@@ -115,6 +136,11 @@ public final class AskViewModelTest {
     }
 
     private static AskResponse response(String answer, String mode) {
-        return new AskResponse(answer, Collections.emptyList(), mode, new AskUsage(0, 0, false));
+        return response(answer, mode, false);
+    }
+
+    private static AskResponse response(String answer, String mode, boolean contextOmitted) {
+        return new AskResponse(answer, Collections.emptyList(), mode,
+                new AskUsage(0, 0, false), contextOmitted);
     }
 }

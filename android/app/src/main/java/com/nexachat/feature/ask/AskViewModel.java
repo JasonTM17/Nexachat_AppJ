@@ -153,7 +153,8 @@ public final class AskViewModel extends ViewModel {
                             String answer = response.getAnswer();
                             if ("NOT_FOUND".equals(response.getMode())
                                     || answer == null || answer.trim().isEmpty()) {
-                                state.setValue(AskUiState.notFound(draft));
+                                state.setValue(AskUiState.notFound(
+                                        draft, response.isContextOmitted()));
                             } else {
                                 state.setValue(AskUiState.answer(draft, response));
                             }
