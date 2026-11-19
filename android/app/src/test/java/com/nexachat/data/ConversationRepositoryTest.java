@@ -8,6 +8,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
@@ -991,6 +993,28 @@ public final class ConversationRepositoryTest {
         clock.advanceTimeBy(1, TimeUnit.SECONDS);
 
         verify(messageApi, times(1)).getConversations(eq(30), isNull());
+    }
+
+    @Test
+    public void unexpectedRefreshErrorDoesNotKillTheRefreshPump() throws Exception {
+        TestScheduler clock = virtualClock();
+        List<Throwable> escapedErrors = new ArrayList<>();
+        RxJavaPlugins.setErrorHandler(escapedErrors::add);
+        buildRepository();
+        doThrow(new RuntimeException("room blew up"))
+                .when(messageApi).getConversations(any(), any());
+
+        resyncRequests.onNext(new Object());
+        clock.advanceTimeBy(1, TimeUnit.SECONDS);
+        verify(messageApi, times(1)).getConversations(eq(30), isNull());
+
+        doReturn(asCall(inboxResponse("[]", null)))
+                .when(messageApi).getConversations(any(), any());
+        resyncRequests.onNext(new Object());
+        clock.advanceTimeBy(1, TimeUnit.SECONDS);
+
+        verify(messageApi, times(2)).getConversations(eq(30), isNull());
+        assertTrue(escapedErrors.isEmpty());
     }
 
     @Test

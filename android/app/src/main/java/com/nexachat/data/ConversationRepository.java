@@ -70,6 +70,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import okhttp3.MediaType;
@@ -120,6 +122,7 @@ public final class ConversationRepository implements AutoCloseable {
     private static final int MAX_AVATAR_BYTES = 25 * 1024 * 1024;
     private static final int AVATAR_READ_BUFFER_BYTES = 64 * 1024;
     private static final String ERROR_UNEXPECTED_EMPTY_BODY = "UNEXPECTED_EMPTY_BODY";
+    private static final Logger LOGGER = Logger.getLogger("ConversationRepository");
 
     private final MessageApi messageApi;
     private final GroupApi groupApi;
@@ -828,6 +831,13 @@ public final class ConversationRepository implements AutoCloseable {
      * push. Cancellation is safe because the Retrofit call is cancelled, the
      * operation tracker drops the disposed pull, and every paging-state write
      * is generation-guarded.
+     *
+     * <p>An unexpected error inside a refresh (Room/SQLite race, mapping bug)
+     * must not kill this long-lived pump: the inner Single converts it to a
+     * logged {@link Result.Failure} so the subscription survives and the next
+     * trigger still refreshes. Converting inside the inner also keeps a
+     * superseded pull's late error from becoming an undeliverable error routed
+     * to {@code RxJavaPlugins.onError}, which would crash the process.
      */
     private void watchPushTriggers() {
         subscriptions.add(session.getEvents()
@@ -838,7 +848,14 @@ public final class ConversationRepository implements AutoCloseable {
         subscriptions.add(refreshRequests
                 .onBackpressureBuffer(4, () -> { }, BackpressureOverflowStrategy.DROP_OLDEST)
                 .debounce(PUSH_REFRESH_DEBOUNCE_MS, TimeUnit.MILLISECONDS)
-                .switchMapSingle(ignored -> refreshInbox())
+                .switchMapSingle(ignored -> refreshInbox()
+                        .onErrorReturn(error -> {
+                            LOGGER.log(Level.SEVERE,
+                                    "Unexpected inbox refresh failure;"
+                                            + " refresh pump stays alive", error);
+                            return Result.failure(
+                                    new ApiError.Unknown("UNEXPECTED_REFRESH_ERROR"));
+                        }))
                 .subscribe(ignored -> { }, RxJavaPlugins::onError));
     }
 
