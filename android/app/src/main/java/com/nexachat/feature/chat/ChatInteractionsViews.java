@@ -32,8 +32,8 @@ public final class ChatInteractionsViews {
             count.setText(root.getContext().getString(
                     R.string.pinned_count, position + 1, total));
             count.setVisibility(View.VISIBLE);
-            spoken = root.getContext().getString(
-                    R.string.pinned_position, position + 1, total);
+            spoken = root.getContext().getResources().getQuantityString(
+                    R.plurals.pinned_position, total, position + 1, total);
         } else {
             count.setVisibility(View.GONE);
             spoken = root.getContext().getString(R.string.pinned_title);
