@@ -80,6 +80,25 @@ class RagLlmAnswerServiceFallbackTest {
     }
 
     @Test
+    void primaryAnsweringGarbageOpensTheBreakerAndCountsFailures() throws Exception {
+        startServers();
+        primary.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
+                FakeOpenAiServer.jsonResponse("not the expected answer json")));
+
+        for (int index = 0; index < 5; index++) {
+            RagLlmAnswer answer = answer("When is the migration?");
+            assertThat(answer).isNull();
+        }
+
+        assertThat(circuitBreaker.allowRequest())
+                .as("a responding-but-broken primary must open the breaker")
+                .isFalse();
+        assertThat(stats.snapshot().llmFailures())
+                .as("an unusable primary answer is a provider failure")
+                .isEqualTo(5);
+    }
+
+    @Test
     void primaryAuthFailureDoesNotFallBackAndReturnsNull() throws Exception {
         startServers();
         primary.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 401, "bad key"));
