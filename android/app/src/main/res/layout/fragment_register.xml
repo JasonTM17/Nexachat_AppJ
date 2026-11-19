@@ -188,6 +188,7 @@
                     app:endIconContentDescription="@string/cd_password_visibility"
                     app:endIconDrawable="@drawable/ic_visibility"
                     app:endIconMode="password_toggle"
+                    app:helperText="@string/auth_password_policy_hint"
                     app:startIconDrawable="@drawable/ic_lock">
 
                     <com.google.android.material.textfield.TextInputEditText

@@ -233,4 +233,12 @@
         </com.google.android.material.card.MaterialCardView>
     </LinearLayout>
     </androidx.core.widget.NestedScrollView>
+
+    <com.nexachat.core.ui.components.ErrorStateView
+        android:id="@+id/e2eeErrorState"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="?android:attr/colorBackground"
+        android:visibility="gone"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior" />
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

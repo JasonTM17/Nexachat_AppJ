@@ -801,7 +801,8 @@ public class CallActivity extends ComponentActivity {
         try {
             startActivity(dial);
         } catch (ActivityNotFoundException ignored) {
-            Toast.makeText(this, R.string.call_phone_unavailable, Toast.LENGTH_LONG).show();
+            // The number was validated; the failure means no dialer app exists.
+            Toast.makeText(this, R.string.call_no_dialer_app, Toast.LENGTH_LONG).show();
         }
         finish();
     }

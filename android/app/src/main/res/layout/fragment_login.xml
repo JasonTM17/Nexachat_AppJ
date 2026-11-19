@@ -161,7 +161,7 @@
                         android:autofillHints="username"
                         android:imeOptions="actionNext"
                         android:importantForAutofill="yes"
-                        android:inputType="textEmailAddress"
+                        android:inputType="text"
                         android:nextFocusDown="@id/passwordInput" />
                 </com.google.android.material.textfield.TextInputLayout>
 

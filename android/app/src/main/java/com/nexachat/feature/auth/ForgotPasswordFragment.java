@@ -51,6 +51,10 @@ public final class ForgotPasswordFragment extends Fragment {
         binding.forgotNewPasswordInput.addTextChangedListener(watcher(viewModel::onNewPasswordChanged));
         binding.forgotConfirmPasswordInput.addTextChangedListener(
                 watcher(viewModel::onConfirmPasswordChanged));
+        if (binding.forgotLoading.getContentDescription() == null) {
+            binding.forgotLoading.setContentDescription(
+                    getString(AuthLoadingOverlay.contentDescriptionResId()));
+        }
         binding.forgotSendCode.setOnClickListener(v -> viewModel.sendCode());
         binding.forgotSubmit.setOnClickListener(v -> viewModel.submitReset());
         binding.forgotResend.setOnClickListener(v -> viewModel.resendCode());
@@ -164,6 +168,9 @@ public final class ForgotPasswordFragment extends Fragment {
         } else {
             binding.forgotError.setVisibility(View.GONE);
         }
+        binding.forgotLoading.setVisibility(
+                state.isSending() || state.isSubmitting() || state.isResending()
+                        ? View.VISIBLE : View.GONE);
         rendering = false;
     }
 

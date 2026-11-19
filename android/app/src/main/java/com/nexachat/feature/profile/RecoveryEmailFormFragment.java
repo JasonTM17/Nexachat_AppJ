@@ -16,6 +16,7 @@ import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.databinding.FragmentRecoveryEmailFormBinding;
 import com.nexachat.feature.auth.ApiErrorText;
+import com.nexachat.feature.auth.AuthLoadingOverlay;
 import dagger.hilt.android.AndroidEntryPoint;
 
 @AndroidEntryPoint
@@ -49,6 +50,10 @@ public final class RecoveryEmailFormFragment extends Fragment {
             return false;
         });
         binding.recoveryFormSend.setOnClickListener(v -> viewModel.sendCode());
+        if (binding.recoveryFormLoading.getContentDescription() == null) {
+            binding.recoveryFormLoading.setContentDescription(
+                    getString(AuthLoadingOverlay.contentDescriptionResId()));
+        }
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
     }
 
@@ -70,6 +75,8 @@ public final class RecoveryEmailFormFragment extends Fragment {
         } else {
             binding.recoveryFormError.setVisibility(View.GONE);
         }
+        binding.recoveryFormLoading.setVisibility(
+                state.isSending() ? View.VISIBLE : View.GONE);
         if (state.isCodeSent() && state.getPendingEmail() != null) {
             viewModel.consumeCodeSent();
             Bundle args = new Bundle();

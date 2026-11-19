@@ -241,6 +241,9 @@
     <string name="action_unpin_conversation">Bỏ ghim trò chuyện</string>
     <string name="pinned_title">Đã ghim</string>
     <string name="pinned_count" translatable="false">%1$d/%2$d</string>
+    <plurals name="pinned_position">
+        <item quantity="other">Đã ghim %1$d trong %2$d</item>
+    </plurals>
     <string name="reply_unavailable">Tin nhắn không khả dụng</string>
     <string name="cd_cancel_reply">Hủy trả lời</string>
     <string name="action_jump_to_message">Đi tới tin nhắn</string>

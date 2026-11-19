@@ -43,7 +43,9 @@ public final class EncryptionFragment extends Fragment {
     private View devicesCard;
     private LinearLayout devicesList;
     private TextView directoryHint;
+    private com.nexachat.core.ui.components.ErrorStateView errorState;
     private String peerName;
+    private String conversationId = "";
     private android.widget.CompoundButton.OnCheckedChangeListener toggleListener;
 
     @Override
@@ -76,6 +78,8 @@ public final class EncryptionFragment extends Fragment {
         devicesCard = view.findViewById(R.id.devicesCard);
         devicesList = view.findViewById(R.id.devicesList);
         directoryHint = view.findViewById(R.id.e2eeDirectoryHint);
+        errorState = view.findViewById(R.id.e2eeErrorState);
+        errorState.setOnRetry(() -> viewModel.load(conversationId));
         view.<com.google.android.material.appbar.MaterialToolbar>findViewById(R.id.toolbar)
                 .setNavigationOnClickListener(ignored ->
                         NavHostFragment.findNavController(this).navigateUp());
@@ -110,7 +114,8 @@ public final class EncryptionFragment extends Fragment {
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
         Bundle args = getArguments();
         if (args != null) {
-            viewModel.load(args.getString("conversationId", ""));
+            conversationId = args.getString("conversationId", "");
+            viewModel.load(conversationId);
         }
     }
 
@@ -227,6 +232,18 @@ public final class EncryptionFragment extends Fragment {
         devicesCard.setVisibility(rowCount == 0 ? View.GONE : View.VISIBLE);
         directoryHint.setVisibility(
                 StatusRules.showDirectoryHint(state) ? View.VISIBLE : View.GONE);
+
+        // An initial-load failure leaves nothing on screen but a one-line
+        // status; surface the shared error state with a retry instead. Once
+        // any conversation data made it through, later errors (toggle,
+        // verify) keep their inline status treatment.
+        boolean loadFailed = state.errorCode != null && !state.loading
+                && !state.enabled && state.devices.isEmpty()
+                && state.verificationCode == null;
+        errorState.setVisibility(loadFailed ? View.VISIBLE : View.GONE);
+        if (loadFailed) {
+            errorState.setMessage(errorText(state.errorCode));
+        }
     }
 
     /**

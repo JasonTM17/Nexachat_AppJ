@@ -78,6 +78,7 @@ public class IncomingCallActivity extends ComponentActivity {
     private boolean pendingAccept;
     private boolean acceptAsVoiceOnly;
     private boolean resolving;
+    private boolean callErrorDialogShown;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable finishEndedScreen = this::finish;
     private Disposable fallbackAdmission;
@@ -166,8 +167,7 @@ public class IncomingCallActivity extends ComponentActivity {
             }
 
             @Override public void onCallError(CallError error) {
-                Toast.makeText(IncomingCallActivity.this, R.string.call_state_failed,
-                        Toast.LENGTH_LONG).show();
+                showCallError(error);
             }
         };
         callManager.addListener(listener);
@@ -525,6 +525,35 @@ public class IncomingCallActivity extends ComponentActivity {
         finish();
     }
 
+    /**
+     * Mirrors CallActivity's failure dialog: the typed CallError.Code resolves
+     * to a specific reason (busy, offline, network, permission) instead of a
+     * generic toast, with the same dial-phone fallback when a number exists.
+     */
+    private void showCallError(@Nullable CallError error) {
+        if (callErrorDialogShown || isFinishing()) {
+            return;
+        }
+        callErrorDialogShown = true;
+        CallFailureDialogCopy copy = CallFailureDialogCopy.forCode(
+                error == null ? null : error.getCode());
+        String phone = getIntent().getStringExtra(CallLauncher.EXTRA_PEER_PHONE);
+        MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(this)
+                .setTitle(copy.getTitleResource())
+                .setMessage(copy.getReasonResource())
+                .setNegativeButton(android.R.string.cancel, (dialog, which) -> finish());
+        if (CallPermissionHelper.hasPhoneFallback(phone)) {
+            builder.setPositiveButton(R.string.call_via_phone,
+                    (dialog, which) -> dialPhone(phone));
+        }
+        builder.setOnDismissListener(dialog -> {
+            if (!isFinishing()) {
+                finish();
+            }
+        });
+        builder.show();
+    }
+
     private void showPermissionFallback() {
         String phone = getIntent().getStringExtra(CallLauncher.EXTRA_PEER_PHONE);
         MaterialAlertDialogBuilder dialog = new MaterialAlertDialogBuilder(this)
@@ -542,7 +571,8 @@ public class IncomingCallActivity extends ComponentActivity {
         try {
             startActivity(dial);
         } catch (ActivityNotFoundException ignored) {
-            Toast.makeText(this, R.string.call_phone_unavailable, Toast.LENGTH_LONG).show();
+            // The number was validated; the failure means no dialer app exists.
+            Toast.makeText(this, R.string.call_no_dialer_app, Toast.LENGTH_LONG).show();
         }
         finish();
     }

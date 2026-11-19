@@ -153,17 +153,21 @@ public final class ChatSurfacePolishContractTest {
         assertEquals("the root announces the banner; the label must stay out of the tree",
                 "no", title.getAttributeNS(ANDROID, "importantForAccessibility"));
 
-        boolean chevron = false;
+        boolean cycleIcon = false;
         NodeList images = doc.getElementsByTagName("ImageView");
         for (int i = 0; i < images.getLength(); i++) {
             Element image = (Element) images.item(i);
-            if ("@drawable/ic_keyboard_arrow_down".equals(image.getAttributeNS(ANDROID, "src"))) {
-                chevron = true;
-                assertEquals("the jump affordance is decorative",
+            if ("@drawable/ic_refresh".equals(image.getAttributeNS(ANDROID, "src"))) {
+                cycleIcon = true;
+                assertEquals("the cycle affordance is decorative",
                         "no", image.getAttributeNS(ANDROID, "importantForAccessibility"));
             }
         }
-        assertTrue("pinned banner must show the jump-to-message chevron", chevron);
+        assertTrue("pinned banner must show the cycle-to-next-pin icon", cycleIcon);
+
+        Element count = findById(doc, "pinnedCount");
+        assertEquals("the position indicator is announced by the root description",
+                "no", count.getAttributeNS(ANDROID, "importantForAccessibility"));
     }
 
     @Test

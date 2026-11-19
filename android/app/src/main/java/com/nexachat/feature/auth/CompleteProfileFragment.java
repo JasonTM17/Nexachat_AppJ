@@ -52,6 +52,7 @@ public final class CompleteProfileFragment extends Fragment {
             public void afterTextChanged(Editable s) {}
         });
         binding.completeProfileContinue.setOnClickListener(v -> viewModel.continueToInbox());
+        binding.completeProfileRetry.setOnClickListener(v -> viewModel.load());
         requireActivity().getOnBackPressedDispatcher().addCallback(
                 getViewLifecycleOwner(),
                 new OnBackPressedCallback(true) {
@@ -106,6 +107,10 @@ public final class CompleteProfileFragment extends Fragment {
             binding.completeProfileError.setText(
                     ApiErrorText.text(requireContext(), state.getError()));
         }
+        // The initial profile fetch has no other recovery path; mirror the
+        // recovery-email manage screen and offer an explicit retry.
+        boolean loadFailed = user == null && !state.getLoading() && state.getError() != null;
+        binding.completeProfileRetry.setVisibility(loadFailed ? View.VISIBLE : View.GONE);
         boolean busy = state.getLoading() || state.getSaving();
         binding.displayNameInput.setEnabled(!busy);
         binding.completeProfileContinue.setEnabled(!busy);
