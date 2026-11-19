@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Guarded coordinator for the phase 08 stable-journey campaign.
 
-Runnable rows are seeded login, send/receive, chat-interactions, summary-ask,
-archive/preferences, groups-contacts, labels-lifecycle, polls-reminders,
-offline-sync, and the two injected-push journeys.
+Runnable rows are seeded login, auth-session-lifecycle, send/receive,
+chat-interactions, summary-ask, archive/preferences, groups-contacts,
+labels-lifecycle, polls-reminders, offline-sync, and the two
+injected-push journeys.
 Every other matrix row stays BLOCKED_CAPABILITY with the gap that still
 prevents that row from producing its evidence.
 """
@@ -127,14 +128,13 @@ ROWS: tuple[JourneyRow, ...] = (
         captures=("paired account UI screenshots", "sanitized REST/STOMP transcripts", "logcat.txt", "summary.json"),
         cleanup=("Remove only generated disposable accounts and their owned rows"),
         rest_plan=(("POST", "/api/v1/auth/register"), ("POST", "/api/v1/auth/login"),
-                   ("POST", "/api/v1/auth/refresh"), ("POST", "/api/v1/auth/logout-all"),
-                   ("GET", "/api/v1/users/me")),
-        capability_gap=("response_barrier can hold account A's REST response for GET /api/v1/conversations and "
-                        "release it after the switch. STOMP stays unproven: the barrier refuses WebSocket upgrades "
-                        "with HTTP 501, so an in-flight STOMP frame during A→B is not paused and B's socket "
-                        "isolation is not evidence. Registration, invalid-credential UI, refresh, logout, "
-                        "logout-all, password change, and saved-session restart are still not driven. Do not "
-                        "report the login slice as this full row."),
+                   ("POST", "/api/v1/auth/refresh"), ("POST", "/api/v1/auth/logout"),
+                   ("POST", "/api/v1/auth/logout-all"), ("PATCH", "/api/v1/auth/password"),
+                   ("GET", "/api/v1/users/me"), ("POST", "/api/v1/conversations/direct"),
+                   ("POST", "/api/v1/conversations/{id}/messages"),
+                   ("GET", "/api/v1/conversations/{id}/messages")),
+        stomp_plan=("CONNECT with Authorization per account", "SUBSCRIBE /topic/conversations.{id}",
+                    "hold account A inbound MESSAGE_CREATED while account B receives live"),
     ),
     JourneyRow(
         id="otp-forgot-password",
@@ -624,10 +624,14 @@ HELPER_CALLS = {
          "assert": "REACTION_UPDATED/MESSAGE_CREATED/MESSAGE_UPDATED/MESSAGE_DELETED/MESSAGE_READ"},
     ),
     "auth-session-lifecycle": (
-        {"helper": "response_barrier.Barrier.hold", "method": "GET",
-         "path": "^/api/v1/conversations$", "token_contains": "account A access token"},
-        {"helper": "response_barrier.Barrier.release", "when": "after the device session is account B"},
-        {"helper": "unproven", "transport": "STOMP", "reason": "WebSocket upgrade returns HTTP 501"},
+        {"helper": "response_barrier.Barrier.hold", "method": "MESSAGE",
+         "path": "^/topic/conversations.{id}$", "token_contains": "account A STOMP CONNECT token"},
+        {"helper": "response_barrier.Barrier.wait_held", "n": 1, "transport": "STOMP over WebSocket tunnel"},
+        {"helper": "response_barrier.Barrier.release", "when": "after account A's socket closes"},
+        {"helper": "realtime_probe.FrameReader", "actors": "A held + B live",
+         "subscribe": "/topic/conversations.{id}"},
+        {"helper": "e2e_common.Client", "rest": "register/login/refresh/logout/logout-all/password/direct/messages"},
+        {"helper": "patch_window", "ui": "invalid credentials, saved session, sign-out, sign-out-all, A to B switch"},
     ),
     "otp-forgot-password": (
         {"helper": "mail_sink.start"},
@@ -7039,28 +7043,445 @@ def run_account_deletion(row: JourneyRow, context: dict[str, Any]) -> dict[str, 
     raise CapabilityBlocked(row.capability_gap)
 
 
-def run_auth_session_lifecycle(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
-    """Hold account A's REST conversations response, then stop.
+_AUTH_NEW_PASSWORD = DISPOSABLE_PASSWORD + "-changed"
+_AUTH_LOGOUT_ALL_LABELS = ("Sign out all devices", "Đăng xuất mọi thiết bị")
 
-    STOMP cannot pass the barrier, and the registration/logout UI is not driven,
-    so the row stays blocked even when a barrier is supplied. Not registered.
+
+def _auth_barrier_factory(context: dict[str, Any]) -> Any:
+    """Resolve the barrier factory; imports response_barrier lazily."""
+    factory = context.get("barrier_factory")
+    if factory is not None:
+        return factory
+    if str(E2E_DIR) not in sys.path:
+        sys.path.insert(0, str(E2E_DIR))
+    import response_barrier
+
+    def start(upstream: str) -> Any:
+        barrier = response_barrier.Barrier(upstream)
+        barrier.__enter__()
+        return barrier
+
+    return start
+
+
+def _auth_reader_factory(context: dict[str, Any]) -> Any:
+    """Resolve the STOMP reader factory; imports realtime_probe lazily."""
+    factory = context.get("frame_reader_factory")
+    if factory is not None:
+        return factory
+    if str(DEVICE_DIR) not in sys.path:
+        sys.path.insert(0, str(DEVICE_DIR))
+    from realtime_probe import FrameReader
+    return FrameReader
+
+
+def _auth_note(scenarios: list[dict[str, Any]], name: str, evidence: str) -> None:
+    scenarios.append({"scenario": name, "status": "driven", "evidence": evidence})
+
+
+def _auth_rest_lifecycle(context: dict[str, Any], client: Any,
+                         scenarios: list[dict[str, Any]],
+                         accounts: list[dict[str, Any]]) -> None:
+    """Drive register/login/invalid/refresh/logout/logout-all/password-change."""
+    phone = _require_disposable_phone(str(context.get("auth_phone") or _new_disposable_phone()))
+    registered = _register_disposable(client, phone, "Journey Auth")
+    accounts.append({"label": "rest", "phone": phone,
+                     "password": DISPOSABLE_PASSWORD,
+                     "token": registered.get("accessToken")})
+    duplicate = client.post(
+        "/api/v1/auth/register",
+        body={"phone": phone, "password": DISPOSABLE_PASSWORD,
+              "displayName": "Journey Auth Dup"})
+    _expect_status(duplicate, {409}, "duplicate registration")
+    _auth_note(scenarios, "register",
+               "201 with a token pair; duplicate phone rejected with HTTP 409")
+
+    def login(password: str) -> dict[str, Any]:
+        response = client.post("/api/v1/auth/login",
+                               body={"phone": phone, "password": password})
+        _expect_status(response, {200}, "auth login")
+        data = response.json() or {}
+        if not data.get("accessToken") or not data.get("refreshToken"):
+            raise EnvironmentFailure("login did not return a token pair")
+        return data
+
+    session = login(DISPOSABLE_PASSWORD)
+    me = client.get("/api/v1/users/me", token=session["accessToken"])
+    _expect_status(me, {200}, "users/me after login")
+    _auth_note(scenarios, "login", "200; /users/me confirms the disposable identity")
+
+    bad = client.post("/api/v1/auth/login",
+                      body={"phone": phone, "password": "not-the-account-password"})
+    _expect_status(bad, {401}, "invalid credential login")
+    _auth_note(scenarios, "invalid-credentials-rest",
+               "wrong password rejected with HTTP 401")
+
+    refreshed = client.post("/api/v1/auth/refresh",
+                            body={"refreshToken": session["refreshToken"]})
+    _expect_status(refreshed, {200}, "token refresh")
+    refresh_data = refreshed.json() or {}
+    if (not refresh_data.get("accessToken") or not refresh_data.get("refreshToken")
+            or refresh_data["refreshToken"] == session["refreshToken"]):
+        raise EnvironmentFailure("refresh did not rotate the token pair")
+    me = client.get("/api/v1/users/me", token=refresh_data["accessToken"])
+    _expect_status(me, {200}, "users/me with refreshed access token")
+    _auth_note(scenarios, "refresh", "200; rotated pair accepted by /users/me")
+
+    for kind, path, body in (
+        ("logout", "/api/v1/auth/logout",
+         lambda s: {"refreshToken": s["refreshToken"]}),
+        ("logout-all", "/api/v1/auth/logout-all", lambda s: None),
+    ):
+        session = login(DISPOSABLE_PASSWORD)
+        kwargs = {"token": session["accessToken"]}
+        payload = body(session)
+        if payload is not None:
+            kwargs["body"] = payload
+        out = client.post(path, **kwargs)
+        _expect_status(out, {204}, kind)
+        _expect_status(client.get("/api/v1/users/me", token=session["accessToken"]),
+                       {401}, f"{kind} access token rejection")
+        _expect_status(client.post("/api/v1/auth/refresh",
+                                   body={"refreshToken": session["refreshToken"]}),
+                       {401}, f"{kind} refresh token rejection")
+        _auth_note(scenarios, kind,
+                   "204; the session's access and refresh tokens are rejected afterwards")
+
+    session = login(DISPOSABLE_PASSWORD)
+    changed = client.patch("/api/v1/auth/password",
+                           token=session["accessToken"],
+                           body={"oldPassword": DISPOSABLE_PASSWORD,
+                                 "newPassword": _AUTH_NEW_PASSWORD})
+    _expect_status(changed, {204}, "password change")
+    _expect_status(client.post("/api/v1/auth/login",
+                               body={"phone": phone, "password": DISPOSABLE_PASSWORD}),
+                   {401}, "old password rejection")
+    session = login(_AUTH_NEW_PASSWORD)
+    me = client.get("/api/v1/users/me", token=session["accessToken"])
+    _expect_status(me, {200}, "users/me with post-change session")
+    _auth_note(scenarios, "password-change",
+               "204; old password 401, new password 200")
+    accounts[0]["password"] = _AUTH_NEW_PASSWORD
+    accounts[0]["token"] = session["accessToken"]
+
+
+def _auth_paused_frame(context: dict[str, Any], client: Any, base_url: str,
+                       scenarios: list[dict[str, Any]],
+                       blocked: list[dict[str, Any]],
+                       accounts: list[dict[str, Any]]) -> None:
+    """Hold account A's inbound STOMP MESSAGE_CREATED through the WS tunnel.
+
+    Account B keeps receiving the same broadcast live; after A's socket
+    closes, releasing the hold must not deliver A's frame anywhere else.
+    """
+    name = "paused-frame-a-to-b-isolation"
+    try:
+        barrier_factory = _auth_barrier_factory(context)
+        reader_factory = _auth_reader_factory(context)
+    except Exception as error:
+        blocked.append({"scenario": name,
+                        "reason": f"STOMP tunnel helpers unavailable: {type(error).__name__}"})
+        return
+    phone_a = _require_disposable_phone(
+        str(context.get("auth_pause_phone_a") or _new_disposable_phone()))
+    phone_b = _require_disposable_phone(
+        str(context.get("auth_pause_phone_b") or _new_disposable_phone()))
+    account_a = _register_disposable(client, phone_a, "Journey Pause A")
+    account_b = _register_disposable(client, phone_b, "Journey Pause B")
+    accounts.append({"label": "pause-a", "phone": phone_a,
+                     "password": DISPOSABLE_PASSWORD,
+                     "token": account_a.get("accessToken")})
+    accounts.append({"label": "pause-b", "phone": phone_b,
+                     "password": DISPOSABLE_PASSWORD,
+                     "token": account_b.get("accessToken")})
+    token_a, token_b = account_a["accessToken"], account_b["accessToken"]
+    direct = client.post("/api/v1/conversations/direct", token=token_a,
+                         body={"phone": phone_b})
+    _expect_status(direct, {200, 201}, "A-B direct conversation")
+    conversation_id = str((direct.json() or {}).get("id") or "")
+    if not conversation_id:
+        raise EnvironmentFailure("the direct conversation returned no id")
+    topic = f"/topic/conversations.{conversation_id}"
+    marker = str(context.get("auth_pause_marker")
+                 or ("sj-paused-" + uuid.uuid4().hex[:10]))
+    barrier = reader_a = reader_b = None
+    try:
+        barrier = barrier_factory(base_url)
+        barrier.hold(method="MESSAGE",
+                     path=rf"^/topic/conversations\.{re.escape(conversation_id)}$",
+                     token_contains=token_a)
+        base = str(getattr(barrier, "url", "") or base_url)
+        ws_url = base.replace("https://", "wss://").replace("http://", "ws://") + "/ws"
+        reader_a = reader_factory(ws_url, token_a)
+        reader_a.subscribe(topic)
+        reader_b = reader_factory(ws_url, token_b)
+        reader_b.subscribe(topic)
+        sent = client.post(f"/api/v1/conversations/{conversation_id}/messages",
+                           token=token_b,
+                           body={"clientMessageId": str(uuid.uuid4()),
+                                 "type": "TEXT", "content": marker,
+                                 "attachmentIds": []})
+        _expect_status(sent, {200, 201}, "paused-frame marker send")
+        try:
+            barrier.wait_held(1, timeout=20)
+        except Exception as error:
+            raise ProductFailure(
+                "account A's inbound STOMP frame was not held by the tunnel") from error
+
+        def topic_events(reader: Any, seconds: float) -> list[dict[str, Any]]:
+            found = []
+            for event in reader.events(seconds):
+                context.setdefault("stomp_events", []).append(event)
+                if (event.get("eventType") == "MESSAGE_CREATED"
+                        and str(event.get("_destination", "")) == topic
+                        and (event.get("payload") or {}).get("content") == marker):
+                    found.append(event)
+            return found
+
+        live = topic_events(reader_b, 3.0)
+        if len(live) != 1:
+            raise ProductFailure(
+                f"account B observed {len(live)} live topic frames, expected 1")
+        items = _history_items(client, token_b, conversation_id)
+        if sum(1 for item in items if item.get("content") == marker) != 1:
+            raise ProductFailure("peer history does not show exactly one marker")
+        reader_a.close()
+        reader_a = None
+        barrier.release()
+        leaked = topic_events(reader_b, 1.5)
+        if leaked:
+            raise ProductFailure("the held account-A frame crossed into account B")
+        _auth_note(scenarios, name,
+                   "A's inbound MESSAGE_CREATED stayed held in the WS tunnel; B received "
+                   "exactly one live copy and nothing after A closed and the hold released")
+    finally:
+        for reader in (reader_a, reader_b):
+            if reader is not None:
+                try:
+                    reader.close()
+                except Exception:
+                    pass
+        if barrier is not None:
+            close = getattr(barrier, "close", None)
+            if close is not None:
+                try:
+                    close()
+                except Exception:
+                    pass
+
+
+def _auth_invalid_login_ui(context: dict[str, Any], phone: str) -> None:
+    """Wrong password must keep the form and render the accessible error."""
+    patch = context["helpers"][2]
+    ui = context["device"]
+    patch.fill_login_field(ui, "phoneInput", phone)
+    ui.key("KEYCODE_BACK")
+    patch.fill_login_field(ui, "passwordInput", "not-the-account-password")
+    context["adb"].command("shell", "input", "keyevent", "4",
+                           timeout=15, check=False)
+    time.sleep(1)
+    nodes = _ui_nodes(context)
+    action = patch.node_by_id(nodes, "primaryAction") or next(
+        (node for node in nodes
+         if patch.text_matches(node, ("Sign in", "Đăng nhập"))), None)
+    if action is None:
+        raise EnvironmentFailure("the sign-in control was not exposed")
+    ui.tap_node(action)
+    _wait_ui_node(
+        context,
+        lambda node: _rid_ends(node, "errorBanner") and bool((node.text or "").strip()),
+        "the invalid-credential error banner did not appear", timeout=20)
+
+
+def _auth_sign_out_all(context: dict[str, Any]) -> None:
+    """Profile -> Sign out all devices -> confirm, landing on the login form."""
+    ui = context["device"]
+    avatar = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "inboxUserAvatar"),
+        "the inbox profile entry point was not visible")
+    ui.tap_node(avatar)
+    _scroll_profile_until(context, "logoutAllRow")
+    row = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "logoutAllRow"),
+        "the Sign out all devices row was not rendered")
+    ui.tap_node(row)
+    confirm = _wait_ui_node(
+        context,
+        lambda node: node.text.strip() in _AUTH_LOGOUT_ALL_LABELS
+                     and node.clickable and not _rid_ends(node, "logoutAllRow"),
+        "the Sign out all devices confirmation was not rendered")
+    ui.tap_node(confirm)
+    patch = context["helpers"][2]
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        if patch.login_form_visible(_ui_nodes(context)):
+            return
+        time.sleep(0.7)
+    raise EnvironmentFailure("the login form did not appear after Sign out all devices")
+
+
+def _auth_device_scenarios(context: dict[str, Any], client: Any,
+                           scenarios: list[dict[str, Any]],
+                           blocked: list[dict[str, Any]],
+                           accounts: list[dict[str, Any]]) -> None:
+    """Drive the UI scenarios when a device-bound campaign supplies the stack."""
+    blocked.append({"scenario": "register-ui",
+                    "reason": "app sign-up is email+OTP; the mail sink is not applied "
+                              "to the local server"})
+    blocked.append({"scenario": "password-change-ui",
+                    "reason": "the change-password dialog has no wired UI driver; "
+                              "REST PATCH /auth/password is driven"})
+    device, helpers = context.get("device"), context.get("helpers")
+    if device is None or helpers is None or context.get("adb") is None:
+        reason = "no device-bound campaign context (adb/device/helpers absent)"
+        for name in ("invalid-credentials-ui", "saved-session-restart",
+                     "logout-ui", "logout-all-ui", "account-switch-ui"):
+            blocked.append({"scenario": name, "reason": reason})
+        return
+    patch = helpers[2]
+    ui = device
+    phone_a = _require_disposable_phone(
+        str(context.get("auth_ui_phone_a") or _new_disposable_phone()))
+    phone_b = _require_disposable_phone(
+        str(context.get("auth_ui_phone_b") or _new_disposable_phone()))
+    _register_disposable(client, phone_a, "Journey UI A")
+    _register_disposable(client, phone_b, "Journey UI B")
+    # Device sign-out revokes every access token the account owns, so the
+    # harness sessions cannot be reused for cleanup; relogin at delete time.
+    accounts.append({"label": "ui-a", "phone": phone_a,
+                     "password": DISPOSABLE_PASSWORD, "token": None})
+    accounts.append({"label": "ui-b", "phone": phone_b,
+                     "password": DISPOSABLE_PASSWORD, "token": None})
+
+    nodes = _ui_nodes(context)
+    if patch.inbox_visible(nodes):
+        _offline_sign_out(context)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        if patch.login_form_visible(_ui_nodes(context)):
+            break
+        time.sleep(0.7)
+    else:
+        raise EnvironmentFailure("the login form was not available for the auth UI scenarios")
+
+    _auth_invalid_login_ui(context, phone_a)
+    _auth_note(scenarios, "invalid-credentials-ui",
+               "wrong password kept the form and rendered the error banner")
+
+    try:
+        _offline_sign_in(context, phone_a, "Journey UI A")
+        _offline_force_stop(context)
+        _offline_relaunch(context)
+        _offline_wait_inbox(context,
+                            "the saved session did not restore the inbox after restart")
+        profile = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "inboxUserAvatar"),
+            "the inbox profile entry point was not visible after restart",
+            timeout=30)
+        ui.tap_node(profile)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "profileName")
+                         and node.text.strip() == "Journey UI A",
+            "the restarted session did not identify Journey UI A", timeout=20)
+        ui.key("KEYCODE_BACK")
+        _offline_wait_inbox(context, "the inbox did not return after the restart check")
+        _auth_note(scenarios, "saved-session-restart",
+                   "force-stop + relaunch restored the inbox as Journey UI A "
+                   "without re-login")
+
+        _offline_sign_out(context)
+        _auth_note(scenarios, "logout-ui",
+                   "profile sign-out returned to the login form")
+
+        _offline_sign_in(context, phone_a, "Journey UI A")
+        _auth_sign_out_all(context)
+        _auth_note(scenarios, "logout-all-ui",
+                   "sign-out-all devices returned to the login form")
+
+        _offline_sign_in(context, phone_a, "Journey UI A")
+        _offline_sign_out(context)
+        _offline_sign_in(context, phone_b, "Journey UI B")
+        _auth_note(scenarios, "account-switch-ui",
+                   "A to B switch verified profileName Journey UI B; "
+                   "A's session ended at sign-out")
+    finally:
+        try:
+            _offline_restore_an(context)
+        except Exception as error:
+            context.setdefault("cleanup_errors", []).append(
+                f"device account restore: {type(error).__name__}")
+
+
+def _auth_cleanup_accounts(client: Any,
+                           accounts: list[dict[str, Any]]) -> list[str]:
+    """Best-effort DELETE /users/me for each disposable account."""
+    errors: list[str] = []
+    for account in accounts:
+        label = account["label"]
+        token = account.get("token")
+        try:
+            for attempt in range(2):
+                if not token:
+                    login = client.post("/api/v1/auth/login",
+                                        body={"phone": account["phone"],
+                                              "password": account["password"]})
+                    if login.status != 200:
+                        errors.append(f"{label}: relogin HTTP {login.status}")
+                        break
+                    token = (login.json() or {}).get("accessToken")
+                deleted = client.request(
+                    "DELETE", "/api/v1/users/me", token=token,
+                    body={"password": account["password"]})
+                if deleted.status in (200, 204):
+                    break
+                if deleted.status == 401 and attempt == 0:
+                    token = None
+                    continue
+                errors.append(f"{label}: delete HTTP {deleted.status}")
+                break
+        except Exception as error:
+            errors.append(f"{label}: {type(error).__name__}")
+    return errors
+
+
+def run_auth_session_lifecycle(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Drive each auth/session scenario or record its exact remaining blocker.
+
+    REST token lifecycle runs through context["client"]; the paused-frame
+    A->B isolation uses response_barrier's WebSocket tunnel; device UI
+    scenarios run only when the campaign supplies adb/device/helpers. Every
+    scenario that cannot be driven lands in blocked and the row ends
+    BLOCKED_CAPABILITY — nothing reports PASS without evidence.
     """
     _campaign_serial(context)
     base_url = _campaign_base_url(context)
-    factory = context.get("barrier_factory")
-    if factory is None:
-        raise CapabilityBlocked(row.capability_gap)
-    barrier = factory(base_url)
+    client = context.get("client")
+    if client is None:
+        raise HarnessError("client is required")
+    row_dir = Path(context.get("row_dir") or context.get("evidence_root") or ".")
+    scenarios: list[dict[str, Any]] = []
+    blocked: list[dict[str, Any]] = []
+    accounts: list[dict[str, Any]] = []
+    primary_error: Exception | None = None
     try:
-        barrier.hold(
-            method="GET", path=r"^/api/v1/conversations$",
-            token_contains=context.get("account_a_token"),
-        )
-        raise CapabilityBlocked(row.capability_gap)
+        _auth_rest_lifecycle(context, client, scenarios, accounts)
+        _auth_paused_frame(context, client, base_url, scenarios, blocked, accounts)
+        _auth_device_scenarios(context, client, scenarios, blocked, accounts)
+    except Exception as error:
+        primary_error = error
+        raise
     finally:
-        close = getattr(barrier, "close", None)
-        if close is not None:
-            close()
+        cleanup_errors = _auth_cleanup_accounts(client, accounts)
+        context.setdefault("cleanup_errors", []).extend(cleanup_errors)
+        _write_json(row_dir / "auth-scenarios.json",
+                    {"scenarios": scenarios, "blocked": blocked})
+        if primary_error is None and context.get("cleanup_errors"):
+            raise HarnessError("auth-session cleanup failed")
+    if blocked:
+        raise CapabilityBlocked("; ".join(
+            f"{item['scenario']}: {item['reason']}" for item in blocked))
+    return {"scenarios": [item["scenario"] for item in scenarios]}
 
 
 def run_room_13_14_upgrade(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
@@ -7096,6 +7517,7 @@ def run_registered_row(row: JourneyRow, context: dict[str, Any]) -> dict[str, An
         "groups-contacts": run_groups_contacts,
         "polls-reminders": run_polls_reminders,
         "offline-sync": run_offline_sync,
+        "auth-session-lifecycle": run_auth_session_lifecycle,
         "calls-injected-notification": run_calls_injected_notification,
         "injected-notifications": run_injected_notifications,
     }

@@ -58,7 +58,8 @@ class MatrixAndDryRunTest(unittest.TestCase):
         self.assertTrue(expected.issubset(refs), sorted(expected - refs))
         runnable = {row.id for row in journeys.ROWS if row.capability_gap is None}
         self.assertEqual(runnable, {
-            "auth-login", "chat-send-receive", "chat-interactions", "summary-ask",
+            "auth-login", "auth-session-lifecycle", "chat-send-receive",
+            "chat-interactions", "summary-ask",
             "archive-preferences", "groups-contacts", "labels-lifecycle",
             "polls-reminders", "offline-sync",
             "calls-injected-notification", "injected-notifications",
@@ -295,15 +296,14 @@ class WiringDecisionTest(unittest.TestCase):
             else:
                 runnable.append(row_id)
         self.assertEqual(runnable, [
-            "auth-login", "chat-send-receive", "chat-interactions",
+            "auth-login", "auth-session-lifecycle", "chat-send-receive",
+            "chat-interactions",
             "groups-contacts", "polls-reminders", "archive-preferences",
             "labels-lifecycle",
             "calls-injected-notification", "summary-ask", "offline-sync",
             "injected-notifications",
         ])
         self.assertEqual(len(runnable) + len(blocked), len(journeys.ROWS))
-        self.assertIn("STOMP", blocked["auth-session-lifecycle"])
-        self.assertIn("501", blocked["auth-session-lifecycle"])
         self.assertIn("expired", blocked["otp-forgot-password"])
         self.assertIn("server_env()", blocked["otp-forgot-password"])
         self.assertIn("Room 14", blocked["room-13-14-upgrade"])
@@ -346,11 +346,19 @@ class WiringDecisionTest(unittest.TestCase):
             def start(self):
                 raise AssertionError("blocked row started a helper")
 
-        for row_id in ("otp-forgot-password", "account-deletion", "auth-session-lifecycle",
+        for row_id in ("otp-forgot-password", "account-deletion",
                        "room-13-14-upgrade", "v111-rc-upgrade"):
             with self.subTest(row_id=row_id):
                 with self.assertRaises(journeys.CapabilityBlocked):
                     journeys.run_registered_row(journeys.ROW_BY_ID[row_id], {"mail_sink": Boom()})
+
+    def test_auth_session_lifecycle_dispatches_to_its_executor(self):
+        row = journeys.ROW_BY_ID["auth-session-lifecycle"]
+        self.assertIsNone(row.capability_gap)
+        # No serial in context: the executor must run and fail as a harness
+        # error, proving the row is no longer capability-blocked at dispatch.
+        with self.assertRaises(journeys.HarnessError):
+            journeys.run_registered_row(row, {"mail_sink": object()})
 
     def test_executors_refuse_a_non_reserved_serial(self):
         cases = (
@@ -850,34 +858,6 @@ class WiringDecisionTest(unittest.TestCase):
         for code in mail.codes:
             self.assertNotIn(code, str(caught.exception))
 
-    def test_barrier_hold_still_leaves_stomp_blocked(self):
-        row = journeys.ROW_BY_ID["auth-session-lifecycle"]
-
-        class Barrier:
-            def __init__(self):
-                self.held = None
-                self.closed = False
-
-            def hold(self, **kwargs):
-                self.held = kwargs
-
-            def close(self):
-                self.closed = True
-
-        barrier = Barrier()
-        with self.assertRaises(journeys.CapabilityBlocked) as caught:
-            journeys.run_auth_session_lifecycle(row, {
-                "serial": "emulator-5554",
-                "base_url": "http://127.0.0.1:18093",
-                "row": row,
-                "account_a_token": "token-a",
-                "barrier_factory": lambda url: barrier,
-            })
-        self.assertEqual(barrier.held["path"], r"^/api/v1/conversations$")
-        self.assertTrue(barrier.closed)
-        self.assertIn("STOMP", str(caught.exception))
-        self.assertIn("501", str(caught.exception))
-
     def test_upgrade_executors_do_not_fetch_or_install(self):
         for row_id, executor in (
             ("room-13-14-upgrade", journeys.run_room_13_14_upgrade),
@@ -893,6 +873,333 @@ class WiringDecisionTest(unittest.TestCase):
                     })
             run.assert_not_called()
             self.assertIn("Room 14", str(caught.exception))
+
+
+class AuthSessionLifecycleExecutorTest(unittest.TestCase):
+    """Offline fake REST/STOMP world for run_auth_session_lifecycle.
+
+    The fake client implements the real revocation semantics (logout stamps
+    every access token dead, refresh rotates, password change revokes all
+    sessions) so the executor's 401/204 assertions are meaningful. The fake
+    barrier records hold rules; the fake readers replay scripted STOMP
+    envelopes keyed by the account phone inside each access token.
+    """
+
+    MARKER = "sj-paused-offline"
+    PHONE_REST = "+84991110001"
+    PHONE_A = "+84991110002"
+    PHONE_B = "+84991110003"
+
+    class Response:
+        def __init__(self, status, body=None):
+            self.status = status
+            self._body = body or {}
+
+        def json(self):
+            return self._body
+
+    class FakeAuthClient:
+        def __init__(self):
+            self.users = {}
+            self.sessions = {}
+            self.clock = 0
+            self.conversations = {}
+            self.deleted_users = []
+            self.calls = []
+
+        def _issue(self, phone):
+            user = self.users[phone]
+            self.clock += 1
+            access = f"at-{phone}-{self.clock}"
+            refresh = f"rt-{phone}-{self.clock}"
+            self.sessions[access] = {"phone": phone, "iat": self.clock,
+                                     "uid": user["id"]}
+            user["refresh_alive"].add(refresh)
+            return {"accessToken": access, "refreshToken": refresh,
+                    "user": {"id": user["id"], "phone": phone}}
+
+        def _user_for_token(self, token):
+            session = self.sessions.get(token or "")
+            if session is None:
+                return None
+            user = self.users.get(session["phone"])
+            if (user is None or user["deleted"] or user["id"] != session["uid"]
+                    or session["iat"] <= user["access_floor"]):
+                return None
+            return user
+
+        @staticmethod
+        def _phone_of(users, user):
+            return next(p for p, u in users.items() if u is user)
+
+        def post(self, path, token=None, body=None, headers=None):
+            self.calls.append(("POST", path))
+            body = body or {}
+            if path == "/api/v1/auth/register":
+                phone = body.get("phone")
+                if phone in self.users and not self.users[phone]["deleted"]:
+                    return AuthSessionLifecycleExecutorTest.Response(409, {})
+                self.users[phone] = {"password": body.get("password"),
+                                     "id": f"uid-{phone}", "access_floor": 0,
+                                     "refresh_alive": set(), "deleted": False}
+                return AuthSessionLifecycleExecutorTest.Response(201, self._issue(phone))
+            if path == "/api/v1/auth/login":
+                user = self.users.get(body.get("phone"))
+                if (user is None or user["deleted"]
+                        or user["password"] != body.get("password")):
+                    return AuthSessionLifecycleExecutorTest.Response(401, {})
+                return AuthSessionLifecycleExecutorTest.Response(200, self._issue(body["phone"]))
+            if path == "/api/v1/auth/refresh":
+                refresh = body.get("refreshToken")
+                owner = next((u for u in self.users.values()
+                              if refresh in u["refresh_alive"]), None)
+                if owner is None:
+                    return AuthSessionLifecycleExecutorTest.Response(401, {})
+                owner["refresh_alive"].discard(refresh)
+                phone = self._phone_of(self.users, owner)
+                return AuthSessionLifecycleExecutorTest.Response(200, self._issue(phone))
+            if path in ("/api/v1/auth/logout", "/api/v1/auth/logout-all"):
+                user = self._user_for_token(token)
+                if user is None:
+                    return AuthSessionLifecycleExecutorTest.Response(401, {})
+                user["access_floor"] = self.clock
+                if path.endswith("logout-all"):
+                    user["refresh_alive"].clear()
+                else:
+                    user["refresh_alive"].discard(body.get("refreshToken"))
+                return AuthSessionLifecycleExecutorTest.Response(204, {})
+            if path == "/api/v1/conversations/direct":
+                if self._user_for_token(token) is None:
+                    return AuthSessionLifecycleExecutorTest.Response(401, {})
+                self.conversations.setdefault("conv-direct-1", {"messages": []})
+                return AuthSessionLifecycleExecutorTest.Response(201, {"id": "conv-direct-1", "type": "DIRECT"})
+            if "/messages" in path:
+                if self._user_for_token(token) is None:
+                    return AuthSessionLifecycleExecutorTest.Response(401, {})
+                cid = path.split("/")[4]
+                conv = self.conversations.setdefault(cid, {"messages": []})
+                conv["messages"].append(
+                    {"id": f"msg-{len(conv['messages']) + 1}",
+                     "content": body.get("content")})
+                return AuthSessionLifecycleExecutorTest.Response(201, conv["messages"][-1])
+            return AuthSessionLifecycleExecutorTest.Response(404, {})
+
+        def get(self, path, token=None, params=None, headers=None):
+            self.calls.append(("GET", path))
+            if path == "/api/v1/users/me":
+                user = self._user_for_token(token)
+                if user is None:
+                    return AuthSessionLifecycleExecutorTest.Response(401, {})
+                return AuthSessionLifecycleExecutorTest.Response(
+                    200, {"id": user["id"],
+                          "phone": self._phone_of(self.users, user)})
+            if "/messages" in path:
+                cid = path.split("/")[4]
+                conv = self.conversations.get(cid, {"messages": []})
+                return AuthSessionLifecycleExecutorTest.Response(200, {"items": list(conv["messages"])})
+            return AuthSessionLifecycleExecutorTest.Response(404, {})
+
+        def patch(self, path, token=None, body=None, headers=None):
+            self.calls.append(("PATCH", path))
+            user = self._user_for_token(token)
+            if user is None:
+                return AuthSessionLifecycleExecutorTest.Response(401, {})
+            phone = self._phone_of(self.users, user)
+            if self.users[phone]["password"] != (body or {}).get("oldPassword"):
+                return AuthSessionLifecycleExecutorTest.Response(400, {})
+            self.users[phone]["password"] = body.get("newPassword")
+            user["access_floor"] = self.clock
+            user["refresh_alive"].clear()
+            return AuthSessionLifecycleExecutorTest.Response(204, {})
+
+        def request(self, method, path, token=None, body=None, params=None,
+                    raw_body=None, headers=None):
+            if method == "DELETE" and path == "/api/v1/users/me":
+                user = self._user_for_token(token)
+                if user is None:
+                    return AuthSessionLifecycleExecutorTest.Response(401, {})
+                phone = self._phone_of(self.users, user)
+                if self.users[phone]["password"] != (body or {}).get("password"):
+                    return AuthSessionLifecycleExecutorTest.Response(401, {})
+                self.users[phone]["deleted"] = True
+                self.deleted_users.append(phone)
+                return AuthSessionLifecycleExecutorTest.Response(204, {})
+            return AuthSessionLifecycleExecutorTest.Response(404, {})
+
+    class FakeBarrier:
+        def __init__(self, upstream):
+            self.upstream = upstream
+            self.url = "http://127.0.0.1:9"
+            self.rules = []
+            self.released = 0
+            self.closed = False
+
+        def hold(self, **kwargs):
+            self.rules.append(kwargs)
+            return len(self.rules)
+
+        def wait_held(self, n=1, timeout=5.0):
+            return [{"id": 1, "path": "s2c MESSAGE /topic/conversations.conv-direct-1"}]
+
+        def release(self, *args, **kwargs):
+            self.released += 1
+            return [1]
+
+        def close(self):
+            self.closed = True
+
+    class FakeReader:
+        """Replays scripted STOMP envelopes; each events() call drains one script."""
+
+        def __init__(self, ws_url, token, call_scripts):
+            self.ws_url = ws_url
+            self.token = token
+            self.call_scripts = [list(script) for script in call_scripts]
+            self.subscriptions = []
+            self.closed = False
+
+        def subscribe(self, destination):
+            self.subscriptions.append(destination)
+
+        def events(self, seconds):
+            script = self.call_scripts.pop(0) if self.call_scripts else []
+            for kind in script:
+                if kind == "marker":
+                    yield {"eventType": "MESSAGE_CREATED",
+                           "conversationId": "conv-direct-1",
+                           "payload": {"id": "msg-1",
+                                       "content": AuthSessionLifecycleExecutorTest.MARKER},
+                           "_destination": self.subscriptions[0],
+                           "_subscription": "sub-1"}
+
+        def close(self):
+            self.closed = True
+
+    @staticmethod
+    def _reader_factory(script_by_token_phone):
+        made = []
+
+        def factory(ws_url, token):
+            phone = next((p for p in script_by_token_phone if p in token), "")
+            reader = AuthSessionLifecycleExecutorTest.FakeReader(
+                ws_url, token, script_by_token_phone.get(phone, []))
+            made.append(reader)
+            return reader
+
+        factory.made = made
+        return factory
+
+    def setUp(self):
+        self.row = journeys.ROW_BY_ID["auth-session-lifecycle"]
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.client = self.FakeAuthClient()
+        self.barrier = self.FakeBarrier("http://127.0.0.1:18093")
+        self.readers = self._reader_factory({
+            self.PHONE_A: [[]],
+            self.PHONE_B: [["marker"], []],
+        })
+
+    def _context(self):
+        return {
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "row": self.row,
+            "client": self.client,
+            "barrier_factory": lambda upstream: self.barrier,
+            "frame_reader_factory": self.readers,
+            "auth_phone": self.PHONE_REST,
+            "auth_pause_phone_a": self.PHONE_A,
+            "auth_pause_phone_b": self.PHONE_B,
+            "auth_pause_marker": self.MARKER,
+            "row_dir": Path(self.tmp.name),
+            "evidence_root": Path(self.tmp.name),
+            "stomp_events": [],
+        }
+
+    def _artifact(self):
+        return json.loads(
+            (Path(self.tmp.name) / "auth-scenarios.json").read_text(encoding="utf-8"))
+
+    def test_rest_and_paused_frame_driven_device_scenarios_blocked(self):
+        context = self._context()
+        with self.assertRaises(journeys.CapabilityBlocked) as caught:
+            journeys.run_auth_session_lifecycle(self.row, context)
+        message = str(caught.exception)
+        artifact = self._artifact()
+        driven = {item["scenario"] for item in artifact["scenarios"]}
+        blocked = {item["scenario"]: item["reason"] for item in artifact["blocked"]}
+        self.assertEqual(driven, {
+            "register", "login", "invalid-credentials-rest", "refresh",
+            "logout", "logout-all", "password-change",
+            "paused-frame-a-to-b-isolation",
+        })
+        self.assertEqual(set(blocked), {
+            "register-ui", "password-change-ui", "invalid-credentials-ui",
+            "saved-session-restart", "logout-ui", "logout-all-ui",
+            "account-switch-ui",
+        })
+        for name in ("invalid-credentials-ui", "saved-session-restart",
+                     "logout-ui", "logout-all-ui", "account-switch-ui"):
+            self.assertIn("device-bound campaign context", blocked[name])
+        self.assertIn("mail sink", blocked["register-ui"])
+        self.assertIn("register-ui", message)
+        self.assertIn("account-switch-ui", message)
+        # REST lifecycle really issued the auth calls.
+        paths = [path for _method, path in self.client.calls]
+        for expected in ("/api/v1/auth/register", "/api/v1/auth/login",
+                         "/api/v1/auth/refresh", "/api/v1/auth/logout",
+                         "/api/v1/auth/logout-all", "/api/v1/auth/password"):
+            self.assertIn(expected, paths)
+        # The tunnel hold targeted account A's STOMP token on the topic.
+        self.assertEqual(len(self.barrier.rules), 1)
+        rule = self.barrier.rules[0]
+        self.assertEqual(rule["method"], "MESSAGE")
+        self.assertTrue(rule["path"].startswith("^/topic/conversations"))
+        token_a = next(t for t in self.client.sessions
+                       if self.PHONE_A in t)
+        self.assertEqual(rule["token_contains"], token_a)
+        self.assertEqual(self.barrier.released, 1)
+        self.assertTrue(self.barrier.closed)
+        # Both readers subscribed to the same topic through the barrier URL.
+        readers = self.readers.made
+        self.assertEqual(len(readers), 2)
+        self.assertTrue(all(r.ws_url.endswith("/ws") for r in readers))
+        self.assertEqual(readers[0].subscriptions, ["/topic/conversations.conv-direct-1"])
+        self.assertEqual(readers[1].subscriptions, ["/topic/conversations.conv-direct-1"])
+        self.assertTrue(readers[0].closed and readers[1].closed)
+        # Disposable accounts were deleted through DELETE /users/me.
+        self.assertEqual(len(self.client.deleted_users), 3)
+        # Driven STOMP evidence landed in the shared transcript list.
+        self.assertTrue(any(e.get("eventType") == "MESSAGE_CREATED"
+                            for e in context["stomp_events"]))
+        for secret in ("at-+", "rt-+", journeys.DISPOSABLE_PASSWORD,
+                       journeys._AUTH_NEW_PASSWORD):
+            self.assertNotIn(secret,
+                             json.dumps(artifact))
+
+    def test_held_frame_crossing_into_b_fails_the_row(self):
+        readers = self._reader_factory({
+            self.PHONE_A: [[]],
+            self.PHONE_B: [["marker"], ["marker"]],
+        })
+        context = self._context()
+        context["frame_reader_factory"] = readers
+        with self.assertRaises(journeys.ProductFailure) as caught:
+            journeys.run_auth_session_lifecycle(self.row, context)
+        self.assertIn("crossed into account B", str(caught.exception))
+
+    def test_wait_held_timeout_is_a_product_failure(self):
+        class NeverHeld(self.FakeBarrier):
+            def wait_held(self, n=1, timeout=5.0):
+                raise TimeoutError("nothing held")
+
+        barrier = NeverHeld("http://127.0.0.1:18093")
+        context = self._context()
+        context["barrier_factory"] = lambda upstream: barrier
+        with self.assertRaises(journeys.ProductFailure) as caught:
+            journeys.run_auth_session_lifecycle(self.row, context)
+        self.assertIn("was not held", str(caught.exception))
 
 
 class ChatInteractionsExecutorTest(unittest.TestCase):

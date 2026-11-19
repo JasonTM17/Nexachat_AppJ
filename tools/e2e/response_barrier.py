@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
-"""Offline-testable, HTTP-only reverse proxy that pauses *responses*.
+"""Offline-testable reverse proxy that pauses *responses*.
 
 Rules are sampled when a request arrives, but enter /held only after the full
 upstream response has arrived. This is the account-switch barrier: /held proves
 the server has finished, while the client has received no response headers yet.
 Control binds to loopback, has no authentication, and must stay on loopback.
-WebSocket upgrades and CONNECT are explicitly refused (501); see README.md.
+
+WebSocket upgrades are tunnelled: frames are proxied in both directions and a
+STOMP frame can be held or delayed with the same rules as a REST response —
+the rule method is the STOMP command (CONNECT, SEND, MESSAGE, ...) and the
+path is the STOMP destination header. The STOMP credential lives inside the
+CONNECT frame, so token_contains matches against the connection's captured
+Authorization header rather than the HTTP handshake. CONNECT requests and
+non-WebSocket upgrades are still refused (501); see README.md.
 """
 
 from __future__ import annotations
@@ -28,6 +35,14 @@ from urllib.parse import urlsplit
 LOG = logging.getLogger("response_barrier")
 HOP_HEADERS = {"connection", "keep-alive", "proxy-authenticate",
                "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"}
+
+_WS_CONTINUATION, _WS_TEXT, _WS_BINARY = 0x0, 0x1, 0x2
+_WS_CLOSE, _WS_PING, _WS_PONG = 0x8, 0x9, 0xA
+_WS_MAX_CONTROL = 125
+
+
+class _WsError(Exception):
+    """WebSocket protocol violation; tears the tunnel down."""
 
 
 def _end_to_end(headers):
@@ -158,6 +173,301 @@ class _ResponseSocket:
         return io.BufferedReader(_ResponseReader(self.sock, self.barrier))
 
 
+class _WsPeer:
+    """One leg of the WebSocket tunnel.
+
+    ``mask_out`` selects the wire role toward the peer: True on the upstream
+    leg (the barrier acts as the WS client) and False toward the downstream
+    client (the barrier acts as the WS server). Inbound frames are accepted
+    masked or unmasked; outbound framing always follows the role.
+    """
+
+    __slots__ = ("sock", "barrier", "mask_out", "_buf", "_frag_op", "_frag",
+                 "_mask_counter")
+
+    def __init__(self, sock, barrier, mask_out, pending=b""):
+        self.sock = sock
+        self.barrier = barrier
+        self.mask_out = mask_out
+        self._buf = bytearray(pending)
+        self._frag_op = None
+        self._frag = bytearray()
+        self._mask_counter = 0
+
+    def _fill(self, count):
+        """Buffer at least ``count`` bytes; False on close or barrier stop."""
+        while len(self._buf) < count:
+            if self.barrier._stopped:
+                return False
+            self.sock.settimeout(0.1)
+            try:
+                chunk = self.sock.recv(65536)
+            except socket.timeout:
+                continue
+            except OSError:
+                return False
+            if not chunk:
+                return False
+            self._buf += chunk
+        return True
+
+    def _take(self, count):
+        out = bytes(self._buf[:count])
+        del self._buf[:count]
+        return out
+
+    def read_frame(self):
+        """One complete frame -> (fin, opcode, payload); None on close."""
+        if not self._fill(2):
+            return None
+        first, second = self._buf[0], self._buf[1]
+        del self._buf[:2]
+        fin, opcode = bool(first & 0x80), first & 0x0F
+        masked, size = bool(second & 0x80), second & 0x7F
+        if size == 126:
+            if not self._fill(2):
+                return None
+            size = int.from_bytes(self._buf[:2], "big")
+            del self._buf[:2]
+        elif size == 127:
+            if not self._fill(8):
+                return None
+            size = int.from_bytes(self._buf[:8], "big")
+            del self._buf[:8]
+        if size > self.barrier.max_body_bytes:
+            raise _WsError("websocket frame exceeds the body limit")
+        key = b""
+        if masked:
+            if not self._fill(4):
+                return None
+            key = self._take(4)
+        if not self._fill(size):
+            return None
+        payload = self._take(size)
+        if masked:
+            payload = bytes(b ^ key[i & 3] for i, b in enumerate(payload))
+        return fin, opcode, payload
+
+    def read_message(self):
+        """One complete message.
+
+        Data messages return ``("message", opcode, payload)`` with fragments
+        reassembled; control frames return ``("control", opcode, payload)``
+        immediately so fragmentation state survives interleaved pings. None
+        means the peer closed or the barrier stopped.
+        """
+        while True:
+            frame = self.read_frame()
+            if frame is None:
+                return None
+            fin, opcode, payload = frame
+            if opcode in (_WS_CLOSE, _WS_PING, _WS_PONG):
+                if len(payload) > _WS_MAX_CONTROL:
+                    raise _WsError("oversized control frame")
+                return ("control", opcode, payload)
+            if opcode == _WS_CONTINUATION:
+                if self._frag_op is None:
+                    raise _WsError("unexpected continuation frame")
+                self._frag += payload
+            elif opcode in (_WS_TEXT, _WS_BINARY):
+                if self._frag_op is not None:
+                    raise _WsError("interleaved data frame")
+                self._frag_op = opcode
+                self._frag = bytearray(payload)
+            else:
+                raise _WsError("reserved websocket opcode")
+            if len(self._frag) > self.barrier.max_body_bytes:
+                raise _WsError("websocket message exceeds the body limit")
+            if fin:
+                message = (self._frag_op, bytes(self._frag))
+                self._frag_op = None
+                self._frag = bytearray()
+                return ("message", *message)
+
+    def send_frame(self, opcode, payload, fin=True):
+        if isinstance(payload, str):
+            payload = payload.encode("utf-8")
+        header = bytearray(((0x80 if fin else 0) | opcode,))
+        mask_bit = 0x80 if self.mask_out else 0
+        size = len(payload)
+        if size < 126:
+            header.append(mask_bit | size)
+        elif size <= 0xFFFF:
+            header.append(mask_bit | 126)
+            header += size.to_bytes(2, "big")
+        else:
+            header.append(mask_bit | 127)
+            header += size.to_bytes(8, "big")
+        if self.mask_out:
+            self._mask_counter = (self._mask_counter + 1) & 0xFFFFFFFF
+            key = self._mask_counter.to_bytes(4, "big")
+            header += key
+            payload = bytes(b ^ key[i & 3] for i, b in enumerate(payload))
+        self.sock.settimeout(self.barrier.io_timeout)
+        self.sock.sendall(bytes(header) + payload)
+
+
+class _WsConn:
+    """Per-tunnel state: the STOMP credential captured from CONNECT."""
+
+    __slots__ = ("token",)
+
+    def __init__(self):
+        self.token = ""
+
+
+def _stomp_frame(payload):
+    """Parse a text payload as a STOMP 1.2 frame.
+
+    Returns ``(command, headers, body)`` or None for heartbeats and non-STOMP
+    payloads. The proxied payload is always forwarded verbatim; parsing only
+    feeds rule matching.
+    """
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    raw = text.lstrip("\n")
+    if not raw or "\x00" not in raw:
+        return None
+    frame, _, _rest = raw.partition("\x00")
+    head, sep, body = frame.partition("\n\n")
+    if not sep:
+        return None
+    lines = head.split("\n")
+    command = lines[0].strip().upper() if lines else ""
+    if not re.fullmatch(r"[A-Z]+", command):
+        return None
+    headers = {}
+    for line in lines[1:]:
+        key, sep2, value = line.rstrip("\r").partition(":")
+        if sep2:
+            headers[key.strip()] = value.strip()
+    return command, headers, body
+
+
+def _ws_label(direction, command, destination):
+    label = direction
+    if command:
+        label += " " + command
+    if destination:
+        label += " " + destination
+    return label
+
+
+def _ws_pump(source, target, direction, conn, barrier):
+    """Relay one tunnel direction until the peer closes or the barrier stops."""
+    while not barrier._stopped:
+        event = source.read_message()
+        if event is None:
+            return
+        kind = event[0]
+        if kind == "control":
+            opcode, payload = event[1], event[2]
+            if opcode == _WS_PING:
+                source.send_frame(_WS_PONG, payload)
+            elif opcode == _WS_CLOSE:
+                try:
+                    source.send_frame(_WS_CLOSE, payload)
+                except OSError:
+                    pass
+                try:
+                    target.send_frame(_WS_CLOSE, b"")
+                except OSError:
+                    pass
+                return
+            # Pongs are unsolicited replies to pings this barrier never sends.
+            continue
+        _message, opcode, payload = event
+        command = destination = ""
+        headers = {}
+        if opcode == _WS_TEXT:
+            parsed = _stomp_frame(payload)
+            if parsed is not None:
+                command, headers, _body = parsed
+                destination = headers.get("destination", "")
+        if (direction == "c2s" and command in ("CONNECT", "STOMP")
+                and not conn.token):
+            conn.token = next(
+                (value for key, value in headers.items()
+                 if key.lower() == "authorization"), "")
+        rule = barrier._match(command, destination, conn.token) if command else None
+        if rule is not None and not barrier._pause(
+                rule, _ws_label(direction, command, destination)):
+            return
+        target.send_frame(opcode, payload)
+
+
+def _ws_read_head(sock, barrier, limit=131072):
+    """Read through the first CRLFCRLF; return (head, leftover) or None."""
+    buf = bytearray()
+    deadline = time.monotonic() + barrier.io_timeout
+    while b"\r\n\r\n" not in buf:
+        if barrier._stopped or time.monotonic() >= deadline:
+            return None
+        sock.settimeout(min(0.1, max(0.001, deadline - time.monotonic())))
+        try:
+            chunk = sock.recv(8192)
+        except socket.timeout:
+            continue
+        except OSError:
+            return None
+        if not chunk:
+            return None
+        buf += chunk
+        if len(buf) > limit:
+            return None
+    head, _, leftover = bytes(buf).partition(b"\r\n\r\n")
+    return head + b"\r\n\r\n", leftover
+
+
+def _ws_parse_head(head):
+    """Parse a raw HTTP response head -> (status, [(name, value)])."""
+    lines = head.split(b"\r\n")
+    try:
+        status = int(lines[0].split(None, 2)[1])
+    except (IndexError, ValueError):
+        return 0, []
+    headers = []
+    for line in lines[1:]:
+        name, sep, value = line.partition(b":")
+        if sep:
+            headers.append((name.decode("latin-1").strip(),
+                            value.decode("latin-1").strip()))
+    return status, headers
+
+
+def _drain_rfile(handler):
+    """Bytes the HTTP reader already buffered past the request headers."""
+    rfile = getattr(handler, "rfile", None)
+    peek = getattr(rfile, "peek", None)
+    if rfile is None or peek is None:
+        return b""
+    barrier = handler.server.barrier
+    drained = bytearray()
+    try:
+        handler.connection.settimeout(0.05)
+        while len(drained) <= barrier.max_body_bytes:
+            try:
+                chunk = peek(65536)
+            except (OSError, ValueError):
+                break
+            if not chunk:
+                break
+            data = rfile.read(len(chunk))
+            if not data:
+                break
+            drained += data
+    except (OSError, ValueError):
+        pass
+    finally:
+        try:
+            handler.connection.settimeout(barrier.io_timeout)
+        except OSError:
+            pass
+    return bytes(drained)
+
+
 class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -216,9 +526,14 @@ class _Handler(BaseHTTPRequestHandler):
 class _ProxyHandler(_Handler):
     def _forward(self):
         barrier = self.server.barrier
+        upgrade_tokens = [token.strip().lower() for token in
+                          (self.headers.get("Upgrade") or "").split(",")]
+        if self.command != "CONNECT" and "websocket" in upgrade_tokens:
+            self._websocket_tunnel()
+            return
         if self.headers.get("Upgrade") or self.command == "CONNECT":
             LOG.warning("REST-only barrier refused an upgrade or CONNECT request")
-            self._json(501, {"error": "REST only: WebSocket upgrades and CONNECT are unsupported"})
+            self._json(501, {"error": "REST only: CONNECT and non-WebSocket upgrades are unsupported"})
             return
         try:
             target = urlsplit(self.path)
@@ -286,6 +601,157 @@ class _ProxyHandler(_Handler):
             return
         if not barrier._stopped:
             self._send(status, data, headers, representation_length)
+
+    def _ws_handshake_request(self, key):
+        barrier = self.server.barrier
+        lines = [f"GET {self.path} HTTP/1.1",
+                 f"Host: {barrier._host}:{barrier._port}"]
+        skip = {"sec-websocket-key", "sec-websocket-version",
+                "sec-websocket-extensions"}
+        for name, value in _end_to_end(self.headers):
+            if name.lower() not in skip:
+                lines.append(f"{name}: {value}")
+        lines += ["Connection: Upgrade", "Upgrade: websocket",
+                  f"Sec-WebSocket-Key: {key}", "Sec-WebSocket-Version: 13"]
+        return ("\r\n".join(lines) + "\r\n\r\n").encode("latin-1")
+
+    def _websocket_tunnel(self):
+        """Proxy an accepted WebSocket upgrade through to the upstream."""
+        barrier = self.server.barrier
+        try:
+            target = urlsplit(self.path)
+        except ValueError:
+            self._json(400, {"error": "invalid request target"})
+            return
+        if (not self.path.startswith("/") or target.netloc or target.scheme
+                or target.fragment):
+            self._json(400, {"error": "use an origin-form request target"})
+            return
+        key = self.headers.get("Sec-WebSocket-Key")
+        versions = [v.strip() for v in
+                    (self.headers.get("Sec-WebSocket-Version") or "").split(",")]
+        if not key or "13" not in versions:
+            self._json(400, {"error": "malformed WebSocket upgrade"})
+            return
+        try:
+            upstream = socket.create_connection(
+                (barrier._host, barrier._port), timeout=barrier.io_timeout)
+        except OSError:
+            self._json(502, {"error": "upstream unavailable"})
+            return
+        try:
+            upstream.settimeout(barrier.io_timeout)
+            upstream.sendall(self._ws_handshake_request(key))
+            head = _ws_read_head(upstream, barrier)
+        except OSError:
+            head = None
+        if head is None:
+            upstream.close()
+            self._json(502, {"error": "upstream handshake failed"})
+            return
+        raw_head, leftover = head
+        status, headers = _ws_parse_head(raw_head)
+        if status != 101:
+            self._ws_reject_upgrade(upstream, status, headers, leftover)
+            return
+        accept = next((value for name, value in headers
+                       if name.lower() == "sec-websocket-accept"), None)
+        protocol = next((value for name, value in headers
+                         if name.lower() == "sec-websocket-protocol"), None)
+        if accept is None:
+            upstream.close()
+            self._json(502, {"error": "upstream returned an invalid handshake"})
+            return
+        self.close_connection = True
+        response = ["HTTP/1.1 101 Switching Protocols", "Upgrade: websocket",
+                    "Connection: Upgrade", f"Sec-WebSocket-Accept: {accept}"]
+        if protocol:
+            response.append(f"Sec-WebSocket-Protocol: {protocol}")
+        try:
+            self.connection.sendall(("\r\n".join(response) + "\r\n\r\n")
+                                    .encode("latin-1"))
+        except OSError:
+            upstream.close()
+            return
+        with barrier._condition:
+            if barrier._stopped:
+                upstream.close()
+                return
+            barrier._upstream_sockets.add(upstream)
+        try:
+            self._ws_relay(upstream, leftover)
+        finally:
+            with barrier._condition:
+                barrier._upstream_sockets.discard(upstream)
+            upstream.close()
+
+    def _ws_reject_upgrade(self, upstream, status, headers, leftover):
+        """Forward a non-101 upstream handshake response, then close."""
+        barrier = self.server.barrier
+        body = bytearray(leftover)
+        lengths = [value for name, value in headers
+                   if name.lower() == "content-length"]
+        want = 0
+        if len(lengths) == 1:
+            try:
+                want = min(max(0, int(lengths[0])), barrier.max_body_bytes)
+            except ValueError:
+                want = 0
+        deadline = time.monotonic() + barrier.io_timeout
+        while len(body) < want:
+            if barrier._stopped or time.monotonic() >= deadline:
+                break
+            upstream.settimeout(min(0.1, max(0.001, deadline - time.monotonic())))
+            try:
+                chunk = upstream.recv(min(65536, want - len(body)))
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            if not chunk:
+                break
+            body += chunk
+        upstream.close()
+        forwarded = [(name, value) for name, value in headers
+                     if name.lower() not in HOP_HEADERS
+                     and name.lower() not in ("content-length", "host")]
+        self._send(status if 400 <= status < 600 else 502, bytes(body), forwarded)
+
+    def _ws_relay(self, upstream, upstream_pending):
+        barrier = self.server.barrier
+        client_peer = _WsPeer(self.connection, barrier, mask_out=False,
+                              pending=_drain_rfile(self))
+        upstream_peer = _WsPeer(upstream, barrier, mask_out=True,
+                                pending=upstream_pending)
+        conn = _WsConn()
+        done = threading.Event()
+
+        def worker(direction, source, target):
+            try:
+                _ws_pump(source, target, direction, conn, barrier)
+            except _WsError:
+                LOG.warning("websocket tunnel %s closed on a protocol violation",
+                            direction)
+            except OSError:
+                pass
+            finally:
+                done.set()
+
+        threads = [
+            threading.Thread(target=worker,
+                             args=("c2s", client_peer, upstream_peer),
+                             name="response-barrier-ws-c2s", daemon=True),
+            threading.Thread(target=worker,
+                             args=("s2c", upstream_peer, client_peer),
+                             name="response-barrier-ws-s2c", daemon=True),
+        ]
+        for thread in threads:
+            thread.start()
+        done.wait()
+        _interrupt(self.connection)
+        _interrupt(upstream)
+        for thread in threads:
+            thread.join(timeout=barrier.io_timeout + 1)
 
     do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = do_HEAD = do_OPTIONS = do_CONNECT = _forward
 
