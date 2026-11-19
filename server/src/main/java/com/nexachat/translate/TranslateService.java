@@ -118,9 +118,12 @@ public class TranslateService {
     // Single-message translate
     // ------------------------------------------------------------------
 
-    // Not readOnly: the cache write on a miss requires a read-write tx, and
-    // Postgres would reject the INSERT inside a read-only transaction.
-    @Transactional
+    // Deliberately NOT @Transactional, like the summary lane: the provider
+    // chain is a blocking external HTTP call, and a transaction here would pin
+    // a pooled connection (10 in prod, 5 on Render) for up to the combined
+    // LLM timeouts. Reads run per-statement under READ COMMITTED exactly as
+    // they did inside one transaction; the cache write is atomic in its own
+    // transaction on TranslationCacheRepository.save.
     public TranslateResponse translate(UUID userId, UUID messageId, String targetLangCode) {
         TranslationLanguage target = requireTargetLanguage(targetLangCode);
         UUID conversationId = messageRepository.findConversationIdById(messageId)
@@ -183,8 +186,10 @@ public class TranslateService {
     // Batch translate (auto-translate)
     // ------------------------------------------------------------------
 
-    // Not readOnly: cache writes on misses require a read-write tx.
-    @Transactional
+    // Not @Transactional for the same reason as translate: one batch can make
+    // up to batchMaxMessages sequential provider calls, so a transaction here
+    // would pin a pooled connection for the whole chain. Each cache write is
+    // atomic in its own transaction on TranslationCacheRepository.save.
     public List<TranslateBatchItem> translateBatch(
             UUID userId, UUID conversationId, List<UUID> messageIds, String targetLangCode) {
         TranslationLanguage target = requireTargetLanguage(targetLangCode);

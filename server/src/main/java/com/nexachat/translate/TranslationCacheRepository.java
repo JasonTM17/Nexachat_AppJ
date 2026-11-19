@@ -3,6 +3,7 @@ package com.nexachat.translate;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -55,7 +56,12 @@ public class TranslationCacheRepository {
      * newest {@code maxLangsPerMessage} rows of the current revision; older
      * revisions are removed wholesale because the invalidation listener may
      * have already deleted them.
+     *
+     * <p>Transactional in its own right: the callers no longer hold a
+     * transaction across the provider call, so the insert, the cap trim and
+     * the expired sweep below must commit or roll back as one unit.
      */
+    @Transactional
     public void save(UUID messageId, long changeVersion, String targetLang,
                      String glossaryHash, CacheEntry entry, Instant expiresAt,
                      int maxLangsPerMessage) {
