@@ -171,6 +171,10 @@ Rows whose capability disposition reads `Runnable with existing helpers`
 | `chat-interactions` | Long-press sheet interactions verified on device + peer REST/STOMP: react, reply, edit, recall, forward, read receipt |
 | `calls-injected-notification` | Dead-process injected `CALL_INVITE` surfaces the heads-up notification (API 34+ cannot full-screen or launch the call activity in background) and declines through the real `CallForegroundService` path; no phantom server call-history row |
 | `injected-notifications` | Injected `NEW_MESSAGE`/`REMINDER` posts shade notifications without leaking the payload body |
+| `summary-ask` | Local summary + Ask sheet: citation chip jump, EXTRACTIVE answer quoting a seeded fact, sources chip lands on the cited message, peer CACHE replay, ai-opt-out contextOmitted round-trip |
+| `archive-preferences` | Media/files/links tabs + paging + sender filter; archive undo snackbar; mute/pin/label/seen/presence flags caller-only, peer-clean, survive pull-to-refresh |
+| `groups-contacts` | Contacts list = GET /contacts; UI group create/rename/add/remove; invite link + on-device approval queue; deep-link return; revoke; leave; banned member denied |
+| `labels-lifecycle` | Label create/assign/filter/unfilter/delete via UI = REST; rotation + force-stop keep exactly one dialog surface; reopen refetches (#181); runtime chips must be clickable |
 
 Every other row is `BLOCKED_CAPABILITY` until its missing driver or oracle is
 built; `--list` prints the exact blocker per row. API 36 notes: runtime
