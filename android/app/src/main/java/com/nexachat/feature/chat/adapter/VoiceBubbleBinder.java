@@ -270,15 +270,28 @@ public final class VoiceBubbleBinder {
                             ContextCompat.getColor(waveform.getContext(), R.color.colorOnSurfaceVariant));
             waveform.setColors(contentColor, ColorUtils.setAlphaComponent(
                     unplayedBase, Math.round(Color.alpha(unplayedBase) * (mine ? 0.6f : 0.4f))));
-            duration.setTextColor(mine ? contentColor : unplayedBase);
-            playButton.setImageTintList(ColorStateList.valueOf(contentColor));
+            boolean error = status == VoicePlaybackState.Status.ERROR;
+            if (error) {
+                // ERROR used to render exactly like idle; give the failure a
+                // visible error-coloured label instead of a silent play icon.
+                int errorColor = MaterialColors.getColor(waveform,
+                        com.google.android.material.R.attr.colorError,
+                        ContextCompat.getColor(waveform.getContext(), R.color.colorError));
+                duration.setTextColor(errorColor);
+                playButton.setImageTintList(ColorStateList.valueOf(errorColor));
+            } else {
+                duration.setTextColor(mine ? contentColor : unplayedBase);
+                playButton.setImageTintList(ColorStateList.valueOf(contentColor));
+            }
             byte[] bars = state.getWaveform();
             waveform.setBars(bars);
             waveform.setProgress(total <= 0L ? 0f : (float) position / total);
 
             String totalText = formatDuration(total);
-            duration.setText(status == VoicePlaybackState.Status.PLAYING
-                    || status == VoicePlaybackState.Status.PAUSED
+            duration.setText(error
+                    ? row.getContext().getString(R.string.voice_status_error)
+                    : status == VoicePlaybackState.Status.PLAYING
+                            || status == VoicePlaybackState.Status.PAUSED
                     ? row.getContext().getString(R.string.voice_duration_progress,
                             formatDuration(position), totalText)
                     : totalText);
@@ -290,6 +303,7 @@ public final class VoiceBubbleBinder {
             playButton.setContentDescription(row.getContext().getString(
                     status == VoicePlaybackState.Status.LOADING
                             ? R.string.voice_loading
+                            : error ? R.string.voice_status_error
                             : playing ? R.string.voice_pause : R.string.voice_play));
         }
 

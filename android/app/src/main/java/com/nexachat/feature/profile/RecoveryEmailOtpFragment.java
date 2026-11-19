@@ -16,6 +16,7 @@ import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.databinding.FragmentRecoveryEmailOtpBinding;
 import com.nexachat.feature.auth.ApiErrorText;
+import com.nexachat.feature.auth.AuthLoadingOverlay;
 import dagger.hilt.android.AndroidEntryPoint;
 
 @AndroidEntryPoint
@@ -54,6 +55,10 @@ public final class RecoveryEmailOtpFragment extends Fragment {
         });
         binding.recoveryOtpVerify.setOnClickListener(v -> viewModel.verify());
         binding.recoveryOtpResend.setOnClickListener(v -> viewModel.resendCode());
+        if (binding.recoveryOtpLoading.getContentDescription() == null) {
+            binding.recoveryOtpLoading.setContentDescription(
+                    getString(AuthLoadingOverlay.contentDescriptionResId()));
+        }
         if (state != null) {
             notedInitialCooldown = state.getBoolean(STATE_NOTED_COOLDOWN, false);
         }
@@ -101,6 +106,8 @@ public final class RecoveryEmailOtpFragment extends Fragment {
         } else {
             binding.recoveryOtpError.setVisibility(View.GONE);
         }
+        binding.recoveryOtpLoading.setVisibility(
+                state.isVerifying() || state.isResending() ? View.VISIBLE : View.GONE);
         if (state.isVerified()) {
             viewModel.consumeVerified();
             Bundle result = new Bundle();

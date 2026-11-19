@@ -93,7 +93,9 @@ public final class BlockedUsersViewModel extends ViewModel {
                 remaining.add(row);
             }
         }
-        uiState.setValue(new UiState(remaining, state.loading, state.error, state.nextCursor));
+        // The error flag is one-shot: an unblock must not re-publish a stale
+        // failure right after its own success snackbar.
+        uiState.setValue(new UiState(remaining, state.loading, false, state.nextCursor));
         disposables.add(safetyRepository.unblockUser(userId)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
@@ -104,6 +106,14 @@ public final class BlockedUsersViewModel extends ViewModel {
         listGeneration++;
         uiState.setValue(new UiState(List.of(), true, false, null));
         loadFirstPage();
+    }
+
+    /** Clears the one-shot error flag after the UI has surfaced it. */
+    public void consumeError() {
+        UiState state = uiState.getValue();
+        if (state != null && state.error) {
+            uiState.setValue(new UiState(state.items, state.loading, false, state.nextCursor));
+        }
     }
 
     private void loadFirstPage() {
@@ -135,8 +145,10 @@ public final class BlockedUsersViewModel extends ViewModel {
                         return;
                     }
                     UiState state = uiState.getValue();
+                    // Keep nextCursor so a failed next-page load can be retried.
                     uiState.setValue(new UiState(
-                            state == null ? List.of() : state.items, false, true, null));
+                            state == null ? List.of() : state.items, false, true,
+                            state == null ? null : state.nextCursor));
                 }));
     }
 

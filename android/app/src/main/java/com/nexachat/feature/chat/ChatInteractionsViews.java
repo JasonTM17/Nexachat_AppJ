@@ -18,9 +18,27 @@ public final class ChatInteractionsViews {
         root.setVisibility(View.VISIBLE);
     }
 
-    public static void bindPinnedBanner(@NonNull View root, @NonNull String text, @NonNull Runnable jump) {
+    /** The banner cycles pins on tap, so it must say which pin is showing. */
+    public static void bindPinnedBanner(
+            @NonNull View root,
+            @NonNull String text,
+            int position,
+            int total,
+            @NonNull Runnable jump) {
         ((TextView) root.findViewById(R.id.pinnedText)).setText(text);
-        root.setContentDescription(root.getContext().getString(R.string.pinned_title) + ", " + text);
+        TextView count = root.findViewById(R.id.pinnedCount);
+        String spoken;
+        if (total > 1) {
+            count.setText(root.getContext().getString(
+                    R.string.pinned_count, position + 1, total));
+            count.setVisibility(View.VISIBLE);
+            spoken = root.getContext().getResources().getQuantityString(
+                    R.plurals.pinned_position, total, position + 1, total);
+        } else {
+            count.setVisibility(View.GONE);
+            spoken = root.getContext().getString(R.string.pinned_title);
+        }
+        root.setContentDescription(spoken + ", " + text);
         root.setOnClickListener(v -> jump.run());
         root.setVisibility(View.VISIBLE);
     }

@@ -48,6 +48,10 @@ public final class StarredMessagesFragment extends Fragment {
             try {
                 NavHostFragment.findNavController(this).navigate(R.id.chatFragment, args);
             } catch (RuntimeException ignored) {
+                if (binding != null) {
+                    Snackbar.make(binding.getRoot(), R.string.error_generic,
+                            Snackbar.LENGTH_SHORT).show();
+                }
             }
         });
         binding.starredList.setLayoutManager(new LinearLayoutManager(requireContext()));
@@ -64,17 +68,26 @@ public final class StarredMessagesFragment extends Fragment {
                 }
             }
         });
+        binding.starredError.setOnRetry(() -> viewModel.retry());
         viewModel.getUiState().observe(getViewLifecycleOwner(), state -> {
             adapter.submit(state.getItems());
             binding.starredProgress.setVisibility(
                     state.isLoading() ? View.VISIBLE : View.GONE);
+            // A load failure gets the full error surface with retry; the empty
+            // label must not claim "no starred messages" for a failed fetch.
+            boolean showError = state.isError() && state.getItems().isEmpty();
+            binding.starredError.setVisibility(showError ? View.VISIBLE : View.GONE);
+            if (showError) {
+                binding.starredError.setMessage(getString(R.string.safety_error_generic));
+            }
             binding.starredEmpty.setVisibility(
-                    !state.isLoading() && state.getItems().isEmpty()
+                    !state.isLoading() && !state.isError() && state.getItems().isEmpty()
                             ? View.VISIBLE
                             : View.GONE);
-            if (state.isError() && binding != null) {
+            if (state.isError() && !state.getItems().isEmpty() && binding != null) {
                 Snackbar.make(binding.getRoot(), R.string.safety_error_generic,
                         Snackbar.LENGTH_SHORT).show();
+                viewModel.consumeError();
             }
         });
     }

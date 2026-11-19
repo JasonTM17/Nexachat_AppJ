@@ -1918,6 +1918,30 @@ public final class ChatViewModel extends ViewModel {
         updatePending(rows -> filterPending(rows, localId));
     }
 
+    /** Re-runs the upload for a FAILED pending row, keeping its retained Uri. */
+    public void retryPendingAttachment(String localId) {
+        PendingAttachment row = null;
+        for (PendingAttachment candidate : currentUiState().getPendingAttachments()) {
+            if (localId.equals(candidate.getLocalId())) {
+                row = candidate;
+                break;
+            }
+        }
+        if (row == null || row.getState() != PendingAttachment.PendingState.FAILED) {
+            return;
+        }
+        CompositeDisposable uploadTask = new CompositeDisposable();
+        CompositeDisposable previous = uploadDisposables.put(localId, uploadTask);
+        if (previous != null) {
+            previous.dispose();
+        }
+        disposables.add(uploadTask);
+        updatePending(rows -> filterPending(rows, localId));
+        LocalAttachment local = new LocalAttachment(
+                row.getUri(), row.getDisplayName(), row.getMimeType(), -1L, row.getType());
+        startUpload(localId, row.getUri(), local, null, uploadTask);
+    }
+
     private static List<PendingAttachment> filterPending(
             List<PendingAttachment> rows, String localId) {
         List<PendingAttachment> next = new ArrayList<>();

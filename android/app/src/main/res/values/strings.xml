@@ -243,6 +243,10 @@
     <string name="action_unpin_conversation">Unpin conversation</string>
     <string name="pinned_title">Pinned</string>
     <string name="pinned_count" translatable="false">%1$d/%2$d</string>
+    <plurals name="pinned_position">
+        <item quantity="one">Pinned %1$d of %2$d</item>
+        <item quantity="other">Pinned %1$d of %2$d</item>
+    </plurals>
     <string name="reply_unavailable">Message unavailable</string>
     <string name="cd_cancel_reply">Cancel reply</string>
     <string name="action_jump_to_message">Go to message</string>
