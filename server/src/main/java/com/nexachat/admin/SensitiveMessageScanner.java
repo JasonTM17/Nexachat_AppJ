@@ -71,7 +71,8 @@ public class SensitiveMessageScanner {
         }
         String capped = content.length() > MAX_SCAN_CHARS
                 ? content.substring(0, MAX_SCAN_CHARS) : content;
-        String folded = TextNormalizer.fold(capped);
+        TextNormalizer.FoldedView foldedView = TextNormalizer.foldView(capped);
+        String folded = foldedView.text();
         String leetView = TextNormalizer.leet(folded);
         List<Match> matches = new ArrayList<>();
         for (AlertRuleRow rule : rules) {
@@ -87,10 +88,17 @@ public class SensitiveMessageScanner {
                     int at = folded.indexOf(needle);
                     int len = needle.length();
                     if (at < 0) {
+                        // The leet view is index-aligned with the folded one,
+                        // so the same mapping translates it back.
                         at = leetView.indexOf(needle);
                     }
                     if (at >= 0) {
-                        matches.add(new Match(rule, at, len));
+                        // A folded offset is NOT an original-text offset: the
+                        // fold collapses whitespace runs and trims the edges,
+                        // so slicing the original by a folded index brackets
+                        // the wrong evidence. Map the range back instead.
+                        matches.add(new Match(rule, foldedView.originalOffset(at),
+                                foldedView.originalLength(at, len)));
                     }
                 }
                 case "REGEX" -> {

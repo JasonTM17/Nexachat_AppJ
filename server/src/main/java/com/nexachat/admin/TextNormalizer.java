@@ -16,22 +16,81 @@ import java.util.Locale;
  *       cannot dodge a keyword rule.</li>
  * </ul>
  *
- * <p>The folded key is never stored — only used at match time.
+ * <p>Folding shrinks the text: whitespace runs collapse to one space and
+ * leading/trailing whitespace is trimmed, so a match found in the folded view
+ * does not sit at the same index as in the original. Use {@link #foldView}
+ * when the caller reports match offsets against the original text.</p>
+ *
+ * <p>The folded key is never stored — only used at match time.</p>
  */
 public final class TextNormalizer {
 
     private TextNormalizer() {
     }
 
+    /** Folded text plus, for every folded char, the original index it came from. */
+    public record FoldedView(String text, int[] originalOffsets) {
+
+        /** Original-text index of the folded char at {@code foldedOffset}. */
+        public int originalOffset(int foldedOffset) {
+            return originalOffsets[foldedOffset];
+        }
+
+        /**
+         * Exclusive original-text end of the folded range
+         * {@code [foldedOffset, foldedOffset + foldedLength)}. The end is the
+         * original index of the folded char that follows the range, or the
+         * original length when the range reaches the folded end.
+         */
+        public int originalEnd(int foldedOffset, int foldedLength) {
+            return originalOffsets[foldedOffset + foldedLength];
+        }
+
+        /** Original-text span length of a folded range. */
+        public int originalLength(int foldedOffset, int foldedLength) {
+            return originalEnd(foldedOffset, foldedLength) - originalOffsets[foldedOffset];
+        }
+    }
+
     /** Case/accent/whitespace fold. */
     public static String fold(String input) {
-        if (input == null) {
-            return "";
+        return foldView(input).text();
+    }
+
+    /**
+     * The same fold as {@link #fold}, with an index map back to the original
+     * text: entry {@code i} names the original index the {@code i}-th folded
+     * char came from, and one trailing sentinel entry names the original
+     * length. The mapping makes folded match positions translatable to the
+     * original text a caller slices evidence from.
+     */
+    public static FoldedView foldView(String input) {
+        if (input == null || input.isEmpty()) {
+            return new FoldedView("", new int[]{0});
         }
-        String nfd = Normalizer.normalize(input, Normalizer.Form.NFD);
-        StringBuilder out = new StringBuilder(nfd.length());
+        int length = input.length();
+        // Decompose one original char at a time so every NFD position can be
+        // attributed to its original index. Canonical decomposition is
+        // code-point-local, so this equals normalizing the whole string.
+        StringBuilder nfd = new StringBuilder(length + 8);
+        int[] nfdOriginal = new int[Math.max(8, length * 3)];
+        int nfdLength = 0;
+        for (int originalIndex = 0; originalIndex < length; originalIndex++) {
+            String decomposed = decompose(input.charAt(originalIndex));
+            for (int position = 0; position < decomposed.length(); position++) {
+                if (nfdLength == nfdOriginal.length) {
+                    nfdOriginal = java.util.Arrays.copyOf(nfdOriginal, nfdOriginal.length * 2);
+                }
+                nfdOriginal[nfdLength++] = originalIndex;
+            }
+            nfd.append(decomposed);
+        }
+
+        StringBuilder out = new StringBuilder(nfdLength);
+        int[] offsets = new int[nfdLength + 1];
         boolean lastWasSpace = true;
-        for (int i = 0; i < nfd.length(); i++) {
+        int foldedLength = 0;
+        for (int i = 0; i < nfdLength; i++) {
             char c = nfd.charAt(i);
             if (c == 'đ') {
                 c = 'd';
@@ -45,18 +104,30 @@ public final class TextNormalizer {
             if (Character.isWhitespace(c)) {
                 if (!lastWasSpace) {
                     out.append(' ');
+                    offsets[foldedLength++] = nfdOriginal[i];
                 }
                 lastWasSpace = true;
                 continue;
             }
             out.append(Character.toLowerCase(c));
+            offsets[foldedLength++] = nfdOriginal[i];
             lastWasSpace = false;
         }
-        int length = out.length();
-        if (length > 0 && out.charAt(length - 1) == ' ') {
-            out.setLength(length - 1);
+        int outLength = out.length();
+        if (outLength > 0 && out.charAt(outLength - 1) == ' ') {
+            out.setLength(outLength - 1);
+            foldedLength--;
         }
-        return out.toString();
+        offsets[foldedLength] = length;
+        return new FoldedView(out.toString(), java.util.Arrays.copyOf(offsets, foldedLength + 1));
+    }
+
+    /** NFD of one char; the fast path avoids the normalizer for ranges with no decomposition. */
+    private static String decompose(char c) {
+        if (c < 0xC0) {
+            return String.valueOf(c);
+        }
+        return Normalizer.normalize(String.valueOf(c), Normalizer.Form.NFD);
     }
 
     /** Leetspeak view of an already-folded string. */
