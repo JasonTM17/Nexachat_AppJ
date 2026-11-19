@@ -87,6 +87,15 @@ public final class UserSearchAdapter extends ListAdapter<UserDto, UserSearchAdap
             divider.setVisibility(isLast ? android.view.View.GONE : android.view.View.VISIBLE);
             avatar.setName(user.getDisplayName());
             avatar.setAvatarUrl(user.getAvatarUrl());
+            // The row is one tap target: announce name and subtitle together and
+            // silence the avatar, whose own label would duplicate the name.
+            avatar.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            String rowLabel = line == null || line.isBlank()
+                    ? itemView.getContext().getString(
+                            R.string.cd_contact_row_name_only, user.getDisplayName())
+                    : itemView.getContext().getString(
+                            R.string.cd_contact_row, user.getDisplayName(), line);
+            itemView.setContentDescription(rowLabel);
             itemView.setOnClickListener(v -> listener.onUserClick(user.getId()));
         }
 

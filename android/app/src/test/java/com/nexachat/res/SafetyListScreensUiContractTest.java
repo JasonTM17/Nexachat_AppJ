@@ -143,7 +143,8 @@ public final class SafetyListScreensUiContractTest {
     @Test
     public void newSafetyStringsExistInBothLocales() throws Exception {
         String[] keys = {
-                "cd_unblock_user_named", "user_unblocked_with_name", "cd_starred_message_row"};
+                "cd_unblock_user_named", "user_unblocked_with_name", "cd_starred_message_row",
+                "cd_contact_row", "cd_contact_row_name_only"};
         Map<String, String> en = loadStrings(new File(resDir, "values/strings_safety.xml"));
         Map<String, String> vi = loadStrings(new File(resDir, "values-vi/strings_safety.xml"));
         for (String key : keys) {
