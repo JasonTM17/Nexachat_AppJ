@@ -126,7 +126,11 @@ class RangeAndNestedBodyRobustnessIT extends RobustnessITBase {
         if (expectedStatus == 416) {
             assertThat(response.getHeader(HttpHeaders.CONTENT_RANGE))
                     .isEqualTo("bytes */" + PNG_BYTES.length);
-            assertThat(response.getContentAsByteArray()).isEmpty();
+            // The 416 carries the standard error envelope, not an empty body.
+            assertThat(objectMapper.readTree(response.getContentAsString())
+                    .path("error").path("code").asText())
+                    .as("range %s error code", range)
+                    .isEqualTo("RANGE_NOT_SATISFIABLE");
             return;
         }
 

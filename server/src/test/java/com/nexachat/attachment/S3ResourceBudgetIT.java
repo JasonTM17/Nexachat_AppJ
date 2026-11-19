@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
 import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.ResourceHttpMessageConverter;
 import org.springframework.http.server.ServletServerHttpResponse;
@@ -186,7 +187,9 @@ class S3ResourceBudgetIT {
             assertThat(response.status()).as("range %s", bad).isEqualTo(416);
             assertThat(response.header("Content-Range"))
                     .isEqualTo("bytes */" + large.length);
-            assertThat(response.body()).isNull();
+            assertThat(new String(response.body()))
+                    .as("range %s", bad)
+                    .contains("RANGE_NOT_SATISFIABLE");
             assertThat(fixture.calls()).as("range %s", bad).hasSize(1);
             assertThat(fixture.calls().get(0).range()).isEqualTo("bytes=0-" + (SNIFF_WINDOW - 1));
             assertThat(fixture.upstreamBytes())
@@ -347,8 +350,20 @@ class S3ResourceBudgetIT {
     }
 
     private Captured serve(FileController target, String key, String range) throws IOException {
-        ResponseEntity<?> response = target.serve(
-                request(key, range), new JwtPrincipal(UUID.randomUUID()));
+        ResponseEntity<?> response;
+        try {
+            response = target.serve(
+                    request(key, range), new JwtPrincipal(UUID.randomUUID()));
+        } catch (RangeNotSatisfiableException ex) {
+            // Direct calls bypass the MVC advice; mirror the 416 +
+            // Content-Range + error-envelope response it produces.
+            MockHttpServletResponse rejected = new MockHttpServletResponse();
+            rejected.setStatus(416);
+            rejected.addHeader(HttpHeaders.ACCEPT_RANGES, "bytes");
+            rejected.addHeader(HttpHeaders.CONTENT_RANGE, "bytes */" + ex.getSizeBytes());
+            return new Captured(416, rejected,
+                    ("{\"error\":{\"code\":\"RANGE_NOT_SATISFIABLE\"}}").getBytes());
+        }
         MockHttpServletResponse servletResponse = new MockHttpServletResponse();
         servletResponse.setStatus(response.getStatusCodeValue());
         response.getHeaders().forEach((name, values) ->
