@@ -6,6 +6,7 @@ import json
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -58,6 +59,7 @@ class MatrixAndDryRunTest(unittest.TestCase):
         self.assertEqual(runnable, {
             "auth-login", "chat-send-receive", "chat-interactions", "summary-ask",
             "archive-preferences", "groups-contacts", "labels-lifecycle",
+            "polls-reminders",
             "calls-injected-notification", "injected-notifications",
         })
         self.assertEqual(journeys.ROWS[-1].id, "account-deletion")
@@ -293,7 +295,8 @@ class WiringDecisionTest(unittest.TestCase):
                 runnable.append(row_id)
         self.assertEqual(runnable, [
             "auth-login", "chat-send-receive", "chat-interactions",
-            "groups-contacts", "archive-preferences", "labels-lifecycle",
+            "groups-contacts", "polls-reminders", "archive-preferences",
+            "labels-lifecycle",
             "calls-injected-notification", "summary-ask", "injected-notifications",
         ])
         self.assertEqual(len(runnable) + len(blocked), len(journeys.ROWS))
@@ -310,8 +313,9 @@ class WiringDecisionTest(unittest.TestCase):
         self.assertNotIn("archive-preferences", blocked)
         self.assertNotIn("groups-contacts", blocked)
         self.assertNotIn("labels-lifecycle", blocked)
+        self.assertNotIn("polls-reminders", blocked)
         for row_id in (
-            "media", "polls-reminders",
+            "media",
             "calls-signaling",
             "offline-sync", "accessibility-sweep",
         ):
@@ -352,6 +356,7 @@ class WiringDecisionTest(unittest.TestCase):
             journeys.run_archive_preferences,
             journeys.run_labels_lifecycle,
             journeys.run_groups_contacts,
+            journeys.run_polls_reminders,
             journeys.run_calls_injected_notification,
             journeys.run_injected_notifications,
             journeys.run_otp_forgot_password,
@@ -3100,6 +3105,14 @@ class GroupsContactsExecutorTest(unittest.TestCase):
         self.assertEqual(result, {"summary": "ok"})
         sentinel.assert_called_once()
 
+    def test_registered_dispatch_routes_polls_reminders(self):
+        sentinel = mock.Mock(return_value={"summary": "ok"})
+        with mock.patch.object(journeys, "run_polls_reminders", sentinel):
+            result = journeys.run_registered_row(
+                journeys.ROW_BY_ID["polls-reminders"], {"serial": "emulator-5554"})
+        self.assertEqual(result, {"summary": "ok"})
+        sentinel.assert_called_once()
+
 
 class LabelsLifecycleExecutorTest(unittest.TestCase):
     """Offline fake device+REST world for run_labels_lifecycle.
@@ -3673,6 +3686,791 @@ class LabelsLifecycleExecutorTest(unittest.TestCase):
                       str(caught.exception))
         self.assertEqual(store.labels["an"], [])
         self.assertTrue(all(not per["an"] for per in store.conv_labels.values()))
+
+
+class PollsRemindersExecutorTest(unittest.TestCase):
+    """Offline fake device+REST world for run_polls_reminders.
+
+    The world mirrors the surfaces probed on emulator-5554: the chat overflow
+    'Group board' row, the boardTabs strip (Reminders/Polls content-descs), the
+    poll create sheet (question + two option rows rendered by default), the
+    poll card (optionControl/optionCount pairs, pollVoterCount, pollMeta,
+    pollVote, pollManage), the 'Close poll?' confirmation, the reminder editor
+    (title/date/time/repeat + Save), the reminder card menu (generic 'title'
+    Edit/Delete rows) and the 'Delete this reminder?' confirmation. One Store
+    backs both the fake REST client and the UI render so REST/UI agreement
+    assertions are real; the fake reminder_clock stands in for the docker
+    fixture and applies the production nextAfter semantics (+1 day for DAILY,
+    drop-from-list for a fired one-off).
+    """
+
+    USERS = {
+        "user-an": ("An", "+84900000001", "tok-an"),
+        "user-binh": ("Binh", "+84900000002", "tok-binh"),
+    }
+    PHONE_TO_UID = {"+84900000001": "user-an", "+84900000002": "user-binh"}
+    REPEAT_TO_WIRE = {"No repeat": "NONE", "Daily": "DAILY",
+                      "Weekly": "WEEKLY", "Monthly": "MONTHLY"}
+    MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+    @staticmethod
+    def _iso(dt):
+        return dt.astimezone(timezone.utc).isoformat()
+
+    @staticmethod
+    def _time_label(dt):
+        hour = dt.hour % 12 or 12
+        ampm = "AM" if dt.hour < 12 else "PM"
+        return (f"{PollsRemindersExecutorTest.MONTHS[dt.month - 1]} "
+                f"{dt.day}, {dt.year} {hour}:{dt.minute:02d} {ampm}")
+
+    class Node:
+        def __init__(self, text="", desc="", rid="", box=(0, 0, 320, 48),
+                     clickable=True, cls="android.widget.TextView"):
+            self.text = text
+            self.desc = desc
+            self.attrs = {"resource-id": ("com.nexachat.debug:id/" + rid) if rid else "",
+                          "enabled": "true"}
+            self.box = box
+            self.clickable = clickable
+            self.cls = cls
+
+        @property
+        def center(self):
+            left, top, right, bottom = self.box
+            return (left + right) // 2, (top + bottom) // 2
+
+    class Store:
+        """Server truth: the disposable group, one poll with a version feed,
+        and the reminder board."""
+
+        def __init__(self):
+            self.cid = "grp-1"
+            self.title = ""
+            self.members = {}       # uid -> {"displayName", "role"}
+            self.poll = None        # {"id","question","options","closed","closedAt","version"}
+            self.changes = []       # {"pollId","version","deleted"}
+            self.reminders = []     # {"id","title","remind_at","repeat","fired","deleted"}
+            self.seq = 0
+
+        def _next(self, prefix):
+            self.seq += 1
+            return f"{prefix}-{self.seq}"
+
+        def create_group(self, title, member_ids):
+            self.title = title
+            self.members = {"user-an": {"displayName": "An", "role": "ADMIN"}}
+            for uid in member_ids:
+                name = PollsRemindersExecutorTest.USERS[uid][0]
+                self.members[uid] = {"displayName": name, "role": "MEMBER"}
+
+        def inbox_entry(self):
+            return {"id": self.cid, "type": "GROUP", "title": self.title,
+                    "members": [{"userId": uid,
+                                 "displayName": member["displayName"],
+                                 "role": member["role"]}
+                                for uid, member in self.members.items()]}
+
+        # --- polls ---------------------------------------------------------
+        def create_poll(self, question, labels):
+            self.poll = {"id": self._next("poll"), "question": question,
+                         "options": [{"id": self._next("opt"), "label": label,
+                                      "votes": set()} for label in labels],
+                         "closed": False, "closedAt": None, "version": 1}
+            self._bump_poll(first=True)
+
+        def _bump_poll(self, first=False):
+            if not first:
+                self.poll["version"] += 1
+            self.changes.append({"pollId": self.poll["id"],
+                                 "version": self.poll["version"],
+                                 "deleted": False})
+
+        def vote(self, uid, option_ids):
+            if self.poll is None:
+                return 404
+            if self.poll["closed"]:
+                return 409
+            wanted = set(option_ids or [])
+            known = {opt["id"] for opt in self.poll["options"]}
+            if not wanted <= known:
+                return 400
+            for opt in self.poll["options"]:
+                opt["votes"].discard(uid)
+                if opt["id"] in wanted:
+                    opt["votes"].add(uid)
+            self._bump_poll()
+            return 200
+
+        def vote_labels(self, uid, labels):
+            if self.poll is None:
+                return 404
+            wanted = {opt["id"] for opt in self.poll["options"]
+                      if opt["label"] in set(labels)}
+            return self.vote(uid, sorted(wanted))
+
+        def close_poll(self):
+            self.poll["closed"] = True
+            self.poll["closedAt"] = PollsRemindersExecutorTest._iso(
+                datetime.now(timezone.utc))
+            self._bump_poll()
+
+        def delete_poll(self):
+            if self.poll is None:
+                return
+            self.poll["version"] += 1
+            self.changes.append({"pollId": self.poll["id"],
+                                 "version": self.poll["version"],
+                                 "deleted": True})
+            self.poll = None
+
+        def poll_dto(self, caller):
+            poll = self.poll
+            options = [{"id": opt["id"], "position": index,
+                        "label": opt["label"],
+                        "voteCount": len(opt["votes"]),
+                        "voterIds": sorted(opt["votes"])}
+                       for index, opt in enumerate(poll["options"])]
+            voters = set()
+            for opt in poll["options"]:
+                voters |= opt["votes"]
+            dto = {"id": poll["id"], "conversationId": self.cid,
+                   "question": poll["question"],
+                   "status": "CLOSED" if poll["closed"] else "OPEN",
+                   "version": poll["version"],
+                   "voterCount": len(voters),
+                   "options": options,
+                   "myOptionIds": [opt["id"] for opt in poll["options"]
+                                   if caller in opt["votes"]]}
+            if poll["closedAt"]:
+                dto["closedAt"] = poll["closedAt"]
+            return dto
+
+        # --- reminders -----------------------------------------------------
+        def _reminder(self, rid):
+            return next((r for r in self.reminders
+                         if r["id"] == rid and not r["deleted"]), None)
+
+        def create_reminder(self, title, repeat):
+            self.reminders.append({
+                "id": self._next("rem"), "title": title,
+                "remind_at": datetime.now(timezone.utc) + timedelta(hours=1),
+                "repeat": repeat, "fired": False, "deleted": False})
+
+        def patch_reminder(self, rid, body):
+            row = self._reminder(rid)
+            if row is None:
+                return 404
+            if "title" in body and body["title"]:
+                row["title"] = body["title"]
+            if "remindAt" in body and body["remindAt"]:
+                row["remind_at"] = datetime.fromisoformat(
+                    str(body["remindAt"]).replace("Z", "+00:00"))
+            if "repeat" in body and body["repeat"]:
+                row["repeat"] = body["repeat"]
+            return 200
+
+        def delete_reminder(self, rid):
+            row = self._reminder(rid)
+            if row is None:
+                return 404
+            row["deleted"] = True
+            return 204
+
+        def fire(self, rid):
+            """The production sweep: a one-off completes and leaves the
+            upcoming list; a repeating row advances one repeat period."""
+            row = self._reminder(rid)
+            assert row is not None, f"fire() on unknown reminder {rid}"
+            now = PollsRemindersExecutorTest._iso(datetime.now(timezone.utc))
+            if row["repeat"] == "NONE":
+                row["fired"] = True
+                return {"status": "FIRED", "fired_at": now,
+                        "last_fired_at": now}
+            days = {"DAILY": 1, "WEEKLY": 7, "MONTHLY": 30}[row["repeat"]]
+            row["remind_at"] = row["remind_at"] + timedelta(days=days)
+            return {"status": "FIRED", "last_fired_at": now}
+
+        def active_reminders(self):
+            return [self._reminder_dto(r) for r in self.reminders
+                    if not r["deleted"] and not r["fired"]]
+
+        def _reminder_dto(self, row):
+            return {"id": row["id"], "conversationId": self.cid,
+                    "title": row["title"],
+                    "remindAt": PollsRemindersExecutorTest._iso(row["remind_at"]),
+                    "repeat": row["repeat"],
+                    "createdBy": "user-an", "createdByName": "An",
+                    "canEdit": True}
+
+        def reminder_time_text(self, row):
+            return PollsRemindersExecutorTest._time_label(
+                row["remind_at"].astimezone(timezone.utc))
+
+    class World:
+        def __init__(self, store):
+            self.store = store
+            self.screen = "inbox"
+            self.tab = "reminders"
+            self.overflow = False
+            self.poll_sheet = False
+            self.poll_q = ""
+            self.poll_opts = ["", ""]
+            self.poll_selected = set()
+            self.poll_menu = False
+            self.close_dialog = False
+            self.editor = False
+            self.editor_id = None
+            self.editor_title = ""
+            self.editor_repeat = "No repeat"
+            self.repeat_dialog = False
+            self.reminder_menu = False
+            self.menu_target = None
+            self.delete_dialog = False
+            self.focused = None      # (rid, index) of the IME target
+            self.keep_vote_after_close = False  # failure variant
+
+        def open_editor(self, rid):
+            self.editor = True
+            self.editor_id = rid
+            if rid is None:
+                self.editor_title = ""
+                self.editor_repeat = "No repeat"
+            else:
+                row = self.store._reminder(rid)
+                self.editor_title = row["title"]
+                wire = row["repeat"]
+                self.editor_repeat = next(
+                    label for label, w in
+                    PollsRemindersExecutorTest.REPEAT_TO_WIRE.items()
+                    if w == wire)
+
+        def _reminders_tree(self):
+            N = PollsRemindersExecutorTest.Node
+            nodes = [N(rid="reminderAdd")]
+            rows = self.store.active_reminders()
+            if not rows:
+                nodes.append(N(text="No reminders yet", rid="reminderEmpty"))
+                return nodes
+            nodes.append(N(rid="reminderList", box=(0, 300, 320, 620)))
+            top = 310
+            for row in rows:
+                nodes.append(N(text=row["title"], rid="reminderTitle",
+                               box=(60, top, 300, top + 40)))
+                nodes.append(N(text=self.store.reminder_time_text(
+                                 self.store._reminder(row["id"])),
+                               rid="reminderTime", box=(60, top + 40, 300, top + 70)))
+                nodes.append(N(rid="reminderMenu",
+                               box=(280, top, 320, top + 40)))
+                top += 90
+            return nodes
+
+        def _polls_tree(self):
+            N = PollsRemindersExecutorTest.Node
+            nodes = [N(rid="pollAdd")]
+            poll = self.store.poll
+            if poll is None:
+                nodes.append(N(text="No polls yet", rid="pollEmpty"))
+                return nodes
+            nodes.append(N(rid="pollList", box=(0, 300, 320, 620)))
+            nodes.append(N(text=poll["question"], rid="pollQuestion",
+                           box=(60, 310, 260, 340)))
+            nodes.append(N(rid="pollOptions", box=(0, 340, 320, 470)))
+            top = 345
+            for opt in poll["options"]:
+                nodes.append(N(text=opt["label"], rid="optionControl",
+                               box=(20, top, 300, top + 30)))
+                count = len(opt["votes"])
+                suffix = "vote" if count == 1 else "votes"
+                nodes.append(N(text=f"{count} {suffix}", rid="optionCount",
+                               box=(60, top + 30, 300, top + 55)))
+                top += 62
+            voters = len(set().union(*(o["votes"] for o in poll["options"])))
+            suffix = "voter" if voters == 1 else "voters"
+            nodes.append(N(text=f"{voters} {suffix}", rid="pollVoterCount",
+                           box=(60, 475, 300, 505)))
+            if poll["closed"]:
+                meta = ("Closed · Closed " + PollsRemindersExecutorTest._time_label(
+                    datetime.now(timezone.utc)))
+            else:
+                meta = "Active · Open"
+            nodes.append(N(text=meta, rid="pollMeta", box=(60, 505, 300, 535)))
+            if not poll["closed"] or self.keep_vote_after_close:
+                nodes.append(N(text="Vote", rid="pollVote",
+                               box=(60, 545, 150, 585)))
+                nodes.append(N(text="Retract vote", rid="pollRetract",
+                               box=(160, 545, 280, 585)))
+            nodes.append(N(rid="pollManage", box=(280, 300, 320, 340)))
+            return nodes
+
+        def tree(self):
+            N = PollsRemindersExecutorTest.Node
+            s = self.store
+            nodes = []
+            if self.screen == "inbox":
+                nodes.append(N(rid="inboxUserAvatar"))
+                nodes.append(N(rid="conversationList", box=(0, 300, 320, 620)))
+                if "user-an" in s.members:
+                    nodes.append(N(text=s.title, box=(76, 360, 300, 390)))
+            elif self.screen == "chat":
+                nodes.append(N(text=s.title))
+                nodes.append(N(rid="chatToolbar", box=(0, 0, 320, 56)))
+                nodes.append(N(rid="messageInput"))
+                nodes.append(N(rid="moreButton"))
+            elif self.screen == "board":
+                nodes.append(N(rid="boardToolbar"))
+                nodes.append(N(rid="boardTabs"))
+                nodes.append(N(desc="Reminders", box=(0, 60, 160, 110)))
+                nodes.append(N(desc="Polls", box=(160, 60, 320, 110)))
+                nodes += (self._polls_tree() if self.tab == "polls"
+                          else self._reminders_tree())
+            if self.overflow:
+                nodes.append(N(rid="select_dialog_listview",
+                               box=(0, 200, 320, 620)))
+                for index, label in enumerate(
+                        ("Shared media", "Group board", "Mute notifications")):
+                    nodes.append(N(text=label, rid="text1",
+                                   box=(0, 210 + 60 * index, 320, 260 + 60 * index)))
+            if self.poll_sheet:
+                nodes.append(N(rid="pollCreateHandle"))
+                nodes.append(N(text=self.poll_q, rid="pollQuestionInput",
+                               cls="android.widget.EditText",
+                               box=(0, 400, 320, 450)))
+                nodes.append(N(text=self.poll_opts[0], rid="optionInput",
+                               cls="android.widget.EditText",
+                               box=(0, 460, 320, 505)))
+                nodes.append(N(text=self.poll_opts[1], rid="optionInput",
+                               cls="android.widget.EditText",
+                               box=(0, 510, 320, 555)))
+                nodes.append(N(rid="pollAddOption"))
+                nodes.append(N(text="Cancel", rid="pollCreateCancel"))
+                nodes.append(N(text="Create", rid="pollCreateSubmit"))
+            if self.editor:
+                nodes.append(N(text="Edit reminder" if self.editor_id
+                               else "New reminder", rid="reminderEditorTitle"))
+                nodes.append(N(text=self.editor_title,
+                               rid="reminderEditorTitleInput",
+                               cls="android.widget.EditText"))
+                nodes.append(N(text="Date", rid="reminderEditorDate"))
+                nodes.append(N(text="Time", rid="reminderEditorTime"))
+                nodes.append(N(text=f"Repeat: {self.editor_repeat}",
+                               rid="reminderEditorRepeat"))
+                nodes.append(N(text="Cancel", rid="reminderEditorCancel"))
+                nodes.append(N(text="Save", rid="reminderEditorSave"))
+            if self.poll_menu:
+                nodes.append(N(text="Close poll", rid="title",
+                               box=(0, 300, 320, 350)))
+                nodes.append(N(text="Delete poll", rid="title",
+                               box=(0, 350, 320, 400)))
+            if self.close_dialog:
+                nodes.append(N(text="Close this poll? Votes can no longer change."))
+                nodes.append(N(text="Close poll", rid="button1",
+                               cls="android.widget.Button"))
+                nodes.append(N(text="Cancel", cls="android.widget.Button"))
+            if self.repeat_dialog:
+                for label in PollsRemindersExecutorTest.REPEAT_TO_WIRE:
+                    nodes.append(N(text=label, rid="text1",
+                                   cls="android.widget.CheckedTextView"))
+            if self.reminder_menu:
+                nodes.append(N(text="Edit", rid="title"))
+                nodes.append(N(text="Delete", rid="title"))
+            if self.delete_dialog:
+                nodes.append(N(text="Delete this reminder?"))
+                nodes.append(N(text="Delete", rid="button1",
+                               cls="android.widget.Button"))
+                nodes.append(N(text="Cancel", cls="android.widget.Button"))
+            return nodes
+
+    class Device:
+        def __init__(self, world):
+            self.world = world
+
+        def nodes(self):
+            return self.world.tree()
+
+        def _option_index(self, node):
+            siblings = sorted(
+                (n for n in self.world.tree()
+                 if n.attrs["resource-id"].endswith("/optionInput")),
+                key=lambda n: n.box[1])
+            for index, sibling in enumerate(siblings):
+                if sibling.box == node.box:
+                    return index
+            return 0
+
+        def tap_node(self, node):
+            w = self.world
+            s = w.store
+            rid = node.attrs["resource-id"]
+            text = node.text.strip()
+            desc = node.desc.strip()
+            cls = node.cls
+            if w.delete_dialog:
+                if text == "Delete" and "Button" in cls:
+                    s.delete_reminder(w.menu_target)
+                w.delete_dialog = False
+                return
+            if w.close_dialog:
+                if text == "Close poll" and "Button" in cls:
+                    s.close_poll()
+                w.close_dialog = False
+                return
+            if w.repeat_dialog:
+                if text in PollsRemindersExecutorTest.REPEAT_TO_WIRE:
+                    w.editor_repeat = text
+                w.repeat_dialog = False
+                return
+            if w.poll_menu:
+                if text == "Close poll":
+                    w.close_dialog = True
+                elif text == "Delete poll":
+                    s.delete_poll()
+                w.poll_menu = False
+                return
+            if w.reminder_menu:
+                if text == "Edit":
+                    w.open_editor(w.menu_target)
+                elif text == "Delete":
+                    w.delete_dialog = True
+                w.reminder_menu = False
+                return
+            if w.overflow:
+                w.overflow = False
+                if text == "Group board" and (
+                        rid.endswith("text1") or "CheckedTextView" in cls):
+                    w.screen = "board"
+                    w.tab = "reminders"
+                return
+            if w.poll_sheet:
+                if rid.endswith("pollQuestionInput"):
+                    w.focused = ("pollQuestionInput", 0)
+                elif rid.endswith("optionInput"):
+                    w.focused = ("optionInput", self._option_index(node))
+                elif rid.endswith("pollCreateSubmit"):
+                    question = w.poll_q.strip()
+                    options = [o.strip() for o in w.poll_opts if o.strip()]
+                    if question and len(options) >= 2:
+                        s.create_poll(question, options)
+                        w.poll_sheet = False
+                elif rid.endswith("pollCreateCancel"):
+                    w.poll_sheet = False
+                return
+            if w.editor:
+                if rid.endswith("reminderEditorTitleInput"):
+                    w.focused = ("reminderEditorTitleInput", 0)
+                elif rid.endswith("reminderEditorRepeat"):
+                    w.repeat_dialog = True
+                elif rid.endswith("reminderEditorSave"):
+                    title = w.editor_title.strip()
+                    if title:
+                        repeat = (PollsRemindersExecutorTest
+                                  .REPEAT_TO_WIRE[w.editor_repeat])
+                        if w.editor_id is None:
+                            s.create_reminder(title, repeat)
+                        else:
+                            s.patch_reminder(
+                                w.editor_id, {"title": title, "repeat": repeat})
+                        w.editor = False
+                        w.editor_id = None
+                elif rid.endswith("reminderEditorCancel"):
+                    w.editor = False
+                    w.editor_id = None
+                return
+            if w.screen == "inbox":
+                if text == s.title and node.box and node.box[1] >= 300:
+                    w.screen = "chat"
+                return
+            if w.screen == "chat":
+                if rid.endswith("moreButton"):
+                    w.overflow = True
+                return
+            if w.screen == "board":
+                if desc == "Polls":
+                    w.tab = "polls"
+                elif desc == "Reminders":
+                    w.tab = "reminders"
+                elif rid.endswith("pollAdd"):
+                    w.poll_sheet = True
+                    w.poll_q = ""
+                    w.poll_opts = ["", ""]
+                elif rid.endswith("optionControl"):
+                    w.poll_selected = {text}
+                elif rid.endswith("pollVote"):
+                    s.vote_labels("user-an", sorted(w.poll_selected))
+                elif rid.endswith("pollManage"):
+                    w.poll_menu = True
+                elif rid.endswith("reminderAdd"):
+                    w.open_editor(None)
+                elif rid.endswith("reminderMenu"):
+                    active = s.active_reminders()
+                    if active:
+                        w.menu_target = active[0]["id"]
+                        w.reminder_menu = True
+                return
+
+        def type_text(self, value):
+            w = self.world
+            focused = w.focused
+            if focused == ("pollQuestionInput", 0):
+                w.poll_q += value
+            elif focused is not None and focused[0] == "optionInput":
+                w.poll_opts[focused[1]] += value
+            elif focused == ("reminderEditorTitleInput", 0):
+                w.editor_title += value
+
+        def delete_chars(self, count):
+            if not count:
+                return
+            w = self.world
+            focused = w.focused
+            if focused == ("pollQuestionInput", 0):
+                w.poll_q = w.poll_q[:-count]
+            elif focused is not None and focused[0] == "optionInput":
+                w.poll_opts[focused[1]] = w.poll_opts[focused[1]][:-count]
+            elif focused == ("reminderEditorTitleInput", 0):
+                w.editor_title = w.editor_title[:-count]
+
+        def move_end(self):
+            return None
+
+        def swipe(self, x1, y1, x2, y2, duration_ms=300):
+            return None
+
+        def key(self, code):
+            w = self.world
+            if w.focused is not None:
+                w.focused = None
+                return
+            if w.delete_dialog or w.close_dialog or w.repeat_dialog \
+                    or w.poll_menu or w.reminder_menu or w.overflow:
+                w.delete_dialog = w.close_dialog = w.repeat_dialog = False
+                w.poll_menu = w.reminder_menu = w.overflow = False
+                return
+            if w.poll_sheet:
+                w.poll_sheet = False
+                return
+            if w.editor:
+                w.editor = False
+                w.editor_id = None
+                return
+            if w.screen == "board":
+                w.screen = "chat"
+                return
+            w.screen = "inbox"
+
+        def screenshot(self, path):
+            Path(path).write_bytes(b"png")
+
+    class Patch:
+        @staticmethod
+        def ui_nodes(device, timeout=8):
+            return device.nodes()
+
+        @staticmethod
+        def grant_test_permissions():
+            return {}
+
+        @staticmethod
+        def filtered_logcat(baseline):
+            return [], False
+
+    class Adb:
+        serial = "emulator-5554"
+
+        def command(self, *args, **kwargs):
+            if args[:2] == ("shell", "date"):
+                return datetime.now(timezone.utc).strftime(
+                    "%Y-%m-%dT%H:%M:%S%z")
+            return ""
+
+    class Response:
+        def __init__(self, status, body=None):
+            self.status = status
+            self._body = body
+
+        def json(self):
+            return self._body
+
+    class Clock:
+        """Stands in for reminder_clock.ReminderClock over the Store."""
+
+        def __init__(self, store):
+            self.store = store
+
+        def make_due(self, reminder_id, minutes_ago=1):
+            row = self.store._reminder(reminder_id)
+            assert row is not None
+            row["remind_at"] = datetime.now(timezone.utc) - timedelta(
+                minutes=minutes_ago)
+            return {"status": "DUE"}
+
+        def wait_fired(self, reminder_id, timeout=20, poll_interval=0.5):
+            return self.store.fire(reminder_id)
+
+    class Client:
+        base_url = "http://127.0.0.1:18093"
+        timeout = 30
+
+        def __init__(self, store):
+            self.store = store
+
+        @staticmethod
+        def _caller(token):
+            return {"tok-an": "user-an", "tok-binh": "user-binh"}.get(token)
+
+        def request(self, method, path, token=None, body=None,
+                    params=None, raw_body=None, headers=None):
+            handler = {"GET": self.get, "POST": self.post, "PATCH": self.patch,
+                       "PUT": self.put, "DELETE": self.delete}[method]
+            return handler(path, token=token, body=body, params=params,
+                           headers=headers)
+
+        @staticmethod
+        def _segment(path, marker):
+            return path.split(marker, 1)[1].split("/", 1)[0]
+
+        def get(self, path, token=None, params=None, headers=None):
+            R = PollsRemindersExecutorTest.Response
+            s = self.store
+            caller = self._caller(token)
+            if path == "/api/v1/conversations":
+                if caller in s.members:
+                    return R(200, [s.inbox_entry()])
+                return R(200, [])
+            if path.endswith("/polls/changes"):
+                return R(200, {"items": list(s.changes),
+                               "nextSince": s.changes[-1]["version"]
+                               if s.changes else 0, "hasMore": False})
+            if path.endswith("/polls"):
+                items = [s.poll_dto(caller)] if s.poll else []
+                return R(200, {"items": items, "nextBefore": None})
+            if path.endswith("/reminders"):
+                return R(200, s.active_reminders())
+            return R(404)
+
+        def post(self, path, token=None, body=None, headers=None):
+            R = PollsRemindersExecutorTest.Response
+            s = self.store
+            caller = self._caller(token)
+            if path == "/api/v1/conversations/group":
+                s.create_group(str((body or {}).get("title") or ""),
+                               list((body or {}).get("memberIds") or []))
+                return R(201, {"id": s.cid})
+            if path.endswith("/leave"):
+                s.members.pop(caller, None)
+                return R(204)
+            if "/polls/" in path and path.endswith("/close"):
+                if s.poll is None or s.poll["closed"]:
+                    return R(409)
+                s.close_poll()
+                return R(200, s.poll_dto(caller))
+            return R(404)
+
+        def put(self, path, token=None, body=None, headers=None):
+            R = PollsRemindersExecutorTest.Response
+            s = self.store
+            caller = self._caller(token)
+            if "/polls/" in path and path.endswith("/vote"):
+                status = s.vote(caller, list((body or {}).get("optionIds") or []))
+                return R(status, s.poll_dto(caller) if status == 200 else None)
+            return R(404)
+
+        def patch(self, path, token=None, body=None, headers=None):
+            R = PollsRemindersExecutorTest.Response
+            s = self.store
+            if "/reminders/" in path:
+                rid = self._segment(path, "/reminders/")
+                status = s.patch_reminder(rid, body or {})
+                if status != 200:
+                    return R(status)
+                return R(200, s._reminder_dto(s._reminder(rid)))
+            return R(404)
+
+        def delete(self, path, token=None, params=None, headers=None):
+            R = PollsRemindersExecutorTest.Response
+            s = self.store
+            if "/polls/" in path:
+                s.delete_poll()
+                return R(204)
+            if "/reminders/" in path:
+                return R(s.delete_reminder(self._segment(path, "/reminders/")))
+            if "/members/" in path:
+                uid = self._segment(path, "/members/")
+                s.members.pop(uid, None)
+                return R(204)
+            return R(404)
+
+    def _fixture(self, keep_vote_after_close=False):
+        store = self.Store()
+        world = self.World(store)
+        world.keep_vote_after_close = keep_vote_after_close
+        client = self.Client(store)
+
+        class Api:
+            USER_A = {"phone": "+84900000001"}
+            USER_C = {"phone": "+84900000002"}
+            PASSWORD = "password123"
+
+        def session(api, recorder, phone):
+            uid = self.PHONE_TO_UID[phone]
+            return {"accessToken": self.USERS[uid][2],
+                    "user": {"id": uid, "phone": phone}}
+
+        context = {
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "row": journeys.ROW_BY_ID["polls-reminders"],
+            "row_dir": Path(tempfile.mkdtemp()),
+            "adb": self.Adb(),
+            "device": self.Device(world),
+            "helpers": (Api(), None, self.Patch()),
+            "client": client,
+            "ui_timeout": 2,
+            "reminder_clock": self.Clock(store),
+        }
+        return store, world, client, context, session
+
+    def test_executor_drives_poll_votes_close_and_reminder_lifecycle(self):
+        store, world, client, context, session = self._fixture()
+        row = journeys.ROW_BY_ID["polls-reminders"]
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session):
+            result = journeys.run_polls_reminders(row, context)
+
+        self.assertIn("OPEN with both options", result["poll_create"])
+        self.assertIn("version rose twice", result["poll_vote"])
+        self.assertIn("2 voters", result["poll_peer"])
+        self.assertIn("monotonic", result["poll_close"])
+        self.assertIn("one-off", result["reminder_create"])
+        self.assertIn("patched the title", result["reminder_edit"])
+        self.assertIn("dropped the one-off", result["reminder_fired"])
+        self.assertIn("next day's occurrence", result["reminder_daily"])
+        self.assertIn("from board and REST", result["reminder_delete"])
+        # Server truth after the full journey + sweep: nothing survives.
+        self.assertIsNone(store.poll)
+        self.assertTrue(all(r["deleted"] or r["fired"]
+                            for r in store.reminders))
+        self.assertEqual(store.members, {})
+        self.assertEqual(world.screen, "inbox")
+        # The version feed observed the close before the cleanup tombstone.
+        versions = [item["version"] for item in store.changes]
+        self.assertEqual(versions[:5], [1, 2, 3, 4, 5])
+
+    def test_executor_sweeps_when_the_closed_poll_keeps_its_vote_control(self):
+        store, world, client, context, session = self._fixture(
+            keep_vote_after_close=True)
+        row = journeys.ROW_BY_ID["polls-reminders"]
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session):
+            with self.assertRaises(journeys.ProductFailure) as caught:
+                journeys.run_polls_reminders(row, context)
+        self.assertIn("closed poll still exposes a Vote control",
+                      str(caught.exception))
+        # The poll was closed for real; the sweep still deletes it, and An's
+        # disposable group is left behind empty.
+        self.assertIsNone(store.poll)
+        self.assertEqual(store.members, {})
 
 
 if __name__ == "__main__":

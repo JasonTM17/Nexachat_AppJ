@@ -2,8 +2,8 @@
 """Guarded coordinator for the phase 08 stable-journey campaign.
 
 Runnable rows are seeded login, send/receive, chat-interactions, summary-ask,
-archive/preferences, groups-contacts, labels-lifecycle, and the two
-injected-push journeys.
+archive/preferences, groups-contacts, labels-lifecycle, polls-reminders, and
+the two injected-push journeys.
 Every other matrix row stays BLOCKED_CAPABILITY with the gap that still
 prevents that row from producing its evidence.
 """
@@ -14,6 +14,7 @@ import argparse
 import hashlib
 import importlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -260,15 +261,61 @@ ROWS: tuple[JourneyRow, ...] = (
         id="polls-reminders",
         title="Polls and reminders",
         matrix_refs=("phase-08:Groups/group board", "c1-5:Polls", "c1-5:Reminders"),
-        preconditions=("Disposable group fixture and local scheduler clock are available"),
-        steps=("Create poll and vote/change/close from separate actors", "Create/edit/delete a due reminder and observe board"),
-        assertions=("Poll counts/version agree with peer REST", "Reminder persisted due/next state agrees with board"),
-        captures=("board/poll/reminder screenshots", "redacted REST/STOMP transcripts", "logcat.txt", "summary.json"),
-        cleanup=("Delete only the poll/reminder fixtures created by the row"),
-        rest_plan=(("POST", "/api/v1/conversations/{id}/polls"), ("POST", "/api/v1/polls/{id}/votes"),
-                   ("POST", "/api/v1/conversations/{id}/reminders")),
-        capability_gap=("No board UI driver or controlled reminder-clock fixture is provided by the existing "
-                        "helpers. Scheduler state cannot be inferred from a screenshot alone."),
+        preconditions=("An is signed in on the device",
+                       "A disposable An+Binh group is seeded over REST",
+                       "The reminder_clock fixture (local Postgres, nexachat-db-1) "
+                       "points at the stack's database — NEXACHAT_E2E_REMINDER_DB "
+                       "when it is not the default 'nexachat' schema"),
+        steps=("Open the group board from the chat overflow; create a poll on the "
+               "Polls tab through the create sheet (question + two options)",
+               "Vote on the device as An, change the selection, and watch Binh's "
+               "REST vote land on the board within the poll refresh interval",
+               "Close the poll through pollManage and verify the board's Closed "
+               "state, the REST version trail and that a further peer vote is denied",
+               "Create a reminder on the Reminders tab, edit its title through the "
+               "card menu and verify board + REST agree each time",
+               "Pull the persisted one-off due with reminder_clock.make_due, wait "
+               "for the scheduler to fire it, then re-open the board to find the "
+               "fired row gone from board and REST",
+               "Create a Daily reminder, move its remindAt near-term through the "
+               "REST PATCH path and let the production scheduler fire it: REST "
+               "remindAt advances one day and the board card shows the next "
+               "occurrence; delete the row's reminder through the card menu"),
+        assertions=("The created poll renders on the board and the peer's REST list "
+                    "shows it; option counts, voterCount and myOptionIds on the "
+                    "device agree with REST for both actors after every vote "
+                    "change, and the poll version increases strictly",
+                    "After the UI close the board shows Closed with no vote/"
+                    "retract controls, REST reports status CLOSED and a peer "
+                    "PUT /vote is refused; /polls/changes returns monotonically "
+                    "increasing versions ending at the closed version",
+                    "The created/edited reminders persist on the board and in "
+                    "GET /reminders with matching title, remindAt and repeat",
+                    "After reminder_clock fires the one-off, the board and REST "
+                    "list drop it; after the production scheduler fires the "
+                    "DAILY row REST remindAt advances past the fired occurrence "
+                    "and the board card shows the next day; the UI delete "
+                    "removes it from board and REST"),
+        captures=("board-polls.png", "poll-created.png", "poll-voted.png",
+                  "poll-closed.png", "board-reminders.png", "reminder-created.png",
+                  "reminder-edited.png", "reminder-fired.png", "reminder-daily.png",
+                  "ui-tree.txt", "logcat.txt", "rest-transcript.json", "summary.json"),
+        cleanup=("Delete any remaining row-created polls/reminders over REST",
+                 "Remove Binh from the row's disposable group and have An leave",
+                 "Return the device to the inbox"),
+        rest_plan=(("POST", "/api/v1/conversations/group"),
+                   ("POST", "/api/v1/conversations/{id}/polls"),
+                   ("GET", "/api/v1/conversations/{id}/polls"),
+                   ("GET", "/api/v1/conversations/{id}/polls/changes"),
+                   ("PUT", "/api/v1/conversations/{id}/polls/{pollId}/vote"),
+                   ("POST", "/api/v1/conversations/{id}/polls/{pollId}/close"),
+                   ("DELETE", "/api/v1/conversations/{id}/polls/{pollId}"),
+                   ("POST", "/api/v1/conversations/{id}/reminders"),
+                   ("GET", "/api/v1/conversations/{id}/reminders"),
+                   ("PATCH", "/api/v1/conversations/{id}/reminders/{reminderId}"),
+                   ("DELETE", "/api/v1/conversations/{id}/reminders/{reminderId}"),
+                   ("DELETE", "/api/v1/conversations/{id}/members/{userId}"),
+                   ("POST", "/api/v1/conversations/{id}/leave")),
     ),
     JourneyRow(
         id="archive-preferences",
@@ -617,6 +664,38 @@ HELPER_CALLS = {
          "target": "revokeButton -> Revoke link; leaveGroupButton -> Leave group",
          "assert": "REST link 404; empty group drops every inbox entry and denies reads"},
     ),
+    "polls-reminders": (
+        {"helper": "e2e_common.Client.post",
+         "path": "POST /api/v1/conversations/group", "actor": "An",
+         "seed": "disposable group with Binh as the only member"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "chat overflow moreButton -> 'Group board' -> boardTabs",
+         "assert": "boardTabs renders Reminders + Polls"},
+        {"helper": "adb_ui.Device.tap_node + type_text",
+         "target": "pollAdd -> pollQuestionInput + optionInput x2 + pollCreateSubmit",
+         "assert": "poll card lands on pollList; peer REST list agrees"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "optionControl <label> -> pollVote (and again to change)",
+         "assert": "optionCount/pollVoterCount agree with REST version + "
+                  "myOptionIds for both actors; Binh's REST vote renders on-board"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "pollManage -> 'Close poll' -> confirm",
+         "assert": "pollMeta Closed, no vote/retract controls; REST status "
+                  "CLOSED and the peer vote is refused"},
+        {"helper": "adb_ui.Device.tap_node + type_text",
+         "target": "reminderAdd -> reminderEditorTitleInput + reminderEditorSave; "
+                   "reminderMenu -> Edit -> title -> Save",
+         "assert": "reminder card + REST agree on title/remindAt/repeat"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "reminderEditorRepeat -> 'Daily' dialog row",
+         "assert": "REST repeat=DAILY; after fire remindAt advances one day"},
+        {"helper": "reminder_clock.ReminderClock.make_due + wait_fired",
+         "assert": "scheduler claims+fires the persisted occurrence; board and "
+                  "REST drop the one-off / advance the daily next occurrence"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "reminderMenu -> Delete -> confirm",
+         "assert": "card + REST row are gone"},
+    ),
     "archive-preferences": (
         {"helper": "e2e_common.Client.request",
          "path": "POST /api/v1/attachments + /messages", "actor": "Binh+An",
@@ -720,7 +799,22 @@ UI_MARKERS = {
         "resource-id:revokeButton", "resource-id:leaveGroupButton",
         "text:You are already a member.", "text:Create group",
     ),
-    "polls-reminders": ("text:unique poll question", "text:unique reminder title"),
+    "polls-reminders": (
+        "resource-id:boardTabs", "resource-id:boardContent",
+        "resource-id:pollList", "resource-id:pollAdd",
+        "resource-id:pollQuestionInput", "resource-id:optionInput",
+        "resource-id:pollCreateSubmit", "resource-id:pollQuestion",
+        "resource-id:pollMeta", "resource-id:pollOptions",
+        "resource-id:optionControl", "resource-id:optionCount",
+        "resource-id:pollVoterCount", "resource-id:pollVote",
+        "resource-id:pollRetract", "resource-id:pollManage",
+        "resource-id:reminderList", "resource-id:reminderAdd",
+        "resource-id:reminderEditorTitleInput", "resource-id:reminderEditorSave",
+        "resource-id:reminderEditorRepeat", "resource-id:reminderTitle",
+        "resource-id:reminderTime", "resource-id:reminderMenu",
+        "text:Close poll", "text:Daily", "text:Edit", "text:Delete",
+        "text:<sj-poll question>", "text:<sj-rem reminder title>",
+    ),
     "archive-preferences": (
         "resource-id:archiveTabs", "resource-id:archiveList",
         "resource-id:archiveMediaTitle", "resource-id:archiveRowTitle",
@@ -4693,6 +4787,805 @@ def run_groups_contacts(row: JourneyRow, context: dict[str, Any]) -> dict[str, A
     return result
 
 
+# --- polls-reminders ---------------------------------------------------------
+# The group board's Reminders/Polls tabs are content-described; both lists are
+# resource-id RecyclerViews and every card control is resource-id tagged. Poll
+# mutations are REST-only (the server publishes no STOMP frame for polls); the
+# reminder due/next transition is driven by reminder_clock's DB fixture, which
+# pulls the persisted remind_at under the real scheduler instead of faking a
+# device clock.
+_BOARD_MENU_ITEM = ("Group board",)
+_BOARD_TAB_REMINDERS = "Reminders"
+_BOARD_TAB_POLLS = "Polls"
+_POLL_PEER_REFRESH_TIMEOUT = 25.0  # PollFragment re-reads the board every ~15s
+_REMINDER_REPEAT_LABEL = {"NONE": "No repeat", "DAILY": "Daily",
+                          "WEEKLY": "Weekly", "MONTHLY": "Monthly"}
+_VOTE_COUNT_RE = re.compile(r"^(\d+)\s+votes?\b")
+_VOTER_COUNT_RE = re.compile(r"^(\d+)\s+voters?\b")
+
+
+def _import_reminder_clock() -> Any:
+    if str(E2E_DIR) not in sys.path:
+        sys.path.insert(0, str(E2E_DIR))
+    return importlib.import_module("reminder_clock")
+
+
+def _reminder_clock(context: dict[str, Any]) -> Any:
+    """The DB fixture for the stack under test.
+
+    The device-E2E jar serves its own database on the shared postgres
+    container — which is not necessarily the default `nexachat` schema, so the
+    caller overrides it via context["reminder_db"] or the
+    NEXACHAT_E2E_REMINDER_DB env var. reminder_clock's target validation keeps
+    the name inside the local nexa* family."""
+    override = context.get("reminder_clock")
+    if override is not None:
+        return override
+    module = _import_reminder_clock()
+    db_name = (context.get("reminder_db")
+               or os.environ.get("NEXACHAT_E2E_REMINDER_DB")
+               or module.DEFAULT_DB_NAME)
+    return module.ReminderClock(db_name=db_name)
+
+
+_BOARD_MONTH_ABBR = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _device_local_now(context: dict[str, Any]) -> datetime:
+    out = context["adb"].command(
+        "shell", "date", "+%Y-%m-%dT%H:%M:%S%z", timeout=15)
+    return datetime.strptime(out.strip(), "%Y-%m-%dT%H:%M:%S%z")
+
+
+def _board_date_label(day: datetime) -> str:
+    return f"{_BOARD_MONTH_ABBR[day.month - 1]} {day.day}, {day.year}"
+
+
+def _iso_instant(value: str) -> datetime | None:
+    """Parse the server's ISO-8601 instant (variable fraction digits, Z)."""
+    try:
+        return datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _instant_after(value: str, earlier: str) -> bool:
+    """True when `value` parses to a strictly later instant than `earlier`."""
+    parsed_value = _iso_instant(value)
+    parsed_earlier = _iso_instant(earlier)
+    return parsed_value is not None and parsed_earlier is not None \
+        and parsed_value > parsed_earlier
+
+
+def _pull_refresh_inbox(context: dict[str, Any]) -> None:
+    """Drag down inside the conversation list to fire swipeRefresh.
+
+    The authoritative inbox only re-fetches on launch or a user refresh, so a
+    group created over REST may wait on a slow STOMP event; the pull-down is
+    the same gesture a user would make."""
+    node = next((item for item in _ui_nodes(context)
+                 if _rid_ends(item, "conversationList")), None)
+    if node is None or not node.box:
+        return
+    left, top, right, bottom = node.box
+    cx = (left + right) // 2
+    context["device"].swipe(cx, top + 30, cx, min(bottom - 10, top + 170), 350)
+
+
+def _open_group_board(context: dict[str, Any]) -> None:
+    """Chat overflow -> 'Group board' (below the fold) -> board tab strip."""
+    _open_chat_menu(context, _BOARD_MENU_ITEM)
+    _wait_ui_node(
+        context, lambda node: _rid_ends(node, "boardTabs"),
+        "the group board did not open", timeout=30)
+
+
+def _board_tab(context: dict[str, Any], label: str) -> None:
+    """Select a board tab by its content-desc; a selected tab is a no-op tap."""
+    node = _wait_ui_node(
+        context,
+        lambda item: item.desc.strip() == label and bool(item.box),
+        f"the board tab {label!r} was not rendered")
+    context["device"].tap_node(node)
+    time.sleep(0.6)
+
+
+def _back_to_chat(context: dict[str, Any]) -> None:
+    """Leave the board so re-entering re-fetches the lists (onResume refresh)."""
+    context["device"].key("KEYCODE_BACK")
+    _wait_ui_node(
+        context, lambda node: _rid_ends(node, "moreButton"),
+        "leaving the board did not return to the group chat", timeout=15)
+
+
+def _popup_item(context: dict[str, Any], label: str, what: str) -> None:
+    """Tap a PopupMenu row by exact text inside the generic 'title'/'text1' rows.
+
+    The reminder card menu and poll manage menu render platform rows whose
+    resource ids are generic (title/text1); their exact text is unique inside
+    the open popup, while the same strings on the board itself carry
+    feature-specific ids and never match this predicate.
+    """
+    node = _wait_ui_node(
+        context,
+        lambda item: item.text.strip() == label
+        and (_rid_ends(item, "title") or _rid_ends(item, "text1")),
+        what)
+    context["device"].tap_node(node)
+
+
+def _type_sheet_field(context: dict[str, Any], rid: str, text: str,
+                      index: int = 0, replace_len: int = 0) -> None:
+    """Tap a sheet EditText, type, then BACK away the opened IME.
+
+    The Material sheets squeeze their scroll body to a strip while the IME is
+    up, so the next field is unreachable until the keyboard is dismissed; BACK
+    closes only the IME while text input was genuinely in flight.
+    """
+    ui = context["device"]
+    nodes = sorted(
+        (node for node in _ui_nodes(context) if _rid_ends(node, rid) and node.box),
+        key=lambda node: (node.box[1], node.box[0]))
+    if index >= len(nodes):
+        raise ProductFailure(f"sheet field {rid}[{index}] was not rendered")
+    ui.tap_node(nodes[index])
+    time.sleep(0.5)
+    if replace_len:
+        ui.move_end()
+        ui.delete_chars(replace_len)
+    ui.type_text(text)
+    time.sleep(0.4)
+    ui.key("KEYCODE_BACK")
+    time.sleep(0.6)
+
+
+def _poll_page(recorder: RecordingClient, token: str, conversation_id: str) -> list[dict[str, Any]]:
+    response = recorder.get(
+        f"/api/v1/conversations/{conversation_id}/polls", token=token,
+        params={"limit": 50})
+    _expect_status(response, {200}, "poll list")
+    return list((response.json() or {}).get("items") or [])
+
+
+def _poll_rest(recorder: RecordingClient, token: str, conversation_id: str,
+               poll_id: str) -> dict[str, Any] | None:
+    return next((item for item in _poll_page(recorder, token, conversation_id)
+                 if str(item.get("id") or "") == poll_id), None)
+
+
+def _wait_poll_rest(recorder: RecordingClient, token: str, conversation_id: str,
+                    poll_id: str, predicate: Callable[[dict[str, Any] | None], bool],
+                    what: str, timeout: float = 15.0) -> dict[str, Any] | None:
+    deadline = time.monotonic() + timeout
+    while True:
+        poll = _poll_rest(recorder, token, conversation_id, poll_id)
+        if predicate(poll):
+            return poll
+        if time.monotonic() >= deadline:
+            raise ProductFailure(what)
+        time.sleep(0.6)
+
+
+def _poll_option_rest(poll: dict[str, Any], label: str) -> dict[str, Any] | None:
+    return next((opt for opt in (poll or {}).get("options") or []
+                 if str(opt.get("label") or "") == label), None)
+
+
+def _poll_counts_rest(poll: dict[str, Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for opt in (poll or {}).get("options") or []:
+        label = str(opt.get("label") or "")
+        voters = opt.get("voterIds")
+        count = opt.get("voteCount")
+        counts[label] = int(count) if count is not None else len(voters or [])
+    return counts
+
+
+def _reminders_rest(recorder: RecordingClient, token: str,
+                    conversation_id: str) -> list[dict[str, Any]]:
+    response = recorder.get(
+        f"/api/v1/conversations/{conversation_id}/reminders", token=token)
+    _expect_status(response, {200}, "reminder list")
+    return list(response.json() or [])
+
+
+def _reminder_rest(recorder: RecordingClient, token: str, conversation_id: str,
+                   title: str) -> dict[str, Any] | None:
+    return next((item for item in _reminders_rest(recorder, token, conversation_id)
+                 if str(item.get("title") or "") == title), None)
+
+
+def _wait_reminder_rest(recorder: RecordingClient, token: str, conversation_id: str,
+                        title: str, predicate: Callable[[dict[str, Any] | None], bool],
+                        what: str, timeout: float = 15.0) -> dict[str, Any] | None:
+    deadline = time.monotonic() + timeout
+    while True:
+        reminder = _reminder_rest(recorder, token, conversation_id, title)
+        if predicate(reminder):
+            return reminder
+        if time.monotonic() >= deadline:
+            raise ProductFailure(what)
+        time.sleep(0.6)
+
+
+def _poll_option_counts_ui(context: dict[str, Any]) -> dict[str, int]:
+    """label -> rendered optionCount inside the card's pollOptions block."""
+    counts: dict[str, int] = {}
+    current: str | None = None
+    for node in _list_children(context, "pollOptions"):
+        if _rid_ends(node, "optionControl"):
+            current = node.text.strip()
+        elif _rid_ends(node, "optionCount") and current is not None:
+            match = _VOTE_COUNT_RE.match(node.text.strip())
+            counts[current] = int(match.group(1)) if match else -1
+            current = None
+    return counts
+
+
+def _poll_voter_count_ui(context: dict[str, Any]) -> int | None:
+    node = next((item for item in _list_children(context, "pollList")
+                 if _rid_ends(item, "pollVoterCount")), None)
+    if node is None:
+        return None
+    match = _VOTER_COUNT_RE.match(node.text.strip())
+    return int(match.group(1)) if match else None
+
+
+def _wait_poll_counts_ui(context: dict[str, Any], expected: dict[str, int],
+                         voters: int, what: str, timeout: float = 15.0) -> None:
+    deadline = time.monotonic() + timeout
+    while True:
+        if (_poll_option_counts_ui(context) == expected
+                and _poll_voter_count_ui(context) == voters):
+            return
+        if time.monotonic() >= deadline:
+            raise ProductFailure(
+                f"{what}: option counts {_poll_option_counts_ui(context)!r}, "
+                f"voter count {_poll_voter_count_ui(context)!r}")
+        time.sleep(0.5)
+
+
+def _tap_poll_option(context: dict[str, Any], label: str) -> None:
+    node = _wait_list_row(
+        context, "pollOptions",
+        f"the option control {label!r} was not on the poll card",
+        rid="optionControl", text=label)
+    context["device"].tap_node(node)
+
+
+def _poll_meta_ui(context: dict[str, Any]) -> str:
+    node = next((item for item in _list_children(context, "pollList")
+                 if _rid_ends(item, "pollMeta")), None)
+    return node.text.strip() if node is not None else ""
+
+
+def run_polls_reminders(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Group-board polls + reminders on a disposable An+Binh group.
+
+    Every mutation is driven through the Android board UI; peer truth comes
+    from Binh's REST client. The reminder due/next transition is pulled under
+    the real scheduler through reminder_clock's DB fixture — the persisted
+    remind_at is moved due, the production sweep claims and fires it, and the
+    board is re-entered so its onResume fetch shows the post-fire list. On the
+    local stack the push gateway is a mock, so no shade notification is
+    asserted; the board list and REST are the persisted truth this row proves.
+    """
+    _campaign_serial(context)
+    _campaign_base_url(context)
+    _prepare_seeded_an(context)
+    api, _adb_ui, _patch = context["helpers"]
+    recorder: RecordingClient = context["client"]
+    ui = context["device"]
+    an = _actor_session(api, recorder, api.USER_A["phone"])
+    binh = _actor_session(api, recorder, api.USER_C["phone"])
+    an_token = an["accessToken"]
+    binh_token = binh["accessToken"]
+    binh_id = str((binh.get("user") or {}).get("id") or "")
+    an_id = str((an.get("user") or {}).get("id") or "")
+    if not binh_id or not an_id:
+        raise EnvironmentFailure("seed actor sessions did not expose user ids")
+    clock = _reminder_clock(context)
+    row_dir = Path(context["row_dir"])
+    tag = uuid.uuid4().hex[:8]
+    group_title = f"sj-pb-{tag}"
+    poll_question = f"sj-poll-{tag}"
+    option_a = f"sj-a-{tag}"
+    option_b = f"sj-b-{tag}"
+    reminder_title = f"sj-rem-{tag}"
+    reminder_title2 = f"{reminder_title}-e"
+    daily_title = f"sj-remd-{tag}"
+    conversation_id = ""
+    poll_id = ""
+    created_reminder_ids: set[str] = set()
+    cleanup_errors: list[str] = []
+    result: dict[str, Any] = {}
+    primary_error: Exception | None = None
+    try:
+        created = recorder.post(
+            "/api/v1/conversations/group", token=an_token,
+            body={"title": group_title, "memberIds": [binh_id]})
+        _expect_status(created, {200, 201}, "disposable group create")
+        conversation_id = str((created.json() or {}).get("id") or "")
+        if not conversation_id:
+            raise EnvironmentFailure("group create did not return an id")
+        _wait_group_roles(
+            recorder, an_token, conversation_id,
+            {"An": "ADMIN", "Binh": "MEMBER"},
+            "the seeded group's members disagree with the REST create")
+
+        # The REST-created group reaches the device inbox via the next
+        # authoritative fetch; pull-refresh the list until it does.
+        group_row = None
+        deadline = time.monotonic() + 45
+        next_refresh = time.monotonic()
+        while True:
+            group_row = _inbox_conversation_row(context, group_title)
+            if group_row is not None:
+                break
+            if time.monotonic() >= deadline:
+                raise ProductFailure("the seeded group row never reached the inbox")
+            if time.monotonic() >= next_refresh:
+                _pull_refresh_inbox(context)
+                next_refresh = time.monotonic() + 8
+            time.sleep(0.5)
+        ui.tap_node(group_row)
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "moreButton"),
+            "the seeded group chat did not open", timeout=30)
+        _open_group_board(context)
+        ui.screenshot(str(row_dir / "board-reminders.png"))
+
+        # === poll: create through the sheet ================================
+        _board_tab(context, _BOARD_TAB_POLLS)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "pollEmpty") or _rid_ends(node, "pollList"),
+            "the polls tab did not render its list surface")
+        ui.screenshot(str(row_dir / "board-polls.png"))
+        add_poll = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "pollAdd"),
+            "the New poll control was not exposed")
+        ui.tap_node(add_poll)
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "pollQuestionInput"),
+            "the poll create sheet did not open")
+        _type_sheet_field(context, "pollQuestionInput", poll_question)
+        _type_sheet_field(context, "optionInput", option_a, index=0)
+        _type_sheet_field(context, "optionInput", option_b, index=1)
+        submit = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "pollCreateSubmit"),
+            "the create sheet lost its submit control")
+        ui.tap_node(submit)
+        _wait_ui_absent(
+            context, lambda node: _rid_ends(node, "pollQuestionInput"),
+            "the poll create sheet did not close")
+        _wait_list_row(
+            context, "pollList",
+            "the created poll never rendered on the board",
+            rid="pollQuestion", text=poll_question, timeout=30)
+        ui.screenshot(str(row_dir / "poll-created.png"))
+        # Exactly one poll exists; identify it by question through Binh's list.
+        deadline = time.monotonic() + 15
+        peer_poll: dict[str, Any] | None = None
+        while True:
+            peer_poll = next(
+                (item for item in _poll_page(recorder, binh_token, conversation_id)
+                 if str(item.get("question") or "") == poll_question), None)
+            if peer_poll is not None:
+                break
+            if time.monotonic() >= deadline:
+                raise ProductFailure(
+                    "Binh's REST list did not carry the created poll")
+            time.sleep(0.6)
+        poll_id = str(peer_poll.get("id") or "")
+        if not poll_id:
+            raise ProductFailure("the created poll did not expose an id")
+        version_0 = int(peer_poll.get("version") or 0)
+        if str(peer_poll.get("status") or "") != "OPEN":
+            raise ProductFailure("the created poll is not OPEN for the peer")
+        if int(peer_poll.get("voterCount") or 0) != 0:
+            raise ProductFailure("the new poll already carried a voter")
+        opt_a_rest = _poll_option_rest(peer_poll, option_a)
+        opt_b_rest = _poll_option_rest(peer_poll, option_b)
+        if opt_a_rest is None or opt_b_rest is None:
+            raise ProductFailure("the REST poll options disagree with the sheet")
+        result["poll_create"] = ("create sheet landed the poll on the board; "
+                                 "peer REST shows it OPEN with both options")
+
+        # === poll: An votes on device, then changes the selection ==========
+        _tap_poll_option(context, option_a)
+        vote_button = _wait_list_row(
+            context, "pollList",
+            "the Vote control was not exposed on the poll card",
+            rid="pollVote")
+        ui.tap_node(vote_button)
+        _wait_poll_counts_ui(
+            context, {option_a: 1, option_b: 0}, 1,
+            "the device vote did not land on the board")
+        an_poll = _wait_poll_rest(
+            recorder, an_token, conversation_id, poll_id,
+            lambda poll: poll is not None
+            and [str(v) for v in (poll.get("myOptionIds") or [])]
+            == [str(opt_a_rest.get("id"))],
+            "An's REST myOptionIds did not reflect the device vote")
+        version_1 = int(an_poll.get("version") or 0)
+        if not version_1 > version_0:
+            raise ProductFailure("the poll version did not rise after the first vote")
+        if _poll_counts_rest(an_poll) != {option_a: 1, option_b: 0}:
+            raise ProductFailure("REST option counts disagree with the board")
+        ui.screenshot(str(row_dir / "poll-voted.png"))
+
+        _tap_poll_option(context, option_b)
+        vote_button2 = _wait_list_row(
+            context, "pollList",
+            "the Vote control vanished before the change vote",
+            rid="pollVote")
+        ui.tap_node(vote_button2)
+        _wait_poll_counts_ui(
+            context, {option_a: 0, option_b: 1}, 1,
+            "the changed vote did not move An's selection on the board")
+        changed_poll = _wait_poll_rest(
+            recorder, an_token, conversation_id, poll_id,
+            lambda poll: poll is not None
+            and [str(v) for v in (poll.get("myOptionIds") or [])]
+            == [str(opt_b_rest.get("id"))],
+            "An's REST myOptionIds did not follow the changed vote")
+        version_2 = int(changed_poll.get("version") or 0)
+        if not version_2 > version_1:
+            raise ProductFailure("the poll version did not rise after the change vote")
+        result["poll_vote"] = ("device vote + change landed on the board and "
+                               "REST (version rose twice, myOptionIds agree)")
+
+        # === poll: Binh votes over REST; the board refreshes ================
+        binh_vote = recorder.put(
+            f"/api/v1/conversations/{conversation_id}/polls/{poll_id}/vote",
+            token=binh_token, body={"optionIds": [opt_a_rest.get("id")]})
+        _expect_status(binh_vote, {200}, "Binh's REST vote")
+        _wait_poll_counts_ui(
+            context, {option_a: 1, option_b: 1}, 2,
+            "Binh's REST vote never rendered on the device board",
+            timeout=_POLL_PEER_REFRESH_TIMEOUT)
+        peer_poll2 = _wait_poll_rest(
+            recorder, binh_token, conversation_id, poll_id,
+            lambda poll: poll is not None
+            and int(poll.get("voterCount") or 0) == 2,
+            "peer REST did not reach two voters")
+        version_3 = int(peer_poll2.get("version") or 0)
+        if not version_3 > version_2:
+            raise ProductFailure("the poll version did not rise after Binh's vote")
+        if [str(v) for v in (peer_poll2.get("myOptionIds") or [])] != [str(opt_a_rest.get("id"))]:
+            raise ProductFailure("Binh's myOptionIds did not record his vote")
+        result["poll_peer"] = ("Binh's REST vote rendered on the board inside the "
+                               "refresh interval; REST shows 2 voters / counts 1+1")
+
+        # === poll: close through manage =====================================
+        manage = _wait_list_row(
+            context, "pollList",
+            "the poll manage control was not exposed",
+            rid="pollManage")
+        ui.tap_node(manage)
+        _popup_item(context, "Close poll", "the manage menu did not offer Close poll")
+        _wait_ui_node(
+            context,
+            lambda node: node.text.strip().startswith("Close this poll?"),
+            "the close confirmation did not open")
+        _tap_dialog_text(context, "Close poll")
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "pollMeta")
+            and node.text.strip().startswith("Closed"),
+            "the board did not flip the poll to Closed", timeout=30)
+        _wait_ui_absent(
+            context, lambda node: _rid_ends(node, "pollVote"),
+            "the closed poll still exposes a Vote control")
+        ui.screenshot(str(row_dir / "poll-closed.png"))
+        closed_poll = _wait_poll_rest(
+            recorder, binh_token, conversation_id, poll_id,
+            lambda poll: poll is not None
+            and str(poll.get("status") or "") == "CLOSED",
+            "REST did not report the poll CLOSED after the UI close")
+        if not closed_poll.get("closedAt"):
+            raise ProductFailure("the closed poll has no closedAt")
+        version_4 = int(closed_poll.get("version") or 0)
+        if not version_4 > version_3:
+            raise ProductFailure("the poll version did not rise on close")
+        late_vote = recorder.put(
+            f"/api/v1/conversations/{conversation_id}/polls/{poll_id}/vote",
+            token=binh_token, body={"optionIds": [opt_b_rest.get("id")]})
+        if late_vote.status in (200, 201):
+            raise ProductFailure("a peer vote was accepted on a closed poll")
+        changes = recorder.get(
+            f"/api/v1/conversations/{conversation_id}/polls/changes",
+            token=binh_token, params={"since": 0, "limit": 100})
+        _expect_status(changes, {200}, "poll changes feed")
+        versions = [int(item.get("version") or 0)
+                    for item in (changes.json() or {}).get("items") or []
+                    if str(item.get("pollId") or "") == poll_id]
+        if not versions or versions[-1] != version_4 or versions != sorted(versions):
+            raise ProductFailure(
+                f"the changes feed does not end at the closed version: {versions!r}")
+        result["poll_close"] = ("manage -> close flipped the board + REST; the peer "
+                                "vote is refused and the version trail is monotonic")
+
+        # === reminder: create + edit through the board =====================
+        _board_tab(context, _BOARD_TAB_REMINDERS)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "reminderEmpty")
+            or _rid_ends(node, "reminderList"),
+            "the reminders tab did not render its list surface")
+        add_reminder = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "reminderAdd"),
+            "the New reminder control was not exposed")
+        ui.tap_node(add_reminder)
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "reminderEditorTitleInput"),
+            "the reminder editor did not open")
+        _type_sheet_field(context, "reminderEditorTitleInput", reminder_title)
+        save = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "reminderEditorSave"),
+            "the reminder editor lost its Save control")
+        ui.tap_node(save)
+        _wait_list_row(
+            context, "reminderList",
+            "the created reminder never rendered on the board",
+            rid="reminderTitle", text=reminder_title, timeout=30)
+        first_rest = _wait_reminder_rest(
+            recorder, an_token, conversation_id, reminder_title,
+            lambda item: item is not None,
+            "the created reminder is absent from REST")
+        reminder_id = str(first_rest.get("id") or "")
+        if not reminder_id:
+            raise ProductFailure("the created reminder did not expose an id")
+        created_reminder_ids.add(reminder_id)
+        first_remind_at = str(first_rest.get("remindAt") or "")
+        if str(first_rest.get("repeat") or "NONE") != "NONE":
+            raise ProductFailure("the new reminder is not a one-off")
+        ui.screenshot(str(row_dir / "reminder-created.png"))
+        result["reminder_create"] = ("editor created the reminder; board card and "
+                                     "REST row agree (one-off, future remindAt)")
+
+        # Edit the title through the card menu; remindAt/repeat are resent.
+        menu = _wait_list_row(
+            context, "reminderList",
+            "the reminder card did not expose its options menu",
+            rid="reminderMenu")
+        ui.tap_node(menu)
+        _popup_item(context, "Edit", "the reminder menu did not offer Edit")
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "reminderEditorTitleInput"),
+            "the reminder editor did not reopen for edit")
+        _type_sheet_field(
+            context, "reminderEditorTitleInput", reminder_title2,
+            replace_len=len(reminder_title))
+        save2 = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "reminderEditorSave"),
+            "the reminder editor lost its Save control on edit")
+        ui.tap_node(save2)
+        _wait_list_row(
+            context, "reminderList",
+            "the edited reminder title never rendered on the board",
+            rid="reminderTitle", text=reminder_title2, timeout=30)
+        edited_rest = _wait_reminder_rest(
+            recorder, an_token, conversation_id, reminder_title2,
+            lambda item: item is not None,
+            "the edited reminder title never reached REST")
+        if str(edited_rest.get("id") or "") != reminder_id:
+            raise ProductFailure("the reminder edit created a new row instead of patching")
+        if str(edited_rest.get("remindAt") or "") != first_remind_at:
+            raise ProductFailure("a title-only edit changed remindAt")
+        ui.screenshot(str(row_dir / "reminder-edited.png"))
+        result["reminder_edit"] = ("card menu -> edit patched the title; board and "
+                                   "REST agree and remindAt was unchanged")
+
+        # === one-off fires via reminder_clock ==============================
+        # The fixture rewrites the persisted remind_at under the production
+        # scheduler; the next <=1s sweep claims and completes it.
+        try:
+            due = clock.make_due(reminder_id, minutes_ago=1)
+        except Exception as error:
+            raise EnvironmentFailure(
+                f"reminder_clock could not pull the row due: {error}") from error
+        if due.get("status") not in ("DUE", "CLAIMED", "FIRED"):
+            raise EnvironmentFailure(f"make_due left the reminder {due.get('status')!r}")
+        try:
+            # wait_fired returns on the claim lease; the REST disappearance
+            # below is the authoritative 'fired and completed' signal.
+            clock.wait_fired(reminder_id, timeout=20)
+        except Exception as error:
+            raise EnvironmentFailure(
+                f"the one-off reminder never fired: {error}") from error
+        _wait_reminder_rest(
+            recorder, an_token, conversation_id, reminder_title2,
+            lambda item: item is None,
+            "the fired one-off stayed in the REST list", timeout=20)
+        _back_to_chat(context)
+        _open_group_board(context)
+        _board_tab(context, _BOARD_TAB_REMINDERS)
+        _wait_list_row(
+            context, "reminderList",
+            "the fired one-off still renders on the board",
+            present=False, rid="reminderTitle", text=reminder_title2, timeout=15)
+        ui.screenshot(str(row_dir / "reminder-fired.png"))
+        result["reminder_fired"] = ("reminder_clock fired the persisted occurrence; "
+                                    "board and REST dropped the one-off")
+
+        # === daily reminder: create, fire, next occurrence, delete ==========
+        add_daily = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "reminderAdd"),
+            "the New reminder control was not exposed for the daily row")
+        ui.tap_node(add_daily)
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "reminderEditorTitleInput"),
+            "the reminder editor did not open for the daily row")
+        _type_sheet_field(context, "reminderEditorTitleInput", daily_title)
+        repeat_row = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "reminderEditorRepeat"),
+            "the repeat field was not exposed")
+        ui.tap_node(repeat_row)
+        _tap_dialog_item(context, (_REMINDER_REPEAT_LABEL["DAILY"],))
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "reminderEditorRepeat")
+            and "Daily" in node.text,
+            "the repeat field did not switch to Daily")
+        save3 = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "reminderEditorSave"),
+            "the reminder editor lost its Save control for the daily row")
+        ui.tap_node(save3)
+        _wait_list_row(
+            context, "reminderList",
+            "the daily reminder never rendered on the board",
+            rid="reminderTitle", text=daily_title, timeout=30)
+        daily_rest = _wait_reminder_rest(
+            recorder, an_token, conversation_id, daily_title,
+            lambda item: item is not None,
+            "the daily reminder is absent from REST")
+        daily_id = str(daily_rest.get("id") or "")
+        if not daily_id:
+            raise ProductFailure("the daily reminder did not expose an id")
+        created_reminder_ids.add(daily_id)
+        if str(daily_rest.get("repeat") or "") != "DAILY":
+            raise ProductFailure("the repeat picker did not persist DAILY")
+        ui.screenshot(str(row_dir / "reminder-daily.png"))
+
+        # Move remindAt just ahead through the real PATCH path so the row's
+        # anchor lands in the near future; the production scheduler then fires
+        # the occurrence and nextAfter advances it exactly one day. A DB-side
+        # make_due would instead reset remindAt back to the still-future
+        # anchor, which cannot prove the next-occurrence transition.
+        near = (datetime.now(timezone.utc) + timedelta(seconds=75)
+                ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        patched = recorder.patch(
+            f"/api/v1/conversations/{conversation_id}/reminders/{daily_id}",
+            token=an_token, body={"remindAt": near})
+        _expect_status(patched, {200}, "daily remindAt PATCH")
+        patched_at = str((patched.json() or {}).get("remindAt") or near)
+        try:
+            clock.wait_fired(daily_id, timeout=120)
+        except Exception as error:
+            raise EnvironmentFailure(
+                f"the daily occurrence never fired: {error}") from error
+        next_rest = _wait_reminder_rest(
+            recorder, an_token, conversation_id, daily_title,
+            lambda item: item is not None
+            and _instant_after(str(item.get("remindAt") or ""), patched_at),
+            "the daily reminder did not advance to its next occurrence",
+            timeout=20)
+        _back_to_chat(context)
+        _open_group_board(context)
+        _board_tab(context, _BOARD_TAB_REMINDERS)
+        _wait_list_row(
+            context, "reminderList",
+            "the daily reminder vanished from the board after firing",
+            rid="reminderTitle", text=daily_title, timeout=15)
+        time_node = _list_row(
+            context, "reminderList", rid="reminderTime")
+        if time_node is None or not time_node.text.strip():
+            raise ProductFailure("the daily card lost its next-occurrence time")
+        # The board must render the REST-persisted next occurrence: parse the
+        # server's remindAt and label it in the device timezone.
+        next_at = _iso_instant(str(next_rest.get("remindAt") or ""))
+        device_tz = _device_local_now(context).tzinfo
+        if next_at is None or device_tz is None:
+            raise EnvironmentFailure("could not resolve the next occurrence's timezone")
+        next_day = _board_date_label(next_at.astimezone(device_tz))
+        if next_day not in time_node.text:
+            raise ProductFailure(
+                f"the daily card shows {time_node.text.strip()!r}, "
+                f"not the persisted next occurrence {next_day!r}")
+        result["reminder_daily"] = (
+            "the fired DAILY reminder advanced in REST and the board card "
+            "shows the next day's occurrence")
+
+        menu2 = _wait_list_row(
+            context, "reminderList",
+            "the daily card did not expose its options menu",
+            rid="reminderMenu")
+        ui.tap_node(menu2)
+        _popup_item(context, "Delete", "the reminder menu did not offer Delete")
+        _wait_ui_node(
+            context,
+            lambda node: node.text.strip() == "Delete this reminder?",
+            "the delete confirmation did not open")
+        _tap_dialog_text(context, "Delete")
+        _wait_list_row(
+            context, "reminderList",
+            "the deleted reminder stayed on the board",
+            present=False, rid="reminderTitle", text=daily_title, timeout=20)
+        _wait_reminder_rest(
+            recorder, an_token, conversation_id, daily_title,
+            lambda item: item is None,
+            "the deleted reminder stayed in REST", timeout=15)
+        result["reminder_delete"] = ("card menu -> delete removed the daily "
+                                     "reminder from board and REST")
+        result["summary"] = "all phases passed"
+    except Exception as error:
+        primary_error = error
+    finally:
+        try:
+            for _ in range(6):
+                nodes = _ui_nodes(context)
+                if any(_rid_ends(node, "inboxUserAvatar") for node in nodes):
+                    break
+                ui.key("KEYCODE_BACK")
+                time.sleep(0.5)
+        except Exception as error:
+            cleanup_errors.append(f"ui restore: {type(error).__name__}")
+        if conversation_id:
+            try:
+                if poll_id:
+                    deleted = recorder.delete(
+                        f"/api/v1/conversations/{conversation_id}/polls/{poll_id}",
+                        token=an_token)
+                    if deleted.status not in (200, 204, 404):
+                        cleanup_errors.append(f"poll delete HTTP {deleted.status}")
+            except Exception as error:
+                cleanup_errors.append(f"poll delete: {type(error).__name__}")
+            try:
+                # Every reminder this conversation carries is this attempt's
+                # fixture (the group is disposable): delete tracked ids plus a
+                # prefix sweep for any row whose id was never captured.
+                sweep_ids = set(created_reminder_ids)
+                try:
+                    for item in _reminders_rest(recorder, an_token, conversation_id):
+                        if str(item.get("title") or "").startswith("sj-rem"):
+                            sweep_ids.add(str(item.get("id") or ""))
+                except Exception:
+                    pass
+                for rid in sorted(sweep_ids):
+                    if not rid:
+                        continue
+                    deleted = recorder.delete(
+                        f"/api/v1/conversations/{conversation_id}/reminders/{rid}",
+                        token=an_token)
+                    if deleted.status not in (200, 204, 404):
+                        cleanup_errors.append(f"reminder {rid} delete HTTP {deleted.status}")
+            except Exception as error:
+                cleanup_errors.append(f"reminder sweep: {type(error).__name__}")
+            try:
+                _remove_member_rest(recorder, an_token, conversation_id, binh_id)
+            except Exception as error:
+                cleanup_errors.append(f"member sweep: {type(error).__name__}")
+            try:
+                left = recorder.post(
+                    f"/api/v1/conversations/{conversation_id}/leave", token=an_token)
+                if left.status not in (200, 204, 400, 403, 404):
+                    cleanup_errors.append(f"leave HTTP {left.status}")
+            except Exception as error:
+                cleanup_errors.append(f"leave: {type(error).__name__}")
+        if cleanup_errors:
+            context["cleanup_errors"] = cleanup_errors
+    if primary_error is not None:
+        raise primary_error
+    if context.get("cleanup_errors"):
+        raise HarnessError("polls-reminders cleanup could not release the fixture")
+    result["cleanup"] = ("row poll/reminders removed, Binh removed and An left "
+                         "the disposable group")
+    return result
+
+
 SEED_PHONES = frozenset({
     "+84900000001", "+84900000002", "+84900000003",
     "+84900000101", "+84900000102",
@@ -5344,6 +6237,7 @@ def run_registered_row(row: JourneyRow, context: dict[str, Any]) -> dict[str, An
         "archive-preferences": run_archive_preferences,
         "labels-lifecycle": run_labels_lifecycle,
         "groups-contacts": run_groups_contacts,
+        "polls-reminders": run_polls_reminders,
         "calls-injected-notification": run_calls_injected_notification,
         "injected-notifications": run_injected_notifications,
     }

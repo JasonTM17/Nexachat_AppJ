@@ -175,6 +175,7 @@ Rows whose capability disposition reads `Runnable with existing helpers`
 | `archive-preferences` | Media/files/links tabs + paging + sender filter; archive undo snackbar; mute/pin/label/seen/presence flags caller-only, peer-clean, survive pull-to-refresh |
 | `groups-contacts` | Contacts list = GET /contacts; UI group create/rename/add/remove; invite link + on-device approval queue; deep-link return; revoke; leave; banned member denied |
 | `labels-lifecycle` | Label create/assign/filter/unfilter/delete via UI = REST; rotation + force-stop keep exactly one dialog surface; reopen refetches (#181); runtime chips must be clickable |
+| `polls-reminders` | Group board Polls + Reminders tabs: poll create/vote/change/close agree with peer REST (`version`, `voterCount`, `myOptionIds`, `/polls/changes` monotonic, closed-poll vote refused); reminder create/edit/delete agree with REST; `reminder_clock` pulls the persisted one-off due under the real scheduler and the board drops it; a near-term `remindAt` PATCH lets the production sweep fire a DAILY row whose next occurrence shows on the board. Needs `NEXACHAT_E2E_REMINDER_DB` when the stack's database is not `nexachat` |
 
 Every other row is `BLOCKED_CAPABILITY` until its missing driver or oracle is
 built; `--list` prints the exact blocker per row. API 36 notes: runtime
