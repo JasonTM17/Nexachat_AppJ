@@ -200,6 +200,38 @@ describe('AlertsPage', () => {
     );
   });
 
+  it('keeps the freshest filter results when an older response resolves late', async () => {
+    const user = userEvent.setup();
+    const unfiltered = page([alert({ snippet: 'unfiltered row' })]);
+    const filtered = page([alert({ snippet: 'high severity row' })]);
+    const stale: { resolve?: (value: Page<AlertSummary>) => void } = {};
+    apiMock.mockImplementation((path: string) => {
+      if (path === '/api/v1/admin/me') return Promise.resolve(me);
+      if (path.startsWith('/api/v1/admin/alerts?')) {
+        return path.includes('severity=HIGH')
+          ? Promise.resolve(filtered)
+          : new Promise<Page<AlertSummary>>((resolve) => {
+              stale.resolve = resolve;
+            });
+      }
+      return Promise.reject(new ApiException(404, 'NO_ROUTE', `unstubbed ${path}`));
+    });
+    renderPage();
+
+    // The unfiltered request is still in flight when the moderator narrows
+    // the filter; the filtered response must win even though it lands first.
+    await user.selectOptions(screen.getByLabelText('Severity'), 'HIGH');
+    expect(await screen.findByText('high severity row')).toBeInTheDocument();
+
+    // Let the stale response land and any wrong re-render settle first.
+    stale.resolve?.(unfiltered);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(screen.queryByText('unfiltered row')).toBeNull();
+    expect(screen.getByText('high severity row')).toBeInTheDocument();
+  });
+
   it('opens the drawer and assigns the alert to the signed-in moderator', async () => {
     const user = userEvent.setup();
     stubRoutes();
