@@ -128,10 +128,12 @@ final class SyncPageStore {
                 SyncCursorEntity current = requested.get(conversation);
                 if (delta.getReset()) {
                     // Reset never deletes queued sends or another account's outbox.
-                    db.messageDao().deleteForConversation(conversation).blockingAwait();
-                    db.messageTranslationDao().deleteForConversation(conversation).blockingAwait();
-                    db.reactionDao().deleteForConversation(conversation).blockingAwait();
-                    db.pinDao().deleteForConversation(conversation).blockingAwait();
+                    // Synchronous *InTransaction deletes only: no blockingAwait
+                    // inside a held writer transaction (issue #184).
+                    db.messageDao().deleteForConversationInTransaction(conversation);
+                    db.messageTranslationDao().deleteForConversationInTransaction(conversation);
+                    db.reactionDao().deleteForConversationInTransaction(conversation);
+                    db.pinDao().deleteForConversationInTransaction(conversation);
                     db.syncCursorDao().delete(owner, conversation);
                     put(new SyncCursorEntity(owner, conversation, delta.getGeneration(), 0,
                             null, null, null, true));
@@ -139,14 +141,14 @@ final class SyncPageStore {
                     continue;
                 }
                 if (delta.isReactionsFullRefresh() && !current.rebuildingReactions) {
-                    db.reactionDao().deleteForConversation(conversation).blockingAwait();
+                    db.reactionDao().deleteForConversationInTransaction(conversation);
                     put(new SyncCursorEntity(owner, conversation, delta.getGeneration(), 0,
                             null, null, response.getServerTime(), true));
                     pending.add(conversation);
                     continue;
                 }
                 if (current.rebuildingReactions && current.changeCursor == 0) {
-                    db.reactionDao().deleteForConversation(conversation).blockingAwait();
+                    db.reactionDao().deleteForConversationInTransaction(conversation);
                 }
                 for (MessageDto row : delta.getChanges()) {
                     boolean isNew = row.getId() != null
@@ -165,7 +167,7 @@ final class SyncPageStore {
                             && owner.equals(row.getResolvedSenderId())
                             && (committed.getClientMessageId() == null
                             || row.getClientMessageId().equals(committed.getClientMessageId()))) {
-                        db.outboxDao().delete(row.getClientMessageId(), owner).blockingAwait();
+                        db.outboxDao().deleteInTransaction(row.getClientMessageId(), owner);
                     }
                 }
                 if (!delta.isReactionsFullRefresh()) {
@@ -242,7 +244,7 @@ final class SyncPageStore {
                         && conversation.equals(committed.getConversationId())
                         && (committed.getClientMessageId() == null
                         || dto.getClientMessageId().equals(committed.getClientMessageId()))) {
-                    db.outboxDao().delete(dto.getClientMessageId(), owner).blockingAwait();
+                    db.outboxDao().deleteInTransaction(dto.getClientMessageId(), owner);
                 }
             }
         }));

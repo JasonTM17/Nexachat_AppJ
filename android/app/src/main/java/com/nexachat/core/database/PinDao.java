@@ -42,7 +42,7 @@ public abstract class PinDao {
     public abstract Completable deleteForConversation(String conversationId);
 
     @Query("DELETE FROM pinned_messages WHERE conversationId = :conversationId")
-    protected abstract void deleteForConversationInTransaction(String conversationId);
+    public abstract void deleteForConversationInTransaction(String conversationId);
 
     @Query("DELETE FROM pinned_messages")
     public abstract Completable clear();

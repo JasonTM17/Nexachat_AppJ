@@ -46,6 +46,11 @@ public interface OutboxDao {
             + "AND ownerUserId = :ownerUserId")
     Completable delete(String clientMessageId, String ownerUserId);
 
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @Query("DELETE FROM outbox WHERE clientMessageId = :clientMessageId "
+            + "AND ownerUserId = :ownerUserId")
+    void deleteInTransaction(String clientMessageId, String ownerUserId);
+
     @Query("DELETE FROM outbox")
     Completable clear();
 
@@ -53,4 +58,9 @@ public interface OutboxDao {
     @Query("DELETE FROM outbox WHERE conversationId = :conversationId "
             + "AND ownerUserId = :ownerUserId")
     Completable deleteForConversation(String conversationId, String ownerUserId);
+
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @Query("DELETE FROM outbox WHERE conversationId = :conversationId "
+            + "AND ownerUserId = :ownerUserId")
+    void deleteForConversationInTransaction(String conversationId, String ownerUserId);
 }

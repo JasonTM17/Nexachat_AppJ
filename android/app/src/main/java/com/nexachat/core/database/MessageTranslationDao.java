@@ -37,6 +37,10 @@ public interface MessageTranslationDao {
     @Query("DELETE FROM message_translations WHERE conversationId = :conversationId")
     Completable deleteForConversation(String conversationId);
 
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @Query("DELETE FROM message_translations WHERE conversationId = :conversationId")
+    void deleteForConversationInTransaction(String conversationId);
+
     /** TTL eviction: rows fetched before {@code cutoffMillis} are stale. */
     @Query("DELETE FROM message_translations WHERE fetchedAt < :cutoffMillis")
     Completable deleteOlderThan(long cutoffMillis);

@@ -78,6 +78,9 @@ public final class SyncEngineV2Test {
         when(outbox.deleteForConversation(anyString(), anyString())).thenReturn(Completable.complete());
         when(outbox.delete(anyString(), anyString())).thenAnswer(i -> Completable.fromAction(() ->
                 queued.remove(i.getArgument(1) + ":" + i.getArgument(0))));
+        // Synchronous *InTransaction variants used inside runInTransaction (issue #184).
+        doAnswer(i -> { queued.remove(i.getArgument(1) + ":" + i.getArgument(0)); return null;
+        }).when(outbox).deleteInTransaction(anyString(), anyString());
         when(inbox.getAllWatermarks()).thenAnswer(i -> Single.just(new ArrayList<>(conversations)));
         when(messages.getAllMaxSeqs()).thenReturn(Single.just(List.of()));
         when(messages.byId(anyString())).thenAnswer(i -> Maybe.fromCallable(() -> rows.get(i.getArgument(0))));
@@ -107,6 +110,10 @@ public final class SyncEngineV2Test {
         });
         when(messages.deleteForConversation(anyString())).thenAnswer(i -> Completable.fromAction(() ->
                 rows.values().removeIf(row -> row.getConversationId().equals(i.getArgument(0)))));
+        doAnswer(i -> {
+            rows.values().removeIf(row -> row.getConversationId().equals(i.getArgument(0)));
+            return null;
+        }).when(messages).deleteForConversationInTransaction(anyString());
         when(reactions.deleteForConversation(anyString())).thenReturn(Completable.complete());
         doAnswer(i -> { reactionRows.put(i.getArgument(0), new ArrayList<>(i.getArgument(1))); return null;
         }).when(reactions).replaceForMessageInTransaction(anyString(), anyList());
@@ -384,7 +391,7 @@ public final class SyncEngineV2Test {
         assertEquals(Long.valueOf(2), requests.get(1).getWatermarks().get(0).getGeneration());
         assertEquals(2, rows.get("m-c0").getGeneration());
         assertEquals(2, cursors.get("A:c0").generation);
-        verify(db.outboxDao(), never()).deleteForConversation(anyString(), anyString());
+        verify(db.outboxDao(), never()).deleteForConversationInTransaction(anyString(), anyString());
         assertEquals(1, cursors.size());
     }
 
@@ -407,7 +414,7 @@ public final class SyncEngineV2Test {
         assertNull(cursors.get("A:c0"));
         assertNotNull(cursors.get("B:other"));
         assertTrue(rows.isEmpty());
-        verify(db.outboxDao()).deleteForConversation("c0", "A");
+        verify(db.outboxDao()).deleteForConversationInTransaction("c0", "A");
     }
 
     @Test public void cacheLossStartsFromZeroEvenWhenInboxSeqIsHigh() {

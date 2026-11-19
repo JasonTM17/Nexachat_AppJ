@@ -700,8 +700,8 @@ public final class SyncEngine {
                                         && conversationId.equals(committed.getConversationId())
                                         && (committed.getClientMessageId() == null
                                         || entity.getClientMessageId().equals(committed.getClientMessageId()))) {
-                                    appDatabase.outboxDao().delete(
-                                            entity.getClientMessageId(), myUserId).blockingAwait();
+                                    appDatabase.outboxDao().deleteInTransaction(
+                                            entity.getClientMessageId(), myUserId);
                                 }
                             }
                             if (!reactionMsgIds.isEmpty()) {
