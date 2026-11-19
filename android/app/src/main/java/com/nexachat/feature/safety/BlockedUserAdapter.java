@@ -57,6 +57,12 @@ public final class BlockedUserAdapter extends RecyclerView.Adapter<BlockedUserAd
         if (showPhone) {
             holder.phone.setText(user.phone());
         }
+        // The row is one tap target: its name must be the announced label, and
+        // the unblock action must name the person instead of overriding the
+        // button's visible "Unblock" text.
+        holder.itemView.setContentDescription(name);
+        holder.unblock.setContentDescription(holder.itemView.getContext()
+                .getString(R.string.cd_unblock_user_named, name));
         holder.unblock.setOnClickListener(ignored -> listener.onUnblock(user));
     }
 

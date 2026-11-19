@@ -58,6 +58,16 @@ public final class StarredMessageAdapter
                 ? holder.itemView.getContext().getString(R.string.inbox_preview_file)
                 : SharedContentUi.previewText(holder.itemView.getContext(), content));
         holder.time.setText(formatTime(holder, row.starredAt()));
+        // One tap target per row: the announced label names sender and snippet
+        // so TalkBack reads the message instead of three detached strings.
+        holder.itemView.setContentDescription(holder.itemView.getContext().getString(
+                R.string.cd_starred_message_row,
+                sender == null || sender.isBlank()
+                        ? holder.itemView.getContext().getString(R.string.archive_unknown_sender)
+                        : sender,
+                content == null || content.isBlank()
+                        ? holder.itemView.getContext().getString(R.string.inbox_preview_file)
+                        : SharedContentUi.previewText(holder.itemView.getContext(), content)));
         holder.itemView.setOnClickListener(ignored -> listener.onOpen(row));
     }
 
