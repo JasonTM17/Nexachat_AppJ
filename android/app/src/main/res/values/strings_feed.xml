@@ -35,6 +35,8 @@
     <string name="feed_comment_rate_limited">Too many comments. Try again later</string>
     <string name="feed_reaction_pill" translatable="false">%1$s %2$d</string>
     <string name="feed_comment_cd" translatable="false">%1$s: %2$s</string>
+    <string name="feed_comments_empty">No comments yet</string>
+    <string name="feed_comments_empty_cta">Add a comment</string>
     <string name="feed_comment_count_zero">No comments</string>
     <plurals name="feed_comment_count">
         <item quantity="one">%d comment</item>
