@@ -126,6 +126,10 @@ All notable changes to NexaChat are documented here. The format follows
 - Admin console: on the feed moderation page, a report's expanded details
   collapse when the status filter or page changes instead of staying open
   on the reloaded list.
+- Android: an inbox conversation no longer disappears with its messages,
+  pins and cursors when an archive lands while the inbox is syncing; the
+  single-page reconcile now confirms the prune through the delta endpoint
+  before deleting local rows.
 
 ## [1.2.15] - 2026-11-17
 
