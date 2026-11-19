@@ -105,6 +105,10 @@ tools/                                    release signing, link checks, E2E and 
   `fix`, `docs`, `chore`, `ci`, optionally with a scope — e.g.
   `feat(server/auth): …`, `fix(app/chat): …`.
 - One concern per commit; keep the diff reviewable.
+- Commit authorship is the repository owner only: do **not** add
+  `Co-authored-by`, `Generated with`, or any AI-tool attribution trailers.
+  Tool/bot co-author lines make the bot appear in GitHub Contributors and
+  cannot be removed later without rewriting history.
 
 ## Pull requests
 
