@@ -384,6 +384,12 @@ public final class GroupDetailFragment extends Fragment {
             }
             renderingRename = false;
         }
+        // Save stays disabled until the name differs from the current one, so a
+        // no-op tap cannot pretend to save.
+        if (renameDialog != null) {
+            renameDialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(
+                    !state.getRenameInput().trim().equals(state.getTitle()));
+        }
     }
 
     @Nullable
