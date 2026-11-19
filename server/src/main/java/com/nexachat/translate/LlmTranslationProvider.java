@@ -43,6 +43,8 @@ public class LlmTranslationProvider implements TranslationProvider {
             throw new TranslationUnavailableException("Translation provider circuit is open");
         }
 
+        boolean primaryAttempted = false;
+        boolean breakerRecorded = false;
         try {
             LlmClient.LlmCallResult completion;
             boolean fallbackUsed = false;
@@ -50,6 +52,7 @@ public class LlmTranslationProvider implements TranslationProvider {
             boolean primaryFailed = false;
             String provider;
             if (primary != null) {
+                primaryAttempted = breakerAllows;
                 try {
                     completion = llmClient.completeTextWithFallback(
                             prompt.systemMessage(), prompt.userMessage(),
@@ -74,18 +77,25 @@ public class LlmTranslationProvider implements TranslationProvider {
             }
             if (primaryUsed) {
                 circuitBreaker.recordSuccess();
+                breakerRecorded = true;
             } else if (primaryFailed) {
                 circuitBreaker.recordFailure();
+                breakerRecorded = true;
             }
             if (completion.content() == null || completion.content().isBlank()) {
                 throw new TranslationUnavailableException("Provider returned an empty completion");
             }
             return new ProviderCompletion(completion.content(), completion.model(), provider);
         } catch (TranslationUnavailableException exception) {
-            circuitBreaker.recordFailure();
+            // One breaker record per primary attempt: the guarded block above
+            // already recorded success or failure, and a local-tier-only run
+            // (no cloud target) never touches the primary-gated breaker.
+            if (primaryAttempted && !breakerRecorded) {
+                circuitBreaker.recordFailure();
+            }
             throw exception;
         } catch (RuntimeException exception) {
-            if (breakerAllows) {
+            if (primaryAttempted && !breakerRecorded) {
                 circuitBreaker.recordFailure();
             }
             throw new TranslationUnavailableException("Translation providers failed", exception);
