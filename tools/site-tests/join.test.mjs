@@ -16,10 +16,12 @@ const VALID_TOKEN = 'A'.repeat(43);
 function stubEl() {
   return {
     attrs: new Map(),
+    listeners: {},
     setAttribute(k, v) { this.attrs.set(k, v); },
     removeAttribute(k) { this.attrs.delete(k); },
     hasAttribute(k) { return this.attrs.has(k); },
     getAttribute(k) { return this.attrs.get(k) ?? null; },
+    addEventListener(type, fn) { (this.listeners[type] ??= []).push(fn); },
   };
 }
 
