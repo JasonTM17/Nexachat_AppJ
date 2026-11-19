@@ -2,22 +2,17 @@
 <resources>
     <!-- v2 semantic colors for night. -->
     <color name="brand_indigo">#FFF4B2E2</color>
-    <color name="brand_indigo_dark">#FFA87699</color>
     <color name="brand_indigo_light">#FFF0C9E3</color>
     <color name="brand_indigo_container">#FF67355D</color>
     <color name="brand_on_indigo_container">#FFFFD7F1</color>
     <color name="slate_secondary">#FFD9BFD1</color>
     <color name="slate_secondary_container">#FF544150</color>
     <color name="slate_on_secondary_container">#FFF6DBED</color>
-    <color name="slate_muted">#FFD9BFD1</color>
     <color name="slate_border">#FF9B8D95</color>
     <color name="slate_divider">#FF4F434B</color>
     <color name="tertiary_emerald">#FF8CD6B7</color>
     <color name="tertiary_emerald_container">#FF184F3D</color>
     <color name="tertiary_on_emerald_container">#FFC5EEDC</color>
-    <color name="tertiary_sky">@color/tertiary_emerald</color>
-    <color name="tertiary_sky_container">@color/tertiary_emerald_container</color>
-    <color name="tertiary_on_sky_container">@color/tertiary_on_emerald_container</color>
     <color name="background_light">#FF151316</color>
     <color name="surface_light">#FF151316</color>
     <color name="surface_dim_light">#FF151316</color>
@@ -35,7 +30,6 @@
     <color name="error_red">#FFFFB4AB</color>
     <color name="error_container_light">#FF93000A</color>
     <color name="on_error_container_light">#FFFFDAD6</color>
-    <color name="success_emerald">@color/tertiary_emerald</color>
     <color name="stitch_online_dot">#FF45BD62</color>
     <color name="stitch_offline_dot">#FF9C959E</color>
     <color name="stitch_fab_fill">#FF67355D</color>
@@ -80,7 +74,6 @@
     <color name="tick_read">#FF8CD6B7</color>
     <color name="nexa_pressed_surface">#FF39353A</color>
     <color name="nexa_pressed_container">#FF5B3A54</color>
-    <color name="nexa_pressed_primary">#FFB592AC</color>
     <color name="nexa_pressed_incoming">#FF39353A</color>
     <color name="nexa_pressed_outgoing">#FF5B3A54</color>
     <color name="nexa_disabled_container">#FF39353A</color>
