@@ -346,13 +346,15 @@ public final class MessageRepository {
                             () -> restReachabilityEvents.onNext(false))));
         }
         collectInBackground(session.getEvents().concatMapCompletable(event ->
-                operationTracker.track(routeSessionEvent(event))));
+                operationTracker.track(routeSessionEvent(event))
+                        .onErrorComplete(this::reportPumpError)));
         if (ephemeralRouter != null) {
             collectInBackground(ephemeralRouter.typingEvents().concatMapCompletable(event ->
                     Completable.fromAction(() -> typingEvents.onNext(event))));
         }
         collectInBackground(session.getResyncRequests().concatMapCompletable(ignored ->
-                operationTracker.track(resyncOnReconnect())));
+                operationTracker.track(resyncOnReconnect())
+                        .onErrorComplete(this::reportPumpError)));
         collectInBackground(sessionEvents.getEvents()
                 .filter(event -> event instanceof SessionEvents.Event.LoggedOut
                         || event instanceof SessionEvents.Event.SessionAvailable)
@@ -2329,6 +2331,12 @@ public final class MessageRepository {
     private void collectInBackground(Completable stream) {
         Disposable disposable = stream.subscribeOn(Schedulers.io()).subscribe(() -> {}, RxJavaPlugins::onError);
         subscriptions.add(disposable);
+    }
+
+    /** Reports a routed-item failure so a transient error cannot kill a realtime pump. */
+    private boolean reportPumpError(Throwable error) {
+        RxJavaPlugins.onError(error);
+        return true;
     }
 
     private void scheduleDetached(Completable cleanup) {
