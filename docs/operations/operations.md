@@ -169,8 +169,8 @@ Compose starts the app with `SPRING_PROFILES_ACTIVE=prod,json-logs`. In
 - caps Hikari at 10 connections per instance (two instances stay below the
   default Postgres `max_connections=100`) and enables gzip response compression,
 - keeps only `/actuator/health` exposed; the Compose and image health checks
-  probe its `liveness` group, while `readiness` covers database, Flyway and
-  storage space.
+  probe its `liveness` group, while `readiness` covers `db`, `flyway`,
+  `diskSpace` and `refreshReplay`.
 
 The `server/Dockerfile` runs as the non-root `nexachat` user and adds
 `-XX:+ExitOnOutOfMemoryError` to `JAVA_OPTS`, so a container is replaced rather
@@ -863,7 +863,7 @@ Two groups are exposed and both are public:
 
 - `/actuator/health/liveness` — `ping`; this is what the Compose and Dockerfile
   health checks call.
-- `/actuator/health/readiness` — `db`, `flyway`, `diskSpace`.
+- `/actuator/health/readiness` — `db`, `flyway`, `diskSpace`, `refreshReplay`.
 
 ### Metrics
 
@@ -1022,7 +1022,7 @@ LAN address printed by the demo script and be on the same network.
 ## Upgrade
 
 Back up before replacing the app image. Flyway applies versioned migrations
-through V33 on app startup and they are forward-only: add a new SQL migration; never
+through V44 on app startup and they are forward-only: add a new SQL migration; never
 edit one already applied to a database. The full migration list with intent is in
 [`docs/architecture/api-contract.md`](../architecture/api-contract.md#migration-history); the migrations after
 V11 introduce:
@@ -1065,7 +1065,7 @@ when verified email is the sign-in anchor,
 `e2ee_enabled` flag and message encryption columns, and
 `V35__backfill_unversioned_messages.sql` repairs rows left without a
 `change_version` by pre-V32 writes such as an old `demo/seed.sql`.
-Ensure every migration file V1–V20, `V22`, and `V24`–`V35` is present in the
+Ensure every migration file V1–V20, `V22`, and `V24`–`V44` is present in the
 source tree before rebuilding the dev app container; the image packages the
 server migration resources used by Flyway at startup.
 
