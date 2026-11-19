@@ -375,3 +375,76 @@ own.
 Read Render's HTTP request log for the two `429` sequences: the status codes and
 timestamps must line up. The application deliberately logs no client IPs, so the
 bucket behaviour above is the confirmation.
+
+## 9. Repairing applied-migration drift
+
+Applied migrations must never change, but three of them did before this was
+enforced: V36's column widening (28d8a492, c99ef64c), V28's nonce-binding
+additions (0aea55645, ac29e4f1e) and the `V27__google_signin.sql` → `V28`
+rename (a974b1884). A database that applied an older version holds stale
+checksums in `flyway_schema_history`, and Flyway runs on every boot with
+validation (`application-prod.yml:46-47`) — so the boot aborts before
+`V45__repair_applied_migration_drift.sql` (which repairs the two
+edit-in-place classes) can run.
+
+**Symptom.** The Render deploy stays on the old build; the new one never
+passes its health check. The boot log ends with:
+
+```text
+org.flywaydb.core.api.exception.FlywayValidateException: Validate failed: Migrations have failed validation
+Migration checksum mismatch for migration version 36
+```
+
+(10, 28 or 36 — whichever edited file that database applied). Redeploying
+the same commit loops on the same failure; the fix is one `flyway repair`.
+
+**One-time fix.** Run repair against the direct Neon URL from the service's
+`DATABASE_URL` (Render Dashboard → Environment, or the env-var diff in §3),
+then redeploy the exact SHA:
+
+```sh
+mvn -q -f server/pom.xml org.flywaydb:flyway-maven-plugin:11.13.3:repair \
+  -Dflyway.url="jdbc:postgresql://<neon-host>/nexachat?sslmode=require" \
+  -Dflyway.user="$DATABASE_USER" \
+  -Dflyway.password="$DATABASE_PASSWORD" \
+  -Dflyway.locations=filesystem:server/src/main/resources/db/migration
+```
+
+The plugin is pinned to the app's Flyway version (pom `flyway.version`), the
+full coordinates avoid prefix resolution against the disabled
+`flyway-community-db-support` repository, and the `filesystem:` location
+reads the migration sources without a prior build. Repair touches no schema
+objects: it realigns recorded checksums with the files in the repository
+(logs `Repairing Schema History table for version 36 ... Checksum: ...`) and
+is a no-op on a database that never applied an old version.
+
+**Special case: a database that applied the old `V27__google_signin.sql`.**
+The rename left that database with version 27 applied under the old name and
+no row for 28. After repair, the version-27 row is realigned to the current
+`V27__account_recovery_email_otp.sql`, so that migration is recorded as
+applied even though its `users.email` columns and `email_otps` table were
+never created — apply `V27__account_recovery_email_otp.sql` by hand once.
+Then reconcile the collision: on that database the current `V28` has not
+run yet and fails on `CREATE TABLE google_signin_nonces` /
+`CREATE TABLE user_identities`. Either:
+
+1. Back up, then drop the V27-created `google_signin_nonces` and
+   `user_identities` objects. The current V28 re-creates both in the current
+   shape on the next deploy. Nonce rows are transient single-use values; the
+   `user_identities` rows are live Google links, so affected users must link
+   again.
+2. Insert a `flyway_schema_history` row for version 28 manually (description
+   `'google signin'`, script `'V28__google_signin.sql'`, `success TRUE`),
+   then run the repair command again to realign its checksum. V28 is then
+   skipped and V45 repairs the old nonce shape — but the pre-rename nonce
+   table also lacks the rename's own `purpose` column,
+   `ck_google_nonce_purpose` and the purpose-aware expiry index, and V45
+   fails on `ck_google_nonce_binding` (`column "purpose" does not exist`)
+   until those are applied by hand too. Choose this only when dropping
+   `user_identities` is unacceptable.
+
+**Policy.** Never edit, rename or delete an applied migration — ship a new
+forward migration instead. The repo-hygiene CI gate
+(`tools/checks/check-migrations-immutable.py`) enforces this on every PR,
+renames included.
+
