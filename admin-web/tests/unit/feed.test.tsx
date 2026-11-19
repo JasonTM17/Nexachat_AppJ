@@ -309,6 +309,28 @@ describe('FeedPage', () => {
     expect(screen.queryByRole('navigation', { name: 'Pagination' })).toBeNull();
   });
 
+  it('clears the action error banner after a successful reload', async () => {
+    const user = userEvent.setup();
+    apiMock.mockResolvedValueOnce(page([report()]));
+    renderPage();
+    expect(await screen.findByText('Mai')).toBeInTheDocument();
+
+    apiMock.mockRejectedValueOnce(new ApiException(500, 'X', 'boom'));
+    await user.click(screen.getByRole('button', { name: 'Mark reviewed' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Mark reviewed' });
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong');
+
+    // The banner's own retry reloads the list: once that succeeds the banner
+    // must not linger over data that is no longer failing.
+    apiMock.mockResolvedValueOnce(page([report()]));
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('switches the status filter and reloads from page 0', async () => {
     const user = userEvent.setup();
     apiMock.mockResolvedValue(page([report()]));

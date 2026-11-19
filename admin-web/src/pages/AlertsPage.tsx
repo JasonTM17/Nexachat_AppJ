@@ -105,6 +105,9 @@ export default function AlertsPage() {
   }, [params, latest, page]);
 
   useEffect(() => {
+    // A new query means a failed action's banner no longer describes the
+    // view; it stays only for the post-action reload of the same view.
+    setActionError(false);
     load();
   }, [load]);
 

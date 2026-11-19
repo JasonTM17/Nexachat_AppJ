@@ -62,6 +62,9 @@ export default function FeedPage() {
   const latest = useLatestRequest();
 
   const load = useCallback(() => {
+    // A reload (retry, filter or page change, or a post-action refresh) means
+    // the failed-action banner no longer describes the view on screen.
+    setActionFailed(false);
     setFailed(false);
     setActionFailed(false);
     // A new list can reuse report ids from a previous view; drop stale

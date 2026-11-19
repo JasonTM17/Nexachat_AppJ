@@ -561,4 +561,28 @@ describe('AlertsPage', () => {
       expect(assigns).toHaveLength(1);
     });
   });
+
+  it('clears the action error banner when the filters change', async () => {
+    const user = userEvent.setup();
+    stubRoutes();
+    renderPage();
+    await screen.findByText('send me your password');
+
+    await user.click(screen.getByText('send me your password'));
+    const drawer = await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' });
+    apiMock.mockRejectedValueOnce(new ApiException(500, 'X', 'boom'));
+    await user.click(within(drawer).getByRole('button', { name: 'Resolve' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Resolved' });
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong');
+
+    // Close the drawer and change the query; a banner for a failed action on
+    // the previous view must not linger over the new one.
+    await user.click(within(drawer).getByRole('button', { name: 'Close' }));
+    await user.selectOptions(screen.getByLabelText('Severity'), 'HIGH');
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
 });
