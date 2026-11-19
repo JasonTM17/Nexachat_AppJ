@@ -309,7 +309,10 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
 
             Runnable refresh = new Runnable() {
                 @Override public void run() {
-                    if (boundConversation != conversation) return;
+                    // A holder detached without recycle (scrap/cache) must not
+                    // keep reposting refreshes against its stale conversation.
+                    if (boundConversation != conversation
+                            || !itemView.isAttachedToWindow()) return;
                     muteExpiryRefresh = null;
                     bindMuteIndicator(conversation);
                 }
