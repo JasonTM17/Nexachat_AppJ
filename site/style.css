@@ -92,6 +92,23 @@ body {
   transform: translateY(0);
 }
 
+/* Branded focus ring baseline for links that have no page-specific rule
+   (e.g. install hints and the join fallback). More specific focus rules in
+   this sheet override it where they apply. */
+a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Status blocks receive programmatic screen-reader focus via tabindex="-1";
+   browsers do not always match :focus-visible for it, so style :focus. */
+[tabindex='-1']:focus {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .container {
   width: 100%;
   max-width: 32rem;
@@ -889,6 +906,12 @@ body:has(#lang-en :target) .home-lang[href="#lang-en"] {
 
 .btn-light:hover {
   background-color: #eedbea;
+}
+
+/* The light-scheme focus ring is near-invisible against the fixed mauve CTA
+   panel, so keep the ring white there in both schemes. */
+.btn-light:focus-visible {
+  outline-color: var(--logo-on-brand);
 }
 
 /* Footer */
