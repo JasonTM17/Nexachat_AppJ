@@ -1,6 +1,8 @@
 """Focused tests for the target-device permission dump parser."""
 
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 from xml.etree.ElementTree import Element
 
@@ -75,6 +77,46 @@ class InboxVisibleTest(unittest.TestCase):
             "bounds": "[0,0][10,10]",
         }))
         self.assertTrue(inbox_visible([avatar]))
+
+    def test_conversation_list_marks_the_inbox_before_avatar_binds(self) -> None:
+        list_node = Node(Element("node", {
+            "resource-id": "com.nexachat.debug:id/conversationList",
+            "bounds": "[0,0][10,10]",
+        }))
+        self.assertTrue(inbox_visible([list_node]))
+
+
+def _rid_node(rid: str) -> Node:
+    return Node(Element("node", {"resource-id": rid, "bounds": "[0,0][10,10]"}))
+
+
+class EnsureDeviceAccountTest(unittest.TestCase):
+    """The resume loop must not Back out of the splash or launcher screens."""
+
+    SPLASH = [_rid_node("com.nexachat.debug:id/splashLogo")]
+    INBOX = [_rid_node("com.nexachat.debug:id/conversationList")]
+    LAUNCHER = [_rid_node("com.google.android.apps.nexuslauncher:id/workspace")]
+    CHAT = [_rid_node("com.nexachat.debug:id/messageList")]
+
+    def _run(self, snapshots: list[list[Node]]) -> Mock:
+        import patch_window
+        ui = Mock()
+        with tempfile.TemporaryDirectory() as evidence:
+            with patch("patch_window.ui_nodes", side_effect=snapshots), \
+                 patch("patch_window.adb"), \
+                 patch("patch_window.time.sleep"):
+                patch_window.ensure_device_account(ui, Path(evidence), fresh_login=False)
+        return ui
+
+    def test_splash_and_launcher_are_never_backed_out_of(self) -> None:
+        ui = self._run([self.SPLASH, self.LAUNCHER, self.SPLASH, self.INBOX])
+        presses = [call.args[0] for call in ui.key.call_args_list]
+        self.assertNotIn("KEYCODE_BACK", presses)
+
+    def test_in_app_non_inbox_screen_is_backed_out_of(self) -> None:
+        ui = self._run([self.CHAT, self.INBOX])
+        presses = [call.args[0] for call in ui.key.call_args_list]
+        self.assertEqual(presses, ["KEYCODE_BACK"])
 
 
 class LoginFieldFocusTest(unittest.TestCase):

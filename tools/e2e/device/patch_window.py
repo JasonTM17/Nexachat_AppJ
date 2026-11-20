@@ -350,10 +350,13 @@ def node_by_id(nodes: list[Node], suffix: str) -> Node | None:
 def inbox_visible(nodes: list[Node]) -> bool:
     """True when the inbox list is drawn, not merely bottom-nav chrome.
 
-    Anchored on the inbox-only avatar entry point: a peer title like "Binh"
-    also appears on an open conversation screen and must not qualify.
+    Anchored on inbox-layout-only ids: the avatar entry point binds late on a
+    heavy account, while conversationList attaches as soon as the fragment
+    view inflates. A peer title like "Binh" also appears on an open
+    conversation screen and must not qualify.
     """
-    return node_by_id(nodes, "inboxUserAvatar") is not None
+    return (node_by_id(nodes, "inboxUserAvatar") is not None
+            or node_by_id(nodes, "conversationList") is not None)
 
 
 def login_form_visible(nodes: list[Node]) -> bool:
@@ -422,14 +425,15 @@ def ensure_device_account(ui: Device, evidence_dir: Path, *, fresh_login: bool) 
         return
 
     adb("shell", "am", "start", "-n", f"{PACKAGE}/{MAIN_ACTIVITY_CLASS}", timeout=30)
-    # Cold start passes through the splash; wait until the sign-in form or inbox is drawn.
-    # A resumed task may land on a previous screen (chat, profile): press Back a
-    # bounded number of times to pop the fragment stack, then relaunch once if
-    # the back stack emptied onto the launcher.
+    # Cold start passes through the splash; wait until the sign-in form or inbox
+    # is drawn. A resumed task may land on a previous screen (chat, profile):
+    # press Back only on an in-app non-target screen — Back on the splash or
+    # the launcher finishes the task and strands the probe. When the app is
+    # not foreground at all, relaunch instead of backing out further.
     nodes: list[Node] = []
     backs = 0
-    relaunched = False
-    deadline = time.monotonic() + 30
+    relaunches = 0
+    deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
         nodes = ui_nodes(ui, timeout=10)
         if inbox_visible(nodes):
@@ -438,12 +442,30 @@ def ensure_device_account(ui: Device, evidence_dir: Path, *, fresh_login: bool) 
         if login_form_visible(nodes):
             sign_in_as_device_account(ui, evidence_dir)
             return
+        rids = [str(node.attrs.get("resource-id", "")) for node in nodes]
+        in_app = any(rid.startswith(f"{PACKAGE}:") for rid in rids)
+        if not in_app:
+            if relaunches < 3:
+                adb("shell", "am", "start", "-n", f"{PACKAGE}/{MAIN_ACTIVITY_CLASS}", timeout=30)
+                relaunches += 1
+            time.sleep(1)
+            continue
+        on_splash = any(rid.endswith("splashProgress") or rid.endswith("splashLogo")
+                        for rid in rids)
+        on_inbox_chrome = any(
+            rid.endswith(marker) for rid in rids for marker in (
+                "inboxBrandTitle", "inboxSearchPill", "swipeRefresh",
+                "createGroupFab", "loadingState", "emptyState", "errorState",
+            ))
+        if on_splash or on_inbox_chrome:
+            time.sleep(1)
+            continue
         if backs < 4:
             ui.key("KEYCODE_BACK")
             backs += 1
-        elif not relaunched:
+        elif relaunches < 3:
             adb("shell", "am", "start", "-n", f"{PACKAGE}/{MAIN_ACTIVITY_CLASS}", timeout=30)
-            relaunched = True
+            relaunches += 1
         time.sleep(1)
     # No login form and no inbox markers yet; fall through to profile verification.
 
