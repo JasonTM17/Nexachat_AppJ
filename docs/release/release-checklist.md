@@ -92,7 +92,7 @@ python tools/checks/check-release-r8-mapping.py
 ## 3. Roll out the database migration and server
 
 Flyway runs on application startup and is forward-only: `V1`–`V20`, `V22`, and
-`V24`–`V35` are the current files (`server/src/main/resources/db/migration/`);
+`V24`–`V44` are the current files (`server/src/main/resources/db/migration/`);
 `V21` and `V23` are reserved and have no files. There is no down-migration.
 The manual Render deploy in §4 boots the API from `server/Dockerfile`; Flyway
 applies pending migrations on that boot. There is no separate migration command.
@@ -113,8 +113,8 @@ applies pending migrations on that boot. There is no separate migration command.
 2. Record the commit SHA of the current live deploy so that SHA can be
    redeployed.
 3. After §4 reports `live`, check the startup log for Flyway success and no
-   `ProductionJwtSecretGuard` failure. Readiness covers the database, Flyway
-   and disk space.
+   `ProductionJwtSecretGuard` failure. Readiness covers the database, Flyway,
+   disk space and refresh replay.
 4. Do not deploy an older commit against a newer schema unless the migration
    was reviewed as backward-compatible. If a migration fails, restore the
    pre-upgrade backup (`docs/operations/operations.md` §Upgrade).
@@ -133,9 +133,9 @@ Follow the verified sequence:
   ```bash
   git push origin main
   ```
-- [ ] **2. CI 7/7** — Verify all 7 GitHub Actions CI jobs pass green on `main`
+- [ ] **2. CI 8/8** — Verify all 8 GitHub Actions CI jobs pass green on `main`
   (`.github/workflows/ci.yml`): `server-test`, `android-test`, `repo-hygiene`,
-  `site-js-test`, `firebase-rules`, `secret-scan`, and `publish-container`.
+  `site-js-test`, `firebase-rules`, `admin-web`, `secret-scan`, and `publish-container`.
 - [ ] **3. Env diff against `render.yaml`** — Compare the production service
   environment variables against `render.yaml`. Apply each added or changed value
   (for example `JAVA_OPTS`, `NEXACHAT_MULTIPART_TEMP_DIR`) with one call per key,

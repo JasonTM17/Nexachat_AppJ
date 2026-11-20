@@ -94,6 +94,7 @@ export default function AuditPage() {
         <Loading />
       ) : data.items.length === 0 ? (
         <Empty
+          hint={actor || action || target ? t('common.empty.filtered') : undefined}
           onClearFilters={
             actor || action || target
               ? () => {

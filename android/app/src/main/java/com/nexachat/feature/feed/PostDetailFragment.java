@@ -33,6 +33,7 @@ public final class PostDetailFragment extends Fragment implements ReportSheetFra
     private PostDetailViewModel viewModel;
     private PostAdapter postAdapter;
     private CommentAdapter commentAdapter;
+    private CommentsEmptyAdapter commentsEmptyAdapter;
 
     public PostDetailFragment() {
         super(R.layout.fragment_post_detail);
@@ -62,8 +63,14 @@ public final class PostDetailFragment extends Fragment implements ReportSheetFra
             }
         });
         commentAdapter = new CommentAdapter(this::showCommentMenu);
+        commentsEmptyAdapter = new CommentsEmptyAdapter(() -> {
+            if (binding != null) {
+                binding.detailInput.requestFocus();
+            }
+        });
         binding.detailList.setLayoutManager(new LinearLayoutManager(requireContext()));
-        binding.detailList.setAdapter(new ConcatAdapter(postAdapter, commentAdapter));
+        binding.detailList.setAdapter(
+                new ConcatAdapter(postAdapter, commentAdapter, commentsEmptyAdapter));
         binding.detailList.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
@@ -93,6 +100,9 @@ public final class PostDetailFragment extends Fragment implements ReportSheetFra
         binding.detailLoading.setVisibility(
                 state.isLoading() && post == null ? View.VISIBLE : View.GONE);
         binding.detailError.setVisibility(state.isError() && post == null ? View.VISIBLE : View.GONE);
+        commentsEmptyAdapter.setShown(post != null
+                && !state.isLoading()
+                && state.getComments().isEmpty());
         binding.detailList.setVisibility(post == null ? View.GONE : View.VISIBLE);
         binding.detailComposer.setVisibility(post == null ? View.GONE : View.VISIBLE);
         binding.detailSend.setEnabled(!state.isSending());

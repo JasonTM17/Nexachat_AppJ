@@ -1,5 +1,6 @@
 :root {
   color-scheme: dark light;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --logo-mark: #dda7cc;
   --logo-ink: #f6dff0;
   --logo-plate: #733f68;
@@ -53,6 +54,11 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+::selection {
+  background-color: color-mix(in srgb, var(--primary) 32%, transparent);
 }
 
 body {
@@ -89,6 +95,23 @@ body {
 
 .skip-link:focus-visible {
   transform: translateY(0);
+}
+
+/* Branded focus ring baseline for links that have no page-specific rule
+   (e.g. install hints and the join fallback). More specific focus rules in
+   this sheet override it where they apply. */
+a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Status blocks receive programmatic screen-reader focus via tabindex="-1";
+   browsers do not always match :focus-visible for it, so style :focus. */
+[tabindex='-1']:focus {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .container {
@@ -128,9 +151,23 @@ body {
   display: inline-flex;
   align-items: center;
   min-height: 2.75rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0.25rem 0.75rem;
   color: var(--primary);
-  text-underline-offset: 2px;
+  text-decoration: none;
+  border-radius: 999px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.language-switch a:hover {
+  color: var(--primary-hover);
+}
+
+/* The primary (VI) language is active by default; English is active while its
+   section is the current anchor target. Mirrors the home header pills. */
+body:not(:has(#lang-en:target)) .language-switch a[href='#lang-vi'],
+body:has(#lang-en:target) .language-switch a[href='#lang-en'] {
+  color: var(--logo-on-brand);
+  background-color: var(--btn-bg);
 }
 
 .language-switch a:focus-visible {
@@ -140,7 +177,7 @@ body {
 }
 
 .language-section {
-  scroll-margin-top: 1rem;
+  scroll-margin-top: 1.25rem;
 }
 
 .language-section + .language-section {
@@ -173,10 +210,12 @@ body {
 }
 
 .error-code {
-  font-size: clamp(2.5rem, 8vw, 3rem);
+  font-size: clamp(3.25rem, 12vw, 4.5rem);
   font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
   color: var(--text-muted);
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
 }
 
 .lead {
@@ -204,7 +243,7 @@ body {
 }
 
 .install-hint code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
 }
 
@@ -232,6 +271,13 @@ body {
 
 .btn:hover {
   background-color: var(--btn-bg-hover);
+}
+
+/* Instant tactile press; gated so reduced-motion users see no offset. */
+@media (prefers-reduced-motion: no-preference) {
+  .btn:not(:disabled):active {
+    transform: translateY(1px);
+  }
 }
 
 .btn:focus-visible {
@@ -284,8 +330,12 @@ body {
 
 .prose h2 {
   font-size: 1.125rem;
-  margin: 1.25rem 0 0.5rem;
+  margin: 1.75rem 0 0.625rem;
   text-wrap: balance;
+}
+
+.prose strong {
+  color: var(--text-main);
 }
 
 .prose p,
@@ -301,13 +351,30 @@ body {
 }
 
 .prose code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   background-color: var(--secondary-bg);
   padding: 0.125rem 0.375rem;
   border-radius: 4px;
   word-break: break-word;
   overflow-wrap: anywhere;
+}
+
+.prose pre {
+  margin: 0 0 0.75rem;
+  padding: 0.625rem 0.875rem;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.prose pre code {
+  padding: 0;
+  background-color: transparent;
+  word-break: normal;
+  overflow-wrap: normal;
+  white-space: pre;
 }
 
 .prose a {
@@ -485,15 +552,28 @@ body.home {
     env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
-/* Top bar */
+/* Top bar. Sticks to the top with a translucent backdrop so the language
+   switch stays reachable; opaque in browsers without backdrop filtering. */
 .home-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
   width: 100%;
   padding: 0.75rem max(1.5rem, calc((100% - 72rem) / 2));
+  background-color: color-mix(in srgb, var(--bg-color) 82%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  backdrop-filter: blur(14px) saturate(1.1);
   border-bottom: 1px solid var(--border-color);
+}
+
+@supports not ((backdrop-filter: blur(14px)) or (-webkit-backdrop-filter: blur(14px))) {
+  .home-header {
+    background-color: var(--bg-color);
+  }
 }
 
 .home-brand {
@@ -561,7 +641,8 @@ body:has(#lang-en :target) .home-lang[href="#lang-en"] {
 }
 
 .home-lang-pane {
-  scroll-margin-top: 1rem;
+  /* Land below the sticky header (~4.25rem tall) when targeted. */
+  scroll-margin-top: 5rem;
 }
 
 /* Language panes: Vietnamese renders by default, English renders when it is
@@ -707,7 +788,7 @@ body:has(#lang-en :target) .home-lang[href="#lang-en"] {
 
 #features-en,
 #features-vi {
-  scroll-margin-top: 1.5rem;
+  scroll-margin-top: 5.5rem;
 }
 
 .section--tint {
@@ -737,6 +818,7 @@ body:has(#lang-en :target) .home-lang[href="#lang-en"] {
   grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   list-style: none;
+  counter-reset: feature-card;
 }
 
 @media (min-width: 40rem) {
@@ -757,6 +839,18 @@ body:has(#lang-en :target) .home-lang[href="#lang-en"] {
   background-color: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
+  counter-increment: feature-card;
+}
+
+.feature-card h3::before {
+  content: counter(feature-card, decimal-leading-zero);
+  display: block;
+  margin-bottom: 0.75rem;
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
 }
 
 .feature-card h3 {
@@ -809,6 +903,7 @@ body:has(#lang-en :target) .home-lang[href="#lang-en"] {
     overflow-x: auto;
     scroll-snap-type: x mandatory;
     scrollbar-width: thin;
+    scrollbar-color: var(--secondary-hover) transparent;
   }
 
   .shots > li {
@@ -834,6 +929,11 @@ body:has(#lang-en :target) .home-lang[href="#lang-en"] {
   padding: 3rem 1.5rem;
   color: var(--logo-on-brand);
   background-color: var(--btn-bg);
+  background-image: radial-gradient(
+    110% 130% at 85% -10%,
+    color-mix(in srgb, var(--primary) 22%, transparent),
+    transparent 55%
+  );
   border-radius: 1.5rem;
   text-align: center;
 }
@@ -874,6 +974,12 @@ body:has(#lang-en :target) .home-lang[href="#lang-en"] {
 
 .btn-light:hover {
   background-color: #eedbea;
+}
+
+/* The light-scheme focus ring is near-invisible against the fixed mauve CTA
+   panel, so keep the ring white there in both schemes. */
+.btn-light:focus-visible {
+  outline-color: var(--logo-on-brand);
 }
 
 /* Footer */

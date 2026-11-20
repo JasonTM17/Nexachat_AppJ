@@ -121,13 +121,13 @@
           <p lang="en">Web deletion is not available yet. Follow the in-app steps above or contact the operator if you cannot sign in.</p>
         </div>
         <div id="web-deletion-form-wrap" hidden>
-          <p class="deletion-web__hint" lang="vi">Với tài khoản có số điện thoại và email khôi phục đã xác minh, nhập số điện thoại đã đăng ký. Mã OTP được gửi tới email đó.</p>
-          <p class="deletion-web__hint" lang="en">For an account with a phone number and verified recovery email, enter the registered phone number. A one-time code is sent to that email.</p>
+          <p class="deletion-web__hint" lang="vi">Với tài khoản có số điện thoại và email khôi phục đã xác minh, nhập số điện thoại đã đăng ký. Mã OTP được gửi tới email đó. Dùng định dạng quốc tế, ví dụ +84901234567.</p>
+          <p class="deletion-web__hint" lang="en">For an account with a phone number and verified recovery email, enter the registered phone number. A one-time code is sent to that email. Use international format, e.g. +84901234567.</p>
           <form id="web-deletion-form" class="deletion-form" action="#" method="post" novalidate>
             <div class="form-field">
               <label class="form-label" for="deletion-phone" lang="vi">Số điện thoại</label>
               <label class="form-label" for="deletion-phone" lang="en">Phone number</label>
-              <input class="form-input" type="tel" id="deletion-phone" name="phone" autocomplete="tel" inputmode="tel" required aria-describedby="deletion-phone-error">
+              <input class="form-input" type="tel" id="deletion-phone" name="phone" autocomplete="tel" inputmode="tel" enterkeyhint="send" required aria-describedby="deletion-phone-error">
               <p class="form-error" id="deletion-phone-error" role="alert" hidden>
                 <span lang="vi">Nhập số điện thoại.</span>
                 <span lang="en">Enter your phone number.</span>
@@ -148,7 +148,7 @@
               <div class="form-field">
                 <label class="form-label" for="deletion-code" lang="vi">Mã 6 chữ số</label>
                 <label class="form-label" for="deletion-code" lang="en">6-digit code</label>
-                <input class="form-input" type="text" id="deletion-code" name="code" inputmode="numeric" pattern="\d{6}" maxlength="6" autocomplete="one-time-code" aria-describedby="deletion-code-error">
+                <input class="form-input" type="text" id="deletion-code" name="code" inputmode="numeric" pattern="\d{6}" maxlength="6" enterkeyhint="go" autocomplete="one-time-code" aria-describedby="deletion-code-error">
                 <p class="form-error" id="deletion-code-error" role="alert" hidden>
                   <span lang="vi">Mã không hợp lệ hoặc đã hết hạn.</span>
                   <span lang="en">Invalid or expired code.</span>

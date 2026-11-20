@@ -58,10 +58,12 @@ class MatrixAndDryRunTest(unittest.TestCase):
         self.assertTrue(expected.issubset(refs), sorted(expected - refs))
         runnable = {row.id for row in journeys.ROWS if row.capability_gap is None}
         self.assertEqual(runnable, {
-            "auth-login", "chat-send-receive", "chat-interactions", "summary-ask",
+            "auth-login", "auth-session-lifecycle", "chat-send-receive",
+            "chat-interactions", "summary-ask", "otp-forgot-password",
             "archive-preferences", "groups-contacts", "labels-lifecycle",
             "polls-reminders", "offline-sync",
             "calls-injected-notification", "injected-notifications",
+            "accessibility-sweep",
         })
         self.assertEqual(journeys.ROWS[-1].id, "account-deletion")
         self.assertEqual(len(journeys.ACCESSIBILITY_VARIANTS), 8)
@@ -139,6 +141,29 @@ class ResultClassificationTest(unittest.TestCase):
                 )
         self.assertEqual(journeys._status_for_error(caught.exception), "FAIL_HARNESS_OR_ENVIRONMENT")
         self.assertEqual(adb.calls, [])
+
+    def test_preflight_skips_shared_readiness_for_self_provisioned_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = Path(directory) / "app-debug.apk"
+            apk.write_bytes(b"offline fixture")
+
+            class NoServer:
+                def get(self, path):
+                    raise AssertionError("readiness must not be probed")
+
+            class BootedAdb:
+                def command(self, *args, **kwargs):
+                    if args == ("get-state",):
+                        return "device"
+                    if args[:3] == ("shell", "getprop", "sys.boot_completed"):
+                        return "1"
+                    if args[:3] == ("shell", "getprop", "ro.build.version.sdk"):
+                        return "36"
+                    raise AssertionError(args)
+
+            # Must not raise: the --dstack mail rows provision their own backend.
+            journeys.preflight("http://127.0.0.1:18093", apk, BootedAdb(),
+                               NoServer(), require_shared_server=False)
 
     class FakeAdb:
         def command(self, *args, **kwargs):
@@ -279,6 +304,389 @@ class RedactionTest(unittest.TestCase):
         self.assertEqual(client.records[0]["response"]["accessToken"], "[REDACTED]")
 
 
+class _AccountDeletionNode:
+    """Minimal uiautomator node shape used by the deletion device fixture."""
+
+    def __init__(self, text="", desc="", rid="", cls="", box=None, clickable=True):
+        self.text = text
+        self.desc = desc
+        self.cls = cls
+        self.box = box or (0, 0, 320, 60)
+        self.clickable = clickable
+        self.attrs = {"resource-id": f"com.nexachat.debug:id/{rid}" if rid else ""}
+
+    def strip(self):  # parity with the real Node helpers
+        return self
+
+
+class _AccountDeletionWorld:
+    """Scripted app: login -> inbox -> profile -> delete-account screens."""
+
+    WRONG_PASSWORD_TEXT = "Current password is incorrect"
+    CODE_SENT_TEXT = ("We sent a confirmation code to your verified email address")
+
+    def __init__(self, store):
+        self.store = store
+        self.screen = "login"
+        self.account = None
+        self.keyboard = False
+        self.login_inputs = {}
+        self.error_text = ""
+        self.code_requested = False
+        self.wrong_password_refused = False
+        self.passwordless_fixture_applied = False
+        self.deleted_via_code = False
+        self.sql_log = []
+
+    def cold_start(self):
+        self.screen = "inbox" if self.account else "login"
+        self.keyboard = False
+        self.login_inputs = {}
+
+    @property
+    def inbox_titles(self):
+        # Only the doomed account ever had the peer conversation; the
+        # re-registered phone starts with a clean (non-cached) inbox.
+        if (self.account and self.store.is_doomed(self.account["phone"])
+                and not self.store.reused):
+            return [self.store.peer_name]
+        return []
+
+    def tree(self):
+        nodes = []
+        if self.screen == "login":
+            nodes.append(_AccountDeletionNode(
+                rid="phoneInput", cls="android.widget.EditText",
+                text=self.login_inputs.get("phoneInput", "")))
+            nodes.append(_AccountDeletionNode(
+                rid="passwordInput", cls="android.widget.EditText",
+                text=self.login_inputs.get("passwordInput", "")))
+            nodes.append(_AccountDeletionNode(text="Sign in", rid="primaryAction",
+                                              cls="android.widget.Button"))
+        elif self.screen == "inbox":
+            nodes.append(_AccountDeletionNode(rid="inboxUserAvatar"))
+            nodes.append(_AccountDeletionNode(rid="conversationList",
+                                             box=(0, 300, 320, 620)))
+            for index, title in enumerate(self.inbox_titles):
+                nodes.append(_AccountDeletionNode(
+                    text=title, box=(10, 310 + index * 2, 310, 312 + index * 2)))
+        elif self.screen == "profile":
+            nodes.append(_AccountDeletionNode(
+                text=self.account["displayName"] if self.account else "",
+                rid="profileName"))
+            nodes.append(_AccountDeletionNode(rid="profileColumn",
+                                             box=(0, 0, 320, 640)))
+            nodes.append(_AccountDeletionNode(text="Sign out", rid="logoutRow"))
+            nodes.append(_AccountDeletionNode(text="Delete account",
+                                              rid="deleteAccountRow"))
+        elif self.screen == "delete":
+            nodes.append(_AccountDeletionNode(rid="deleteAccountToolbar"))
+            if self.store.is_passwordless(self.account):
+                nodes.append(_AccountDeletionNode(text="Send code",
+                                                  rid="sendDeletionCode"))
+                if self.code_requested:
+                    nodes.append(_AccountDeletionNode(
+                        text=self.CODE_SENT_TEXT, rid="deletionCodeSentMessage"))
+                    nodes.append(_AccountDeletionNode(
+                        rid="deletionCodeInput", cls="android.widget.EditText"))
+            else:
+                nodes.append(_AccountDeletionNode(rid="passwordInput",
+                                                  cls="android.widget.EditText"))
+            nodes.append(_AccountDeletionNode(text="Delete my account",
+                                              rid="confirmDelete",
+                                              cls="android.widget.Button"))
+            if self.error_text:
+                nodes.append(_AccountDeletionNode(text=self.error_text,
+                                                  rid="inlineError"))
+        return nodes
+
+
+class _AccountDeletionDeviceFixture:
+    """Device/adb/patch/client/mail fakes for the account-deletion executor."""
+
+    PHONE = "+84993334445"
+    EMAIL = "delete-device@example.test"
+    PEER_NAME = "Journey Peer fixture"
+
+    class Response:
+        def __init__(self, status, body=None):
+            self.status = status
+            self._body = body if body is not None else {}
+
+        def json(self):
+            return self._body
+
+    class Store:
+        def __init__(self):
+            self.users = {}          # phone -> {"password", "displayName", "deleted"}
+            self.passwordless = set()
+            self.doomed = set()
+            self.reused = False
+            self.deletion_code = "654321"
+            self.messages = []
+
+        def is_passwordless(self, account):
+            return account is not None and account["phone"] in self.passwordless
+
+        def is_doomed(self, phone):
+            return phone in self.doomed
+
+    class Mail:
+        def __init__(self, codes):
+            self.codes = list(codes)
+            self.n = 0
+            self.stopped = False
+
+        def start(self):
+            return None
+
+        def stop(self):
+            self.stopped = True
+
+        def server_env(self):
+            return {"NEXACHAT_MAIL_PROVIDER": "smtp",
+                    "MAIL_SMTP_HOST": "127.0.0.1", "MAIL_SMTP_PORT": "1025",
+                    "MAIL_SMTP_USERNAME": "", "MAIL_SMTP_PASSWORD": "",
+                    "MAIL_FROM": "noreply@nexachat.io.vn"}
+
+        def wait_for_message(self, to, subject_contains=None, timeout=60):
+            code = self.codes[self.n]
+            self.n += 1
+            return {"Text": code}
+
+        def extract_otp(self, message):
+            return message["Text"]
+
+        def clear(self):
+            return None
+
+    class Client:
+        def __init__(self, store, world):
+            self.store = store
+            self.world = world
+            self.confirmed = False
+
+        def post(self, path, token=None, body=None, headers=None):
+            R = _AccountDeletionDeviceFixture.Response
+            body = body or {}
+            if path.endswith("/auth/register"):
+                phone = body["phone"]
+                if phone in self.store.users:
+                    self.store.reused = True
+                self.store.users[phone] = {"password": body["password"],
+                                           "displayName": body["displayName"],
+                                           "deleted": False}
+                return R(201, {"accessToken": f"tok-{phone}",
+                               "user": {"id": phone, "phone": phone}})
+            if path.endswith("/users/me/email/verify"):
+                return R(200, {})
+            if path.endswith("/account-deletion/request"):
+                return R(202, {})
+            if path.endswith("/account-deletion/confirm"):
+                self.confirmed = True
+                self.store.users[body["phone"]]["deleted"] = True
+                return R(204, None)
+            if path.endswith("/conversations/direct"):
+                return R(201, {"id": "conv-del", "type": "DIRECT"})
+            if "/messages" in path:
+                self.store.messages.append(body["content"])
+                return R(201, {"id": "m1"})
+            raise AssertionError(path)
+
+        def put(self, path, token=None, body=None, headers=None):
+            return _AccountDeletionDeviceFixture.Response(202, {})
+
+        def get(self, path, token=None, params=None, headers=None):
+            R = _AccountDeletionDeviceFixture.Response
+            phone = (token or "").removeprefix("tok-")
+            user = self.store.users.get(phone)
+            if path == "/api/v1/users/me":
+                if user is None or user["deleted"]:
+                    return R(401)
+                return R(200, {"phone": phone})
+            if path == "/api/v1/conversations/conv-del/messages":
+                return R(200, {"items": [{"content": content}
+                                         for content in self.store.messages]})
+            raise AssertionError(path)
+
+        def request(self, method, path, token=None, body=None, headers=None):
+            phone = (token or "").removeprefix("tok-")
+            user = self.store.users.get(phone)
+            if method == "DELETE" and path == "/api/v1/users/me":
+                if user and body and body.get("password") == user["password"]:
+                    user["deleted"] = True
+                    return _AccountDeletionDeviceFixture.Response(204, None)
+                return _AccountDeletionDeviceFixture.Response(401, {})
+            raise AssertionError((method, path))
+
+    class Device:
+        def __init__(self, world, store):
+            self.world = world
+            self.store = store
+
+        def nodes(self):
+            return self.world.tree()
+
+        def tap_node(self, node):
+            w = self.world
+            rid = node.attrs["resource-id"].rsplit("/", 1)[-1]
+            if w.screen == "login" and rid == "primaryAction":
+                phone = w.login_inputs.get("phoneInput", "")
+                password = w.login_inputs.get("passwordInput", "")
+                user = self.store.users.get(phone)
+                if user and not user["deleted"] and password == user["password"]:
+                    w.account = {"phone": phone,
+                                 "displayName": user["displayName"]}
+                    w.screen = "inbox"
+                return
+            if w.screen == "inbox" and rid == "inboxUserAvatar":
+                w.screen = "profile"
+                return
+            if w.screen == "profile" and rid == "deleteAccountRow":
+                w.screen = "delete"
+                w.error_text = ""
+                w.code_requested = False
+                return
+            if w.screen == "delete":
+                if rid == "confirmDelete":
+                    if self.store.is_passwordless(w.account):
+                        code = w.login_inputs.get("deletionCodeInput", "")
+                        if code == self.store.deletion_code:
+                            self.store.users[w.account["phone"]]["deleted"] = True
+                            w.deleted_via_code = True
+                            w.account = None
+                            w.screen = "login"
+                        else:
+                            w.error_text = "Wrong or expired code"
+                    else:
+                        w.wrong_password_refused = True
+                        w.error_text = w.WRONG_PASSWORD_TEXT
+                elif rid == "sendDeletionCode":
+                    w.code_requested = True
+
+        def key(self, code):
+            w = self.world
+            if w.keyboard:
+                w.keyboard = False
+                return
+            if w.screen == "delete":
+                w.screen = "profile"
+            elif w.screen == "profile":
+                w.screen = "inbox"
+
+        def swipe(self, x1, y1, x2, y2, duration):
+            return None
+
+        def screenshot(self, path):
+            Path(path).write_bytes(b"png")
+
+    class Adb:
+        serial = "emulator-5554"
+
+        def __init__(self, world):
+            self.world = world
+
+        def command(self, *args, **kwargs):
+            if "force-stop" in args:
+                return ""
+            if args[:2] == ("shell", "am") and "start" in args:
+                self.world.cold_start()
+                return ""
+            if args[:3] == ("shell", "input", "keyevent"):
+                self.world.keyboard = False
+                return ""
+            return ""
+
+    class Patch:
+        PASSWORD = "password123"
+
+        @staticmethod
+        def ui_nodes(device, timeout=8):
+            return device.nodes()
+
+        @staticmethod
+        def node_by_id(nodes, suffix):
+            return next((node for node in nodes
+                         if node.attrs.get("resource-id", "").endswith("/" + suffix)),
+                        None)
+
+        @staticmethod
+        def text_matches(node, candidates):
+            value = (node.text + " " + node.desc).casefold()
+            return any(candidate.casefold() in value for candidate in candidates)
+
+        @staticmethod
+        def login_form_visible(nodes):
+            ids = {node.attrs.get("resource-id", "").rsplit("/", 1)[-1]
+                   for node in nodes}
+            return {"phoneInput", "passwordInput"} <= ids and any(
+                node.text.strip() == "Sign in" for node in nodes)
+
+        @staticmethod
+        def inbox_visible(nodes):
+            return any(node.attrs.get("resource-id", "").endswith("/inboxUserAvatar")
+                       for node in nodes)
+
+        @staticmethod
+        def fill_login_field(ui, field_id, value):
+            ui.world.login_inputs[field_id] = value
+            ui.world.keyboard = True
+
+    def __init__(self, test):
+        self.test = test
+        self.phone = self.PHONE
+        self.store = self.Store()
+        self.store.peer_name = self.PEER_NAME
+        self.world = _AccountDeletionWorld(self.store)
+        self.store.doomed.add(self.phone)
+        self.client = self.Client(self.store, self.world)
+        # codes: recovery-email verify, then the in-app deletion code.
+        self.mail = self.Mail(["112233", self.store.deletion_code])
+
+    def context(self, row, stack_port=None):
+        """Context whose base_url sits on a free port; the disposable stack
+        handle serves stack_port (defaults to the same port so the app can
+        reach it; a different port simulates the shared-server conflict)."""
+        import socket
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        base_url = f"http://127.0.0.1:{port}"
+        stack_base = f"http://127.0.0.1:{stack_port or port}"
+        world = self.world
+        store = self.store
+
+        def sql(statement, db_name=None):
+            world.sql_log.append(statement)
+            if "password_hash = NULL" in statement:
+                world.passwordless_fixture_applied = True
+                store.passwordless.add(self.phone)
+
+        def apply_env(env):
+            return {"base_url": stack_base, "client": self.client,
+                    "sql": sql, "close": lambda: None}
+
+        class Api:
+            USER_A = {"phone": "+84900000001"}
+
+        return {
+            "serial": "emulator-5554",
+            "base_url": base_url,
+            "row": row,
+            "row_dir": Path(tempfile.mkdtemp()),
+            "selected_ids": ("auth-login", "account-deletion"),
+            "disposable_phone": self.phone,
+            "disposable_email": self.EMAIL,
+            "mail_sink": self.mail,
+            "client": self.client,
+            "apply_server_env": apply_env,
+            "adb": self.Adb(world),
+            "device": self.Device(world, store),
+            "helpers": (Api(), None, self.Patch()),
+            "ui_timeout": 2,
+        }
+
+
 class WiringDecisionTest(unittest.TestCase):
     def test_list_shows_runnable_rows_and_remaining_gaps(self):
         output = __import__("io").StringIO()
@@ -295,17 +703,14 @@ class WiringDecisionTest(unittest.TestCase):
             else:
                 runnable.append(row_id)
         self.assertEqual(runnable, [
-            "auth-login", "chat-send-receive", "chat-interactions",
+            "auth-login", "auth-session-lifecycle", "otp-forgot-password",
+            "chat-send-receive", "chat-interactions",
             "groups-contacts", "polls-reminders", "archive-preferences",
             "labels-lifecycle",
             "calls-injected-notification", "summary-ask", "offline-sync",
-            "injected-notifications",
+            "injected-notifications", "accessibility-sweep",
         ])
         self.assertEqual(len(runnable) + len(blocked), len(journeys.ROWS))
-        self.assertIn("STOMP", blocked["auth-session-lifecycle"])
-        self.assertIn("501", blocked["auth-session-lifecycle"])
-        self.assertIn("expired", blocked["otp-forgot-password"])
-        self.assertIn("server_env()", blocked["otp-forgot-password"])
         self.assertIn("Room 14", blocked["room-13-14-upgrade"])
         self.assertIn("Room 14", blocked["v111-rc-upgrade"])
         self.assertIn("seed user", blocked["account-deletion"])
@@ -320,9 +725,9 @@ class WiringDecisionTest(unittest.TestCase):
         for row_id in (
             "media",
             "calls-signaling",
-            "accessibility-sweep",
         ):
             self.assertIn("BLOCKED_CAPABILITY:", blocked[row_id])
+        self.assertNotIn("accessibility-sweep", blocked)
 
     def test_upgrade_plan_names_install_and_stays_blocked(self):
         output = __import__("io").StringIO()
@@ -346,11 +751,31 @@ class WiringDecisionTest(unittest.TestCase):
             def start(self):
                 raise AssertionError("blocked row started a helper")
 
-        for row_id in ("otp-forgot-password", "account-deletion", "auth-session-lifecycle",
-                       "room-13-14-upgrade", "v111-rc-upgrade"):
+        # Mail rows now have executors: with no apply_server_env they must raise
+        # CapabilityBlocked inside the mail-sink gate, before Boom.start() runs.
+        mail_context = {
+            "mail_sink": Boom(),
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "selected_ids": ("account-deletion",),
+        }
+        for row_id in ("otp-forgot-password", "account-deletion"):
+            with self.subTest(row_id=row_id):
+                with self.assertRaises(journeys.CapabilityBlocked):
+                    journeys.run_registered_row(
+                        journeys.ROW_BY_ID[row_id], dict(mail_context))
+        for row_id in ("room-13-14-upgrade", "v111-rc-upgrade"):
             with self.subTest(row_id=row_id):
                 with self.assertRaises(journeys.CapabilityBlocked):
                     journeys.run_registered_row(journeys.ROW_BY_ID[row_id], {"mail_sink": Boom()})
+
+    def test_auth_session_lifecycle_dispatches_to_its_executor(self):
+        row = journeys.ROW_BY_ID["auth-session-lifecycle"]
+        self.assertIsNone(row.capability_gap)
+        # No serial in context: the executor must run and fail as a harness
+        # error, proving the row is no longer capability-blocked at dispatch.
+        with self.assertRaises(journeys.HarnessError):
+            journeys.run_registered_row(row, {"mail_sink": object()})
 
     def test_executors_refuse_a_non_reserved_serial(self):
         cases = (
@@ -365,6 +790,7 @@ class WiringDecisionTest(unittest.TestCase):
             journeys.run_otp_forgot_password,
             journeys.run_account_deletion,
             journeys.run_auth_session_lifecycle,
+            journeys.run_accessibility_sweep,
             journeys.run_room_13_14_upgrade,
             journeys.run_v111_rc_upgrade,
         )
@@ -858,33 +1284,180 @@ class WiringDecisionTest(unittest.TestCase):
         for code in mail.codes:
             self.assertNotIn(code, str(caught.exception))
 
-    def test_barrier_hold_still_leaves_stomp_blocked(self):
-        row = journeys.ROW_BY_ID["auth-session-lifecycle"]
+    def test_account_deletion_blocks_when_the_stack_misses_the_app_port(self):
+        row = journeys.ROW_BY_ID["account-deletion"]
+        fixture = _AccountDeletionDeviceFixture(self)
+        context = fixture.context(row, stack_port=18443)
+        with mock.patch.object(journeys.time, "sleep"):
+            with self.assertRaises(journeys.CapabilityBlocked) as caught:
+                journeys.run_account_deletion(row, context)
+        text = str(caught.exception)
+        self.assertIn("10.0.2.2", text)
+        self.assertIn("cache", text)
+        # The REST/OTP deletion still ran before the explicit gap.
+        self.assertEqual(fixture.mail.n, 2)
+        self.assertTrue(fixture.client.confirmed)
+        self.assertTrue(fixture.mail.stopped)
+        for code in fixture.mail.codes:
+            self.assertNotIn(code, text)
 
-        class Barrier:
+    def test_account_deletion_drives_the_in_app_ui_slice(self):
+        row = journeys.ROW_BY_ID["account-deletion"]
+        fixture = _AccountDeletionDeviceFixture(self)
+        context = fixture.context(row)
+        with mock.patch.object(journeys.time, "sleep"):
+            result = journeys.run_account_deletion(row, context)
+        for key in ("sign_in", "wrong_password_ui", "in_app_deletion",
+                    "token_rejection", "peer_history", "cache_and_reuse"):
+            self.assertIn(key, result)
+        world = fixture.world
+        # The wrong password was refused in the UI and the account survived it.
+        self.assertTrue(world.wrong_password_refused)
+        # The passwordless (V33 Google-only) fixture flipped the UI to the
+        # code flow, the Mailpit code confirmed the deletion, and the app
+        # returned to the login form.
+        self.assertTrue(world.passwordless_fixture_applied)
+        self.assertTrue(world.deleted_via_code)
+        self.assertEqual(world.screen, "inbox")
+        self.assertEqual(world.account["phone"], fixture.phone)
+        # The re-registered phone signed in to an inbox with no cached row.
+        self.assertEqual(world.inbox_titles, [])
+        # The OTP never leaked into the results or the sql transcript.
+        transcript = json.dumps(result) + json.dumps(world.sql_log)
+        for code in fixture.mail.codes:
+            self.assertNotIn(code, transcript)
+
+    def test_otp_flow_passes_on_a_stack_handle_and_proves_expiry(self):
+        row = journeys.ROW_BY_ID["otp-forgot-password"]
+        phone = "+84991112233"
+
+        class Mail:
             def __init__(self):
-                self.held = None
-                self.closed = False
+                self.codes = ["482910", "193847", "550012", "778899"]
+                self.n = 0
+                self.stopped = False
 
-            def hold(self, **kwargs):
-                self.held = kwargs
+            def start(self):
+                return None
 
-            def close(self):
-                self.closed = True
+            def stop(self):
+                self.stopped = True
 
-        barrier = Barrier()
-        with self.assertRaises(journeys.CapabilityBlocked) as caught:
-            journeys.run_auth_session_lifecycle(row, {
+            def server_env(self):
+                return {"NEXACHAT_MAIL_PROVIDER": "smtp", "MAIL_SMTP_HOST": "127.0.0.1",
+                        "MAIL_SMTP_PORT": "1025", "MAIL_SMTP_USERNAME": "",
+                        "MAIL_SMTP_PASSWORD": "", "MAIL_FROM": "noreply@nexachat.io.vn"}
+
+            def wait_for_message(self, to, subject_contains=None, timeout=60):
+                code = self.codes[self.n]
+                self.n += 1
+                return {"Text": code}
+
+            def extract_otp(self, message):
+                return message["Text"]
+
+            def clear(self):
+                return None
+
+        class Response:
+            def __init__(self, status, body=None):
+                self.status = status
+                self._body = body
+
+            def json(self):
+                return {} if self._body is None else self._body
+
+        class Client:
+            def __init__(self):
+                self.used = set()
+                self.expired_attempts = []
+
+            def post(self, path, token=None, body=None, headers=None):
+                body = body or {}
+                if path.endswith("/register"):
+                    return Response(201, {"accessToken": "old-token", "user": {"id": "u1", "phone": body["phone"]}})
+                if path.endswith("/email/verify"):
+                    return Response(200, {"verified": True})
+                if path.endswith("/password-reset/request"):
+                    return Response(202, {})
+                if path.endswith("/password-reset/confirm"):
+                    code = body["code"]
+                    if code in {"000000", "111111"} or code in self.used:
+                        return Response(400, {})
+                    if code == "778899":
+                        self.expired_attempts.append(code)
+                        return Response(400, {})
+                    self.used.add(code)
+                    return Response(204, None)
+                if path.endswith("/login"):
+                    if body["password"] == journeys.DISPOSABLE_PASSWORD:
+                        return Response(401, {})
+                    return Response(200, {"accessToken": "new-token"})
+                raise AssertionError(path)
+
+            def put(self, path, token=None, body=None, headers=None):
+                return Response(202, {})
+
+            def get(self, path, token=None, params=None, headers=None):
+                return Response(401, {})
+
+            def request(self, method, path, token=None, body=None, headers=None):
+                return self.post(path, token=token, body=body)
+
+        mail = Mail()
+        shared_client = Client()
+        stack_client = Client()
+        sql_calls = []
+        closed = []
+
+        def apply_env(env):
+            return {
+                "client": stack_client,
+                "base_url": "http://127.0.0.1:19000",
+                "sql": sql_calls.append,
+                "close": lambda: closed.append(True),
+            }
+
+        context = {
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "row": row,
+            "disposable_phone": phone,
+            "disposable_email": "otp@example.test",
+            "mail_sink": mail,
+            "client": shared_client,
+            "sleep": lambda seconds: None,
+            "apply_server_env": apply_env,
+        }
+        result = journeys.run_otp_forgot_password(row, context)
+        self.assertEqual(result["expired_code"], "aged OTP was refused by the disposable stack")
+        # The action ran against the stack client, and the context was restored.
+        self.assertEqual(stack_client.expired_attempts, ["778899"])
+        self.assertIs(context["client"], shared_client)
+        self.assertEqual(context["base_url"], "http://127.0.0.1:18093")
+        self.assertNotIn("dstack_handle", context)
+        # The expiry proof rewrote expires_at on the disposable database.
+        self.assertTrue(any("expires_at" in stmt for stmt in sql_calls))
+        self.assertEqual(closed, [True])
+        self.assertTrue(mail.stopped)
+        for code in mail.codes:
+            self.assertNotIn(code, str(result))
+
+    def test_otp_flow_without_apply_env_never_starts_the_sink(self):
+        row = journeys.ROW_BY_ID["otp-forgot-password"]
+
+        class Boom:
+            def start(self):
+                raise AssertionError("mail sink started without a server hook")
+
+        with self.assertRaises(journeys.CapabilityBlocked):
+            journeys.run_otp_forgot_password(row, {
                 "serial": "emulator-5554",
                 "base_url": "http://127.0.0.1:18093",
                 "row": row,
-                "account_a_token": "token-a",
-                "barrier_factory": lambda url: barrier,
+                "disposable_phone": "+84991112233",
+                "mail_sink": Boom(),
             })
-        self.assertEqual(barrier.held["path"], r"^/api/v1/conversations$")
-        self.assertTrue(barrier.closed)
-        self.assertIn("STOMP", str(caught.exception))
-        self.assertIn("501", str(caught.exception))
 
     def test_upgrade_executors_do_not_fetch_or_install(self):
         for row_id, executor in (
@@ -901,6 +1474,333 @@ class WiringDecisionTest(unittest.TestCase):
                     })
             run.assert_not_called()
             self.assertIn("Room 14", str(caught.exception))
+
+
+class AuthSessionLifecycleExecutorTest(unittest.TestCase):
+    """Offline fake REST/STOMP world for run_auth_session_lifecycle.
+
+    The fake client implements the real revocation semantics (logout stamps
+    every access token dead, refresh rotates, password change revokes all
+    sessions) so the executor's 401/204 assertions are meaningful. The fake
+    barrier records hold rules; the fake readers replay scripted STOMP
+    envelopes keyed by the account phone inside each access token.
+    """
+
+    MARKER = "sj-paused-offline"
+    PHONE_REST = "+84991110001"
+    PHONE_A = "+84991110002"
+    PHONE_B = "+84991110003"
+
+    class Response:
+        def __init__(self, status, body=None):
+            self.status = status
+            self._body = body or {}
+
+        def json(self):
+            return self._body
+
+    class FakeAuthClient:
+        def __init__(self):
+            self.users = {}
+            self.sessions = {}
+            self.clock = 0
+            self.conversations = {}
+            self.deleted_users = []
+            self.calls = []
+
+        def _issue(self, phone):
+            user = self.users[phone]
+            self.clock += 1
+            access = f"at-{phone}-{self.clock}"
+            refresh = f"rt-{phone}-{self.clock}"
+            self.sessions[access] = {"phone": phone, "iat": self.clock,
+                                     "uid": user["id"]}
+            user["refresh_alive"].add(refresh)
+            return {"accessToken": access, "refreshToken": refresh,
+                    "user": {"id": user["id"], "phone": phone}}
+
+        def _user_for_token(self, token):
+            session = self.sessions.get(token or "")
+            if session is None:
+                return None
+            user = self.users.get(session["phone"])
+            if (user is None or user["deleted"] or user["id"] != session["uid"]
+                    or session["iat"] <= user["access_floor"]):
+                return None
+            return user
+
+        @staticmethod
+        def _phone_of(users, user):
+            return next(p for p, u in users.items() if u is user)
+
+        def post(self, path, token=None, body=None, headers=None):
+            self.calls.append(("POST", path))
+            body = body or {}
+            if path == "/api/v1/auth/register":
+                phone = body.get("phone")
+                if phone in self.users and not self.users[phone]["deleted"]:
+                    return AuthSessionLifecycleExecutorTest.Response(409, {})
+                self.users[phone] = {"password": body.get("password"),
+                                     "id": f"uid-{phone}", "access_floor": 0,
+                                     "refresh_alive": set(), "deleted": False}
+                return AuthSessionLifecycleExecutorTest.Response(201, self._issue(phone))
+            if path == "/api/v1/auth/login":
+                user = self.users.get(body.get("phone"))
+                if (user is None or user["deleted"]
+                        or user["password"] != body.get("password")):
+                    return AuthSessionLifecycleExecutorTest.Response(401, {})
+                return AuthSessionLifecycleExecutorTest.Response(200, self._issue(body["phone"]))
+            if path == "/api/v1/auth/refresh":
+                refresh = body.get("refreshToken")
+                owner = next((u for u in self.users.values()
+                              if refresh in u["refresh_alive"]), None)
+                if owner is None:
+                    return AuthSessionLifecycleExecutorTest.Response(401, {})
+                owner["refresh_alive"].discard(refresh)
+                phone = self._phone_of(self.users, owner)
+                return AuthSessionLifecycleExecutorTest.Response(200, self._issue(phone))
+            if path in ("/api/v1/auth/logout", "/api/v1/auth/logout-all"):
+                user = self._user_for_token(token)
+                if user is None:
+                    return AuthSessionLifecycleExecutorTest.Response(401, {})
+                user["access_floor"] = self.clock
+                if path.endswith("logout-all"):
+                    user["refresh_alive"].clear()
+                else:
+                    user["refresh_alive"].discard(body.get("refreshToken"))
+                return AuthSessionLifecycleExecutorTest.Response(204, {})
+            if path == "/api/v1/conversations/direct":
+                if self._user_for_token(token) is None:
+                    return AuthSessionLifecycleExecutorTest.Response(401, {})
+                self.conversations.setdefault("conv-direct-1", {"messages": []})
+                return AuthSessionLifecycleExecutorTest.Response(201, {"id": "conv-direct-1", "type": "DIRECT"})
+            if "/messages" in path:
+                if self._user_for_token(token) is None:
+                    return AuthSessionLifecycleExecutorTest.Response(401, {})
+                cid = path.split("/")[4]
+                conv = self.conversations.setdefault(cid, {"messages": []})
+                conv["messages"].append(
+                    {"id": f"msg-{len(conv['messages']) + 1}",
+                     "content": body.get("content")})
+                return AuthSessionLifecycleExecutorTest.Response(201, conv["messages"][-1])
+            return AuthSessionLifecycleExecutorTest.Response(404, {})
+
+        def get(self, path, token=None, params=None, headers=None):
+            self.calls.append(("GET", path))
+            if path == "/api/v1/users/me":
+                user = self._user_for_token(token)
+                if user is None:
+                    return AuthSessionLifecycleExecutorTest.Response(401, {})
+                return AuthSessionLifecycleExecutorTest.Response(
+                    200, {"id": user["id"],
+                          "phone": self._phone_of(self.users, user)})
+            if "/messages" in path:
+                cid = path.split("/")[4]
+                conv = self.conversations.get(cid, {"messages": []})
+                return AuthSessionLifecycleExecutorTest.Response(200, {"items": list(conv["messages"])})
+            return AuthSessionLifecycleExecutorTest.Response(404, {})
+
+        def patch(self, path, token=None, body=None, headers=None):
+            self.calls.append(("PATCH", path))
+            user = self._user_for_token(token)
+            if user is None:
+                return AuthSessionLifecycleExecutorTest.Response(401, {})
+            phone = self._phone_of(self.users, user)
+            if self.users[phone]["password"] != (body or {}).get("oldPassword"):
+                return AuthSessionLifecycleExecutorTest.Response(400, {})
+            self.users[phone]["password"] = body.get("newPassword")
+            user["access_floor"] = self.clock
+            user["refresh_alive"].clear()
+            return AuthSessionLifecycleExecutorTest.Response(204, {})
+
+        def request(self, method, path, token=None, body=None, params=None,
+                    raw_body=None, headers=None):
+            if method == "DELETE" and path == "/api/v1/users/me":
+                user = self._user_for_token(token)
+                if user is None:
+                    return AuthSessionLifecycleExecutorTest.Response(401, {})
+                phone = self._phone_of(self.users, user)
+                if self.users[phone]["password"] != (body or {}).get("password"):
+                    return AuthSessionLifecycleExecutorTest.Response(401, {})
+                self.users[phone]["deleted"] = True
+                self.deleted_users.append(phone)
+                return AuthSessionLifecycleExecutorTest.Response(204, {})
+            return AuthSessionLifecycleExecutorTest.Response(404, {})
+
+    class FakeBarrier:
+        def __init__(self, upstream):
+            self.upstream = upstream
+            self.url = "http://127.0.0.1:9"
+            self.rules = []
+            self.released = 0
+            self.closed = False
+
+        def hold(self, **kwargs):
+            self.rules.append(kwargs)
+            return len(self.rules)
+
+        def wait_held(self, n=1, timeout=5.0):
+            return [{"id": 1, "path": "s2c MESSAGE /topic/conversations.conv-direct-1"}]
+
+        def release(self, *args, **kwargs):
+            self.released += 1
+            return [1]
+
+        def close(self):
+            self.closed = True
+
+    class FakeReader:
+        """Replays scripted STOMP envelopes; each events() call drains one script."""
+
+        def __init__(self, ws_url, token, call_scripts):
+            self.ws_url = ws_url
+            self.token = token
+            self.call_scripts = [list(script) for script in call_scripts]
+            self.subscriptions = []
+            self.closed = False
+
+        def subscribe(self, destination):
+            self.subscriptions.append(destination)
+
+        def events(self, seconds):
+            script = self.call_scripts.pop(0) if self.call_scripts else []
+            for kind in script:
+                if kind == "marker":
+                    yield {"eventType": "MESSAGE_CREATED",
+                           "conversationId": "conv-direct-1",
+                           "payload": {"id": "msg-1",
+                                       "content": AuthSessionLifecycleExecutorTest.MARKER},
+                           "_destination": self.subscriptions[0],
+                           "_subscription": "sub-1"}
+
+        def close(self):
+            self.closed = True
+
+    @staticmethod
+    def _reader_factory(script_by_token_phone):
+        made = []
+
+        def factory(ws_url, token):
+            phone = next((p for p in script_by_token_phone if p in token), "")
+            reader = AuthSessionLifecycleExecutorTest.FakeReader(
+                ws_url, token, script_by_token_phone.get(phone, []))
+            made.append(reader)
+            return reader
+
+        factory.made = made
+        return factory
+
+    def setUp(self):
+        self.row = journeys.ROW_BY_ID["auth-session-lifecycle"]
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.client = self.FakeAuthClient()
+        self.barrier = self.FakeBarrier("http://127.0.0.1:18093")
+        self.readers = self._reader_factory({
+            self.PHONE_A: [[]],
+            self.PHONE_B: [["marker"], []],
+        })
+
+    def _context(self):
+        return {
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "row": self.row,
+            "client": self.client,
+            "barrier_factory": lambda upstream: self.barrier,
+            "frame_reader_factory": self.readers,
+            "auth_phone": self.PHONE_REST,
+            "auth_pause_phone_a": self.PHONE_A,
+            "auth_pause_phone_b": self.PHONE_B,
+            "auth_pause_marker": self.MARKER,
+            "row_dir": Path(self.tmp.name),
+            "evidence_root": Path(self.tmp.name),
+            "stomp_events": [],
+        }
+
+    def _artifact(self):
+        return json.loads(
+            (Path(self.tmp.name) / "auth-scenarios.json").read_text(encoding="utf-8"))
+
+    def test_rest_and_paused_frame_driven_device_scenarios_blocked(self):
+        context = self._context()
+        with self.assertRaises(journeys.CapabilityBlocked) as caught:
+            journeys.run_auth_session_lifecycle(self.row, context)
+        message = str(caught.exception)
+        artifact = self._artifact()
+        driven = {item["scenario"] for item in artifact["scenarios"]}
+        blocked = {item["scenario"]: item["reason"] for item in artifact["blocked"]}
+        self.assertEqual(driven, {
+            "register", "login", "invalid-credentials-rest", "refresh",
+            "logout", "logout-all", "password-change",
+            "paused-frame-a-to-b-isolation",
+        })
+        self.assertEqual(set(blocked), {
+            "register-ui", "password-change-ui", "invalid-credentials-ui",
+            "saved-session-restart", "logout-ui", "logout-all-ui",
+            "account-switch-ui",
+        })
+        for name in ("invalid-credentials-ui", "saved-session-restart",
+                     "logout-ui", "logout-all-ui", "account-switch-ui"):
+            self.assertIn("device-bound campaign context", blocked[name])
+        self.assertIn("mail sink", blocked["register-ui"])
+        self.assertIn("register-ui", message)
+        self.assertIn("account-switch-ui", message)
+        # REST lifecycle really issued the auth calls.
+        paths = [path for _method, path in self.client.calls]
+        for expected in ("/api/v1/auth/register", "/api/v1/auth/login",
+                         "/api/v1/auth/refresh", "/api/v1/auth/logout",
+                         "/api/v1/auth/logout-all", "/api/v1/auth/password"):
+            self.assertIn(expected, paths)
+        # The tunnel hold targeted account A's STOMP token on the topic.
+        self.assertEqual(len(self.barrier.rules), 1)
+        rule = self.barrier.rules[0]
+        self.assertEqual(rule["method"], "MESSAGE")
+        self.assertTrue(rule["path"].startswith("^/topic/conversations"))
+        token_a = next(t for t in self.client.sessions
+                       if self.PHONE_A in t)
+        self.assertEqual(rule["token_contains"], token_a)
+        self.assertEqual(self.barrier.released, 1)
+        self.assertTrue(self.barrier.closed)
+        # Both readers subscribed to the same topic through the barrier URL.
+        readers = self.readers.made
+        self.assertEqual(len(readers), 2)
+        self.assertTrue(all(r.ws_url.endswith("/ws") for r in readers))
+        self.assertEqual(readers[0].subscriptions, ["/topic/conversations.conv-direct-1"])
+        self.assertEqual(readers[1].subscriptions, ["/topic/conversations.conv-direct-1"])
+        self.assertTrue(readers[0].closed and readers[1].closed)
+        # Disposable accounts were deleted through DELETE /users/me.
+        self.assertEqual(len(self.client.deleted_users), 3)
+        # Driven STOMP evidence landed in the shared transcript list.
+        self.assertTrue(any(e.get("eventType") == "MESSAGE_CREATED"
+                            for e in context["stomp_events"]))
+        for secret in ("at-+", "rt-+", journeys.DISPOSABLE_PASSWORD,
+                       journeys._AUTH_NEW_PASSWORD):
+            self.assertNotIn(secret,
+                             json.dumps(artifact))
+
+    def test_held_frame_crossing_into_b_fails_the_row(self):
+        readers = self._reader_factory({
+            self.PHONE_A: [[]],
+            self.PHONE_B: [["marker"], ["marker"]],
+        })
+        context = self._context()
+        context["frame_reader_factory"] = readers
+        with self.assertRaises(journeys.ProductFailure) as caught:
+            journeys.run_auth_session_lifecycle(self.row, context)
+        self.assertIn("crossed into account B", str(caught.exception))
+
+    def test_wait_held_timeout_is_a_product_failure(self):
+        class NeverHeld(self.FakeBarrier):
+            def wait_held(self, n=1, timeout=5.0):
+                raise TimeoutError("nothing held")
+
+        barrier = NeverHeld("http://127.0.0.1:18093")
+        context = self._context()
+        context["barrier_factory"] = lambda upstream: barrier
+        with self.assertRaises(journeys.ProductFailure) as caught:
+            journeys.run_auth_session_lifecycle(self.row, context)
+        self.assertIn("was not held", str(caught.exception))
 
 
 class ChatInteractionsExecutorTest(unittest.TestCase):
@@ -5430,6 +6330,261 @@ class FatalVerdictAndOrphanDumpTest(unittest.TestCase):
             results = journeys.execute_rows(
                 [journeys.ROW_BY_ID["auth-login"]], context, self._ok)
             self.assertEqual(results[0]["status"], "FAIL_PRODUCT")
+
+
+class AccessibilitySweepExecutorTest(unittest.TestCase):
+    """Offline fake device+oracle world for run_accessibility_sweep.
+
+    The world mirrors the surfaces the sweep drives on emulator-5554: the
+    seeded An/Binh fixture, the display-settings snapshot/restore pair, the
+    wm density read, and a UI tree the real a11y_oracle accepts. Navigation
+    helpers are mocked at the journey boundary (they are pinned by their own
+    rows' tests); the oracle itself runs for real.
+    """
+
+    def setUp(self) -> None:
+        import a11y_oracle
+        self.oracle = a11y_oracle
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+
+    class _Node:
+        """The adb_ui.Node shape: attribute access plus the raw attrs dict the
+        a11y_oracle also accepts."""
+
+        def __init__(self, attrs):
+            self.attrs = attrs
+            self.text = attrs.get("text", "")
+            self.desc = attrs.get("content-desc", "")
+            self.cls = attrs.get("class", "")
+            self.box = None
+
+    def _nodes(self) -> list["_Node"]:
+        # A clean tree: one non-interactive labeled root, so every oracle
+        # check passes and the cell is an honest PASS.
+        return [self._Node({
+            "resource-id": "com.nexachat.debug:id/conversationList",
+            "class": "androidx.recyclerview.widget.RecyclerView",
+            "text": "Inbox", "content-desc": "", "bounds": "[0,0][1080,2400]",
+            "clickable": "false", "focusable": "false",
+            "enabled": "true", "scrollable": "true",
+        })]
+
+    def _world(self, density: str = "Physical density: 420") -> tuple[dict, list]:
+        adb_calls: list[tuple] = []
+
+        class FakeAdb:
+            calls = adb_calls
+
+            def command(self, *args, timeout=None, check=True):
+                adb_calls.append(tuple(args))
+                if tuple(args[:3]) == ("shell", "wm", "density"):
+                    return density
+                if tuple(args[:4]) == ("shell", "cmd", "uimode", "night"):
+                    return "Night mode: no"
+                if tuple(args[:4]) == ("shell", "settings", "get", "secure"):
+                    return {"enabled_accessibility_services": "null",
+                            "accessibility_enabled": "0"}.get(args[4], "")
+                if tuple(args[:4]) == ("shell", "settings", "get", "global"):
+                    return "1.0" if args[4] == "animator_duration_scale" else ""
+                return ""
+
+        class FakeDevice:
+            def tap_node(self, node):
+                pass
+
+            def key(self, key):
+                pass
+
+            def screenshot(self, path):
+                Path(path).write_bytes(b"png")
+
+        restores: list[dict] = []
+
+        class FakePatch:
+            def settings_snapshot(self):
+                return {"font_scale": "1.0", "system_locales": "en-US"}
+
+            def restore_device_settings(self, before):
+                restores.append(dict(before))
+
+        class FakeApi:
+            USER_A = {"phone": "+84900000001", "name": "An"}
+            USER_C = {"phone": "+84900000002", "name": "Binh"}
+
+            def direct_conversation(self, recorder, token, phone):
+                return None, {"id": "conv-1"}
+
+        patch = FakePatch()
+        context = {
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "helpers": (FakeApi(), None, patch),
+            "client": mock.Mock(),
+            "adb": FakeAdb(),
+            "device": FakeDevice(),
+            "row_dir": self.root / "attempt-1",
+            "ui_timeout": 0.5,
+        }
+        context["row_dir"].mkdir(parents=True, exist_ok=True)
+        return context, restores
+
+    def _run(self, context, **overrides):
+        patches = [
+            mock.patch.object(journeys, "_prepare_seeded_an"),
+            mock.patch.object(journeys, "_actor_session",
+                              return_value={"accessToken": "t", "user": {"id": "an-id"}}),
+            mock.patch.object(journeys, "_offline_rest_once",
+                              return_value=mock.Mock(**{"json.return_value": {"id": "grp-1"}})),
+            mock.patch.object(journeys, "_offline_send_rest"),
+            mock.patch.object(journeys, "_wait_ui_node", return_value=None),
+            mock.patch.object(journeys, "_inbox_conversation_row", return_value=object()),
+            mock.patch.object(journeys, "_open_chat_menu"),
+            mock.patch.object(journeys, "_open_assign_dialog"),
+            mock.patch.object(journeys, "_tap_dialog_button"),
+            mock.patch.object(journeys, "_ui_nodes", side_effect=lambda context: self._nodes()),
+        ]
+        for item in overrides.pop("extra_patches", ()):
+            patches.append(item)
+        assert not overrides, overrides
+        for item in patches:
+            item.start()
+            self.addCleanup(item.stop)
+        row = journeys.ROW_BY_ID["accessibility-sweep"]
+        return journeys.run_accessibility_sweep(row, context)
+
+    def test_dispatch_routes_accessibility_sweep(self):
+        sentinel = mock.Mock(return_value={"summary": "ok"})
+        with mock.patch.object(journeys, "run_accessibility_sweep", sentinel):
+            result = journeys.run_registered_row(
+                journeys.ROW_BY_ID["accessibility-sweep"], {"serial": "emulator-5554"})
+        self.assertEqual(result, {"summary": "ok"})
+        sentinel.assert_called_once()
+
+    def test_row_is_runnable_and_inventory_pins_real_rids(self):
+        row = journeys.ROW_BY_ID["accessibility-sweep"]
+        self.assertIsNone(row.capability_gap)
+        self.assertEqual([screen["screen"] for screen in journeys.CRITICAL_SCREENS], [
+            "inbox", "direct-chat", "group-chat", "archive",
+            "settings", "labels", "contacts",
+        ])
+        # Every marker rid must exist in the android layouts (or be a framework
+        # id the app matches on); the inventory may not invent ids.
+        layouts = journeys.ROOT / "android" / "app" / "src" / "main" / "res" / "layout"
+        xml = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in layouts.glob("*.xml")
+        )
+        framework_ids = {"select_dialog_listview"}
+        for screen in journeys.CRITICAL_SCREENS:
+            marker = screen["marker_rid"]
+            with self.subTest(screen=screen["screen"]):
+                self.assertTrue(
+                    f"@+id/{marker}" in xml or marker in framework_ids,
+                    f"marker rid {marker!r} does not exist in the layouts")
+
+    def test_sweep_runs_oracle_on_every_matrix_cell(self):
+        context, restores = self._world()
+        calls: list[dict] = []
+        real = self.oracle.summarize_findings
+
+        def wrapped(nodes, **kwargs):
+            calls.append(dict(kwargs))
+            return real(nodes, **kwargs)
+
+        with mock.patch.object(self.oracle, "summarize_findings", wrapped):
+            result = self._run(context)
+        self.assertEqual(len(calls), 8 * 7)
+        self.assertTrue(all(call["density"] == 420.0 for call in calls))
+        self.assertTrue(all(call["screen"] == "auto" for call in calls))
+        self.assertEqual(len(result["cells"]), 8 * 7)
+        self.assertTrue(all(cell["status"] == "PASS" for cell in result["cells"]))
+        variants = {(cell["locale"], cell["night"], cell["font_scale"])
+                    for cell in result["cells"]}
+        self.assertEqual(variants, {
+            (variant["locale"], variant["night"], variant["font_scale"])
+            for variant in journeys.ACCESSIBILITY_VARIANTS
+        })
+        screens = {cell["screen"] for cell in result["cells"]}
+        self.assertEqual(screens, {screen["screen"] for screen in journeys.CRITICAL_SCREENS})
+        # Every cell carries oracle assertions, not just a screenshot.
+        for cell in result["cells"]:
+            self.assertTrue(cell["checks"])
+            self.assertTrue(all(entry["ok"] for entry in cell["checks"].values()))
+        self.assertEqual(result["density_dpi"], 420.0)
+        self.assertEqual(result["talkback"]["enabled_before"], "0")
+        self.assertEqual(result["reduced_motion"]["animator_duration_scale_before"], "1.0")
+        self.assertTrue(result["heuristic_caveats"])
+        # Display settings were restored exactly once with the snapshot.
+        self.assertEqual(restores, [{
+            "font_scale": "1.0", "system_locales": "en-US",
+            "night_mode": "Night mode: no",
+        }])
+        # TalkBack and reduced-motion state were restored too (a null services
+        # snapshot clears the list, an unreadable flag falls back to disabled).
+        self.assertIn(("shell", "settings", "put", "secure",
+                       "enabled_accessibility_services", '""'),
+                      context["adb"].calls)
+        self.assertIn(("shell", "settings", "put", "secure",
+                       "accessibility_enabled", "0"),
+                      context["adb"].calls)
+        self.assertIn(("shell", "settings", "put", "global",
+                       "animator_duration_scale", "1.0"),
+                      context["adb"].calls)
+
+    def test_sweep_restores_settings_when_a_cell_raises(self):
+        context, restores = self._world()
+        boom = mock.patch.object(
+            journeys, "_a11y_sweep_cell", side_effect=journeys.ProductFailure("boom"))
+        boom.start()
+        self.addCleanup(boom.stop)
+        with self.assertRaisesRegex(journeys.ProductFailure, "boom"):
+            self._run(context)
+        self.assertEqual(restores, [{
+            "font_scale": "1.0", "system_locales": "en-US",
+            "night_mode": "Night mode: no",
+        }])
+
+    def test_sweep_blocks_when_density_is_unreadable(self):
+        context, _restores = self._world(density="")
+        with self.assertRaisesRegex(journeys.CapabilityBlocked, "wm density"):
+            self._run(context)
+
+    def test_sweep_blocks_when_the_oracle_cannot_run(self):
+        context, _restores = self._world()
+
+        def broken(nodes, **kwargs):
+            raise self.oracle.A11yOracleError("bad dump")
+
+        with mock.patch.object(self.oracle, "summarize_findings", broken):
+            with self.assertRaisesRegex(journeys.CapabilityBlocked, "could not run the a11y oracle"):
+                self._run(context)
+        cells = json.loads((context["row_dir"] / "a11y-sweep-cells.json").read_text())
+        self.assertEqual(len(cells), 8 * 7)
+        self.assertTrue(all(cell["status"] == "BLOCKED" for cell in cells))
+
+    def test_sweep_fails_product_when_the_oracle_finds_a_defect(self):
+        context, _restores = self._world()
+        report = {
+            "ok": False, "node_count": 1, "interactive_count": 1,
+            "checks": {
+                "unlabeled_interactive": {
+                    "ok": False, "count": 1,
+                    "findings": [{"issue": "unlabeled_interactive", "rid": "sendButton",
+                                  "text": "", "content_desc": "", "bounds": "[0,0][10,10]"}],
+                },
+                "small_touch_targets": {"ok": True, "count": 0, "findings": []},
+                "missing_desc_images": {"ok": True, "count": 0, "findings": []},
+                "focus_order_issues": {"ok": True, "count": 0, "findings": []},
+            },
+        }
+        with mock.patch.object(self.oracle, "summarize_findings", return_value=report):
+            with self.assertRaisesRegex(journeys.ProductFailure, "failed the a11y oracle"):
+                self._run(context)
+        cells = json.loads((context["row_dir"] / "a11y-sweep-cells.json").read_text())
+        self.assertEqual(cells[0]["status"], "FINDINGS")
+        self.assertEqual(cells[0]["findings"][0]["rid"], "sendButton")
 
 
 if __name__ == "__main__":

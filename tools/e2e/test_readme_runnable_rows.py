@@ -25,6 +25,7 @@ RUNNABLE_ROWS = (
     "groups-contacts",
     "labels-lifecycle",
     "polls-reminders",
+    "accessibility-sweep",
 )
 
 BLOCKED_ROWS = (

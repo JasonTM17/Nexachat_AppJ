@@ -280,8 +280,9 @@ public-feed.md, calls.md).
   (`site/delete-account.html`) via recovery-email OTP.
 - **Account recovery & email OTP (V27):** `email_otps` stores HMAC-SHA256 digests
   of 6-digit codes (10-minute expiry, constant-time compare, 5-attempt limit, 60 s cooldown)
-  for email verification (`POST /api/v1/users/me/email/request`), password reset
-  (`POST /api/v1/auth/recovery/reset-password/request`), and web account deletion. Pluggable
+  for email verification (`PUT /api/v1/users/me/email`, `POST /api/v1/users/me/email/verify`),
+  password reset (`POST /api/v1/auth/password-reset/request`), and web account deletion
+  (`POST /api/v1/account-deletion/request`). Pluggable
   `MailSender` supports SMTP (Gmail, local Mailpit for dev) and Resend.
 - **Google sign-in (V28, V33):** OpenID Connect identity integration
   (`user_identities`, `google_signin_nonces`). Validates Google ID tokens via

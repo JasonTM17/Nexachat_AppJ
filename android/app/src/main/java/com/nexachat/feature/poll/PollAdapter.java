@@ -114,6 +114,7 @@ public final class PollAdapter extends ListAdapter<PollAdapter.Row, PollAdapter.
 
     static final class PollViewHolder extends RecyclerView.ViewHolder {
         private final ItemPollBinding binding;
+        @NonNull private String boundOptionsSignature = "";
 
         PollViewHolder(@NonNull ItemPollBinding binding) {
             super(binding.getRoot());
@@ -129,13 +130,26 @@ public final class PollAdapter extends ListAdapter<PollAdapter.Row, PollAdapter.
             binding.pollManage.setVisibility(row.canManage ? View.VISIBLE : View.GONE);
             binding.pollManage.setOnClickListener(anchor ->
                     listener.onManage(poll, binding.pollManage));
-            binding.pollOptions.removeAllViews();
             int maxCount = 0;
             for (PollOption option : poll.getOptions()) {
                 maxCount = Math.max(maxCount, option.getVoteCount());
             }
-            for (PollOption option : poll.getOptions()) {
-                addOption(context, poll, option, row, closed, maxCount, listener);
+            String signature = optionsSignature(poll);
+            if (signature.equals(boundOptionsSignature)
+                    && binding.pollOptions.getChildCount() == poll.getOptions().size()) {
+                // Same option set as the previous bind: update controls in place
+                // instead of re-inflating every row (vote updates would otherwise
+                // flicker on active polls).
+                for (int i = 0; i < poll.getOptions().size(); i++) {
+                    updateOption(context, poll, poll.getOptions().get(i), row, closed,
+                            maxCount, listener, binding.pollOptions.getChildAt(i));
+                }
+            } else {
+                boundOptionsSignature = signature;
+                binding.pollOptions.removeAllViews();
+                for (PollOption option : poll.getOptions()) {
+                    addOption(context, poll, option, row, closed, maxCount, listener);
+                }
             }
             binding.pollVoterCount.setText(
                     com.nexachat.res.QuantityStrings.pollVoterCount(
@@ -182,6 +196,47 @@ public final class PollAdapter extends ListAdapter<PollAdapter.Row, PollAdapter.
                         optionBinding.optionCount, option, checked, result, percent,
                         closed || row.voting, poll.getId(), listener);
             }
+        }
+
+        private void updateOption(
+                Context context,
+                Poll poll,
+                PollOption option,
+                Row row,
+                boolean closed,
+                int maxCount,
+                Listener listener,
+                View optionView) {
+            CompoundButton control = optionView.findViewById(R.id.optionControl);
+            LinearProgressIndicator progress = optionView.findViewById(R.id.optionProgress);
+            TextView countView = optionView.findViewById(R.id.optionCount);
+            if (control == null || progress == null || countView == null) {
+                boundOptionsSignature = "";
+                binding.pollOptions.removeAllViews();
+                for (PollOption opt : poll.getOptions()) {
+                    addOption(context, poll, opt, row, closed, maxCount, listener);
+                }
+                boundOptionsSignature = optionsSignature(poll);
+                return;
+            }
+            boolean checked = row.selection.contains(option.getId());
+            String count = com.nexachat.res.QuantityStrings.pollOptionVoteCount(
+                    context.getResources(), option.getVoteCount());
+            String names = voterNames(poll, option, row.voterNames);
+            String result = names.isEmpty()
+                    ? count
+                    : context.getString(R.string.poll_option_count_named, count, names);
+            int percent = maxCount == 0 ? 0 : Math.round(option.getVoteCount() * 100f / maxCount);
+            bindControl(control, progress, countView, option, checked, result, percent,
+                    closed || row.voting, poll.getId(), listener);
+        }
+
+        private static String optionsSignature(Poll poll) {
+            StringBuilder builder = new StringBuilder(poll.isMultipleChoice() ? "m|" : "s|");
+            for (PollOption option : poll.getOptions()) {
+                builder.append(option.getId()).append('|');
+            }
+            return builder.toString();
         }
 
         private void bindControl(

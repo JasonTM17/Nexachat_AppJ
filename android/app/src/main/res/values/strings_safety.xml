@@ -33,4 +33,9 @@
     <string name="safety_error_generic">Something went wrong</string>
     <string name="cd_starred_message">Starred message</string>
     <string name="cd_unblock">Unblock</string>
+    <string name="cd_unblock_user_named">Unblock %1$s</string>
+    <string name="user_unblocked_with_name">Unblocked %1$s</string>
+    <string name="cd_starred_message_row">Message from %1$s: %2$s</string>
+    <string name="cd_contact_row">%1$s, %2$s</string>
+    <string name="cd_contact_row_name_only">%1$s</string>
 </resources>

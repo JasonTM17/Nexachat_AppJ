@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import concurrent.futures
+import hashlib
 import http.client
 import json
 import socket
+import socketserver
 import threading
 import time
 import unittest
@@ -314,7 +317,7 @@ class BarrierTests(unittest.TestCase):
         with Barrier(self.origin, max_body_bytes=8) as barrier:
             with self.assertLogs("response_barrier", level="WARNING"):
                 self.assertEqual(501, request(barrier.url, "/ws", headers={
-                    "Connection": "Upgrade", "Upgrade": "websocket"})[0])
+                    "Connection": "Upgrade", "Upgrade": "h2c"})[0])
                 self.assertEqual(501, request(barrier.url, "example.invalid:443", "CONNECT")[0])
             self.assertEqual(400, request(barrier.url, "http://example.invalid/")[0])
             self.assertEqual(400, request(barrier.url, "/", "POST", body=b"too-long-body")[0])
@@ -386,6 +389,488 @@ class BarrierTests(unittest.TestCase):
         for kwargs in ({"max_held": 0}, {"io_timeout": float("nan")}, {"max_hold_time": 0}):
             with self.assertRaises(ValueError):
                 Barrier(self.origin, **kwargs)
+
+
+# --- WebSocket tunnel fixtures (stdlib RFC 6455) -------------------------
+
+_WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+
+def _ws_accept(key):
+    return base64.b64encode(
+        hashlib.sha1((key + _WS_GUID).encode("ascii")).digest()).decode("ascii")
+
+
+def _ws_encode(opcode, payload, *, mask, fin=True):
+    if isinstance(payload, str):
+        payload = payload.encode("utf-8")
+    header = bytearray(((0x80 if fin else 0) | opcode,))
+    mask_bit = 0x80 if mask else 0
+    size = len(payload)
+    if size < 126:
+        header.append(mask_bit | size)
+    elif size <= 0xFFFF:
+        header.append(mask_bit | 126)
+        header += size.to_bytes(2, "big")
+    else:
+        header.append(mask_bit | 127)
+        header += size.to_bytes(8, "big")
+    if mask:
+        header += b"\x11\x22\x33\x44"
+        payload = bytes(b ^ b"\x11\x22\x33\x44"[i & 3] for i, b in enumerate(payload))
+    return bytes(header) + payload
+
+
+class _WsReader:
+    """Buffered RFC 6455 reader shared by the test client and upstream."""
+
+    def __init__(self, sock, *, mask_out, pending=b"", require_mask=False):
+        self.sock = sock
+        self.mask_out = mask_out
+        self.require_mask = require_mask
+        self.buf = bytearray(pending)
+        self.pongs = []
+
+    def _exact(self, count, deadline):
+        while len(self.buf) < count:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("websocket read timed out")
+            self.sock.settimeout(remaining)
+            try:
+                chunk = self.sock.recv(min(65536, count - len(self.buf) + 4096))
+            except socket.timeout:
+                continue
+            if not chunk:
+                raise EOFError("websocket peer closed")
+            self.buf += chunk
+        out = bytes(self.buf[:count])
+        del self.buf[:count]
+        return out
+
+    def frame(self, deadline):
+        first, second = self._exact(2, deadline)
+        fin, opcode = bool(first & 0x80), first & 0x0F
+        masked, size = bool(second & 0x80), second & 0x7F
+        if self.require_mask and not masked:
+            raise ConnectionError("client-role frame arrived unmasked")
+        if size == 126:
+            size = int.from_bytes(self._exact(2, deadline), "big")
+        elif size == 127:
+            size = int.from_bytes(self._exact(8, deadline), "big")
+        key = self._exact(4, deadline) if masked else b""
+        payload = self._exact(size, deadline) if size else b""
+        if masked:
+            payload = bytes(b ^ key[i & 3] for i, b in enumerate(payload))
+        return fin, opcode, payload
+
+    def send(self, opcode, payload, fin=True):
+        self.sock.sendall(_ws_encode(opcode, payload, mask=self.mask_out, fin=fin))
+
+    def message(self, deadline):
+        """Next complete data message as (opcode, payload); None on close/EOF."""
+        frag_op, parts = None, []
+        while True:
+            try:
+                fin, opcode, payload = self.frame(deadline)
+            except (EOFError, TimeoutError, OSError):
+                return None
+            if opcode == 0x9:
+                self.send(0xA, payload)
+                continue
+            if opcode == 0xA:
+                self.pongs.append(payload)
+                continue
+            if opcode == 0x8:
+                return None
+            if opcode == 0x0:
+                if frag_op is None:
+                    return None
+                parts.append(payload)
+                if fin:
+                    return frag_op, b"".join(parts)
+            elif opcode in (0x1, 0x2):
+                frag_op, parts = opcode, [payload]
+                if fin:
+                    return opcode, payload
+            else:
+                return None
+
+
+class _WsClient:
+    """RFC 6455 client used to drive the barrier's downstream leg."""
+
+    def __init__(self, origin, path="/ws", *, version="13", include_key=True,
+                 extra_headers=None):
+        target = urlsplit(origin)
+        self.sock = socket.create_connection((target.hostname, target.port), timeout=4)
+        self.sock.settimeout(4)
+        lines = [
+            f"GET {path} HTTP/1.1",
+            f"Host: {target.hostname}:{target.port}",
+            "Upgrade: websocket",
+            "Connection: Upgrade",
+        ]
+        if include_key:
+            key = base64.b64encode(b"0123456789abcdef").decode("ascii")
+            lines.append(f"Sec-WebSocket-Key: {key}")
+        if version:
+            lines.append(f"Sec-WebSocket-Version: {version}")
+        for name, value in (extra_headers or {}).items():
+            lines.append(f"{name}: {value}")
+        self.sock.sendall(("\r\n".join(lines) + "\r\n\r\n").encode("latin-1"))
+        head = bytearray()
+        while b"\r\n\r\n" not in head and len(head) <= 65536:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                break
+            head += chunk
+        status_line = bytes(head).split(b"\r\n", 1)[0]
+        try:
+            self.status = int(status_line.split()[1])
+        except (IndexError, ValueError):
+            self.status = 0
+        _, _, pending = bytes(head).partition(b"\r\n\r\n")
+        self.reader = _WsReader(self.sock, mask_out=True, pending=pending)
+
+    def stomp(self, command, headers=None, body=""):
+        lines = [command] + [f"{key}:{value}" for key, value in (headers or {}).items()]
+        self.reader.send(0x1, "\n".join(lines) + "\n\n" + body + "\x00")
+
+    def connect_stomp(self, token):
+        self.stomp("CONNECT", {"accept-version": "1.2", "heart-beat": "0,0",
+                               "Authorization": "Bearer " + token})
+
+    def recv_stomp(self, timeout):
+        """Next STOMP frame as (command, headers, body); None on timeout/close."""
+        deadline = time.monotonic() + timeout
+        while True:
+            got = self.reader.message(deadline)
+            if got is None:
+                return None
+            opcode, payload = got
+            if opcode != 0x1:
+                continue
+            text = payload.decode("utf-8", "replace").lstrip("\n")
+            if not text:
+                continue
+            frame = text.split("\x00", 1)[0]
+            head, _, body = frame.partition("\n\n")
+            lines = head.split("\n")
+            command = lines[0].strip() if lines else ""
+            headers = {}
+            for line in lines[1:]:
+                key, sep, value = line.partition(":")
+                if sep:
+                    headers[key.strip()] = value.strip()
+            return command, headers, body
+
+    def recv_frame(self, timeout):
+        """Next raw frame as (opcode, payload); None on timeout/close."""
+        deadline = time.monotonic() + timeout
+        try:
+            _fin, opcode, payload = self.reader.frame(deadline)
+        except (EOFError, TimeoutError, OSError):
+            return None
+        return opcode, payload
+
+    def close(self):
+        try:
+            self.reader.send(0x8, b"")
+        except OSError:
+            pass
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+
+class _WsUpstreamHandler(socketserver.BaseRequestHandler):
+    """Minimal WS+STOMP upstream: CONNECT->CONNECTED, SEND->MESSAGE echo."""
+
+    def handle(self):
+        sock = self.request
+        sock.settimeout(4)
+        head = bytearray()
+        try:
+            while b"\r\n\r\n" not in head and len(head) <= 65536:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    return
+                head += chunk
+        except OSError:
+            return
+        header_block, _, leftover = bytes(head).partition(b"\r\n\r\n")
+        headers = {}
+        for line in header_block.split(b"\r\n")[1:]:
+            name, sep, value = line.partition(b":")
+            if sep:
+                headers[name.decode("latin-1").strip().lower()] = \
+                    value.decode("latin-1").strip()
+        server = self.server
+        with server.lock:
+            server.connections += 1
+            server.live.add(sock)
+        try:
+            if server.reject_upgrade or "sec-websocket-key" not in headers:
+                sock.sendall(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n"
+                             b"Connection: close\r\n\r\n")
+                return
+            accept = _ws_accept(headers["sec-websocket-key"])
+            sock.sendall(("HTTP/1.1 101 Switching Protocols\r\n"
+                          "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+                          f"Sec-WebSocket-Accept: {accept}\r\n\r\n").encode("latin-1"))
+            reader = _WsReader(sock, mask_out=False, pending=leftover,
+                               require_mask=True)
+            with server.lock:
+                server.readers.append(reader)
+            while True:
+                got = reader.message(time.monotonic() + 15)
+                if got is None:
+                    return
+                opcode, payload = got
+                if opcode != 0x1:
+                    continue
+                text = payload.decode("utf-8", "replace")
+                with server.lock:
+                    server.texts.append(text)
+                raw_frame = text.lstrip("\n")
+                if not raw_frame or "\x00" not in raw_frame:
+                    continue
+                frame = raw_frame.split("\x00", 1)[0]
+                head_part, _, body = frame.partition("\n\n")
+                cmd_lines = head_part.split("\n")
+                command = cmd_lines[0].strip().upper() if cmd_lines else ""
+                destination = ""
+                for line in cmd_lines[1:]:
+                    key, sep, value = line.partition(":")
+                    if sep and key.strip().lower() == "destination":
+                        destination = value.strip()
+                with server.lock:
+                    server.events.append((command, destination, body))
+                if command in ("CONNECT", "STOMP"):
+                    reader.send(0x1, "CONNECTED\nversion:1.2\n\n\x00")
+                elif command == "SEND":
+                    if body == "@ping":
+                        reader.send(0x9, b"upstream-ping")
+                        continue
+                    topic = destination
+                    prefix, suffix = "/app/conversations/", "/messages"
+                    if destination.startswith(prefix) and destination.endswith(suffix):
+                        topic = "/topic/conversations." + \
+                            destination[len(prefix):-len(suffix)]
+                    reader.send(0x1, f"MESSAGE\ndestination:{topic}\n"
+                                    f"subscription:sub-0\n\n{body}\x00")
+                elif command == "DISCONNECT":
+                    return
+        finally:
+            with server.lock:
+                server.live.discard(sock)
+                server.connections -= 1
+            try:
+                sock.close()
+            except OSError:
+                pass
+
+
+class _WsUpstreamServer(socketserver.ThreadingTCPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+    def __init__(self, address):
+        super().__init__(address, _WsUpstreamHandler)
+        self.events = []
+        self.texts = []
+        self.readers = []
+        self.live = set()
+        self.lock = threading.Lock()
+        self.reject_upgrade = False
+        self.connections = 0
+
+
+class WsTunnelTests(unittest.TestCase):
+    def setUp(self):
+        self.upstream = _WsUpstreamServer(("127.0.0.1", 0))
+        self.upstream_thread = threading.Thread(
+            target=self.upstream.serve_forever, kwargs={"poll_interval": 0.01})
+        self.upstream_thread.start()
+        self.origin = f"http://127.0.0.1:{self.upstream.server_address[1]}"
+        self.clients = []
+
+    def tearDown(self):
+        for client in self.clients:
+            client.close()
+        with self.upstream.lock:
+            live = list(self.upstream.live)
+        for sock in live:
+            try:
+                sock.close()
+            except OSError:
+                pass
+        self.upstream.shutdown()
+        self.upstream.server_close()
+        self.upstream_thread.join(2)
+        self.assertFalse(self.upstream_thread.is_alive())
+
+    def _client(self, origin, token=None, **kwargs):
+        client = _WsClient(origin, **kwargs)
+        self.clients.append(client)
+        if client.status == 101 and token is not None:
+            client.connect_stomp(token)
+        return client
+
+    def test_upgrade_is_accepted_and_stomp_frames_flow_both_ways(self):
+        with Barrier(self.origin) as barrier:
+            client = self._client(barrier.url, "token-a")
+            self.assertEqual(101, client.status)
+            command, _headers, _body = client.recv_stomp(3)
+            self.assertEqual("CONNECTED", command)
+            client.stomp("SEND", {"destination": "/app/conversations/9/messages"},
+                         body='{"content":"hello"}')
+            command, headers, body = client.recv_stomp(3)
+            self.assertEqual("MESSAGE", command)
+            self.assertEqual("/topic/conversations.9", headers["destination"])
+            self.assertEqual('{"content":"hello"}', body)
+            client.reader.send(0x1, "\n")  # STOMP heartbeat passes through
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                with self.upstream.lock:
+                    if "\n" in self.upstream.texts:
+                        break
+                time.sleep(0.05)
+            else:
+                self.fail("STOMP heartbeat never reached the upstream")
+            with self.upstream.lock:
+                commands = [event[0] for event in self.upstream.events]
+            self.assertEqual(["CONNECT", "SEND"], commands)
+
+    def test_inbound_message_is_held_per_token_until_release(self):
+        with Barrier(self.origin) as barrier:
+            barrier.hold(path=r"^/topic/conversations\.", method="MESSAGE",
+                         token_contains="token-a")
+            client_a = self._client(barrier.url, "token-a")
+            client_a.recv_stomp(3)
+            client_b = self._client(barrier.url, "token-b")
+            client_b.recv_stomp(3)
+            client_a.stomp("SEND", {"destination": "/app/conversations/9/messages"},
+                           body="a-frame")
+            client_b.stomp("SEND", {"destination": "/app/conversations/9/messages"},
+                           body="b-frame")
+            command, _headers, body = client_b.recv_stomp(3)
+            self.assertEqual("b-frame", body)
+            held = barrier.wait_held(1, timeout=3)
+            self.assertTrue(held[0]["path"].startswith("s2c MESSAGE"))
+            self.assertIn("/topic/conversations.9", held[0]["path"])
+            self.assertIsNone(client_a.recv_stomp(0.4))
+            self.assertEqual([held[0]["id"]], barrier.release())
+            command, _headers, body = client_a.recv_stomp(3)
+            self.assertEqual("a-frame", body)
+            self.assertEqual([], barrier.held())
+
+    def test_client_to_server_message_is_held_before_upstream(self):
+        with Barrier(self.origin) as barrier:
+            barrier.hold(path=r"^/app/", method="SEND", token_contains="token-a")
+            client = self._client(barrier.url, "token-a")
+            client.recv_stomp(3)
+            client.stomp("SEND", {"destination": "/app/conversations/9/messages"},
+                         body="held-send")
+            held = barrier.wait_held(1, timeout=3)
+            self.assertIn("c2s SEND", held[0]["path"])
+            deadline = time.monotonic() + 0.5
+            seen_send = False
+            while time.monotonic() < deadline:
+                with self.upstream.lock:
+                    seen_send = any(event[0] == "SEND" for event in self.upstream.events)
+                if seen_send:
+                    break
+                time.sleep(0.05)
+            self.assertFalse(seen_send)
+            barrier.release()
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                with self.upstream.lock:
+                    if any(event[0] == "SEND" for event in self.upstream.events):
+                        break
+                time.sleep(0.05)
+            else:
+                self.fail("upstream never received the held SEND")
+            _command, _headers, body = client.recv_stomp(3)
+            self.assertEqual("held-send", body)
+
+    def test_held_frame_is_dropped_when_its_connection_closes(self):
+        with Barrier(self.origin) as barrier:
+            barrier.hold(path=r"^/topic/", method="MESSAGE", token_contains="token-a")
+            client_a = self._client(barrier.url, "token-a")
+            client_a.recv_stomp(3)
+            client_b = self._client(barrier.url, "token-b")
+            client_b.recv_stomp(3)
+            client_a.stomp("SEND", {"destination": "/app/conversations/9/messages"},
+                           body="a-frame")
+            held = barrier.wait_held(1, timeout=3)
+            client_a.close()
+            time.sleep(0.3)
+            self.assertIn(held[0]["id"], barrier.release())
+            self.assertEqual([], barrier.held())
+            client_b.stomp("SEND", {"destination": "/app/conversations/9/messages"},
+                           body="b-frame")
+            _command, _headers, body = client_b.recv_stomp(3)
+            self.assertEqual("b-frame", body)
+
+    def test_fragmented_client_message_is_reassembled_upstream(self):
+        with Barrier(self.origin) as barrier:
+            client = self._client(barrier.url, "token-a")
+            client.recv_stomp(3)
+            frame_text = ("SEND\ndestination:/app/conversations/9/messages\n\n"
+                          "reassembled-payload\x00")
+            client.reader.send(0x1, frame_text[:17], fin=False)
+            client.reader.send(0x0, frame_text[17:], fin=True)
+            _command, _headers, body = client.recv_stomp(3)
+            self.assertEqual("reassembled-payload", body)
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                with self.upstream.lock:
+                    hits = sum("reassembled-payload" in text
+                               for text in self.upstream.texts)
+                if hits:
+                    break
+                time.sleep(0.05)
+            else:
+                self.fail("upstream never received the reassembled message")
+            self.assertEqual(1, hits)
+
+    def test_ping_is_answered_and_close_propagates(self):
+        with Barrier(self.origin) as barrier:
+            client = self._client(barrier.url, "token-a")
+            client.recv_stomp(3)
+            client.reader.send(0x9, b"ping-1")
+            got = client.recv_frame(3)
+            self.assertEqual((0xA, b"ping-1"), got)
+            client.stomp("SEND", {"destination": "/app/echo"}, body="@ping")
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                if any(reader.pongs for reader in self.upstream.readers):
+                    break
+                time.sleep(0.05)
+            self.assertTrue(any(reader.pongs for reader in self.upstream.readers))
+            self.assertIsNone(client.recv_stomp(0.3))
+            client.reader.send(0x8, b"")
+            deadline = time.monotonic() + 3
+            while self.upstream.connections and time.monotonic() < deadline:
+                time.sleep(0.05)
+            self.assertEqual(0, self.upstream.connections)
+
+    def test_malformed_websocket_handshake_is_rejected(self):
+        with Barrier(self.origin) as barrier:
+            no_key = self._client(barrier.url, include_key=False)
+            self.assertEqual(400, no_key.status)
+            bad_version = self._client(barrier.url, version="12")
+            self.assertEqual(400, bad_version.status)
+
+    def test_upstream_handshake_rejection_is_forwarded(self):
+        self.upstream.reject_upgrade = True
+        with Barrier(self.origin) as barrier:
+            client = self._client(barrier.url, "token-a")
+            self.assertEqual(403, client.status)
 
 
 if __name__ == "__main__":

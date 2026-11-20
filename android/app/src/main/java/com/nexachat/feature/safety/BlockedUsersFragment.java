@@ -14,7 +14,7 @@ import com.nexachat.R;
 import com.nexachat.databinding.FragmentBlockedUsersBinding;
 import dagger.hilt.android.AndroidEntryPoint;
 
-/** The caller's blocked-user list; each row offers inline unblock with undo. */
+/** The caller's blocked-user list; each row offers inline unblock with a confirmation snackbar. */
 @AndroidEntryPoint
 public final class BlockedUsersFragment extends Fragment {
 
@@ -35,9 +35,15 @@ public final class BlockedUsersFragment extends Fragment {
                 ignored -> NavHostFragment.findNavController(this).navigateUp());
         adapter = new BlockedUserAdapter(user -> {
             viewModel.unblock(user.userId());
-            String label = user.displayName() == null ? "" : user.displayName();
+            String label = user.displayName() == null || user.displayName().isBlank()
+                    ? "" : user.displayName();
+            int message = label.isEmpty()
+                    ? R.string.user_unblocked_snackbar
+                    : R.string.user_unblocked_with_name;
             Snackbar.make(binding.getRoot(),
-                            getString(R.string.user_unblocked_snackbar) + " " + label,
+                            label.isEmpty()
+                                    ? getString(message)
+                                    : getString(message, label),
                             Snackbar.LENGTH_SHORT)
                     .show();
         });
@@ -55,6 +61,8 @@ public final class BlockedUsersFragment extends Fragment {
                 }
             }
         });
+        binding.blockedEmpty.setIcon(R.drawable.ic_block);
+        binding.blockedEmpty.setMessage(getString(R.string.blocked_users_empty));
         binding.blockedError.setOnRetry(() -> viewModel.refresh());
         viewModel.getUiState().observe(getViewLifecycleOwner(), state -> {
             adapter.submit(state.getItems());

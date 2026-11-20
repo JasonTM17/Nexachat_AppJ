@@ -17,29 +17,31 @@ import mail_sink
 
 
 def sample_reset_password_text(code: str = "482910") -> str:
-    """Mirrors OtpMailContent.forCode(RESET_PASSWORD, code) text layout."""
-    english_action = "reset your NexaChat password"
-    vietnamese_action = "đặt lại mật khẩu NexaChat"
+    """Mirrors OtpMailContent.forCode(RESET_PASSWORD, code) EN text layout."""
     return (
-        f"NexaChat security code: {code}\n"
-        f"Use this code to {english_action}. It expires in 10 minutes.\n\n"
-        f"Mã bảo mật NexaChat: {code}\n"
-        f"Dùng mã này để {vietnamese_action}. Mã hết hạn sau 10 phút.\n\n"
-        "If you did not request a password reset, ignore this email.\n"
-        "Nếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này."
+        "NexaChat\r\n\r\nReset your password\r\n"
+        "Enter this code in NexaChat to choose a new password.\r\n\r\n"
+        f"Your code: {code}\r\n"
+        "It expires in 10 minutes.\r\n\r\n"
+        "Never share this code. NexaChat will never ask you for it.\r\n"
+        "If you did not ask to reset your password, you can ignore this email. "
+        "Your password stays the same.\r\n\r\n--\r\n"
+        "This message was sent automatically, please do not reply."
     )
 
 
 def sample_reset_password_html(code: str = "482910") -> str:
-    english_action = "reset your NexaChat password"
-    vietnamese_action = "đặt lại mật khẩu NexaChat"
+    """Mirrors the real HTML layout: hidden preheader plus the 34px code box."""
     return (
-        f"<p>NexaChat security code: <strong>{code}</strong></p>"
-        f"<p>Use this code to {english_action}. It expires in 10 minutes.</p>"
-        f"<hr><p>Mã bảo mật NexaChat: <strong>{code}</strong></p>"
-        f"<p>Dùng mã này để {vietnamese_action}. Mã hết hạn sau 10 phút.</p>"
-        "<p>If you did not request this, ignore this email."
-        "<br>Nếu bạn không yêu cầu thao tác này, hãy bỏ qua email này.</p>"
+        "<!doctype html><html><body>"
+        f"<div style=\"display:none;\">Your code is {code}. "
+        "It expires in 10 minutes.</div>"
+        "<h1>Reset your password</h1>"
+        "<p>Enter this code in NexaChat to choose a new password.</p>"
+        f"<div style=\"font-size:34px;font-weight:700;\">{code}</div>"
+        "<p>It expires in 10 minutes.</p>"
+        "<p>Never share this code. NexaChat will never ask you for it.</p>"
+        "</body></html>"
     )
 
 

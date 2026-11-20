@@ -24,6 +24,8 @@ final class InviteRequestAdapter
         void onReview(@NonNull String requestId, boolean approve);
     }
 
+    private static final Object PAYLOAD_ACTIONS_ENABLED = new Object();
+
     private final Listener listener;
     private boolean actionsEnabled = true;
 
@@ -62,8 +64,9 @@ final class InviteRequestAdapter
     }
 
     void setActionsEnabled(boolean enabled) {
+        if (actionsEnabled == enabled) return;
         actionsEnabled = enabled;
-        notifyItemRangeChanged(0, getItemCount());
+        notifyItemRangeChanged(0, getItemCount(), PAYLOAD_ACTIONS_ENABLED);
     }
 
     @NonNull @Override
@@ -71,6 +74,19 @@ final class InviteRequestAdapter
         View row = LayoutInflater.from(parent.getContext())
                 .inflate(R.layout.item_invite_join_request, parent, false);
         return new Holder(row);
+    }
+
+    @Override
+    public void onBindViewHolder(
+            @NonNull Holder holder,
+            int position,
+            @NonNull java.util.List<Object> payloads) {
+        if (!payloads.isEmpty()) {
+            holder.approve.setEnabled(actionsEnabled);
+            holder.reject.setEnabled(actionsEnabled);
+            return;
+        }
+        super.onBindViewHolder(holder, position, payloads);
     }
 
     @Override

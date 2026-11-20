@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Guarded coordinator for the phase 08 stable-journey campaign.
 
-Runnable rows are seeded login, send/receive, chat-interactions, summary-ask,
-archive/preferences, groups-contacts, labels-lifecycle, polls-reminders,
-offline-sync, and the two injected-push journeys.
+Runnable rows are seeded login, auth-session-lifecycle, send/receive,
+chat-interactions, summary-ask, archive/preferences, groups-contacts,
+labels-lifecycle, polls-reminders, offline-sync, and the two
+injected-push journeys.
 Every other matrix row stays BLOCKED_CAPABILITY with the gap that still
 prevents that row from producing its evidence.
 """
@@ -16,6 +17,7 @@ import importlib
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import time
@@ -127,14 +129,13 @@ ROWS: tuple[JourneyRow, ...] = (
         captures=("paired account UI screenshots", "sanitized REST/STOMP transcripts", "logcat.txt", "summary.json"),
         cleanup=("Remove only generated disposable accounts and their owned rows"),
         rest_plan=(("POST", "/api/v1/auth/register"), ("POST", "/api/v1/auth/login"),
-                   ("POST", "/api/v1/auth/refresh"), ("POST", "/api/v1/auth/logout-all"),
-                   ("GET", "/api/v1/users/me")),
-        capability_gap=("response_barrier can hold account A's REST response for GET /api/v1/conversations and "
-                        "release it after the switch. STOMP stays unproven: the barrier refuses WebSocket upgrades "
-                        "with HTTP 501, so an in-flight STOMP frame during A→B is not paused and B's socket "
-                        "isolation is not evidence. Registration, invalid-credential UI, refresh, logout, "
-                        "logout-all, password change, and saved-session restart are still not driven. Do not "
-                        "report the login slice as this full row."),
+                   ("POST", "/api/v1/auth/refresh"), ("POST", "/api/v1/auth/logout"),
+                   ("POST", "/api/v1/auth/logout-all"), ("PATCH", "/api/v1/auth/password"),
+                   ("GET", "/api/v1/users/me"), ("POST", "/api/v1/conversations/direct"),
+                   ("POST", "/api/v1/conversations/{id}/messages"),
+                   ("GET", "/api/v1/conversations/{id}/messages")),
+        stomp_plan=("CONNECT with Authorization per account", "SUBSCRIBE /topic/conversations.{id}",
+                    "hold account A inbound MESSAGE_CREATED while account B receives live"),
     ),
     JourneyRow(
         id="otp-forgot-password",
@@ -148,11 +149,7 @@ ROWS: tuple[JourneyRow, ...] = (
         rest_plan=(("PUT", "/api/v1/users/me/email"), ("POST", "/api/v1/users/me/email/verify"),
                    ("POST", "/api/v1/auth/password-reset/request"),
                    ("POST", "/api/v1/auth/password-reset/confirm")),
-        capability_gap=("mail_sink can start Mailpit and server_env() names the SMTP settings, but this "
-                        "coordinator does not restart the already-running local server, so those settings are "
-                        "not applied. EmailOtpService.CODE_TTL is 10 minutes with no test clock, so an expired "
-                        "code cannot be asserted. Wrong, reused, and resend therefore have no delivered-mail "
-                        "evidence yet."),
+        capability_gap=None,
     ),
     JourneyRow(
         id="chat-send-receive",
@@ -568,13 +565,12 @@ ROWS: tuple[JourneyRow, ...] = (
         title="Accessibility sweep (parameterized EN/VI × light/dark × 100%/200%)",
         matrix_refs=("phase-08:Accessibility", "c1-5:accessibility criteria"),
         preconditions=("Integrated RC and the critical-screen inventory are available"),
-        steps=("For each locale/night/font tuple, apply settings, visit critical screens and capture the UI"),
+        steps=("For each locale/night/font tuple, apply settings, visit critical screens and capture the UI",
+               "Run the a11y_oracle checks (labels, touch targets, image descs, focus order) on every critical screen"),
         assertions=("No clipped text or inaccessible critical action", "TalkBack and reduced-motion checks are recorded"),
         captures=("one screenshot per parameter tuple", "ui-tree.txt per tuple", "summary.json"),
         cleanup=("Restore original locale, night mode, font scale and network settings in finally"),
         rest_plan=(("GET", "/actuator/health/readiness"),),
-        capability_gap=("The helper can set and restore display settings, but there is no accepted critical-screen "
-                        "inventory or TalkBack/reduced-motion oracle. A screenshot-only sweep is not a pass."),
         variants=ACCESSIBILITY_VARIANTS,
     ),
     JourneyRow(
@@ -588,11 +584,12 @@ ROWS: tuple[JourneyRow, ...] = (
         cleanup=("Deletion itself is the cleanup; never use seed/owner accounts"),
         rest_plan=(("DELETE", "/api/v1/users/me"), ("POST", "/api/v1/account-deletion/request"),
                    ("POST", "/api/v1/account-deletion/confirm")),
-        capability_gap=("mail_sink can read a deletion OTP, but this coordinator does not restart the local "
-                        "server with server_env(), and no helper binds a disposable account into the debug UI. "
-                        "Wrong-password refusal on device, in-app confirmation, the deleted-account cache, "
-                        "peer-neutral history, and phone reuse on device stay unproven. The row stays last and "
-                        "must never target a seed user."),
+        capability_gap=("the mail/REST deletion flow runs against a disposable stack (--dstack), "
+                        "and the in-app UI slice (sign-in, wrong-password refusal, OTP confirm, "
+                        "deleted-account cache, phone reuse on device) runs when the stack owns "
+                        "the app's compile-time port; otherwise the row reports this gap. The "
+                        "peer's UI render of the tombstoned author stays unproven on a single "
+                        "device. The row stays last and must never target a seed user."),
     ),
 )
 
@@ -624,10 +621,14 @@ HELPER_CALLS = {
          "assert": "REACTION_UPDATED/MESSAGE_CREATED/MESSAGE_UPDATED/MESSAGE_DELETED/MESSAGE_READ"},
     ),
     "auth-session-lifecycle": (
-        {"helper": "response_barrier.Barrier.hold", "method": "GET",
-         "path": "^/api/v1/conversations$", "token_contains": "account A access token"},
-        {"helper": "response_barrier.Barrier.release", "when": "after the device session is account B"},
-        {"helper": "unproven", "transport": "STOMP", "reason": "WebSocket upgrade returns HTTP 501"},
+        {"helper": "response_barrier.Barrier.hold", "method": "MESSAGE",
+         "path": "^/topic/conversations.{id}$", "token_contains": "account A STOMP CONNECT token"},
+        {"helper": "response_barrier.Barrier.wait_held", "n": 1, "transport": "STOMP over WebSocket tunnel"},
+        {"helper": "response_barrier.Barrier.release", "when": "after account A's socket closes"},
+        {"helper": "realtime_probe.FrameReader", "actors": "A held + B live",
+         "subscribe": "/topic/conversations.{id}"},
+        {"helper": "e2e_common.Client", "rest": "register/login/refresh/logout/logout-all/password/direct/messages"},
+        {"helper": "patch_window", "ui": "invalid credentials, saved session, sign-out, sign-out-all, A to B switch"},
     ),
     "otp-forgot-password": (
         {"helper": "mail_sink.start"},
@@ -641,6 +642,15 @@ HELPER_CALLS = {
         {"helper": "mail_sink.server_env"},
         {"helper": "mail_sink.wait_for_message"},
         {"helper": "mail_sink.extract_otp"},
+        {"helper": "adb_ui.Device.tap_node", "target": "resource-id deleteAccountRow",
+         "opens": "resource-id deleteAccountToolbar"},
+        {"helper": "adb_ui.Device.type_text", "target": "resource-id passwordInput",
+         "assert": "resource-id inlineError renders the wrong-password refusal"},
+        {"helper": "adb_ui.Device.tap_node", "target": "resource-id sendDeletionCode",
+         "assert": "resource-id deletionCodeSentMessage renders"},
+        {"helper": "adb_ui.Device.type_text", "target": "resource-id deletionCodeInput"},
+        {"helper": "adb_ui.Device.tap_node", "target": "resource-id confirmDelete",
+         "assert": "the login form returns (signed out)"},
         {"helper": "mail_sink.stop", "when": "finally"},
     ),
     "calls-injected-notification": (
@@ -826,6 +836,16 @@ HELPER_CALLS = {
          "then": ["adb", "-s", SERIAL, "install", "-r", "<v1.2-rc-apk>"],
          "blocked": "v1.2 RC and Room 14 build do not exist"},
     ),
+    "accessibility-sweep": (
+        {"helper": "stable_journeys.set_accessibility_variant",
+         "assert": "locale/night/font_scale applied per ACCESSIBILITY_VARIANTS tuple"},
+        {"helper": "stable_journeys.snapshot_settings + restore_settings",
+         "assert": "display settings restored in finally"},
+        {"helper": "a11y_oracle.summarize_findings",
+         "assert": "labels/touch-target/image-desc/focus-order checks per critical screen"},
+        {"helper": "a11y_oracle.get_enabled_accessibility_services + restore_talkback",
+         "assert": "TalkBack state snapshotted, recorded and restored"},
+    ),
 }
 
 UI_MARKERS = {
@@ -928,8 +948,19 @@ UI_MARKERS = {
     ),
     "room-13-14-upgrade": ("text:queued message before and after migration"),
     "v111-rc-upgrade": ("text:Sign in", "text:Binh"),
-    "accessibility-sweep": ("ui-tree marker for each of 8 locale/theme/font variants",),
-    "account-deletion": ("text:localized deletion confirmation", "text:Sign in"),
+    "accessibility-sweep": (
+        "resource-id:conversationList", "resource-id:messageInput",
+        "resource-id:archiveTabs", "resource-id:profileName",
+        "resource-id:select_dialog_listview", "resource-id:contactList",
+    ),
+    "account-deletion": (
+        "resource-id:deleteAccountRow", "resource-id:deleteAccountToolbar",
+        "resource-id:passwordInput", "resource-id:confirmDelete",
+        "resource-id:inlineError", "text:Current password is incorrect",
+        "resource-id:sendDeletionCode", "resource-id:deletionCodeSentMessage",
+        "resource-id:deletionCodeInput", "resource-id:deleteProgress",
+        "text:Delete my account", "text:Sign in",
+    ),
 }
 
 
@@ -5844,6 +5875,26 @@ _OFFLINE_SYNC_POLL_S = 180.0
 _OFFLINE_ROW_SWEEP_LIMIT = 56  # ~1-viewport page-downs per inbox row scan cycle
 
 
+# --- accessibility-sweep ------------------------------------------------------
+# The accepted critical-screen inventory: every (locale, night, font_scale)
+# variant must visit each screen below and pass the a11y_oracle checks on its
+# dumped UI tree. Marker rids come from the screen layouts -- fragment_inbox
+# (conversationList), fragment_chat (messageInput), fragment_archive
+# (archiveTabs), fragment_profile (profileName), the conversation-labels
+# AlertDialog (select_dialog_listview), fragment_contacts (contactList). The
+# direct and group chat share fragment_chat, so the executor tells the two
+# chat cells apart by the seeded peer/group title rendered in the chat header.
+CRITICAL_SCREENS: tuple[dict[str, str], ...] = (
+    {"screen": "inbox", "marker_rid": "conversationList"},
+    {"screen": "direct-chat", "marker_rid": "messageInput"},
+    {"screen": "group-chat", "marker_rid": "messageInput"},
+    {"screen": "archive", "marker_rid": "archiveTabs"},
+    {"screen": "settings", "marker_rid": "profileName"},
+    {"screen": "labels", "marker_rid": "select_dialog_listview"},
+    {"screen": "contacts", "marker_rid": "contactList"},
+)
+
+
 def _offline_patch(context: dict[str, Any], fn: str, *args: Any, **kwargs: Any) -> Any:
     """Run a patch_window step, translating its product defect into ours."""
     patch = context["helpers"][2]
@@ -6647,9 +6698,13 @@ def _offline_sign_out(context: dict[str, Any]) -> None:
 
 
 def _offline_sign_in(context: dict[str, Any], phone: str,
-                     display_name: str) -> None:
-    """Drive the real login form for a seeded account, then prove the profile
-    identifies that account — the same probe _assert_device_account_an uses."""
+                     display_name: str, password: str | None = None) -> None:
+    """Drive the real login form for an account, then prove the profile
+    identifies that account — the same probe _assert_device_account_an uses.
+
+    password defaults to the seeded patch_window PASSWORD; disposable
+    accounts pass their own password explicitly.
+    """
     patch = context["helpers"][2]
     ui = context["device"]
     deadline = time.monotonic() + 45
@@ -6669,12 +6724,13 @@ def _offline_sign_in(context: dict[str, Any], phone: str,
     # attempt-1), and the first tap right after the form draws can miss input
     # focus while the IME settles (run-11 attempt-2). Refill-and-verify a
     # bounded number of times before giving up.
-    password = getattr(patch, "PASSWORD", "password123")
+    resolved_password = (password if password is not None
+                         else getattr(patch, "PASSWORD", "password123"))
     for _attempt in range(3):
         try:
             patch.fill_login_field(ui, "phoneInput", phone)
             ui.key("KEYCODE_BACK")
-            patch.fill_login_field(ui, "passwordInput", password)
+            patch.fill_login_field(ui, "passwordInput", resolved_password)
         except Exception:
             if _attempt == 2:
                 raise
@@ -7836,9 +7892,86 @@ def _complete_password_reset(context: dict[str, Any], mail: Any, phone: str, ema
     _expect_status(fresh, {204}, "resent reset code")
 
 
-def _with_mail_sink(context: dict[str, Any], row: JourneyRow, action: Callable[[Any], None]) -> None:
+def _import_disposable_stack():
+    if str(E2E_DIR) not in sys.path:
+        sys.path.insert(0, str(E2E_DIR))
+    return importlib.import_module("disposable_stack")
+
+
+# Rows that provision their own backend through apply_server_env when --dstack
+# is on; selected alone they do not require the shared local server.
+_DSTACK_SELF_PROVISIONED_ROWS = frozenset({"otp-forgot-password", "account-deletion"})
+
+
+def _dstack_apply_server_env(context: dict[str, Any], api: Any) -> Callable[[dict[str, str]], dict[str, Any]]:
+    """apply_server_env backed by disposable_stack: provision + start a private server.
+
+    The returned handle carries the stack base_url, a sql() bound to the
+    disposable database, and close() that stops the backend and drops the DB.
+    The stack lives under the row's attempt dir so repeated attempts and
+    neighbouring mail rows each get a fresh database. context may pin the
+    app port ("dstack_app_port") so the device app — whose base URL is
+    compile-time — can reach the stack.
+    """
+    def apply(env: dict[str, str]) -> dict[str, Any]:
+        dstack = _import_disposable_stack()
+        row_dir = context.get("row_dir") or Path(context["evidence_root"]) / "dstack-row"
+        stack = dstack.DisposableStack(
+            str(Path(row_dir) / "dstack"),
+            server_target=str(context.get("dstack_server_target")
+                              or dstack.DEFAULT_SERVER_TARGET))
+        pinned_port = context.get("dstack_app_port")
+        state = stack.provision(
+            app_port=int(pinned_port) if pinned_port else None,
+            extra_env=dict(env),
+            extra_java_args=[
+                # Mailpit is plaintext SMTP; the default config requires STARTTLS.
+                "--spring.mail.properties.mail.smtp.starttls.enable=false",
+                "--spring.mail.properties.mail.smtp.starttls.required=false",
+            ])
+        try:
+            stack.start()
+        except Exception:
+            try:
+                stack.stop()
+            except Exception:
+                pass
+            stack.dropdb()
+            raise
+        base_url = str(state.get("base_url") or dstack.base_url_for(int(state["app_port"])))
+
+        def close() -> None:
+            try:
+                stack.stop()
+            finally:
+                stack.dropdb()
+
+        return {"base_url": base_url, "stack": stack, "state": state,
+                "sql": stack.sql, "close": close}
+
+    return apply
+
+
+def _with_mail_sink(context: dict[str, Any], row: JourneyRow,
+                    action: Callable[[Any], None]) -> dict[str, Any] | None:
+    """Start Mailpit, hand its env to context["apply_server_env"], run action.
+
+    apply_server_env may return a disposable-server handle carrying "base_url"
+    (or a ready "client"), a "sql" callable, and "close". When a handle is
+    returned the action runs against that server: context["client"] and
+    context["base_url"] are swapped for the action (the stack recorder aliases
+    the campaign transcript) and restored afterwards, then close() and
+    mail.stop() run in that order.
+    """
+    apply_env = context.get("apply_server_env")
+    if apply_env is None:
+        raise CapabilityBlocked(
+            row.capability_gap
+            or "mail sink is not applied to the local server; rerun with --dstack")
     mail = context.get("mail_sink") or _import_mail_sink()
     started = False
+    handle: dict[str, Any] | None = None
+    previous: dict[str, Any] = {}
     try:
         mail.start()
         started = True
@@ -7848,22 +7981,68 @@ def _with_mail_sink(context: dict[str, Any], row: JourneyRow, action: Callable[[
             raise HarnessError("mail sink server_env() did not point at an SMTP sink")
         if PRODUCTION_HOST.casefold() in host.casefold():
             raise HarnessError("mail sink host looks like production")
-        apply_env = context.get("apply_server_env")
-        if apply_env is None:
-            raise CapabilityBlocked(row.capability_gap or "mail sink is not applied to the local server")
-        apply_env(env)
+        handle = apply_env(env)
+        if handle and (handle.get("base_url") or handle.get("client")):
+            previous = {"client": context["client"],
+                        "base_url": context.get("base_url")}
+            stack_client = handle.get("client")
+            if stack_client is None:
+                helpers = context.get("helpers") or _load_helpers()
+                stack_client = RecordingClient(
+                    helpers[0].Client(handle["base_url"], timeout=30))
+            if hasattr(stack_client, "records"):
+                stack_client.records = previous["client"].records
+            context["client"] = stack_client
+            context["base_url"] = str(handle.get("base_url") or previous["base_url"]).rstrip("/")
+            context["dstack_handle"] = handle
         action(mail)
+        return handle
     finally:
+        if previous:
+            context["client"] = previous["client"]
+            context["base_url"] = previous["base_url"]
+            context.pop("dstack_handle", None)
+        if handle and callable(handle.get("close")):
+            try:
+                handle["close"]()
+            except Exception as error:
+                context.setdefault("cleanup_errors", []).append(
+                    f"disposable stack teardown: {error}")
         if started:
             mail.stop()
 
 
-def run_otp_forgot_password(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
-    """Start the mail sink and reset a disposable password when the server can be pointed at it.
+def _prove_expired_reset_code(context: dict[str, Any], mail: Any, phone: str, email: str) -> None:
+    """Age a fresh reset code inside the disposable DB, then confirm it is refused.
 
-    The campaign does not restart an already-running server, and OTP expiry has
-    no test clock, so this executor always ends BLOCKED_CAPABILITY. It is not
-    registered for a device run.
+    EmailOtpService.CODE_TTL is fixed at 10 minutes, so expiry is proven by
+    rewinding expires_at on the disposable database rather than by waiting.
+    """
+    handle = context.get("dstack_handle") or {}
+    sql = handle.get("sql")
+    if sql is None:
+        raise CapabilityBlocked(
+            "expired-code proof needs a disposable database; rerun with --dstack")
+    if "'" in email or '"' in email:
+        raise HarnessError("disposable email must not contain quotes")
+    client = context["client"]
+    mail.clear()
+    context.get("sleep", time.sleep)(61)
+    requested = client.post("/api/v1/auth/password-reset/request", body={"phone": phone})
+    _expect_status(requested, {202}, "password reset expiry request")
+    code = _read_otp(mail, email)
+    sql("UPDATE email_otps SET expires_at = now() - interval '5 minutes' "
+        f"WHERE purpose = 'RESET_PASSWORD' AND email = '{email}' AND consumed_at IS NULL")
+    expired = _confirm_reset(client, phone, code, REPLACEMENT_PASSWORD + "-3")
+    _expect_status(expired, {400}, "expired reset code")
+
+
+def run_otp_forgot_password(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Reset a disposable password on a disposable stack pointed at Mailpit.
+
+    Requires context["apply_server_env"] (--dstack provisions a private
+    backend); without it the row stays BLOCKED_CAPABILITY before Mailpit or a
+    database is touched.
     """
     _campaign_serial(context)
     _campaign_base_url(context)
@@ -7872,10 +8051,11 @@ def run_otp_forgot_password(row: JourneyRow, context: dict[str, Any]) -> dict[st
 
     def action(mail: Any) -> None:
         _complete_password_reset(context, mail, phone, email)
-        raise CapabilityBlocked(row.capability_gap)
+        _prove_expired_reset_code(context, mail, phone, email)
 
     _with_mail_sink(context, row, action)
-    raise CapabilityBlocked(row.capability_gap)
+    return {"password_reset": "request/wrong/confirm/reuse/resend all behaved",
+            "expired_code": "aged OTP was refused by the disposable stack"}
 
 
 def _require_deletion_last(context: dict[str, Any]) -> None:
@@ -7884,75 +8064,1079 @@ def _require_deletion_last(context: dict[str, Any]) -> None:
         raise HarnessError("account deletion must run last")
 
 
-def _complete_account_deletion(context: dict[str, Any], mail: Any, phone: str, email: str) -> None:
+_DELETION_WRONG_PASSWORD_LABELS = ("Current password is incorrect",
+                                  "Mật khẩu hiện tại không đúng")
+_DELETION_CODE_SENT_LABELS = ("We sent a confirmation code to your verified email address",
+                              "Chúng tôi đã gửi mã xác nhận đến địa chỉ email đã xác minh của bạn")
+_DELETION_UNPROVEN = ("in-app confirmation, the deleted-account cache, peer-neutral "
+                      "history and phone reuse on device stay unproven")
+
+
+def _port_bindable(port: int) -> bool:
+    """True when the loopback port can be bound right now (no server owns it)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind(("127.0.0.1", int(port)))
+        except OSError:
+            return False
+        return True
+
+
+def _deletion_app_port(context: dict[str, Any]) -> int | None:
+    """Port the device app's compile-time base URL points at (10.0.2.2:<port>).
+
+    Reads the pre-swap campaign base URL when present: _with_mail_sink
+    temporarily replaces context["base_url"] with the stack's own URL.
+    """
+    base_url = str(context.get("deletion_app_base_url")
+                   or context.get("base_url") or "")
+    parsed = urlsplit(derive_emulator_base_url(base_url))
+    return parsed.port
+
+
+def _deletion_device_gap(context: dict[str, Any]) -> str | None:
+    """Explicit reason the in-app deletion UI cannot be driven, or None."""
+    if context.get("device") is None or context.get("adb") is None \
+            or not context.get("helpers"):
+        return (f"no device driver is bound to this context, so {_DELETION_UNPROVEN}")
+    handle = context.get("dstack_handle") or {}
+    stack_base = str(handle.get("base_url") or "")
+    if not stack_base:
+        return (f"the disposable stack did not report a base URL, so {_DELETION_UNPROVEN}")
+    app_port = _deletion_app_port(context)
+    stack_port = urlsplit(stack_base).port
+    if app_port is None or stack_port != app_port:
+        return (f"the app's compile-time base URL points at 10.0.2.2:{app_port} but the "
+                f"disposable stack serves {stack_base or 'an unknown port'}; stop the shared "
+                f"local server and rerun this row alone with --dstack so the stack can own "
+                f"the app port, otherwise {_DELETION_UNPROVEN}")
+    return None
+
+
+def _deletion_sign_in(context: dict[str, Any], phone: str, password: str,
+                      display_name: str) -> None:
+    """Relaunch the app and sign the disposable account in through the real UI.
+
+    A session left over from a previous backend is signed out first: its
+    token cannot be valid against the disposable stack's fresh JWT secret.
+    """
+    patch = context["helpers"][2]
+    _offline_relaunch(context)
+    deadline = time.monotonic() + 45
+    while True:
+        nodes = _ui_nodes(context)
+        if patch.login_form_visible(nodes):
+            break
+        if patch.inbox_visible(nodes):
+            _offline_sign_out(context)
+            break
+        if time.monotonic() >= deadline:
+            raise EnvironmentFailure(
+                f"neither the login form nor the inbox appeared for {display_name}")
+        time.sleep(0.7)
+    _offline_sign_in(context, phone, display_name, password=password)
+
+
+def _deletion_open_delete_screen(context: dict[str, Any]) -> None:
+    """Inbox -> profile -> the destructive deleteAccountRow -> delete screen."""
+    ui = context["device"]
+    patch = context["helpers"][2]
+    avatar = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "inboxUserAvatar"),
+        "the inbox profile entry point was not visible")
+    ui.tap_node(avatar)
+    _wait_ui_node(
+        context, lambda node: _rid_ends(node, "profileName"),
+        "the profile screen did not open")
+    _scroll_profile_until(context, "deleteAccountRow")
+    row = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "deleteAccountRow"),
+        "the Delete account row was not rendered")
+    ui.tap_node(row)
+    _wait_ui_node(
+        context, lambda node: _rid_ends(node, "deleteAccountToolbar"),
+        "the delete-account screen did not open", timeout=30)
+
+
+def _deletion_wait_signed_out(context: dict[str, Any], timeout: float = 60) -> None:
+    patch = context["helpers"][2]
+    deadline = time.monotonic() + timeout
+    while True:
+        if patch.login_form_visible(_ui_nodes(context)):
+            return
+        if time.monotonic() >= deadline:
+            raise ProductFailure("the app did not return to the login form after deletion")
+        time.sleep(0.7)
+
+
+def _deletion_device_slice(context: dict[str, Any], mail: Any, phone: str,
+                           email: str, token: str, peer: dict[str, Any]) -> dict[str, Any]:
+    """Drive the in-app deletion UI against the disposable stack.
+
+    Real rids from fragment_delete_account.xml: passwordInput, confirmDelete,
+    inlineError, sendDeletionCode, deletionCodeSentMessage, deletionCodeInput.
+    The OTP code is read from Mailpit and never logged or captured.
+    """
     client = context["client"]
-    registered = _register_disposable(client, phone, "Journey Delete")
-    token = registered["accessToken"]
-    _verify_recovery_email(client, mail, token, email)
-    denied = client.request(
-        "DELETE", "/api/v1/users/me", token=token, body={"password": "not-the-account-password"},
-    )
-    _expect_status(denied, {401}, "wrong password deletion")
+    ui = context["device"]
+    patch = context["helpers"][2]
+    peer_name = str(peer.get("displayName") or "Journey Peer")
+    peer_token = str(peer["accessToken"])
+    peer_phone = str(peer["phone"])
+
+    # Peer fixture: a direct conversation whose inbox row is titled by the
+    # peer, plus one unique message authored by the doomed account.
+    direct = client.post("/api/v1/conversations/direct", token=token,
+                         body={"phone": peer_phone})
+    _expect_status(direct, {200, 201}, "deletion peer direct conversation")
+    conversation_id = str((direct.json() or {}).get("id") or "")
+    if not conversation_id:
+        raise EnvironmentFailure("the direct conversation returned no id")
+    marker = "sj-del-" + uuid.uuid4().hex[:10]
+    sent = client.post(f"/api/v1/conversations/{conversation_id}/messages",
+                       token=token,
+                       body={"clientMessageId": str(uuid.uuid4()), "type": "TEXT",
+                             "content": marker, "attachmentIds": []})
+    _expect_status(sent, {200, 201}, "deletion peer marker message")
+
+    # 1. Deterministic sign-in of the disposable account through the real UI.
+    _deletion_sign_in(context, phone, DISPOSABLE_PASSWORD, "Journey Delete")
+
+    # 2. UI wrong-password refusal (password flow: passwordInput + confirmDelete).
+    _deletion_open_delete_screen(context)
+    patch.fill_login_field(ui, "passwordInput", "not-the-account-password")
+    ui.key("KEYCODE_BACK")
+    confirm = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "confirmDelete"),
+        "the Delete my account button was not rendered")
+    ui.tap_node(confirm)
+    _wait_ui_node(
+        context,
+        lambda node: _rid_ends(node, "inlineError")
+                     and patch.text_matches(node, _DELETION_WRONG_PASSWORD_LABELS),
+        "the wrong-password refusal (inlineError 'Current password is incorrect') "
+        "was not rendered")
     still_there = client.get("/api/v1/users/me", token=token)
-    _expect_status(still_there, {200}, "account after wrong password")
-    requested = client.post("/api/v1/account-deletion/request", body={"phone": phone})
-    _expect_status(requested, {202}, "deletion code request")
+    _expect_status(still_there, {200}, "account after the UI wrong-password refusal")
+
+    # 3. In-app OTP confirmation. The code flow only renders for an account
+    # with no password hash (the V33 Google-only state), so simulate that
+    # supported server state on the disposable database — the same fixture
+    # pattern the expired-reset-code proof uses — then re-enter the screen
+    # so the profile refetch flips the UI to the code flow.
+    sql = (context.get("dstack_handle") or {}).get("sql")
+    if sql is None:
+        raise CapabilityBlocked(
+            f"the in-app deletion OTP flow needs the disposable database; rerun "
+            f"with --dstack, otherwise {_DELETION_UNPROVEN}")
+    sql(f"UPDATE users SET password_hash = NULL WHERE phone = '{phone}'")
+    ui.key("KEYCODE_BACK")
+    ui.key("KEYCODE_BACK")
+    _offline_wait_inbox(
+        context, "the inbox did not return before the in-app OTP pass")
+    _deletion_open_delete_screen(context)
+    send_code = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "sendDeletionCode"),
+        "the Send code button was not rendered for the passwordless account")
+    ui.tap_node(send_code)
+    _wait_ui_node(
+        context,
+        lambda node: _rid_ends(node, "deletionCodeSentMessage")
+                     and patch.text_matches(node, _DELETION_CODE_SENT_LABELS),
+        "the deletion code-sent message was not rendered")
     code = _read_otp(mail, email)
-    confirmed = client.post(
-        "/api/v1/account-deletion/confirm", body={"phone": phone, "code": code},
-    )
-    _expect_status(confirmed, {204}, "deletion confirm")
+    patch.fill_login_field(ui, "deletionCodeInput", code)
+    ui.key("KEYCODE_BACK")
+    confirm = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "confirmDelete"),
+        "the confirm button was not rendered after the code was sent")
+    ui.tap_node(confirm)
+    _deletion_wait_signed_out(context)
+
+    # 4. Post-deletion: token death, peer-neutral history, phone reuse, and
+    #    no deleted-account cache on the freshly re-registered device session.
     rejected = client.get("/api/v1/users/me", token=token)
-    _expect_status(rejected, {401}, "token after account deletion")
+    _expect_status(rejected, {401}, "token after in-app account deletion")
+    _history_item_by_content(client, peer_token, conversation_id, marker)
     reused = client.post(
         "/api/v1/auth/register",
-        body={"phone": phone, "password": DISPOSABLE_PASSWORD, "displayName": "Journey Reused"},
+        body={"phone": phone, "password": DISPOSABLE_PASSWORD,
+              "displayName": "Journey Reused"},
     )
-    _expect_status(reused, {200, 201}, "phone reuse after deletion")
+    _expect_status(reused, {200, 201}, "phone reuse after in-app deletion")
+    _deletion_sign_in(context, phone, DISPOSABLE_PASSWORD, "Journey Reused")
+    deadline = time.monotonic() + 20
+    while True:
+        _pull_refresh_inbox(context)
+        if _inbox_conversation_row(context, peer_name) is None:
+            break
+        if time.monotonic() >= deadline:
+            raise ProductFailure(
+                "the deleted account's inbox cache still rendered the peer conversation")
+        time.sleep(0.7)
+
+    return {
+        "sign_in": "the disposable account signed in through the real login form",
+        "wrong_password_ui": "confirmDelete with a bad password rendered the "
+                             "inlineError refusal and the account survived",
+        "in_app_deletion": "sendDeletionCode + deletionCodeInput + confirmDelete "
+                           "deleted the account and returned to the login form",
+        "token_rejection": "the pre-deletion token is rejected after in-app deletion",
+        "peer_history": "the peer's REST history keeps the deleted account's message",
+        "cache_and_reuse": "the re-registered phone signs in on device to an inbox "
+                           "with no deleted-account conversation row",
+    }
 
 
 def run_account_deletion(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
-    """OTP-delete a disposable account only. In-app cache and peer UI stay blocked.
+    """Delete a disposable account on a disposable stack, in-app when possible.
 
-    Not registered for a device run: the local server is not restarted with
-    server_env(), and no helper signs the disposable account into the debug UI.
+    The mail/REST flow runs when context["apply_server_env"] exists (--dstack).
+    The in-app UI slice additionally needs the disposable stack to own the
+    device app's compile-time port (10.0.2.2:<base_url port>); when it cannot,
+    the row reports the explicit gap instead of a silent pass.
     """
     _campaign_serial(context)
     _campaign_base_url(context)
     _require_deletion_last(context)
     phone = _require_disposable_phone(str(context.get("disposable_phone") or _new_disposable_phone()))
     email = str(context.get("disposable_email") or _new_disposable_email())
+    results: dict[str, Any] = {}
+
+    # Pin the stack to the app's compiled port when that port is free, so the
+    # device app can reach the disposable backend. An occupied port (the
+    # shared local server) leaves the stack on a random port and the device
+    # slice degrades to its explicit blocked reason below. The pre-swap base
+    # URL is kept for the gap check because _with_mail_swap replaces it.
+    app_port = _deletion_app_port(context)
+    context["deletion_app_base_url"] = str(context.get("base_url") or "")
+    if app_port is not None and _port_bindable(app_port):
+        context["dstack_app_port"] = app_port
 
     def action(mail: Any) -> None:
-        _complete_account_deletion(context, mail, phone, email)
-        raise CapabilityBlocked(row.capability_gap)
+        client = context["client"]
+        registered = _register_disposable(client, phone, "Journey Delete")
+        token = registered["accessToken"]
+        _verify_recovery_email(client, mail, token, email)
+        denied = client.request(
+            "DELETE", "/api/v1/users/me", token=token,
+            body={"password": "not-the-account-password"},
+        )
+        _expect_status(denied, {401}, "wrong password deletion")
+        still_there = client.get("/api/v1/users/me", token=token)
+        _expect_status(still_there, {200}, "account after wrong password")
+        gap = _deletion_device_gap(context)
+        if gap is None:
+            peer_phone = _new_disposable_phone()
+            peer_name = "Journey Peer " + uuid.uuid4().hex[:6]
+            peer_registered = _register_disposable(client, peer_phone, peer_name)
+            peer = {"accessToken": peer_registered["accessToken"],
+                    "phone": peer_phone, "displayName": peer_name}
+            results.update(_deletion_device_slice(
+                context, mail, phone, email, token, peer))
+            return
+        # The device slice cannot run: still prove the REST/OTP deletion, then
+        # report the explicit gap — never a silent pass.
+        requested = client.post("/api/v1/account-deletion/request", body={"phone": phone})
+        _expect_status(requested, {202}, "deletion code request")
+        code = _read_otp(mail, email)
+        confirmed = client.post(
+            "/api/v1/account-deletion/confirm", body={"phone": phone, "code": code},
+        )
+        _expect_status(confirmed, {204}, "deletion confirm")
+        rejected = client.get("/api/v1/users/me", token=token)
+        _expect_status(rejected, {401}, "token after account deletion")
+        reused = client.post(
+            "/api/v1/auth/register",
+            body={"phone": phone, "password": DISPOSABLE_PASSWORD,
+                  "displayName": "Journey Reused"},
+        )
+        _expect_status(reused, {200, 201}, "phone reuse after deletion")
+        raise CapabilityBlocked(gap)
 
     _with_mail_sink(context, row, action)
-    raise CapabilityBlocked(row.capability_gap)
+    if not results:
+        raise CapabilityBlocked(row.capability_gap)
+    return results
+
+
+# --- accessibility-sweep -----------------------------------------------------
+
+def _import_a11y_oracle():
+    if str(DEVICE_DIR) not in sys.path:
+        sys.path.insert(0, str(DEVICE_DIR))
+    return importlib.import_module("a11y_oracle")
+
+
+_A11Y_DENSITY_RE = re.compile(r"(\d{3,4})")
+
+
+def _a11y_density(adb: Adb) -> float:
+    """The effective DPI `adb shell wm density` reports (an override wins over
+    the physical value). a11y_oracle rejects 160-based scale multipliers, so
+    an unreadable density blocks the row instead of mis-scaling the floor."""
+    output = adb.command("shell", "wm", "density", timeout=20, check=False) or ""
+    numbers = _A11Y_DENSITY_RE.findall(output)
+    if not numbers:
+        raise CapabilityBlocked("wm density did not report a DPI; the a11y oracle needs it")
+    return float(numbers[-1])
+
+
+def _a11y_talkback_snapshot(adb: Adb) -> dict[str, str]:
+    """The secure settings a11y_oracle.get_* reads; restored after the sweep."""
+    return {
+        "services": adb.command("shell", "settings", "get", "secure",
+                                "enabled_accessibility_services", timeout=20, check=False),
+        "enabled": adb.command("shell", "settings", "get", "secure",
+                               "accessibility_enabled", timeout=20, check=False),
+    }
+
+
+def _a11y_talkback_restore(adb: Adb, before: dict[str, str]) -> None:
+    # Same semantics as a11y_oracle.restore_talkback: a missing snapshot clears
+    # the services list and an unreadable flag falls back to disabled, so a
+    # swept device is never left with TalkBack force-enabled.
+    services = str(before.get("services") or "").strip()
+    restored = services if services not in ("", "null") else '""'
+    flag = str(before.get("enabled") or "").strip()
+    flag = flag if flag in ("0", "1") else "0"
+    adb.command("shell", "settings", "put", "secure",
+                "enabled_accessibility_services", restored, timeout=20, check=False)
+    adb.command("shell", "settings", "put", "secure",
+                "accessibility_enabled", flag, timeout=20, check=False)
+
+
+def _a11y_reduced_motion_snapshot(adb: Adb) -> str:
+    return adb.command("shell", "settings", "get", "global",
+                       "animator_duration_scale", timeout=20, check=False)
+
+
+def _a11y_reduced_motion_restore(adb: Adb, saved: str) -> None:
+    if str(saved).strip() not in ("", "null"):
+        adb.command("shell", "settings", "put", "global",
+                    "animator_duration_scale", saved.strip(), timeout=20, check=False)
+
+
+def _a11y_back_to_inbox(context: dict[str, Any]) -> None:
+    """Press BACK until the inbox renders again (archive needs two presses).
+    The inbox marker is checked before every press, so the inbox itself never
+    receives a BACK that could exit the app."""
+    ui = context["device"]
+    deadline = time.monotonic() + _ui_timeout(context)
+    while True:
+        if any(_rid_ends(node, "conversationList")
+               or _rid_ends(node, "inboxUserAvatar") for node in _ui_nodes(context)):
+            return
+        if time.monotonic() >= deadline:
+            raise ProductFailure("the sweep could not return to the inbox between screens")
+        ui.key("KEYCODE_BACK")
+        time.sleep(0.6)
+
+
+def _a11y_open_screen(context: dict[str, Any], screen: str, group_title: str) -> None:
+    """Navigate to one critical screen from the inbox via real UI taps."""
+    ui = context["device"]
+    if screen == "inbox":
+        return
+    if screen in ("direct-chat", "group-chat"):
+        title = "Binh" if screen == "direct-chat" else group_title
+        deadline = time.monotonic() + _ui_timeout(context)
+        row = None
+        while row is None:
+            row = _inbox_conversation_row(context, title)
+            if row is not None:
+                break
+            if time.monotonic() >= deadline:
+                raise ProductFailure(f"the {title!r} conversation row was not on the inbox")
+            time.sleep(0.4)
+        ui.tap_node(row)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "messageInput"),
+            f"the {title!r} conversation did not open its composer")
+        return
+    if screen == "archive":
+        # The shared-media browser is reached from a chat overflow, so open the
+        # seeded direct first (the same path run_archive_preferences takes).
+        _a11y_open_screen(context, "direct-chat", group_title)
+        _open_chat_menu(context, _ARCHIVE_MENU_ITEM)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "archiveTabs"),
+            "the shared-media screen did not open")
+        return
+    if screen == "settings":
+        avatar = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "inboxUserAvatar"),
+            "the inbox avatar was not exposed")
+        ui.tap_node(avatar)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "profileName"),
+            "the profile/preferences screen did not open")
+        return
+    if screen == "labels":
+        _open_assign_dialog(context)
+        return
+    if screen == "contacts":
+        entry = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "inboxContactsButton"),
+            "the inbox contacts button was not exposed")
+        ui.tap_node(entry)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "contactList"),
+            "the contacts screen did not open")
+        return
+    raise HarnessError(f"unknown critical screen {screen!r}")
+
+
+def _a11y_sweep_cell(context: dict[str, Any], oracle: Any, density: float,
+                     variant: dict[str, str], screen: dict[str, str],
+                     group_title: str) -> dict[str, Any]:
+    """Visit one (variant, screen) cell and run every a11y_oracle check on it.
+
+    A cell only passes when the oracle produced at least one assertion; a cell
+    whose oracle could not run reports BLOCKED, never a silent screenshot pass.
+    """
+    ui = context["device"]
+    row_dir = Path(context["row_dir"])
+    name = screen["screen"]
+    marker = screen["marker_rid"]
+    _a11y_open_screen(context, name, group_title)
+    _wait_ui_node(
+        context,
+        lambda node: _rid_ends(node, marker),
+        f"the {name} screen did not expose {marker}")
+    nodes = _ui_nodes(context)
+    cell: dict[str, Any] = {
+        "screen": name, "locale": variant["locale"],
+        "night": variant["night"], "font_scale": variant["font_scale"],
+    }
+    try:
+        report = oracle.summarize_findings(nodes, density=density, screen="auto")
+    except oracle.A11yOracleError as error:
+        cell.update({"status": "BLOCKED", "reason": str(error)})
+        return cell
+    try:
+        ui.screenshot(str(row_dir / (
+            f"a11y-{variant['locale']}-{variant['night']}-"
+            f"{variant['font_scale']}-{name}.png")))
+    except Exception as error:
+        context.setdefault("cleanup_errors", []).append(
+            f"a11y screenshot {name}: {type(error).__name__}")
+    cell.update({
+        "status": "PASS" if report["ok"] else "FINDINGS",
+        "node_count": report["node_count"],
+        "interactive_count": report["interactive_count"],
+        "checks": {check: {"ok": entry["ok"], "count": entry["count"]}
+                   for check, entry in report["checks"].items()},
+    })
+    if not report["ok"]:
+        # Keep the evidence bounded: the first findings per check carry the
+        # rid/text/bounds a TalkBack pass needs to confirm.
+        findings: list[dict[str, Any]] = []
+        for check, entry in report["checks"].items():
+            for finding in entry["findings"][:5]:
+                findings.append({
+                    "check": check,
+                    "issue": finding.get("issue"),
+                    "rid": finding.get("rid"),
+                    "text": finding.get("text"),
+                    "content_desc": finding.get("content_desc"),
+                    "bounds": finding.get("bounds"),
+                })
+        cell["findings"] = findings
+    return cell
+
+
+def run_accessibility_sweep(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Sweep the critical-screen inventory under every display variant.
+
+    For each (locale, night, font_scale) tuple the executor applies the display
+    settings, navigates to every CRITICAL_SCREENS entry via real UI taps and
+    runs the a11y_oracle checks (unlabeled interactive nodes, sub-48dp touch
+    targets, unnamed images, focus-order candidates) on the dumped UI tree.
+    Every cell carries oracle assertions or reports BLOCKED; a screenshot-only
+    cell is never a pass. TalkBack and reduced-motion state are snapshotted,
+    recorded and restored -- the dump oracles are triage candidates pending a
+    TalkBack-verified pass (see a11y_oracle.HEURISTIC_CAVEATS).
+    """
+    _campaign_serial(context)
+    _campaign_base_url(context)
+    _prepare_seeded_an(context)
+    api, _adb_ui, patch = context["helpers"]
+    recorder: RecordingClient = context["client"]
+    adb: Adb = context["adb"]
+    oracle = _import_a11y_oracle()
+    an = _actor_session(api, recorder, api.USER_A["phone"])
+    binh = _actor_session(api, recorder, api.USER_C["phone"])
+    an_id = str((an.get("user") or {}).get("id") or "")
+    binh_id = str((binh.get("user") or {}).get("id") or "")
+    if not an_id or not binh_id:
+        raise EnvironmentFailure("seed actor sessions did not expose user ids")
+
+    tag = uuid.uuid4().hex[:8]
+    group_title = f"sj-a11y-{tag}"
+    marker_text = f"sj-a11y-{tag}-msg"
+    _, conversation = api.direct_conversation(recorder, an["accessToken"], api.USER_C["phone"])
+    direct_id = str(conversation.get("id") or "")
+    if not direct_id:
+        raise EnvironmentFailure("the seeded direct conversation returned no id")
+    created_group = _offline_rest_once(
+        lambda: recorder.post(
+            "/api/v1/conversations/group", token=an["accessToken"],
+            body={"title": group_title, "memberIds": [binh_id]}),
+        {200, 201}, "sweep group create")
+    group_id = str((created_group.json() or {}).get("id") or "")
+    if not group_id:
+        raise EnvironmentFailure("the sweep group create returned no id")
+    for conversation_id in (direct_id, group_id):
+        _offline_send_rest(recorder, an["accessToken"], conversation_id, marker_text)
+
+    # The activity-scoped ViewModels only fetch once per process lifetime, so
+    # the REST-seeded group needs a cold start before it can render.
+    adb.command("shell", "am", "force-stop", PACKAGE, timeout=20)
+    adb.command("shell", "am", "start", "-n", f"{PACKAGE}/{MAIN_ACTIVITY}", timeout=30)
+    _wait_ui_node(
+        context,
+        lambda node: _rid_ends(node, "inboxUserAvatar"),
+        "the inbox did not reload after the sweep fixture relaunch",
+        timeout=30)
+    _wait_ui_node(
+        context,
+        lambda node: node.text.strip() == group_title,
+        "the seeded sweep group did not reach the inbox",
+        timeout=30)
+
+    density = _a11y_density(adb)
+    before = snapshot_settings(adb, patch)
+    talkback_before = _a11y_talkback_snapshot(adb)
+    motion_before = _a11y_reduced_motion_snapshot(adb)
+    cells: list[dict[str, Any]] = []
+    cleanup_errors: list[str] = []
+    primary_error: Exception | None = None
+    try:
+        for variant in ACCESSIBILITY_VARIANTS:
+            set_accessibility_variant(adb, variant)
+            _wait_ui_node(
+                context,
+                lambda node: (_rid_ends(node, "conversationList")
+                              or _rid_ends(node, "inboxUserAvatar")),
+                "the inbox did not render after the variant switch",
+                timeout=30)
+            for screen in CRITICAL_SCREENS:
+                cell = _a11y_sweep_cell(
+                    context, oracle, density, variant, screen, group_title)
+                cells.append(cell)
+                if cell["status"] == "BLOCKED":
+                    continue
+                if screen["screen"] == "labels":
+                    # Dismiss the labels dialog by its own Done button; BACK on
+                    # a dialog can also dismiss the parent screen.
+                    _tap_dialog_button(
+                        context, _LBL_DONE,
+                        "the labels dialog did not offer Done after the sweep cell")
+                _a11y_back_to_inbox(context)
+    except Exception as error:
+        primary_error = error
+    finally:
+        try:
+            restore_settings(adb, patch, before)
+        except Exception as error:
+            cleanup_errors.append(f"settings restore: {type(error).__name__}")
+        try:
+            _a11y_talkback_restore(adb, talkback_before)
+        except Exception as error:
+            cleanup_errors.append(f"talkback restore: {type(error).__name__}")
+        try:
+            _a11y_reduced_motion_restore(adb, motion_before)
+        except Exception as error:
+            cleanup_errors.append(f"reduced-motion restore: {type(error).__name__}")
+        if cleanup_errors:
+            context["cleanup_errors"] = cleanup_errors
+    if primary_error is not None:
+        raise primary_error
+    if context.get("cleanup_errors"):
+        raise HarnessError("the sweep could not restore every display setting")
+
+    row_dir = Path(context["row_dir"])
+    _write_json(row_dir / "a11y-sweep-cells.json", cells)
+    blocked = [cell for cell in cells if cell["status"] == "BLOCKED"]
+    if blocked:
+        raise CapabilityBlocked(
+            f"{len(blocked)} of {len(cells)} sweep cells could not run the a11y oracle: "
+            + "; ".join(f"{cell['screen']}[{cell['locale']}/{cell['night']}/"
+                        f"{cell['font_scale']}]: {cell['reason']}" for cell in blocked))
+    failing = [cell for cell in cells if cell["status"] == "FINDINGS"]
+    if failing:
+        raise ProductFailure(
+            f"{len(failing)} of {len(cells)} sweep cells failed the a11y oracle "
+            f"(details in a11y-sweep-cells.json): "
+            + "; ".join(f"{cell['screen']}[{cell['locale']}/{cell['night']}/"
+                        f"{cell['font_scale']}]: "
+                        + ", ".join(f"{check}={entry['count']}"
+                                    for check, entry in cell["checks"].items()
+                                    if not entry["ok"])
+                        for cell in failing))
+    return {
+        "matrix": (f"{len(ACCESSIBILITY_VARIANTS)} variants x "
+                   f"{len(CRITICAL_SCREENS)} critical screens, all oracle cells PASS"),
+        "cells": cells,
+        "density_dpi": density,
+        "talkback": {"services_before": talkback_before["services"],
+                     "enabled_before": talkback_before["enabled"],
+                     "restored": True},
+        "reduced_motion": {"animator_duration_scale_before": motion_before,
+                           "restored": True},
+        "heuristic_caveats": list(oracle.HEURISTIC_CAVEATS),
+        "restore": ("locale, night mode, font scale, TalkBack and animator "
+                    "scale restored in finally"),
+    }
+
+
+_AUTH_NEW_PASSWORD = DISPOSABLE_PASSWORD + "-changed"
+_AUTH_LOGOUT_ALL_LABELS = ("Sign out all devices", "Đăng xuất mọi thiết bị")
+
+
+def _auth_barrier_factory(context: dict[str, Any]) -> Any:
+    """Resolve the barrier factory; imports response_barrier lazily."""
+    factory = context.get("barrier_factory")
+    if factory is not None:
+        return factory
+    if str(E2E_DIR) not in sys.path:
+        sys.path.insert(0, str(E2E_DIR))
+    import response_barrier
+
+    def start(upstream: str) -> Any:
+        barrier = response_barrier.Barrier(upstream)
+        barrier.__enter__()
+        return barrier
+
+    return start
+
+
+def _auth_reader_factory(context: dict[str, Any]) -> Any:
+    """Resolve the STOMP reader factory; imports realtime_probe lazily."""
+    factory = context.get("frame_reader_factory")
+    if factory is not None:
+        return factory
+    if str(DEVICE_DIR) not in sys.path:
+        sys.path.insert(0, str(DEVICE_DIR))
+    from realtime_probe import FrameReader
+    return FrameReader
+
+
+def _auth_note(scenarios: list[dict[str, Any]], name: str, evidence: str) -> None:
+    scenarios.append({"scenario": name, "status": "driven", "evidence": evidence})
+
+
+def _auth_rest_lifecycle(context: dict[str, Any], client: Any,
+                         scenarios: list[dict[str, Any]],
+                         accounts: list[dict[str, Any]]) -> None:
+    """Drive register/login/invalid/refresh/logout/logout-all/password-change."""
+    phone = _require_disposable_phone(str(context.get("auth_phone") or _new_disposable_phone()))
+    registered = _register_disposable(client, phone, "Journey Auth")
+    accounts.append({"label": "rest", "phone": phone,
+                     "password": DISPOSABLE_PASSWORD,
+                     "token": registered.get("accessToken")})
+    duplicate = client.post(
+        "/api/v1/auth/register",
+        body={"phone": phone, "password": DISPOSABLE_PASSWORD,
+              "displayName": "Journey Auth Dup"})
+    _expect_status(duplicate, {409}, "duplicate registration")
+    _auth_note(scenarios, "register",
+               "201 with a token pair; duplicate phone rejected with HTTP 409")
+
+    def login(password: str) -> dict[str, Any]:
+        response = client.post("/api/v1/auth/login",
+                               body={"phone": phone, "password": password})
+        _expect_status(response, {200}, "auth login")
+        data = response.json() or {}
+        if not data.get("accessToken") or not data.get("refreshToken"):
+            raise EnvironmentFailure("login did not return a token pair")
+        return data
+
+    session = login(DISPOSABLE_PASSWORD)
+    me = client.get("/api/v1/users/me", token=session["accessToken"])
+    _expect_status(me, {200}, "users/me after login")
+    _auth_note(scenarios, "login", "200; /users/me confirms the disposable identity")
+
+    bad = client.post("/api/v1/auth/login",
+                      body={"phone": phone, "password": "not-the-account-password"})
+    _expect_status(bad, {401}, "invalid credential login")
+    _auth_note(scenarios, "invalid-credentials-rest",
+               "wrong password rejected with HTTP 401")
+
+    refreshed = client.post("/api/v1/auth/refresh",
+                            body={"refreshToken": session["refreshToken"]})
+    _expect_status(refreshed, {200}, "token refresh")
+    refresh_data = refreshed.json() or {}
+    if (not refresh_data.get("accessToken") or not refresh_data.get("refreshToken")
+            or refresh_data["refreshToken"] == session["refreshToken"]):
+        raise EnvironmentFailure("refresh did not rotate the token pair")
+    me = client.get("/api/v1/users/me", token=refresh_data["accessToken"])
+    _expect_status(me, {200}, "users/me with refreshed access token")
+    _auth_note(scenarios, "refresh", "200; rotated pair accepted by /users/me")
+
+    for kind, path, body in (
+        ("logout", "/api/v1/auth/logout",
+         lambda s: {"refreshToken": s["refreshToken"]}),
+        ("logout-all", "/api/v1/auth/logout-all", lambda s: None),
+    ):
+        session = login(DISPOSABLE_PASSWORD)
+        kwargs = {"token": session["accessToken"]}
+        payload = body(session)
+        if payload is not None:
+            kwargs["body"] = payload
+        out = client.post(path, **kwargs)
+        _expect_status(out, {204}, kind)
+        _expect_status(client.get("/api/v1/users/me", token=session["accessToken"]),
+                       {401}, f"{kind} access token rejection")
+        _expect_status(client.post("/api/v1/auth/refresh",
+                                   body={"refreshToken": session["refreshToken"]}),
+                       {401}, f"{kind} refresh token rejection")
+        _auth_note(scenarios, kind,
+                   "204; the session's access and refresh tokens are rejected afterwards")
+
+    session = login(DISPOSABLE_PASSWORD)
+    changed = client.patch("/api/v1/auth/password",
+                           token=session["accessToken"],
+                           body={"oldPassword": DISPOSABLE_PASSWORD,
+                                 "newPassword": _AUTH_NEW_PASSWORD})
+    _expect_status(changed, {204}, "password change")
+    _expect_status(client.post("/api/v1/auth/login",
+                               body={"phone": phone, "password": DISPOSABLE_PASSWORD}),
+                   {401}, "old password rejection")
+    session = login(_AUTH_NEW_PASSWORD)
+    me = client.get("/api/v1/users/me", token=session["accessToken"])
+    _expect_status(me, {200}, "users/me with post-change session")
+    _auth_note(scenarios, "password-change",
+               "204; old password 401, new password 200")
+    accounts[0]["password"] = _AUTH_NEW_PASSWORD
+    accounts[0]["token"] = session["accessToken"]
+
+
+def _auth_paused_frame(context: dict[str, Any], client: Any, base_url: str,
+                       scenarios: list[dict[str, Any]],
+                       blocked: list[dict[str, Any]],
+                       accounts: list[dict[str, Any]]) -> None:
+    """Hold account A's inbound STOMP MESSAGE_CREATED through the WS tunnel.
+
+    Account B keeps receiving the same broadcast live; after A's socket
+    closes, releasing the hold must not deliver A's frame anywhere else.
+    """
+    name = "paused-frame-a-to-b-isolation"
+    try:
+        barrier_factory = _auth_barrier_factory(context)
+        reader_factory = _auth_reader_factory(context)
+    except Exception as error:
+        blocked.append({"scenario": name,
+                        "reason": f"STOMP tunnel helpers unavailable: {type(error).__name__}"})
+        return
+    phone_a = _require_disposable_phone(
+        str(context.get("auth_pause_phone_a") or _new_disposable_phone()))
+    phone_b = _require_disposable_phone(
+        str(context.get("auth_pause_phone_b") or _new_disposable_phone()))
+    account_a = _register_disposable(client, phone_a, "Journey Pause A")
+    account_b = _register_disposable(client, phone_b, "Journey Pause B")
+    accounts.append({"label": "pause-a", "phone": phone_a,
+                     "password": DISPOSABLE_PASSWORD,
+                     "token": account_a.get("accessToken")})
+    accounts.append({"label": "pause-b", "phone": phone_b,
+                     "password": DISPOSABLE_PASSWORD,
+                     "token": account_b.get("accessToken")})
+    token_a, token_b = account_a["accessToken"], account_b["accessToken"]
+    direct = client.post("/api/v1/conversations/direct", token=token_a,
+                         body={"phone": phone_b})
+    _expect_status(direct, {200, 201}, "A-B direct conversation")
+    conversation_id = str((direct.json() or {}).get("id") or "")
+    if not conversation_id:
+        raise EnvironmentFailure("the direct conversation returned no id")
+    topic = f"/topic/conversations.{conversation_id}"
+    marker = str(context.get("auth_pause_marker")
+                 or ("sj-paused-" + uuid.uuid4().hex[:10]))
+    barrier = reader_a = reader_b = None
+    try:
+        barrier = barrier_factory(base_url)
+        barrier.hold(method="MESSAGE",
+                     path=rf"^/topic/conversations\.{re.escape(conversation_id)}$",
+                     token_contains=token_a)
+        base = str(getattr(barrier, "url", "") or base_url)
+        ws_url = base.replace("https://", "wss://").replace("http://", "ws://") + "/ws"
+        reader_a = reader_factory(ws_url, token_a)
+        reader_a.subscribe(topic)
+        reader_b = reader_factory(ws_url, token_b)
+        reader_b.subscribe(topic)
+        sent = client.post(f"/api/v1/conversations/{conversation_id}/messages",
+                           token=token_b,
+                           body={"clientMessageId": str(uuid.uuid4()),
+                                 "type": "TEXT", "content": marker,
+                                 "attachmentIds": []})
+        _expect_status(sent, {200, 201}, "paused-frame marker send")
+        try:
+            barrier.wait_held(1, timeout=20)
+        except Exception as error:
+            raise ProductFailure(
+                "account A's inbound STOMP frame was not held by the tunnel") from error
+
+        def topic_events(reader: Any, seconds: float) -> list[dict[str, Any]]:
+            found = []
+            for event in reader.events(seconds):
+                context.setdefault("stomp_events", []).append(event)
+                if (event.get("eventType") == "MESSAGE_CREATED"
+                        and str(event.get("_destination", "")) == topic
+                        and (event.get("payload") or {}).get("content") == marker):
+                    found.append(event)
+            return found
+
+        live = topic_events(reader_b, 3.0)
+        if len(live) != 1:
+            raise ProductFailure(
+                f"account B observed {len(live)} live topic frames, expected 1")
+        items = _history_items(client, token_b, conversation_id)
+        if sum(1 for item in items if item.get("content") == marker) != 1:
+            raise ProductFailure("peer history does not show exactly one marker")
+        reader_a.close()
+        reader_a = None
+        barrier.release()
+        leaked = topic_events(reader_b, 1.5)
+        if leaked:
+            raise ProductFailure("the held account-A frame crossed into account B")
+        _auth_note(scenarios, name,
+                   "A's inbound MESSAGE_CREATED stayed held in the WS tunnel; B received "
+                   "exactly one live copy and nothing after A closed and the hold released")
+    finally:
+        for reader in (reader_a, reader_b):
+            if reader is not None:
+                try:
+                    reader.close()
+                except Exception:
+                    pass
+        if barrier is not None:
+            close = getattr(barrier, "close", None)
+            if close is not None:
+                try:
+                    close()
+                except Exception:
+                    pass
+
+
+def _auth_invalid_login_ui(context: dict[str, Any], phone: str) -> None:
+    """Wrong password must keep the form and render the accessible error."""
+    patch = context["helpers"][2]
+    ui = context["device"]
+    patch.fill_login_field(ui, "phoneInput", phone)
+    ui.key("KEYCODE_BACK")
+    patch.fill_login_field(ui, "passwordInput", "not-the-account-password")
+    context["adb"].command("shell", "input", "keyevent", "4",
+                           timeout=15, check=False)
+    time.sleep(1)
+    nodes = _ui_nodes(context)
+    action = patch.node_by_id(nodes, "primaryAction") or next(
+        (node for node in nodes
+         if patch.text_matches(node, ("Sign in", "Đăng nhập"))), None)
+    if action is None:
+        raise EnvironmentFailure("the sign-in control was not exposed")
+    ui.tap_node(action)
+    _wait_ui_node(
+        context,
+        lambda node: _rid_ends(node, "errorBanner") and bool((node.text or "").strip()),
+        "the invalid-credential error banner did not appear", timeout=20)
+
+
+def _auth_sign_out_all(context: dict[str, Any]) -> None:
+    """Profile -> Sign out all devices -> confirm, landing on the login form."""
+    ui = context["device"]
+    avatar = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "inboxUserAvatar"),
+        "the inbox profile entry point was not visible")
+    ui.tap_node(avatar)
+    _scroll_profile_until(context, "logoutAllRow")
+    row = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "logoutAllRow"),
+        "the Sign out all devices row was not rendered")
+    ui.tap_node(row)
+    confirm = _wait_ui_node(
+        context,
+        lambda node: node.text.strip() in _AUTH_LOGOUT_ALL_LABELS
+                     and node.clickable and not _rid_ends(node, "logoutAllRow"),
+        "the Sign out all devices confirmation was not rendered")
+    ui.tap_node(confirm)
+    patch = context["helpers"][2]
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        if patch.login_form_visible(_ui_nodes(context)):
+            return
+        time.sleep(0.7)
+    raise EnvironmentFailure("the login form did not appear after Sign out all devices")
+
+
+def _auth_device_scenarios(context: dict[str, Any], client: Any,
+                           scenarios: list[dict[str, Any]],
+                           blocked: list[dict[str, Any]],
+                           accounts: list[dict[str, Any]]) -> None:
+    """Drive the UI scenarios when a device-bound campaign supplies the stack."""
+    blocked.append({"scenario": "register-ui",
+                    "reason": "app sign-up is email+OTP; the mail sink is not applied "
+                              "to the local server"})
+    blocked.append({"scenario": "password-change-ui",
+                    "reason": "the change-password dialog has no wired UI driver; "
+                              "REST PATCH /auth/password is driven"})
+    device, helpers = context.get("device"), context.get("helpers")
+    if device is None or helpers is None or context.get("adb") is None:
+        reason = "no device-bound campaign context (adb/device/helpers absent)"
+        for name in ("invalid-credentials-ui", "saved-session-restart",
+                     "logout-ui", "logout-all-ui", "account-switch-ui"):
+            blocked.append({"scenario": name, "reason": reason})
+        return
+    patch = helpers[2]
+    ui = device
+    phone_a = _require_disposable_phone(
+        str(context.get("auth_ui_phone_a") or _new_disposable_phone()))
+    phone_b = _require_disposable_phone(
+        str(context.get("auth_ui_phone_b") or _new_disposable_phone()))
+    _register_disposable(client, phone_a, "Journey UI A")
+    _register_disposable(client, phone_b, "Journey UI B")
+    # Device sign-out revokes every access token the account owns, so the
+    # harness sessions cannot be reused for cleanup; relogin at delete time.
+    accounts.append({"label": "ui-a", "phone": phone_a,
+                     "password": DISPOSABLE_PASSWORD, "token": None})
+    accounts.append({"label": "ui-b", "phone": phone_b,
+                     "password": DISPOSABLE_PASSWORD, "token": None})
+
+    nodes = _ui_nodes(context)
+    if patch.inbox_visible(nodes):
+        _offline_sign_out(context)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        if patch.login_form_visible(_ui_nodes(context)):
+            break
+        time.sleep(0.7)
+    else:
+        raise EnvironmentFailure("the login form was not available for the auth UI scenarios")
+
+    _auth_invalid_login_ui(context, phone_a)
+    _auth_note(scenarios, "invalid-credentials-ui",
+               "wrong password kept the form and rendered the error banner")
+
+    try:
+        _offline_sign_in(context, phone_a, "Journey UI A")
+        _offline_force_stop(context)
+        _offline_relaunch(context)
+        _offline_wait_inbox(context,
+                            "the saved session did not restore the inbox after restart")
+        profile = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "inboxUserAvatar"),
+            "the inbox profile entry point was not visible after restart",
+            timeout=30)
+        ui.tap_node(profile)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "profileName")
+                         and node.text.strip() == "Journey UI A",
+            "the restarted session did not identify Journey UI A", timeout=20)
+        ui.key("KEYCODE_BACK")
+        _offline_wait_inbox(context, "the inbox did not return after the restart check")
+        _auth_note(scenarios, "saved-session-restart",
+                   "force-stop + relaunch restored the inbox as Journey UI A "
+                   "without re-login")
+
+        _offline_sign_out(context)
+        _auth_note(scenarios, "logout-ui",
+                   "profile sign-out returned to the login form")
+
+        _offline_sign_in(context, phone_a, "Journey UI A")
+        _auth_sign_out_all(context)
+        _auth_note(scenarios, "logout-all-ui",
+                   "sign-out-all devices returned to the login form")
+
+        _offline_sign_in(context, phone_a, "Journey UI A")
+        _offline_sign_out(context)
+        _offline_sign_in(context, phone_b, "Journey UI B")
+        _auth_note(scenarios, "account-switch-ui",
+                   "A to B switch verified profileName Journey UI B; "
+                   "A's session ended at sign-out")
+    finally:
+        try:
+            _offline_restore_an(context)
+        except Exception as error:
+            context.setdefault("cleanup_errors", []).append(
+                f"device account restore: {type(error).__name__}")
+
+
+def _auth_cleanup_accounts(client: Any,
+                           accounts: list[dict[str, Any]]) -> list[str]:
+    """Best-effort DELETE /users/me for each disposable account."""
+    errors: list[str] = []
+    for account in accounts:
+        label = account["label"]
+        token = account.get("token")
+        try:
+            for attempt in range(2):
+                if not token:
+                    login = client.post("/api/v1/auth/login",
+                                        body={"phone": account["phone"],
+                                              "password": account["password"]})
+                    if login.status != 200:
+                        errors.append(f"{label}: relogin HTTP {login.status}")
+                        break
+                    token = (login.json() or {}).get("accessToken")
+                deleted = client.request(
+                    "DELETE", "/api/v1/users/me", token=token,
+                    body={"password": account["password"]})
+                if deleted.status in (200, 204):
+                    break
+                if deleted.status == 401 and attempt == 0:
+                    token = None
+                    continue
+                errors.append(f"{label}: delete HTTP {deleted.status}")
+                break
+        except Exception as error:
+            errors.append(f"{label}: {type(error).__name__}")
+    return errors
 
 
 def run_auth_session_lifecycle(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
-    """Hold account A's REST conversations response, then stop.
+    """Drive each auth/session scenario or record its exact remaining blocker.
 
-    STOMP cannot pass the barrier, and the registration/logout UI is not driven,
-    so the row stays blocked even when a barrier is supplied. Not registered.
+    REST token lifecycle runs through context["client"]; the paused-frame
+    A->B isolation uses response_barrier's WebSocket tunnel; device UI
+    scenarios run only when the campaign supplies adb/device/helpers. Every
+    scenario that cannot be driven lands in blocked and the row ends
+    BLOCKED_CAPABILITY — nothing reports PASS without evidence.
     """
     _campaign_serial(context)
     base_url = _campaign_base_url(context)
-    factory = context.get("barrier_factory")
-    if factory is None:
-        raise CapabilityBlocked(row.capability_gap)
-    barrier = factory(base_url)
+    client = context.get("client")
+    if client is None:
+        raise HarnessError("client is required")
+    row_dir = Path(context.get("row_dir") or context.get("evidence_root") or ".")
+    scenarios: list[dict[str, Any]] = []
+    blocked: list[dict[str, Any]] = []
+    accounts: list[dict[str, Any]] = []
+    primary_error: Exception | None = None
     try:
-        barrier.hold(
-            method="GET", path=r"^/api/v1/conversations$",
-            token_contains=context.get("account_a_token"),
-        )
-        raise CapabilityBlocked(row.capability_gap)
+        _auth_rest_lifecycle(context, client, scenarios, accounts)
+        _auth_paused_frame(context, client, base_url, scenarios, blocked, accounts)
+        _auth_device_scenarios(context, client, scenarios, blocked, accounts)
+    except Exception as error:
+        primary_error = error
+        raise
     finally:
-        close = getattr(barrier, "close", None)
-        if close is not None:
-            close()
+        cleanup_errors = _auth_cleanup_accounts(client, accounts)
+        context.setdefault("cleanup_errors", []).extend(cleanup_errors)
+        _write_json(row_dir / "auth-scenarios.json",
+                    {"scenarios": scenarios, "blocked": blocked})
+        if primary_error is None and context.get("cleanup_errors"):
+            raise HarnessError("auth-session cleanup failed")
+    if blocked:
+        raise CapabilityBlocked("; ".join(
+            f"{item['scenario']}: {item['reason']}" for item in blocked))
+    return {"scenarios": [item["scenario"] for item in scenarios]}
 
 
 def run_room_13_14_upgrade(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
@@ -7975,26 +9159,36 @@ def _capability_runner(row: JourneyRow, context: dict[str, Any]) -> dict[str, An
     raise HarnessError(f"no row executor is registered for {row.id}")
 
 
+_ROW_EXECUTOR_NAMES: dict[str, str] = {
+    "auth-login": "run_auth_login",
+    "chat-send-receive": "run_chat_send_receive",
+    "chat-interactions": "run_chat_interactions",
+    "summary-ask": "run_summary_ask",
+    "archive-preferences": "run_archive_preferences",
+    "labels-lifecycle": "run_labels_lifecycle",
+    "groups-contacts": "run_groups_contacts",
+    "polls-reminders": "run_polls_reminders",
+    "offline-sync": "run_offline_sync",
+    "auth-session-lifecycle": "run_auth_session_lifecycle",
+    "calls-injected-notification": "run_calls_injected_notification",
+    "injected-notifications": "run_injected_notifications",
+    "otp-forgot-password": "run_otp_forgot_password",
+    "account-deletion": "run_account_deletion",
+    "accessibility-sweep": "run_accessibility_sweep",
+}
+
+
 def run_registered_row(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    # Registered executors decide their own capability gate: a row whose gap is
+    # only the missing apply_server_env hook still runs its mail/REST portion
+    # when --dstack supplies one, then reports the residual gap itself. The
+    # lookup stays dynamic so tests can patch the executor by name.
+    executor = globals().get(_ROW_EXECUTOR_NAMES.get(row.id, ""))
+    if executor is not None:
+        return executor(row, context)
     if row.capability_gap:
         raise CapabilityBlocked(row.capability_gap)
-    executors = {
-        "auth-login": run_auth_login,
-        "chat-send-receive": run_chat_send_receive,
-        "chat-interactions": run_chat_interactions,
-        "summary-ask": run_summary_ask,
-        "archive-preferences": run_archive_preferences,
-        "labels-lifecycle": run_labels_lifecycle,
-        "groups-contacts": run_groups_contacts,
-        "polls-reminders": run_polls_reminders,
-        "offline-sync": run_offline_sync,
-        "calls-injected-notification": run_calls_injected_notification,
-        "injected-notifications": run_injected_notifications,
-    }
-    executor = executors.get(row.id)
-    if executor is None:
-        return _capability_runner(row, context)
-    return executor(row, context)
+    return _capability_runner(row, context)
 
 
 def _status_for_error(error: Exception) -> str:
@@ -8166,15 +9360,17 @@ def set_accessibility_variant(adb: Adb, variant: dict[str, str]) -> None:
     adb.command("shell", "cmd", "locale", "set", variant["locale"])
 
 
-def preflight(base_url: str, apk: Path, adb: Adb, recorder: RecordingClient) -> None:
+def preflight(base_url: str, apk: Path, adb: Adb, recorder: RecordingClient,
+              *, require_shared_server: bool = True) -> None:
     if not apk.is_file():
         raise EnvironmentFailure("debug APK is missing")
-    try:
-        readiness = recorder.get("/actuator/health/readiness")
-    except Exception as error:
-        raise EnvironmentFailure(f"local readiness request failed: {type(error).__name__}") from error
-    if readiness.status != 200:
-        raise EnvironmentFailure(f"{base_url.rstrip('/')}/actuator/health/readiness returned HTTP {readiness.status}")
+    if require_shared_server:
+        try:
+            readiness = recorder.get("/actuator/health/readiness")
+        except Exception as error:
+            raise EnvironmentFailure(f"local readiness request failed: {type(error).__name__}") from error
+        if readiness.status != 200:
+            raise EnvironmentFailure(f"{base_url.rstrip('/')}/actuator/health/readiness returned HTTP {readiness.status}")
     state = adb.command("get-state", timeout=15)
     if state != "device":
         raise EnvironmentFailure(f"{SERIAL} is not ready (adb get-state: {state or 'empty'})")
@@ -8202,6 +9398,7 @@ def with_settings_restored(action: Callable[[], Any], restore: Callable[[], Any]
 
 def run_campaign(rows: Iterable[JourneyRow], *, base_url: str, serial: str,
                  apk: Path, evidence_dir: Path, reset_app_data: bool = False,
+                 dstack: bool = False,
                  adb_adapter: Adb | None = None,
                  runner: Callable[[JourneyRow, dict[str, Any]], dict[str, Any]] | None = None) -> dict[str, Any]:
     selected = tuple(rows)
@@ -8230,12 +9427,20 @@ def run_campaign(rows: Iterable[JourneyRow], *, base_url: str, serial: str,
                                "reset_app_data": reset_app_data, "helpers": helpers,
                                "frame_reader": None, "stomp_events": [],
                                "serial": serial, "base_url": base_url.rstrip("/")}
+    if dstack:
+        context["apply_server_env"] = _dstack_apply_server_env(context, api)
     before: dict[str, str] | None = None
     device = helpers[1].Device(serial)
     context["device"] = device
     try:
         try:
-            preflight(base_url, apk, adb, recorder)
+            # Rows that provision their own disposable backend (--dstack mail
+            # rows selected alone) do not need the shared local server; the
+            # device checks below still apply.
+            shared_rows = [row.id for row in selected
+                           if row.id not in _DSTACK_SELF_PROVISIONED_ROWS]
+            preflight(base_url, apk, adb, recorder,
+                      require_shared_server=not (dstack and not shared_rows))
         except Exception as error:
             status = _status_for_error(error)
             reason = sanitize_text(str(error))[:1000]
@@ -8348,6 +9553,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--apk", default=str(DEFAULT_APK), help="debug APK to install")
     parser.add_argument("--reset-app-data", action="store_true",
                         help="clear only com.nexachat.debug on emulator-5554 before sign-in")
+    parser.add_argument("--dstack", action="store_true",
+                        help="let mail/OTP rows provision a disposable backend via "
+                             "tools/e2e/disposable_stack.py instead of staying blocked")
     return parser
 
 
@@ -8373,6 +9581,7 @@ def main(argv: list[str] | None = None) -> int:
         summary = run_campaign(
             selected, base_url=args.base_url, serial=args.serial, apk=Path(args.apk),
             evidence_dir=Path(args.evidence_dir), reset_app_data=args.reset_app_data,
+            dstack=args.dstack,
         )
         print(render_summary(summary))
         return 0 if summary["status"] == "PASS" else 1

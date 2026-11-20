@@ -78,7 +78,9 @@
                     android:host="join"
                     android:pathPrefix="/" />
             </intent-filter>
-            <!-- Verified HTTPS App Links filter is supplied by src/release/AndroidManifest.xml for release builds only -->
+            <!-- Verified HTTPS App Links filter is generated for release builds only:
+                 the generateReleaseInviteManifest Gradle task writes it and
+                 release.manifest.srcFile points at the generated file. -->
         </activity>
 
         <activity

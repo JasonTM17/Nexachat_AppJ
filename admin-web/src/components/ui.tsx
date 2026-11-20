@@ -61,7 +61,13 @@ export function Chip({
   label?: string;
 }) {
   return (
-    <span className={`chip${tone ? ` ${tone}` : ''}`} title={label} aria-label={label}>
+    <span
+      className={`chip${tone ? ` ${tone}` : ''}`}
+      title={label}
+      // aria-label is only valid with a role; role="img" makes the label the
+      // accessible name instead of the bare chip text (e.g. "+9").
+      {...(label ? { role: 'img', 'aria-label': label } : {})}
+    >
       {children}
     </span>
   );
@@ -316,6 +322,11 @@ export function Pager({
   );
 }
 
+// Locale-aware grouping for KPI numbers (1,234 / 1.234 depending on lang).
+export function fmtNum(value: number): string {
+  return value.toLocaleString(timeLocale());
+}
+
 export function fmtTime(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -323,6 +334,15 @@ export function fmtTime(iso: string | null | undefined): string {
   return d.toLocaleString(timeLocale(), {
     month: 'short',
     day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+// Clock-only formatter on the app-synced display locale, so stamps never
+// mix browser-locale output with table times in the same screen.
+export function fmtClock(d: Date): string {
+  return d.toLocaleTimeString(timeLocale(), {
     hour: '2-digit',
     minute: '2-digit',
   });

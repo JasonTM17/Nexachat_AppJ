@@ -7,7 +7,13 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { api, login as apiLogin, tokenStore, type MeResponse } from './api';
+import {
+  api,
+  login as apiLogin,
+  tokenStore,
+  SESSION_EXPIRED_EVENT,
+  type MeResponse,
+} from './api';
 
 interface SessionState {
   me: MeResponse | null;
@@ -50,6 +56,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // api.ts dispatches this when a mid-session token refresh fails: the
+  // session is expired, so drop me and let App route to /login (LoginPage
+  // shows a notice from the sessionStorage flag api.ts sets).
+  useEffect(() => {
+    const onExpired = () => {
+      tokenStore.clear();
+      setMe(null);
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
   }, []);
 
   const signIn = useCallback(async (identifier: string, password: string) => {

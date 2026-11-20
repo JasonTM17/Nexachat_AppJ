@@ -96,7 +96,7 @@ class GroupServiceTest {
                 avatarReferenceCoordinator,
                 new UploadAdmission(16, 1000),
                 simpUserRegistry, simpleBrokerMessageHandler, transactionManagerProvider(),
-                mock(com.nexachat.user.UserBlockRepository.class));
+                mock(com.nexachat.user.UserBlockRepository.class), 100);
         lenient().when(userRepository.findByIdForUpdate(adminId)).thenReturn(Optional.of(admin()));
         lenient().when(storageService.exists(anyString())).thenReturn(true);
         // Group writers now take the conversation row at entry; the unit
@@ -353,6 +353,25 @@ class GroupServiceTest {
         verify(memberRepository, never()).save(any(ConversationMember.class));
         verify(messageService, never()).postSystemMessage(any(), any(), anyString());
         verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void addMembers_refusesWhenTheBatchExceedsTheGroupCap() {
+        groupExistsAndCallerIs(ConversationMember.Role.ADMIN);
+        when(memberRepository.findMemberUserIds(conversationId)).thenReturn(List.of(adminId));
+        when(userRepository.findActiveUsersByIdsForUpdate(sortedIds(adminId, bobId, carolId)))
+                .thenReturn(List.of(admin(), bob(), carol()));
+        // The group is at 99 of the 100-member cap the invite paths enforce;
+        // a direct admin add must refuse the same way, not push past it.
+        when(memberRepository.countByConversation_Id(conversationId)).thenReturn(99L);
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> groupService.addMembers(adminId, conversationId,
+                        new AddMemberRequest(List.of(bobId, carolId))));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        verify(memberRepository, never()).save(any(ConversationMember.class));
+        verify(messageService, never()).postSystemMessage(any(), any(), anyString());
     }
 
     @Test
@@ -910,7 +929,7 @@ class GroupServiceTest {
                 conversationRepository, memberRepository, userRepository, attachmentRepository,
                 messageService, eventPublisher, storageService, avatarReferenceCoordinator,
                 admission, simpUserRegistry, simpleBrokerMessageHandler, transactionManagerProvider(),
-                mock(com.nexachat.user.UserBlockRepository.class));
+                mock(com.nexachat.user.UserBlockRepository.class), 100);
 
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);

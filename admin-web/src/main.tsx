@@ -4,12 +4,14 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { SessionProvider } from './auth';
 import { I18nProvider } from './i18n';
+import { initialTheme } from './lib/theme';
 import './styles.css';
 
-// Stamp the persisted theme before the first render so every route, including
-// login outside the app shell, uses it; Layout keeps it in sync on toggle.
-document.documentElement.dataset.theme =
-  localStorage.getItem('admin.theme') === 'dark' ? 'dark' : 'light';
+// Stamp the theme before the first render so every route, including login
+// outside the app shell, uses it. An explicit stored choice wins; with none,
+// the OS color scheme decides (matching the index.html pre-CSS paint).
+// Layout keeps data-theme in sync and persists only explicit toggles.
+document.documentElement.dataset.theme = initialTheme();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

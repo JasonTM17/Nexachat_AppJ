@@ -21,9 +21,10 @@ export async function createEnvironment() {
 }
 
 /**
- * Mirrors the server-projected authorization state described in
- * reports/r4-307-sol-firebase-design.md. These fields are written by the
- * privileged REST client only; every client-facing read/write is denied.
+ * Mirrors the server-projected authorization state written by
+ * server/src/main/java/com/nexachat/firebase/projection/. These fields are
+ * written by the privileged REST client only; every client-facing
+ * read/write is denied.
  */
 export function baseFixture() {
   const now = Date.now();

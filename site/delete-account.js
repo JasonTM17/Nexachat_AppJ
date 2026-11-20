@@ -34,7 +34,9 @@
     if (typeof raw !== 'string') {
       return '';
     }
-    return raw.trim();
+    // E.164 carries no separators; users paste numbers with spaces, dashes,
+    // dots or parentheses, so strip them before posting.
+    return raw.trim().replace(/[\s\-().]/g, '');
   }
 
   function validateCode(raw) {
@@ -59,6 +61,11 @@
     var fields = form.querySelectorAll('input, button');
     for (var i = 0; i < fields.length; i++) {
       fields[i].disabled = busy;
+    }
+    if (busy) {
+      form.setAttribute('aria-busy', 'true');
+    } else {
+      form.removeAttribute('aria-busy');
     }
   }
 
@@ -321,7 +328,14 @@
     wireEnter(codeInput, function () {
       if (btnDelete && !btnDelete.disabled) {
         btnDelete.click();
+        return;
       }
+      // Enter with an unusable code used to be a silent no-op: move focus to
+      // the field and surface its error when a code was actually typed.
+      if (codeInput && codeInput.value.trim()) {
+        showFieldError(codeInput, true);
+      }
+      focusElement(codeInput);
     });
 
     form.addEventListener('submit', function (ev) {

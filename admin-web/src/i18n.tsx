@@ -10,7 +10,9 @@ import { setTimeLang } from './lib/locale';
 
 export type Lang = 'en' | 'vi';
 
-const STRINGS = {
+// Exported so tests can assert en/vi key parity; the public surface is the
+// StringKey type plus the provider below.
+export const STRINGS = {
   en: {
     'app.name': 'NexaChat Admin',
     'nav.overview': 'Overview',
@@ -31,9 +33,11 @@ const STRINGS = {
     'login.error.suspended': 'Account is suspended',
     'login.error.network': 'Cannot reach the server. Check your connection and try again.',
     'login.error.server': 'The server could not process the sign-in. Try again later.',
+    'login.notice.sessionExpired': 'Your session has expired — please sign in again.',
     'common.loading': 'Loading…',
     'common.empty': 'Nothing here',
     'common.empty.hint': 'No results to show right now.',
+    'common.empty.filtered': 'No results match the current filters.',
     'common.error': 'Something went wrong',
     'common.error.hint': 'The request could not be completed.',
     'common.retry': 'Retry',
@@ -149,6 +153,8 @@ const STRINGS = {
     'rules.col.type': 'Type',
     'rules.col.pattern': 'Pattern',
     'rules.col.enabled': 'Enabled',
+    'rules.state.on': 'on',
+    'rules.state.off': 'off',
     'rules.builtIn': 'Built-in',
     'rules.new': 'New rule',
     'rules.field.name': 'Name',
@@ -201,9 +207,11 @@ const STRINGS = {
     'login.error.suspended': 'Tài khoản đã bị đình chỉ',
     'login.error.network': 'Không thể kết nối máy chủ. Kiểm tra kết nối và thử lại.',
     'login.error.server': 'Máy chủ không xử lý được đăng nhập. Vui lòng thử lại sau.',
+    'login.notice.sessionExpired': 'Phiên đăng nhập đã hết hạn — vui lòng đăng nhập lại.',
     'common.loading': 'Đang tải…',
     'common.empty': 'Không có dữ liệu',
     'common.empty.hint': 'Hiện chưa có kết quả để hiển thị.',
+    'common.empty.filtered': 'Không có kết quả nào khớp với bộ lọc hiện tại.',
     'common.error': 'Có lỗi xảy ra',
     'common.error.hint': 'Không thể hoàn thành yêu cầu.',
     'common.retry': 'Thử lại',
@@ -319,6 +327,8 @@ const STRINGS = {
     'rules.col.type': 'Kiểu',
     'rules.col.pattern': 'Mẫu',
     'rules.col.enabled': 'Bật',
+    'rules.state.on': 'bật',
+    'rules.state.off': 'tắt',
     'rules.builtIn': 'Mặc định',
     'rules.new': 'Thêm quy tắc',
     'rules.field.name': 'Tên',

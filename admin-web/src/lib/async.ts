@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // Debounce a fast-changing value (e.g. a search box) so consumers only react
 // once typing settles. The timer resets on every change; `delayMs` of quiet
@@ -14,13 +14,20 @@ export function useDebouncedValue<T>(value: T, delayMs: number): T {
 
 // Guard against out-of-order responses: each call gets a sequence number and
 // only the latest one may write state. Returns a setter that ignores updates
-// from any but the newest call.
-export function useLatestRequest(): <T>(fn: Promise<T>, apply: (value: T) => void) => void {
+// from any but the newest call, plus `cancel()` which invalidates every call
+// still in flight (used when a consumer dismisses the surface the response
+// would populate, e.g. a closed detail drawer must not reopen itself).
+export interface LatestRequest {
+  <T>(fn: Promise<T>, apply: (value: T) => void): void;
+  cancel: () => void;
+}
+
+export function useLatestRequest(): LatestRequest {
   const seqRef = useRef(0);
   // Memoized: consumers put the returned function into useCallback/useEffect
   // dependency lists — a fresh identity each render would refire the effect
   // (and its network call) on every render.
-  return useCallback(<T,>(fn: Promise<T>, apply: (value: T) => void) => {
+  const latest = useCallback(<T,>(fn: Promise<T>, apply: (value: T) => void) => {
     const seq = ++seqRef.current;
     void fn.then(
       (value) => {
@@ -31,4 +38,10 @@ export function useLatestRequest(): <T>(fn: Promise<T>, apply: (value: T) => voi
       },
     );
   }, []);
+  const cancel = useCallback(() => {
+    seqRef.current += 1;
+  }, []);
+  // Same object identity every render (both callbacks are stable), so
+  // attaching `cancel` cannot destabilize dependency lists.
+  return useMemo(() => Object.assign(latest, { cancel }), [latest, cancel]);
 }

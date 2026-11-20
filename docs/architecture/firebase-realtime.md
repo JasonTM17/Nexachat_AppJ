@@ -21,8 +21,10 @@ caveat; this page owns the rules contract, its tests and the known gaps.
 
 Every path below is written by the privileged server REST client except
 `presence` and `typing`, which are written by the owning client inside the
-lease. Clients can read only the leaves named here. Parent and list reads are
-denied by the rules.
+lease. Clients can read only the nodes named here: `presence/{uid}` (all bridge
+records of that user), the `typing/{conversationId}/{uid}` leaf and the
+`calls/{callId}` leaf. All parent and list reads above those grants are denied
+by the rules.
 
 | Path | Writer | Lifetime / contract |
 |---|---|---|
@@ -111,7 +113,7 @@ rollout gates.
 
 ## Call status projection
 
-Call status projection (`/calls/{callId}`) can passively refine the call-screen label to “Call accepted” when the server projection advances before the corresponding STOMP event updates local call state. It never changes call controls or terminal outcomes and is not a signaling channel or call authority; STOMP over WebSocket remains the sole authoritative transport for WebRTC SDP, ICE candidates, and call actions (`/topic/call.*`).
+Call status projection (`/calls/{callId}`) can passively refine the call-screen label to “Call accepted” when the server projection advances before the corresponding STOMP event updates local call state. It never changes call controls or terminal outcomes and is not a signaling channel or call authority; STOMP over WebSocket remains the sole authoritative transport for WebRTC SDP, ICE candidates, and call actions (SEND `/app/calls/{conversationId}/signal`, call events on `/user/queue/calls`).
 
 - **Paths & Payload**:
   - Path: `/calls/{callId}`

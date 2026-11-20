@@ -30,11 +30,14 @@
         <svg class="brand-mark" viewBox="0 0 108 108" aria-hidden="true" focusable="false"><path d="M24 20H36L64 60V20H80V84H66L40 47V72L24 84Z"/></svg>
         <span>NexaChat</span>
       </h1>
+      <div id="invite-pending" class="state-container" aria-live="polite">
+        <p class="lead" lang="vi">Đang kiểm tra lời mời…</p>
+        <p class="lead" lang="en">Checking this invite…</p>
+      </div>
       <div id="invite-valid" class="state-container" hidden aria-live="polite">
         <p class="lead" lang="vi">Lời mời nhóm.</p>
         <p class="lead" lang="en">Group invite.</p>
-        <a id="btn-open-app" class="btn" href="#" lang="vi" aria-label="Mở ứng dụng, Open app">Mở ứng dụng</a>
-        <p class="install-hint" lang="en">Open app</p>
+        <a id="btn-open-app" class="btn btn-lg" href="#">Mở ứng dụng · Open app</a>
         <p id="app-fallback" class="install-hint" hidden>
           <span lang="vi">Ứng dụng chưa mở? Cài NexaChat rồi thử lại — </span>
           <span lang="en">App didn't open? Install NexaChat and try again — </span>

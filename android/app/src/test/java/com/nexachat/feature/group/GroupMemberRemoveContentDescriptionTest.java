@@ -9,7 +9,7 @@ import org.junit.Test;
 public final class GroupMemberRemoveContentDescriptionTest {
 
     @Test
-    public void removeMemberUsesMemberNamedConfirmString() {
-        assertEquals(R.string.group_remove_member_confirm, GroupMemberAdapter.removeMemberContentDescriptionRes());
+    public void removeMemberUsesMemberNamedLabel() {
+        assertEquals(R.string.cd_remove_member_named, GroupMemberAdapter.removeMemberContentDescriptionRes());
     }
 }

@@ -100,7 +100,11 @@ public final class ProfileFragment extends Fragment {
     }
 
     @Override public void onViewCreated(@NonNull View view, @Nullable Bundle state) {
-        viewModel = new ViewModelProvider(this).get(ProfileViewModel.class);
+        // The profile state is the activity-scoped "shared profile state" the inbox
+        // binds (ProfileViewModel's own contract: "the profile must follow the
+        // session, not the screen"). A fragment-scoped instance would fork it and
+        // rename/avatar updates would never reach the inbox identity strip.
+        viewModel = new ViewModelProvider(requireActivity()).get(ProfileViewModel.class);
         linkedAccountsViewModel = new ViewModelProvider(this).get(LinkedAccountsViewModel.class);
         settingsViewModel = new ViewModelProvider(requireActivity()).get(AppSettingsViewModel.class);
         streakViewModel = new ViewModelProvider(this).get(StreakViewModel.class);

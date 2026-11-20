@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { I18nProvider, useI18n } from '../../src/i18n';
+import { I18nProvider, STRINGS, useI18n } from '../../src/i18n';
 import type { ReactNode } from 'react';
 
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -54,5 +54,9 @@ describe('i18n', () => {
   it('falls back to the key for missing strings', () => {
     const { result } = renderHook(() => useI18n(), { wrapper });
     expect(result.current.t('nonexistent.key' as never)).toBe('nonexistent.key');
+  });
+
+  it('keeps the en and vi key sets identical', () => {
+    expect(Object.keys(STRINGS.vi).sort()).toEqual(Object.keys(STRINGS.en).sort());
   });
 });

@@ -118,9 +118,12 @@ public class TranslateService {
     // Single-message translate
     // ------------------------------------------------------------------
 
-    // Not readOnly: the cache write on a miss requires a read-write tx, and
-    // Postgres would reject the INSERT inside a read-only transaction.
-    @Transactional
+    // Deliberately NOT @Transactional, like the summary lane: the provider
+    // chain is a blocking external HTTP call, and a transaction here would pin
+    // a pooled connection (10 in prod, 5 on Render) for up to the combined
+    // LLM timeouts. Reads run per-statement under READ COMMITTED exactly as
+    // they did inside one transaction; the cache write is atomic in its own
+    // transaction on TranslationCacheRepository.save.
     public TranslateResponse translate(UUID userId, UUID messageId, String targetLangCode) {
         TranslationLanguage target = requireTargetLanguage(targetLangCode);
         UUID conversationId = messageRepository.findConversationIdById(messageId)
@@ -168,6 +171,16 @@ public class TranslateService {
             throw ApiException.of(ApiErrorCode.TRANSLATION_UNAVAILABLE,
                     "Translation is temporarily unavailable");
         }
+        // Post-generation re-check, the same lane gate the summary and ask
+        // paths apply: a consent revoke committed while the provider call was
+        // in flight must win the race — the result is neither returned nor
+        // cached. Unlocked like the ask lane's pre-call re-check; the residual
+        // window to the cache write is milliseconds, not the provider call.
+        if (!consentRepository.isConsented(userId)) {
+            metrics.recordTranslateRequest("REFUSED", "none");
+            throw ApiException.of(ApiErrorCode.AI_CONSENT_REQUIRED,
+                    "External AI consent is required to translate messages");
+        }
         String text = target.code().equals(generation.output().sourceLang())
                 ? content : generation.output().text();
         cacheRepository.save(messageId, row.changeVersion(), target.code(), glossaryHash,
@@ -183,8 +196,10 @@ public class TranslateService {
     // Batch translate (auto-translate)
     // ------------------------------------------------------------------
 
-    // Not readOnly: cache writes on misses require a read-write tx.
-    @Transactional
+    // Not @Transactional for the same reason as translate: one batch can make
+    // up to batchMaxMessages sequential provider calls, so a transaction here
+    // would pin a pooled connection for the whole chain. Each cache write is
+    // atomic in its own transaction on TranslationCacheRepository.save.
     public List<TranslateBatchItem> translateBatch(
             UUID userId, UUID conversationId, List<UUID> messageIds, String targetLangCode) {
         TranslationLanguage target = requireTargetLanguage(targetLangCode);
@@ -259,6 +274,15 @@ public class TranslateService {
                 metrics.recordTranslateRequest("FAILURE", "none");
                 items.add(TranslateBatchItem.failed(id, target.code(),
                         ApiErrorCode.TRANSLATION_UNAVAILABLE.getCode()));
+                continue;
+            }
+            // Same post-generation lane gate as the single-message path: a
+            // revoke committed while this item's provider call was in flight
+            // wins, and the result is neither returned nor cached.
+            if (!consentRepository.isConsented(userId)) {
+                metrics.recordTranslateRequest("REFUSED", "none");
+                items.add(TranslateBatchItem.failed(id, target.code(),
+                        ApiErrorCode.AI_CONSENT_REQUIRED.getCode()));
                 continue;
             }
             String text = target.code().equals(generation.output().sourceLang())

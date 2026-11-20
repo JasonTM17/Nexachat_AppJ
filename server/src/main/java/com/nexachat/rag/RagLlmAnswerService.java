@@ -131,16 +131,25 @@ public class RagLlmAnswerService {
                 completion = llmClient.completeTextWithTargetResult(
                         prompt.systemMessage(), prompt.userMessage(), secondary);
             }
+            RagLlmAnswer answer = outputValidator.validate(completion.content(), prompt);
+            // Validate before recording: a primary that answers 200 with an
+            // unusable body is a failing primary, not a healthy one — the
+            // breaker must open on it and the failure stat must count it,
+            // exactly like the summary lane treats bad output.
+            if (answer == null) {
+                if (primaryUsed || primaryFailed) {
+                    circuitBreaker.recordFailure();
+                    breakerRecorded = true;
+                }
+                stats.recordLlmFailure();
+                return null;
+            }
             if (primaryUsed) {
                 circuitBreaker.recordSuccess();
                 breakerRecorded = true;
             } else if (primaryFailed) {
                 circuitBreaker.recordFailure();
                 breakerRecorded = true;
-            }
-            RagLlmAnswer answer = outputValidator.validate(completion.content(), prompt);
-            if (answer == null) {
-                return null;
             }
             String provider = fallbackUsed ? "fallback" : (primaryUsed ? "primary" : null);
             return new RagLlmAnswer(answer.answer(), answer.citationIds(), provider);

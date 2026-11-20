@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AlertsPage from '../../src/pages/AlertsPage';
 import { I18nProvider } from '../../src/i18n';
@@ -131,6 +131,61 @@ describe('AlertsPage', () => {
     expect(await screen.findByText('Nothing here')).toBeInTheDocument();
   });
 
+  it('opens the row with Space and marks it busy while the detail loads', async () => {
+    let resolveDetail: (d: AlertDetail) => void = () => {};
+    apiMock.mockImplementation((path: string) => {
+      if (path === '/api/v1/admin/me') return Promise.resolve(me);
+      if (path.startsWith('/api/v1/admin/alerts?')) return Promise.resolve(page([alert()]));
+      if (path === '/api/v1/admin/alerts/a1') {
+        return new Promise<AlertDetail>((res) => (resolveDetail = res));
+      }
+      return Promise.reject(new ApiException(404, 'NO_ROUTE', `unstubbed ${path}`));
+    });
+    renderPage();
+    const row = (await screen.findByText('send me your password')).closest('tr') as HTMLElement;
+
+    // Space activates the row like Enter, with immediate busy feedback
+    row.focus();
+    await userEvent.keyboard(' ');
+    expect(row).toHaveAttribute('aria-busy', 'true');
+
+    resolveDetail(detail());
+    expect(await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' })).toBeInTheDocument();
+    await waitFor(() => expect(row).not.toHaveAttribute('aria-busy'));
+  });
+
+  it('does not reopen the drawer when a dismissed detail fetch resolves late', async () => {
+    const user = userEvent.setup();
+    const resolvers: Array<(d: AlertDetail) => void> = [];
+    apiMock.mockImplementation((path: string) => {
+      if (path === '/api/v1/admin/me') return Promise.resolve(me);
+      if (path.startsWith('/api/v1/admin/alerts?')) return Promise.resolve(page([alert()]));
+      if (path === '/api/v1/admin/alerts/a1') {
+        return new Promise<AlertDetail>((res) => resolvers.push(res));
+      }
+      return Promise.reject(new ApiException(404, 'NO_ROUTE', `unstubbed ${path}`));
+    });
+    renderPage();
+    const row = (await screen.findByText('send me your password')).closest('tr') as HTMLElement;
+
+    await user.click(row);
+    resolvers[0](detail());
+    await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' });
+
+    // A second fetch for the same alert (e.g. the post-action refetch) is in
+    // flight when the user dismisses the drawer; its late response must not
+    // resurrect the drawer or leave the row marked busy.
+    await user.click(row);
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await act(async () => {
+      resolvers[resolvers.length - 1](detail());
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(row).not.toHaveAttribute('aria-busy');
+  });
+
   it('filters by severity and reloads from page 0', async () => {
     const user = userEvent.setup();
     stubRoutes();
@@ -143,6 +198,38 @@ describe('AlertsPage', () => {
         '/api/v1/admin/alerts?status=OPEN&severity=HIGH&page=0&size=25',
       ),
     );
+  });
+
+  it('keeps the freshest filter results when an older response resolves late', async () => {
+    const user = userEvent.setup();
+    const unfiltered = page([alert({ snippet: 'unfiltered row' })]);
+    const filtered = page([alert({ snippet: 'high severity row' })]);
+    const stale: { resolve?: (value: Page<AlertSummary>) => void } = {};
+    apiMock.mockImplementation((path: string) => {
+      if (path === '/api/v1/admin/me') return Promise.resolve(me);
+      if (path.startsWith('/api/v1/admin/alerts?')) {
+        return path.includes('severity=HIGH')
+          ? Promise.resolve(filtered)
+          : new Promise<Page<AlertSummary>>((resolve) => {
+              stale.resolve = resolve;
+            });
+      }
+      return Promise.reject(new ApiException(404, 'NO_ROUTE', `unstubbed ${path}`));
+    });
+    renderPage();
+
+    // The unfiltered request is still in flight when the moderator narrows
+    // the filter; the filtered response must win even though it lands first.
+    await user.selectOptions(screen.getByLabelText('Severity'), 'HIGH');
+    expect(await screen.findByText('high severity row')).toBeInTheDocument();
+
+    // Let the stale response land and any wrong re-render settle first.
+    stale.resolve?.(unfiltered);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(screen.queryByText('unfiltered row')).toBeNull();
+    expect(screen.getByText('high severity row')).toBeInTheDocument();
   });
 
   it('opens the drawer and assigns the alert to the signed-in moderator', async () => {
@@ -168,6 +255,42 @@ describe('AlertsPage', () => {
         body: { assigneeId: 'me-mod' },
       }),
     );
+  });
+
+  it('shows a failed status change inside the open drawer and refetches detail and list', async () => {
+    const user = userEvent.setup();
+    // Only the PATCH fails; the detail GET and the list keep working.
+    apiMock.mockImplementation((path: string, opts?: { method?: string }) => {
+      if (path === '/api/v1/admin/me') return Promise.resolve(me);
+      if (path === '/api/v1/admin/alerts/a1' && opts?.method === 'PATCH') {
+        return Promise.reject(new ApiException(500, 'X', 'boom'));
+      }
+      if (path.startsWith('/api/v1/admin/alerts?')) return Promise.resolve(page([alert()]));
+      if (path === '/api/v1/admin/alerts/a1') return Promise.resolve(detail());
+      return Promise.reject(new ApiException(404, 'NO_ROUTE', `unstubbed ${path}`));
+    });
+    renderPage();
+
+    await user.click(await screen.findByText('send me your password'));
+    const drawer = await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' });
+    const detailCalls = () =>
+      apiMock.mock.calls.filter(([p]) => p === '/api/v1/admin/alerts/a1').length;
+    const listCalls = () =>
+      apiMock.mock.calls.filter(([p]) => String(p).startsWith('/api/v1/admin/alerts?')).length;
+    expect(detailCalls()).toBe(1);
+    expect(listCalls()).toBe(1);
+
+    await user.click(within(drawer).getByRole('button', { name: 'Resolve' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Resolved' });
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+
+    // The failure renders inside the drawer (the page-top alert sits behind
+    // the scrim); the confirm dialog closed but the drawer stayed open.
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent('Something went wrong');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    // Both the detail and the list are refetched after the failed action.
+    await waitFor(() => expect(detailCalls()).toBe(3));
+    await waitFor(() => expect(listCalls()).toBe(2));
   });
 
   it('resolves an alert from the drawer without a reason', async () => {
@@ -249,6 +372,63 @@ describe('AlertsPage', () => {
         body: { body: 'contacted sender' },
       }),
     );
+  });
+
+  it('clamps the pager back when a bulk-dismiss empties the current page', async () => {
+    const user = userEvent.setup();
+    let dismissed = false;
+    apiMock.mockImplementation((path: string) => {
+      if (path === '/api/v1/admin/me') return Promise.resolve(me);
+      if (path === '/api/v1/admin/alerts/bulk-dismiss') {
+        dismissed = true;
+        return Promise.resolve(undefined);
+      }
+      if (path.startsWith('/api/v1/admin/alerts?')) {
+        if (path.includes('page=1')) {
+          // after the dismiss, the last page is gone: 25 items remain on page 0
+          if (dismissed) {
+            return Promise.resolve({ items: [], page: 1, size: 25, total: 25, hasMore: false });
+          }
+          return Promise.resolve({
+            items: [alert({ id: 'a2' })],
+            page: 1,
+            size: 25,
+            total: 26,
+            hasMore: false,
+          });
+        }
+        return Promise.resolve({
+          items: [alert()],
+          page: 0,
+          size: 25,
+          total: dismissed ? 25 : 26,
+          hasMore: false,
+        });
+      }
+      if (path === '/api/v1/admin/alerts/a1') return Promise.resolve(detail());
+      return Promise.reject(new ApiException(404, 'NO_ROUTE', `unstubbed ${path}`));
+    });
+    renderPage();
+    await screen.findByText('send me your password');
+
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await screen.findByRole('checkbox', { name: 'Select a2' });
+    await user.click(screen.getByRole('checkbox', { name: 'Select a2' }));
+    await user.click(screen.getByRole('button', { name: /Dismiss selected · 1 selected/ }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Dismiss selected' });
+    await user.type(within(dialog).getByLabelText(/Reason/), 'duplicates');
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+
+    // the emptied page=1 response clamps the pager to page 0 and refetches
+    await waitFor(() => {
+      const page0Calls = apiMock.mock.calls.filter(
+        ([p]) => p === '/api/v1/admin/alerts?status=OPEN&page=0&size=25',
+      );
+      expect(page0Calls.length).toBe(2);
+    });
+    expect(await screen.findByText('send me your password')).toBeInTheDocument();
+    // total is now 25 -> a single page -> no pager at all
+    expect(screen.queryByRole('navigation', { name: 'Pagination' })).toBeNull();
   });
 
   it('bulk-dismisses selected alerts with a required reason', async () => {
@@ -380,5 +560,29 @@ describe('AlertsPage', () => {
       );
       expect(assigns).toHaveLength(1);
     });
+  });
+
+  it('clears the action error banner when the filters change', async () => {
+    const user = userEvent.setup();
+    stubRoutes();
+    renderPage();
+    await screen.findByText('send me your password');
+
+    await user.click(screen.getByText('send me your password'));
+    const drawer = await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' });
+    apiMock.mockRejectedValueOnce(new ApiException(500, 'X', 'boom'));
+    await user.click(within(drawer).getByRole('button', { name: 'Resolve' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Resolved' });
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong');
+
+    // Close the drawer and change the query; a banner for a failed action on
+    // the previous view must not linger over the new one.
+    await user.click(within(drawer).getByRole('button', { name: 'Close' }));
+    await user.selectOptions(screen.getByLabelText('Severity'), 'HIGH');
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });

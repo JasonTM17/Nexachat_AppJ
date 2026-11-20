@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '../auth';
 import { useI18n, type StringKey } from '../i18n';
 import { tokenStore } from '../api';
+import { initialTheme, persistTheme } from '../lib/theme';
 
 const NAV: { to: string; key: StringKey; icon: string }[] = [
   { to: '/overview', key: 'nav.overview', icon: '◐' },
@@ -29,16 +30,26 @@ export default function Layout() {
   const { signOut, me } = useSession();
   const navigate = useNavigate();
   const location = useLocation();
-  const [theme, setTheme] = useState<string>(
-    () => localStorage.getItem('admin.theme') ?? 'light',
-  );
+  // Tri-state: stored explicit choice wins, otherwise the OS preference.
+  // Mounting must NOT persist — only an explicit toggle writes localStorage.
+  const [theme, setTheme] = useState<'light' | 'dark'>(initialTheme);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem('admin.theme', theme);
   }, [theme]);
 
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    persistTheme(next);
+    setTheme(next);
+  };
+
   const title = TITLES[location.pathname] ?? 'app.name';
+
+  // Per-route window title so tabs and screen readers identify the page.
+  useEffect(() => {
+    document.title = `${t(title)} · ${t('app.name')}`;
+  }, [title, t]);
 
   return (
     <div className="shell">
@@ -88,7 +99,7 @@ export default function Layout() {
             </select>
             <button
               className="btn ghost sm"
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              onClick={toggleTheme}
               aria-label={t('theme.toggle')}
               aria-pressed={theme === 'dark'}
               title={`${t('theme.light')}/${t('theme.dark')}`}

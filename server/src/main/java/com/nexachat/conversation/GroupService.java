@@ -24,6 +24,7 @@ import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.simp.broker.AbstractBrokerMessageHandler;
@@ -109,6 +110,7 @@ public class GroupService {
     private final ObjectProvider<PlatformTransactionManager> transactionManagerProvider;
     private final SimpUserRegistry simpUserRegistry;
     private final AbstractBrokerMessageHandler simpleBrokerMessageHandler;
+    private final int maxMembers;
 
     public GroupService(ConversationRepository conversationRepository,
                         ConversationMemberRepository memberRepository,
@@ -122,7 +124,8 @@ public class GroupService {
                         SimpUserRegistry simpUserRegistry,
                         AbstractBrokerMessageHandler simpleBrokerMessageHandler,
                         ObjectProvider<PlatformTransactionManager> transactionManagerProvider,
-                        UserBlockRepository blockRepository) {
+                        UserBlockRepository blockRepository,
+                        @Value("${nexachat.group.max-members:100}") int maxMembers) {
         this.conversationRepository = conversationRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
@@ -136,6 +139,7 @@ public class GroupService {
         this.simpUserRegistry = simpUserRegistry;
         this.simpleBrokerMessageHandler = simpleBrokerMessageHandler;
         this.transactionManagerProvider = transactionManagerProvider;
+        this.maxMembers = Math.max(2, maxMembers);
     }
 
     private TransactionTemplate avatarBindTransaction() {
@@ -252,6 +256,16 @@ public class GroupService {
                 .toList();
         if (toAdd.isEmpty()) {
             return; // idempotent no-op: nothing changed → no message, no broadcast
+        }
+        // The same member cap the invite paths enforce, under the same
+        // conversation row lock: without it a direct admin add could push a
+        // group past the limit, after which every invite join and join-request
+        // approval is refused permanently while admin adds keep succeeding.
+        long memberCount = memberRepository.countByConversation_Id(conversationId);
+        if (memberCount + toAdd.size() > maxMembers) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "Group has reached maximum member capacity",
+                    Map.of("limit", maxMembers));
         }
 
         String actorName = lockedUsers.get(callerId).getDisplayName();

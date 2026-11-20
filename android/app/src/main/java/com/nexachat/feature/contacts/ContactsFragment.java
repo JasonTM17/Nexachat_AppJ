@@ -354,7 +354,7 @@ public final class ContactsFragment extends Fragment {
         addDialog = new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.add_contact_title)
                 .setView(scroll)
-                .setNegativeButton(android.R.string.cancel, (d, w) -> {
+                .setNegativeButton(R.string.action_cancel, (d, w) -> {
                     viewModel.resetAddFlow();
                     addDialog = null;
                 })

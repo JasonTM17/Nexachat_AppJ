@@ -8,6 +8,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
@@ -17,6 +19,7 @@ import static org.mockito.Mockito.when;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.net.Uri;
+import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.database.AppDatabase;
 import com.nexachat.core.database.ConversationDao;
@@ -665,6 +668,76 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
+    public void nextPageDuringResetWindowReportsStaleInsteadOfExhausted() throws Exception {
+        buildRepository();
+        java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger executes =
+                new java.util.concurrent.atomic.AtomicInteger();
+        when(messageApi.getConversations(eq(30), isNull())).thenReturn(blockingInboxCall(
+                inboxJson("conv-a", 20), "cursor-page-2", entered, release, executes));
+
+        Thread refresher = new Thread(
+                () -> repository.refreshInboxPage().blockingGet(), "inbox-refresh");
+        refresher.start();
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+
+        // The fresh walk's first page is still in flight, so the cleared cursor
+        // means mid-reset — the call must not resolve as an exhausted inbox.
+        Result<Boolean> midReset = repository.loadNextInboxPage().blockingGet();
+
+        release.countDown();
+        refresher.join(5_000);
+
+        assertTrue(midReset instanceof Result.Failure<?>);
+        assertEquals(
+                new ApiError.Unknown(ConversationRepository.ERROR_INBOX_PAGE_STALE),
+                ((Result.Failure<?>) midReset).getError());
+
+        // Once page one lands, paging continues normally at the new cursor.
+        stubInboxPage("cursor-page-2", null, inboxJson("conv-b", 10));
+        Result<Boolean> next = repository.loadNextInboxPage().blockingGet();
+        assertTrue(next instanceof Result.Success<?>);
+        assertFalse(((Result.Success<Boolean>) next).getValue());
+        verify(messageApi).getConversations(eq(30), eq("cursor-page-2"));
+    }
+
+    @Test
+    public void supersededRefreshReportsStaleInsteadOfExhausted() throws Exception {
+        buildRepository();
+        java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger executes =
+                new java.util.concurrent.atomic.AtomicInteger();
+        when(messageApi.getConversations(eq(30), isNull())).thenReturn(blockingInboxCall(
+                inboxJson("conv-a", 20), null, entered, release, executes));
+
+        java.util.concurrent.atomic.AtomicReference<Result<Boolean>> staleResult =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        Thread first = new Thread(
+                () -> staleResult.set(repository.refreshInboxPage().blockingGet()),
+                "inbox-refresh-stale");
+        first.start();
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+
+        // A newer refresh's reset is eager: building the call already bumped
+        // the generation and cleared the walk cursor while the previous walk's
+        // page one is still in flight — the same interleaving a push-triggered
+        // refreshInbox() creates. (The returned Single is left unsubscribed:
+        // under the trampoline scheduler a second tracked request cannot run
+        // until the first finishes.)
+        repository.refreshInboxPage();
+        release.countDown();
+        first.join(5_000);
+
+        Result<Boolean> stale = staleResult.get();
+        assertTrue(stale instanceof Result.Failure<?>);
+        assertEquals(
+                new ApiError.Unknown(ConversationRepository.ERROR_INBOX_PAGE_STALE),
+                ((Result.Failure<?>) stale).getError());
+    }
+
+    @Test
     public void duplicateConversationAcrossPagesIsUpsertedOnceWithoutActivityRegression()
             throws Exception {
         buildRepository();
@@ -991,6 +1064,28 @@ public final class ConversationRepositoryTest {
         clock.advanceTimeBy(1, TimeUnit.SECONDS);
 
         verify(messageApi, times(1)).getConversations(eq(30), isNull());
+    }
+
+    @Test
+    public void unexpectedRefreshErrorDoesNotKillTheRefreshPump() throws Exception {
+        TestScheduler clock = virtualClock();
+        List<Throwable> escapedErrors = new ArrayList<>();
+        RxJavaPlugins.setErrorHandler(escapedErrors::add);
+        buildRepository();
+        doThrow(new RuntimeException("room blew up"))
+                .when(messageApi).getConversations(any(), any());
+
+        resyncRequests.onNext(new Object());
+        clock.advanceTimeBy(1, TimeUnit.SECONDS);
+        verify(messageApi, times(1)).getConversations(eq(30), isNull());
+
+        doReturn(asCall(inboxResponse("[]", null)))
+                .when(messageApi).getConversations(any(), any());
+        resyncRequests.onNext(new Object());
+        clock.advanceTimeBy(1, TimeUnit.SECONDS);
+
+        verify(messageApi, times(2)).getConversations(eq(30), isNull());
+        assertTrue(escapedErrors.isEmpty());
     }
 
     @Test

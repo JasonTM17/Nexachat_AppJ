@@ -6,7 +6,6 @@
     <dimen name="space_md">16dp</dimen>
     <dimen name="space_lg">24dp</dimen>
     <dimen name="space_xl">32dp</dimen>
-    <dimen name="max_content_width">640dp</dimen>
     <dimen name="min_touch_target">48dp</dimen>
     <dimen name="letter_rail_cell_min_height">24dp</dimen>
     <dimen name="letter_bubble_size">56dp</dimen>
@@ -17,15 +16,10 @@
     <dimen name="corner_lg">12dp</dimen>
     <dimen name="corner_xl">16dp</dimen>
     <dimen name="corner_full">999dp</dimen>
-    <dimen name="elevation_level1">1dp</dimen>
-    <dimen name="elevation_level2">3dp</dimen>
-    <dimen name="elevation_level3">6dp</dimen>
-    <dimen name="elevation_level4">12dp</dimen>
     <dimen name="auth_form_max_width">440dp</dimen>
     <dimen name="bubble_max_width">280dp</dimen>
     <dimen name="bubble_quote_min_width">192dp</dimen>
     <dimen name="shared_card_width">232dp</dimen>
-    <dimen name="attachment_chip_max_width">240dp</dimen>
     <dimen name="media_dismiss_distance">96dp</dimen>
     <dimen name="inbox_swipe_text_size">14sp</dimen>
     <dimen name="space_inset">12dp</dimen>
@@ -52,7 +46,6 @@
     <dimen name="metadata_icon_size">16dp</dimen>
     <dimen name="bubble_content_inset">12dp</dimen>
     <dimen name="bubble_group_gap">4dp</dimen>
-    <dimen name="bubble_turn_gap">8dp</dimen>
     <dimen name="composer_min_height">64dp</dimen>
     <dimen name="sheet_handle_width">32dp</dimen>
     <dimen name="sheet_handle_height">4dp</dimen>
@@ -62,7 +55,6 @@
     <dimen name="focus_stroke_width">2dp</dimen>
     <dimen name="call_control_size">60dp</dimen>
     <dimen name="call_end_size">72dp</dimen>
-    <dimen name="call_avatar_size">112dp</dimen>
     <dimen name="chip_min_height">32dp</dimen>
     <dimen name="button_min_height">48dp</dimen>
     <dimen name="fab_clearance">88dp</dimen>
@@ -75,7 +67,6 @@
     <dimen name="loading_indicator_size">40dp</dimen>
     <dimen name="streak_badge_min_height">24dp</dimen>
     <dimen name="streak_badge_icon_size">14dp</dimen>
-    <dimen name="streak_milestone_icon_size">48dp</dimen>
     <dimen name="streak_milestone_disc_size">96dp</dimen>
     <dimen name="feed_image_height">220dp</dimen>
     <dimen name="feed_reaction_pill_min_height">32dp</dimen>

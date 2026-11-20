@@ -240,7 +240,7 @@ When the feature flags are explicitly turned on, the following data reaches Fire
     client writes are completely denied (`.write: false`).
   - *Passive UI only*: Consumed by `FirebaseCallStatusDisplayAdapter.java:37-74` for header/list
     display only. WebRTC signaling (SDP offers/answers, ICE candidates) and call audio NEVER
-    touch Firebase; they remain relayed in-memory and via STOMP (`/topic/call.*`).
+    touch Firebase; they remain relayed in-memory and via STOMP (`/app/calls/{conversationId}/signal` and `/user/queue/calls`).
 - **Server authorization & lease mirrors**:
   - `/control/enabled`: global kill switch boolean (`tools/firebase-rules/database.rules.json:28`).
   - `/control/presencePrivacyVersion`: integer version `2` gate (`docs/architecture/firebase-realtime.md:29-30`).
@@ -569,7 +569,7 @@ These are owner decisions; do not infer them from code:
 - Source inspected: Android manifest, backup/network XML, Gradle catalog,
   privacy configuration test, Room entities and database module, DataStore and
   Keystore storage, attachment/media caches, auth/logout/deletion flow, Google
-  Credential Manager client, server Flyway migrations V1–V33, controllers,
+  Credential Manager client, server Flyway migrations V1–V44, controllers,
   account-deletion and email-OTP services, the mail adapters, Firebase bridge
   and RTDB projection code (`server/src/main/java/com/nexachat/firebase/`),
   Android ephemeral transport (`core/realtime/ephemeral/` and

@@ -57,7 +57,7 @@ public final class HalfOpenSocketDetectionTest {
     }
 
     @Test
-    public void foregroundHalfOpenLinkIsMarkedLostWithinFifteenSeconds() {
+    public void foregroundHalfOpenLinkIsMarkedLostWithinTheDetectBound() {
         Armed armed = Armed.open(true);
         armed.scheduler.advanceTimeTo(60_000L, TimeUnit.MILLISECONDS);
         assertEquals(
@@ -94,6 +94,29 @@ public final class HalfOpenSocketDetectionTest {
         armed.scheduler.advanceTimeTo(
                 StompClient.DEAD_AFTER_MS + StompClient.HEARTBEAT_MS, TimeUnit.MILLISECONDS);
         assertEquals(40_000L, armed.lostAtMs.get());
+    }
+
+    @Test
+    public void firstServerBeatAfterTheLateInitialTickKeepsTheSocketAlive() {
+        // The broker's first beat lands on a later scheduler tick — measured
+        // 12-18 s after CONNECTED. A silence grace shorter than that cancels a
+        // healthy foreground socket before it ever beats, forcing a reconnect
+        // every ~15 s; the grace must span two negotiated periods plus slack.
+        Armed armed = Armed.open(true);
+        long firstBeat = 18_000L;
+        assertTrue("the measured first beat must sit inside the grace",
+                firstBeat < StompClient.FOREGROUND_DEAD_AFTER_MS);
+        armed.scheduler.advanceTimeTo(firstBeat, TimeUnit.MILLISECONDS);
+        assertEquals("a late first beat must not cancel the socket", -1L, armed.lostAtMs.get());
+        armed.listener.onMessage(armed.socket, "\n");
+        long cursor = firstBeat;
+        for (long beat = 0L; beat < 3L; beat++) {
+            cursor += StompClient.HEARTBEAT_MS;
+            armed.scheduler.advanceTimeTo(cursor, TimeUnit.MILLISECONDS);
+            assertEquals(-1L, armed.lostAtMs.get());
+            armed.listener.onMessage(armed.socket, "\n");
+        }
+        assertTrue(armed.client.isOpen());
     }
 
     @Test

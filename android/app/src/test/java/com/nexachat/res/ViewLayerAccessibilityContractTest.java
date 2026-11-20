@@ -252,6 +252,47 @@ public final class ViewLayerAccessibilityContractTest {
     }
 
     /**
+     * The comment row is not clickable, but CommentAdapter puts the full
+     * "author: body" label on the row container, which makes it a focus stop.
+     * The child texts repeat those words, so they must stay out of the tree or
+     * a screen reader reads every comment twice.
+     */
+    @Test
+    public void commentRowChildrenDoNotRepeatTheRowLabel() throws Exception {
+        String[] mutedChildren = {"commentAuthor", "commentBody", "commentTime"};
+        Element row = parse("item_feed_comment.xml").getDocumentElement();
+        List<String> violations = new ArrayList<>();
+        for (String child : mutedChildren) {
+            Element element = findById(row, child);
+            if (element == null) {
+                violations.add("item_feed_comment.xml: missing @id/" + child);
+                continue;
+            }
+            String importance = attr(element, "importantForAccessibility");
+            if (!"no".equals(importance)) {
+                violations.add("item_feed_comment.xml: " + child
+                        + " importantForAccessibility is \"" + importance
+                        + "\", expected \"no\" (the row carries the comment label)");
+            }
+        }
+        if (!violations.isEmpty()) {
+            fail("Feed comment row accessibility:\n" + String.join("\n", violations));
+        }
+    }
+
+    /**
+     * The unread-summary banner text is swapped asynchronously as messages arrive;
+     * without a live region a screen reader never announces the new count.
+     */
+    @Test
+    public void unreadBannerAnnouncesCountChanges() throws Exception {
+        Element text = findById(parse("include_unread_banner.xml"), "unreadBannerText");
+        assertNotNull("include_unread_banner.xml: missing @id/unreadBannerText", text);
+        assertEquals("unreadBannerText live region", "polite",
+                attr(text, "accessibilityLiveRegion"));
+    }
+
+    /**
      * The group name is the only place the screen states which group it is, so the
      * admin-only rename affordance must not replace it in the announced name.
      */

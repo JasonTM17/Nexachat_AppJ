@@ -184,11 +184,25 @@ notification permission must be granted after each `pm clear`, `cmd
 notification cancel` no longer exists (cleanup goes through the DUMP-gated
 debug receiver), and `am broadcast` arrives with an unattributed sender uid.
 
+`--dstack` wires the mail rows to a disposable backend provisioned by
+`tools/e2e/disposable_stack.py`: `otp-forgot-password` runs its full
+request/wrong/expired/reused/resend flow to PASS on the private stack (OTP
+expiry is proven by rewinding `expires_at` in the disposable database), and
+`account-deletion` additionally drives the in-app UI slice (sign-in,
+wrong-password refusal, OTP confirm, deleted-account cache, phone reuse on
+device) when the stack owns the app's compile-time port — run the row alone
+with the shared local server stopped so the pinned stack can serve the app.
+Otherwise the row still proves the REST/OTP deletion and reports the explicit
+gap; the peer's UI render of the tombstoned author stays unproven on a single
+device. Without `--dstack` both rows refuse before Mailpit or a database is
+touched.
+
 ## Local development with Mailpit (Email OTP & Account Deletion)
 
-For testing recovery-email verification (`POST /api/v1/users/me/email/request`),
-password reset (`POST /api/v1/auth/recovery/reset-password/request`), and
-self-service account deletion (`POST /api/v1/account-deletion/request`)
+For testing recovery-email verification (`PUT /api/v1/users/me/email` +
+`POST /api/v1/users/me/email/verify`), password reset
+(`POST /api/v1/auth/password-reset/request` + `/confirm`), and self-service
+account deletion (`POST /api/v1/account-deletion/request` + `/confirm`)
 without external email service credentials, use [Mailpit](https://github.com/axllent/mailpit)
 as a local SMTP sink:
 

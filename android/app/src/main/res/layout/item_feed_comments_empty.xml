@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_horizontal"
+    android:minHeight="200dp"
+    android:orientation="vertical"
+    android:paddingHorizontal="@dimen/space_xl"
+    android:paddingVertical="@dimen/space_xl">
+
+    <ImageView
+        android:layout_width="@dimen/state_icon_size"
+        android:layout_height="@dimen/state_icon_size"
+        android:contentDescription="@null"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_forum_outline"
+        app:tint="?attr/colorPrimary" />
+
+    <TextView
+        android:id="@+id/commentsEmptyMessage"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_md"
+        android:accessibilityLiveRegion="polite"
+        android:gravity="center"
+        android:text="@string/feed_comments_empty"
+        android:textAppearance="?attr/textAppearanceBodyMedium"
+        android:textColor="?attr/colorOnSurfaceVariant" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/commentsEmptyAction"
+        style="@style/Widget.NexaChat.Button.Text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_sm"
+        android:minHeight="@dimen/min_touch_target"
+        android:text="@string/feed_comments_empty_cta" />
+</LinearLayout>

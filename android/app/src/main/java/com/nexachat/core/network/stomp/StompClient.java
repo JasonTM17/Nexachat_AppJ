@@ -145,9 +145,13 @@ public final class StompClient {
     public static final long DEAD_AFTER_MS = 30_000L;
     /**
      * Foreground silence that still accepts one late server heart-beat.
-     * The negotiated interval is {@link #HEARTBEAT_MS}; this leaves 4 seconds of jitter.
+     * The negotiated interval is {@link #HEARTBEAT_MS}, but the broker only
+     * sends its first beat on a later scheduler tick — measured 12-18 s after
+     * CONNECTED — so the grace must span two periods plus the same jitter
+     * slack, or the client cancels a healthy socket before it ever beats
+     * and reconnects every ~15 s in the foreground.
      */
-    public static final long FOREGROUND_DEAD_AFTER_MS = 14_000L;
+    public static final long FOREGROUND_DEAD_AFTER_MS = 24_000L;
     /** Foreground poll. It does not write to the socket. */
     public static final long FOREGROUND_LIVENESS_POLL_MS = 1_000L;
     /**

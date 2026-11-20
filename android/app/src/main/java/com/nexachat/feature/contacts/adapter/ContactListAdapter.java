@@ -182,6 +182,17 @@ public final class ContactListAdapter extends ListAdapter<ContactSections.Row, R
             avatar.setName(label);
             avatar.setAvatarUrl(contact.getAvatarUrl());
             avatar.setOnlineStatus(null);
+            // The row is one tap target: announce name and subtitle together and
+            // silence the avatar, whose own label would duplicate the name.
+            avatar.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            String subtitle = phone.getVisibility() == View.VISIBLE
+                    ? phone.getText().toString() : null;
+            itemView.setContentDescription(itemView.getContext().getString(
+                    subtitle == null || subtitle.isBlank()
+                            ? R.string.cd_contact_row_name_only
+                            : R.string.cd_contact_row,
+                    label,
+                    subtitle == null ? "" : subtitle));
             itemView.setOnClickListener(v -> listener.onContactClick(contact.getUserId()));
         }
 

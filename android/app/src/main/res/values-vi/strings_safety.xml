@@ -32,4 +32,9 @@
     <string name="safety_error_generic">Có lỗi xảy ra</string>
     <string name="cd_starred_message">Tin nhắn đánh dấu</string>
     <string name="cd_unblock">Bỏ chặn</string>
+    <string name="cd_unblock_user_named">Bỏ chặn %1$s</string>
+    <string name="user_unblocked_with_name">Đã bỏ chặn %1$s</string>
+    <string name="cd_starred_message_row">Tin nhắn từ %1$s: %2$s</string>
+    <string name="cd_contact_row">%1$s, %2$s</string>
+    <string name="cd_contact_row_name_only">%1$s</string>
 </resources>
