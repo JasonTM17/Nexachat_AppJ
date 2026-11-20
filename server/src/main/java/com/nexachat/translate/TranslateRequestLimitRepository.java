@@ -50,14 +50,24 @@ public class TranslateRequestLimitRepository {
      * Returns tokens taken by an earlier {@link #tryConsume} in the same
      * transaction. Callers use it to make a multi-window refusal spend
      * nothing; the consumed upsert already holds the row lock, so the refund
-     * cannot interleave with another consumer.
+     * cannot interleave with another consumer. A refund that would take the
+     * row to zero deletes it instead: the schema's {@code CHECK
+     * (request_count > 0)} rejects 0, and the consume upsert recreates the
+     * row on the next request anyway.
      */
     public void refund(UUID userId, String windowType, Instant windowStart, int count) {
+        OffsetDateTime windowStartUtc = OffsetDateTime.ofInstant(windowStart, ZoneOffset.UTC);
+        jdbcTemplate.update("""
+                        DELETE FROM translate_request_limits
+                        WHERE user_id = ? AND window_type = ? AND window_start = ?
+                          AND request_count <= ?
+                        """,
+                userId, windowType, windowStartUtc, count);
         jdbcTemplate.update("""
                         UPDATE translate_request_limits
                         SET request_count = request_count - ?
                         WHERE user_id = ? AND window_type = ? AND window_start = ?
                         """,
-                count, userId, windowType, OffsetDateTime.ofInstant(windowStart, ZoneOffset.UTC));
+                count, userId, windowType, windowStartUtc);
     }
 }
