@@ -1335,17 +1335,32 @@ def run_chat_send_receive(row: JourneyRow, context: dict[str, Any]) -> dict[str,
             raise ProductFailure("device did not render its sent chat message") from error
         ui.screenshot(str(context["row_dir"] / "chat-after-send.png"))
 
-        page_response = recorder.get(
-            f"/api/v1/conversations/{conversation_id}/messages",
-            token=binh["accessToken"], params={"limit": 50},
-        )
-        if page_response.status != 200:
-            raise ProductFailure(f"peer REST history returned HTTP {page_response.status}")
-        page = page_response.json() or {}
-        items = page.get("items") or []
-        matching = [item for item in items if item.get("content") == outbound]
-        if len(matching) != 1:
-            raise ProductFailure("peer REST history did not contain exactly one device message")
+        # The device send flushes through the outbox worker, which can sit
+        # behind a large inbox resync after a cold start. Poll the peer's REST
+        # history for a bounded window instead of a single immediate read, then
+        # keep the exact-one assertion on the converged page.
+        matching: list[dict[str, Any]] = []
+        last_status: int | None = None
+        deadline = time.monotonic() + 45
+        while True:
+            page_response = recorder.get(
+                f"/api/v1/conversations/{conversation_id}/messages",
+                token=binh["accessToken"], params={"limit": 50},
+            )
+            last_status = page_response.status
+            if page_response.status == 200:
+                page = page_response.json() or {}
+                items = page.get("items") or []
+                matching = [item for item in items if item.get("content") == outbound]
+                if len(matching) == 1:
+                    break
+                if len(matching) > 1:
+                    raise ProductFailure("peer REST history contained duplicate copies of the device message")
+            if time.monotonic() >= deadline:
+                if last_status != 200:
+                    raise ProductFailure(f"peer REST history returned HTTP {last_status}")
+                raise ProductFailure("peer REST history did not contain exactly one device message")
+            time.sleep(2)
         outbound_id = str(matching[0].get("id", ""))
         if outbound_id:
             created.append((an, outbound_id))
