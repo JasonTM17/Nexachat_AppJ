@@ -68,6 +68,9 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li>A GROUP has ≥ 2 people at creation: creator (ADMIN) plus ≥ 1 listed
  *       member (deduped, creator-skipped) — phase-08 "≥2 members".</li>
+ *   <li>The member cap ({@code nexachat.group.max-members}) bounds every
+ *       membership entry path, creation included: creator plus listed members
+ *       must fit inside it → {@code VALIDATION_FAILED}.</li>
  *   <li>A group with members must keep ≥ 1 ADMIN: the SOLE admin cannot leave
  *       or be removed while other members remain → {@code VALIDATION_FAILED}
  *       (a domain invariant, not a permission question — no caller may break
@@ -155,7 +158,8 @@ public class GroupService {
      * inboxes immediately).
      *
      * @throws ApiException {@code VALIDATION_FAILED} (bad title / empty
-     *                      member list), {@code USER_NOT_FOUND} (creator or a
+     *                      member list / roster over the member cap),
+     *                      {@code USER_NOT_FOUND} (creator or a
      *                      listed member does not exist)
      */
     @Transactional
@@ -174,6 +178,17 @@ public class GroupService {
         if (memberIds.isEmpty()) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
                     "Group needs at least one other member");
+        }
+        // The same member cap the join, admin-add and approval paths enforce,
+        // applied to the initial roster (creator + listed members): without it
+        // a group could be born already past the limit every other entry path
+        // then refuses. Checked after the block filter so the count matches
+        // the rows actually inserted, and before the user locks so an
+        // over-cap request holds nothing.
+        if (memberIds.size() + 1 > maxMembers) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "Group has reached maximum member capacity",
+                    Map.of("limit", maxMembers));
         }
         List<UUID> userIdsToLock = new ArrayList<>(memberIds);
         userIdsToLock.add(creatorId);
