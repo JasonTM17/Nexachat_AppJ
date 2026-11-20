@@ -121,5 +121,87 @@ class OtherValidatorsTest(unittest.TestCase):
         self.assertAlmostEqual(journey.seconds_until_next_minute(179.5), 1.5)
 
 
+class TranslateBudgetTest(unittest.TestCase):
+    def test_free_lanes_never_charge(self):
+        budget = journey.TranslateBudget(per_minute=2, per_day=2)
+        for _ in range(5):
+            self.assertEqual(budget.attempt(charge=False), "free")
+        self.assertEqual((budget.minute_used, budget.day_used), (0, 0))
+
+    def test_charged_attempts_spend_both_windows(self):
+        budget = journey.TranslateBudget(per_minute=3, per_day=5)
+        self.assertEqual([budget.attempt() for _ in range(3)],
+                         ["allowed", "allowed", "allowed"])
+        self.assertEqual((budget.minute_used, budget.day_used), (3, 3))
+
+    def test_minute_refusal_never_touches_the_day_window(self):
+        budget = journey.TranslateBudget(per_minute=1, per_day=5)
+        budget.attempt()
+        self.assertEqual(budget.attempt(), "minute_refused")
+        self.assertEqual(budget.attempt(), "minute_refused")
+        self.assertEqual((budget.minute_used, budget.day_used), (1, 1))
+
+    def test_day_refusal_refunds_the_minute_token(self):
+        budget = journey.TranslateBudget(per_minute=3, per_day=2)
+        self.assertEqual([budget.attempt() for _ in range(2)], ["allowed", "allowed"])
+        # The minute window still has capacity, but the day window refuses:
+        # the minute token is consumed and then refunded, so the minute count
+        # stays put — repeated refusals never leak a token.
+        for _ in range(3):
+            self.assertEqual(budget.attempt(), "day_refused")
+        self.assertEqual((budget.minute_used, budget.day_used), (2, 2))
+
+    def test_free_lanes_work_after_refusals(self):
+        budget = journey.TranslateBudget(per_minute=1, per_day=1)
+        budget.attempt()
+        self.assertEqual(budget.attempt(), "minute_refused")
+        self.assertEqual(budget.attempt(charge=False), "free")
+
+
+class RevokeBatchSimulationTest(unittest.TestCase):
+    def test_revoke_before_the_batch_refuses_every_charged_item(self):
+        self.assertEqual(
+            journey.simulate_revoke_mid_batch(
+                ["charged", "charged", "charged", "shortcut"], revoke_after=0),
+            ["AI_CONSENT_REQUIRED", "AI_CONSENT_REQUIRED",
+             "AI_CONSENT_REQUIRED", "shortcut"])
+
+    def test_revoke_after_two_generations_refuses_the_rest(self):
+        self.assertEqual(
+            journey.simulate_revoke_mid_batch(["charged"] * 4, revoke_after=2),
+            ["translated", "translated", "AI_CONSENT_REQUIRED", "AI_CONSENT_REQUIRED"])
+
+    def test_free_lanes_ignore_the_revoke(self):
+        self.assertEqual(
+            journey.simulate_revoke_mid_batch(
+                ["cached", "shortcut", "charged", "charged"], revoke_after=1),
+            ["cached", "shortcut", "translated", "AI_CONSENT_REQUIRED"])
+
+    def test_no_revoke_translates_every_charged_item(self):
+        for revoke_after in (3, 9):
+            self.assertEqual(
+                journey.simulate_revoke_mid_batch(["charged"] * 3, revoke_after=revoke_after),
+                ["translated"] * 3)
+
+    def test_outcomes_match_the_item_count(self):
+        items = ["charged", "shortcut", "charged", "cached", "charged"]
+        self.assertEqual(len(journey.simulate_revoke_mid_batch(items, 2)), len(items))
+
+
+class BatchItemOutcomeTest(unittest.TestCase):
+    def test_success_and_refusal_shapes(self):
+        self.assertEqual(journey.batch_item_outcome(
+            {"messageId": "m1", "text": "salut", "error": None}), "translated")
+        self.assertEqual(journey.batch_item_outcome(
+            {"messageId": "m1", "text": None, "error": "RATE_LIMITED"}),
+            "refused:RATE_LIMITED")
+
+    def test_malformed_shapes(self):
+        for item in (None, {}, {"text": "x", "error": None},
+                     {"messageId": "m", "text": "x", "error": "E"},
+                     {"messageId": "m", "text": None, "error": None}):
+            self.assertEqual(journey.batch_item_outcome(item), "malformed")
+
+
 if __name__ == "__main__":
     unittest.main()

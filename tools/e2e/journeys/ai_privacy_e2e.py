@@ -5,13 +5,15 @@ Fixture accounts live in +849000006xx (display names "AI E2E ..."). Demo seed
 users are never touched and tokens are never printed. The stack runs without
 any external LLM / embedding / translate key, so the assertions target the
 offline engines (lexical embeddings, EXTRACTIVE/CACHE ask modes, the LOCAL
-summary engine, the translate same-language shortcut and the documented
-TRANSLATION_UNAVAILABLE refusal) and switch to the provider-backed contract
-only when the response shows a provider answered.
+summary engine, the translate same-language shortcut, the documented
+TRANSLATION_UNAVAILABLE refusal, the clean typed translate budget refusal,
+and the consent-revoke translate refusals) and switch to the provider-backed
+contract only when the response shows a provider answered.
 
 Contracts: docs/architecture/rag.md, ai-summary.md, ai-translation.md,
 server/src/main/java/com/nexachat/rag/**, summary/**, translate/**, and the
-ITs AskApiIT, ConversationAiOptOutIT, SummaryOptOutIT.
+ITs AskApiIT, ConversationAiOptOutIT, SummaryOptOutIT,
+TranslateRequestLimitRepositoryIT, TranslateTxRollbackIT.
 
 Usage:
     python tools/e2e/journeys/ai_privacy_e2e.py [--base-url http://127.0.0.1:8092]
@@ -47,6 +49,7 @@ ASKER_PHONE = "+84900000601"     # A: consented member who asks / summarizes
 PEER_PHONE = "+84900000602"      # B: non-consented member, authors facts, opts out
 OUTSIDER_PHONE = "+84900000603"  # C: never a member of the A-B conversation
 LIMIT_PHONE = "+84900000604"     # R: outsider that only burns its own ask bucket
+TRANSLATE_PHONE = "+84900000605"  # T: consented burner that spends only its own translate budget
 ADMIN_PHONE = "+84900000890"     # operator phone for /api/v1/rag/stats
 
 NAMES = {
@@ -54,11 +57,13 @@ NAMES = {
     PEER_PHONE: TAG + " Peer",
     OUTSIDER_PHONE: TAG + " Outsider",
     LIMIT_PHONE: TAG + " Limiter",
+    TRANSLATE_PHONE: TAG + " Translate",
     ADMIN_PHONE: TAG + " Admin",
 }
 
 ASK_MODES = ("CACHE", "NOT_FOUND", "EXTRACTIVE", "LLM")
 ASK_RATE_PER_MINUTE = 20  # nexachat.rag.ask.rate-limit-per-minute default
+TRANSLATE_RATE_PER_MINUTE = 30  # nexachat.translate.rate-limit-per-minute default
 PURGE_NOT_RUN_REASON = ("backend predates #138 (opt-out did not purge message_summaries: "
                         "stale cached summary replayed)")
 
@@ -206,6 +211,82 @@ def classify_summary_purge(cached_after_opt_out: bool,
 
 def seconds_until_next_minute(now: float) -> float:
     return 60.0 - (now % 60.0) + 1.0
+
+
+class TranslateBudget:
+    """Offline model of the per-user translate token accounting (#242).
+
+    The minute window is consumed first; when the day window refuses, the
+    minute token is refunded (a refusal spends nothing); a minute-window
+    refusal never touches the day; cache hits and same-language shortcuts
+    are free. Provider attempts are charged, not just successes
+    (ai-translation.md: "tokens are charged per attempted generation").
+    """
+
+    def __init__(self, per_minute: int = 30, per_day: int = 300) -> None:
+        self.per_minute = per_minute
+        self.per_day = per_day
+        self.minute_used = 0
+        self.day_used = 0
+
+    def attempt(self, charge: bool = True) -> str:
+        """One translate attempt: 'free' | 'allowed' | 'minute_refused' | 'day_refused'."""
+        if not charge:
+            return "free"
+        if self.minute_used >= self.per_minute:
+            return "minute_refused"
+        if self.day_used >= self.per_day:
+            # The minute token was consumed and then refunded: net spend zero.
+            return "day_refused"
+        self.minute_used += 1
+        self.day_used += 1
+        return "allowed"
+
+
+def simulate_revoke_mid_batch(items: Sequence[str], revoke_after: int) -> List[str]:
+    """Expected per-item outcomes for one translate-batch whose caller's AI
+    consent flips to false after ``revoke_after`` provider-bound items have
+    completed (0 = the revoke predates the batch).
+
+    ``items`` holds one entry per requested id: 'charged' for a provider-bound
+    message, 'cached' for a cache hit, 'shortcut' for a same-language message.
+    Free lanes ignore the revoke; a charged item whose generation finished
+    after the revoke is refused post-generation (AI_CONSENT_REQUIRED) and is
+    never cached; a revoke that predates the batch refuses every charged item
+    before the provider is called, so no tokens are spent.
+    """
+    outcomes: List[str] = []
+    entry_consented: Optional[bool] = None
+    charged_done = 0
+    for kind in items:
+        if kind == "cached":
+            outcomes.append("cached")
+            continue
+        if kind == "shortcut":
+            outcomes.append("shortcut")
+            continue
+        if entry_consented is None:
+            entry_consented = revoke_after > 0
+        if not entry_consented:
+            outcomes.append("AI_CONSENT_REQUIRED")
+            continue
+        # The entry check saw consent, so the provider runs; the post-generation
+        # re-check re-reads consent and a revoke that landed meanwhile wins.
+        charged_done += 1
+        outcomes.append("AI_CONSENT_REQUIRED" if charged_done > revoke_after
+                        else "translated")
+    return outcomes
+
+
+def batch_item_outcome(item) -> str:
+    """'translated' | 'refused:<code>' | 'malformed' for one translate-batch item."""
+    if not isinstance(item, dict) or not item.get("messageId"):
+        return "malformed"
+    if item.get("error") is not None and item.get("text") is None:
+        return "refused:" + str(item["error"])
+    if item.get("error") is None and isinstance(item.get("text"), str) and item["text"]:
+        return "translated"
+    return "malformed"
 
 
 # --------------------------------------------------------------------------
@@ -600,6 +681,172 @@ def scenario_translate_contract(ctx: Context) -> None:
         "messageIds": [], "targetLang": "vi"}), 400, "VALIDATION_FAILED", "empty batch")
 
 
+def scenario_translate_refund_on_provider_failure(ctx: Context) -> None:
+    """Keyless stack: every generation fails as a typed 503 that is charged
+    per attempt and never cached; burning those charged attempts reaches the
+    per-minute refusal, which must stay a clean typed 429 (the #242 refund
+    accounting turned refusals into HTTP 500s when the refunded row broke the
+    schema CHECK); the batch reports the refusal per item and keeps serving
+    free lanes while the budget is dry. The day-window refund itself (a daily
+    refusal spends nothing) needs 300+ attempts and is modelled offline by
+    TranslateBudget and proven by TranslateRequestLimitRepositoryIT and
+    TranslateTxRollbackIT."""
+    ctx.session(PEER_PHONE)
+    ctx.set_consent(TRANSLATE_PHONE, True)
+    _, conversation = direct_conversation(ctx.client, ctx.token(TRANSLATE_PHONE), PEER_PHONE)
+    cid = str(conversation["id"])
+    token = ctx.token(TRANSLATE_PHONE)
+    # The burner owns its conversation and budget: no other scenario is affected.
+    english = send_text(ctx.client, token, cid,
+                        f"Please bring the blue folder tomorrow ({ctx.nonce}).")
+    vietnamese = send_text(ctx.client, token, cid,
+                           f"Chào bạn, hẹn gặp lúc tám giờ nhé ({ctx.nonce}).")
+
+    def translate(message_id: str, target: str = "fr"):
+        return ctx.client.post(f"/api/v1/messages/{message_id}/translate",
+                               token=token, body={"targetLang": target})
+
+    def batch(ids: List[str], target: str = "fr"):
+        return ctx.client.post(f"/api/v1/conversations/{cid}/translate-batch",
+                               token=token, body={"messageIds": ids, "targetLang": target})
+
+    # A provider-backed stack cannot exercise failure accounting without
+    # burning real LLM calls; the keyless stack fails instantly and free.
+    probe = translate(english["id"])
+    if probe.status == 200:
+        raise NotRun("provider answered: failure/refund accounting needs the keyless stack")
+    assert_error(probe, 503, "TRANSLATION_UNAVAILABLE", "keyless provider failure")
+    repeat = translate(english["id"])
+    assert_error(repeat, 503, "TRANSLATION_UNAVAILABLE",
+                 "a provider failure was cached instead of retried")
+
+    # Per-item typed failures; the batch survives them.
+    failed = batch([english["id"], vietnamese["id"]])
+    check(failed.status == 200, f"translate-batch expected 200, got {failed}")
+    items = {item["messageId"]: item for item in failed.json()["results"]}
+    check(batch_item_outcome(items[english["id"]]) == "refused:TRANSLATION_UNAVAILABLE",
+          f"batch provider-failure item {items[english['id']]}")
+    check(batch_item_outcome(items[vietnamese["id"]]) == "translated"
+          and items[vietnamese["id"]]["text"] == vietnamese["content"],
+          f"batch shortcut item must stay free and served: {items[vietnamese['id']]}")
+
+    # Charge-per-attempt: failing generations still count, so burning them
+    # must reach the per-minute refusal — a clean typed 429, never a 500.
+    # The bound absorbs a minute rollover mid-burn plus any tokens an
+    # earlier run left in this burner's current window.
+    charged = 0
+    limited = None
+    for _ in range(2 * TRANSLATE_RATE_PER_MINUTE + 5):
+        response = translate(english["id"])
+        charged += 1
+        if response.status == 429:
+            limited = response
+            break
+        assert_error(response, 503, "TRANSLATION_UNAVAILABLE", "charged attempt inside the budget")
+    check(limited is not None,
+          f"{charged} charged attempts never hit the per-minute limit "
+          f"({TRANSLATE_RATE_PER_MINUTE}/min default)")
+    assert_error(limited, 429, "RATE_LIMITED", "budget refusal must be a clean typed 429")
+    # The refusal state stays valid: the next charged attempt refuses again,
+    # still typed — a corrupted refund row would surface as HTTP 500.
+    assert_error(translate(english["id"]), 429, "RATE_LIMITED",
+                 "refusal must repeat cleanly after the first one")
+
+    # The batch latches to the refusal per item; the free lane keeps serving.
+    refused = batch([english["id"], vietnamese["id"]])
+    check(refused.status == 200, f"translate-batch under the limit expected 200, got {refused}")
+    items = {item["messageId"]: item for item in refused.json()["results"]}
+    check(batch_item_outcome(items[english["id"]]) == "refused:RATE_LIMITED",
+          f"batch rate-limited item {items[english['id']]}")
+    check(batch_item_outcome(items[vietnamese["id"]]) == "translated"
+          and items[vietnamese["id"]]["text"] == vietnamese["content"],
+          f"shortcut item must ignore the dry budget: {items[vietnamese['id']]}")
+    shortcut = translate(vietnamese["id"], "vi")
+    check(shortcut.status == 200 and shortcut.json()["text"] == vietnamese["content"],
+          f"single shortcut under a dry budget: {shortcut}")
+
+
+def scenario_revoke_consent_mid_batch(ctx: Context) -> None:
+    """A consent revoke between batch rounds wins for every provider-bound
+    item: typed AI_CONSENT_REQUIRED per item (HTTP 200 batch, nothing cached
+    from the revoked round), free lanes keep serving, and re-granting
+    restores the provider lane. The mid-flight variant — the revoke landing
+    while one batch's provider calls are in flight, refused post-generation
+    and never cached — is modelled offline by simulate_revoke_mid_batch and
+    proven by the server's TranslateServiceTest re-check tests."""
+    ctx.conversation_id()
+    token = ctx.token(ASKER_PHONE)
+    english = [ctx.send(ASKER_PHONE,
+                        f"Revoke probe {i}: ship the blue crate on Friday ({ctx.nonce}).")
+               for i in range(3)]
+    vietnamese = ctx.send(ASKER_PHONE, f"Chào bạn, hẹn gặp lúc tám giờ nhé ({ctx.nonce}).")
+    batch_messages = english + [vietnamese]
+
+    def translate(message: dict, target: str = "fr"):
+        return ctx.client.post(f"/api/v1/messages/{message['id']}/translate",
+                               token=token, body={"targetLang": target})
+
+    def batch():
+        return ctx.client.post(
+            f"/api/v1/conversations/{ctx.conversation_id()}/translate-batch",
+            token=token, body={"messageIds": [m["id"] for m in batch_messages],
+                               "targetLang": "fr"})
+
+    def check_batch(response, expected: List[str], what: str) -> dict:
+        check(response.status == 200, f"{what}: batch expected 200, got {response}")
+        items = {item["messageId"]: item for item in response.json()["results"]}
+        for message, want in zip(batch_messages, expected):
+            got = batch_item_outcome(items[message["id"]])
+            check(got == want, f"{what}: item {message['id']} expected {want}, "
+                               f"got {got} ({items[message['id']]})")
+        return items
+
+    def as_live(model_outcomes: List[str]) -> List[str]:
+        return [("translated" if outcome in ("translated", "shortcut", "cached")
+                 else "refused:" + outcome) for outcome in model_outcomes]
+
+    probe = translate(english[0])
+    if probe.status == 503:
+        assert_error(probe, 503, "TRANSLATION_UNAVAILABLE", "keyless probe")
+        provider_backed = False
+    else:
+        check(probe.status == 200, f"probe expected 200/503, got {probe}")
+        check(probe.json()["cached"] is False, "probe must be a fresh generation")
+        provider_backed = True
+
+    # revoke_after=0: the revoke predates the batch, so every charged item is
+    # refused before the provider is called and the shortcut ignores the revoke.
+    revoked_expected = as_live(
+        simulate_revoke_mid_batch(["charged"] * 3 + ["shortcut"], revoke_after=0))
+    try:
+        ctx.set_consent(ASKER_PHONE, False)
+        check_batch(batch(), revoked_expected, "revoked batch")
+        assert_error(translate(english[1]), 403, "AI_CONSENT_REQUIRED",
+                     "single translate under a revoked consent")
+        if provider_backed:
+            # Pipeline order (ai-translation.md): the cache read precedes the
+            # consent gate, so the pre-revoke generation stays replayable
+            # without any provider call.
+            replay = translate(english[0])
+            check(replay.status == 200 and replay.json()["cached"] is True,
+                  f"cached row must not need consent: {replay}")
+    finally:
+        ctx.set_consent(ASKER_PHONE, True)
+
+    # Re-grant: the provider lane is back and the refused round left no rows.
+    if provider_backed:
+        restored_expected = as_live(
+            simulate_revoke_mid_batch(["charged"] * 3 + ["shortcut"], revoke_after=3))
+        items = check_batch(batch(), restored_expected, "re-granted batch")
+        check(items[english[0]["id"]]["cached"] is True,
+              "re-granted replay of the pre-revoke generation")
+        check(items[english[1]["id"]]["cached"] is False,
+              "the revoked round leaked a cache row into the re-granted batch")
+    else:
+        restored_expected = ["refused:TRANSLATION_UNAVAILABLE"] * 3 + ["translated"]
+        check_batch(batch(), restored_expected, "re-granted keyless batch")
+
+
 def scenario_ask_rate_limit(ctx: Context) -> None:
     """A dedicated non-member burns only its own bucket: the limiter runs before membership."""
     path = f"/api/v1/conversations/{ctx.conversation_id()}/ask"
@@ -630,6 +877,8 @@ SCENARIOS: List[Tuple[str, Callable[[Context], None]]] = [
     ("summary_purge_on_opt_out", scenario_summary_purge_on_opt_out),
     ("edit_recall_invalidates_cache", scenario_edit_recall_invalidates_cache),
     ("translate_contract", scenario_translate_contract),
+    ("translate_refund_on_provider_failure", scenario_translate_refund_on_provider_failure),
+    ("revoke_consent_mid_batch", scenario_revoke_consent_mid_batch),
     ("ask_rate_limit", scenario_ask_rate_limit),
 ]
 
