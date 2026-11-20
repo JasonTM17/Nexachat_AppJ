@@ -188,10 +188,14 @@ debug receiver), and `am broadcast` arrives with an unattributed sender uid.
 `tools/e2e/disposable_stack.py`: `otp-forgot-password` runs its full
 request/wrong/expired/reused/resend flow to PASS on the private stack (OTP
 expiry is proven by rewinding `expires_at` in the disposable database), and
-`account-deletion` executes its mail/REST portion there but still reports
-`BLOCKED_CAPABILITY` for the in-app assertions (sign-in UI, deleted-account
-cache, peer view). Without `--dstack` both rows refuse before Mailpit or a
-database is touched.
+`account-deletion` additionally drives the in-app UI slice (sign-in,
+wrong-password refusal, OTP confirm, deleted-account cache, phone reuse on
+device) when the stack owns the app's compile-time port — run the row alone
+with the shared local server stopped so the pinned stack can serve the app.
+Otherwise the row still proves the REST/OTP deletion and reports the explicit
+gap; the peer's UI render of the tombstoned author stays unproven on a single
+device. Without `--dstack` both rows refuse before Mailpit or a database is
+touched.
 
 ## Local development with Mailpit (Email OTP & Account Deletion)
 

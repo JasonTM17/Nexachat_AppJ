@@ -148,6 +148,17 @@ public final class InboxUiState {
                 selectedFilter);
     }
 
+    /**
+     * A refresh ended without a usable page outcome — e.g. its repository walk
+     * was superseded by a newer one. Only the spinner resets; {@code hasMore}
+     * keeps its last known value so a stale page cannot freeze paging.
+     */
+    public InboxUiState withRefreshIdle() {
+        return new InboxUiState(
+                conversations, currentUserId, false, error, hasMore, loadingMore,
+                nextPageError, selectedFilter);
+    }
+
     public InboxUiState withNextPageStarted() {
         return new InboxUiState(
                 conversations, currentUserId, loading, error, hasMore, true, null,
