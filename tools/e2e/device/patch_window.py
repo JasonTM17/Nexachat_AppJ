@@ -296,16 +296,22 @@ def kill_orphan_uiautomators() -> list[str]:
     Housekeeping only: failures are swallowed and killed pids returned.
     """
     try:
-        ps = adb("shell", "ps", "-A", check_result=False, timeout=15)
+        ps = adb("shell", "ps", "-A", "-o", "PID,ARGS",
+                 check_result=False, timeout=15)
     except Exception:
         return []
     killed: list[str] = []
     for line in ps.splitlines():
         fields = line.split()
-        if len(fields) >= 2 and fields[1].isdigit() and "uiautomator" in line:
+        # Match the cmdline, not the comm name: the app_process that holds
+        # the UiAutomation registration is only renamed to `uiautomator`
+        # after JVM init, so a young or wedged holder shows up as
+        # `app_process ... com.android.commands.uiautomator.Launcher`.
+        if fields and fields[0].isdigit() and "uiautomator" in line:
+            pid = fields[0]
             try:
-                adb("shell", "kill", "-9", fields[1], check_result=False, timeout=15)
-                killed.append(fields[1])
+                adb("shell", "kill", "-9", pid, check_result=False, timeout=15)
+                killed.append(pid)
             except Exception:
                 pass
     return killed

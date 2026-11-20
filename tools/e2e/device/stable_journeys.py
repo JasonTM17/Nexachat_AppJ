@@ -7471,6 +7471,11 @@ def run_calls_injected_notification(row: JourneyRow, context: dict[str, Any]) ->
     _campaign_base_url(context)
     adb = context["adb"]
     _prepare_seeded_an(context)
+    # Runtime grants are a precondition of the dead-process assertion: without
+    # POST_NOTIFICATIONS the incoming-call surface cannot legally appear
+    # (notification suppressed, activity fallback BAL-blocked). The grant is
+    # idempotent, so applying it unconditionally mirrors _clear_app_data.
+    context["helpers"][2].grant_test_permissions()
     an, _binh, conversation_id, recipient_id, caller_id = _seed_pair(context)
     call_id = "sj-call-" + uuid.uuid4().hex[:8]
     cleanup_errors: list[str] = []
@@ -7919,12 +7924,17 @@ def _status_for_error(error: Exception) -> str:
 
 
 def _uiautomator_pids(ps_output: str) -> list[str]:
-    """PIDs of `uiautomator` shell processes listed in `ps -A` output."""
+    """PIDs of `uiautomator` processes listed in `ps -A -o PID,ARGS` output.
+
+    Matched on the cmdline rather than the comm name: the app_process
+    holding the UiAutomation registration is renamed to `uiautomator` only
+    after JVM init, so a young or wedged holder appears as
+    `app_process /system/bin com.android.commands.uiautomator.Launcher`."""
     pids: list[str] = []
     for line in ps_output.splitlines():
         fields = line.split()
-        if len(fields) >= 2 and fields[1].isdigit() and "uiautomator" in line:
-            pids.append(fields[1])
+        if fields and fields[0].isdigit() and "uiautomator" in line:
+            pids.append(fields[0])
     return pids
 
 
@@ -7937,7 +7947,8 @@ def _kill_orphan_uiautomators(adb: Adb) -> list[str]:
     failure is swallowed and the killed pids are only reported back.
     """
     try:
-        pids = _uiautomator_pids(adb.command("shell", "ps", "-A", timeout=15, check=False))
+        pids = _uiautomator_pids(adb.command(
+            "shell", "ps", "-A", "-o", "PID,ARGS", timeout=15, check=False))
     except Exception:
         return []
     killed: list[str] = []

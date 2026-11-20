@@ -407,6 +407,10 @@ class WiringDecisionTest(unittest.TestCase):
                     return []
                 return [Node("Incoming voice call"), Node("Accept"), Node("Decline")]
 
+            @staticmethod
+            def grant_test_permissions():
+                return {}
+
         class Device:
             def tap_node(self, node):
                 if node.text in {"Decline", "Từ chối"}:
@@ -503,6 +507,10 @@ class WiringDecisionTest(unittest.TestCase):
             @staticmethod
             def ui_nodes(device, timeout=8):
                 return []  # peek never lands inside a uiautomator dump
+
+            @staticmethod
+            def grant_test_permissions():
+                return {}
 
         class Device:
             def tap_node(self, node):
@@ -5322,10 +5330,11 @@ E/AndroidRuntime( 9902): java.lang.IllegalStateException: truncated dump
 
 class FatalVerdictAndOrphanDumpTest(unittest.TestCase):
     PS_WITH_ORPHAN = """\
-USER           PID   PPID     VSZ    RSS WCHAN            ADDR S NAME
-root             1      0  100000    900 0                   0 S init
-shell         8871    320 2200000  40000 0                   0 S com.android.commands.uiautomator.DumpCommand
-u0_a123       5123    320 3300000  90000 0                   0 S com.nexachat.debug
+  PID ARGS
+    1 init
+ 8871 uiautomator
+ 8872 app_process /system/bin com.android.commands.uiautomator.Launcher dump /sdcard/ui.xml
+ 5123 com.nexachat.debug
 """
 
     class FakeAdb:
@@ -5368,7 +5377,10 @@ u0_a123       5123    320 3300000  90000 0                   0 S com.nexachat.de
         return {"summary": "ok"}
 
     def test_uiautomator_pids_parses_ps_output(self):
-        self.assertEqual(journeys._uiautomator_pids(self.PS_WITH_ORPHAN), ["8871"])
+        # Both the renamed `uiautomator` comm and the pre-rename
+        # `app_process ... uiautomator.Launcher` holder are caught.
+        self.assertEqual(journeys._uiautomator_pids(self.PS_WITH_ORPHAN),
+                         ["8871", "8872"])
         self.assertEqual(journeys._uiautomator_pids(""), [])
         self.assertEqual(journeys._uiautomator_pids(
             "u0_a123 5123 320 3300000 90000 0 0 S com.nexachat.debug\n"), [])
@@ -5382,8 +5394,9 @@ u0_a123       5123    320 3300000  90000 0                   0 S com.nexachat.de
             self.assertEqual(results[0]["status"], "PASS")
             calls = context["adb"].calls
             kills = [call for call in calls if call[:3] == ("shell", "kill", "-9")]
-            self.assertEqual(kills, [("shell", "kill", "-9", "8871")])
-            ps_index = calls.index(("shell", "ps", "-A"))
+            self.assertEqual(kills, [("shell", "kill", "-9", "8871"),
+                                     ("shell", "kill", "-9", "8872")])
+            ps_index = calls.index(("shell", "ps", "-A", "-o", "PID,ARGS"))
             logcat_index = calls.index(("logcat", "-d", "-v", "brief"))
             self.assertLess(ps_index, logcat_index)
 
@@ -5398,10 +5411,11 @@ u0_a123       5123    320 3300000  90000 0                   0 S com.nexachat.de
 
         with mock.patch.object(patch_window, "adb", fake_adb):
             killed = patch_window.kill_orphan_uiautomators()
-        self.assertEqual(killed, ["8871"])
+        self.assertEqual(killed, ["8871", "8872"])
         self.assertEqual(
             [call for call in calls if call[:3] == ("shell", "kill", "-9")],
-            [("shell", "kill", "-9", "8871")])
+            [("shell", "kill", "-9", "8871"),
+             ("shell", "kill", "-9", "8872")])
 
     def test_scoped_shell_crash_leaves_the_row_verdict_alone(self):
         with tempfile.TemporaryDirectory() as directory:

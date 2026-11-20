@@ -141,15 +141,19 @@ class Device:
         """Kill leftover `uiautomator dump` processes on the device.
 
         Their UiAutomation registration survives the host-side adb timeout
-        and makes every later dump crash with 'already registered'."""
+        and makes every later dump crash with 'already registered'. Match
+        the cmdline rather than the comm name: the app_process holding the
+        registration is renamed to `uiautomator` only after JVM init, so a
+        young or wedged holder appears as `app_process ... uiautomator`."""
         try:
-            pids = self.shell("pidof", "uiautomator").strip()
+            ps = self.shell("ps", "-A", "-o", "PID,ARGS", timeout=15)
         except Exception:
             return
-        for pid in pids.split():
-            if pid.isdigit():
+        for line in ps.splitlines():
+            fields = line.split()
+            if fields and fields[0].isdigit() and "uiautomator" in line:
                 try:
-                    self.shell("kill", pid, timeout=10)
+                    self.shell("kill", "-9", fields[0], timeout=10)
                 except Exception:
                     pass
 
