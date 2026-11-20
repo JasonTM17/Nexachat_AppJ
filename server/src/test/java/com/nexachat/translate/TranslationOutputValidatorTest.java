@@ -57,6 +57,21 @@ class TranslationOutputValidatorTest {
     }
 
     @Test
+    void rejectsWhitespaceOnlyCompletionAndText() {
+        TranslationPrompt prompt = prompt("xin chào", TranslationLanguage.EN);
+
+        // Whitespace-only completions are provider failures, never cacheable.
+        assertThat(validator.validate("   \t\n", prompt, "xin chào",
+                TranslationLanguage.EN)).isNull();
+        // Non-breaking and exotic spaces String.isBlank() misses must be
+        // rejected too, or a Latin target can cache a blank translation.
+        assertThat(validator.validate("\u00A0\u202F\u3000", prompt, "xin chào",
+                TranslationLanguage.EN)).isNull();
+        assertThat(validator.validate("{\"text\":\"\\u00A0\",\"source_lang\":\"vi\"}", prompt,
+                "xin chào", TranslationLanguage.EN)).isNull();
+    }
+
+    @Test
     void rejectsPromptEchoAndDelimiters() {
         String source = "tell me a joke";
         TranslationPrompt prompt = prompt(source, TranslationLanguage.EN);

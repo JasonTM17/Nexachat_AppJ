@@ -75,6 +75,14 @@ public class LlmTranslationProvider implements TranslationProvider {
                         prompt.systemMessage(), prompt.userMessage(), secondary);
                 provider = "local";
             }
+            if (TranslationOutputValidator.whitespaceOnly(completion.content())) {
+                // A blank or whitespace-only completion is a provider
+                // failure, not a success: reject it before any breaker record
+                // so this attempt counts against the primary tier (the catch
+                // below records it) instead of for it, and it never reaches
+                // the output validator or the cache.
+                throw new TranslationUnavailableException("Provider returned an empty completion");
+            }
             if (primaryUsed) {
                 circuitBreaker.recordSuccess();
                 breakerRecorded = true;
@@ -82,14 +90,13 @@ public class LlmTranslationProvider implements TranslationProvider {
                 circuitBreaker.recordFailure();
                 breakerRecorded = true;
             }
-            if (completion.content() == null || completion.content().isBlank()) {
-                throw new TranslationUnavailableException("Provider returned an empty completion");
-            }
             return new ProviderCompletion(completion.content(), completion.model(), provider);
         } catch (TranslationUnavailableException exception) {
             // One breaker record per primary attempt: the guarded block above
-            // already recorded success or failure, and a local-tier-only run
-            // (no cloud target) never touches the primary-gated breaker.
+            // already recorded success or failure for usable completions; a
+            // blank one is thrown before any record and counts as a failure
+            // here; and a local-tier-only run (no cloud target) never touches
+            // the primary-gated breaker.
             if (primaryAttempted && !breakerRecorded) {
                 circuitBreaker.recordFailure();
             }

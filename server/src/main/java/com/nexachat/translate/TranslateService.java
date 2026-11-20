@@ -44,7 +44,9 @@ import java.util.regex.Pattern;
  * caller is a member with AI consent, the sender has not opted out of AI for
  * the conversation, and the message is plain text that predates neither the
  * member's admission nor encryption. Cache hits never consume rate-limit
- * tokens and never contact a provider.
+ * tokens and never contact a provider. A token spent on a request that
+ * produced no translation — a provider failure, a rejected output, or a
+ * consent revoke that wins the post-generation race — is refunded.
  */
 @Service
 @Profile("!test")
@@ -167,6 +169,9 @@ public class TranslateService {
         Generation generation = runProvider(conversationId, userId, member, row.toMessage(),
                 target, glossary);
         if (generation == null) {
+            // The token bought no generation — the provider chain failed or
+            // its output was rejected — so it goes back to the budget.
+            rateLimiter.refundOne(userId);
             metrics.recordTranslateRequest("FAILURE", "none");
             throw ApiException.of(ApiErrorCode.TRANSLATION_UNAVAILABLE,
                     "Translation is temporarily unavailable");
@@ -174,9 +179,12 @@ public class TranslateService {
         // Post-generation re-check, the same lane gate the summary and ask
         // paths apply: a consent revoke committed while the provider call was
         // in flight must win the race — the result is neither returned nor
-        // cached. Unlocked like the ask lane's pre-call re-check; the residual
-        // window to the cache write is milliseconds, not the provider call.
+        // cached, and the consumed token is refunded: the revoke, not the
+        // caller's budget, pays for the refused generation. Unlocked like the
+        // ask lane's pre-call re-check; the residual window to the cache write
+        // is milliseconds, not the provider call.
         if (!consentRepository.isConsented(userId)) {
+            rateLimiter.refundOne(userId);
             metrics.recordTranslateRequest("REFUSED", "none");
             throw ApiException.of(ApiErrorCode.AI_CONSENT_REQUIRED,
                     "External AI consent is required to translate messages");
@@ -222,7 +230,6 @@ public class TranslateService {
         Set<UUID> optedOut = aiOptOuts.optedOutUserIds(conversationId);
         List<GlossaryTerm> glossary = glossaryRepository.findTerms(conversationId, userId);
         String glossaryHash = GlossaryHasher.hash(glossary);
-        Boolean consented = null;
         boolean rateLimited = false;
 
         List<TranslateBatchItem> items = new ArrayList<>(ids.size());
@@ -250,10 +257,10 @@ public class TranslateService {
                         target.code(), target.code(), false, null));
                 continue;
             }
-            if (consented == null) {
-                consented = consentRepository.isConsented(userId);
-            }
-            if (!consented) {
+            // Consent is re-read per item, never cached for the batch: a
+            // revoke committed mid-batch must stop later items from reaching
+            // the provider, mirroring the post-generation gate below.
+            if (!consentRepository.isConsented(userId)) {
                 items.add(TranslateBatchItem.failed(id, target.code(),
                         ApiErrorCode.AI_CONSENT_REQUIRED.getCode()));
                 continue;
@@ -271,6 +278,9 @@ public class TranslateService {
             }
             Generation generation = runProvider(conversationId, userId, member, message, target, glossary);
             if (generation == null) {
+                // No generation for this item's token: refund it, exactly as
+                // the single-message path does.
+                rateLimiter.refundOne(userId);
                 metrics.recordTranslateRequest("FAILURE", "none");
                 items.add(TranslateBatchItem.failed(id, target.code(),
                         ApiErrorCode.TRANSLATION_UNAVAILABLE.getCode()));
@@ -278,8 +288,10 @@ public class TranslateService {
             }
             // Same post-generation lane gate as the single-message path: a
             // revoke committed while this item's provider call was in flight
-            // wins, and the result is neither returned nor cached.
+            // wins — the result is neither returned nor cached, and the item's
+            // consumed token is refunded.
             if (!consentRepository.isConsented(userId)) {
+                rateLimiter.refundOne(userId);
                 metrics.recordTranslateRequest("REFUSED", "none");
                 items.add(TranslateBatchItem.failed(id, target.code(),
                         ApiErrorCode.AI_CONSENT_REQUIRED.getCode()));
