@@ -398,7 +398,15 @@ export default function AlertsPage() {
         <Drawer
           title={`${detail.alert.category} · ${detail.alert.severity}`}
           sub={detail.alert.id}
-          onClose={() => setDetail(null)}
+          onClose={() => {
+            // Cancel any in-flight detail fetch so a late response cannot
+            // reopen the drawer the user just dismissed; the row's busy and
+            // error markers belong to the dismissed view too.
+            latestDetail.cancel();
+            setDetailBusy(null);
+            setDetailFailed(null);
+            setDetail(null);
+          }}
         >
           {actionError && (
             <div className="form-error" role="alert">

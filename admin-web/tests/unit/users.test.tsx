@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import UsersPage from '../../src/pages/UsersPage';
 import { I18nProvider } from '../../src/i18n';
@@ -272,6 +272,40 @@ describe('UsersPage', () => {
     // the drawer never opens and no banner duplicates the row-level error
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getAllByRole('alert')).toHaveLength(1);
+  });
+
+  it('does not reopen the drawer when a dismissed detail fetch resolves late', async () => {
+    const userEvt = userEvent.setup();
+    const resolvers = new Map<string, (d: UserDetail) => void>();
+    apiMock.mockImplementation((path: string) => {
+      if (path === '/api/v1/admin/me') return Promise.resolve(me);
+      if (path === '/api/v1/admin/users/deleted?limit=50') return Promise.resolve([]);
+      if (path.startsWith('/api/v1/admin/users?')) return Promise.resolve(page([user()]));
+      const match = /^\/api\/v1\/admin\/users\/([^/]+)$/.exec(path);
+      if (match) {
+        return new Promise<UserDetail>((res) => resolvers.set(match[1], res));
+      }
+      return Promise.reject(new ApiException(404, 'NO_ROUTE', `unstubbed ${path}`));
+    });
+    renderPage();
+    const row = (await screen.findByText('Mai')).closest('tr') as HTMLElement;
+
+    await userEvt.click(row);
+    resolvers.get('u1')!(detail());
+    await screen.findByRole('dialog', { name: 'Mai' });
+
+    // A second fetch for the same row (e.g. the post-action refetch) is in
+    // flight when the user dismisses the drawer; its late response must not
+    // resurrect the drawer or leave the row marked busy.
+    await userEvt.click(row);
+    await userEvt.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await act(async () => {
+      resolvers.get('u1')!(detail());
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(row).not.toHaveAttribute('aria-busy');
   });
 
   it('opens the drawer from the keyboard with Enter and Space', async () => {

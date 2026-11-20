@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AlertsPage from '../../src/pages/AlertsPage';
 import { I18nProvider } from '../../src/i18n';
@@ -152,6 +152,38 @@ describe('AlertsPage', () => {
     resolveDetail(detail());
     expect(await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' })).toBeInTheDocument();
     await waitFor(() => expect(row).not.toHaveAttribute('aria-busy'));
+  });
+
+  it('does not reopen the drawer when a dismissed detail fetch resolves late', async () => {
+    const user = userEvent.setup();
+    const resolvers: Array<(d: AlertDetail) => void> = [];
+    apiMock.mockImplementation((path: string) => {
+      if (path === '/api/v1/admin/me') return Promise.resolve(me);
+      if (path.startsWith('/api/v1/admin/alerts?')) return Promise.resolve(page([alert()]));
+      if (path === '/api/v1/admin/alerts/a1') {
+        return new Promise<AlertDetail>((res) => resolvers.push(res));
+      }
+      return Promise.reject(new ApiException(404, 'NO_ROUTE', `unstubbed ${path}`));
+    });
+    renderPage();
+    const row = (await screen.findByText('send me your password')).closest('tr') as HTMLElement;
+
+    await user.click(row);
+    resolvers[0](detail());
+    await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' });
+
+    // A second fetch for the same alert (e.g. the post-action refetch) is in
+    // flight when the user dismisses the drawer; its late response must not
+    // resurrect the drawer or leave the row marked busy.
+    await user.click(row);
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await act(async () => {
+      resolvers[resolvers.length - 1](detail());
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(row).not.toHaveAttribute('aria-busy');
   });
 
   it('filters by severity and reloads from page 0', async () => {

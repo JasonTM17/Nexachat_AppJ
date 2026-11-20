@@ -350,7 +350,15 @@ export default function UsersPage() {
         <Drawer
           title={selected.user.displayName ?? selected.user.phone ?? selected.user.id}
           sub={selected.user.id}
-          onClose={() => setSelected(null)}
+          onClose={() => {
+            // Cancel any in-flight detail fetch so a late response cannot
+            // reopen the drawer the user just dismissed; the row's busy and
+            // error markers belong to the dismissed view too.
+            latestDetail.cancel();
+            setDetailBusy(null);
+            setDetailFailed(null);
+            setSelected(null);
+          }}
         >
           {actionError && (
             <div className="form-error" role="alert">
