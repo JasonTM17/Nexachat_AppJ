@@ -2117,9 +2117,17 @@ def _ask_cited_ids(payload: dict[str, Any]) -> list[str]:
 
 
 def _wait_summary_ready(context: dict[str, Any]) -> Any:
-    """Wait for the summary sheet's READY body; report the last visible error."""
+    """Wait for the summary sheet's READY body; report the last visible error.
+
+    Bullet rows render inside `summarySheetScroll`; uiautomator prunes the
+    rows sitting below the sheet's inner viewport, so a valid summary with
+    its bullets below the fold reports "no content" forever. The sheet is
+    paged down each round like `_summary_citation_chip` already does.
+    """
+    ui = context["device"]
     deadline = time.monotonic() + _ASK_RESULT_TIMEOUT
     last_error = ""
+    seen_header = None
     while True:
         nodes = _ui_nodes(context)
         bullets = [node for node in nodes
@@ -2127,8 +2135,14 @@ def _wait_summary_ready(context: dict[str, Any]) -> Any:
         header = next((node for node in nodes
                        if _rid_ends(node, "summaryResultHeader")
                        and node.text.strip() and _node_visible(node)), None)
-        if bullets and header is not None:
-            return header
+        # Scrolling to expose bullets expands the sheet and slides the header
+        # above the viewport — header and bullets are never co-visible on a
+        # filled sheet. Latch the header at first sight (the collapsed sheet
+        # always opens with it at the top) and return it once bullets appear.
+        if header is not None:
+            seen_header = header
+        if bullets and seen_header is not None:
+            return seen_header
         error = next((node for node in nodes
                       if _rid_ends(node, "summaryErrorText")
                       and node.text.strip() and _node_visible(node)), None)
@@ -2136,6 +2150,13 @@ def _wait_summary_ready(context: dict[str, Any]) -> Any:
         if time.monotonic() >= deadline:
             detail = f" (error card: {last_error!r})" if last_error else ""
             raise ProductFailure(f"the LOCAL summary did not render its content{detail}")
+        scroll = next((node for node in nodes
+                       if _rid_ends(node, "summarySheetScroll")), None)
+        if scroll is not None:
+            box = getattr(scroll, "box", None) or (0, 0, 320, 640)
+            ui.swipe((box[0] + box[2]) // 2, box[3] - 30,
+                     (box[0] + box[2]) // 2, box[1] + (box[3] - box[1]) // 3,
+                     350)
         time.sleep(0.5)
 
 
@@ -2707,6 +2728,12 @@ def _open_inbox_actions(context: dict[str, Any]) -> None:
     ui = context["device"]
     deadline = time.monotonic() + _ui_timeout(context)
     while True:
+        # Sweep below the rendered viewport — a low-sorted peer row is
+        # otherwise invisible to the a11y dump (labels-lifecycle attempt-1).
+        if not _inbox_row_found_scrolled(context, "Binh"):
+            if time.monotonic() >= deadline:
+                raise ProductFailure("the seeded peer row was not on the inbox")
+            continue
         row = _inbox_conversation_row(context, "Binh")
         if row is None:
             if time.monotonic() >= deadline:
@@ -2729,11 +2756,12 @@ def _wait_binh_row(context: dict[str, Any], present: bool, what: str,
     if present:
         deadline = time.monotonic() + float(timeout or _ui_timeout(context))
         while True:
-            if _inbox_conversation_row(context, "Binh") is not None:
+            # A restored row can sort below the rendered viewport — sweep
+            # the list before declaring the wait failed (run-archprefs-10).
+            if _inbox_row_found_scrolled(context, "Binh"):
                 return
             if time.monotonic() >= deadline:
                 raise ProductFailure(what)
-            time.sleep(0.4)
     else:
         deadline = time.monotonic() + float(timeout or _ui_timeout(context))
         while True:
@@ -2775,6 +2803,36 @@ def _scroll_list_to_top(context: dict[str, Any], container_rid: str,
         height = box[3] - box[1]
         ui.swipe(cx, box[1] + int(height * 0.30), cx, box[3] - int(height * 0.12), 300)
         time.sleep(0.5)
+
+
+def _inbox_row_found_scrolled(context: dict[str, Any], title: str | tuple,
+                              swipes: int = 5) -> bool:
+    """Sweep the conversationList downward looking for a row title.
+
+    `_inbox_conversation_row` only sees rendered nodes — a restored or
+    low-sorted row below the ~4-row viewport reports absent forever
+    (run-archprefs-verify-10: the un-archived Binh row sorted last and the
+    row check timed out below the fold). Each round dumps once per
+    viewport and pages down; when the sweep is exhausted the list is
+    scrolled back to the top so the next wait round starts stable.
+    """
+    ui = context["device"]
+    for _ in range(swipes):
+        nodes = _ui_nodes(context)
+        if _inbox_conversation_row(context, title, nodes) is not None:
+            return True
+        container = next((node for node in nodes
+                          if _rid_ends(node, "conversationList")), None)
+        if container is None:
+            break
+        box = getattr(container, "box", None) or (0, 0, 320, 640)
+        cx = (box[0] + box[2]) // 2
+        height = box[3] - box[1]
+        ui.swipe(cx, box[3] - int(height * 0.12), cx,
+                 box[1] + int(height * 0.30), 300)
+        time.sleep(0.5)
+    _scroll_list_to_top(context, "conversationList")
+    return False
 
 
 def _pull_to_refresh(context: dict[str, Any]) -> None:
@@ -3187,10 +3245,13 @@ def run_archive_preferences(row: JourneyRow, context: dict[str, Any]) -> dict[st
         if not snackbar_seen:
             raise ProductFailure(
                 "the archive snackbar did not render after the overflow archive")
-        ui.screenshot(str(row_dir / "archive-snackbar.png"))
         if undo is None:
             raise ProductFailure("the archive snackbar did not offer Undo")
+        # Tap before the screenshot: the snackbar's ~3s TTL can expire inside
+        # one dump+capture window on a slow bridge, and a stale Undo tap then
+        # lands on whatever surfaced underneath (run-sweep-verify-12).
         ui.tap_node(undo)
+        ui.screenshot(str(row_dir / "archive-snackbar.png"))
         _wait_inbox_entry(
             recorder, an["accessToken"], conversation_id,
             lambda entry: entry is not None and entry.get("archived") is False,
@@ -3199,7 +3260,8 @@ def run_archive_preferences(row: JourneyRow, context: dict[str, Any]) -> dict[st
                          "An's archive leaked into Binh's inbox entry")
         _wait_binh_row(
             context, True,
-            "the conversation row did not return to the inbox after Undo")
+            "the conversation row did not return to the inbox after Undo",
+            timeout=60.0)
         result["archive_undo"] = ("overflow archive persisted caller-side; the "
                                   "snackbar's Undo action reverted it")
 
@@ -3904,13 +3966,16 @@ def run_labels_lifecycle(row: JourneyRow, context: dict[str, Any]) -> dict[str, 
             lambda node: node.text.strip() in _LBL_FILTER_ALL and not node.desc.strip(),
             "the 'All labels' filter chip never appeared")
         ui.tap_node(all_chip)
-        deadline = time.monotonic() + _ui_timeout(context)
-        while not _inbox_row_visible(context, "NexaChat Team"):
+        # Delta-sync restore plus a full scroll sweep can exceed the stock UI
+        # timeout on a loaded bridge — rows return on their own, just late
+        # (run-sweep-verify-13: Binh present in both post-failure captures).
+        deadline = time.monotonic() + 60.0
+        while not _inbox_row_found_scrolled(context, "NexaChat Team"):
             if time.monotonic() >= deadline:
                 raise ProductFailure("unlabeled rows did not return after 'All labels'")
-            time.sleep(0.4)
-        if not _inbox_row_visible(context, "Binh"):
-            raise ProductFailure("the labeled row did not return after 'All labels'")
+        while not _inbox_row_found_scrolled(context, "Binh"):
+            if time.monotonic() >= deadline:
+                raise ProductFailure("the labeled row did not return after 'All labels'")
         result["unfilter"] = "All labels restores the full inbox"
 
         # === phase 4: dialog recreation — rotation + stop/start =============
@@ -5547,8 +5612,12 @@ def run_polls_reminders(row: JourneyRow, context: dict[str, Any]) -> dict[str, A
         try:
             due = clock.make_due(reminder_id, minutes_ago=1)
         except Exception as error:
+            hint = (" (reminder row missing from the target db? set "
+                    "NEXACHAT_E2E_REMINDER_DB to the stack's database)"
+                    if "UPDATE 0" in str(error)
+                    or "not found" in str(error).lower() else "")
             raise EnvironmentFailure(
-                f"reminder_clock could not pull the row due: {error}") from error
+                f"reminder_clock could not pull the row due: {error}{hint}") from error
         if due.get("status") not in ("DUE", "CLAIMED", "FIRED"):
             raise EnvironmentFailure(f"make_due left the reminder {due.get('status')!r}")
         try:
