@@ -8650,6 +8650,14 @@ def run_accessibility_sweep(row: JourneyRow, context: dict[str, Any]) -> dict[st
         if time.monotonic() >= deadline:
             raise ProductFailure("the seeded sweep group did not reach the inbox")
         time.sleep(0.5)
+    # The Binh DM also carries a fresh fixture message; give its row the same
+    # convergence budget so the direct-chat cell never hunts a row whose sync
+    # is still landing after the cold start.
+    deadline = time.monotonic() + 60
+    while not _inbox_row_found_scrolled(context, "Binh"):
+        if time.monotonic() >= deadline:
+            raise ProductFailure("the seeded peer conversation did not reach the inbox")
+        time.sleep(0.5)
 
     density = _a11y_density(adb)
     before = snapshot_settings(adb, patch)
