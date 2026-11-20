@@ -141,6 +141,29 @@ class ResultClassificationTest(unittest.TestCase):
         self.assertEqual(journeys._status_for_error(caught.exception), "FAIL_HARNESS_OR_ENVIRONMENT")
         self.assertEqual(adb.calls, [])
 
+    def test_preflight_skips_shared_readiness_for_self_provisioned_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = Path(directory) / "app-debug.apk"
+            apk.write_bytes(b"offline fixture")
+
+            class NoServer:
+                def get(self, path):
+                    raise AssertionError("readiness must not be probed")
+
+            class BootedAdb:
+                def command(self, *args, **kwargs):
+                    if args == ("get-state",):
+                        return "device"
+                    if args[:3] == ("shell", "getprop", "sys.boot_completed"):
+                        return "1"
+                    if args[:3] == ("shell", "getprop", "ro.build.version.sdk"):
+                        return "36"
+                    raise AssertionError(args)
+
+            # Must not raise: the --dstack mail rows provision their own backend.
+            journeys.preflight("http://127.0.0.1:18093", apk, BootedAdb(),
+                               NoServer(), require_shared_server=False)
+
     class FakeAdb:
         def command(self, *args, **kwargs):
             return ""
@@ -278,6 +301,387 @@ class RedactionTest(unittest.TestCase):
             self.assertNotIn(secret, transcript)
         self.assertEqual(client.records[0]["headers"]["Authorization"], "[REDACTED]")
         self.assertEqual(client.records[0]["response"]["accessToken"], "[REDACTED]")
+
+
+class _AccountDeletionNode:
+    """Minimal uiautomator node shape used by the deletion device fixture."""
+
+    def __init__(self, text="", desc="", rid="", cls="", box=None, clickable=True):
+        self.text = text
+        self.desc = desc
+        self.cls = cls
+        self.box = box or (0, 0, 320, 60)
+        self.clickable = clickable
+        self.attrs = {"resource-id": f"com.nexachat.debug:id/{rid}" if rid else ""}
+
+    def strip(self):  # parity with the real Node helpers
+        return self
+
+
+class _AccountDeletionWorld:
+    """Scripted app: login -> inbox -> profile -> delete-account screens."""
+
+    WRONG_PASSWORD_TEXT = "Current password is incorrect"
+    CODE_SENT_TEXT = ("We sent a confirmation code to your verified email address")
+
+    def __init__(self, store):
+        self.store = store
+        self.screen = "login"
+        self.account = None
+        self.keyboard = False
+        self.login_inputs = {}
+        self.error_text = ""
+        self.code_requested = False
+        self.wrong_password_refused = False
+        self.passwordless_fixture_applied = False
+        self.deleted_via_code = False
+        self.sql_log = []
+
+    def cold_start(self):
+        self.screen = "inbox" if self.account else "login"
+        self.keyboard = False
+        self.login_inputs = {}
+
+    @property
+    def inbox_titles(self):
+        # Only the doomed account ever had the peer conversation; the
+        # re-registered phone starts with a clean (non-cached) inbox.
+        if (self.account and self.store.is_doomed(self.account["phone"])
+                and not self.store.reused):
+            return [self.store.peer_name]
+        return []
+
+    def tree(self):
+        nodes = []
+        if self.screen == "login":
+            nodes.append(_AccountDeletionNode(rid="phoneInput",
+                                             cls="android.widget.EditText"))
+            nodes.append(_AccountDeletionNode(rid="passwordInput",
+                                             cls="android.widget.EditText"))
+            nodes.append(_AccountDeletionNode(text="Sign in", rid="primaryAction",
+                                              cls="android.widget.Button"))
+        elif self.screen == "inbox":
+            nodes.append(_AccountDeletionNode(rid="inboxUserAvatar"))
+            nodes.append(_AccountDeletionNode(rid="conversationList",
+                                             box=(0, 300, 320, 620)))
+            for index, title in enumerate(self.inbox_titles):
+                nodes.append(_AccountDeletionNode(
+                    text=title, box=(10, 310 + index * 2, 310, 312 + index * 2)))
+        elif self.screen == "profile":
+            nodes.append(_AccountDeletionNode(
+                text=self.account["displayName"] if self.account else "",
+                rid="profileName"))
+            nodes.append(_AccountDeletionNode(rid="profileColumn",
+                                             box=(0, 0, 320, 640)))
+            nodes.append(_AccountDeletionNode(text="Sign out", rid="logoutRow"))
+            nodes.append(_AccountDeletionNode(text="Delete account",
+                                              rid="deleteAccountRow"))
+        elif self.screen == "delete":
+            nodes.append(_AccountDeletionNode(rid="deleteAccountToolbar"))
+            if self.store.is_passwordless(self.account):
+                nodes.append(_AccountDeletionNode(text="Send code",
+                                                  rid="sendDeletionCode"))
+                if self.code_requested:
+                    nodes.append(_AccountDeletionNode(
+                        text=self.CODE_SENT_TEXT, rid="deletionCodeSentMessage"))
+                    nodes.append(_AccountDeletionNode(
+                        rid="deletionCodeInput", cls="android.widget.EditText"))
+            else:
+                nodes.append(_AccountDeletionNode(rid="passwordInput",
+                                                  cls="android.widget.EditText"))
+            nodes.append(_AccountDeletionNode(text="Delete my account",
+                                              rid="confirmDelete",
+                                              cls="android.widget.Button"))
+            if self.error_text:
+                nodes.append(_AccountDeletionNode(text=self.error_text,
+                                                  rid="inlineError"))
+        return nodes
+
+
+class _AccountDeletionDeviceFixture:
+    """Device/adb/patch/client/mail fakes for the account-deletion executor."""
+
+    PHONE = "+84993334445"
+    EMAIL = "delete-device@example.test"
+    PEER_NAME = "Journey Peer fixture"
+
+    class Response:
+        def __init__(self, status, body=None):
+            self.status = status
+            self._body = body if body is not None else {}
+
+        def json(self):
+            return self._body
+
+    class Store:
+        def __init__(self):
+            self.users = {}          # phone -> {"password", "displayName", "deleted"}
+            self.passwordless = set()
+            self.doomed = set()
+            self.reused = False
+            self.deletion_code = "654321"
+            self.messages = []
+
+        def is_passwordless(self, account):
+            return account is not None and account["phone"] in self.passwordless
+
+        def is_doomed(self, phone):
+            return phone in self.doomed
+
+    class Mail:
+        def __init__(self, codes):
+            self.codes = list(codes)
+            self.n = 0
+            self.stopped = False
+
+        def start(self):
+            return None
+
+        def stop(self):
+            self.stopped = True
+
+        def server_env(self):
+            return {"NEXACHAT_MAIL_PROVIDER": "smtp",
+                    "MAIL_SMTP_HOST": "127.0.0.1", "MAIL_SMTP_PORT": "1025",
+                    "MAIL_SMTP_USERNAME": "", "MAIL_SMTP_PASSWORD": "",
+                    "MAIL_FROM": "noreply@nexachat.io.vn"}
+
+        def wait_for_message(self, to, subject_contains=None, timeout=60):
+            code = self.codes[self.n]
+            self.n += 1
+            return {"Text": code}
+
+        def extract_otp(self, message):
+            return message["Text"]
+
+        def clear(self):
+            return None
+
+    class Client:
+        def __init__(self, store, world):
+            self.store = store
+            self.world = world
+            self.confirmed = False
+
+        def post(self, path, token=None, body=None, headers=None):
+            R = _AccountDeletionDeviceFixture.Response
+            body = body or {}
+            if path.endswith("/auth/register"):
+                phone = body["phone"]
+                if phone in self.store.users:
+                    self.store.reused = True
+                self.store.users[phone] = {"password": body["password"],
+                                           "displayName": body["displayName"],
+                                           "deleted": False}
+                return R(201, {"accessToken": f"tok-{phone}",
+                               "user": {"id": phone, "phone": phone}})
+            if path.endswith("/users/me/email/verify"):
+                return R(200, {})
+            if path.endswith("/account-deletion/request"):
+                return R(202, {})
+            if path.endswith("/account-deletion/confirm"):
+                self.confirmed = True
+                self.store.users[body["phone"]]["deleted"] = True
+                return R(204, None)
+            if path.endswith("/conversations/direct"):
+                return R(201, {"id": "conv-del", "type": "DIRECT"})
+            if "/messages" in path:
+                self.store.messages.append(body["content"])
+                return R(201, {"id": "m1"})
+            raise AssertionError(path)
+
+        def put(self, path, token=None, body=None, headers=None):
+            return _AccountDeletionDeviceFixture.Response(202, {})
+
+        def get(self, path, token=None, params=None, headers=None):
+            R = _AccountDeletionDeviceFixture.Response
+            phone = (token or "").removeprefix("tok-")
+            user = self.store.users.get(phone)
+            if path == "/api/v1/users/me":
+                if user is None or user["deleted"]:
+                    return R(401)
+                return R(200, {"phone": phone})
+            if path == "/api/v1/conversations/conv-del/messages":
+                return R(200, {"items": [{"content": content}
+                                         for content in self.store.messages]})
+            raise AssertionError(path)
+
+        def request(self, method, path, token=None, body=None, headers=None):
+            phone = (token or "").removeprefix("tok-")
+            user = self.store.users.get(phone)
+            if method == "DELETE" and path == "/api/v1/users/me":
+                if user and body and body.get("password") == user["password"]:
+                    user["deleted"] = True
+                    return _AccountDeletionDeviceFixture.Response(204, None)
+                return _AccountDeletionDeviceFixture.Response(401, {})
+            raise AssertionError((method, path))
+
+    class Device:
+        def __init__(self, world, store):
+            self.world = world
+            self.store = store
+
+        def nodes(self):
+            return self.world.tree()
+
+        def tap_node(self, node):
+            w = self.world
+            rid = node.attrs["resource-id"].rsplit("/", 1)[-1]
+            if w.screen == "login" and rid == "primaryAction":
+                phone = w.login_inputs.get("phoneInput", "")
+                password = w.login_inputs.get("passwordInput", "")
+                user = self.store.users.get(phone)
+                if user and not user["deleted"] and password == user["password"]:
+                    w.account = {"phone": phone,
+                                 "displayName": user["displayName"]}
+                    w.screen = "inbox"
+                return
+            if w.screen == "inbox" and rid == "inboxUserAvatar":
+                w.screen = "profile"
+                return
+            if w.screen == "profile" and rid == "deleteAccountRow":
+                w.screen = "delete"
+                w.error_text = ""
+                w.code_requested = False
+                return
+            if w.screen == "delete":
+                if rid == "confirmDelete":
+                    if self.store.is_passwordless(w.account):
+                        code = w.login_inputs.get("deletionCodeInput", "")
+                        if code == self.store.deletion_code:
+                            self.store.users[w.account["phone"]]["deleted"] = True
+                            w.deleted_via_code = True
+                            w.account = None
+                            w.screen = "login"
+                        else:
+                            w.error_text = "Wrong or expired code"
+                    else:
+                        w.wrong_password_refused = True
+                        w.error_text = w.WRONG_PASSWORD_TEXT
+                elif rid == "sendDeletionCode":
+                    w.code_requested = True
+
+        def key(self, code):
+            w = self.world
+            if w.keyboard:
+                w.keyboard = False
+                return
+            if w.screen == "delete":
+                w.screen = "profile"
+            elif w.screen == "profile":
+                w.screen = "inbox"
+
+        def swipe(self, x1, y1, x2, y2, duration):
+            return None
+
+        def screenshot(self, path):
+            Path(path).write_bytes(b"png")
+
+    class Adb:
+        serial = "emulator-5554"
+
+        def __init__(self, world):
+            self.world = world
+
+        def command(self, *args, **kwargs):
+            if "force-stop" in args:
+                return ""
+            if args[:2] == ("shell", "am") and "start" in args:
+                self.world.cold_start()
+                return ""
+            if args[:3] == ("shell", "input", "keyevent"):
+                self.world.keyboard = False
+                return ""
+            return ""
+
+    class Patch:
+        PASSWORD = "password123"
+
+        @staticmethod
+        def ui_nodes(device, timeout=8):
+            return device.nodes()
+
+        @staticmethod
+        def node_by_id(nodes, suffix):
+            return next((node for node in nodes
+                         if node.attrs.get("resource-id", "").endswith("/" + suffix)),
+                        None)
+
+        @staticmethod
+        def text_matches(node, candidates):
+            value = (node.text + " " + node.desc).casefold()
+            return any(candidate.casefold() in value for candidate in candidates)
+
+        @staticmethod
+        def login_form_visible(nodes):
+            ids = {node.attrs.get("resource-id", "").rsplit("/", 1)[-1]
+                   for node in nodes}
+            return {"phoneInput", "passwordInput"} <= ids and any(
+                node.text.strip() == "Sign in" for node in nodes)
+
+        @staticmethod
+        def inbox_visible(nodes):
+            return any(node.attrs.get("resource-id", "").endswith("/inboxUserAvatar")
+                       for node in nodes)
+
+        @staticmethod
+        def fill_login_field(ui, field_id, value):
+            ui.world.login_inputs[field_id] = value
+            ui.world.keyboard = True
+
+    def __init__(self, test):
+        self.test = test
+        self.phone = self.PHONE
+        self.store = self.Store()
+        self.store.peer_name = self.PEER_NAME
+        self.world = _AccountDeletionWorld(self.store)
+        self.store.doomed.add(self.phone)
+        self.client = self.Client(self.store, self.world)
+        # codes: recovery-email verify, then the in-app deletion code.
+        self.mail = self.Mail(["112233", self.store.deletion_code])
+
+    def context(self, row, stack_port=None):
+        """Context whose base_url sits on a free port; the disposable stack
+        handle serves stack_port (defaults to the same port so the app can
+        reach it; a different port simulates the shared-server conflict)."""
+        import socket
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        base_url = f"http://127.0.0.1:{port}"
+        stack_base = f"http://127.0.0.1:{stack_port or port}"
+        world = self.world
+        store = self.store
+
+        def sql(statement, db_name=None):
+            world.sql_log.append(statement)
+            if "password_hash = NULL" in statement:
+                world.passwordless_fixture_applied = True
+                store.passwordless.add(self.phone)
+
+        def apply_env(env):
+            return {"base_url": stack_base, "client": self.client,
+                    "sql": sql, "close": lambda: None}
+
+        class Api:
+            USER_A = {"phone": "+84900000001"}
+
+        return {
+            "serial": "emulator-5554",
+            "base_url": base_url,
+            "row": row,
+            "row_dir": Path(tempfile.mkdtemp()),
+            "selected_ids": ("auth-login", "account-deletion"),
+            "disposable_phone": self.phone,
+            "disposable_email": self.EMAIL,
+            "mail_sink": self.mail,
+            "client": self.client,
+            "apply_server_env": apply_env,
+            "adb": self.Adb(world),
+            "device": self.Device(world, store),
+            "helpers": (Api(), None, self.Patch()),
+            "ui_timeout": 2,
+        }
 
 
 class WiringDecisionTest(unittest.TestCase):
@@ -867,6 +1271,49 @@ class WiringDecisionTest(unittest.TestCase):
         self.assertIn("cache", str(caught.exception))
         for code in mail.codes:
             self.assertNotIn(code, str(caught.exception))
+
+    def test_account_deletion_blocks_when_the_stack_misses_the_app_port(self):
+        row = journeys.ROW_BY_ID["account-deletion"]
+        fixture = _AccountDeletionDeviceFixture(self)
+        context = fixture.context(row, stack_port=18443)
+        with mock.patch.object(journeys.time, "sleep"):
+            with self.assertRaises(journeys.CapabilityBlocked) as caught:
+                journeys.run_account_deletion(row, context)
+        text = str(caught.exception)
+        self.assertIn("10.0.2.2", text)
+        self.assertIn("cache", text)
+        # The REST/OTP deletion still ran before the explicit gap.
+        self.assertEqual(fixture.mail.n, 2)
+        self.assertTrue(fixture.client.confirmed)
+        self.assertTrue(fixture.mail.stopped)
+        for code in fixture.mail.codes:
+            self.assertNotIn(code, text)
+
+    def test_account_deletion_drives_the_in_app_ui_slice(self):
+        row = journeys.ROW_BY_ID["account-deletion"]
+        fixture = _AccountDeletionDeviceFixture(self)
+        context = fixture.context(row)
+        with mock.patch.object(journeys.time, "sleep"):
+            result = journeys.run_account_deletion(row, context)
+        for key in ("sign_in", "wrong_password_ui", "in_app_deletion",
+                    "token_rejection", "peer_history", "cache_and_reuse"):
+            self.assertIn(key, result)
+        world = fixture.world
+        # The wrong password was refused in the UI and the account survived it.
+        self.assertTrue(world.wrong_password_refused)
+        # The passwordless (V33 Google-only) fixture flipped the UI to the
+        # code flow, the Mailpit code confirmed the deletion, and the app
+        # returned to the login form.
+        self.assertTrue(world.passwordless_fixture_applied)
+        self.assertTrue(world.deleted_via_code)
+        self.assertEqual(world.screen, "inbox")
+        self.assertEqual(world.account["phone"], fixture.phone)
+        # The re-registered phone signed in to an inbox with no cached row.
+        self.assertEqual(world.inbox_titles, [])
+        # The OTP never leaked into the results or the sql transcript.
+        transcript = json.dumps(result) + json.dumps(world.sql_log)
+        for code in fixture.mail.codes:
+            self.assertNotIn(code, transcript)
 
     def test_otp_flow_passes_on_a_stack_handle_and_proves_expiry(self):
         row = journeys.ROW_BY_ID["otp-forgot-password"]

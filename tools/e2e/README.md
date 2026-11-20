@@ -296,9 +296,13 @@ With `--dstack` the mail rows provision a disposable backend via
 `disposable_stack.py`: `otp-forgot-password` then runs the full
 request/wrong/expired/reused/resend flow to PASS (expiry is proven by rewinding
 `expires_at` inside the disposable database), and `account-deletion` executes
-its mail/REST portion but still reports `BLOCKED_CAPABILITY` for the in-app
-assertions (sign-in UI, deleted-account cache, peer view). Without `--dstack`
-both rows raise `CapabilityBlocked` before Mailpit or a database is touched.
+its mail/REST portion plus the in-app UI slice — sign-in, wrong-password
+refusal, OTP confirm, deleted-account cache and phone reuse on device — when
+the disposable stack owns the app's compile-time port (run the row alone with
+the shared local server stopped; the stack is pinned to that port). When the
+port is occupied the row still proves the REST/OTP deletion and reports the
+explicit gap instead of a silent pass. Without `--dstack` both rows raise
+`CapabilityBlocked` before Mailpit or a database is touched.
 
 ```bash
 python tools/e2e/device/stable_journeys.py --list

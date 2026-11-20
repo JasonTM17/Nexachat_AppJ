@@ -17,6 +17,7 @@ import importlib
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import time
@@ -584,10 +585,12 @@ ROWS: tuple[JourneyRow, ...] = (
         cleanup=("Deletion itself is the cleanup; never use seed/owner accounts"),
         rest_plan=(("DELETE", "/api/v1/users/me"), ("POST", "/api/v1/account-deletion/request"),
                    ("POST", "/api/v1/account-deletion/confirm")),
-        capability_gap=("the mail/REST deletion flow runs against a disposable stack (--dstack), but no "
-                        "helper binds a disposable account into the debug UI: in-app confirmation, the "
-                        "deleted-account cache, and peer UI stay unproven. The row stays last and must "
-                        "never target a seed user."),
+        capability_gap=("the mail/REST deletion flow runs against a disposable stack (--dstack), "
+                        "and the in-app UI slice (sign-in, wrong-password refusal, OTP confirm, "
+                        "deleted-account cache, phone reuse on device) runs when the stack owns "
+                        "the app's compile-time port; otherwise the row reports this gap. The "
+                        "peer's UI render of the tombstoned author stays unproven on a single "
+                        "device. The row stays last and must never target a seed user."),
     ),
 )
 
@@ -640,6 +643,15 @@ HELPER_CALLS = {
         {"helper": "mail_sink.server_env"},
         {"helper": "mail_sink.wait_for_message"},
         {"helper": "mail_sink.extract_otp"},
+        {"helper": "adb_ui.Device.tap_node", "target": "resource-id deleteAccountRow",
+         "opens": "resource-id deleteAccountToolbar"},
+        {"helper": "adb_ui.Device.type_text", "target": "resource-id passwordInput",
+         "assert": "resource-id inlineError renders the wrong-password refusal"},
+        {"helper": "adb_ui.Device.tap_node", "target": "resource-id sendDeletionCode",
+         "assert": "resource-id deletionCodeSentMessage renders"},
+        {"helper": "adb_ui.Device.type_text", "target": "resource-id deletionCodeInput"},
+        {"helper": "adb_ui.Device.tap_node", "target": "resource-id confirmDelete",
+         "assert": "the login form returns (signed out)"},
         {"helper": "mail_sink.stop", "when": "finally"},
     ),
     "calls-injected-notification": (
@@ -928,7 +940,14 @@ UI_MARKERS = {
     "room-13-14-upgrade": ("text:queued message before and after migration"),
     "v111-rc-upgrade": ("text:Sign in", "text:Binh"),
     "accessibility-sweep": ("ui-tree marker for each of 8 locale/theme/font variants",),
-    "account-deletion": ("text:localized deletion confirmation", "text:Sign in"),
+    "account-deletion": (
+        "resource-id:deleteAccountRow", "resource-id:deleteAccountToolbar",
+        "resource-id:passwordInput", "resource-id:confirmDelete",
+        "resource-id:inlineError", "text:Current password is incorrect",
+        "resource-id:sendDeletionCode", "resource-id:deletionCodeSentMessage",
+        "resource-id:deletionCodeInput", "resource-id:deleteProgress",
+        "text:Delete my account", "text:Sign in",
+    ),
 }
 
 
@@ -5966,9 +5985,13 @@ def _offline_sign_out(context: dict[str, Any]) -> None:
 
 
 def _offline_sign_in(context: dict[str, Any], phone: str,
-                     display_name: str) -> None:
-    """Drive the real login form for a seeded account, then prove the profile
-    identifies that account — the same probe _assert_device_account_an uses."""
+                     display_name: str, password: str | None = None) -> None:
+    """Drive the real login form for an account, then prove the profile
+    identifies that account — the same probe _assert_device_account_an uses.
+
+    password defaults to the seeded patch_window PASSWORD; disposable
+    accounts pass their own password explicitly.
+    """
     patch = context["helpers"][2]
     ui = context["device"]
     deadline = time.monotonic() + 45
@@ -5982,7 +6005,8 @@ def _offline_sign_in(context: dict[str, Any], phone: str,
     patch.fill_login_field(ui, "phoneInput", phone)
     ui.key("KEYCODE_BACK")
     patch.fill_login_field(
-        ui, "passwordInput", getattr(patch, "PASSWORD", "password123"))
+        ui, "passwordInput",
+        password if password is not None else getattr(patch, "PASSWORD", "password123"))
     context["adb"].command("shell", "input", "keyevent", "4",
                            timeout=15, check=False)
     time.sleep(1)
@@ -6949,13 +6973,20 @@ def _import_disposable_stack():
     return importlib.import_module("disposable_stack")
 
 
+# Rows that provision their own backend through apply_server_env when --dstack
+# is on; selected alone they do not require the shared local server.
+_DSTACK_SELF_PROVISIONED_ROWS = frozenset({"otp-forgot-password", "account-deletion"})
+
+
 def _dstack_apply_server_env(context: dict[str, Any], api: Any) -> Callable[[dict[str, str]], dict[str, Any]]:
     """apply_server_env backed by disposable_stack: provision + start a private server.
 
     The returned handle carries the stack base_url, a sql() bound to the
     disposable database, and close() that stops the backend and drops the DB.
     The stack lives under the row's attempt dir so repeated attempts and
-    neighbouring mail rows each get a fresh database.
+    neighbouring mail rows each get a fresh database. context may pin the
+    app port ("dstack_app_port") so the device app — whose base URL is
+    compile-time — can reach the stack.
     """
     def apply(env: dict[str, str]) -> dict[str, Any]:
         dstack = _import_disposable_stack()
@@ -6964,7 +6995,9 @@ def _dstack_apply_server_env(context: dict[str, Any], api: Any) -> Callable[[dic
             str(Path(row_dir) / "dstack"),
             server_target=str(context.get("dstack_server_target")
                               or dstack.DEFAULT_SERVER_TARGET))
+        pinned_port = context.get("dstack_app_port")
         state = stack.provision(
+            app_port=int(pinned_port) if pinned_port else None,
             extra_env=dict(env),
             extra_java_args=[
                 # Mailpit is plaintext SMTP; the default config requires STARTTLS.
@@ -7106,51 +7139,301 @@ def _require_deletion_last(context: dict[str, Any]) -> None:
         raise HarnessError("account deletion must run last")
 
 
-def _complete_account_deletion(context: dict[str, Any], mail: Any, phone: str, email: str) -> None:
+_DELETION_WRONG_PASSWORD_LABELS = ("Current password is incorrect",
+                                  "Mật khẩu hiện tại không đúng")
+_DELETION_CODE_SENT_LABELS = ("We sent a confirmation code to your verified email address",
+                              "Chúng tôi đã gửi mã xác nhận đến địa chỉ email đã xác minh của bạn")
+_DELETION_UNPROVEN = ("in-app confirmation, the deleted-account cache, peer-neutral "
+                      "history and phone reuse on device stay unproven")
+
+
+def _port_bindable(port: int) -> bool:
+    """True when the loopback port can be bound right now (no server owns it)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind(("127.0.0.1", int(port)))
+        except OSError:
+            return False
+        return True
+
+
+def _deletion_app_port(context: dict[str, Any]) -> int | None:
+    """Port the device app's compile-time base URL points at (10.0.2.2:<port>).
+
+    Reads the pre-swap campaign base URL when present: _with_mail_sink
+    temporarily replaces context["base_url"] with the stack's own URL.
+    """
+    base_url = str(context.get("deletion_app_base_url")
+                   or context.get("base_url") or "")
+    parsed = urlsplit(derive_emulator_base_url(base_url))
+    return parsed.port
+
+
+def _deletion_device_gap(context: dict[str, Any]) -> str | None:
+    """Explicit reason the in-app deletion UI cannot be driven, or None."""
+    if context.get("device") is None or context.get("adb") is None \
+            or not context.get("helpers"):
+        return (f"no device driver is bound to this context, so {_DELETION_UNPROVEN}")
+    handle = context.get("dstack_handle") or {}
+    stack_base = str(handle.get("base_url") or "")
+    if not stack_base:
+        return (f"the disposable stack did not report a base URL, so {_DELETION_UNPROVEN}")
+    app_port = _deletion_app_port(context)
+    stack_port = urlsplit(stack_base).port
+    if app_port is None or stack_port != app_port:
+        return (f"the app's compile-time base URL points at 10.0.2.2:{app_port} but the "
+                f"disposable stack serves {stack_base or 'an unknown port'}; stop the shared "
+                f"local server and rerun this row alone with --dstack so the stack can own "
+                f"the app port, otherwise {_DELETION_UNPROVEN}")
+    return None
+
+
+def _deletion_sign_in(context: dict[str, Any], phone: str, password: str,
+                      display_name: str) -> None:
+    """Relaunch the app and sign the disposable account in through the real UI.
+
+    A session left over from a previous backend is signed out first: its
+    token cannot be valid against the disposable stack's fresh JWT secret.
+    """
+    patch = context["helpers"][2]
+    _offline_relaunch(context)
+    deadline = time.monotonic() + 45
+    while True:
+        nodes = _ui_nodes(context)
+        if patch.login_form_visible(nodes):
+            break
+        if patch.inbox_visible(nodes):
+            _offline_sign_out(context)
+            break
+        if time.monotonic() >= deadline:
+            raise EnvironmentFailure(
+                f"neither the login form nor the inbox appeared for {display_name}")
+        time.sleep(0.7)
+    _offline_sign_in(context, phone, display_name, password=password)
+
+
+def _deletion_open_delete_screen(context: dict[str, Any]) -> None:
+    """Inbox -> profile -> the destructive deleteAccountRow -> delete screen."""
+    ui = context["device"]
+    patch = context["helpers"][2]
+    avatar = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "inboxUserAvatar"),
+        "the inbox profile entry point was not visible")
+    ui.tap_node(avatar)
+    _wait_ui_node(
+        context, lambda node: _rid_ends(node, "profileName"),
+        "the profile screen did not open")
+    _scroll_profile_until(context, "deleteAccountRow")
+    row = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "deleteAccountRow"),
+        "the Delete account row was not rendered")
+    ui.tap_node(row)
+    _wait_ui_node(
+        context, lambda node: _rid_ends(node, "deleteAccountToolbar"),
+        "the delete-account screen did not open", timeout=30)
+
+
+def _deletion_wait_signed_out(context: dict[str, Any], timeout: float = 60) -> None:
+    patch = context["helpers"][2]
+    deadline = time.monotonic() + timeout
+    while True:
+        if patch.login_form_visible(_ui_nodes(context)):
+            return
+        if time.monotonic() >= deadline:
+            raise ProductFailure("the app did not return to the login form after deletion")
+        time.sleep(0.7)
+
+
+def _deletion_device_slice(context: dict[str, Any], mail: Any, phone: str,
+                           email: str, token: str, peer: dict[str, Any]) -> dict[str, Any]:
+    """Drive the in-app deletion UI against the disposable stack.
+
+    Real rids from fragment_delete_account.xml: passwordInput, confirmDelete,
+    inlineError, sendDeletionCode, deletionCodeSentMessage, deletionCodeInput.
+    The OTP code is read from Mailpit and never logged or captured.
+    """
     client = context["client"]
-    registered = _register_disposable(client, phone, "Journey Delete")
-    token = registered["accessToken"]
-    _verify_recovery_email(client, mail, token, email)
-    denied = client.request(
-        "DELETE", "/api/v1/users/me", token=token, body={"password": "not-the-account-password"},
-    )
-    _expect_status(denied, {401}, "wrong password deletion")
+    ui = context["device"]
+    patch = context["helpers"][2]
+    peer_name = str(peer.get("displayName") or "Journey Peer")
+    peer_token = str(peer["accessToken"])
+    peer_phone = str(peer["phone"])
+
+    # Peer fixture: a direct conversation whose inbox row is titled by the
+    # peer, plus one unique message authored by the doomed account.
+    direct = client.post("/api/v1/conversations/direct", token=token,
+                         body={"phone": peer_phone})
+    _expect_status(direct, {200, 201}, "deletion peer direct conversation")
+    conversation_id = str((direct.json() or {}).get("id") or "")
+    if not conversation_id:
+        raise EnvironmentFailure("the direct conversation returned no id")
+    marker = "sj-del-" + uuid.uuid4().hex[:10]
+    sent = client.post(f"/api/v1/conversations/{conversation_id}/messages",
+                       token=token,
+                       body={"clientMessageId": str(uuid.uuid4()), "type": "TEXT",
+                             "content": marker, "attachmentIds": []})
+    _expect_status(sent, {200, 201}, "deletion peer marker message")
+
+    # 1. Deterministic sign-in of the disposable account through the real UI.
+    _deletion_sign_in(context, phone, DISPOSABLE_PASSWORD, "Journey Delete")
+
+    # 2. UI wrong-password refusal (password flow: passwordInput + confirmDelete).
+    _deletion_open_delete_screen(context)
+    patch.fill_login_field(ui, "passwordInput", "not-the-account-password")
+    ui.key("KEYCODE_BACK")
+    confirm = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "confirmDelete"),
+        "the Delete my account button was not rendered")
+    ui.tap_node(confirm)
+    _wait_ui_node(
+        context,
+        lambda node: _rid_ends(node, "inlineError")
+                     and patch.text_matches(node, _DELETION_WRONG_PASSWORD_LABELS),
+        "the wrong-password refusal (inlineError 'Current password is incorrect') "
+        "was not rendered")
     still_there = client.get("/api/v1/users/me", token=token)
-    _expect_status(still_there, {200}, "account after wrong password")
-    requested = client.post("/api/v1/account-deletion/request", body={"phone": phone})
-    _expect_status(requested, {202}, "deletion code request")
+    _expect_status(still_there, {200}, "account after the UI wrong-password refusal")
+
+    # 3. In-app OTP confirmation. The code flow only renders for an account
+    # with no password hash (the V33 Google-only state), so simulate that
+    # supported server state on the disposable database — the same fixture
+    # pattern the expired-reset-code proof uses — then re-enter the screen
+    # so the profile refetch flips the UI to the code flow.
+    sql = (context.get("dstack_handle") or {}).get("sql")
+    if sql is None:
+        raise CapabilityBlocked(
+            f"the in-app deletion OTP flow needs the disposable database; rerun "
+            f"with --dstack, otherwise {_DELETION_UNPROVEN}")
+    sql(f"UPDATE users SET password_hash = NULL WHERE phone = '{phone}'")
+    ui.key("KEYCODE_BACK")
+    ui.key("KEYCODE_BACK")
+    _offline_wait_inbox(
+        context, "the inbox did not return before the in-app OTP pass")
+    _deletion_open_delete_screen(context)
+    send_code = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "sendDeletionCode"),
+        "the Send code button was not rendered for the passwordless account")
+    ui.tap_node(send_code)
+    _wait_ui_node(
+        context,
+        lambda node: _rid_ends(node, "deletionCodeSentMessage")
+                     and patch.text_matches(node, _DELETION_CODE_SENT_LABELS),
+        "the deletion code-sent message was not rendered")
     code = _read_otp(mail, email)
-    confirmed = client.post(
-        "/api/v1/account-deletion/confirm", body={"phone": phone, "code": code},
-    )
-    _expect_status(confirmed, {204}, "deletion confirm")
+    patch.fill_login_field(ui, "deletionCodeInput", code)
+    ui.key("KEYCODE_BACK")
+    confirm = _wait_ui_node(
+        context, lambda node: _rid_ends(node, "confirmDelete"),
+        "the confirm button was not rendered after the code was sent")
+    ui.tap_node(confirm)
+    _deletion_wait_signed_out(context)
+
+    # 4. Post-deletion: token death, peer-neutral history, phone reuse, and
+    #    no deleted-account cache on the freshly re-registered device session.
     rejected = client.get("/api/v1/users/me", token=token)
-    _expect_status(rejected, {401}, "token after account deletion")
+    _expect_status(rejected, {401}, "token after in-app account deletion")
+    _history_item_by_content(client, peer_token, conversation_id, marker)
     reused = client.post(
         "/api/v1/auth/register",
-        body={"phone": phone, "password": DISPOSABLE_PASSWORD, "displayName": "Journey Reused"},
+        body={"phone": phone, "password": DISPOSABLE_PASSWORD,
+              "displayName": "Journey Reused"},
     )
-    _expect_status(reused, {200, 201}, "phone reuse after deletion")
+    _expect_status(reused, {200, 201}, "phone reuse after in-app deletion")
+    _deletion_sign_in(context, phone, DISPOSABLE_PASSWORD, "Journey Reused")
+    deadline = time.monotonic() + 20
+    while True:
+        _pull_refresh_inbox(context)
+        if _inbox_conversation_row(context, peer_name) is None:
+            break
+        if time.monotonic() >= deadline:
+            raise ProductFailure(
+                "the deleted account's inbox cache still rendered the peer conversation")
+        time.sleep(0.7)
+
+    return {
+        "sign_in": "the disposable account signed in through the real login form",
+        "wrong_password_ui": "confirmDelete with a bad password rendered the "
+                             "inlineError refusal and the account survived",
+        "in_app_deletion": "sendDeletionCode + deletionCodeInput + confirmDelete "
+                           "deleted the account and returned to the login form",
+        "token_rejection": "the pre-deletion token is rejected after in-app deletion",
+        "peer_history": "the peer's REST history keeps the deleted account's message",
+        "cache_and_reuse": "the re-registered phone signs in on device to an inbox "
+                           "with no deleted-account conversation row",
+    }
 
 
 def run_account_deletion(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
-    """OTP-delete a disposable account on a disposable stack; in-app cache and peer UI stay blocked.
+    """Delete a disposable account on a disposable stack, in-app when possible.
 
-    The mail/REST flow runs when context["apply_server_env"] exists (--dstack);
-    the row still ends BLOCKED_CAPABILITY for the unproven in-app assertions.
+    The mail/REST flow runs when context["apply_server_env"] exists (--dstack).
+    The in-app UI slice additionally needs the disposable stack to own the
+    device app's compile-time port (10.0.2.2:<base_url port>); when it cannot,
+    the row reports the explicit gap instead of a silent pass.
     """
     _campaign_serial(context)
     _campaign_base_url(context)
     _require_deletion_last(context)
     phone = _require_disposable_phone(str(context.get("disposable_phone") or _new_disposable_phone()))
     email = str(context.get("disposable_email") or _new_disposable_email())
+    results: dict[str, Any] = {}
+
+    # Pin the stack to the app's compiled port when that port is free, so the
+    # device app can reach the disposable backend. An occupied port (the
+    # shared local server) leaves the stack on a random port and the device
+    # slice degrades to its explicit blocked reason below. The pre-swap base
+    # URL is kept for the gap check because _with_mail_swap replaces it.
+    app_port = _deletion_app_port(context)
+    context["deletion_app_base_url"] = str(context.get("base_url") or "")
+    if app_port is not None and _port_bindable(app_port):
+        context["dstack_app_port"] = app_port
 
     def action(mail: Any) -> None:
-        _complete_account_deletion(context, mail, phone, email)
-        raise CapabilityBlocked(row.capability_gap)
+        client = context["client"]
+        registered = _register_disposable(client, phone, "Journey Delete")
+        token = registered["accessToken"]
+        _verify_recovery_email(client, mail, token, email)
+        denied = client.request(
+            "DELETE", "/api/v1/users/me", token=token,
+            body={"password": "not-the-account-password"},
+        )
+        _expect_status(denied, {401}, "wrong password deletion")
+        still_there = client.get("/api/v1/users/me", token=token)
+        _expect_status(still_there, {200}, "account after wrong password")
+        gap = _deletion_device_gap(context)
+        if gap is None:
+            peer_phone = _new_disposable_phone()
+            peer_name = "Journey Peer " + uuid.uuid4().hex[:6]
+            peer_registered = _register_disposable(client, peer_phone, peer_name)
+            peer = {"accessToken": peer_registered["accessToken"],
+                    "phone": peer_phone, "displayName": peer_name}
+            results.update(_deletion_device_slice(
+                context, mail, phone, email, token, peer))
+            return
+        # The device slice cannot run: still prove the REST/OTP deletion, then
+        # report the explicit gap — never a silent pass.
+        requested = client.post("/api/v1/account-deletion/request", body={"phone": phone})
+        _expect_status(requested, {202}, "deletion code request")
+        code = _read_otp(mail, email)
+        confirmed = client.post(
+            "/api/v1/account-deletion/confirm", body={"phone": phone, "code": code},
+        )
+        _expect_status(confirmed, {204}, "deletion confirm")
+        rejected = client.get("/api/v1/users/me", token=token)
+        _expect_status(rejected, {401}, "token after account deletion")
+        reused = client.post(
+            "/api/v1/auth/register",
+            body={"phone": phone, "password": DISPOSABLE_PASSWORD,
+                  "displayName": "Journey Reused"},
+        )
+        _expect_status(reused, {200, 201}, "phone reuse after deletion")
+        raise CapabilityBlocked(gap)
 
     _with_mail_sink(context, row, action)
-    raise CapabilityBlocked(row.capability_gap)
+    if not results:
+        raise CapabilityBlocked(row.capability_gap)
+    return results
 
 
 _AUTH_NEW_PASSWORD = DISPOSABLE_PASSWORD + "-changed"
@@ -7808,15 +8091,17 @@ def set_accessibility_variant(adb: Adb, variant: dict[str, str]) -> None:
     adb.command("shell", "cmd", "locale", "set", variant["locale"])
 
 
-def preflight(base_url: str, apk: Path, adb: Adb, recorder: RecordingClient) -> None:
+def preflight(base_url: str, apk: Path, adb: Adb, recorder: RecordingClient,
+              *, require_shared_server: bool = True) -> None:
     if not apk.is_file():
         raise EnvironmentFailure("debug APK is missing")
-    try:
-        readiness = recorder.get("/actuator/health/readiness")
-    except Exception as error:
-        raise EnvironmentFailure(f"local readiness request failed: {type(error).__name__}") from error
-    if readiness.status != 200:
-        raise EnvironmentFailure(f"{base_url.rstrip('/')}/actuator/health/readiness returned HTTP {readiness.status}")
+    if require_shared_server:
+        try:
+            readiness = recorder.get("/actuator/health/readiness")
+        except Exception as error:
+            raise EnvironmentFailure(f"local readiness request failed: {type(error).__name__}") from error
+        if readiness.status != 200:
+            raise EnvironmentFailure(f"{base_url.rstrip('/')}/actuator/health/readiness returned HTTP {readiness.status}")
     state = adb.command("get-state", timeout=15)
     if state != "device":
         raise EnvironmentFailure(f"{SERIAL} is not ready (adb get-state: {state or 'empty'})")
@@ -7880,7 +8165,13 @@ def run_campaign(rows: Iterable[JourneyRow], *, base_url: str, serial: str,
     context["device"] = device
     try:
         try:
-            preflight(base_url, apk, adb, recorder)
+            # Rows that provision their own disposable backend (--dstack mail
+            # rows selected alone) do not need the shared local server; the
+            # device checks below still apply.
+            shared_rows = [row.id for row in selected
+                           if row.id not in _DSTACK_SELF_PROVISIONED_ROWS]
+            preflight(base_url, apk, adb, recorder,
+                      require_shared_server=not (dstack and not shared_rows))
         except Exception as error:
             status = _status_for_error(error)
             reason = sanitize_text(str(error))[:1000]
