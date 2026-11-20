@@ -1198,10 +1198,13 @@ class ChatInteractionsExecutorTest(unittest.TestCase):
 
         def get(self, path, token=None, params=None, headers=None):
             if path == "/api/v1/conversations":
-                return ChatInteractionsExecutorTest.Response(200, [
-                    {"id": self.direct_id, "type": "DIRECT"},
-                    {"id": self.group_id, "type": "GROUP", "title": "NexaChat Team"},
-                ])
+                # 'NexaChat Team' sits beyond page 1 of An's stale-heavy inbox;
+                # a paged fetch must never see it — the executor reads unpaged.
+                items = [{"id": self.direct_id, "type": "DIRECT"},
+                         {"id": self.group_id, "type": "GROUP", "title": "NexaChat Team"}]
+                if (params or {}).get("limit"):
+                    items = items[:1]
+                return ChatInteractionsExecutorTest.Response(200, items)
             if "/messages" in path:
                 cid = path.split("/")[4]
                 return ChatInteractionsExecutorTest.Response(
@@ -5174,17 +5177,31 @@ class OfflineSyncExecutorTest(unittest.TestCase):
     def test_executor_flags_a_single_batch_sync_as_a_defect(self):
         store, world, client, context, session = self._fixture()
         original = world.emit_sync
+        emitted = []
 
         def single_batch():
-            world.sync_log.append(
-                "I/okhttp.OkHttpClient: --> POST "
-                "http://10.0.2.2:8080/api/v1/sync (80-byte body)")
+            if not emitted:
+                emitted.append(True)
+                world.sync_log.append(
+                    "I/okhttp.OkHttpClient: --> POST "
+                    "http://10.0.2.2:8080/api/v1/sync (80-byte body)")
 
         world.emit_sync = single_batch
-        with self.assertRaises(journeys.ProductFailure) as caught:
-            self._run(context, session)
-        self.assertIn("at least two bounded batches", str(caught.exception))
-        world.emit_sync = original
+        # The constructor's cold start already emitted through the real
+        # emitter; clear it so exactly one scripted post reaches the check.
+        world.sync_log.clear()
+        # The post-marker batch window is polled now; pin it to a single
+        # read so the one scripted post still counts exactly once.
+        original_poll = journeys._OFFLINE_SYNC_POLL_S
+        journeys._OFFLINE_SYNC_POLL_S = 0
+        try:
+            with self.assertRaises(journeys.ProductFailure) as caught:
+                self._run(context, session)
+            self.assertIn("at least two bounded batches",
+                          str(caught.exception))
+        finally:
+            journeys._OFFLINE_SYNC_POLL_S = original_poll
+            world.emit_sync = original
 
     def test_executor_flags_a_seeded_row_that_never_converges(self):
         store, world, client, context, session = self._fixture()
