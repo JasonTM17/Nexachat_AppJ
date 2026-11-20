@@ -63,6 +63,7 @@ class MatrixAndDryRunTest(unittest.TestCase):
             "archive-preferences", "groups-contacts", "labels-lifecycle",
             "polls-reminders", "offline-sync",
             "calls-injected-notification", "injected-notifications",
+            "accessibility-sweep",
         })
         self.assertEqual(journeys.ROWS[-1].id, "account-deletion")
         self.assertEqual(len(journeys.ACCESSIBILITY_VARIANTS), 8)
@@ -301,7 +302,7 @@ class WiringDecisionTest(unittest.TestCase):
             "groups-contacts", "polls-reminders", "archive-preferences",
             "labels-lifecycle",
             "calls-injected-notification", "summary-ask", "offline-sync",
-            "injected-notifications",
+            "injected-notifications", "accessibility-sweep",
         ])
         self.assertEqual(len(runnable) + len(blocked), len(journeys.ROWS))
         self.assertIn("Room 14", blocked["room-13-14-upgrade"])
@@ -318,9 +319,9 @@ class WiringDecisionTest(unittest.TestCase):
         for row_id in (
             "media",
             "calls-signaling",
-            "accessibility-sweep",
         ):
             self.assertIn("BLOCKED_CAPABILITY:", blocked[row_id])
+        self.assertNotIn("accessibility-sweep", blocked)
 
     def test_upgrade_plan_names_install_and_stays_blocked(self):
         output = __import__("io").StringIO()
@@ -383,6 +384,7 @@ class WiringDecisionTest(unittest.TestCase):
             journeys.run_otp_forgot_password,
             journeys.run_account_deletion,
             journeys.run_auth_session_lifecycle,
+            journeys.run_accessibility_sweep,
             journeys.run_room_13_14_upgrade,
             journeys.run_v111_rc_upgrade,
         )
@@ -5848,6 +5850,261 @@ u0_a123       5123    320 3300000  90000 0                   0 S com.nexachat.de
             results = journeys.execute_rows(
                 [journeys.ROW_BY_ID["auth-login"]], context, self._ok)
             self.assertEqual(results[0]["status"], "FAIL_PRODUCT")
+
+
+class AccessibilitySweepExecutorTest(unittest.TestCase):
+    """Offline fake device+oracle world for run_accessibility_sweep.
+
+    The world mirrors the surfaces the sweep drives on emulator-5554: the
+    seeded An/Binh fixture, the display-settings snapshot/restore pair, the
+    wm density read, and a UI tree the real a11y_oracle accepts. Navigation
+    helpers are mocked at the journey boundary (they are pinned by their own
+    rows' tests); the oracle itself runs for real.
+    """
+
+    def setUp(self) -> None:
+        import a11y_oracle
+        self.oracle = a11y_oracle
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+
+    class _Node:
+        """The adb_ui.Node shape: attribute access plus the raw attrs dict the
+        a11y_oracle also accepts."""
+
+        def __init__(self, attrs):
+            self.attrs = attrs
+            self.text = attrs.get("text", "")
+            self.desc = attrs.get("content-desc", "")
+            self.cls = attrs.get("class", "")
+            self.box = None
+
+    def _nodes(self) -> list["_Node"]:
+        # A clean tree: one non-interactive labeled root, so every oracle
+        # check passes and the cell is an honest PASS.
+        return [self._Node({
+            "resource-id": "com.nexachat.debug:id/conversationList",
+            "class": "androidx.recyclerview.widget.RecyclerView",
+            "text": "Inbox", "content-desc": "", "bounds": "[0,0][1080,2400]",
+            "clickable": "false", "focusable": "false",
+            "enabled": "true", "scrollable": "true",
+        })]
+
+    def _world(self, density: str = "Physical density: 420") -> tuple[dict, list]:
+        adb_calls: list[tuple] = []
+
+        class FakeAdb:
+            calls = adb_calls
+
+            def command(self, *args, timeout=None, check=True):
+                adb_calls.append(tuple(args))
+                if tuple(args[:3]) == ("shell", "wm", "density"):
+                    return density
+                if tuple(args[:4]) == ("shell", "cmd", "uimode", "night"):
+                    return "Night mode: no"
+                if tuple(args[:4]) == ("shell", "settings", "get", "secure"):
+                    return {"enabled_accessibility_services": "null",
+                            "accessibility_enabled": "0"}.get(args[4], "")
+                if tuple(args[:4]) == ("shell", "settings", "get", "global"):
+                    return "1.0" if args[4] == "animator_duration_scale" else ""
+                return ""
+
+        class FakeDevice:
+            def tap_node(self, node):
+                pass
+
+            def key(self, key):
+                pass
+
+            def screenshot(self, path):
+                Path(path).write_bytes(b"png")
+
+        restores: list[dict] = []
+
+        class FakePatch:
+            def settings_snapshot(self):
+                return {"font_scale": "1.0", "system_locales": "en-US"}
+
+            def restore_device_settings(self, before):
+                restores.append(dict(before))
+
+        class FakeApi:
+            USER_A = {"phone": "+84900000001", "name": "An"}
+            USER_C = {"phone": "+84900000002", "name": "Binh"}
+
+            def direct_conversation(self, recorder, token, phone):
+                return None, {"id": "conv-1"}
+
+        patch = FakePatch()
+        context = {
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "helpers": (FakeApi(), None, patch),
+            "client": mock.Mock(),
+            "adb": FakeAdb(),
+            "device": FakeDevice(),
+            "row_dir": self.root / "attempt-1",
+            "ui_timeout": 0.5,
+        }
+        context["row_dir"].mkdir(parents=True, exist_ok=True)
+        return context, restores
+
+    def _run(self, context, **overrides):
+        patches = [
+            mock.patch.object(journeys, "_prepare_seeded_an"),
+            mock.patch.object(journeys, "_actor_session",
+                              return_value={"accessToken": "t", "user": {"id": "an-id"}}),
+            mock.patch.object(journeys, "_offline_rest_once",
+                              return_value=mock.Mock(**{"json.return_value": {"id": "grp-1"}})),
+            mock.patch.object(journeys, "_offline_send_rest"),
+            mock.patch.object(journeys, "_wait_ui_node", return_value=None),
+            mock.patch.object(journeys, "_inbox_conversation_row", return_value=object()),
+            mock.patch.object(journeys, "_open_chat_menu"),
+            mock.patch.object(journeys, "_open_assign_dialog"),
+            mock.patch.object(journeys, "_tap_dialog_button"),
+            mock.patch.object(journeys, "_ui_nodes", side_effect=lambda context: self._nodes()),
+        ]
+        for item in overrides.pop("extra_patches", ()):
+            patches.append(item)
+        assert not overrides, overrides
+        for item in patches:
+            item.start()
+            self.addCleanup(item.stop)
+        row = journeys.ROW_BY_ID["accessibility-sweep"]
+        return journeys.run_accessibility_sweep(row, context)
+
+    def test_dispatch_routes_accessibility_sweep(self):
+        sentinel = mock.Mock(return_value={"summary": "ok"})
+        with mock.patch.object(journeys, "run_accessibility_sweep", sentinel):
+            result = journeys.run_registered_row(
+                journeys.ROW_BY_ID["accessibility-sweep"], {"serial": "emulator-5554"})
+        self.assertEqual(result, {"summary": "ok"})
+        sentinel.assert_called_once()
+
+    def test_row_is_runnable_and_inventory_pins_real_rids(self):
+        row = journeys.ROW_BY_ID["accessibility-sweep"]
+        self.assertIsNone(row.capability_gap)
+        self.assertEqual([screen["screen"] for screen in journeys.CRITICAL_SCREENS], [
+            "inbox", "direct-chat", "group-chat", "archive",
+            "settings", "labels", "contacts",
+        ])
+        # Every marker rid must exist in the android layouts (or be a framework
+        # id the app matches on); the inventory may not invent ids.
+        layouts = journeys.ROOT / "android" / "app" / "src" / "main" / "res" / "layout"
+        xml = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in layouts.glob("*.xml")
+        )
+        framework_ids = {"select_dialog_listview"}
+        for screen in journeys.CRITICAL_SCREENS:
+            marker = screen["marker_rid"]
+            with self.subTest(screen=screen["screen"]):
+                self.assertTrue(
+                    f"@+id/{marker}" in xml or marker in framework_ids,
+                    f"marker rid {marker!r} does not exist in the layouts")
+
+    def test_sweep_runs_oracle_on_every_matrix_cell(self):
+        context, restores = self._world()
+        calls: list[dict] = []
+        real = self.oracle.summarize_findings
+
+        def wrapped(nodes, **kwargs):
+            calls.append(dict(kwargs))
+            return real(nodes, **kwargs)
+
+        with mock.patch.object(self.oracle, "summarize_findings", wrapped):
+            result = self._run(context)
+        self.assertEqual(len(calls), 8 * 7)
+        self.assertTrue(all(call["density"] == 420.0 for call in calls))
+        self.assertTrue(all(call["screen"] == "auto" for call in calls))
+        self.assertEqual(len(result["cells"]), 8 * 7)
+        self.assertTrue(all(cell["status"] == "PASS" for cell in result["cells"]))
+        variants = {(cell["locale"], cell["night"], cell["font_scale"])
+                    for cell in result["cells"]}
+        self.assertEqual(variants, {
+            (variant["locale"], variant["night"], variant["font_scale"])
+            for variant in journeys.ACCESSIBILITY_VARIANTS
+        })
+        screens = {cell["screen"] for cell in result["cells"]}
+        self.assertEqual(screens, {screen["screen"] for screen in journeys.CRITICAL_SCREENS})
+        # Every cell carries oracle assertions, not just a screenshot.
+        for cell in result["cells"]:
+            self.assertTrue(cell["checks"])
+            self.assertTrue(all(entry["ok"] for entry in cell["checks"].values()))
+        self.assertEqual(result["density_dpi"], 420.0)
+        self.assertEqual(result["talkback"]["enabled_before"], "0")
+        self.assertEqual(result["reduced_motion"]["animator_duration_scale_before"], "1.0")
+        self.assertTrue(result["heuristic_caveats"])
+        # Display settings were restored exactly once with the snapshot.
+        self.assertEqual(restores, [{
+            "font_scale": "1.0", "system_locales": "en-US",
+            "night_mode": "Night mode: no",
+        }])
+        # TalkBack and reduced-motion state were restored too (a null services
+        # snapshot clears the list, an unreadable flag falls back to disabled).
+        self.assertIn(("shell", "settings", "put", "secure",
+                       "enabled_accessibility_services", '""'),
+                      context["adb"].calls)
+        self.assertIn(("shell", "settings", "put", "secure",
+                       "accessibility_enabled", "0"),
+                      context["adb"].calls)
+        self.assertIn(("shell", "settings", "put", "global",
+                       "animator_duration_scale", "1.0"),
+                      context["adb"].calls)
+
+    def test_sweep_restores_settings_when_a_cell_raises(self):
+        context, restores = self._world()
+        boom = mock.patch.object(
+            journeys, "_a11y_sweep_cell", side_effect=journeys.ProductFailure("boom"))
+        boom.start()
+        self.addCleanup(boom.stop)
+        with self.assertRaisesRegex(journeys.ProductFailure, "boom"):
+            self._run(context)
+        self.assertEqual(restores, [{
+            "font_scale": "1.0", "system_locales": "en-US",
+            "night_mode": "Night mode: no",
+        }])
+
+    def test_sweep_blocks_when_density_is_unreadable(self):
+        context, _restores = self._world(density="")
+        with self.assertRaisesRegex(journeys.CapabilityBlocked, "wm density"):
+            self._run(context)
+
+    def test_sweep_blocks_when_the_oracle_cannot_run(self):
+        context, _restores = self._world()
+
+        def broken(nodes, **kwargs):
+            raise self.oracle.A11yOracleError("bad dump")
+
+        with mock.patch.object(self.oracle, "summarize_findings", broken):
+            with self.assertRaisesRegex(journeys.CapabilityBlocked, "could not run the a11y oracle"):
+                self._run(context)
+        cells = json.loads((context["row_dir"] / "a11y-sweep-cells.json").read_text())
+        self.assertEqual(len(cells), 8 * 7)
+        self.assertTrue(all(cell["status"] == "BLOCKED" for cell in cells))
+
+    def test_sweep_fails_product_when_the_oracle_finds_a_defect(self):
+        context, _restores = self._world()
+        report = {
+            "ok": False, "node_count": 1, "interactive_count": 1,
+            "checks": {
+                "unlabeled_interactive": {
+                    "ok": False, "count": 1,
+                    "findings": [{"issue": "unlabeled_interactive", "rid": "sendButton",
+                                  "text": "", "content_desc": "", "bounds": "[0,0][10,10]"}],
+                },
+                "small_touch_targets": {"ok": True, "count": 0, "findings": []},
+                "missing_desc_images": {"ok": True, "count": 0, "findings": []},
+                "focus_order_issues": {"ok": True, "count": 0, "findings": []},
+            },
+        }
+        with mock.patch.object(self.oracle, "summarize_findings", return_value=report):
+            with self.assertRaisesRegex(journeys.ProductFailure, "failed the a11y oracle"):
+                self._run(context)
+        cells = json.loads((context["row_dir"] / "a11y-sweep-cells.json").read_text())
+        self.assertEqual(cells[0]["status"], "FINDINGS")
+        self.assertEqual(cells[0]["findings"][0]["rid"], "sendButton")
 
 
 if __name__ == "__main__":

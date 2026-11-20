@@ -284,10 +284,17 @@ ordered last and is limited to a disposable account.
 
 Runnable rows are `auth-login`, `chat-send-receive`, `chat-interactions`,
 `calls-injected-notification`, `injected-notifications`, `summary-ask`,
-`archive-preferences`, `groups-contacts`, `labels-lifecycle`, and
-`polls-reminders`. The two push rows call `device/inject_push.py` rather than
-assembling a broadcast. `auth-session-lifecycle`, `otp-forgot-password`,
-`media`, both upgrade rows, and `account-deletion` stay
+`archive-preferences`, `groups-contacts`, `labels-lifecycle`,
+`polls-reminders`, and `accessibility-sweep`. The two push rows call
+`device/inject_push.py` rather than assembling a broadcast. The
+`accessibility-sweep` row walks the `CRITICAL_SCREENS` inventory (inbox,
+direct chat, group chat, archive, settings, labels, contacts) under every
+EN/VI x light/dark x 100%/200% variant, runs the `device/a11y_oracle.py`
+checks on each dumped UI tree (a screenshot-only cell is never a pass;
+cells whose oracle cannot run report BLOCKED_CAPABILITY), and restores
+locale, night mode, font scale, TalkBack and animator state in `finally`.
+`auth-session-lifecycle`, `otp-forgot-password`, `media`, both upgrade
+rows, and `account-deletion` stay
 `BLOCKED_CAPABILITY`; `--list` names the remaining gap (server restart and OTP
 expiry, in-app deletion, the missing Room 14 build, and STOMP through the
 REST-only barrier).

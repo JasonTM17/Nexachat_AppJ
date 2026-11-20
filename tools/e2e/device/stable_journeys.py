@@ -564,13 +564,12 @@ ROWS: tuple[JourneyRow, ...] = (
         title="Accessibility sweep (parameterized EN/VI × light/dark × 100%/200%)",
         matrix_refs=("phase-08:Accessibility", "c1-5:accessibility criteria"),
         preconditions=("Integrated RC and the critical-screen inventory are available"),
-        steps=("For each locale/night/font tuple, apply settings, visit critical screens and capture the UI"),
+        steps=("For each locale/night/font tuple, apply settings, visit critical screens and capture the UI",
+               "Run the a11y_oracle checks (labels, touch targets, image descs, focus order) on every critical screen"),
         assertions=("No clipped text or inaccessible critical action", "TalkBack and reduced-motion checks are recorded"),
         captures=("one screenshot per parameter tuple", "ui-tree.txt per tuple", "summary.json"),
         cleanup=("Restore original locale, night mode, font scale and network settings in finally"),
         rest_plan=(("GET", "/actuator/health/readiness"),),
-        capability_gap=("The helper can set and restore display settings, but there is no accepted critical-screen "
-                        "inventory or TalkBack/reduced-motion oracle. A screenshot-only sweep is not a pass."),
         variants=ACCESSIBILITY_VARIANTS,
     ),
     JourneyRow(
@@ -825,6 +824,16 @@ HELPER_CALLS = {
          "then": ["adb", "-s", SERIAL, "install", "-r", "<v1.2-rc-apk>"],
          "blocked": "v1.2 RC and Room 14 build do not exist"},
     ),
+    "accessibility-sweep": (
+        {"helper": "stable_journeys.set_accessibility_variant",
+         "assert": "locale/night/font_scale applied per ACCESSIBILITY_VARIANTS tuple"},
+        {"helper": "stable_journeys.snapshot_settings + restore_settings",
+         "assert": "display settings restored in finally"},
+        {"helper": "a11y_oracle.summarize_findings",
+         "assert": "labels/touch-target/image-desc/focus-order checks per critical screen"},
+        {"helper": "a11y_oracle.get_enabled_accessibility_services + restore_talkback",
+         "assert": "TalkBack state snapshotted, recorded and restored"},
+    ),
 }
 
 UI_MARKERS = {
@@ -927,7 +936,11 @@ UI_MARKERS = {
     ),
     "room-13-14-upgrade": ("text:queued message before and after migration"),
     "v111-rc-upgrade": ("text:Sign in", "text:Binh"),
-    "accessibility-sweep": ("ui-tree marker for each of 8 locale/theme/font variants",),
+    "accessibility-sweep": (
+        "resource-id:conversationList", "resource-id:messageInput",
+        "resource-id:archiveTabs", "resource-id:profileName",
+        "resource-id:select_dialog_listview", "resource-id:contactList",
+    ),
     "account-deletion": ("text:localized deletion confirmation", "text:Sign in"),
 }
 
@@ -5674,6 +5687,26 @@ _OFFLINE_FULL_BATCH_BYTES = 3000
 _OFFLINE_SIGN_OUT_LABELS = ("Sign out", "Đăng xuất")
 
 
+# --- accessibility-sweep ------------------------------------------------------
+# The accepted critical-screen inventory: every (locale, night, font_scale)
+# variant must visit each screen below and pass the a11y_oracle checks on its
+# dumped UI tree. Marker rids come from the screen layouts -- fragment_inbox
+# (conversationList), fragment_chat (messageInput), fragment_archive
+# (archiveTabs), fragment_profile (profileName), the conversation-labels
+# AlertDialog (select_dialog_listview), fragment_contacts (contactList). The
+# direct and group chat share fragment_chat, so the executor tells the two
+# chat cells apart by the seeded peer/group title rendered in the chat header.
+CRITICAL_SCREENS: tuple[dict[str, str], ...] = (
+    {"screen": "inbox", "marker_rid": "conversationList"},
+    {"screen": "direct-chat", "marker_rid": "messageInput"},
+    {"screen": "group-chat", "marker_rid": "messageInput"},
+    {"screen": "archive", "marker_rid": "archiveTabs"},
+    {"screen": "settings", "marker_rid": "profileName"},
+    {"screen": "labels", "marker_rid": "select_dialog_listview"},
+    {"screen": "contacts", "marker_rid": "contactList"},
+)
+
+
 def _offline_patch(context: dict[str, Any], fn: str, *args: Any, **kwargs: Any) -> Any:
     """Run a patch_window step, translating its product defect into ours."""
     patch = context["helpers"][2]
@@ -7153,6 +7186,343 @@ def run_account_deletion(row: JourneyRow, context: dict[str, Any]) -> dict[str, 
     raise CapabilityBlocked(row.capability_gap)
 
 
+# --- accessibility-sweep -----------------------------------------------------
+
+def _import_a11y_oracle():
+    if str(DEVICE_DIR) not in sys.path:
+        sys.path.insert(0, str(DEVICE_DIR))
+    return importlib.import_module("a11y_oracle")
+
+
+_A11Y_DENSITY_RE = re.compile(r"(\d{3,4})")
+
+
+def _a11y_density(adb: Adb) -> float:
+    """The effective DPI `adb shell wm density` reports (an override wins over
+    the physical value). a11y_oracle rejects 160-based scale multipliers, so
+    an unreadable density blocks the row instead of mis-scaling the floor."""
+    output = adb.command("shell", "wm", "density", timeout=20, check=False) or ""
+    numbers = _A11Y_DENSITY_RE.findall(output)
+    if not numbers:
+        raise CapabilityBlocked("wm density did not report a DPI; the a11y oracle needs it")
+    return float(numbers[-1])
+
+
+def _a11y_talkback_snapshot(adb: Adb) -> dict[str, str]:
+    """The secure settings a11y_oracle.get_* reads; restored after the sweep."""
+    return {
+        "services": adb.command("shell", "settings", "get", "secure",
+                                "enabled_accessibility_services", timeout=20, check=False),
+        "enabled": adb.command("shell", "settings", "get", "secure",
+                               "accessibility_enabled", timeout=20, check=False),
+    }
+
+
+def _a11y_talkback_restore(adb: Adb, before: dict[str, str]) -> None:
+    # Same semantics as a11y_oracle.restore_talkback: a missing snapshot clears
+    # the services list and an unreadable flag falls back to disabled, so a
+    # swept device is never left with TalkBack force-enabled.
+    services = str(before.get("services") or "").strip()
+    restored = services if services not in ("", "null") else '""'
+    flag = str(before.get("enabled") or "").strip()
+    flag = flag if flag in ("0", "1") else "0"
+    adb.command("shell", "settings", "put", "secure",
+                "enabled_accessibility_services", restored, timeout=20, check=False)
+    adb.command("shell", "settings", "put", "secure",
+                "accessibility_enabled", flag, timeout=20, check=False)
+
+
+def _a11y_reduced_motion_snapshot(adb: Adb) -> str:
+    return adb.command("shell", "settings", "get", "global",
+                       "animator_duration_scale", timeout=20, check=False)
+
+
+def _a11y_reduced_motion_restore(adb: Adb, saved: str) -> None:
+    if str(saved).strip() not in ("", "null"):
+        adb.command("shell", "settings", "put", "global",
+                    "animator_duration_scale", saved.strip(), timeout=20, check=False)
+
+
+def _a11y_back_to_inbox(context: dict[str, Any]) -> None:
+    """Press BACK until the inbox renders again (archive needs two presses).
+    The inbox marker is checked before every press, so the inbox itself never
+    receives a BACK that could exit the app."""
+    ui = context["device"]
+    deadline = time.monotonic() + _ui_timeout(context)
+    while True:
+        if any(_rid_ends(node, "conversationList")
+               or _rid_ends(node, "inboxUserAvatar") for node in _ui_nodes(context)):
+            return
+        if time.monotonic() >= deadline:
+            raise ProductFailure("the sweep could not return to the inbox between screens")
+        ui.key("KEYCODE_BACK")
+        time.sleep(0.6)
+
+
+def _a11y_open_screen(context: dict[str, Any], screen: str, group_title: str) -> None:
+    """Navigate to one critical screen from the inbox via real UI taps."""
+    ui = context["device"]
+    if screen == "inbox":
+        return
+    if screen in ("direct-chat", "group-chat"):
+        title = "Binh" if screen == "direct-chat" else group_title
+        deadline = time.monotonic() + _ui_timeout(context)
+        row = None
+        while row is None:
+            row = _inbox_conversation_row(context, title)
+            if row is not None:
+                break
+            if time.monotonic() >= deadline:
+                raise ProductFailure(f"the {title!r} conversation row was not on the inbox")
+            time.sleep(0.4)
+        ui.tap_node(row)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "messageInput"),
+            f"the {title!r} conversation did not open its composer")
+        return
+    if screen == "archive":
+        # The shared-media browser is reached from a chat overflow, so open the
+        # seeded direct first (the same path run_archive_preferences takes).
+        _a11y_open_screen(context, "direct-chat", group_title)
+        _open_chat_menu(context, _ARCHIVE_MENU_ITEM)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "archiveTabs"),
+            "the shared-media screen did not open")
+        return
+    if screen == "settings":
+        avatar = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "inboxUserAvatar"),
+            "the inbox avatar was not exposed")
+        ui.tap_node(avatar)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "profileName"),
+            "the profile/preferences screen did not open")
+        return
+    if screen == "labels":
+        _open_assign_dialog(context)
+        return
+    if screen == "contacts":
+        entry = _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "inboxContactsButton"),
+            "the inbox contacts button was not exposed")
+        ui.tap_node(entry)
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, "contactList"),
+            "the contacts screen did not open")
+        return
+    raise HarnessError(f"unknown critical screen {screen!r}")
+
+
+def _a11y_sweep_cell(context: dict[str, Any], oracle: Any, density: float,
+                     variant: dict[str, str], screen: dict[str, str],
+                     group_title: str) -> dict[str, Any]:
+    """Visit one (variant, screen) cell and run every a11y_oracle check on it.
+
+    A cell only passes when the oracle produced at least one assertion; a cell
+    whose oracle could not run reports BLOCKED, never a silent screenshot pass.
+    """
+    ui = context["device"]
+    row_dir = Path(context["row_dir"])
+    name = screen["screen"]
+    marker = screen["marker_rid"]
+    _a11y_open_screen(context, name, group_title)
+    _wait_ui_node(
+        context,
+        lambda node: _rid_ends(node, marker),
+        f"the {name} screen did not expose {marker}")
+    nodes = _ui_nodes(context)
+    cell: dict[str, Any] = {
+        "screen": name, "locale": variant["locale"],
+        "night": variant["night"], "font_scale": variant["font_scale"],
+    }
+    try:
+        report = oracle.summarize_findings(nodes, density=density, screen="auto")
+    except oracle.A11yOracleError as error:
+        cell.update({"status": "BLOCKED", "reason": str(error)})
+        return cell
+    try:
+        ui.screenshot(str(row_dir / (
+            f"a11y-{variant['locale']}-{variant['night']}-"
+            f"{variant['font_scale']}-{name}.png")))
+    except Exception as error:
+        context.setdefault("cleanup_errors", []).append(
+            f"a11y screenshot {name}: {type(error).__name__}")
+    cell.update({
+        "status": "PASS" if report["ok"] else "FINDINGS",
+        "node_count": report["node_count"],
+        "interactive_count": report["interactive_count"],
+        "checks": {check: {"ok": entry["ok"], "count": entry["count"]}
+                   for check, entry in report["checks"].items()},
+    })
+    if not report["ok"]:
+        # Keep the evidence bounded: the first findings per check carry the
+        # rid/text/bounds a TalkBack pass needs to confirm.
+        findings: list[dict[str, Any]] = []
+        for check, entry in report["checks"].items():
+            for finding in entry["findings"][:5]:
+                findings.append({
+                    "check": check,
+                    "issue": finding.get("issue"),
+                    "rid": finding.get("rid"),
+                    "text": finding.get("text"),
+                    "content_desc": finding.get("content_desc"),
+                    "bounds": finding.get("bounds"),
+                })
+        cell["findings"] = findings
+    return cell
+
+
+def run_accessibility_sweep(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Sweep the critical-screen inventory under every display variant.
+
+    For each (locale, night, font_scale) tuple the executor applies the display
+    settings, navigates to every CRITICAL_SCREENS entry via real UI taps and
+    runs the a11y_oracle checks (unlabeled interactive nodes, sub-48dp touch
+    targets, unnamed images, focus-order candidates) on the dumped UI tree.
+    Every cell carries oracle assertions or reports BLOCKED; a screenshot-only
+    cell is never a pass. TalkBack and reduced-motion state are snapshotted,
+    recorded and restored -- the dump oracles are triage candidates pending a
+    TalkBack-verified pass (see a11y_oracle.HEURISTIC_CAVEATS).
+    """
+    _campaign_serial(context)
+    _campaign_base_url(context)
+    _prepare_seeded_an(context)
+    api, _adb_ui, patch = context["helpers"]
+    recorder: RecordingClient = context["client"]
+    adb: Adb = context["adb"]
+    oracle = _import_a11y_oracle()
+    an = _actor_session(api, recorder, api.USER_A["phone"])
+    binh = _actor_session(api, recorder, api.USER_C["phone"])
+    an_id = str((an.get("user") or {}).get("id") or "")
+    binh_id = str((binh.get("user") or {}).get("id") or "")
+    if not an_id or not binh_id:
+        raise EnvironmentFailure("seed actor sessions did not expose user ids")
+
+    tag = uuid.uuid4().hex[:8]
+    group_title = f"sj-a11y-{tag}"
+    marker_text = f"sj-a11y-{tag}-msg"
+    _, conversation = api.direct_conversation(recorder, an["accessToken"], api.USER_C["phone"])
+    direct_id = str(conversation.get("id") or "")
+    if not direct_id:
+        raise EnvironmentFailure("the seeded direct conversation returned no id")
+    created_group = _offline_rest_once(
+        lambda: recorder.post(
+            "/api/v1/conversations/group", token=an["accessToken"],
+            body={"title": group_title, "memberIds": [binh_id]}),
+        {200, 201}, "sweep group create")
+    group_id = str((created_group.json() or {}).get("id") or "")
+    if not group_id:
+        raise EnvironmentFailure("the sweep group create returned no id")
+    for conversation_id in (direct_id, group_id):
+        _offline_send_rest(recorder, an["accessToken"], conversation_id, marker_text)
+
+    # The activity-scoped ViewModels only fetch once per process lifetime, so
+    # the REST-seeded group needs a cold start before it can render.
+    adb.command("shell", "am", "force-stop", PACKAGE, timeout=20)
+    adb.command("shell", "am", "start", "-n", f"{PACKAGE}/{MAIN_ACTIVITY}", timeout=30)
+    _wait_ui_node(
+        context,
+        lambda node: _rid_ends(node, "inboxUserAvatar"),
+        "the inbox did not reload after the sweep fixture relaunch",
+        timeout=30)
+    _wait_ui_node(
+        context,
+        lambda node: node.text.strip() == group_title,
+        "the seeded sweep group did not reach the inbox",
+        timeout=30)
+
+    density = _a11y_density(adb)
+    before = snapshot_settings(adb, patch)
+    talkback_before = _a11y_talkback_snapshot(adb)
+    motion_before = _a11y_reduced_motion_snapshot(adb)
+    cells: list[dict[str, Any]] = []
+    cleanup_errors: list[str] = []
+    primary_error: Exception | None = None
+    try:
+        for variant in ACCESSIBILITY_VARIANTS:
+            set_accessibility_variant(adb, variant)
+            _wait_ui_node(
+                context,
+                lambda node: (_rid_ends(node, "conversationList")
+                              or _rid_ends(node, "inboxUserAvatar")),
+                "the inbox did not render after the variant switch",
+                timeout=30)
+            for screen in CRITICAL_SCREENS:
+                cell = _a11y_sweep_cell(
+                    context, oracle, density, variant, screen, group_title)
+                cells.append(cell)
+                if cell["status"] == "BLOCKED":
+                    continue
+                if screen["screen"] == "labels":
+                    # Dismiss the labels dialog by its own Done button; BACK on
+                    # a dialog can also dismiss the parent screen.
+                    _tap_dialog_button(
+                        context, _LBL_DONE,
+                        "the labels dialog did not offer Done after the sweep cell")
+                _a11y_back_to_inbox(context)
+    except Exception as error:
+        primary_error = error
+    finally:
+        try:
+            restore_settings(adb, patch, before)
+        except Exception as error:
+            cleanup_errors.append(f"settings restore: {type(error).__name__}")
+        try:
+            _a11y_talkback_restore(adb, talkback_before)
+        except Exception as error:
+            cleanup_errors.append(f"talkback restore: {type(error).__name__}")
+        try:
+            _a11y_reduced_motion_restore(adb, motion_before)
+        except Exception as error:
+            cleanup_errors.append(f"reduced-motion restore: {type(error).__name__}")
+        if cleanup_errors:
+            context["cleanup_errors"] = cleanup_errors
+    if primary_error is not None:
+        raise primary_error
+    if context.get("cleanup_errors"):
+        raise HarnessError("the sweep could not restore every display setting")
+
+    row_dir = Path(context["row_dir"])
+    _write_json(row_dir / "a11y-sweep-cells.json", cells)
+    blocked = [cell for cell in cells if cell["status"] == "BLOCKED"]
+    if blocked:
+        raise CapabilityBlocked(
+            f"{len(blocked)} of {len(cells)} sweep cells could not run the a11y oracle: "
+            + "; ".join(f"{cell['screen']}[{cell['locale']}/{cell['night']}/"
+                        f"{cell['font_scale']}]: {cell['reason']}" for cell in blocked))
+    failing = [cell for cell in cells if cell["status"] == "FINDINGS"]
+    if failing:
+        raise ProductFailure(
+            f"{len(failing)} of {len(cells)} sweep cells failed the a11y oracle "
+            f"(details in a11y-sweep-cells.json): "
+            + "; ".join(f"{cell['screen']}[{cell['locale']}/{cell['night']}/"
+                        f"{cell['font_scale']}]: "
+                        + ", ".join(f"{check}={entry['count']}"
+                                    for check, entry in cell["checks"].items()
+                                    if not entry["ok"])
+                        for cell in failing))
+    return {
+        "matrix": (f"{len(ACCESSIBILITY_VARIANTS)} variants x "
+                   f"{len(CRITICAL_SCREENS)} critical screens, all oracle cells PASS"),
+        "cells": cells,
+        "density_dpi": density,
+        "talkback": {"services_before": talkback_before["services"],
+                     "enabled_before": talkback_before["enabled"],
+                     "restored": True},
+        "reduced_motion": {"animator_duration_scale_before": motion_before,
+                           "restored": True},
+        "heuristic_caveats": list(oracle.HEURISTIC_CAVEATS),
+        "restore": ("locale, night mode, font scale, TalkBack and animator "
+                    "scale restored in finally"),
+    }
+
+
 _AUTH_NEW_PASSWORD = DISPOSABLE_PASSWORD + "-changed"
 _AUTH_LOGOUT_ALL_LABELS = ("Sign out all devices", "Đăng xuất mọi thiết bị")
 
@@ -7629,6 +7999,7 @@ _ROW_EXECUTOR_NAMES: dict[str, str] = {
     "injected-notifications": "run_injected_notifications",
     "otp-forgot-password": "run_otp_forgot_password",
     "account-deletion": "run_account_deletion",
+    "accessibility-sweep": "run_accessibility_sweep",
 }
 
 
