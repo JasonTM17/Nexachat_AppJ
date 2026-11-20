@@ -22,6 +22,9 @@ import java.util.UUID;
 @Profile("!test")
 public class TranslateRateLimiter {
 
+    private static final String MINUTE_WINDOW = "MINUTE";
+    private static final String DAY_WINDOW = "DAY";
+
     private final TranslateRequestLimitRepository repository;
     private final TranslateProperties properties;
     private final Clock clock;
@@ -64,18 +67,18 @@ public class TranslateRateLimiter {
         // The short window goes first: when it refuses, nothing is spent, so a
         // burst cannot burn the daily allowance without producing a translation.
         Instant minuteStart = now.truncatedTo(ChronoUnit.MINUTES);
-        if (!repository.tryConsume(userId, "MINUTE", minuteStart,
+        if (!repository.tryConsume(userId, MINUTE_WINDOW, minuteStart,
                 properties.getRateLimitPerMinute(), count)) {
             return false;
         }
-        if (repository.tryConsume(userId, "DAY", dayStart, properties.getRateLimitPerDay(), count)) {
+        if (repository.tryConsume(userId, DAY_WINDOW, dayStart, properties.getRateLimitPerDay(), count)) {
             return true;
         }
         // The daily window refused after the minute window already consumed:
         // return the minute tokens so a refusal still spends nothing. The
         // refund runs in the same transaction as the consume above, and the
         // upsert already locked the row, so it cannot race another consumer.
-        repository.refund(userId, "MINUTE", minuteStart, count);
+        repository.refund(userId, MINUTE_WINDOW, minuteStart, count);
         return false;
     }
 
@@ -83,5 +86,25 @@ public class TranslateRateLimiter {
     @Transactional
     public void consumeOne(UUID userId) {
         consume(userId, 1);
+    }
+
+    /**
+     * Returns one consumed token to both windows. Called when a consume bought
+     * no translation — the provider chain failed, its output was rejected, or
+     * a consent revoke won the post-generation race — so a failed generation
+     * never bills the caller's budget. Refunding a window that owes nothing
+     * (already refunded, or the consume never happened) is a no-op: the
+     * repository deletes the row when the refund would take it to zero, and a
+     * missing row matches nothing.
+     */
+    @Transactional
+    public void refundOne(UUID userId) {
+        Instant now = clock.instant();
+        Instant dayStart = LocalDate.ofInstant(now, ZoneOffset.UTC)
+                .atStartOfDay(ZoneOffset.UTC)
+                .toInstant();
+        Instant minuteStart = now.truncatedTo(ChronoUnit.MINUTES);
+        repository.refund(userId, MINUTE_WINDOW, minuteStart, 1);
+        repository.refund(userId, DAY_WINDOW, dayStart, 1);
     }
 }
