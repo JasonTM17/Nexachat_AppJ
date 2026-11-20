@@ -140,8 +140,12 @@ public final class InboxViewModel extends ViewModel {
                                 updateState(state -> state.withRefreshResult(
                                         Boolean.TRUE.equals(success.getValue())));
                             } else {
-                                updateState(state -> state.withRefreshFailure(
-                                        ((Result.Failure<?>) result).getError()));
+                                ApiError error = ((Result.Failure<?>) result).getError();
+                                if (isStaleInboxPage(error)) {
+                                    updateState(InboxUiState::withRefreshIdle);
+                                } else {
+                                    updateState(state -> state.withRefreshFailure(error));
+                                }
                             }
                         },
                         error -> {
@@ -180,8 +184,12 @@ public final class InboxViewModel extends ViewModel {
                                 updateState(state -> state.withNextPageResult(
                                         Boolean.TRUE.equals(success.getValue())));
                             } else {
-                                updateState(state -> state.withNextPageFailure(
-                                        ((Result.Failure<?>) result).getError()));
+                                ApiError error = ((Result.Failure<?>) result).getError();
+                                if (isStaleInboxPage(error)) {
+                                    updateState(InboxUiState::withNextPageIdle);
+                                } else {
+                                    updateState(state -> state.withNextPageFailure(error));
+                                }
                             }
                         },
                         error -> {
@@ -262,6 +270,18 @@ public final class InboxViewModel extends ViewModel {
 
     private synchronized boolean isPageOperationCurrent(long generation) {
         return generation == pageOperationGeneration;
+    }
+
+    /**
+     * The repository reports {@link ConversationRepository#ERROR_INBOX_PAGE_STALE}
+     * when a page's walk was superseded by a newer refresh or its cursor state
+     * is still mid-reset. That is a busy signal, not exhaustion: the result is
+     * dropped so a push-triggered refresh racing a ViewModel request cannot
+     * latch {@code hasMore} off permanently.
+     */
+    private static boolean isStaleInboxPage(@Nullable ApiError error) {
+        return error instanceof ApiError.Unknown unknown
+                && ConversationRepository.ERROR_INBOX_PAGE_STALE.equals(unknown.getCode());
     }
 
     private void start(@Nullable TokenStore tokenStore, @Nullable Moshi moshi) {

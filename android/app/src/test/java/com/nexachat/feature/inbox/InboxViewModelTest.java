@@ -212,6 +212,49 @@ public final class InboxViewModelTest {
     }
 
     @Test
+    public void supersededRefreshResultDoesNotLatchHasMore() {
+        // A push-triggered refresh can supersede the ViewModel's page-one
+        // request; the repository reports INBOX_PAGE_STALE instead of a real
+        // hasMore value and the stale result must not freeze paging.
+        SingleSubject<Result<Boolean>> pending = SingleSubject.create();
+        when(repository.refreshInboxPage(false)).thenReturn(pending);
+
+        viewModel.refresh();
+        pending.onSuccess(Result.failure(new ApiError.Unknown(
+                ConversationRepository.ERROR_INBOX_PAGE_STALE)));
+
+        InboxUiState state = viewModel.getUiState().getValue();
+        assertFalse(state.isLoading());
+        assertNull(state.getError());
+        assertTrue(state.hasMore());
+
+        // The next page is still requestable after the dropped result.
+        viewModel.loadNextPage();
+        verify(repository, times(1)).loadNextInboxPage();
+    }
+
+    @Test
+    public void resetWindowNextPageResultDoesNotLatchHasMore() {
+        // loadNextInboxPage() during a refresh's reset window reports
+        // INBOX_PAGE_STALE; it must clear the spinner without touching
+        // hasMore or the manual-retry nextPageError surface.
+        when(repository.loadNextInboxPage()).thenReturn(Single.just(
+                Result.failure(new ApiError.Unknown(
+                        ConversationRepository.ERROR_INBOX_PAGE_STALE))));
+
+        viewModel.loadNextPage();
+
+        InboxUiState state = viewModel.getUiState().getValue();
+        assertFalse(state.isLoadingMore());
+        assertNull(state.getNextPageError());
+        assertTrue(state.hasMore());
+
+        viewModel.loadNextPage();
+        verify(repository, times(2)).loadNextInboxPage();
+        assertTrue(viewModel.getUiState().getValue().hasMore());
+    }
+
+    @Test
     public void selectedFilterIsPersistedAndRestoredWithVisibleRows() {
         inboxFlow.onNext(List.of(
                 conversation("direct-unread", 2),

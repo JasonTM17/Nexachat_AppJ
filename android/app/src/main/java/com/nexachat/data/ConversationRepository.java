@@ -122,6 +122,13 @@ public final class ConversationRepository implements AutoCloseable {
     private static final int MAX_AVATAR_BYTES = 25 * 1024 * 1024;
     private static final int AVATAR_READ_BUFFER_BYTES = 64 * 1024;
     private static final String ERROR_UNEXPECTED_EMPTY_BODY = "UNEXPECTED_EMPTY_BODY";
+    /**
+     * Local paging signal: the page's walk was superseded by a newer refresh,
+     * or a next page was requested while the fresh walk's first page is still
+     * in flight. Callers must treat it as "not decided yet" — never as inbox
+     * exhaustion — so a racing refresh cannot latch {@code hasMore} off.
+     */
+    public static final String ERROR_INBOX_PAGE_STALE = "INBOX_PAGE_STALE";
     private static final Logger LOGGER = Logger.getLogger("ConversationRepository");
 
     private final MessageApi messageApi;
@@ -467,6 +474,14 @@ public final class ConversationRepository implements AutoCloseable {
         synchronized (inboxPagingLock) {
             if (inFlightNextInboxPage != null) return inFlightNextInboxPage;
             if (!hasMoreInboxPages || nextInboxCursor == null) {
+                // A cleared cursor is ambiguous: it marks true exhaustion only
+                // after a complete page persisted and cleared the walk flag.
+                // During a refresh's reset window (or after a failed first
+                // page) the flag is still set, so report busy — not exhausted —
+                // and let the caller retry once page one lands.
+                if (inboxWalkStartedAtFirstPage) {
+                    return Single.just(staleInboxPageResult());
+                }
                 return Single.just(new Result.Success<>(Boolean.FALSE));
             }
             final long generation = inboxPageGeneration;
@@ -1044,7 +1059,7 @@ public final class ConversationRepository implements AutoCloseable {
             InboxFetch fetch = successValue(result);
             synchronized (inboxPagingLock) {
                 if (generation != inboxPageGeneration) {
-                    return Single.just(new Result.Success<>(Boolean.FALSE));
+                    return Single.just(staleInboxPageResult());
                 }
                 if (!firstPage && (!hasMoreInboxPages
                         || !Objects.equals(nextInboxCursor, cursor))) {
@@ -1106,11 +1121,22 @@ public final class ConversationRepository implements AutoCloseable {
                                     pageIds, oldestInboxSequence, archived, myId)))
                     .andThen(Single.fromCallable(() -> {
                         synchronized (inboxPagingLock) {
-                            return new Result.Success<>(generation == inboxPageGeneration
-                                    && hasMoreInboxPages);
+                            if (generation != inboxPageGeneration) {
+                                return staleInboxPageResult();
+                            }
+                            return new Result.Success<Boolean>(hasMoreInboxPages);
                         }
                     }));
         });
+    }
+
+    /**
+     * Result for a page whose walk was superseded or whose cursor state is
+     * still mid-reset. Distinct from {@code Success(false)} so subscribers
+     * never read a racing refresh as exhaustion and latch {@code hasMore} off.
+     */
+    private static Result<Boolean> staleInboxPageResult() {
+        return Result.failure(new ApiError.Unknown(ERROR_INBOX_PAGE_STALE));
     }
 
     private boolean isInboxPageGenerationCurrent(long generation) {
