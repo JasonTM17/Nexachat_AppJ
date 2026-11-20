@@ -5075,15 +5075,37 @@ def _reminder_clock(context: dict[str, Any]) -> Any:
     container — which is not necessarily the default `nexachat` schema, so the
     caller overrides it via context["reminder_db"] or the
     NEXACHAT_E2E_REMINDER_DB env var. reminder_clock's target validation keeps
-    the name inside the local nexa* family."""
+    the name inside the local nexa* family. An unusable target (bad env var,
+    missing helper module) is a harness/environment failure, never a product
+    verdict."""
     override = context.get("reminder_clock")
     if override is not None:
         return override
-    module = _import_reminder_clock()
-    db_name = (context.get("reminder_db")
-               or os.environ.get("NEXACHAT_E2E_REMINDER_DB")
-               or module.DEFAULT_DB_NAME)
-    return module.ReminderClock(db_name=db_name)
+    try:
+        module = _import_reminder_clock()
+        db_name = (context.get("reminder_db")
+                   or os.environ.get("NEXACHAT_E2E_REMINDER_DB")
+                   or module.DEFAULT_DB_NAME)
+        return module.ReminderClock(db_name=db_name)
+    except Exception as error:
+        raise EnvironmentFailure(
+            "the reminder_clock DB fixture is not usable (set "
+            "NEXACHAT_E2E_REMINDER_DB to the stack's database): "
+            f"{type(error).__name__}: {error}") from error
+
+
+def _is_reminder_clock_error(error: Exception, class_name: str) -> bool:
+    """True when the DB fixture raised one of reminder_clock's typed errors.
+
+    The helper module owns the taxonomy (ReminderNotFoundError,
+    PsqlExecutionError, ...) and speaks to Postgres only through
+    machine-readable `psql -tA -F` output, so the row classifies failures on
+    the raised class instead of matching raw psql output text."""
+    try:
+        expected = getattr(_import_reminder_clock(), class_name, None)
+    except Exception:
+        return False
+    return isinstance(expected, type) and isinstance(error, expected)
 
 
 _BOARD_MONTH_ABBR = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -5643,10 +5665,13 @@ def run_polls_reminders(row: JourneyRow, context: dict[str, Any]) -> dict[str, A
         try:
             due = clock.make_due(reminder_id, minutes_ago=1)
         except Exception as error:
-            hint = (" (reminder row missing from the target db? set "
-                    "NEXACHAT_E2E_REMINDER_DB to the stack's database)"
-                    if "UPDATE 0" in str(error)
-                    or "not found" in str(error).lower() else "")
+            hint = ""
+            if _is_reminder_clock_error(error, "ReminderNotFoundError"):
+                hint = (" (reminder row missing from the target db? set "
+                        "NEXACHAT_E2E_REMINDER_DB to the stack's database)")
+            elif _is_reminder_clock_error(error, "PsqlExecutionError"):
+                hint = (" (psql via `docker exec` failed or is missing; check "
+                        "the stack's DB container)")
             raise EnvironmentFailure(
                 f"reminder_clock could not pull the row due: {error}{hint}") from error
         if due.get("status") not in ("DUE", "CLAIMED", "FIRED"):

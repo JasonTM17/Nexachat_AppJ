@@ -9,12 +9,16 @@ import com.nexachat.summary.llm.LlmProperties;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.net.URI;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Breaker accounting on the translate provider chain: one primary attempt
@@ -22,7 +26,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * then returns a blank completion used to record two failures for one
  * attempt, opening the breaker after three requests instead of five, and a
  * local-only run (no cloud target) used to record failures even though the
- * breaker gates the primary tier only.
+ * breaker gates the primary tier only. A blank or whitespace-only primary
+ * completion is a breaker failure, never a success.
  */
 class LlmTranslationProviderFallbackTest {
 
@@ -86,6 +91,53 @@ class LlmTranslationProviderFallbackTest {
         assertThat(circuitBreaker.allowRequest())
                 .as("a local-only run never records a primary-tier breaker outcome")
                 .isTrue();
+    }
+
+    @Test
+    void blankPrimaryCompletionOpensTheBreakerInsteadOfKeepingItHealthy() {
+        // A mocked client is the only seam where a blank completion reaches
+        // the provider: the real LlmClient already refuses to return one.
+        LlmClient client = mock(LlmClient.class);
+        when(client.cloudTarget()).thenReturn(new LlmClient.TargetConfig(
+                URI.create("https://primary.example/v1"), "key", "primary-model", 1_000, 256));
+        when(client.localTarget()).thenReturn(null);
+        when(client.fallbackTarget()).thenReturn(null);
+        when(client.completeTextWithFallback(any(), any(), any(), any()))
+                .thenReturn(new LlmClient.LlmCallResult("   ", "primary-model", 1, 1, false));
+        CircuitBreaker breaker = new CircuitBreaker(Clock.systemUTC());
+        LlmTranslationProvider blankProvider = new LlmTranslationProvider(client, breaker);
+
+        // Before the fix each blank primary completion recorded a breaker
+        // success, so the circuit never opened on a degenerate tier.
+        for (int attempt = 0; attempt < 5; attempt++) {
+            assertThatThrownBy(() -> blankProvider.translate(prompt()))
+                    .as("blank attempt %d", attempt)
+                    .isInstanceOf(TranslationUnavailableException.class);
+        }
+
+        assertThat(breaker.allowRequest())
+                .as("blank primary completions must count as breaker failures")
+                .isFalse();
+    }
+
+    @Test
+    void whitespaceOnlyPrimaryCompletionIsABreakerFailureNotASuccess() throws Exception {
+        startServers(true);
+        // Non-breaking spaces pass the client-level blank guard, so only the
+        // provider's whitespace check stands between them and the breaker.
+        primary.handle((exchange, body, authorization) ->
+                FakeOpenAiServer.respond(exchange, 200,
+                        FakeOpenAiServer.jsonResponse("\u00A0\u202F\u3000")));
+
+        for (int attempt = 0; attempt < 5; attempt++) {
+            assertThatThrownBy(() -> provider.translate(prompt()))
+                    .as("whitespace-only attempt %d", attempt)
+                    .isInstanceOf(TranslationUnavailableException.class);
+        }
+
+        assertThat(circuitBreaker.allowRequest())
+                .as("whitespace-only completions must open the breaker")
+                .isFalse();
     }
 
     private void startServers(boolean cloudEnabled) throws Exception {

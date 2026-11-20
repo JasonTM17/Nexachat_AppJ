@@ -300,17 +300,6 @@ class TranslateServiceTest {
     // ------------------------------------------------- provider & guards
 
     @Test
-    void missingConsentIsRefused() {
-        stubTarget(row("xin chào"));
-        when(consentRepository.isConsented(userId)).thenReturn(false);
-
-        assertThatThrownBy(() -> service.translate(userId, messageId, "en"))
-                .satisfies(error -> assertThat(((ApiException) error).getCode())
-                        .isEqualTo(ApiErrorCode.AI_CONSENT_REQUIRED));
-        verify(provider, never()).translate(any());
-    }
-
-    @Test
     void consentRevokedDuringGenerationIsRefusedAndNotCached() {
         stubTarget(row("xin chào"));
         when(provider.translate(any())).thenReturn(completion("hello", "vi"));
@@ -323,6 +312,21 @@ class TranslateServiceTest {
         verify(provider).translate(any());
         verify(cacheRepository, never()).save(any(), anyLong(), anyString(), anyString(),
                 any(), any(), anyInt());
+        // The revoke, not the caller's budget, pays for the refused generation.
+        verify(rateLimiter).refundOne(userId);
+    }
+
+    @Test
+    void missingConsentIsRefused() {
+        stubTarget(row("xin chào"));
+        when(consentRepository.isConsented(userId)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.translate(userId, messageId, "en"))
+                .satisfies(error -> assertThat(((ApiException) error).getCode())
+                        .isEqualTo(ApiErrorCode.AI_CONSENT_REQUIRED));
+        verify(provider, never()).translate(any());
+        verify(rateLimiter, never()).consumeOne(any());
+        verify(rateLimiter, never()).refundOne(any());
     }
 
     @Test
@@ -335,20 +339,26 @@ class TranslateServiceTest {
                 .satisfies(error -> assertThat(((ApiException) error).getCode())
                         .isEqualTo(ApiErrorCode.RATE_LIMITED));
         verify(provider, never()).translate(any());
+        // A refused consume spends nothing, so there is nothing to refund.
+        verify(rateLimiter, never()).refundOne(any());
     }
 
     @Test
-    void providerFailureMapsToUnavailable() {
+    void providerFailureMapsToUnavailableAndRefundsTheToken() {
         stubTarget(row("xin chào"));
         when(provider.translate(any())).thenThrow(new TranslationUnavailableException("down"));
 
         assertThatThrownBy(() -> service.translate(userId, messageId, "en"))
                 .satisfies(error -> assertThat(((ApiException) error).getCode())
                         .isEqualTo(ApiErrorCode.TRANSLATION_UNAVAILABLE));
+        // The token bought no generation, so it goes back to the budget.
+        verify(rateLimiter).refundOne(userId);
+        verify(cacheRepository, never()).save(any(), anyLong(), anyString(), anyString(),
+                any(), any(), anyInt());
     }
 
     @Test
-    void unusableProviderOutputMapsToUnavailable() {
+    void unusableProviderOutputMapsToUnavailableAndRefundsTheToken() {
         stubTarget(row("xin chào các bạn"));
         when(provider.translate(any())).thenReturn(
                 new TranslationProvider.ProviderCompletion("not json", "m", "cloud"));
@@ -356,6 +366,40 @@ class TranslateServiceTest {
         assertThatThrownBy(() -> service.translate(userId, messageId, "en"))
                 .satisfies(error -> assertThat(((ApiException) error).getCode())
                         .isEqualTo(ApiErrorCode.TRANSLATION_UNAVAILABLE));
+        verify(rateLimiter).refundOne(userId);
+        verify(cacheRepository, never()).save(any(), anyLong(), anyString(), anyString(),
+                any(), any(), anyInt());
+    }
+
+    @Test
+    void blankCompletionIsUnavailableRefundedAndNotCached() {
+        stubTarget(row("xin chào các bạn"));
+        when(provider.translate(any())).thenReturn(
+                new TranslationProvider.ProviderCompletion("   \t\n", "m", "cloud"));
+
+        assertThatThrownBy(() -> service.translate(userId, messageId, "en"))
+                .satisfies(error -> assertThat(((ApiException) error).getCode())
+                        .isEqualTo(ApiErrorCode.TRANSLATION_UNAVAILABLE));
+        verify(rateLimiter).refundOne(userId);
+        verify(cacheRepository, never()).save(any(), anyLong(), anyString(), anyString(),
+                any(), any(), anyInt());
+    }
+
+    @Test
+    void whitespaceOnlyTranslationTextIsNeverCached() {
+        stubTarget(row("xin chào"));
+        // Non-breaking spaces slip past String.isBlank(); the validator must
+        // still refuse to return or cache a translation that carries no text.
+        when(provider.translate(any())).thenReturn(
+                new TranslationProvider.ProviderCompletion(
+                        "{\"text\":\"\\u00A0\",\"source_lang\":\"vi\"}", "m", "cloud"));
+
+        assertThatThrownBy(() -> service.translate(userId, messageId, "en"))
+                .satisfies(error -> assertThat(((ApiException) error).getCode())
+                        .isEqualTo(ApiErrorCode.TRANSLATION_UNAVAILABLE));
+        verify(rateLimiter).refundOne(userId);
+        verify(cacheRepository, never()).save(any(), anyLong(), anyString(), anyString(),
+                any(), any(), anyInt());
     }
 
     @Test
@@ -442,6 +486,8 @@ class TranslateServiceTest {
         assertThat(results).allSatisfy(item -> assertThat(item.error())
                 .isEqualTo(ApiErrorCode.RATE_LIMITED.getCode()));
         verify(provider, never()).translate(any());
+        // A refused consume spends nothing, so there is nothing to refund.
+        verify(rateLimiter, never()).refundOne(any());
     }
 
     @Test
@@ -475,10 +521,11 @@ class TranslateServiceTest {
 
         assertThat(results.get(0).error()).isEqualTo(ApiErrorCode.AI_CONSENT_REQUIRED.getCode());
         verify(rateLimiter, never()).tryConsume(any(), anyInt());
+        verify(rateLimiter, never()).refundOne(any());
     }
 
     @Test
-    void batchConsentRevokedDuringGenerationRefusesAndSkipsTheCache() {
+    void batchConsentRevokedDuringGenerationRefusesSkipsCacheAndStopsTheBatch() {
         UUID a = UUID.randomUUID();
         UUID b = UUID.randomUUID();
         Instant created = Instant.parse("2026-11-16T09:00:00Z");
@@ -488,7 +535,9 @@ class TranslateServiceTest {
                         new TargetRow(b, 2L, senderId, "A", "mai nhé", 0L, created, "TEXT", null, null, false)));
         when(provider.translate(any())).thenReturn(completion("tonight", "vi"));
         when(rateLimiter.tryConsume(userId, 1)).thenReturn(true);
-        // The lazy entry check consents; both post-generation re-checks see the revoke.
+        // Item a's entry check consents and its post-generation re-check sees
+        // the revoke; item b's own per-item entry check then refuses without
+        // consuming a token or contacting the provider.
         when(consentRepository.isConsented(userId)).thenReturn(true).thenReturn(false);
 
         List<TranslateBatchItem> results = service.translateBatch(
@@ -496,7 +545,34 @@ class TranslateServiceTest {
 
         assertThat(results).allSatisfy(item -> assertThat(item.error())
                 .isEqualTo(ApiErrorCode.AI_CONSENT_REQUIRED.getCode()));
+        verify(provider, times(1)).translate(any());
+        verify(rateLimiter, times(1)).tryConsume(userId, 1);
+        // Only item a consumed; its token is refunded because the revoke won.
+        verify(rateLimiter, times(1)).refundOne(userId);
+        verify(cacheRepository, never()).save(any(), anyLong(), anyString(), anyString(),
+                any(), any(), anyInt());
+    }
+
+    @Test
+    void batchProviderFailureRefundsEveryConsumedToken() {
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+        Instant created = Instant.parse("2026-11-16T09:00:00Z");
+        when(contextRepository.findTargets(eq(conversationId), any()))
+                .thenReturn(List.of(
+                        new TargetRow(a, 1L, senderId, "A", "tối nay", 0L, created, "TEXT", null, null, false),
+                        new TargetRow(b, 2L, senderId, "A", "mai nhé", 0L, created, "TEXT", null, null, false)));
+        when(rateLimiter.tryConsume(userId, 1)).thenReturn(true);
+        when(provider.translate(any())).thenThrow(new TranslationUnavailableException("down"));
+
+        List<TranslateBatchItem> results = service.translateBatch(
+                userId, conversationId, List.of(a, b), "en");
+
+        assertThat(results).allSatisfy(item -> assertThat(item.error())
+                .isEqualTo(ApiErrorCode.TRANSLATION_UNAVAILABLE.getCode()));
         verify(provider, times(2)).translate(any());
+        // Every consumed token is returned: a failed generation bills no one.
+        verify(rateLimiter, times(2)).refundOne(userId);
         verify(cacheRepository, never()).save(any(), anyLong(), anyString(), anyString(),
                 any(), any(), anyInt());
     }

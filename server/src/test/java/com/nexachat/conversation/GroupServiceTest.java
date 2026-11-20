@@ -20,6 +20,8 @@ import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -33,6 +35,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -46,6 +49,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -303,6 +307,64 @@ class GroupServiceTest {
         verify(conversationRepository, never()).save(any());
     }
 
+    /**
+     * Boundary of the creation cap (cap 3): the total roster — creator plus
+     * listed members — landing at cap-1 (2) or exactly cap (3) is accepted;
+     * cap+1 (4) is refused with the same contract error the join paths use.
+     */
+    @ParameterizedTest
+    @CsvSource({"2,true", "3,true", "4,false"})
+    void createGroup_enforcesTheMemberCapAtTheBoundary(int rosterTotal, boolean allowed) {
+        GroupService capped = new GroupService(
+                conversationRepository, memberRepository, userRepository, attachmentRepository,
+                messageService, eventPublisher, storageService, avatarReferenceCoordinator,
+                new UploadAdmission(16, 1000), simpUserRegistry, simpleBrokerMessageHandler,
+                transactionManagerProvider(), mock(com.nexachat.user.UserBlockRepository.class), 3);
+
+        List<UUID> memberIds = new ArrayList<>();
+        List<User> roster = new ArrayList<>();
+        for (int i = 1; i < rosterTotal; i++) {
+            UUID id = UUID.randomUUID();
+            memberIds.add(id);
+            roster.add(userWithId(id, "+8490111" + String.format("%04d", 100 + i), "Boundary " + i));
+        }
+        List<UUID> lockIds = new ArrayList<>(memberIds);
+        lockIds.add(adminId);
+        List<User> lockedRoster = new ArrayList<>(roster);
+        lockedRoster.add(admin());
+        lenient().when(userRepository.findActiveUsersByIdsForUpdate(
+                        sortedIds(lockIds.toArray(UUID[]::new))))
+                .thenReturn(lockedRoster);
+        lenient().when(conversationRepository.save(any(Conversation.class))).thenAnswer(inv -> {
+            Conversation c = inv.getArgument(0);
+            ReflectionTestUtils.setField(c, "id", conversationId);
+            ReflectionTestUtils.setField(c, "createdAt", Instant.now());
+            return c;
+        });
+        lenient().when(memberRepository.findMembers(conversationId)).thenReturn(List.of());
+        lenient().when(memberRepository.findMemberViews(conversationId)).thenReturn(List.of());
+
+        if (allowed) {
+            ConversationResponse response = capped.createGroup(
+                    adminId, new CreateGroupRequest("Boundary", memberIds));
+
+            assertThat(response.id()).isEqualTo(conversationId);
+            ArgumentCaptor<List<ConversationMember>> rows =
+                    ArgumentCaptor.forClass(List.class);
+            verify(memberRepository).saveAll(rows.capture());
+            assertThat(rows.getValue()).hasSize(rosterTotal); // creator ADMIN + listed MEMBERs
+        } else {
+            ApiException ex = catchThrowableOfType(ApiException.class,
+                    () -> capped.createGroup(adminId,
+                            new CreateGroupRequest("Boundary", memberIds)));
+
+            assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+            assertThat(ex.getDetails()).containsEntry("limit", 3);
+            verify(conversationRepository, never()).save(any());
+            verify(userRepository, never()).findActiveUsersByIdsForUpdate(anyList());
+        }
+    }
+
     // ----------------------------------------------------------- addMembers
 
     @Test
@@ -372,6 +434,62 @@ class GroupServiceTest {
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
         verify(memberRepository, never()).save(any(ConversationMember.class));
         verify(messageService, never()).postSystemMessage(any(), any(), anyString());
+    }
+
+    /**
+     * Boundary of the admin-add cap (cap 3): a batch landing the group at
+     * cap-1 (2) or exactly cap (3) is accepted; cap+1 (4) — whether from a
+     * full group or a batch that overshoots — is refused with the same
+     * contract error the join paths use.
+     */
+    @ParameterizedTest
+    @CsvSource({"1,1,true", "2,1,true", "3,1,false", "2,2,false"})
+    void addMembers_enforcesTheMemberCapAtTheBoundary(
+            int membersBefore, int addCount, boolean allowed) {
+        GroupService capped = new GroupService(
+                conversationRepository, memberRepository, userRepository, attachmentRepository,
+                messageService, eventPublisher, storageService, avatarReferenceCoordinator,
+                new UploadAdmission(16, 1000), simpUserRegistry, simpleBrokerMessageHandler,
+                transactionManagerProvider(), mock(com.nexachat.user.UserBlockRepository.class), 3);
+        groupExistsAndCallerIs(ConversationMember.Role.ADMIN);
+
+        List<UUID> existingIds = new ArrayList<>(List.of(adminId));
+        for (int i = 1; i < membersBefore; i++) {
+            existingIds.add(UUID.randomUUID());
+        }
+        List<UUID> candidateIds = new ArrayList<>();
+        List<User> candidates = new ArrayList<>();
+        for (int i = 0; i < addCount; i++) {
+            UUID id = UUID.randomUUID();
+            candidateIds.add(id);
+            candidates.add(userWithId(id, "+8490122" + String.format("%04d", 200 + i), "Candidate " + i));
+        }
+        when(memberRepository.findMemberUserIds(conversationId)).thenReturn(existingIds);
+        List<UUID> lockIds = new ArrayList<>(candidateIds);
+        lockIds.add(adminId);
+        List<User> locked = new ArrayList<>(candidates);
+        locked.add(admin());
+        when(userRepository.findActiveUsersByIdsForUpdate(
+                        sortedIds(lockIds.toArray(UUID[]::new))))
+                .thenReturn(locked);
+        when(memberRepository.countByConversation_Id(conversationId))
+                .thenReturn((long) membersBefore);
+        lenient().when(memberRepository.findMembers(conversationId)).thenReturn(List.of());
+
+        if (allowed) {
+            capped.addMembers(adminId, conversationId, new AddMemberRequest(candidateIds));
+
+            verify(memberRepository, times(addCount)).save(any(ConversationMember.class));
+        } else {
+            ApiException ex = catchThrowableOfType(ApiException.class,
+                    () -> capped.addMembers(adminId, conversationId,
+                            new AddMemberRequest(candidateIds)));
+
+            assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+            assertThat(ex.getDetails()).containsEntry("limit", 3);
+            verify(memberRepository, never()).save(any(ConversationMember.class));
+            verify(messageService, never()).postSystemMessage(any(), any(), anyString());
+        }
     }
 
     @Test

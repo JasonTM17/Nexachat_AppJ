@@ -10,9 +10,10 @@ import java.util.regex.Pattern;
 
 /**
  * Validates the provider's translate response before it can be cached or
- * returned. Rejects unparseable or fenced JSON, delimiter/system-prompt
- * echoes, implausible length ratios and script-mismatched output — the
- * injection-hardening counterpart to {@link TranslationPromptBuilder}.
+ * returned. Rejects blank or whitespace-only output, unparseable or fenced
+ * JSON, delimiter/system-prompt echoes, implausible length ratios and
+ * script-mismatched output — the injection-hardening counterpart to
+ * {@link TranslationPromptBuilder}.
  */
 @Component
 public final class TranslationOutputValidator {
@@ -31,6 +32,21 @@ public final class TranslationOutputValidator {
     }
 
     /**
+     * True when {@code value} is null, empty, or nothing but Unicode
+     * whitespace — including the non-breaking and exotic space characters
+     * {@link String#isBlank()} misses. A completion or translation text that
+     * passes no letter at all carries no result: {@link LlmTranslationProvider}
+     * counts it as a breaker failure, and this validator rejects it so it is
+     * never returned or cached.
+     */
+    static boolean whitespaceOnly(String value) {
+        if (value == null || value.isEmpty()) {
+            return true;
+        }
+        return value.codePoints().allMatch(cp -> Character.isWhitespace(cp) || Character.isSpaceChar(cp));
+    }
+
+    /**
      * Parses and validates the provider completion.
      *
      * @return the validated output, or {@code null} when it fails any check —
@@ -42,8 +58,11 @@ public final class TranslationOutputValidator {
         if (completion == null || prompt == null || sourceText == null || target == null) {
             return null;
         }
+        if (whitespaceOnly(completion)) {
+            return null;
+        }
         String trimmed = completion.trim();
-        if (trimmed.startsWith("```") || trimmed.isEmpty()) {
+        if (trimmed.startsWith("```")) {
             return null;
         }
         JsonNode root;
@@ -61,7 +80,7 @@ public final class TranslationOutputValidator {
             return null;
         }
         String text = textNode.asText();
-        if (text.isBlank()) {
+        if (whitespaceOnly(text)) {
             return null;
         }
         int outputChars = text.codePointCount(0, text.length());

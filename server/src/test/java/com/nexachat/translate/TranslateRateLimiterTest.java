@@ -89,6 +89,22 @@ class TranslateRateLimiterTest {
     }
 
     @Test
+    void refundOneReturnsTokensToBothWindows() {
+        TranslateRequestLimitRepository repository = mock(TranslateRequestLimitRepository.class);
+        UUID userId = UUID.randomUUID();
+
+        new TranslateRateLimiter(repository, properties,
+                Clock.fixed(Instant.parse("2026-11-16T23:59:45Z"), ZoneOffset.UTC))
+                .refundOne(userId);
+
+        // A generation that never happened must bill neither window.
+        verify(repository).refund(userId, "MINUTE",
+                Instant.parse("2026-11-16T23:59:00Z"), 1);
+        verify(repository).refund(userId, "DAY",
+                Instant.parse("2026-11-16T00:00:00Z"), 1);
+    }
+
+    @Test
     void batchConsumesRequestedAmount() {
         TranslateRequestLimitRepository repository = mock(TranslateRequestLimitRepository.class);
         UUID userId = UUID.randomUUID();

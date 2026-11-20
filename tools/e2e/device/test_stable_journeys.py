@@ -5386,6 +5386,65 @@ class PollsRemindersExecutorTest(unittest.TestCase):
         self.assertIsNone(store.poll)
         self.assertEqual(store.members, {})
 
+    def test_make_due_row_missing_fails_as_environment_with_db_hint(self):
+        # A fixture that cannot find the reminder row (e.g. the stack serves
+        # another database) must be a harness/environment failure carrying the
+        # NEXACHAT_E2E_REMINDER_DB hint, never a false FAIL_PRODUCT.
+        module = journeys._import_reminder_clock()
+        store, world, client, context, session = self._fixture()
+
+        class MissingRowClock(self.Clock):
+            def make_due(self, reminder_id, minutes_ago=1):
+                raise module.ReminderNotFoundError(
+                    f"Reminder {reminder_id} not found in database nexachat")
+
+        context["reminder_clock"] = MissingRowClock(store)
+        row = journeys.ROW_BY_ID["polls-reminders"]
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session):
+            with self.assertRaises(journeys.EnvironmentFailure) as caught:
+                journeys.run_polls_reminders(row, context)
+        self.assertIn("not found", str(caught.exception))
+        self.assertIn("NEXACHAT_E2E_REMINDER_DB", str(caught.exception))
+
+    def test_make_due_psql_failure_fails_as_environment(self):
+        # psql missing/failing (docker exec refused, container down) must be
+        # a harness/environment failure with a container hint.
+        module = journeys._import_reminder_clock()
+        store, world, client, context, session = self._fixture()
+
+        class PsqlDownClock(self.Clock):
+            def make_due(self, reminder_id, minutes_ago=1):
+                raise module.PsqlExecutionError(
+                    "psql exited with code 1: connection refused")
+
+        context["reminder_clock"] = PsqlDownClock(store)
+        row = journeys.ROW_BY_ID["polls-reminders"]
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session):
+            with self.assertRaises(journeys.EnvironmentFailure) as caught:
+                journeys.run_polls_reminders(row, context)
+        self.assertIn("could not pull the row due", str(caught.exception))
+        self.assertIn("psql", str(caught.exception))
+        self.assertIn("DB container", str(caught.exception))
+
+    def test_unusable_reminder_db_target_fails_as_environment(self):
+        # A refused NEXACHAT_E2E_REMINDER_DB target must surface as a clear
+        # classified environment error, not a raw ValueError from the fixture.
+        store, world, client, context, session = self._fixture()
+        context.pop("reminder_clock")
+        row = journeys.ROW_BY_ID["polls-reminders"]
+        with mock.patch.dict("os.environ",
+                             {"NEXACHAT_E2E_REMINDER_DB": "postgres"}):
+            with mock.patch.object(journeys, "_assert_device_account_an"), \
+                    mock.patch.object(journeys, "_actor_session", side_effect=session):
+                with self.assertRaises(journeys.EnvironmentFailure) as caught:
+                    journeys.run_polls_reminders(row, context)
+        self.assertIn("reminder_clock DB fixture is not usable",
+                      str(caught.exception))
+        self.assertIn("Refusing database name", str(caught.exception))
+        self.assertIn("NEXACHAT_E2E_REMINDER_DB", str(caught.exception))
+
 
 class OfflineSyncExecutorTest(unittest.TestCase):
     """Offline fake device+REST world for run_offline_sync.

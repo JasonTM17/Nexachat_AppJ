@@ -18,7 +18,10 @@ import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import jakarta.persistence.EntityManager;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -35,6 +38,7 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -484,6 +488,47 @@ class InviteServiceTest {
         assertThat(ex.getDetails()).containsEntry("limit", 5);
     }
 
+    /**
+     * Boundary of the join cap (cap 5): a join landing the group at cap-1
+     * (resulting 4) or exactly cap (resulting 5) is admitted; a join into a
+     * full group (5) is refused without burning a link use.
+     */
+    @ParameterizedTest
+    @CsvSource({"3,true", "4,true", "5,false"})
+    void join_enforcesTheMemberCapAtTheBoundary(int membersBefore, boolean allowed) {
+        String token = "join_cap_boundary";
+        String hash = tokenGenerator.hashToken(token);
+
+        GroupInviteLink link = new GroupInviteLink(
+                groupConversation, adminUser, hash, false, null, null);
+        UUID linkId = UUID.randomUUID();
+        ReflectionTestUtils.setField(link, "id", linkId);
+
+        when(linkRepository.findByTokenHash(hash)).thenReturn(Optional.of(link));
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, strangerId)).thenReturn(false);
+        when(banRepository.isBannedFromLink(conversationId, strangerId, linkId)).thenReturn(false);
+        when(memberRepository.countByConversation_Id(conversationId))
+                .thenReturn((long) membersBefore);
+        lenient().when(linkRepository.findByIdForUpdate(linkId)).thenReturn(Optional.of(link));
+        lenient().when(linkRepository.tryConsumeUse(linkId)).thenReturn(1);
+
+        if (allowed) {
+            JoinResponse response = inviteService.join(strangerId, token, "127.0.0.1");
+
+            assertThat(response.status()).isEqualTo("JOINED");
+            verify(groupService).addMemberFromInvite(strangerId, conversationId, null);
+        } else {
+            ApiException ex = catchThrowableOfType(
+                    () -> inviteService.join(strangerId, token, "127.0.0.1"),
+                    ApiException.class);
+
+            assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+            assertThat(ex.getDetails()).containsEntry("limit", 5);
+            verify(linkRepository, never()).tryConsumeUse(any());
+            verify(groupService, never()).addMemberFromInvite(any(), any(), any());
+        }
+    }
+
     @Test
     void join_requiresApproval_createsPendingRequest() {
         String token = "approval_token";
@@ -732,5 +777,88 @@ class InviteServiceTest {
         assertThat(response.status()).isEqualTo("APPROVED");
         verify(linkRepository, never()).tryConsumeUse(any());
         verify(groupService, never()).addMemberFromInvite(any(), any(), any());
+    }
+
+    /**
+     * Boundary of the approval cap (cap 5): approving while the group is at
+     * cap-1 (resulting 4) or exactly cap-1's successor (resulting 5 = cap) is
+     * accepted; approving a full group (5) is refused, and the refusal must
+     * burn neither a link use nor the request's PENDING status.
+     */
+    @ParameterizedTest
+    @CsvSource({"3,true", "4,true", "5,false"})
+    void approveJoinRequest_enforcesTheMemberCapAtTheBoundary(int membersBefore, boolean allowed) {
+        UUID reqId = UUID.randomUUID();
+        GroupInviteLink link = new GroupInviteLink(
+                groupConversation, adminUser, "hash", true, null, 10);
+        UUID linkId = UUID.randomUUID();
+        ReflectionTestUtils.setField(link, "id", linkId);
+
+        GroupJoinRequest request = new GroupJoinRequest(groupConversation, link, strangerUser);
+        ReflectionTestUtils.setField(request, "id", reqId);
+
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(groupConversation));
+        when(memberRepository.findByConversation_IdAndUser_Id(conversationId, adminId))
+                .thenReturn(Optional.of(memberRow(groupConversation, adminUser, ConversationMember.Role.ADMIN)));
+        when(joinRequestRepository.findById(reqId)).thenReturn(Optional.of(request));
+        when(memberRepository.countByConversation_Id(conversationId))
+                .thenReturn((long) membersBefore);
+        lenient().when(linkRepository.findByIdForUpdate(linkId)).thenReturn(Optional.of(link));
+        lenient().when(linkRepository.tryConsumeUse(linkId)).thenReturn(1);
+        lenient().when(joinRequestRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        if (allowed) {
+            JoinRequestResponse response = inviteService.approveJoinRequest(adminId, conversationId, reqId);
+
+            assertThat(response.status()).isEqualTo("APPROVED");
+            verify(groupService).addMemberFromInvite(strangerId, conversationId, adminId);
+        } else {
+            ApiException ex = catchThrowableOfType(ApiException.class,
+                    () -> inviteService.approveJoinRequest(adminId, conversationId, reqId));
+
+            assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+            assertThat(ex.getDetails()).containsEntry("limit", 5);
+            verify(linkRepository, never()).tryConsumeUse(any());
+            verify(groupService, never()).addMemberFromInvite(any(), any(), any());
+            verify(joinRequestRepository, never()).save(any(GroupJoinRequest.class));
+        }
+    }
+
+    /**
+     * The approval path must own the conversation row before the cap count
+     * and keep it through the member insert — the lockReview serialization
+     * (users → conversation → request → link → insert) that makes concurrent
+     * approvals safe the same way join()'s own conversation lock does.
+     */
+    @Test
+    void approveJoinRequest_capCheckRunsUnderTheConversationRowLock() {
+        UUID reqId = UUID.randomUUID();
+        GroupInviteLink link = new GroupInviteLink(
+                groupConversation, adminUser, "hash", true, null, 10);
+        UUID linkId = UUID.randomUUID();
+        ReflectionTestUtils.setField(link, "id", linkId);
+
+        GroupJoinRequest request = new GroupJoinRequest(groupConversation, link, strangerUser);
+        ReflectionTestUtils.setField(request, "id", reqId);
+
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(groupConversation));
+        when(memberRepository.findByConversation_IdAndUser_Id(conversationId, adminId))
+                .thenReturn(Optional.of(memberRow(groupConversation, adminUser, ConversationMember.Role.ADMIN)));
+        when(joinRequestRepository.findById(reqId)).thenReturn(Optional.of(request));
+        when(memberRepository.countByConversation_Id(conversationId)).thenReturn(2L);
+        when(linkRepository.findByIdForUpdate(linkId)).thenReturn(Optional.of(link));
+        when(linkRepository.tryConsumeUse(linkId)).thenReturn(1);
+        when(joinRequestRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        inviteService.approveJoinRequest(adminId, conversationId, reqId);
+
+        InOrder order = inOrder(conversationRepository, joinRequestRepository,
+                memberRepository, linkRepository, groupService);
+        order.verify(conversationRepository).findByIdForUpdate(conversationId);
+        order.verify(joinRequestRepository).findByIdForUpdate(reqId);
+        order.verify(memberRepository).countByConversation_Id(conversationId);
+        order.verify(linkRepository).findByIdForUpdate(linkId);
+        order.verify(linkRepository).tryConsumeUse(linkId);
+        order.verify(groupService).addMemberFromInvite(strangerId, conversationId, adminId);
     }
 }

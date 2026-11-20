@@ -465,6 +465,11 @@ public class InviteService {
             return toJoinRequestResponse(request);
         }
 
+        // lockReview holds the conversation row FOR UPDATE from this point
+        // through the member insert below until commit — the same per-row
+        // serialization join() gets from its own conversation lock — so
+        // concurrent approvals cannot both pass this count and over-fill the
+        // group, and an exhausted link cannot be oversubscribed.
         long memberCount = memberRepository.countByConversation_Id(conversationId);
         if (memberCount >= maxMembers) {
             throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
