@@ -26,6 +26,10 @@ public interface ConversationDao {
     @Query("UPDATE conversations SET pinned = :pinned, pinnedAt = :pinnedAt WHERE id = :conversationId")
     Completable updatePin(String conversationId, boolean pinned, Long pinnedAt);
 
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @Query("UPDATE conversations SET pinned = :pinned, pinnedAt = :pinnedAt WHERE id = :conversationId")
+    void updatePinInTransaction(String conversationId, boolean pinned, Long pinnedAt);
+
     @Query("SELECT id AS conversationId, COALESCE(lastMessageSeq, 0) AS maxSeq FROM conversations")
     Single<List<ConversationWatermark>> getAllWatermarks();
 
@@ -83,17 +87,40 @@ public interface ConversationDao {
             String conversationId, long seq, String content, String senderName, long at,
             boolean encrypted, String type);
 
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @Query(
+            "UPDATE conversations SET lastMessageSeq = :seq, lastMessageContent = :content, "
+                    + "lastMessageSenderName = :senderName, lastMessageAt = :at, "
+                    + "lastMessageDeleted = 0, lastMessageEncrypted = :encrypted, "
+                    + "lastMessageType = :type "
+                    + "WHERE id = :conversationId AND :seq > lastMessageSeq")
+    void updateLastMessageInTransaction(
+            String conversationId, long seq, String content, String senderName, long at,
+            boolean encrypted, String type);
+
     /** An edit refreshes the snippet only while the same message remains last. */
     @Query(
             "UPDATE conversations SET lastMessageContent = :content, lastMessageDeleted = 0 "
                     + "WHERE id = :conversationId AND lastMessageSeq = :seq")
     Completable updateLastMessageContent(String conversationId, long seq, String content);
 
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @Query(
+            "UPDATE conversations SET lastMessageContent = :content, lastMessageDeleted = 0 "
+                    + "WHERE id = :conversationId AND lastMessageSeq = :seq")
+    void updateLastMessageContentInTransaction(String conversationId, long seq, String content);
+
     /** Marks the deleted last message with a neutral localized snippet. */
     @Query(
             "UPDATE conversations SET lastMessageContent = NULL, lastMessageDeleted = 1 "
                     + "WHERE id = :conversationId")
     Completable markLastMessageDeleted(String conversationId);
+
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @Query(
+            "UPDATE conversations SET lastMessageContent = NULL, lastMessageDeleted = 1 "
+                    + "WHERE id = :conversationId")
+    void markLastMessageDeletedInTransaction(String conversationId);
 
     /** Applies the server E2EE flag pushed on conversation-updated frames. */
     @Query("UPDATE conversations SET e2eeEnabled = :enabled WHERE id = :conversationId")
@@ -103,6 +130,10 @@ public interface ConversationDao {
     @Query("UPDATE conversations SET disappearingSeconds = :seconds WHERE id = :conversationId")
     Completable updateDisappearingSeconds(String conversationId, int seconds);
 
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @Query("UPDATE conversations SET disappearingSeconds = :seconds WHERE id = :conversationId")
+    void updateDisappearingSecondsInTransaction(String conversationId, int seconds);
+
     /** Streak badge cache for one direct row; the next inbox refresh overwrites it. */
     @Query("UPDATE conversations SET streakCount = :count, streakAtRisk = :atRisk "
             + "WHERE id = :conversationId")
@@ -111,15 +142,29 @@ public interface ConversationDao {
     @Query("UPDATE conversations SET unreadCount = unreadCount + :delta WHERE id = :conversationId")
     Completable incrementUnread(String conversationId, int delta);
 
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @Query("UPDATE conversations SET unreadCount = unreadCount + :delta WHERE id = :conversationId")
+    void incrementUnreadInTransaction(String conversationId, int delta);
+
     /** Caller-scoped mute preference; {@code mutedUntil} is null for a forever mute. */
     @Query(
             "UPDATE conversations SET muted = :muted, mutedUntilEpochMs = :mutedUntilEpochMs "
                     + "WHERE id = :conversationId")
     Completable updateMute(String conversationId, boolean muted, @Nullable Long mutedUntilEpochMs);
 
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @Query(
+            "UPDATE conversations SET muted = :muted, mutedUntilEpochMs = :mutedUntilEpochMs "
+                    + "WHERE id = :conversationId")
+    void updateMuteInTransaction(String conversationId, boolean muted, @Nullable Long mutedUntilEpochMs);
+
     /** Caller-scoped archive preference. */
     @Query("UPDATE conversations SET archived = :archived WHERE id = :conversationId")
     Completable updateArchived(String conversationId, boolean archived);
+
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @Query("UPDATE conversations SET archived = :archived WHERE id = :conversationId")
+    void updateArchivedInTransaction(String conversationId, boolean archived);
 
     /** Caller-scoped per-conversation AI opt-out preference. */
     @Query("UPDATE conversations SET aiOptOut = :aiOptOut WHERE id = :conversationId")

@@ -631,6 +631,10 @@ public final class SyncEngine {
 
         boolean applied = tokenRefresher.runIfSessionCurrent(expectedEpoch, () ->
                 appDatabase.runInTransaction(() -> {
+                    // Only synchronous *InTransaction statements inside the held
+                    // writer transaction (issue #184): a queued Rx write parks this
+                    // thread behind the executor it saturates during the fresh-install
+                    // full drain, wedging every concurrent live write and render.
                     for (SyncResponse.ConversationDeltaDto delta : response.getDeltas()) {
                         String conversationId = delta.getConversationId();
                         if (conversationId == null) continue;
@@ -643,11 +647,11 @@ public final class SyncEngine {
                             Long mutedUntil = muted
                                     ? TimeAndJwt.isoToEpochMsOrNull(delta.getMutedUntil())
                                     : null;
-                            conversationDao.updateMute(conversationId, muted, mutedUntil).blockingAwait();
+                            conversationDao.updateMuteInTransaction(conversationId, muted, mutedUntil);
                         }
                         if (delta.getArchived() != null) {
-                            conversationDao.updateArchived(
-                                    conversationId, Boolean.TRUE.equals(delta.getArchived())).blockingAwait();
+                            conversationDao.updateArchivedInTransaction(
+                                    conversationId, Boolean.TRUE.equals(delta.getArchived()));
                         }
 
                         // 1. Ingest new messages
@@ -660,7 +664,7 @@ public final class SyncEngine {
                             for (MessageDto dto : delta.getNewMessages()) {
                                 MessageEntity entity = toEntity(dto, conversationId);
                                 if (entity != null) {
-                                    boolean isNew = messageDao.byId(entity.getId()).blockingGet() == null;
+                                    boolean isNew = messageDao.byIdInTransaction(entity.getId()) == null;
                                     newEntities.add(entity);
                                     if (isNew && entity.getDeletedAtEpochMs() == null
                                             && !myUserId.equals(entity.getSenderId())) {
@@ -678,24 +682,23 @@ public final class SyncEngine {
                             }
 
                             if (!newEntities.isEmpty()) {
-                                messageDao.upsertAll(newEntities).blockingAwait();
+                                messageDao.upsertAllInTransaction(newEntities);
                                 MessageEntity last = newEntities.get(newEntities.size() - 1);
-                                conversationDao.updateLastMessage(
+                                conversationDao.updateLastMessageInTransaction(
                                         conversationId, last.getSeq(),
                                         last.getContent() != null ? last.getContent() : last.getType(),
                                         last.getSenderDisplayName() != null ? last.getSenderDisplayName() : "",
-                                        last.getCreatedAt(), last.isEncrypted(), last.getType()
-                                ).blockingAwait();
+                                        last.getCreatedAt(), last.isEncrypted(), last.getType());
                             }
                             if (incoming > 0) {
-                                conversationDao.incrementUnread(conversationId, incoming).blockingAwait();
+                                conversationDao.incrementUnreadInTransaction(conversationId, incoming);
                             }
                             for (MessageEntity entity : newEntities) {
                                 if (entity.getClientMessageId() == null
                                         || !myUserId.equals(entity.getSenderId())) {
                                     continue;
                                 }
-                                MessageEntity committed = messageDao.byId(entity.getId()).blockingGet();
+                                MessageEntity committed = messageDao.byIdInTransaction(entity.getId());
                                 if (committed != null && myUserId.equals(committed.getSenderId())
                                         && conversationId.equals(committed.getConversationId())
                                         && (committed.getClientMessageId() == null
@@ -714,11 +717,10 @@ public final class SyncEngine {
                             for (MessageDto dto : delta.getEditedMessages()) {
                                 MessageEntity entity = toEntity(dto, conversationId);
                                 if (entity != null) {
-                                    messageDao.update(entity).blockingAwait();
-                                    conversationDao.updateLastMessageContent(
+                                    messageDao.updateInTransaction(entity);
+                                    conversationDao.updateLastMessageContentInTransaction(
                                             conversationId, entity.getSeq(),
-                                            entity.getContent() != null ? entity.getContent() : entity.getType()
-                                    ).blockingAwait();
+                                            entity.getContent() != null ? entity.getContent() : entity.getType());
                                 }
                             }
                         }
@@ -726,7 +728,7 @@ public final class SyncEngine {
                         // 3. Ingest deleted message IDs
                         if (!delta.getDeletedMessageIds().isEmpty()) {
                             for (String deletedId : delta.getDeletedMessageIds()) {
-                                MessageEntity existing = messageDao.byId(deletedId).blockingGet();
+                                MessageEntity existing = messageDao.byIdInTransaction(deletedId);
                                 if (existing != null && existing.getDeletedAtEpochMs() == null) {
                                     MessageEntity tombstone = new MessageEntity(
                                             existing.getId(), existing.getConversationId(), existing.getSeq(),
@@ -736,14 +738,14 @@ public final class SyncEngine {
                                             existing.getCreatedAt(), null, existing.getEditedAtEpochMs(),
                                             System.currentTimeMillis()
                                     );
-                                    messageDao.update(tombstone).blockingAwait();
+                                    messageDao.updateInTransaction(tombstone);
                                     reactionDao.deleteForMessageInTransaction(deletedId);
-                                    messageDao.clearReplySnippets(deletedId).blockingAwait();
+                                    messageDao.clearReplySnippetsInTransaction(deletedId);
                                     // Keep the inbox preview neutral when the deleted message was the
                                     // conversation's last one, as the live delete path already does.
-                                    ConversationEntity row = conversationDao.byId(existing.getConversationId()).blockingGet();
+                                    ConversationEntity row = conversationDao.byIdSync(existing.getConversationId());
                                     if (row != null && row.getLastMessageSeq() == existing.getSeq()) {
-                                        conversationDao.markLastMessageDeleted(existing.getConversationId()).blockingAwait();
+                                        conversationDao.markLastMessageDeletedInTransaction(existing.getConversationId());
                                     }
                                 }
                             }
@@ -771,15 +773,15 @@ public final class SyncEngine {
                         // 5. Apply caller-only member flags (pinned, pinnedAt) and the
                         //    conversation-scoped disappearing timer.
                         if (delta.getDisappearingSeconds() != null) {
-                            conversationDao.updateDisappearingSeconds(
-                                    conversationId, delta.getDisappearingSeconds()).blockingAwait();
+                            conversationDao.updateDisappearingSecondsInTransaction(
+                                    conversationId, delta.getDisappearingSeconds());
                         }
                         if (delta.getPinned() != null) {
                             boolean pinned = Boolean.TRUE.equals(delta.getPinned());
                             Long pinnedAt = delta.getPinnedAt() != null
                                     ? TimeAndJwt.isoToEpochMsOrNull(delta.getPinnedAt())
                                     : null;
-                            conversationDao.updatePin(conversationId, pinned, pinnedAt).blockingAwait();
+                            conversationDao.updatePinInTransaction(conversationId, pinned, pinnedAt);
                         }
 
                         // 6. Peer receipt watermarks advance ONLY from the peer's own read/delivered

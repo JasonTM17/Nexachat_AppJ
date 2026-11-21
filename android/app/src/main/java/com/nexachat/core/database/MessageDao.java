@@ -20,15 +20,32 @@ public interface MessageDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     Completable upsert(MessageEntity message);
 
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    void upsertInTransaction(MessageEntity message);
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     Completable upsertAll(List<MessageEntity> messages);
+
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    void upsertAllInTransaction(List<MessageEntity> messages);
 
     /** Full-row replace for an optimistic edit/delete and its restore path. */
     @Update
     Completable update(MessageEntity message);
 
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @Update
+    void updateInTransaction(MessageEntity message);
+
     @Query("SELECT * FROM messages WHERE id = :messageId")
     Maybe<MessageEntity> byId(String messageId);
+
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @androidx.annotation.Nullable
+    @Query("SELECT * FROM messages WHERE id = :messageId")
+    MessageEntity byIdInTransaction(String messageId);
 
     @Query("SELECT * FROM messages WHERE id IN (:messageIds)")
     Single<List<MessageEntity>> byIds(List<String> messageIds);
@@ -36,6 +53,10 @@ public interface MessageDao {
     /** Clears embedded previews for replies that reference a tombstoned message. */
     @Query("UPDATE messages SET replyToSnippet = NULL WHERE replyToId = :messageId")
     Completable clearReplySnippets(String messageId);
+
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @Query("UPDATE messages SET replyToSnippet = NULL WHERE replyToId = :messageId")
+    void clearReplySnippetsInTransaction(String messageId);
 
     /** Chronological stream for one conversation; UI sorts by seq, not time. */
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY seq ASC")

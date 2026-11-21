@@ -115,9 +115,12 @@ final class SyncPageStore {
         List<String> pending = new ArrayList<>();
         fenced(owner, epoch, () -> db.runInTransaction(() -> {
             // Reject pages whose cache/cursor scope changed while HTTP was in flight.
+            // Only synchronous statements run inside the held writer transaction
+            // (issue #184): a queued Rx read or write parks this thread behind
+            // the executor while the fresh-install drain saturates it.
             for (SyncCursorEntity expected : requested.values()) {
                 if (!same(expected, read(owner, expected.conversationId))
-                        || db.conversationDao().byId(expected.conversationId).blockingGet() == null) {
+                        || db.conversationDao().byIdSync(expected.conversationId) == null) {
                     throw new CancellationException("Sync cache changed before page commit");
                 }
             }
@@ -152,14 +155,14 @@ final class SyncPageStore {
                 }
                 for (MessageDto row : delta.getChanges()) {
                     boolean isNew = row.getId() != null
-                            && db.messageDao().byId(row.getId()).blockingGet() == null;
+                            && db.messageDao().byIdInTransaction(row.getId()) == null;
                     boolean accepted = messages.apply(
                             row, conversation, delta.getGeneration(), owner, current.rebuildingReactions);
                     MessageEntity committed = row.getId() == null
-                            ? null : db.messageDao().byId(row.getId()).blockingGet();
+                            ? null : db.messageDao().byIdInTransaction(row.getId());
                     if (accepted && isNew && committed != null && committed.getDeletedAtEpochMs() == null
                             && !owner.equals(committed.getSenderId())) {
-                        db.conversationDao().incrementUnread(conversation, 1).blockingAwait();
+                        db.conversationDao().incrementUnreadInTransaction(conversation, 1);
                     }
                     if (committed != null && row.getClientMessageId() != null
                             && owner.equals(committed.getSenderId())
@@ -173,7 +176,7 @@ final class SyncPageStore {
                 if (!delta.isReactionsFullRefresh()) {
                     for (ReactionUpdateDto update : delta.getReactionUpdates()) {
                         if (update.getMessageId() == null) continue;
-                        MessageEntity row = db.messageDao().byId(update.getMessageId()).blockingGet();
+                        MessageEntity row = db.messageDao().byIdInTransaction(update.getMessageId());
                         // Reaction and message pages have independent orderings. Preserve
                         // unknown-message aggregates before acknowledging the reaction cursor.
                         if (row == null || (conversation.equals(row.getConversationId())
@@ -229,17 +232,20 @@ final class SyncPageStore {
             SyncCursorEntity cursor = db.syncCursorDao().find(owner, conversation);
             if (versioned && legacyEpoch == epoch) return;
             if (cursor != null && cursor.generation != generation) return;
-            if (db.conversationDao().byId(conversation).blockingGet() == null) return;
-            boolean isNew = db.messageDao().byId(dto.getId()).blockingGet() == null;
+            // Only synchronous statements inside the held writer transaction
+            // (issue #184): parking on a queued Rx statement wedges every live
+            // write while the fresh-install sync drain holds the executor/writer.
+            if (db.conversationDao().byIdSync(conversation) == null) return;
+            boolean isNew = db.messageDao().byIdInTransaction(dto.getId()) == null;
             boolean accepted = messages.apply(dto, conversation, generation, owner, historyReactions);
             if (accepted && isNew && countUnread && !owner.equals(dto.getResolvedSenderId())
                     && dto.getDeletedAt() == null) {
-                db.conversationDao().incrementUnread(conversation, 1).blockingAwait();
+                db.conversationDao().incrementUnreadInTransaction(conversation, 1);
             }
             // A retry acknowledgement proves delivery even when its content was already cached
             // by sync/history or superseded by a later edit. Never tie queue progress to repainting.
             if (owner.equals(dto.getResolvedSenderId()) && dto.getClientMessageId() != null) {
-                MessageEntity committed = db.messageDao().byId(dto.getId()).blockingGet();
+                MessageEntity committed = db.messageDao().byIdInTransaction(dto.getId());
                 if (committed != null && owner.equals(committed.getSenderId())
                         && conversation.equals(committed.getConversationId())
                         && (committed.getClientMessageId() == null
@@ -257,7 +263,7 @@ final class SyncPageStore {
             SyncCursorEntity cursor = db.syncCursorDao().find(owner, conversation);
             if (generation > 0 && legacyEpoch == epoch) return;
             if (cursor != null && cursor.generation != generation) return;
-            if (db.conversationDao().byId(conversation).blockingGet() == null) return;
+            if (db.conversationDao().byIdSync(conversation) == null) return;
             messages.delete(id, conversation, version, generation, deletedAt);
         }));
     }
@@ -277,11 +283,16 @@ final class SyncPageStore {
 
     private void preferences(SyncResponse.ConversationDeltaDto delta) {
         String conversation = delta.getConversationId();
-        if (delta.getMuted() != null) db.conversationDao().updateMute(conversation, delta.getMuted(),
-                delta.getMuted() ? TimeAndJwt.isoToEpochMsOrNull(delta.getMutedUntil()) : null).blockingAwait();
-        if (delta.getArchived() != null) db.conversationDao().updateArchived(conversation, delta.getArchived()).blockingAwait();
-        if (delta.getPinned() != null) db.conversationDao().updatePin(conversation, delta.getPinned(),
-                TimeAndJwt.isoToEpochMsOrNull(delta.getPinnedAt())).blockingAwait();
+        // Synchronous *InTransaction statements only (issue #184): this runs
+        // inside the held writer page-commit transaction.
+        if (delta.getMuted() != null) db.conversationDao().updateMuteInTransaction(conversation,
+                delta.getMuted(),
+                delta.getMuted() ? TimeAndJwt.isoToEpochMsOrNull(delta.getMutedUntil()) : null);
+        if (delta.getArchived() != null) db.conversationDao()
+                .updateArchivedInTransaction(conversation, delta.getArchived());
+        if (delta.getPinned() != null) db.conversationDao().updatePinInTransaction(conversation,
+                delta.getPinned(),
+                TimeAndJwt.isoToEpochMsOrNull(delta.getPinnedAt()));
     }
 
     private static boolean same(SyncCursorEntity a, SyncCursorEntity b) {

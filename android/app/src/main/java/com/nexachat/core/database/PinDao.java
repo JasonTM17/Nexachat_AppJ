@@ -38,6 +38,12 @@ public abstract class PinDao {
                     + "AND messageId = :messageId")
     public abstract Completable delete(String conversationId, String messageId);
 
+    /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
+    @Query(
+            "DELETE FROM pinned_messages WHERE conversationId = :conversationId "
+                    + "AND messageId = :messageId")
+    public abstract void deleteInTransaction(String conversationId, String messageId);
+
     @Query("DELETE FROM pinned_messages WHERE conversationId = :conversationId")
     public abstract Completable deleteForConversation(String conversationId);
 

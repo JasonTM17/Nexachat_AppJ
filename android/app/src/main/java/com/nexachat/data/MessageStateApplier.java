@@ -50,10 +50,10 @@ final class MessageStateApplier {
             boolean reconcileReactions) {
         MessageEntity row = toEntity(dto, conversation, generation);
         if (row.getReplyToId() != null) {
-            MessageEntity parent = db.messageDao().byId(row.getReplyToId()).blockingGet();
+            MessageEntity parent = db.messageDao().byIdInTransaction(row.getReplyToId());
             if (parent != null && parent.getDeletedAtEpochMs() != null) row = row.withReplyToSnippet(null);
         }
-        MessageEntity old = db.messageDao().byId(row.getId()).blockingGet();
+        MessageEntity old = db.messageDao().byIdInTransaction(row.getId());
         boolean accepted = accepts(old, row);
         if (!accepted) {
             // A reaction rebuild also replaces empty aggregates for an unchanged message revision.
@@ -64,17 +64,21 @@ final class MessageStateApplier {
             }
             return false;
         }
-        if (old == null) db.messageDao().upsert(row).blockingAwait();
-        else db.messageDao().update(row).blockingAwait();
-        db.conversationDao().updateLastMessage(conversation, row.getSeq(),
+        // Only synchronous statements inside the caller's held writer transaction
+        // (issue #184): a queued Rx write parks the transaction thread behind the
+        // very connection it holds while the fresh-install sync drain saturates
+        // the shared query executor, wedging every live write and render.
+        if (old == null) db.messageDao().upsertInTransaction(row);
+        else db.messageDao().updateInTransaction(row);
+        db.conversationDao().updateLastMessageInTransaction(conversation, row.getSeq(),
                 Objects.requireNonNullElse(row.getContent(), row.getType()),
                 Objects.requireNonNullElse(row.getSenderDisplayName(), ""), row.getCreatedAt(),
-                row.isEncrypted(), row.getType()).blockingAwait();
+                row.isEncrypted(), row.getType());
         if (row.getDeletedAtEpochMs() != null) {
             cleanupDelete(row);
         } else {
-            db.conversationDao().updateLastMessageContent(conversation, row.getSeq(),
-                    Objects.requireNonNullElse(row.getContent(), row.getType())).blockingAwait();
+            db.conversationDao().updateLastMessageContentInTransaction(conversation, row.getSeq(),
+                    Objects.requireNonNullElse(row.getContent(), row.getType()));
             // A message revision does not order reactions. Only the full reconciliation owns snapshots.
             if (reconcileReactions) replaceReactions(dto, row, owner);
         }
@@ -82,25 +86,25 @@ final class MessageStateApplier {
     }
 
     void delete(String id, String conversation, long version, long generation, Long deletedAt) {
-        MessageEntity old = db.messageDao().byId(id).blockingGet();
+        MessageEntity old = db.messageDao().byIdInTransaction(id);
         MessageEntity row = old == null
                 ? new MessageEntity(id, conversation, 0, "", null, "TEXT", "", null,
                         null, null, null, 0, null, null, deletedAt)
                 : old.asDeleted(deletedAt);
         row = row.withSyncVersion(version, generation);
         if (!accepts(old, row)) return;
-        if (old == null) db.messageDao().upsert(row).blockingAwait();
-        else db.messageDao().update(row).blockingAwait();
+        if (old == null) db.messageDao().upsertInTransaction(row);
+        else db.messageDao().updateInTransaction(row);
         cleanupDelete(row);
     }
 
     private void cleanupDelete(MessageEntity row) {
         db.reactionDao().deleteForMessageInTransaction(row.getId());
-        db.pinDao().delete(row.getConversationId(), row.getId()).blockingAwait();
-        db.messageDao().clearReplySnippets(row.getId()).blockingAwait();
-        ConversationEntity conversation = db.conversationDao().byId(row.getConversationId()).blockingGet();
+        db.pinDao().deleteInTransaction(row.getConversationId(), row.getId());
+        db.messageDao().clearReplySnippetsInTransaction(row.getId());
+        ConversationEntity conversation = db.conversationDao().byIdSync(row.getConversationId());
         if (conversation != null && conversation.getLastMessageSeq() == row.getSeq()) {
-            db.conversationDao().markLastMessageDeleted(row.getConversationId()).blockingAwait();
+            db.conversationDao().markLastMessageDeletedInTransaction(row.getConversationId());
         }
     }
 
