@@ -1,5 +1,6 @@
 package com.nexachat.summary;
 
+import com.nexachat.core.network.SessionEvents;
 import java.io.IOException;
 import java.time.DateTimeException;
 import java.time.Instant;
@@ -35,6 +36,11 @@ public final class SummaryRepository {
 
     public SummaryRepository(SummaryApi api) {
         this(api, System::currentTimeMillis);
+    }
+
+    public SummaryRepository(SummaryApi api, SessionEvents sessionEvents) {
+        this(api);
+        Objects.requireNonNull(sessionEvents, "sessionEvents");
     }
 
     SummaryRepository(SummaryApi api, LongSupplier clock) {

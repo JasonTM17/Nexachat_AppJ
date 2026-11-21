@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertNull;
 
 import com.squareup.moshi.Moshi;
+import com.nexachat.core.network.SessionEvents;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -274,6 +275,68 @@ public final class SummaryRepositoryTest {
     }
 
     @Test
+    public void aNewSessionWithTheSameConsentCannotReplayThePreviousAccountsSummary() {
+        ControlledApi api = new ControlledApi();
+        SessionEvents sessions = new SessionEvents();
+        SummaryRepository repository = new SummaryRepository(api, sessions);
+        sessions.emitSessionAvailable();
+        repository.request("conversation-1", unread(), new ResultCapture());
+        api.calls.get(0).succeed(summary("account-a"));
+        assertTrue(repository.findCachedById("conversation-1", unread(), "account-a").isPresent());
+
+        sessions.emitSessionClosing();
+        sessions.emitLoggedOut();
+        sessions.emitSessionAvailable();
+        ResultCapture accountB = new ResultCapture();
+        repository.request("conversation-1", unread(), accountB);
+
+        assertNull(accountB.response.get());
+        assertEquals(2, api.calls.size());
+        api.calls.get(1).succeed(summary("account-b"));
+        assertEquals("account-b", accountB.response.get().getSummaryId());
+    }
+
+    @Test
+    public void sessionClosingFencesAPendingFillAndBlocksNewRequestsUntilLogin() {
+        ControlledApi api = new ControlledApi();
+        SessionEvents sessions = new SessionEvents();
+        SummaryRepository repository = new SummaryRepository(api, sessions);
+        sessions.emitSessionAvailable();
+        ResultCapture old = new ResultCapture();
+        repository.request("conversation-1", unread(), old);
+
+        sessions.emitSessionClosing();
+        api.calls.get(0).succeed(summary("closed-session"));
+        assertNull(old.response.get());
+        assertFalse(repository.findCachedById("conversation-1", unread(), "closed-session").isPresent());
+        ResultCapture closed = new ResultCapture();
+        repository.request("conversation-1", unread(), closed);
+        assertEquals(SummaryError.UNKNOWN, closed.error.get());
+        assertEquals(1, api.calls.size());
+
+        sessions.emitSessionAvailable();
+        repository.request("conversation-1", unread(), new ResultCapture());
+        assertEquals(2, api.calls.size());
+    }
+
+    @Test
+    public void directAccountReplacementAndReauthenticationInvalidateSummaryCache() {
+        ControlledApi api = new ControlledApi();
+        SessionEvents sessions = new SessionEvents();
+        SummaryRepository repository = new SummaryRepository(api, sessions);
+        sessions.emitSessionAvailable();
+        repository.request("conversation-1", unread(), new ResultCapture());
+        api.calls.get(0).succeed(summary("account-a"));
+
+        sessions.emitSessionAvailable();
+        repository.request("conversation-1", unread(), new ResultCapture());
+        assertEquals(2, api.calls.size());
+        api.calls.get(1).succeed(summary("account-b"));
+        sessions.emitReauthenticationRequired();
+        assertFalse(repository.findCachedById("conversation-1", unread(), "account-b").isPresent());
+    }
+
+    @Test
     public void anOlderResponseCannotReplaceANewerRefresh() {
         ControlledApi api = new ControlledApi();
         SummaryRepository repository = new SummaryRepository(api);
@@ -362,8 +425,8 @@ public final class SummaryRepositoryTest {
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
     }
 
-    private static final class ControlledApi implements SummaryApi {
-        private final List<ControlledCall> calls = new ArrayList<>();
+    static final class ControlledApi implements SummaryApi {
+        final List<ControlledCall> calls = new ArrayList<>();
         private boolean enqueueFailure;
 
         @Override
@@ -374,7 +437,7 @@ public final class SummaryRepositoryTest {
         }
     }
 
-    private static final class ControlledCall implements Call<SummaryResponse> {
+    static final class ControlledCall implements Call<SummaryResponse> {
         private final boolean enqueueFailure;
         private retrofit2.Callback<SummaryResponse> callback;
         private boolean canceled;
@@ -393,6 +456,10 @@ public final class SummaryRepositoryTest {
 
         void succeed(SummaryResponse response) { callback.onResponse(this, Response.success(response)); }
         void fail(Throwable failure) { callback.onFailure(this, failure); }
+        void error(int code, String body) {
+            callback.onResponse(this, Response.error(code,
+                    ResponseBody.create(okhttp3.MediaType.get("application/json"), body)));
+        }
         @Override public Response<SummaryResponse> execute() { throw new UnsupportedOperationException(); }
         @Override public boolean isExecuted() { return callback != null; }
         @Override public void cancel() { canceled = true; }

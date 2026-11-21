@@ -591,6 +591,90 @@ public final class SummaryViewModelTest {
         return new SavedStateHandle(Map.of(SummaryViewModel.ARG_CONVERSATION_ID, "conversation-1"));
     }
 
+    @Test
+    public void cacheClearRejectsNetworkSuccessAlreadyQueuedForPublication() throws Exception {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            SummaryRepositoryTest.ControlledApi api = new SummaryRepositoryTest.ControlledApi();
+            SummaryRepository repository = new SummaryRepository(api);
+            QueuedExecutor main = new QueuedExecutor();
+            SavedStateHandle saved = conversationHandle();
+            SummaryViewModel viewModel = new SummaryViewModel(saved, repository, main,
+                    System::currentTimeMillis);
+            viewModel.request(SummaryScope.UNREAD, null);
+            main.drain();
+            api.calls.get(0).succeed(summaryResponse("invalidated"));
+            repository.clearCache();
+            main.drain();
+
+            assertEquals(SummaryUiState.Status.IDLE, viewModel.state().getValue().getStatus());
+            assertNull(viewModel.state().getValue().getSummary());
+            assertNull(saved.get("summary_last_id"));
+        }
+    }
+
+    @Test
+    public void cacheClearRejectsCachedSuccessAlreadyQueuedForPublication() throws Exception {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            SummaryRepositoryTest.ControlledApi api = new SummaryRepositoryTest.ControlledApi();
+            SummaryRepository repository = new SummaryRepository(api);
+            QueuedExecutor main = new QueuedExecutor();
+            SavedStateHandle saved = conversationHandle();
+            SummaryViewModel viewModel = new SummaryViewModel(saved, repository, main,
+                    System::currentTimeMillis);
+            viewModel.request(SummaryScope.UNREAD, null);
+            api.calls.get(0).succeed(summaryResponse("cached-invalidated"));
+            main.drain();
+            viewModel.request(SummaryScope.UNREAD, null);
+            assertEquals(1, api.calls.size());
+            repository.clearCache();
+            main.drain();
+
+            assertEquals(SummaryUiState.Status.IDLE, viewModel.state().getValue().getStatus());
+            assertNull(saved.get("summary_last_id"));
+        }
+    }
+
+    @Test
+    public void cacheClearRejectsQueuedTimezoneRetry() {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            SummaryRepositoryTest.ControlledApi api = new SummaryRepositoryTest.ControlledApi();
+            SummaryRepository repository = new SummaryRepository(api);
+            QueuedExecutor main = new QueuedExecutor();
+            SummaryViewModel viewModel = new SummaryViewModel(conversationHandle(), repository,
+                    main, System::currentTimeMillis);
+            viewModel.request(SummaryScope.TODAY, null);
+            main.drain();
+            api.calls.get(0).error(400, "{\"error\":{\"code\":\"INVALID_TIME_ZONE\"}}");
+            repository.clearCache();
+            main.drain();
+
+            assertEquals(1, api.calls.size());
+            assertEquals(SummaryUiState.Status.IDLE, viewModel.state().getValue().getStatus());
+        }
+    }
+
+    @Test
+    public void cacheClearRemovesAlreadyPublishedReadyStateAndSavedId() throws Exception {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            SummaryRepositoryTest.ControlledApi api = new SummaryRepositoryTest.ControlledApi();
+            SummaryRepository repository = new SummaryRepository(api);
+            QueuedExecutor main = new QueuedExecutor();
+            SavedStateHandle saved = conversationHandle();
+            SummaryViewModel viewModel = new SummaryViewModel(saved, repository, main,
+                    System::currentTimeMillis);
+            viewModel.request(SummaryScope.UNREAD, null);
+            api.calls.get(0).succeed(summaryResponse("ready-before-clear"));
+            main.drain();
+            assertEquals("ready-before-clear", saved.get("summary_last_id"));
+
+            repository.clearCache();
+            main.drain();
+
+            assertEquals(SummaryUiState.Status.IDLE, viewModel.state().getValue().getStatus());
+            assertNull(saved.get("summary_last_id"));
+        }
+    }
+
     private static final class ControlledRepository {
         private final SummaryRepository repository = mock(SummaryRepository.class);
         private final List<SummaryRepository.Callback> callbacks = new ArrayList<>();
