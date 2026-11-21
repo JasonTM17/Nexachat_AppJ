@@ -229,11 +229,18 @@ order describes unblocking order; operating-system scheduling can reorder
 completion across independent client sockets. A reset does not cancel requests
 or undo upstream writes. Install rules before triggering account A's request.
 
-Limits: REST over **plain HTTP only** on both legs, with no TLS termination,
-HTTPS upstream or CONNECT tunneling. WebSocket upgrades return **501** with a
-REST-only explanation and a warning; the proxy **does not carry STOMP**, whose
-URL is also derived from Android's API base URL. Use it for isolated REST race
-testing, not a complete realtime journey. Request chunking and `Expect:
+Limits: plain HTTP only on both legs, with no TLS termination,
+HTTPS upstream or CONNECT tunneling. WebSocket upgrades are tunnelled:
+frames are proxied in both directions and a STOMP frame can be held or
+delayed with the same rules as a REST response — the rule method is the
+STOMP command (CONNECT, SEND, MESSAGE, ...) and the path is the STOMP
+destination header, with `token_contains` matched against the connection's
+captured Authorization header. HTTP `CONNECT` requests and
+non-WebSocket upgrades are still refused with **501**. Use it for isolated
+REST race testing and STOMP hold proofs against a live local server; the
+`auth-session-lifecycle` row drives the paused-frame hold through the
+tunnel when it can be established and reports that scenario as unproven
+otherwise. Request chunking and `Expect:
 100-continue` are rejected; upstream chunked responses are decoded and buffered.
 HEAD, duplicate response headers, HTTP error status/body and ordinary binary
 request/response bodies are preserved. Bodies default to at most 32 MiB each;
@@ -293,11 +300,20 @@ EN/VI x light/dark x 100%/200% variant, runs the `device/a11y_oracle.py`
 checks on each dumped UI tree (a screenshot-only cell is never a pass;
 cells whose oracle cannot run report BLOCKED_CAPABILITY), and restores
 locale, night mode, font scale, TalkBack and animator state in `finally`.
-`auth-session-lifecycle`, `otp-forgot-password`, `media`, both upgrade
-rows, and `account-deletion` stay
-`BLOCKED_CAPABILITY`; `--list` names the remaining gap (server restart and OTP
-expiry, in-app deletion, the missing Room 14 build, and STOMP through the
-REST-only barrier).
+`otp-forgot-password`, `media`, both upgrade rows, and `account-deletion`
+stay `BLOCKED_CAPABILITY` in a default campaign; `--list` names the
+remaining gap (server restart and OTP expiry, in-app deletion, the missing
+Room 14 build, and the `auth-session-lifecycle` STOMP hold).
+`auth-session-lifecycle` shows the same `BLOCKED_CAPABILITY` disposition
+in `--list` — its undriven scenarios, not its REST ops, are the gap —
+while its executor still runs: it proves the REST session ops on
+disposable accounts — register/login, invalid credentials, refresh
+rotation with the rotated-away token rejected, logout, logout-all killing
+a concurrent session, password change with the old password rejected —
+and returns partial coverage naming the exact undriven scenarios (the
+paused-frame STOMP hold / cross-session socket isolation when no WS hold
+tunnel can be established, plus the UI scenarios a campaign cannot bind)
+instead of a silent pass.
 
 With `--dstack` the mail rows provision a disposable backend via
 `disposable_stack.py`: `otp-forgot-password` then runs the full

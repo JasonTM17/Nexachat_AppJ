@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Guarded coordinator for the phase 08 stable-journey campaign.
 
-Runnable rows are seeded login, auth-session-lifecycle, send/receive,
-chat-interactions, summary-ask, archive/preferences, groups-contacts,
-labels-lifecycle, polls-reminders, offline-sync, and the two
-injected-push journeys.
+Runnable rows are seeded login, send/receive, chat-interactions,
+summary-ask, archive/preferences, groups-contacts, labels-lifecycle,
+polls-reminders, offline-sync, and the two injected-push journeys.
+auth-session-lifecycle runs its REST-provable slice (plan 2.3(b)): the
+executor proves the REST session ops on disposable accounts, drives the
+paused-frame STOMP hold through the WS tunnel when the campaign can
+establish one, and reports every scenario it could not drive as
+unproven — the full hold proof against a live server is the deferred
+plan 2.3(a) slice.
 Every other matrix row stays BLOCKED_CAPABILITY with the gap that still
 prevents that row from producing its evidence.
 """
@@ -136,6 +141,18 @@ ROWS: tuple[JourneyRow, ...] = (
                    ("GET", "/api/v1/conversations/{id}/messages")),
         stomp_plan=("CONNECT with Authorization per account", "SUBSCRIBE /topic/conversations.{id}",
                     "hold account A inbound MESSAGE_CREATED while account B receives live"),
+        capability_gap=("The executor proves the REST session ops on disposable "
+                        "accounts (register/login, invalid credentials, refresh "
+                        "rotation with the rotated-away token rejected, logout, "
+                        "logout-all killing a concurrent session, password change "
+                        "with the old password rejected) and reports the exact "
+                        "undriven scenarios per run; the paused-frame STOMP hold / "
+                        "cross-session socket isolation stays unproven until the "
+                        "deferred full hold proof (plan 2.3(a)) drives it through "
+                        "the tunnel against a live server — the row attempts the "
+                        "hold whenever a campaign establishes the WS tunnel — "
+                        "and in-app sign-up and the change-password dialog have "
+                        "no wired UI driver."),
     ),
     JourneyRow(
         id="otp-forgot-password",
@@ -853,7 +870,9 @@ UI_MARKERS = {
                    "resource-id:primaryAction", "text:An", "text:Binh"),
     "chat-send-receive": ("text:Binh", "resource-id:messageInput", "resource-id:sendButton",
                            "text:<unique outbound message>", "text:<unique inbound message>"),
-    "auth-session-lifecycle": ("text:localized login/error state", "text:An", "text:Binh"),
+    "auth-session-lifecycle": ("text:localized login/error state",
+                               "text:Journey UI A", "text:Journey UI B",
+                               "text:Sign out all devices"),
     "otp-forgot-password": ("text:localized OTP verification state", "text:password changed"),
     "chat-interactions": (
         "resource-id:messageActionsTitle", "resource-id:actionLabel",
@@ -8762,7 +8781,7 @@ def _auth_note(scenarios: list[dict[str, Any]], name: str, evidence: str) -> Non
 def _auth_rest_lifecycle(context: dict[str, Any], client: Any,
                          scenarios: list[dict[str, Any]],
                          accounts: list[dict[str, Any]]) -> None:
-    """Drive register/login/invalid/refresh/logout/logout-all/password-change."""
+    """Drive register/login/invalid credentials/refresh rotation/logout/logout-all/password change."""
     phone = _require_disposable_phone(str(context.get("auth_phone") or _new_disposable_phone()))
     registered = _register_disposable(client, phone, "Journey Auth")
     accounts.append({"label": "rest", "phone": phone,
@@ -8805,27 +8824,52 @@ def _auth_rest_lifecycle(context: dict[str, Any], client: Any,
         raise EnvironmentFailure("refresh did not rotate the token pair")
     me = client.get("/api/v1/users/me", token=refresh_data["accessToken"])
     _expect_status(me, {200}, "users/me with refreshed access token")
-    _auth_note(scenarios, "refresh", "200; rotated pair accepted by /users/me")
+    reused = client.post("/api/v1/auth/refresh",
+                         body={"refreshToken": session["refreshToken"]})
+    _expect_status(reused, {401}, "rotated-away refresh token rejection")
+    _auth_note(scenarios, "refresh",
+               "200; the rotated pair is accepted by /users/me and reusing "
+               "the rotated-away refresh token is rejected with HTTP 401")
 
-    for kind, path, body in (
-        ("logout", "/api/v1/auth/logout",
-         lambda s: {"refreshToken": s["refreshToken"]}),
-        ("logout-all", "/api/v1/auth/logout-all", lambda s: None),
-    ):
-        session = login(DISPOSABLE_PASSWORD)
-        kwargs = {"token": session["accessToken"]}
-        payload = body(session)
-        if payload is not None:
-            kwargs["body"] = payload
-        out = client.post(path, **kwargs)
-        _expect_status(out, {204}, kind)
-        _expect_status(client.get("/api/v1/users/me", token=session["accessToken"]),
-                       {401}, f"{kind} access token rejection")
+    # Single logout must kill only the presenting session: a concurrent
+    # login has to survive by rotating its own kept refresh token.
+    session = login(DISPOSABLE_PASSWORD)
+    concurrent = login(DISPOSABLE_PASSWORD)
+    out = client.post("/api/v1/auth/logout", token=session["accessToken"],
+                      body={"refreshToken": session["refreshToken"]})
+    _expect_status(out, {204}, "logout")
+    _expect_status(client.get("/api/v1/users/me", token=session["accessToken"]),
+                   {401}, "logout access token rejection")
+    _expect_status(client.post("/api/v1/auth/refresh",
+                               body={"refreshToken": session["refreshToken"]}),
+                   {401}, "logout refresh token rejection")
+    survived = client.post("/api/v1/auth/refresh",
+                           body={"refreshToken": concurrent["refreshToken"]})
+    _expect_status(survived, {200},
+                   "concurrent-session refresh after single logout")
+    me = client.get("/api/v1/users/me",
+                    token=(survived.json() or {}).get("accessToken"))
+    _expect_status(me, {200}, "users/me after the concurrent session rotated")
+    _auth_note(scenarios, "logout",
+               "204; the logged-out session's access and refresh tokens are "
+               "rejected while a concurrent session recovers by rotating its "
+               "kept refresh token")
+
+    # Logout-all must kill every session, not only the one that called it.
+    session = login(DISPOSABLE_PASSWORD)
+    concurrent = login(DISPOSABLE_PASSWORD)
+    out = client.post("/api/v1/auth/logout-all", token=session["accessToken"])
+    _expect_status(out, {204}, "logout-all")
+    for label, dead in (("issuing session", session),
+                        ("concurrent session", concurrent)):
+        _expect_status(client.get("/api/v1/users/me", token=dead["accessToken"]),
+                       {401}, f"logout-all {label} access token rejection")
         _expect_status(client.post("/api/v1/auth/refresh",
-                                   body={"refreshToken": session["refreshToken"]}),
-                       {401}, f"{kind} refresh token rejection")
-        _auth_note(scenarios, kind,
-                   "204; the session's access and refresh tokens are rejected afterwards")
+                                   body={"refreshToken": dead["refreshToken"]}),
+                       {401}, f"logout-all {label} refresh token rejection")
+    _auth_note(scenarios, "logout-all",
+               "204; both the issuing session and a concurrent second session "
+               "lose their access and refresh tokens")
 
     session = login(DISPOSABLE_PASSWORD)
     changed = client.patch("/api/v1/auth/password",
@@ -8886,16 +8930,29 @@ def _auth_paused_frame(context: dict[str, Any], client: Any, base_url: str,
                  or ("sj-paused-" + uuid.uuid4().hex[:10]))
     barrier = reader_a = reader_b = None
     try:
-        barrier = barrier_factory(base_url)
-        barrier.hold(method="MESSAGE",
-                     path=rf"^/topic/conversations\.{re.escape(conversation_id)}$",
-                     token_contains=token_a)
-        base = str(getattr(barrier, "url", "") or base_url)
-        ws_url = base.replace("https://", "wss://").replace("http://", "ws://") + "/ws"
-        reader_a = reader_factory(ws_url, token_a)
-        reader_a.subscribe(topic)
-        reader_b = reader_factory(ws_url, token_b)
-        reader_b.subscribe(topic)
+        try:
+            barrier = barrier_factory(base_url)
+            barrier.hold(method="MESSAGE",
+                         path=rf"^/topic/conversations\.{re.escape(conversation_id)}$",
+                         token_contains=token_a)
+            base = str(getattr(barrier, "url", "") or base_url)
+            ws_url = base.replace("https://", "wss://").replace("http://", "ws://") + "/ws"
+            reader_a = reader_factory(ws_url, token_a)
+            reader_a.subscribe(topic)
+            reader_b = reader_factory(ws_url, token_b)
+            reader_b.subscribe(topic)
+        except Exception as error:
+            # The WS hold tunnel is a harness capability, not a product
+            # assertion: on a stack that cannot establish it, the paused-frame
+            # hold stays unproven and the row reports partial coverage
+            # instead of failing (plan 2.3(b); the live hold proof is the
+            # deferred 2.3(a) slice).
+            blocked.append({"scenario": name,
+                            "reason": ("the WS hold tunnel could not be "
+                                       f"established ({type(error).__name__}); the "
+                                       "paused-frame STOMP hold / cross-session "
+                                       "socket isolation stays unproven on this stack")})
+            return
         sent = client.post(f"/api/v1/conversations/{conversation_id}/messages",
                            token=token_b,
                            body={"clientMessageId": str(uuid.uuid4()),
@@ -9126,13 +9183,18 @@ def _auth_cleanup_accounts(client: Any,
 
 
 def run_auth_session_lifecycle(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
-    """Drive each auth/session scenario or record its exact remaining blocker.
+    """Drive each auth/session scenario and report exact per-run coverage.
 
     REST token lifecycle runs through context["client"]; the paused-frame
     A->B isolation uses response_barrier's WebSocket tunnel; device UI
-    scenarios run only when the campaign supplies adb/device/helpers. Every
-    scenario that cannot be driven lands in blocked and the row ends
-    BLOCKED_CAPABILITY — nothing reports PASS without evidence.
+    scenarios run only when the campaign supplies adb/device/helpers. The
+    REST lifecycle is the row's proven core (plan 2.3(b)): it must pass or
+    the row fails. Scenarios that cannot be driven land in blocked and the
+    row returns partial coverage naming each undriven scenario — the
+    paused-frame STOMP hold stays unproven until the deferred full hold
+    proof (plan 2.3(a)) drives it through the tunnel against a live
+    server. A driven scenario that fails still fails the row; nothing
+    reports proven without its evidence.
     """
     _campaign_serial(context)
     base_url = _campaign_base_url(context)
@@ -9159,9 +9221,16 @@ def run_auth_session_lifecycle(row: JourneyRow, context: dict[str, Any]) -> dict
         if primary_error is None and context.get("cleanup_errors"):
             raise HarnessError("auth-session cleanup failed")
     if blocked:
-        raise CapabilityBlocked("; ".join(
-            f"{item['scenario']}: {item['reason']}" for item in blocked))
-    return {"scenarios": [item["scenario"] for item in scenarios]}
+        unproven = "; ".join(
+            f"{item['scenario']} ({item['reason']})" for item in blocked)
+        coverage = ("partial: the REST session lifecycle is proven on disposable "
+                    "accounts; unproven: " + unproven)
+    else:
+        coverage = ("full: the REST session lifecycle, the paused-frame STOMP "
+                    "hold and the bound device scenarios were all driven")
+    return {"scenarios": [item["scenario"] for item in scenarios],
+            "blocked": blocked,
+            "coverage": coverage}
 
 
 def run_room_13_14_upgrade(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:

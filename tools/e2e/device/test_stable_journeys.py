@@ -58,13 +58,17 @@ class MatrixAndDryRunTest(unittest.TestCase):
         self.assertTrue(expected.issubset(refs), sorted(expected - refs))
         runnable = {row.id for row in journeys.ROWS if row.capability_gap is None}
         self.assertEqual(runnable, {
-            "auth-login", "auth-session-lifecycle", "chat-send-receive",
+            "auth-login", "chat-send-receive",
             "chat-interactions", "summary-ask", "otp-forgot-password",
             "archive-preferences", "groups-contacts", "labels-lifecycle",
             "polls-reminders", "offline-sync",
             "calls-injected-notification", "injected-notifications",
             "accessibility-sweep",
         })
+        self.assertIn("REST session ops",
+                      journeys.ROW_BY_ID["auth-session-lifecycle"].capability_gap)
+        self.assertIn("STOMP hold",
+                      journeys.ROW_BY_ID["auth-session-lifecycle"].capability_gap)
         self.assertEqual(journeys.ROWS[-1].id, "account-deletion")
         self.assertEqual(len(journeys.ACCESSIBILITY_VARIANTS), 8)
         for row in journeys.ROWS:
@@ -703,7 +707,7 @@ class WiringDecisionTest(unittest.TestCase):
             else:
                 runnable.append(row_id)
         self.assertEqual(runnable, [
-            "auth-login", "auth-session-lifecycle", "otp-forgot-password",
+            "auth-login", "otp-forgot-password",
             "chat-send-receive", "chat-interactions",
             "groups-contacts", "polls-reminders", "archive-preferences",
             "labels-lifecycle",
@@ -714,6 +718,9 @@ class WiringDecisionTest(unittest.TestCase):
         self.assertIn("Room 14", blocked["room-13-14-upgrade"])
         self.assertIn("Room 14", blocked["v111-rc-upgrade"])
         self.assertIn("seed user", blocked["account-deletion"])
+        self.assertIn("REST session ops", blocked["auth-session-lifecycle"])
+        self.assertIn("STOMP hold", blocked["auth-session-lifecycle"])
+        self.assertIn("stays unproven", blocked["auth-session-lifecycle"])
         self.assertNotIn("calls-injected-notification", blocked)
         self.assertNotIn("injected-notifications", blocked)
         self.assertNotIn("summary-ask", blocked)
@@ -771,9 +778,14 @@ class WiringDecisionTest(unittest.TestCase):
 
     def test_auth_session_lifecycle_dispatches_to_its_executor(self):
         row = journeys.ROW_BY_ID["auth-session-lifecycle"]
-        self.assertIsNone(row.capability_gap)
+        # The gap now states the partial-coverage contract (plan 2.3(b)): the
+        # REST session ops are proven, the paused-frame STOMP hold stays
+        # unproven. The registered executor still runs — a gap never silences
+        # dispatch.
+        self.assertIn("REST session ops", row.capability_gap)
+        self.assertIn("STOMP hold", row.capability_gap)
         # No serial in context: the executor must run and fail as a harness
-        # error, proving the row is no longer capability-blocked at dispatch.
+        # error, proving the row still dispatches despite its gap.
         with self.assertRaises(journeys.HarnessError):
             journeys.run_registered_row(row, {"mail_sink": object()})
 
@@ -1722,11 +1734,9 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
         return json.loads(
             (Path(self.tmp.name) / "auth-scenarios.json").read_text(encoding="utf-8"))
 
-    def test_rest_and_paused_frame_driven_device_scenarios_blocked(self):
+    def test_rest_and_paused_frame_driven_reports_partial_coverage(self):
         context = self._context()
-        with self.assertRaises(journeys.CapabilityBlocked) as caught:
-            journeys.run_auth_session_lifecycle(self.row, context)
-        message = str(caught.exception)
+        result = journeys.run_auth_session_lifecycle(self.row, context)
         artifact = self._artifact()
         driven = {item["scenario"] for item in artifact["scenarios"]}
         blocked = {item["scenario"]: item["reason"] for item in artifact["blocked"]}
@@ -1744,8 +1754,16 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
                      "logout-ui", "logout-all-ui", "account-switch-ui"):
             self.assertIn("device-bound campaign context", blocked[name])
         self.assertIn("mail sink", blocked["register-ui"])
-        self.assertIn("register-ui", message)
-        self.assertIn("account-switch-ui", message)
+        # The row passes on its REST-provable core and reports the undriven
+        # scenarios explicitly instead of collapsing into BLOCKED_CAPABILITY.
+        self.assertEqual(set(result["scenarios"]), driven)
+        self.assertEqual(result["blocked"], artifact["blocked"])
+        self.assertIn("partial", result["coverage"])
+        self.assertIn("the REST session lifecycle is proven", result["coverage"])
+        self.assertIn("unproven: register-ui", result["coverage"])
+        self.assertIn("account-switch-ui", result["coverage"])
+        # The driven STOMP hold is never listed as unproven.
+        self.assertNotIn("paused-frame-a-to-b-isolation", result["coverage"])
         # REST lifecycle really issued the auth calls.
         paths = [path for _method, path in self.client.calls]
         for expected in ("/api/v1/auth/register", "/api/v1/auth/login",
@@ -1778,6 +1796,7 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
                        journeys._AUTH_NEW_PASSWORD):
             self.assertNotIn(secret,
                              json.dumps(artifact))
+            self.assertNotIn(secret, json.dumps(result))
 
     def test_held_frame_crossing_into_b_fails_the_row(self):
         readers = self._reader_factory({
@@ -1801,6 +1820,109 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
         with self.assertRaises(journeys.ProductFailure) as caught:
             journeys.run_auth_session_lifecycle(self.row, context)
         self.assertIn("was not held", str(caught.exception))
+
+    def test_rest_only_stack_reports_the_stomp_hold_as_unproven(self):
+        """Plan 2.3(b): without a WS hold tunnel the row still passes its
+        REST-provable core and names the paused-frame hold as unproven."""
+
+        def unavailable_factory(upstream):
+            raise RuntimeError("no WS tunnel on this stack")
+
+        context = self._context()
+        context["barrier_factory"] = unavailable_factory
+        result = journeys.run_auth_session_lifecycle(self.row, context)
+        artifact = self._artifact()
+        driven = {item["scenario"] for item in artifact["scenarios"]}
+        self.assertEqual(driven, {
+            "register", "login", "invalid-credentials-rest", "refresh",
+            "logout", "logout-all", "password-change",
+        })
+        blocked = {item["scenario"]: item["reason"] for item in artifact["blocked"]}
+        self.assertIn("the WS hold tunnel could not be established",
+                      blocked["paused-frame-a-to-b-isolation"])
+        self.assertIn("stays unproven on this stack",
+                      blocked["paused-frame-a-to-b-isolation"])
+        self.assertIn("unproven: paused-frame-a-to-b-isolation",
+                      result["coverage"])
+        self.assertIn("the REST session lifecycle is proven", result["coverage"])
+        # The disposable accounts (rest + the two pause accounts registered
+        # before the tunnel attempt) were still cleaned up.
+        self.assertEqual(len(self.client.deleted_users), 3)
+
+    def test_rotated_away_refresh_token_reuse_fails_the_row(self):
+        class ReusingRefresh(self.FakeAuthClient):
+            """Defect: rotation leaves the rotated-away refresh token usable."""
+
+            def post(self, path, token=None, body=None, headers=None):
+                if path == "/api/v1/auth/refresh":
+                    self.calls.append(("POST", path))
+                    refresh = (body or {}).get("refreshToken")
+                    owner = next((user for user in self.users.values()
+                                  if refresh in user["refresh_alive"]), None)
+                    if owner is None:
+                        return AuthSessionLifecycleExecutorTest.Response(401, {})
+                    phone = self._phone_of(self.users, owner)
+                    return AuthSessionLifecycleExecutorTest.Response(
+                        200, self._issue(phone))
+                return super().post(path, token=token, body=body, headers=headers)
+
+        context = self._context()
+        context["client"] = ReusingRefresh()
+        with self.assertRaises(journeys.ProductFailure) as caught:
+            journeys.run_auth_session_lifecycle(self.row, context)
+        self.assertIn("rotated-away refresh token rejection returned HTTP 200",
+                      str(caught.exception))
+        # Cleanup still removed the disposable account after the failure.
+        self.assertEqual(len(context["client"].deleted_users), 1)
+
+    def test_logout_all_sparing_a_concurrent_session_fails_the_row(self):
+        class SparingLogoutAll(self.FakeAuthClient):
+            """Defect: logout-all revokes only the newest session's token."""
+
+            def post(self, path, token=None, body=None, headers=None):
+                if path == "/api/v1/auth/logout-all":
+                    self.calls.append(("POST", path))
+                    user = self._user_for_token(token)
+                    if user is None:
+                        return AuthSessionLifecycleExecutorTest.Response(401, {})
+                    user["access_floor"] = self.clock
+                    refreshes = sorted(user["refresh_alive"])
+                    user["refresh_alive"].clear()
+                    if refreshes:
+                        user["refresh_alive"].add(refreshes[-1])
+                    return AuthSessionLifecycleExecutorTest.Response(204, {})
+                return super().post(path, token=token, body=body, headers=headers)
+
+        context = self._context()
+        context["client"] = SparingLogoutAll()
+        with self.assertRaises(journeys.ProductFailure) as caught:
+            journeys.run_auth_session_lifecycle(self.row, context)
+        self.assertIn("logout-all concurrent session refresh token rejection "
+                      "returned HTTP 200", str(caught.exception))
+        self.assertEqual(len(context["client"].deleted_users), 1)
+
+    def test_single_logout_killing_every_session_fails_the_row(self):
+        class LogoutKillsAll(self.FakeAuthClient):
+            """Defect: single logout revokes every session like logout-all."""
+
+            def post(self, path, token=None, body=None, headers=None):
+                if path == "/api/v1/auth/logout":
+                    self.calls.append(("POST", path))
+                    user = self._user_for_token(token)
+                    if user is None:
+                        return AuthSessionLifecycleExecutorTest.Response(401, {})
+                    user["access_floor"] = self.clock
+                    user["refresh_alive"].clear()
+                    return AuthSessionLifecycleExecutorTest.Response(204, {})
+                return super().post(path, token=token, body=body, headers=headers)
+
+        context = self._context()
+        context["client"] = LogoutKillsAll()
+        with self.assertRaises(journeys.ProductFailure) as caught:
+            journeys.run_auth_session_lifecycle(self.row, context)
+        self.assertIn("concurrent-session refresh after single logout "
+                      "returned HTTP 401", str(caught.exception))
+        self.assertEqual(len(context["client"].deleted_users), 1)
 
 
 class ChatInteractionsExecutorTest(unittest.TestCase):
