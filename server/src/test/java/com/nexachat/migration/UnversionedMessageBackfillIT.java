@@ -105,23 +105,15 @@ class UnversionedMessageBackfillIT {
                     "SELECT deleted_at IS NOT NULL AND content IS NULL FROM messages WHERE id = ?",
                     Boolean.class, fixtures.tombstone.get(1))).isTrue();
 
-            // disappearing_seconds arrives with V39; the V34 snapshot predates the column.
-            List<Map<String, String>> healthyConversationAfter =
-                    dumpRows(jdbc, "SELECT * FROM conversations WHERE id = ?", CONV_HEALTHY);
-            healthyConversationAfter.forEach(row -> row.remove("disappearing_seconds"));
-            assertThat(healthyConversationAfter).isEqualTo(healthyBefore);
-            List<Map<String, String>> healthyMessagesAfter = dumpRows(jdbc,
-                    "SELECT * FROM messages WHERE conversation_id = ? ORDER BY seq, id", CONV_HEALTHY);
-            // peer_suppressed arrives with V38 and expires_at with V39; the V34 snapshot predates both.
-            healthyMessagesAfter.forEach(row -> {
-                row.remove("peer_suppressed");
-                row.remove("expires_at");
-            });
-            assertThat(healthyMessagesAfter).isEqualTo(healthyMessagesBefore);
-            List<Map<String, String>> emptyConversationAfter =
-                    dumpRows(jdbc, "SELECT * FROM conversations WHERE id = ?", CONV_EMPTY);
-            emptyConversationAfter.forEach(row -> row.remove("disappearing_seconds"));
-            assertThat(emptyConversationAfter).isEqualTo(emptyBefore);
+            // Later migrations may add columns. Preserve every V34 value,
+            // along with the original row count and ordering.
+            assertThat(dumpRows(jdbc, "SELECT * FROM conversations WHERE id = ?", CONV_HEALTHY))
+                    .zipSatisfy(healthyBefore, (after, before) -> assertThat(after).containsAllEntriesOf(before));
+            assertThat(dumpRows(jdbc,
+                    "SELECT * FROM messages WHERE conversation_id = ? ORDER BY seq, id", CONV_HEALTHY))
+                    .zipSatisfy(healthyMessagesBefore, (after, before) -> assertThat(after).containsAllEntriesOf(before));
+            assertThat(dumpRows(jdbc, "SELECT * FROM conversations WHERE id = ?", CONV_EMPTY))
+                    .zipSatisfy(emptyBefore, (after, before) -> assertThat(after).containsAllEntriesOf(before));
         }
     }
 
