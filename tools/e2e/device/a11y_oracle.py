@@ -29,6 +29,20 @@ announcements, TouchDelegate expansion, or actual swipe order. Every report
 therefore carries ``heuristic_caveats``; findings are triage candidates for a
 TalkBack-verified pass, not verdicts.
 
+Decorative-id resolution: API 36 ``uiautomator`` dumps still include views the
+app hid from accessibility services (``importantForAccessibility="no"``),
+and the dump XML carries no attribute that identifies them -- the first
+completed sweep run flagged settings ``rowIcon``/``rowChevron`` as
+``missing_desc_images`` even though the app's own layout marks them
+decorative. ``load_decorative_rids`` therefore scans the checked-out
+``android/app/src/main/res/layout/*.xml`` once per sweep (path configurable,
+default the repo's android dir) for ids the layouts mark decorative
+(``importantForAccessibility="no"`` or ``contentDescription="@null"``), and
+``summarize_findings`` suppresses ``missing_desc_images`` findings on those
+rids, reporting the number as ``suppressed_decorative`` so every suppression
+stays auditable. A missing layout dir degrades to no suppression with a
+warning; the dump oracles keep running either way.
+
 Standard library only.
 
 Usage:
@@ -36,16 +50,20 @@ Usage:
     python tools/e2e/device/a11y_oracle.py parse --xml ui.xml
     python tools/e2e/device/a11y_oracle.py sweep --xml ui.xml --density 420 --screen auto
     python tools/e2e/device/a11y_oracle.py sweep --xml ui.xml \
+        --layout-dir android/app/src/main/res/layout
+    python tools/e2e/device/a11y_oracle.py sweep --xml ui.xml \
         --order authTitle,phoneInput,passwordInput,primaryAction
 """
 
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import re
 import sys
+import warnings
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
@@ -55,6 +73,15 @@ DEFAULT_MIN_DP = 48.0
 DEFAULT_DENSITY_DPI = 160.0
 # Below this a "density" is certainly a 160-based scale multiplier, not a DPI.
 DENSITY_DPI_FLOOR = 40.0
+
+# The repo's checked-out app layouts: the static source for decorative-rid
+# resolution (the same parents[3] repo root stable_journeys.ROOT pins).
+DEFAULT_LAYOUT_DIR = (
+    Path(__file__).resolve().parents[3] / "android" / "app" / "src" / "main" / "res" / "layout"
+)
+_ANDROID_RES_NS = "http://schemas.android.com/apk/res/android"
+# App-local layout ids only ("@+id/name" / "@id/name"); "@android:id/..." never matches.
+_LAYOUT_ID_RE = re.compile(r"^@\+?id/([A-Za-z0-9_]+)$")
 
 # TalkBack service components seen on Google-API emulator images. The marvin
 # component is the classic one; newer images ship the accessibility package.
@@ -77,8 +104,11 @@ HEURISTIC_CAVEATS = (
     "findings with non-empty descendant_labels may still be announced and need a TalkBack pass to confirm",
     "small_touch_targets: measures the dumped box in px; TouchDelegate or ViewConfiguration "
     "minimum-touch-target expansion is invisible to a dump",
-    "missing_desc_images: views hidden with importantForAccessibility='no' never appear in a dump, "
-    "so a surviving unnamed image is a candidate; TalkBack must confirm what is announced",
+    "missing_desc_images: API 36 dumps still include views the app marked "
+    "importantForAccessibility='no' and carry no attribute identifying them, so the sweep "
+    "cross-references the app's own layouts: findings on ids the layouts mark decorative are "
+    "suppressed and counted as suppressed_decorative, never silently dropped; TalkBack must "
+    "confirm what is announced",
     "focus_order_issues: geometry and presence heuristics over a flat dump; the real traversal "
     "order needs a TalkBack-verified capture (expected_order checks presence and uniqueness, not swipe order)",
 )
@@ -223,6 +253,72 @@ def parse_ui_xml(xml: str | bytes) -> list[dict[str, str]]:
     if not nodes:
         raise A11yOracleError("ui dump contains no <node> elements")
     return nodes
+
+
+# ---------------------------------------------------------------------------
+# Decorative-rid resolution -- the app's own layout XML, scanned once per sweep
+# ---------------------------------------------------------------------------
+
+
+def _android_attr(element: ET.Element, name: str) -> str | None:
+    """A layout element's ``android:`` attribute (namespace optional, so
+    synthetic fixtures without ``xmlns:android`` parse too)."""
+    if name in element.attrib:
+        return element.attrib[name]
+    return element.attrib.get(f"{{{_ANDROID_RES_NS}}}{name}")
+
+
+@functools.lru_cache(maxsize=8)
+def load_decorative_rids(layout_dir: str | os.PathLike[str] | None = DEFAULT_LAYOUT_DIR
+                         ) -> frozenset[str]:
+    """Rid suffixes the app's own layouts mark decorative, for ``missing_desc_images``.
+
+    API 36 ``uiautomator`` dumps still include views the app hid from
+    accessibility services, and the dump carries no attribute that identifies
+    them -- the dump alone cannot tell decoration from an unnamed control.
+    This resolves that ambiguity from the only legitimate remaining signal,
+    the checked-out layout XML: every ``*.xml`` under ``layout_dir`` is
+    scanned for ids carrying either decorative marker
+    (``importantForAccessibility="no"`` or ``contentDescription="@null"``).
+    Elements without an app-local id cannot be resolved by rid and are
+    skipped; platform ``@android:id/...`` values never match.
+
+    ``layout_dir=None`` disables suppression outright; a missing or unreadable
+    layout dir degrades to no suppression with a warning (the dump oracles
+    keep running). Results are cached per path so a sweep scans the layouts
+    once, not once per cell; tests reset with ``load_decorative_rids.cache_clear()``.
+    """
+    if layout_dir is None:
+        return frozenset()
+    path = Path(layout_dir)
+    if not path.is_dir():
+        warnings.warn(
+            f"a11y_oracle: layout dir {path} does not exist; missing_desc_images "
+            "decorative suppression is disabled",
+            stacklevel=2,
+        )
+        return frozenset()
+    rids: set[str] = set()
+    for file in sorted(path.glob("*.xml")):
+        try:
+            root = ET.parse(file).getroot()
+        except (ET.ParseError, OSError, UnicodeError) as error:
+            warnings.warn(
+                f"a11y_oracle: skipping unreadable layout {file.name}: {error}",
+                stacklevel=2,
+            )
+            continue
+        for element in root.iter():
+            decorative = (
+                _android_attr(element, "importantForAccessibility") == "no"
+                or _android_attr(element, "contentDescription") == "@null"
+            )
+            if not decorative:
+                continue
+            match = _LAYOUT_ID_RE.match((_android_attr(element, "id") or "").strip())
+            if match:
+                rids.add(match.group(1))
+    return frozenset(rids)
 
 
 # ---------------------------------------------------------------------------
@@ -444,20 +540,30 @@ def small_touch_targets(nodes: list[Any], min_dp: float = DEFAULT_MIN_DP,
     return findings
 
 
-def missing_desc_images(nodes: list[Any]) -> list[dict[str, Any]]:
+def missing_desc_images(nodes: list[Any], decorative_rids: Any = None) -> list[dict[str, Any]]:
     """Image-class nodes in the dump with no content-desc (and no text).
 
-    On-device this is stronger than the static A1 rule: decoration hidden via
-    ``importantForAccessibility='no'`` never appears in a dump at all, so any
-    surviving unnamed image is either an unnamed control or decoration that
-    forgot the flag. A ``NAF`` attribute on the node adds evidence.
+    The old claim that decoration hidden via ``importantForAccessibility='no'``
+    never appears in a dump was wrong: API 36 dumps still surface such views,
+    and the dump XML carries no attribute that identifies them, so this dump
+    oracle alone cannot tell decoration from an unnamed control. The
+    legitimate tie-breaker is the app's own source: ``decorative_rids`` (rid
+    suffixes from :func:`load_decorative_rids`, which scans the checked-out
+    layout XML) are suppressed here, and ``summarize_findings`` reports how
+    many findings were suppressed as ``suppressed_decorative`` so the
+    suppression stays auditable. With no ``decorative_rids`` the oracle keeps
+    its dump-only behavior and flags every unnamed image. A ``NAF``
+    attribute on the node adds evidence.
     """
+    decorative = decorative_rids or ()
     findings: list[dict[str, Any]] = []
     for node in nodes:
         simple_class = _attrs(node).get("class", "").rsplit(".", 1)[-1]
         if not (simple_class.endswith("ImageView") or simple_class.endswith("ImageButton")):
             continue
         if node_desc(node).strip() or node_text(node).strip():
+            continue
+        if rid_suffix(node) in decorative:
             continue
         findings.append(_finding("missing_desc_image", node))
     return findings
@@ -553,9 +659,24 @@ def focus_order_issues(nodes: list[Any], *, screen: Any = None,
 
 def summarize_findings(nodes: list[Any], *, min_dp: float = DEFAULT_MIN_DP,
                        density: float = DEFAULT_DENSITY_DPI, screen: Any = None,
-                       expected_order: Any = None) -> dict[str, Any]:
-    """Runs every oracle and folds the findings into one JSON-ready report."""
+                       expected_order: Any = None,
+                       layout_dir: Any = DEFAULT_LAYOUT_DIR) -> dict[str, Any]:
+    """Runs every oracle and folds the findings into one JSON-ready report.
+
+    ``layout_dir`` resolves the decorative rids the app's own layouts declare
+    (see :func:`load_decorative_rids`, called once per sweep via its cache):
+    ``missing_desc_images`` findings on those rids are suppressed and counted
+    as ``suppressed_decorative`` so the suppression stays auditable.
+    ``layout_dir=None`` disables suppression outright; a missing directory
+    only warns and leaves the dump-only findings in place.
+    """
     resolved = _resolve_screen(nodes, screen)
+    decorative = (
+        frozenset() if layout_dir is None else load_decorative_rids(layout_dir)
+    )
+    images_unsuppressed = missing_desc_images(nodes)
+    images = (missing_desc_images(nodes, decorative_rids=decorative)
+              if decorative else images_unsuppressed)
     checks: dict[str, dict[str, Any]] = {
         "unlabeled_interactive": {
             "findings": unlabeled_interactive(nodes),
@@ -566,7 +687,8 @@ def summarize_findings(nodes: list[Any], *, min_dp: float = DEFAULT_MIN_DP,
             "findings": small_touch_targets(nodes, min_dp=min_dp, density=density),
         },
         "missing_desc_images": {
-            "findings": missing_desc_images(nodes),
+            "findings": images,
+            "suppressed_decorative": len(images_unsuppressed) - len(images),
         },
         "focus_order_issues": {
             "screen": list(resolved) if resolved is not None else None,
@@ -643,6 +765,11 @@ def build_parser() -> argparse.ArgumentParser:
                        help="'WxH' or 'auto' (root node bounds); off-screen focus check")
     sweep.add_argument("--order", default=None,
                        help="Comma-separated expected rid suffixes in TalkBack order")
+    sweep.add_argument("--layout-dir", default=str(DEFAULT_LAYOUT_DIR),
+                       help="App res/layout dir scanned once for ids the layouts mark "
+                            "decorative (importantForAccessibility='no' / "
+                            "contentDescription='@null'); a missing dir disables "
+                            "missing_desc_images suppression with a warning")
 
     parse = subparsers.add_parser(
         "parse", help="Print a ui dump as the JSON node dicts the oracles consume")
@@ -690,6 +817,7 @@ def main(argv: list[str] | None = None) -> int:
             report = summarize_findings(
                 nodes, min_dp=args.min_dp, density=args.density,
                 screen=_parse_screen_arg(args.screen), expected_order=expected,
+                layout_dir=args.layout_dir,
             )
             print(json.dumps(report, indent=2))
             return 0 if report["ok"] else 1
