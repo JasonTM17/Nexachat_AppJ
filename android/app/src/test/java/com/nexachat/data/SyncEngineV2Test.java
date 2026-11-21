@@ -119,6 +119,22 @@ public final class SyncEngineV2Test {
         }).when(reactions).replaceForMessageInTransaction(anyString(), anyList());
         doAnswer(i -> { reactionRows.remove(i.getArgument(0)); return null;
         }).when(reactions).deleteForMessageInTransaction(anyString());
+        // Synchronous *InTransaction statements inside runInTransaction (issue #184):
+        // page commits and live lifecycle writes no longer park on queued Rx calls.
+        when(messages.byIdInTransaction(anyString())).thenAnswer(i -> rows.get(i.getArgument(0)));
+        doAnswer(i -> { MessageEntity row = i.getArgument(0); rows.putIfAbsent(row.getId(), row); return null;
+        }).when(messages).upsertInTransaction(any(MessageEntity.class));
+        doAnswer(i -> { MessageEntity row = i.getArgument(0); rows.put(row.getId(), row); return null;
+        }).when(messages).updateInTransaction(any(MessageEntity.class));
+        doAnswer(i -> {
+            for (MessageEntity row : (List<MessageEntity>) i.getArgument(0)) rows.putIfAbsent(row.getId(), row);
+            return null;
+        }).when(messages).upsertAllInTransaction(anyList());
+        when(inbox.byIdSync(anyString())).thenAnswer(i ->
+                conversations.stream().anyMatch(c -> c.getConversationId().equals(i.getArgument(0)))
+                        ? conversation(i.getArgument(0)) : null);
+        doAnswer(i -> { unreadCounts.merge(i.getArgument(0), i.getArgument(1), Integer::sum); return null;
+        }).when(inbox).incrementUnreadInTransaction(anyString(), anyInt());
         // Transaction simulation with rollback. Actual Room/SQLite proof is the instrumented test.
         doAnswer(i -> {
             Map<String, MessageEntity> beforeRows = new LinkedHashMap<>(rows);
@@ -224,8 +240,8 @@ public final class SyncEngineV2Test {
         restart();
         engine.sync().blockingAwait();
         assertEquals(1, cursor(requests.get(1).getWatermarks().get(0)));
-        verify(messages, times(1)).upsert(any());
-        verify(messages, never()).update(any());
+        verify(messages, times(1)).upsertInTransaction(any());
+        verify(messages, never()).updateInTransaction(any());
     }
 
     @Test public void overlappingFcmAndReconnectJoinExactlyOneFlight() throws Exception {
@@ -296,8 +312,8 @@ public final class SyncEngineV2Test {
         engine.sync().blockingAwait();
         assertEquals("v3", rows.get("m-c0").getContent());
         assertEquals(2, cursors.get("A:c0").changeCursor);
-        verify(inbox).updateLastMessageContent("c0", 1, "v3");
-        verify(inbox, never()).updateLastMessageContent("c0", 1, "v2");
+        verify(inbox).updateLastMessageContentInTransaction("c0", 1, "v3");
+        verify(inbox, never()).updateLastMessageContentInTransaction("c0", 1, "v2");
         engine.applyServerMessage(parseMessage(message("c0", 2)), "c0").blockingAwait();
         assertEquals("late event also loses to the newer revision", "v3", rows.get("m-c0").getContent());
     }
@@ -314,11 +330,11 @@ public final class SyncEngineV2Test {
         assertEquals("", rows.get("m-c0").getContent());
         assertNull(rows.get("m-c0").getAttachmentsJson());
         assertEquals("[]", rows.get("m-c0").getMentionsJson());
-        verify(messages).clearReplySnippets("m-c0");
-        verify(db.pinDao()).delete("c0", "m-c0");
+        verify(messages).clearReplySnippetsInTransaction("m-c0");
+        verify(db.pinDao()).deleteInTransaction("c0", "m-c0");
         verify(reactions).deleteForMessageInTransaction("m-c0");
-        verify(inbox).markLastMessageDeleted("c0");
-        verify(inbox, never()).updateLastMessageContent("c0", 1, "v2");
+        verify(inbox).markLastMessageDeletedInTransaction("c0");
+        verify(inbox, never()).updateLastMessageContentInTransaction("c0", 1, "v2");
     }
 
     @Test public void lateReplyPageCannotRestoreASnippetClearedByAParentRecall() {
@@ -351,7 +367,7 @@ public final class SyncEngineV2Test {
         engine.applyServerHistoryOrEvent(legacy, "c0", true, true).blockingAwait();
         engine.applyServerHistoryOrEvent(legacy, "c0", true, true).blockingAwait();
         assertEquals("v1", rows.get("m-c0").getContent());
-        verify(inbox, times(1)).incrementUnread("c0", 1);
+        verify(inbox, times(1)).incrementUnreadInTransaction("c0", 1);
         rows.put("m-c0", rows.get("m-c0").withSyncVersion(3, 1).withContentAndEditedAt("newer", 3L));
         engine.applyServerMessage(legacy.withContent("old", "2026-11-12T00:00:04Z"), "c0").blockingAwait();
         engine.applyServerDelete("m-c0", "c0", 0, 0, 4L).blockingAwait();

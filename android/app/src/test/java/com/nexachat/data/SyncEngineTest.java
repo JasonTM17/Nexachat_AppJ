@@ -205,7 +205,7 @@ public final class SyncEngineTest {
                 totalWatermarks += request.getWatermarks().size();
             }
             assertEquals(watermarkCount, totalWatermarks);
-            verify(messageDao, times(batchCount)).upsertAll(anyList());
+            verify(messageDao, times(batchCount)).upsertAllInTransaction(anyList());
             verify(appDatabase, times(batchCount)).runInTransaction(any(Runnable.class));
             verify(tokenStore).saveSyncServerTime("user-1", "cursor-next-" + batchCount);
         }
@@ -248,7 +248,7 @@ public final class SyncEngineTest {
         observer.assertError(java.io.IOException.class);
 
         verify(messageApi, times(2)).syncDeltas(any(SyncRequest.class));
-        verify(messageDao).upsertAll(anyList());
+        verify(messageDao).upsertAllInTransaction(anyList());
         verify(tokenStore, never()).saveSyncServerTime(anyString(), anyString());
     }
 
@@ -280,12 +280,12 @@ public final class SyncEngineTest {
 
         syncEngine.sync().blockingAwait();
 
-        verify(conversationDao).updateMute(
+        verify(conversationDao).updateMuteInTransaction(
                 org.mockito.ArgumentMatchers.eq("c1"),
                 org.mockito.ArgumentMatchers.eq(true),
                 org.mockito.ArgumentMatchers.eq(
                         java.time.Instant.parse("2026-11-10T01:00:00Z").toEpochMilli()));
-        verify(conversationDao).updateArchived(
+        verify(conversationDao).updateArchivedInTransaction(
                 org.mockito.ArgumentMatchers.eq("c1"),
                 org.mockito.ArgumentMatchers.eq(true));
     }
@@ -310,9 +310,9 @@ public final class SyncEngineTest {
 
         syncEngine.sync().blockingAwait();
 
-        verify(conversationDao, never()).updateMute(anyString(),
+        verify(conversationDao, never()).updateMuteInTransaction(anyString(),
                 org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.any());
-        verify(conversationDao, never()).updateArchived(anyString(),
+        verify(conversationDao, never()).updateArchivedInTransaction(anyString(),
                 org.mockito.ArgumentMatchers.anyBoolean());
     }
 
@@ -356,13 +356,13 @@ public final class SyncEngineTest {
         syncEngine.sync().blockingAwait();
 
         verify(messageApi, times(2)).syncDeltas(any(SyncRequest.class));
-        verify(conversationDao).updateMute(
+        verify(conversationDao).updateMuteInTransaction(
                 eq("c1"), eq(true),
                 eq(java.time.Instant.parse("2026-11-10T01:00:00Z").toEpochMilli()));
-        verify(conversationDao).updateMute(eq("c1"), eq(false),
+        verify(conversationDao).updateMuteInTransaction(eq("c1"), eq(false),
                 org.mockito.ArgumentMatchers.isNull());
-        verify(conversationDao).updateArchived("c1", true);
-        verify(conversationDao).updateArchived("c1", false);
+        verify(conversationDao).updateArchivedInTransaction("c1", true);
+        verify(conversationDao).updateArchivedInTransaction("c1", false);
         verify(tokenStore).saveSyncServerTime("user-1", "cursor-end");
     }
 
@@ -416,8 +416,8 @@ public final class SyncEngineTest {
         assertEquals(3, captured.getWatermarks().size());
 
         verify(appDatabase).runInTransaction(any(Runnable.class));
-        verify(messageDao).upsertAll(anyList());
-        verify(conversationDao).updateLastMessage(
+        verify(messageDao).upsertAllInTransaction(anyList());
+        verify(conversationDao).updateLastMessageInTransaction(
                 org.mockito.ArgumentMatchers.eq("c1"),
                 org.mockito.ArgumentMatchers.eq(15L),
                 org.mockito.ArgumentMatchers.eq("Hello World"),
@@ -455,7 +455,10 @@ public final class SyncEngineTest {
                 "m-del", "c1", 5L, "user-1", "Alice", "TEXT", "Secret", "client-1",
                 null, null, null, 1700000000L, null, null, null
         );
-        when(messageDao.byId("m-del")).thenReturn(Maybe.just(existing));
+        // The tombstone path reads and writes through the synchronous
+        // *InTransaction statements (issue #184 convention).
+        when(messageDao.byIdInTransaction("m-del")).thenReturn(existing);
+        when(conversationDao.byIdSync("c1")).thenReturn(null);
         when(messageDao.update(any(MessageEntity.class))).thenReturn(Completable.complete());
         when(messageDao.clearReplySnippets("m-del")).thenReturn(Completable.complete());
         when(conversationDao.byId("c1")).thenReturn(Maybe.empty());
@@ -465,13 +468,13 @@ public final class SyncEngineTest {
         observer.assertComplete();
 
         ArgumentCaptor<MessageEntity> tombstoneCaptor = ArgumentCaptor.forClass(MessageEntity.class);
-        verify(messageDao).update(tombstoneCaptor.capture());
+        verify(messageDao).updateInTransaction(tombstoneCaptor.capture());
         MessageEntity tombstone = tombstoneCaptor.getValue();
         assertEquals("m-del", tombstone.getId());
         assertEquals("", tombstone.getContent());
         assertTrue(tombstone.getDeletedAtEpochMs() != null);
         verify(reactionDao).deleteForMessageInTransaction("m-del");
-        verify(messageDao).clearReplySnippets("m-del");
+        verify(messageDao).clearReplySnippetsInTransaction("m-del");
     }
 
     @Test
@@ -656,8 +659,8 @@ public final class SyncEngineTest {
         assertEquals(11L, requests.get(1).getWatermarks().get(0).getLastSeq());
         assertEquals(Long.valueOf(41L),
                 requests.get(1).getWatermarks().get(0).getReactionCursor());
-        verify(messageDao).upsertAll(anyList());
-        verify(messageDao).update(any(MessageEntity.class));
+        verify(messageDao).upsertAllInTransaction(anyList());
+        verify(messageDao).updateInTransaction(any(MessageEntity.class));
         verify(reactionDao).replaceForMessageInTransaction(
                 org.mockito.ArgumentMatchers.eq("m-10"), anyList());
         verify(tokenStore).saveSyncServerTime("user-1", "cursor-end");
@@ -692,7 +695,7 @@ public final class SyncEngineTest {
         List<SyncRequest> requests = requestCaptor.getAllValues();
         assertEquals(20L, requests.get(1).getWatermarks().get(0).getLastSeq());
         assertEquals("cursor-start", requests.get(1).getSince());
-        verify(messageDao, times(2)).update(any(MessageEntity.class));
+        verify(messageDao, times(2)).updateInTransaction(any(MessageEntity.class));
         verify(tokenStore).saveSyncServerTime("user-1", "cursor-end");
     }
 
@@ -950,7 +953,7 @@ public final class SyncEngineTest {
         assertTrue("cancelled request should leave execute", responseReturned.await(5, TimeUnit.SECONDS));
         operationTracker.activate(newGeneration);
         observer.dispose();
-        verify(messageDao, never()).upsertAll(anyList());
+        verify(messageDao, never()).upsertAllInTransaction(anyList());
         verify(tokenStore, never()).saveSyncServerTime("user-a", "cursor-a");
     }
 
@@ -1028,7 +1031,7 @@ public final class SyncEngineTest {
         releaseResponse.countDown();
 
         observer.awaitDone(5, TimeUnit.SECONDS).assertComplete();
-        verify(messageDao, never()).upsertAll(anyList());
+        verify(messageDao, never()).upsertAllInTransaction(anyList());
         verify(tokenStore, never()).saveSyncServerTime("user-a", "cursor-a");
     }
 
@@ -1062,9 +1065,9 @@ public final class SyncEngineTest {
 
         syncEngine.sync().blockingAwait();
 
-        verify(conversationDao).updateMute(eq("c1"), eq(true), eq(TimeAndJwt.isoToEpochMsOrNull("2026-11-09T15:00:00Z")));
-        verify(conversationDao).updateArchived(eq("c1"), eq(true));
-        verify(conversationDao).updatePin(eq("c1"), eq(true), eq(TimeAndJwt.isoToEpochMsOrNull("2026-11-09T14:00:00Z")));
+        verify(conversationDao).updateMuteInTransaction(eq("c1"), eq(true), eq(TimeAndJwt.isoToEpochMsOrNull("2026-11-09T15:00:00Z")));
+        verify(conversationDao).updateArchivedInTransaction(eq("c1"), eq(true));
+        verify(conversationDao).updatePinInTransaction(eq("c1"), eq(true), eq(TimeAndJwt.isoToEpochMsOrNull("2026-11-09T14:00:00Z")));
     }
 
     private static MessageDto message(String id, long seq, String conversationId, String content) {

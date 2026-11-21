@@ -574,9 +574,14 @@ public final class SyncAndOutboxRegressionTest {
         when(messageDao.byId("m-deleted")).thenReturn(Maybe.just(new MessageEntity(
                 "m-deleted", "c1", 5L, "user-peer", "Alice", "TEXT", "old preview", "client-1",
                 null, null, null, 1700000000L, null, null, null)));
-        when(conversationDao.byId("c1")).thenReturn(Maybe.just(new ConversationEntity(
+        // The tombstone path reads and writes through the synchronous
+        // *InTransaction statements (issue #184 convention).
+        when(messageDao.byIdInTransaction("m-deleted")).thenReturn(new MessageEntity(
+                "m-deleted", "c1", 5L, "user-peer", "Alice", "TEXT", "old preview", "client-1",
+                null, null, null, 1700000000L, null, null, null));
+        when(conversationDao.byIdSync("c1")).thenReturn(new ConversationEntity(
                 "c1", "DIRECT", null, currentLastMessageSeq, "old preview", "Alice", 1000L,
-                0, null, null, null, 0L, null, null, false)));
+                0, null, null, null, 0L, null, null, false));
         when(messageDao.update(any(MessageEntity.class))).thenReturn(Completable.complete());
         when(messageDao.clearReplySnippets(anyString())).thenReturn(Completable.complete());
         when(conversationDao.markLastMessageDeleted(anyString())).thenReturn(Completable.complete());
@@ -592,9 +597,9 @@ public final class SyncAndOutboxRegressionTest {
         engine.sync().blockingAwait();
 
         if (shouldMarkDeleted) {
-            verify(conversationDao).markLastMessageDeleted("c1");
+            verify(conversationDao).markLastMessageDeletedInTransaction("c1");
         } else {
-            verify(conversationDao, never()).markLastMessageDeleted(anyString());
+            verify(conversationDao, never()).markLastMessageDeletedInTransaction(anyString());
         }
     }
 

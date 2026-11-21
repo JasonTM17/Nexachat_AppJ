@@ -2576,6 +2576,79 @@ public final class ConversationRepositoryTest {
             });
         }
 
+        @Override
+        public void updateLastMessageInTransaction(
+                String conversationId, long seq, String content, String senderName, long at,
+                boolean encrypted, String type) {
+            ConversationEntity row = rows.get(conversationId);
+            if (row != null && seq > row.getLastMessageSeq()) {
+                rows.put(conversationId, withLastMessage(row, seq, content, senderName, at,
+                        false, type));
+            }
+            publish();
+        }
+
+        @Override
+        public void updateLastMessageContentInTransaction(String conversationId, long seq, String content) {
+            ConversationEntity row = rows.get(conversationId);
+            if (row != null && row.getLastMessageSeq() == seq) {
+                rows.put(conversationId, withLastMessage(row, seq, content,
+                        row.getLastMessageSenderName(), row.getLastMessageAt(), false,
+                        row.getLastMessageType()));
+            }
+            publish();
+        }
+
+        @Override
+        public void markLastMessageDeletedInTransaction(String conversationId) {
+            ConversationEntity row = rows.get(conversationId);
+            if (row != null) rows.put(conversationId, withLastMessage(row,
+                    row.getLastMessageSeq(), null, row.getLastMessageSenderName(),
+                    row.getLastMessageAt(), true, row.getLastMessageType()));
+            publish();
+        }
+
+        @Override
+        public void incrementUnreadInTransaction(String conversationId, int delta) {
+            ConversationEntity row = rows.get(conversationId);
+            if (row != null) rows.put(conversationId, withUnread(row, row.getUnreadCount() + delta));
+            publish();
+        }
+
+        @Override
+        public void updateMuteInTransaction(String conversationId, boolean muted, Long mutedUntilEpochMs) {
+            ConversationEntity row = rows.get(conversationId);
+            if (row != null) {
+                rows.put(conversationId, withPreferences(
+                        row, muted, mutedUntilEpochMs, row.isArchived(), row.isAiOptOut()));
+            }
+            publish();
+        }
+
+        @Override
+        public void updateArchivedInTransaction(String conversationId, boolean archived) {
+            ConversationEntity row = rows.get(conversationId);
+            if (row != null) {
+                rows.put(conversationId, withPreferences(
+                        row, row.isMuted(), row.getMutedUntilEpochMs(), archived, row.isAiOptOut()));
+            }
+            publish();
+        }
+
+        @Override
+        public void updatePinInTransaction(String conversationId, boolean pinned, Long pinnedAt) {
+            ConversationEntity row = rows.get(conversationId);
+            if (row != null) rows.put(conversationId, row.withPinned(pinned, pinnedAt));
+            publish();
+        }
+
+        @Override
+        public void updateDisappearingSecondsInTransaction(String conversationId, int seconds) {
+            ConversationEntity row = rows.get(conversationId);
+            if (row != null) rows.put(conversationId, row.withDisappearingSeconds(seconds));
+            publish();
+        }
+
         private void publish() {
             List<ConversationEntity> ordered = new ArrayList<>(rows.values());
             ordered.sort((a, b) -> {
