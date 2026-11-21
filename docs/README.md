@@ -23,7 +23,7 @@ quick start remain in [README.md](../README.md).
 | [quality/known-limitations.md](quality/known-limitations.md) | Documented trade-offs, free-tier limits, and audit caveats. |
 | [design/design-notes.md](design/design-notes.md) | Material 3 tokens and XML layout mapping. |
 | [design/stitch/DESIGN.md](design/stitch/DESIGN.md) | Stitch design-system specification. |
-| [media/README.md](media/README.md) | UI capture index (frames predate the Tonal Plum refresh; recapture pending). |
+| [media/README.md](media/README.md) | UI capture index; gallery frames are current Tonal Plum, showcase frames predate the refresh. |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | JDK 21 build gates, branching, and PR checklist. |
 
 ## Operators
