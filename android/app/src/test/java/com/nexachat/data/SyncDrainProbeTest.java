@@ -23,6 +23,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -308,6 +309,67 @@ public final class SyncDrainProbeTest {
                 probe.inboxDuringDrain.get() >= 1);
         probe.endDrain(false, 0L);
         assertFalse(probe.drainActive);
+    }
+
+    @Test public void deferredPrunesFireTheDrainEndHookOnceAndResetPerDrain() {
+        SyncDrainProbe probe = engine.drainProbe;
+        AtomicInteger retriggers = new AtomicInteger();
+        probe.onPrunesDeferredDrainEnd = retriggers::incrementAndGet;
+
+        probe.beginDrain();
+        probe.endDrain(false, 0L);
+        assertEquals("a drain without deferred prunes never re-triggers", 0, retriggers.get());
+
+        probe.beginDrain();
+        probe.onPruneSuppressed();
+        probe.onPruneSuppressed();
+        assertTrue(probe.isDrainActive());
+        assertEquals(2, probe.suppressedPrunes.get());
+        probe.endDrain(false, 0L);
+        assertEquals("exactly one re-trigger per drain that deferred prunes", 1, retriggers.get());
+        assertFalse(probe.isDrainActive());
+
+        probe.beginDrain();
+        assertEquals("the deferred-prune counter resets per drain", 0, probe.suppressedPrunes.get());
+        probe.endDrain(false, 0L);
+        assertEquals("a clean drain still never re-triggers", 1, retriggers.get());
+    }
+
+    @Test public void pruneSuppressionWorksWhileTheDiagnosticsStayDormant() {
+        // A raw probe keeps the production LOGCAT sink: in JVM tests the gate
+        // hits the android.jar stub and the diagnostics stay dormant — but the
+        // suppression window, counter, and re-trigger hook are product
+        // behavior (issue #266 phase 1.5) and must work anyway.
+        SyncDrainProbe probe = new SyncDrainProbe();
+        AtomicInteger retriggers = new AtomicInteger();
+        probe.onPrunesDeferredDrainEnd = retriggers::incrementAndGet;
+
+        probe.beginDrain();
+        assertFalse("diagnostics stay dormant behind the logcat gate", probe.recording());
+        assertTrue(probe.isDrainActive());
+        probe.onPruneSuppressed();
+        probe.endDrain(false, 0L);
+
+        assertFalse(probe.isDrainActive());
+        assertEquals(1, probe.suppressedPrunes.get());
+        assertEquals("the dormant gate must not block the deferral re-trigger", 1, retriggers.get());
+        assertTrue("the dormant probe emits no drain lines", sink.lines.isEmpty());
+    }
+
+    @Test public void emptyDrainOpensAndClosesTheWindowWithoutARetrigger() {
+        AtomicInteger retriggers = new AtomicInteger();
+        engine.drainProbe.onPrunesDeferredDrainEnd = retriggers::incrementAndGet;
+        server = request -> envelope(List.of(delta("c0", 1, false, "")), 1);
+
+        engine.sync().onErrorComplete().blockingAwait();
+
+        assertFalse("an empty drain still opens and closes the window",
+                engine.drainProbe.drainActive);
+        assertEquals(0, engine.drainProbe.pages);
+        assertTrue("the empty drain ran begin/endDrain at all",
+                sink.drainLine().contains("pages=0"));
+        assertEquals("nothing was deferred, so no re-trigger fires", 0, retriggers.get());
+        verify(api, never()).syncDeltas(any());
     }
 
     private void restart() {

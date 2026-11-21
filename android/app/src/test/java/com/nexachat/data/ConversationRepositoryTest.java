@@ -73,6 +73,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import okhttp3.Headers;
 import okhttp3.MultipartBody;
 import okhttp3.Request;
@@ -121,6 +123,8 @@ public final class ConversationRepositoryTest {
             moshi.adapter(Types.newParameterizedType(List.class, ConversationInboxDto.class));
 
     private ConversationRepository repository;
+    /** Stand-in for the engine's probe when a test exercises drain suppression. */
+    private SyncDrainProbe probe;
 
     @Before
     public void setUp() throws Exception {
@@ -177,6 +181,18 @@ public final class ConversationRepositoryTest {
                 operationTracker,
                 inboxReadWatermarkCache,
                 messageRepository);
+    }
+
+    /**
+     * Wires a drain probe the repository can consult, the way production
+     * wiring routes the sync engine's probe through the message repository.
+     * Must be called before {@link #buildRepository()} so the constructor
+     * sees the stubbed accessor when it registers its drain-end hook.
+     */
+    private void buildRepositoryWithDrainProbe() {
+        probe = new SyncDrainProbe();
+        when(messageRepository.drainProbe()).thenReturn(probe);
+        buildRepository();
     }
 
     private <T> Call<T> asCall(Response<T> response) {
@@ -1835,6 +1851,81 @@ public final class ConversationRepositoryTest {
 
         assertFalse(dao().rows.containsKey("conv-left"));
         notices.assertNoValues();
+    }
+
+    @Test
+    public void reconcilePrunesDeferWhileASyncDrainIsActiveAndRunAfterItEnds() throws Exception {
+        TestScheduler clock = virtualClock();
+        buildRepositoryWithDrainProbe();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 20), conversation("conv-gone", 25))).blockingAwait();
+        // A fresh body per pull: the drain-end re-trigger re-fetches page one,
+        // and a single-use mock response body would feed the second pull an
+        // empty (authoritative) page instead of the fixture's rows.
+        String page = inboxAdapter.toJson(List.of(inboxDto("conv-a", 20)));
+        when(messageApi.getConversations(any(), any())).thenAnswer(invocation ->
+                asCall(Response.success(ResponseBody.create(
+                        okhttp3.MediaType.parse("application/json"), page))));
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(asCall(Response.success(
+                new SyncResponse(List.of(), "2026-11-08T10:00:00Z"))));
+
+        probe.beginDrain();                      // the reconnect drain holds the cache window
+        resyncRequests.onNext(new Object());      // the same reconnect's debounced inbox refresh
+        clock.advanceTimeBy(1, TimeUnit.SECONDS);
+
+        assertTrue("the prune defers while the drain holds the cache window",
+                dao().rows.containsKey("conv-gone"));
+        assertTrue("the deferred prune is recorded on the drain probe",
+                probe.suppressedPrunes.get() > 0);
+        assertTrue(probe.isDrainActive());
+        verify(messageApi, never()).syncDeltas(any(SyncRequest.class));
+        verify(messageApi, times(1)).getConversations(eq(30), isNull());
+
+        probe.endDrain(false, 0L);               // drain end fires the once-per-drain re-trigger
+        clock.advanceTimeBy(1, TimeUnit.SECONDS);
+
+        assertEquals("the deferred reconcile converges after the drain",
+                java.util.Set.of("conv-a"), dao().rows.keySet());
+        verify(messageApi, times(2)).getConversations(eq(30), isNull());
+    }
+
+    @Test
+    public void pruneDefersWhenADrainOpensWhileTheConfirmCallIsInFlight() throws Exception {
+        buildRepositoryWithDrainProbe();
+        dao().upsertAll(List.of(
+                conversation("conv-a", 20), conversation("conv-gone", 25))).blockingAwait();
+        TestSubscriber<ConversationRepository.SelfRemovalNotice> notices =
+                repository.selfRemovals().test();
+        stubInbox(List.of(inboxDto("conv-a", 20)));
+        // The drain opens while the delta confirm is already on the wire: the
+        // confirm answers "lost", but the prune transaction still defers to
+        // the window, and the removal notice defers with it.
+        AtomicBoolean drainOpened = new AtomicBoolean();
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenAnswer(invocation -> {
+            if (drainOpened.compareAndSet(false, true)) probe.beginDrain();
+            return asCall(Response.success(new SyncResponse(List.of(), "2026-11-08T10:00:00Z")));
+        });
+
+        repository.refreshInbox().blockingGet();
+
+        assertTrue("the confirm approved the prune, but the drain window defers it",
+                dao().rows.containsKey("conv-gone"));
+        assertTrue("the deferred prune is recorded on the drain probe",
+                probe.suppressedPrunes.get() > 0);
+        notices.assertNoValues();
+    }
+
+    @Test
+    public void drainEndWithoutDeferredPrunesAddsNoRefreshTrigger() throws Exception {
+        TestScheduler clock = virtualClock();
+        buildRepositoryWithDrainProbe();
+        stubInbox(List.of());
+
+        probe.beginDrain();
+        probe.endDrain(false, 0L);
+        clock.advanceTimeBy(1, TimeUnit.SECONDS);
+
+        verify(messageApi, never()).getConversations(any(), any());
     }
 
     @Test

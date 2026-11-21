@@ -8,19 +8,32 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Debug-gated timing seam for the v2 sync drain (issue #266, phase 0).
+ * Debug-gated timing seam for the v2 sync drain (issue #266, phase 0), and
+ * holder of the drain-active window the inbox reconcile consults to defer
+ * prune work while a drain holds the cache (issue #266, phase 1.5).
  *
- * <p>Dormant by default: every hook first checks a single volatile gate that
- * the default {@link LineSink} answers false unless the logcat tag override
- * was flipped on-device with {@code adb shell setprop log.tag.SyncDrain
- * DEBUG}. While dormant the drain behaves exactly as before — no counter
- * moves and no line is emitted. Once enabled, each drain prints one line per
- * page and one totals line, all under the {@code SyncDrain} tag:
+ * <p>Diagnostics stay dormant by default: every timing hook first checks a
+ * single volatile gate that the default {@link LineSink} answers false unless
+ * the logcat tag override was flipped on-device with {@code adb shell
+ * setprop log.tag.SyncDrain DEBUG}. While dormant the drain behaves exactly
+ * as before — no diagnostic counter moves and no line is emitted. Once
+ * enabled, each drain prints one line per page and one totals line, all
+ * under the {@code SyncDrain} tag:
  *
  * <pre>
  * page #1 wm=100 rows=50 reactions=0 next=100 fetchMs=203.4 applyMs=388.1 guardMs=11.0 deltaMs=344.9 restarts=0
  * drain pages=60 wallMs=41233.0 fetchMs=8120.4 applyMs=29800.2 guardMs=670.1 deltaMs=28010.7 restarts=2 pending=true inbox=118 messages=97 inboxIdle=0 messagesIdle=0
  * </pre>
+ *
+ * <p>The phase-1.5 suppression state is product behavior and is never gated
+ * by the sink: {@link #drainActive} opens and closes with every v2 drain,
+ * {@link #onPruneSuppressed()} counts reconcile prunes deferred while it was
+ * open, and {@link #onPrunesDeferredDrainEnd} — optional wiring in the
+ * {@code onFlightJoined} seam style — runs once at the end of a drain that
+ * deferred prunes so the repository can re-run the skipped reconcile on its
+ * normal trigger path. None of this changes the drain's own behavior, and no
+ * line's format changes: the deferred-prune counter never appears in an
+ * emitted line.
  *
  * <p>Honors the #264 writer-transaction contract: {@link #pageGuard} and
  * {@link #pageDelta} run inside the held writer transaction and touch plain
@@ -78,7 +91,28 @@ final class SyncDrainProbe {
     final AtomicLong inboxIdle = new AtomicLong();
     final AtomicLong messagesIdle = new AtomicLong();
 
+    // --- prune suppression state (issue #266 phase 1.5): product behavior, never gated by the sink ---
+    /** Reconcile prune sites deferred during the drain window now closing. */
+    final AtomicInteger suppressedPrunes = new AtomicInteger();
+    /**
+     * Fired once at the end of a drain that deferred prunes, on the drain
+     * thread outside every transaction, so the repository can re-run the
+     * skipped reconcile work on its normal trigger path. Optional wiring in
+     * the {@code onFlightJoined} seam style; the default is a no-op.
+     */
+    @VisibleForTesting volatile Runnable onPrunesDeferredDrainEnd = () -> {};
+
     boolean recording() { return recording; }
+
+    /** The drain-active signal: true across the whole {@code SyncV2Consumer.sync} call. */
+    boolean isDrainActive() { return drainActive; }
+
+    /**
+     * Records one prune site the reconcile deferred because a drain held the
+     * cache window. Plain memory only — safe on any thread and inside the
+     * suppression decision path (issue #264: no Rx, no Room statements).
+     */
+    void onPruneSuppressed() { suppressedPrunes.incrementAndGet(); }
 
     /** Opens the drain window, resets the per-drain counters and re-checks the sink gate once. */
     void beginDrain() {
@@ -94,6 +128,7 @@ final class SyncDrainProbe {
         pageDeltaNanos = 0L;
         inboxDuringDrain.set(0);
         messagesDuringDrain.set(0);
+        suppressedPrunes.set(0);
         if (recording) observerArmed = true;
         drainActive = true;
     }
@@ -146,9 +181,18 @@ final class SyncDrainProbe {
         drainErrorClass = error.getClass().getName();
     }
 
-    /** Closes the drain window and emits the totals line; drain thread, outside transactions. */
+    /**
+     * Closes the drain window, re-triggers the deferred reconcile when prunes
+     * were suppressed during the window, and emits the totals line; drain
+     * thread, outside transactions. The re-trigger reads the counter before
+     * the window closes so a suppression racing the close still counts toward
+     * this drain's decision (a miss merely falls back to the next normal
+     * trigger — the suppression itself already happened).
+     */
     void endDrain(boolean hasPendingContinuation, long wallNanos) {
+        boolean prunesDeferred = suppressedPrunes.get() > 0;
         drainActive = false;
+        if (prunesDeferred) onPrunesDeferredDrainEnd.run();
         if (!recording) return;
         String error = drainErrorClass != null ? " error=" + drainErrorClass : "";
         emit(format("drain%s pages=%d wallMs=%.1f fetchMs=%.1f applyMs=%.1f guardMs=%.1f"

@@ -764,6 +764,34 @@ public final class SyncEngineV2Test {
         assertTrue("cancellation must not emit undeliverable failures", undeliverable.isEmpty());
     }
 
+    @Test public void drainWindowClosesOnSessionCancellationAndStillRetriggersDeferredPrunes()
+            throws Exception {
+        seed(1, 1);
+        AtomicInteger retriggers = new AtomicInteger();
+        CountDownLatch drainEnded = new CountDownLatch(1);
+        // The hook runs inside endDrain after the window closed, so awaiting
+        // it also proves the flag cleared: the terminal event can reach this
+        // test's blockingAwait before the drain thread finishes its finally.
+        engine.drainProbe.onPrunesDeferredDrainEnd = () -> {
+            retriggers.incrementAndGet();
+            drainEnded.countDown();
+        };
+        server = request -> {
+            // The reconnect's inbox refresh deferred its prune work mid-drain,
+            // then the session epoch moved: the page fence cancels the drain.
+            engine.drainProbe.onPruneSuppressed();
+            refresher.onSessionEstablished(2L);
+            return envelope(List.of(delta("c0", 2, false, message("c0", 2))), 2);
+        };
+
+        engine.sync().onErrorComplete().blockingAwait(); // cancellation is swallowed as completion
+
+        assertTrue("endDrain runs even on the cancellation exit",
+                drainEnded.await(5, TimeUnit.SECONDS));
+        assertFalse("the window closes on the cancellation exit", engine.drainProbe.drainActive);
+        assertEquals("deferred prunes still re-trigger once at drain end", 1, retriggers.get());
+    }
+
     @Test public void reversedIndependentReactionPagesSurviveLaterMessagesAndRestart() {
         conversations.add(new ConversationWatermark("c0", 900));
         cursors.put("A:c0", new SyncCursorEntity("A", "c0", 1, 0,

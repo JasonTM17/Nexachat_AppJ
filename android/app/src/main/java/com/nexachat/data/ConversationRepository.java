@@ -100,6 +100,15 @@ import retrofit2.Response;
  * running supersedes it: the superseded pull is disposed rather than queued,
  * so a burst never leaves a backlog of serialized redundant pulls.
  *
+ * <p>While a v2 sync drain is committing pages, the reconcile defers its
+ * prune work (issue #266): a prune deletes {@code conversations} rows
+ * mid-drain and the database triggers wipe that conversation's
+ * {@code sync_cursors} row, so the next page's pre-commit guard mismatches
+ * and the whole walk restarts from cursor zero. The deferral is recorded on
+ * the drain probe and re-run by one debounced refresh at drain end, so no
+ * convergence work is lost. Live STOMP writes, user-initiated leaves, and
+ * the drain's own sweep are never deferred.
+ *
  * <p>Mute, archive and AI opt-out are caller-scoped server preferences. Writes
  * go through the REST endpoints first and are written through to Room only on
  * success; inbox payloads and delta bundles carry the authoritative mute,
@@ -281,6 +290,7 @@ public final class ConversationRepository implements AutoCloseable {
                     }
                 },
                 preferenceLanes);
+        wireDrainEndRetrigger();
         watchPushTriggers();
     }
 
@@ -319,8 +329,7 @@ public final class ConversationRepository implements AutoCloseable {
                 // emission semantics untouched; no-op unless the SyncDrain
                 // logcat gate is enabled.
                 .doOnNext(summaries -> {
-                    SyncDrainProbe probe = messageRepository == null
-                            ? null : messageRepository.drainProbe();
+                    SyncDrainProbe probe = drainProbe();
                     if (probe != null) probe.onInboxEmission();
                 })
                 .subscribeOn(Schedulers.io());
@@ -1264,6 +1273,17 @@ public final class ConversationRepository implements AutoCloseable {
      * inaccessible and announces a removal only for confirmed group losses —
      * an archived conversation keeps its membership and a locally-initiated
      * leave is in {@link #voluntaryExitIds}, so neither produces a notice.
+     *
+     * <p>While a v2 sync drain holds the cache window, the whole reconcile
+     * defers (issue #266): pruning then would wipe a draining conversation's
+     * {@code sync_cursors} row via the database triggers and force the next
+     * page's pre-commit guard to restart the walk from cursor zero. The
+     * deferral is recorded on the drain probe, and the drain's end fires one
+     * debounced refresh ({@link #retriggerReconcileAfterDrain()}) that re-runs
+     * this reconcile with fresh server state, so convergence is postponed,
+     * never lost. The prune transaction is additionally re-checked right
+     * before it runs, so a drain that opens while the delta confirm was
+     * already on the wire also defers.
      */
     private Completable reconcileInboxRows(
             long generation,
@@ -1274,6 +1294,9 @@ public final class ConversationRepository implements AutoCloseable {
             boolean archived,
             @Nullable String ownerUserId) {
         if (!isInboxPageGenerationCurrent(generation)) {
+            return Completable.complete();
+        }
+        if (pruneSuppressedForActiveDrain()) {
             return Completable.complete();
         }
         // inboxFlow() emits on Room's shared query executor; without observeOn
@@ -1319,18 +1342,23 @@ public final class ConversationRepository implements AutoCloseable {
                         suspects.add(row);
                     }
                 }
+                // The prune transaction re-checks the drain window right
+                // before it runs: a drain that opened while the page fetch or
+                // delta confirm was in flight defers here too, and the
+                // removal notices defer with it because the rows survive.
                 Completable deleteDefinite = definiteDeletes.isEmpty()
                         ? Completable.complete()
-                        : Completable.fromAction(() -> {
-                            appDatabase.runInTransaction(() -> {
-                                for (ConversationEntity row : definiteDeletes) {
-                                    LocalConversationCleaner.deleteInTransaction(
-                                            appDatabase, row.getId(), ownerUserId);
-                                }
-                            });
-                        });
+                        : Completable.defer(() -> pruneSuppressedForActiveDrain()
+                                ? Completable.complete()
+                                : Completable.fromAction(() -> {
+                                    appDatabase.runInTransaction(() -> {
+                                        for (ConversationEntity row : definiteDeletes) {
+                                            LocalConversationCleaner.deleteInTransaction(
+                                                    appDatabase, row.getId(), ownerUserId);
+                                        }
+                                    });
+                                }).andThen(notifyConfirmedRemovals(definiteDeletes)));
                 return deleteDefinite
-                        .andThen(notifyConfirmedRemovals(definiteDeletes))
                         .andThen(confirmAbsenceAndPrune(suspects, ownerUserId))
                         .andThen(Completable.fromAction(() -> locallyCreatedIds.removeAll(walkIdSet)));
             }
@@ -1360,10 +1388,19 @@ public final class ConversationRepository implements AutoCloseable {
      * watermark therefore proves the conversation is gone, so its local cache
      * is pruned in the same transaction as the rows already applied. A prune
      * the server confirmed also announces the removal when it was one.
+     *
+     * <p>Both the confirm call and the prune transaction defer while a sync
+     * drain holds the cache window (issue #266): the confirm is skipped to
+     * keep the drain's own HTTP and writer free of competing work, and the
+     * transaction is re-checked after the confirm returns so a drain that
+     * opened mid-flight still defers the delete.
      */
     private Completable confirmAbsenceAndPrune(
             List<ConversationEntity> suspects, @Nullable String ownerUserId) {
         if (suspects.isEmpty()) {
+            return Completable.complete();
+        }
+        if (pruneSuppressedForActiveDrain()) {
             return Completable.complete();
         }
         return confirmedInaccessibleIds(suspects).flatMapCompletable(lostIds -> {
@@ -1376,15 +1413,65 @@ public final class ConversationRepository implements AutoCloseable {
             if (toPrune.isEmpty()) {
                 return Completable.complete();
             }
-            return Completable.fromAction(() -> {
-                appDatabase.runInTransaction(() -> {
-                    for (ConversationEntity row : toPrune) {
-                        LocalConversationCleaner.deleteInTransaction(
-                                appDatabase, row.getId(), ownerUserId);
-                    }
-                });
-            }).andThen(emitRemovalNotices(toPrune));
+            return Completable.defer(() -> pruneSuppressedForActiveDrain()
+                    ? Completable.complete()
+                    : Completable.fromAction(() -> {
+                        appDatabase.runInTransaction(() -> {
+                            for (ConversationEntity row : toPrune) {
+                                LocalConversationCleaner.deleteInTransaction(
+                                        appDatabase, row.getId(), ownerUserId);
+                            }
+                        });
+                    }).andThen(emitRemovalNotices(toPrune)));
         });
+    }
+
+    /** Shared drain probe of the attached sync engine; null when no engine is wired. */
+    @Nullable
+    private SyncDrainProbe drainProbe() {
+        MessageRepository messages = this.messageRepository;
+        return messages == null ? null : messages.drainProbe();
+    }
+
+    /**
+     * Whether a v2 sync drain is currently committing pages, in which case the
+     * reconcile must not prune rows: a prune deletes {@code conversations}
+     * rows mid-drain and the database triggers wipe that conversation's
+     * {@code sync_cursors} row, so the next page's pre-commit guard mismatches
+     * and the whole walk restarts from cursor zero (issue #266). The skipped
+     * work is recorded on the drain probe — a plain counter — and re-run by
+     * the once-on-drain-end refresh, so nothing is lost. This check itself is
+     * a volatile read plus, on the suppressed path, a counter increment: no
+     * logging, no Rx chain, and no Room statement (#264).
+     */
+    private boolean pruneSuppressedForActiveDrain() {
+        SyncDrainProbe probe = drainProbe();
+        if (probe == null || !probe.isDrainActive()) return false;
+        probe.onPruneSuppressed();
+        return true;
+    }
+
+    /**
+     * Registers the drain-end deferral hook on the shared probe, in the
+     * {@code onFlightJoined} seam style: a field write, no constructor or Hilt
+     * changes. Repositories without an attached sync engine keep the probe's
+     * no-op default and prune exactly as before.
+     */
+    private void wireDrainEndRetrigger() {
+        SyncDrainProbe probe = drainProbe();
+        if (probe != null) probe.onPrunesDeferredDrainEnd = this::retriggerReconcileAfterDrain;
+    }
+
+    /**
+     * Once-per-drain re-trigger (issue #266): a reconcile that deferred prune
+     * work while a drain held the cache window must still converge, and an
+     * idle app has no guaranteed push to do it. The drain thread fires this
+     * after the window closed; it feeds the existing debounced refresh pump,
+     * so it coalesces with any push-triggered refresh into a single pull, and
+     * a refresh that lands inside the next drain simply defers again.
+     */
+    private void retriggerReconcileAfterDrain() {
+        refreshRequests.onNext(Boolean.TRUE);
     }
 
     /**
