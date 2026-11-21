@@ -129,6 +129,9 @@ public class AskService {
         }
         java.time.Instant admittedFrom = memberRepository.findJoinedAt(conversationId, userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_MEMBER, "Conversation membership required"));
+        // Capture before the E2EE gate: activation during capture must be seen by the gate;
+        // activation afterward changes this revision and suppresses response selection.
+        RagQuestionCache.ContextSnapshot context = questionCache.contextSnapshot(conversationId);
         // Membership gates the e2ee flag so a non-member cannot probe it.
         boolean e2ee = conversationRepository.findById(conversationId)
                 .map(Conversation::isE2eeEnabled).orElse(false);
@@ -150,7 +153,6 @@ public class AskService {
                 : request.language();
         String questionHash = RagHashes.questionHash(hashInput(question, priorTurns));
 
-        RagQuestionCache.ContextSnapshot context = questionCache.contextSnapshot(conversationId);
         AskKey key = new AskKey(conversationId, userId, questionHash, language, consentSnapshot,
                 admittedFrom, context);
         AskResponse response = computeOnce(key, contextOmitted, () -> compute(
@@ -161,7 +163,7 @@ public class AskService {
             stats.recordNotFound();
             response = AskResponse.notFound(aiOptOuts.hasOptedOutMessages(conversationId));
         }
-        return new AskExecution(consentSnapshot, response);
+        return new AskExecution(consentSnapshot, response, conversationId, context);
     }
 
     /**

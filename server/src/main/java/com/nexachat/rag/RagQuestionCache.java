@@ -127,6 +127,15 @@ public class RagQuestionCache {
                 && expected.equals(contextSnapshot(conversationId));
     }
 
+    /** The caller holds a transaction; source mutations conflict with this parent lock. */
+    public boolean lockContextForResponse(UUID conversationId, ContextSnapshot expected) {
+        List<Long> versions = jdbcTemplate.query(
+                "SELECT ai_context_version FROM conversations WHERE id = ? FOR SHARE",
+                (rs, rowNum) -> rs.getLong(1), conversationId);
+        return expected != null && !versions.isEmpty() && versions.getFirst() == expected.revision()
+                && contextUnchanged(conversationId, expected);
+    }
+
     @Transactional
     public boolean saveIfConsentSnapshotMatches(
             UUID userId,

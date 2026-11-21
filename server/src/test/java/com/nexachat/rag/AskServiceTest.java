@@ -2,6 +2,7 @@ package com.nexachat.rag;
 
 import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
+import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.summary.SummaryConsentRepository;
@@ -15,6 +16,7 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -83,6 +85,31 @@ class AskServiceTest {
                 .isInstanceOf(ApiException.class)
                 .satisfies(throwable -> assertThat(((ApiException) throwable).getCode())
                         .isEqualTo(ApiErrorCode.CONVERSATION_NOT_FOUND));
+    }
+
+    @Test
+    void e2eeActivationDuringSnapshotCaptureStopsAllProviderWork() {
+        AtomicBoolean encrypted = new AtomicBoolean(false);
+        Conversation conversation = mock(Conversation.class);
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conversation));
+        when(conversation.isE2eeEnabled()).thenAnswer(invocation -> encrypted.get());
+        when(questionCache.contextSnapshot(conversationId)).thenAnswer(invocation -> {
+            encrypted.set(true);
+            return new RagQuestionCache.ContextSnapshot(2, null);
+        });
+        RagEmbeddingService provider = mock(RagEmbeddingService.class);
+        RagRetrievalService retriever = mock(RagRetrievalService.class);
+        AskService guarded = new AskService(rateLimiter, conversationRepository, memberRepository,
+                consentRepository, provider, retriever, questionCache, llmAnswerService,
+                properties, stats, Clock.systemUTC());
+
+        assertThatThrownBy(() -> guarded.ask(conversationId, userId, new AskRequest("Hello?", null)))
+                .isInstanceOf(ApiException.class)
+                .satisfies(throwable -> assertThat(((ApiException) throwable).getCode())
+                        .isEqualTo(ApiErrorCode.E2EE_AI_UNAVAILABLE));
+        verify(provider, never()).embedQuestion(any(), anyBoolean());
+        verify(questionCache, never()).findExact(any(), any(), any());
+        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

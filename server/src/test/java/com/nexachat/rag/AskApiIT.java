@@ -18,6 +18,8 @@ import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
@@ -87,7 +89,7 @@ class AskApiIT {
 
     @Autowired
     private MockMvc mockMvc;
-    @Autowired
+    @MockitoSpyBean
     private ObjectMapper objectMapper;
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -103,6 +105,8 @@ class AskApiIT {
     private UserSettingsService userSettingsService;
     @Autowired
     private AskResponseWriter responseWriter;
+    @Autowired
+    private AskService askService;
     @Autowired
     private DataSource dataSource;
     @MockitoSpyBean
@@ -186,6 +190,84 @@ class AskApiIT {
         assertThat(cited).contains(fact.id().toString());
         assertThat(cited).doesNotContain(outsider.getId().toString());
     }
+
+    @ParameterizedTest
+    @EnumSource(ResponseMutation.class)
+    void sourceMutationAfterExecutionSuppressesSerializedAnswer(ResponseMutation mutation) throws Exception {
+        addMessage(caller.getId(), "The server migration is scheduled for March 14 at 02:00.");
+        TestMessage uncited = addMessage(peer.getId(), "Lunch for the workshop is in the west room.");
+        Instant expiry = Instant.now().plusSeconds(300).truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+        if (mutation == ResponseMutation.EXPIRY) {
+            jdbcTemplate.update("UPDATE messages SET expires_at = ? WHERE id = ?",
+                    OffsetDateTime.ofInstant(expiry, ZoneOffset.UTC), uncited.id());
+        }
+        if (mutation == ResponseMutation.E2EE) {
+            // E2EE is permitted only for DIRECT conversations by the production schema.
+            String directKey = java.util.stream.Stream.of(caller.getId().toString(), peer.getId().toString())
+                    .sorted().collect(java.util.stream.Collectors.joining(":"));
+            jdbcTemplate.update("UPDATE conversations SET type = 'DIRECT', direct_key = ? WHERE id = ?",
+                    directKey, conversationId);
+        }
+        AskExecution execution = askService.askForResponse(conversationId, caller.getId(),
+                new AskRequest("When is the server migration scheduled?", null));
+        assertThat(execution.response().mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(execution.response().citations()).extracting(RagCitation::messageId)
+                .doesNotContain(uncited.id());
+        switch (mutation) {
+            case EDIT -> jdbcTemplate.update("UPDATE messages SET content = 'Lunch moved to the east room' WHERE id = ?",
+                    uncited.id());
+            case RECALL -> jdbcTemplate.update("UPDATE messages SET deleted_at = now() WHERE id = ?", uncited.id());
+            case OPT_OUT -> jdbcTemplate.update("INSERT INTO conversation_ai_opt_outs (conversation_id, user_id) VALUES (?, ?)",
+                    conversationId, peer.getId());
+            case EXPIRY -> doReturn(expiry).when(clock).instant();
+            case E2EE -> jdbcTemplate.update("UPDATE conversations SET e2ee_enabled = TRUE WHERE id = ?", conversationId);
+        }
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        responseWriter.write(caller.getId(), execution, response);
+        assertThat(response.getContentAsString()).doesNotContain("March 14");
+        JsonNode body = objectMapper.readTree(response.getContentAsString());
+        assertThat(body.path("mode").asText()).isEqualTo("NOT_FOUND");
+        assertThat(body.path("answer").isNull()).isTrue();
+        assertThat(body.path("contextOmitted").asBoolean()).isEqualTo(mutation == ResponseMutation.OPT_OUT);
+    }
+
+    @Test
+    void unchangedExecutionStillSerializesItsAnswer() throws Exception {
+        addMessage(peer.getId(), "The server migration is scheduled for March 14 at 02:00.");
+        AskExecution execution = askService.askForResponse(conversationId, caller.getId(),
+                new AskRequest("When is the server migration scheduled?", null));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        responseWriter.write(caller.getId(), execution, response);
+        JsonNode body = objectMapper.readTree(response.getContentAsString());
+        assertThat(body.path("mode").asText()).isEqualTo("EXTRACTIVE");
+        assertThat(body.path("answer").asText()).contains("March 14");
+    }
+
+    @Test
+    void expiryCrossingJsonSerializationSuppressesCandidateBytes() throws Exception {
+        TestMessage fact = addMessage(peer.getId(), "The server migration is scheduled for March 14 at 02:00.");
+        Instant expiry = Instant.now().plusSeconds(300).truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+        jdbcTemplate.update("UPDATE messages SET expires_at = ? WHERE id = ?",
+                OffsetDateTime.ofInstant(expiry, ZoneOffset.UTC), fact.id());
+        AskExecution execution = askService.askForResponse(conversationId, caller.getId(),
+                new AskRequest("When is the server migration scheduled?", null));
+        assertThat(execution.response().mode()).isEqualTo(AskMode.EXTRACTIVE);
+        doAnswer(invocation -> {
+            byte[] bytes = (byte[]) invocation.callRealMethod();
+            if (invocation.getArgument(0) instanceof AskResponse candidate && candidate.mode() != AskMode.NOT_FOUND) {
+                doReturn(expiry).when(clock).instant();
+            }
+            return bytes;
+        }).when(objectMapper).writeValueAsBytes(any());
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        responseWriter.write(caller.getId(), execution, response);
+        assertThat(response.getContentAsString()).doesNotContain("March 14");
+        assertThat(objectMapper.readTree(response.getContentAsString()).path("mode").asText()).isEqualTo("NOT_FOUND");
+    }
+
+    private enum ResponseMutation { EDIT, RECALL, OPT_OUT, EXPIRY, E2EE }
 
     @Test
     void theSameQuestionIsReplayedFromTheCache() throws Exception {
