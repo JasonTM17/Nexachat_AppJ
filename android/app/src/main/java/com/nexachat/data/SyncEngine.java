@@ -30,6 +30,7 @@ import com.squareup.moshi.Types;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.io.IOException;
 import java.time.Instant;
@@ -42,6 +43,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -71,6 +74,19 @@ public final class SyncEngine {
     @Nullable private final E2eeSession e2eeSession;
     private final JsonAdapter<List<AttachmentDto>> attachmentsAdapter;
     private final AtomicBoolean hasPendingContinuation = new AtomicBoolean();
+    /**
+     * Session epoch that already consumed the once-per-session post-persist
+     * re-trigger (issue #270); {@link Long#MIN_VALUE} before the first arm.
+     */
+    private final AtomicLong postPersistRetriggerEpoch = new AtomicLong(Long.MIN_VALUE);
+    /** Post-persist re-triggers that passed the epoch guard and fired a sync flight. */
+    @VisibleForTesting final AtomicInteger postPersistSyncsFired = new AtomicInteger();
+    /**
+     * Test seam in the {@code onFlightJoined} style: runs inside the armed
+     * post-persist flight before the epoch guard, the window where a session
+     * boundary can land between the persist signal and the trigger.
+     */
+    @VisibleForTesting volatile Runnable retriggerTestHookBeforeGuard = () -> {};
     /** Server time of the last successful sync, echoed back as {@code since} so edits/deletes/reactions delta-sync. */
     @Nullable
     private volatile String lastServerTime;
@@ -186,6 +202,50 @@ public final class SyncEngine {
                 inFlight = shared;
                 return shared;
             }
+        });
+    }
+
+    /**
+     * Once-per-session-epoch re-trigger of {@link #sync()} (issue #270): the
+     * startup reconnect drain can read an empty {@code conversations}
+     * watermark table before the first inbox page persist writes its rows,
+     * closing at zero pages so an offline burst is never fetched, and no
+     * other path re-triggers it. The first persist completion of a session
+     * arms exactly one normal drain; every later page persist in the same
+     * epoch is coalesced away, and a session that changed between the
+     * persist signal and the armed flight suppresses the call.
+     *
+     * <p>The armed flight hops to the io scheduler — never inside a Room
+     * transaction or on Room's executor, whose thread only pays one volatile
+     * epoch read and one CAS here (issue #264) — and re-checks the session
+     * in the {@code isSessionCurrent} style of every other trigger before
+     * subscribing, so a stale session cannot fire it. A re-triggered drain
+     * is a normal drain: the probe window opens with it and the reconcile's
+     * prune deferral (issue #266) applies unchanged.
+     */
+    public void onInboxPagePersistCompleted() {
+        long expectedEpoch = tokenRefresher.sessionEpoch();
+        if (!tokenRefresher.isSessionCurrent(expectedEpoch)) {
+            // A fenced-out or closing session neither fires nor consumes the
+            // next session's one allowance.
+            return;
+        }
+        while (true) {
+            long consumed = postPersistRetriggerEpoch.get();
+            if (consumed == expectedEpoch) {
+                return; // this session epoch already armed its one re-trigger
+            }
+            if (postPersistRetriggerEpoch.compareAndSet(consumed, expectedEpoch)) {
+                break;
+            }
+        }
+        Schedulers.io().scheduleDirect(() -> {
+            retriggerTestHookBeforeGuard.run();
+            if (!tokenRefresher.isSessionCurrent(expectedEpoch)) {
+                return; // the session changed between the persist and this trigger
+            }
+            postPersistSyncsFired.incrementAndGet();
+            sync().onErrorComplete().subscribe(() -> { }, RxJavaPlugins::onError);
         });
     }
 

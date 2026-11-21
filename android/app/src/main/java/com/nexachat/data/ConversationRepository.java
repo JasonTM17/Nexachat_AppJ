@@ -1124,6 +1124,10 @@ public final class ConversationRepository implements AutoCloseable {
                             }
                         }
                     }))
+                    // Issue #270: the persist just became durable; hand the
+                    // epoch-guarded sync re-trigger to the engine before the
+                    // reconcile's confirm calls delay this chain.
+                    .andThen(Completable.fromAction(this::notifyInboxPagePersistCompleted))
                     .andThen(Completable.fromAction(() -> {
                         if (isInboxPageGenerationCurrent(generation)) {
                             presenceRepository.seed(presenceSeeds);
@@ -1472,6 +1476,19 @@ public final class ConversationRepository implements AutoCloseable {
      */
     private void retriggerReconcileAfterDrain() {
         refreshRequests.onNext(Boolean.TRUE);
+    }
+
+    /**
+     * Hands the completed inbox-page persist to the sync engine (issue #270):
+     * the startup reconnect sync may have drained zero pages because this
+     * persist had not landed yet, and no other path re-triggers it. The
+     * engine coalesces to one epoch-guarded drain per session epoch; this
+     * call is plain memory only, so it stays safe on the Room executor
+     * thread that completed the persist (issue #264).
+     */
+    private void notifyInboxPagePersistCompleted() {
+        MessageRepository messages = this.messageRepository;
+        if (messages != null) messages.onInboxPagePersistCompleted();
     }
 
     /**
