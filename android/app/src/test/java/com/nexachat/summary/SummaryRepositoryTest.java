@@ -4,17 +4,25 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertNull;
 
 import com.squareup.moshi.Moshi;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.ResponseBody;
+import okio.Timeout;
 import org.junit.Test;
+import retrofit2.Call;
+import retrofit2.Response;
 import retrofit2.Retrofit;
 import retrofit2.converter.moshi.MoshiConverterFactory;
 
@@ -247,6 +255,151 @@ public final class SummaryRepositoryTest {
             assertFalse(repository.findCachedById("conversation-1", lastN(20, "Asia/Ho_Chi_Minh"),
                     "summary-1").isPresent());
         }
+    }
+
+    @Test
+    public void cacheClearFencesAPendingResponseAndItsSuccessCallback() {
+        ControlledApi api = new ControlledApi();
+        SummaryRepository repository = new SummaryRepository(api);
+        ResultCapture old = new ResultCapture();
+        repository.request("conversation-1", unread(), old);
+
+        repository.clearCache();
+        api.calls.get(0).succeed(summary("old"));
+
+        assertNull(old.response.get());
+        assertFalse(repository.findCachedById("conversation-1", unread(), "old").isPresent());
+        repository.request("conversation-1", unread(), new ResultCapture());
+        assertEquals(2, api.calls.size());
+    }
+
+    @Test
+    public void anOlderResponseCannotReplaceANewerRefresh() {
+        ControlledApi api = new ControlledApi();
+        SummaryRepository repository = new SummaryRepository(api);
+        ResultCapture old = new ResultCapture();
+        repository.request("conversation-1", unread(), old);
+        repository.request("conversation-1", refreshUnread(), new ResultCapture());
+
+        api.calls.get(1).succeed(summary("fresh"));
+        api.calls.get(0).succeed(summary("old"));
+
+        assertEquals("old", old.response.get().getSummaryId());
+        assertTrue(repository.findCachedById("conversation-1", unread(), "fresh").isPresent());
+        assertFalse(repository.findCachedById("conversation-1", unread(), "old").isPresent());
+    }
+
+    @Test
+    public void aFailedNewerRefreshDoesNotRestoreOlderFillEligibility() {
+        ControlledApi api = new ControlledApi();
+        SummaryRepository repository = new SummaryRepository(api);
+        repository.request("conversation-1", unread(), new ResultCapture());
+        ResultCapture fresh = new ResultCapture();
+        repository.request("conversation-1", refreshUnread(), fresh);
+
+        api.calls.get(1).fail(new IOException("synthetic"));
+        api.calls.get(0).succeed(summary("old"));
+
+        assertEquals(SummaryError.NETWORK, fresh.error.get());
+        assertFalse(repository.findCachedById("conversation-1", unread(), "old").isPresent());
+        repository.request("conversation-1", unread(), new ResultCapture());
+        assertEquals(3, api.calls.size());
+    }
+
+    @Test
+    public void distinctKeysCanFillIndependentlyAndCanceledCallsCannotFill() {
+        ControlledApi api = new ControlledApi();
+        SummaryRepository repository = new SummaryRepository(api);
+        SummaryRepository.Cancellable canceled = repository.request(
+                "conversation-1", unread(), new ResultCapture());
+        repository.request("conversation-2", unread(), new ResultCapture());
+        canceled.cancel();
+        api.calls.get(0).succeed(summary("canceled"));
+        api.calls.get(1).succeed(summary("other"));
+
+        assertFalse(repository.findCachedById("conversation-1", unread(), "canceled").isPresent());
+        assertTrue(repository.findCachedById("conversation-2", unread(), "other").isPresent());
+    }
+
+    @Test
+    public void enqueueFailureIsReportedAndTheNextRequestCanRecover() {
+        ControlledApi api = new ControlledApi();
+        api.enqueueFailure = true;
+        SummaryRepository repository = new SummaryRepository(api);
+        ResultCapture failed = new ResultCapture();
+
+        repository.request("conversation-1", unread(), failed);
+
+        assertEquals(SummaryError.UNKNOWN, failed.error.get());
+        api.enqueueFailure = false;
+        ResultCapture next = new ResultCapture();
+        repository.request("conversation-1", unread(), next);
+        api.calls.get(1).succeed(summary("recovered"));
+        assertTrue(repository.findCachedById("conversation-1", unread(), "recovered").isPresent());
+    }
+
+    @Test
+    public void requestedLanguagesHaveIndependentCacheIdentity() {
+        ControlledApi api = new ControlledApi();
+        SummaryRepository repository = new SummaryRepository(api);
+        repository.request("conversation-1", unread(), new ResultCapture());
+        api.calls.get(0).succeed(summary("auto"));
+
+        repository.request("conversation-1",
+                new SummaryRequest(SummaryScope.UNREAD, null, SummaryLanguage.EN, false),
+                new ResultCapture());
+
+        assertEquals(2, api.calls.size());
+    }
+
+    private static SummaryRequest refreshUnread() {
+        return new SummaryRequest(SummaryScope.UNREAD, null, SummaryLanguage.AUTO, true);
+    }
+
+    private static SummaryResponse summary(String id) {
+        return new SummaryResponse(id, "conversation-1", 1, 5, 5, SummaryLanguage.EN,
+                "LOCAL", null, null, false, "2026-11-21T10:00:00Z", "Overview",
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+    }
+
+    private static final class ControlledApi implements SummaryApi {
+        private final List<ControlledCall> calls = new ArrayList<>();
+        private boolean enqueueFailure;
+
+        @Override
+        public Call<SummaryResponse> summarize(String id, SummaryRequest request) {
+            ControlledCall call = new ControlledCall(enqueueFailure);
+            calls.add(call);
+            return call;
+        }
+    }
+
+    private static final class ControlledCall implements Call<SummaryResponse> {
+        private final boolean enqueueFailure;
+        private retrofit2.Callback<SummaryResponse> callback;
+        private boolean canceled;
+
+        private ControlledCall(boolean enqueueFailure) {
+            this.enqueueFailure = enqueueFailure;
+        }
+
+        @Override
+        public void enqueue(retrofit2.Callback<SummaryResponse> value) {
+            if (enqueueFailure) {
+                throw new IllegalStateException("synthetic enqueue failure");
+            }
+            callback = value;
+        }
+
+        void succeed(SummaryResponse response) { callback.onResponse(this, Response.success(response)); }
+        void fail(Throwable failure) { callback.onFailure(this, failure); }
+        @Override public Response<SummaryResponse> execute() { throw new UnsupportedOperationException(); }
+        @Override public boolean isExecuted() { return callback != null; }
+        @Override public void cancel() { canceled = true; }
+        @Override public boolean isCanceled() { return canceled; }
+        @Override public Call<SummaryResponse> clone() { return new ControlledCall(enqueueFailure); }
+        @Override public Request request() { return new Request.Builder().url("http://localhost/").build(); }
+        @Override public Timeout timeout() { return Timeout.NONE; }
     }
 
     private static SummaryRequest unread() {
