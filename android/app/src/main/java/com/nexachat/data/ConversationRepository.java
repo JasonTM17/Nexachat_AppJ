@@ -27,6 +27,7 @@ import com.nexachat.core.network.dto.CreateGroupRequest;
 import com.nexachat.core.network.dto.DisappearingRequest;
 import com.nexachat.core.network.dto.MuteRequest;
 import com.nexachat.core.network.dto.PeerPresenceDto;
+import com.nexachat.core.network.dto.ReadRequest;
 import com.nexachat.core.network.dto.SyncRequest;
 import com.nexachat.core.network.dto.SyncResponse;
 import com.nexachat.core.network.dto.UpdateConversationRequest;
@@ -566,6 +567,75 @@ public final class ConversationRepository implements AutoCloseable {
                 false,
                 null,
                 state -> muteCallFor(conversationId, state))
+                .subscribeOn(Schedulers.io()));
+    }
+
+    /**
+     * Marks a fully-read conversation unread for this caller. The local badge
+     * bumps immediately; a failed PUT rolls the bump back. Peers are not
+     * notified — the server rewinds only this member's {@code lastReadSeq}.
+     */
+    @NonNull
+    public Single<Result<Void>> markUnread(@NonNull String conversationId) {
+        Objects.requireNonNull(conversationId, "conversationId");
+        return operationTracker.track(conversationDao.byId(conversationId)
+                .map(Optional::of)
+                .defaultIfEmpty(Optional.empty())
+                .flatMap(optional -> {
+                    ConversationEntity row = optional.orElse(null);
+                    boolean bump = row != null && row.getUnreadCount() == 0
+                            && row.getLastMessageSeq() > 0L;
+                    Completable local = bump
+                            ? conversationDao.incrementUnread(conversationId, 1)
+                            : Completable.complete();
+                    return local.andThen(callVoid(settingsApi.markUnread(conversationId)))
+                            .flatMap(result -> {
+                                if (result instanceof Result.Failure<?> && bump) {
+                                    return conversationDao.incrementUnread(conversationId, -1)
+                                            .andThen(Single.just(result));
+                                }
+                                if (result instanceof Result.Success<?> && row != null) {
+                                    inboxReadWatermarkCache.rewind(
+                                            conversationId,
+                                            Math.max(0L, row.getLastMessageSeq() - 1L));
+                                }
+                                return Single.just(result);
+                            });
+                })
+                .subscribeOn(Schedulers.io()));
+    }
+
+    /**
+     * Clears the inbox badge without opening the chat, using
+     * {@code POST /conversations/{id}/read} up to the latest cached seq.
+     */
+    @NonNull
+    public Single<Result<Void>> markReadUpToLatest(@NonNull String conversationId) {
+        Objects.requireNonNull(conversationId, "conversationId");
+        return operationTracker.track(conversationDao.byId(conversationId)
+                .flatMap(row -> {
+                    long seq = row.getLastMessageSeq();
+                    int previousUnread = row.getUnreadCount();
+                    if (seq <= 0L) {
+                        return Single.just(successVoid()).toMaybe();
+                    }
+                    return conversationDao.clearUnread(conversationId)
+                            .andThen(callVoid(messageApi.markRead(
+                                    conversationId, new ReadRequest(seq))))
+                            .flatMap(result -> {
+                                if (result instanceof Result.Failure<?> && previousUnread > 0) {
+                                    return conversationDao.incrementUnread(
+                                                    conversationId, previousUnread)
+                                            .andThen(Single.just(result));
+                                }
+                                if (result instanceof Result.Success<?>) {
+                                    inboxReadWatermarkCache.adopt(conversationId, seq);
+                                }
+                                return Single.just(result);
+                            })
+                            .toMaybe();
+                })
+                .switchIfEmpty(Single.just(successVoid()))
                 .subscribeOn(Schedulers.io()));
     }
 

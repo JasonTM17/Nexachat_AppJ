@@ -9,15 +9,15 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
-        android:minHeight="64dp"
+        android:minHeight="@dimen/list_item_min_height"
         android:orientation="horizontal"
         android:paddingHorizontal="@dimen/space_md"
-        android:paddingVertical="10dp">
+        android:paddingVertical="@dimen/list_item_padding_vertical">
 
         <com.nexachat.core.ui.components.AvatarView
             android:id="@+id/avatar"
-            android:layout_width="48dp"
-            android:layout_height="48dp" />
+            android:layout_width="@dimen/avatar_md"
+            android:layout_height="@dimen/avatar_md" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -39,7 +39,7 @@
                 android:id="@+id/phone"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
+                android:layout_marginTop="@dimen/space_xxs"
                 android:ellipsize="end"
                 android:maxLines="1"
                 android:textAppearance="?attr/textAppearanceBodySmall"
@@ -53,6 +53,6 @@
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:layout_gravity="bottom"
-        android:layout_marginStart="76dp"
+        android:layout_marginStart="@dimen/divider_inset"
         android:background="?attr/colorSurfaceContainerHighest" />
 </FrameLayout>

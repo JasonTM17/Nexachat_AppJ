@@ -5,87 +5,96 @@
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground">
 
-    <androidx.core.widget.NestedScrollView
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:fillViewport="true">
-
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingHorizontal="@dimen/space_md"
-        android:paddingBottom="@dimen/space_lg">
+        android:layout_height="match_parent"
+        android:orientation="vertical">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/recoveryOtpToolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
+            android:background="?attr/colorSurface"
             app:navigationContentDescription="@string/cd_back"
-            app:navigationIcon="@drawable/ic_arrow_back" />
+            app:navigationIcon="@drawable/ic_arrow_back"
+            app:titleTextAppearance="?attr/textAppearanceTitleLarge" />
 
-        <TextView
-            android:id="@+id/recoveryOtpTarget"
+        <androidx.core.widget.NestedScrollView
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_sm"
-            android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:textColor="?attr/colorOnSurfaceVariant" />
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:fillViewport="true">
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/recoveryOtpLayout"
-            style="@style/Widget.NexaChat.TextInputLayout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            android:hint="@string/recovery_email_otp_label">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/recoveryOtpInput"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:contentDescription="@string/cd_recovery_email_otp"
-                android:imeOptions="actionDone"
-                android:freezesText="false"
-                android:inputType="number"
-                android:maxLength="6"
-                android:maxLines="1"
-                android:saveEnabled="false" />
-        </com.google.android.material.textfield.TextInputLayout>
+                android:orientation="vertical"
+                android:paddingHorizontal="@dimen/space_md"
+                android:paddingBottom="@dimen/space_lg">
 
-        <TextView
-            android:id="@+id/recoveryOtpError"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_sm"
-            android:accessibilityLiveRegion="polite"
-            android:background="@drawable/bg_auth_inline_error"
-            android:drawableStart="@drawable/ic_error_outline"
-            android:drawableTint="?attr/colorError"
-            android:drawablePadding="@dimen/space_sm"
-            android:padding="@dimen/space_inset"
-            android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:textColor="?attr/colorOnErrorContainer"
-            android:visibility="gone" />
+                <TextView
+                    android:id="@+id/recoveryOtpTarget"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/recoveryOtpVerify"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            android:minHeight="@dimen/min_touch_target"
-            android:text="@string/recovery_email_verify" />
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/recoveryOtpLayout"
+                    style="@style/Widget.NexaChat.TextInputLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:hint="@string/recovery_email_otp_label">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/recoveryOtpResend"
-            style="@style/Widget.NexaChat.Button.Outlined"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_sm"
-            android:minHeight="@dimen/min_touch_target"
-            android:text="@string/recovery_email_resend" />
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/recoveryOtpInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:contentDescription="@string/cd_recovery_email_otp"
+                        android:imeOptions="actionDone"
+                        android:freezesText="false"
+                        android:inputType="number"
+                        android:maxLength="6"
+                        android:maxLines="1"
+                        android:saveEnabled="false" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <TextView
+                    android:id="@+id/recoveryOtpError"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:accessibilityLiveRegion="polite"
+                    android:background="@drawable/bg_auth_inline_error"
+                    android:drawableStart="@drawable/ic_error_outline"
+                    android:drawableTint="?attr/colorError"
+                    android:drawablePadding="@dimen/space_sm"
+                    android:padding="@dimen/space_inset"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?attr/colorOnErrorContainer"
+                    android:visibility="gone" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/recoveryOtpVerify"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:minHeight="@dimen/min_touch_target"
+                    android:text="@string/recovery_email_verify" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/recoveryOtpResend"
+                    style="@style/Widget.NexaChat.Button.Outlined"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:minHeight="@dimen/min_touch_target"
+                    android:text="@string/recovery_email_resend" />
+            </LinearLayout>
+        </androidx.core.widget.NestedScrollView>
     </LinearLayout>
-    </androidx.core.widget.NestedScrollView>
 
     <com.nexachat.core.ui.components.LoadingStateView
         android:id="@+id/recoveryOtpLoading"

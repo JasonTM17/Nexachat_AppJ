@@ -462,6 +462,41 @@ public final class InboxViewModelTest {
     }
 
     @Test
+    public void markUnreadSuccessSurfacesUndoThatMarksRead() {
+        when(repository.markUnread("c-1"))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+        when(repository.markReadUpToLatest("c-1"))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+
+        viewModel.markConversationUnread("c-1");
+
+        InboxEvent event = viewModel.getEvents().getValue().consume();
+        assertTrue(event instanceof InboxPreferenceSuccess);
+        InboxPreferenceSuccess success = (InboxPreferenceSuccess) event;
+        assertEquals(com.nexachat.R.string.conversation_marked_unread, success.getMessageId());
+        assertNotNull(success.getUndo());
+        success.getUndo().run();
+        verify(repository).markReadUpToLatest("c-1");
+    }
+
+    @Test
+    public void markReadSuccessSurfacesUndoThatMarksUnread() {
+        when(repository.markReadUpToLatest("c-1"))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+        when(repository.markUnread("c-1"))
+                .thenReturn(Single.just(new Result.Success<Void>(null)));
+
+        viewModel.markConversationRead("c-1");
+
+        InboxEvent event = viewModel.getEvents().getValue().consume();
+        assertTrue(event instanceof InboxPreferenceSuccess);
+        InboxPreferenceSuccess success = (InboxPreferenceSuccess) event;
+        assertEquals(com.nexachat.R.string.conversation_marked_read, success.getMessageId());
+        success.getUndo().run();
+        verify(repository).markUnread("c-1");
+    }
+
+    @Test
     public void archiveActionDelegatesTheRequestedFlag() {
         when(repository.setConversationArchived("c-1", true))
                 .thenReturn(Single.just(new Result.Success<Void>(null)));

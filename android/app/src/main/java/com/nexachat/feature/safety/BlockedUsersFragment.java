@@ -62,7 +62,8 @@ public final class BlockedUsersFragment extends Fragment {
             }
         });
         binding.blockedEmpty.setIcon(R.drawable.ic_block);
-        binding.blockedEmpty.setMessage(getString(R.string.blocked_users_empty));
+        binding.blockedEmpty.setTitle(getString(R.string.blocked_users_empty));
+        binding.blockedEmpty.setMessage(getString(R.string.blocked_users_empty_hint));
         binding.blockedError.setOnRetry(() -> viewModel.refresh());
         viewModel.getUiState().observe(getViewLifecycleOwner(), state -> {
             adapter.submit(state.getItems());

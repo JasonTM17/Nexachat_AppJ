@@ -39,7 +39,8 @@ public final class ReminderFragment extends Fragment {
         binding.reminderList.setLayoutManager(new LinearLayoutManager(requireContext()));
         binding.reminderList.setAdapter(adapter);
         binding.reminderEmpty.setIcon(R.drawable.ic_hourglass_top);
-        binding.reminderEmpty.setMessage(getString(R.string.reminder_empty));
+        binding.reminderEmpty.setTitle(getString(R.string.reminder_empty));
+        binding.reminderEmpty.setMessage(getString(R.string.reminder_empty_hint));
         binding.reminderLoading.setLabel(getString(R.string.reminder_loading));
         binding.reminderAdd.setOnClickListener(ignored -> openEditor(null));
         viewModel.getUiState().observe(getViewLifecycleOwner(), this::render);
@@ -94,7 +95,8 @@ public final class ReminderFragment extends Fragment {
             binding.reminderError.setOnRetry(null);
         }
         if (showEmpty) {
-            binding.reminderEmpty.setMessage(getString(R.string.reminder_empty));
+            binding.reminderEmpty.setTitle(getString(R.string.reminder_empty));
+            binding.reminderEmpty.setMessage(getString(R.string.reminder_empty_hint));
         }
 
         ReminderRepository.Failure refreshError = state.getRefreshError();

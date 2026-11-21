@@ -100,4 +100,10 @@ public final class DatabaseModule {
     public static MessageTranslationDao provideMessageTranslationDao(AppDatabase database) {
         return database.messageTranslationDao();
     }
+
+    @Provides
+    @Singleton
+    public static ComposerDraftDao provideComposerDraftDao(AppDatabase database) {
+        return database.composerDraftDao();
+    }
 }

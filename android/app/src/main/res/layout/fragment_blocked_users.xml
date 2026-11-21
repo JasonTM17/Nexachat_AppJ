@@ -17,6 +17,7 @@
         app:navigationContentDescription="@string/cd_back"
         app:navigationIcon="@drawable/ic_arrow_back"
         app:title="@string/blocked_users_title"
+        app:titleTextAppearance="?attr/textAppearanceTitleLarge"
         app:titleTextColor="?attr/colorOnSurface" />
 
     <androidx.recyclerview.widget.RecyclerView

@@ -19,7 +19,8 @@
             android:layout_height="?attr/actionBarSize"
             android:background="?attr/colorSurface"
             app:navigationIcon="@drawable/ic_arrow_back"
-            app:navigationContentDescription="@string/cd_back" />
+            app:navigationContentDescription="@string/cd_back"
+            app:titleTextAppearance="?attr/textAppearanceTitleLarge" />
 
         <LinearLayout
             android:id="@+id/contactsHeader"
@@ -47,8 +48,8 @@
 
                 <ImageView
                     android:id="@+id/contactsSearchIcon"
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
+                    android:layout_width="@dimen/icon_size_sm"
+                    android:layout_height="@dimen/icon_size_sm"
                     android:importantForAccessibility="no"
                     android:src="@drawable/ic_search"
                     app:tint="?attr/colorOnSurfaceVariant" />

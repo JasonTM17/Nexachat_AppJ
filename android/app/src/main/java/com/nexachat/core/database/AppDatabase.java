@@ -26,9 +26,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             SyncCursorEntity.class,
             KeysetTrustEntity.class,
             MessageTranslationEntity.class,
-            StarredMessageEntity.class
+            StarredMessageEntity.class,
+            ComposerDraftEntity.class
         },
-        version = 21,
+        version = 22,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -43,6 +44,7 @@ public abstract class AppDatabase extends RoomDatabase {
     public abstract KeysetTrustDao keysetTrustDao();
     public abstract MessageTranslationDao messageTranslationDao();
     public abstract StarDao starDao();
+    public abstract ComposerDraftDao composerDraftDao();
 
     /** Clears cached account data and other offline actions while retaining message sends. */
     public void clearAccountDataPreservingOutbox() {
@@ -59,6 +61,7 @@ public abstract class AppDatabase extends RoomDatabase {
             db.execSQL("DELETE FROM `sync_cursors`");
             db.execSQL("DELETE FROM `e2ee_keyset_trust`");
             db.execSQL("DELETE FROM `message_translations`");
+            db.execSQL("DELETE FROM `composer_drafts`");
         });
     }
 
@@ -342,6 +345,17 @@ public abstract class AppDatabase extends RoomDatabase {
         }
     };
 
+    /** Local unsent composer drafts keyed by conversation, like WhatsApp/iMessage. */
+    public static final Migration MIGRATION_21_22 = new Migration(21, 22) {
+        @Override public void migrate(SupportSQLiteDatabase db) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS `composer_drafts` ("
+                    + "`conversationId` TEXT NOT NULL, `content` TEXT NOT NULL, "
+                    + "`mentionsJson` TEXT NOT NULL, `mentionAllOffset` INTEGER NOT NULL, "
+                    + "`mentionAllLength` INTEGER NOT NULL, `updatedAtEpochMs` INTEGER NOT NULL, "
+                    + "PRIMARY KEY(`conversationId`))");
+        }
+    };
+
     /**
      * The complete migration chain in order — the single source of truth so
      * production ({@code DatabaseModule}) and instrumented tests can never drift
@@ -354,6 +368,7 @@ public abstract class AppDatabase extends RoomDatabase {
             MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
             MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
             MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
+            MIGRATION_21_22,
     };
 
     /** Cache deletion must invalidate even a numerically plausible cursor, including partial loss. */

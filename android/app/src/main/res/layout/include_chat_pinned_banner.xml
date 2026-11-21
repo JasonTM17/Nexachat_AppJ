@@ -71,8 +71,8 @@
 
         <ImageView
             android:id="@+id/pinnedRefreshIcon"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="@dimen/icon_size"
+            android:layout_height="@dimen/icon_size"
             android:layout_marginStart="@dimen/space_sm"
             android:importantForAccessibility="no"
             android:src="@drawable/ic_refresh"

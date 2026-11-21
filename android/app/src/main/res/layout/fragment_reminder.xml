@@ -10,7 +10,7 @@
         android:layout_height="match_parent"
         android:clipToPadding="false"
         android:paddingTop="@dimen/space_xs"
-        android:paddingBottom="96dp"
+        android:paddingBottom="@dimen/fab_clearance"
         android:scrollbars="vertical" />
 
     <com.nexachat.core.ui.components.LoadingStateView

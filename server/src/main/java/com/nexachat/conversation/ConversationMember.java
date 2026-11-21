@@ -150,6 +150,14 @@ public class ConversationMember implements Persistable<ConversationMemberId> {
         return lastReadSeq;
     }
 
+    /**
+     * Caller-only unread bookmark. Never used for peer receipts — those stay
+     * monotonic through {@code advanceReadWatermark}.
+     */
+    public void rewindReadTo(long seq) {
+        this.lastReadSeq = Math.max(0L, seq);
+    }
+
     public long getLastDeliveredSeq() {
         return lastDeliveredSeq;
     }

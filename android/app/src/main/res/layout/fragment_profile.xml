@@ -5,10 +5,25 @@
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground">
 
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/profileToolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            android:background="?attr/colorSurface"
+            app:navigationContentDescription="@string/cd_back"
+            app:navigationIcon="@drawable/ic_arrow_back"
+            app:titleTextAppearance="?attr/textAppearanceTitleLarge" />
+
 <androidx.core.widget.NestedScrollView
     android:id="@+id/profileScroll"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="0dp"
+    android:layout_weight="1">
 
     <LinearLayout
         android:id="@+id/profileColumn"
@@ -18,14 +33,6 @@
         android:orientation="vertical"
         android:paddingHorizontal="@dimen/space_md"
         android:paddingBottom="@dimen/space_lg">
-
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/profileToolbar"
-            android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            app:navigationContentDescription="@string/cd_back"
-            app:navigationIcon="@drawable/ic_arrow_back"
-            app:titleTextAppearance="?attr/textAppearanceTitleLarge" />
 
         <TextView
             android:id="@+id/profileLoadError"
@@ -206,7 +213,7 @@
                     android:id="@+id/themeQuickChips"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginHorizontal="16dp"
+                    android:layout_marginHorizontal="@dimen/space_md"
                     android:layout_marginBottom="@dimen/space_sm"
                     app:chipSpacingHorizontal="@dimen/space_xs"
                     app:chipSpacingVertical="@dimen/space_xs"
@@ -909,7 +916,7 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="@dimen/space_lg"
             app:cardBackgroundColor="?attr/colorErrorContainer"
             app:cardCornerRadius="@dimen/corner_xl"
             app:cardElevation="0dp"
@@ -937,6 +944,7 @@
             android:visibility="gone" />
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>
+</LinearLayout>
 
     <com.nexachat.core.ui.components.LoadingStateView
         android:id="@+id/loadingState"

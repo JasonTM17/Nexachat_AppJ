@@ -200,6 +200,25 @@ public final class ConversationPreviewHelperTest {
     }
 
     @Test
+    public void composerDraftOverridesLastMessagePreview() {
+        Context context = mock(Context.class);
+        when(context.getString(eq(R.string.inbox_preview_draft), any()))
+                .thenAnswer(invocation -> "Draft: " + invocation.getArgument(1));
+        ConversationSummary conversation = conversation("DIRECT", null, "hello there", null, false);
+
+        assertEquals("Draft: later", ConversationPreviewHelper.previewText(
+                context, conversation, "me", "later"));
+        assertEquals("hello there", ConversationPreviewHelper.previewText(
+                context, conversation, "me", null));
+    }
+
+    @Test
+    public void clipDraftCollapsesWhitespaceAndCapsLength() {
+        assertEquals("hi there", ConversationPreviewHelper.clipDraft("  hi   there  "));
+        assertEquals("a".repeat(80), ConversationPreviewHelper.clipDraft("a".repeat(90)));
+    }
+
+    @Test
     public void malformedSharedTokensStayRawText() {
         Context context = mock(Context.class);
 

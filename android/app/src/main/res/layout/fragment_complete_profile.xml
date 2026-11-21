@@ -114,8 +114,8 @@
 
             <ImageView
               android:id="@+id/completeProfileEmailVerified"
-              android:layout_width="20dp"
-              android:layout_height="20dp"
+              android:layout_width="@dimen/icon_size_sm"
+              android:layout_height="@dimen/icon_size_sm"
               android:layout_marginStart="@dimen/space_sm"
               android:contentDescription="@string/cd_complete_profile_email_verified"
               android:src="@drawable/ic_check_circle"

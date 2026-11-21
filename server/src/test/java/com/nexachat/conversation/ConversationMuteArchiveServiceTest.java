@@ -312,6 +312,60 @@ class ConversationMuteArchiveServiceTest {
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NOT_MEMBER);
     }
 
+    @Test
+    void markUnread_rewindsFullyReadWatermark() {
+        ConversationMember row = member();
+        ReflectionTestUtils.setField(row.getConversation(), "lastMessageSeq", 10L);
+        row.rewindReadTo(10L);
+        givenConversationExists();
+        when(memberRepository.findByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(Optional.of(row));
+
+        service.markUnread(userId, conversationId);
+
+        assertThat(row.getLastReadSeq()).isEqualTo(9L);
+        verify(memberRepository).save(row);
+    }
+
+    @Test
+    void markUnread_alreadyUnreadIsNoOp() {
+        ConversationMember row = member();
+        ReflectionTestUtils.setField(row.getConversation(), "lastMessageSeq", 10L);
+        row.rewindReadTo(4L);
+        givenConversationExists();
+        when(memberRepository.findByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(Optional.of(row));
+
+        service.markUnread(userId, conversationId);
+
+        assertThat(row.getLastReadSeq()).isEqualTo(4L);
+        verify(memberRepository, never()).save(any());
+    }
+
+    @Test
+    void markUnread_emptyConversationIsNoOp() {
+        ConversationMember row = member();
+        givenConversationExists();
+        when(memberRepository.findByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(Optional.of(row));
+
+        service.markUnread(userId, conversationId);
+
+        verify(memberRepository, never()).save(any());
+    }
+
+    @Test
+    void markUnread_nonMember_throwsNotMember() {
+        givenConversationExists();
+        when(memberRepository.findByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(Optional.empty());
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> service.markUnread(userId, conversationId));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NOT_MEMBER);
+    }
+
     private boolean isMutedUntil(ConversationMember member) {
         return member.isMuted()
                 && NOW.plus(Duration.ofDays(1)).equals(member.getMutedUntil());

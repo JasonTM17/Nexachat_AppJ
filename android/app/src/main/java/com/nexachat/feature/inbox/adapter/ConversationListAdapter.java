@@ -29,6 +29,7 @@ import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Inbox conversation rows with unread badge and relative timestamps.
@@ -42,6 +43,8 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
 
     private final Listener listener;
     private List<ConversationLabel> labelDefinitions = List.of();
+    @NonNull
+    private Map<String, String> composerDrafts = Map.of();
     @Nullable
     private final String currentUserId;
     @NonNull
@@ -92,7 +95,8 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
     @Override
     public void onBindViewHolder(@NonNull Holder holder, int position) {
         ConversationSummary conversation = getItem(position);
-        holder.bind(conversation, currentUserId, justNowLabel, yesterdayLabel, listener, labelDefinitions);
+        holder.bind(conversation, currentUserId, justNowLabel, yesterdayLabel, listener,
+                labelDefinitions, composerDrafts.get(conversation.getId()));
     }
 
     @Override
@@ -104,6 +108,15 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
     public void setLabelDefinitions(@NonNull List<ConversationLabel> labels) {
         if (labelDefinitions.equals(labels)) return;
         labelDefinitions = List.copyOf(labels);
+        notifyItemRangeChanged(0, getItemCount());
+    }
+
+    public void setComposerDrafts(@NonNull Map<String, String> drafts) {
+        Map<String, String> next = Map.copyOf(drafts);
+        if (composerDrafts.equals(next)) {
+            return;
+        }
+        composerDrafts = next;
         notifyItemRangeChanged(0, getItemCount());
     }
 
@@ -141,7 +154,8 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                 @NonNull String justNowLabel,
                 @NonNull String yesterdayLabel,
                 @NonNull Listener listener,
-                @NonNull List<ConversationLabel> labelDefinitions
+                @NonNull List<ConversationLabel> labelDefinitions,
+                @Nullable String composerDraft
         ) {
             clearMuteExpiry();
             boundConversation = conversation;
@@ -159,10 +173,12 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             boolean unread = conversation.getUnreadCount() > 0;
             boolean deletedPreview = conversation.getLastMessageDeleted();
             InboxRowTypography.applyUnreadWeight(title, unread);
+            boolean hasDraft = composerDraft != null && !composerDraft.isBlank();
             String previewText = ConversationPreviewHelper.previewText(
                     itemView.getContext(),
                     conversation,
-                    currentUserId
+                    currentUserId,
+                    hasDraft ? composerDraft : null
             );
             boolean hasPreviewLine = InboxRowPreviewRules.hasPreviewLine(previewText);
             if (hasPreviewLine) {
@@ -173,15 +189,17 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                 preview.setText("");
             }
             applyTitleVerticalAlignment(hasPreviewLine);
-            InboxRowTypography.applyPreviewStyle(preview, unread, deletedPreview);
+            InboxRowTypography.applyPreviewStyle(preview, unread, deletedPreview, hasDraft);
             boolean missedCall = ConversationPreviewHelper.isMissedCall(conversation, currentUserId);
             int previewColor = resolveThemeColor(
                     itemView.getContext(),
-                    missedCall
-                            ? com.google.android.material.R.attr.colorError
-                            : unread && !deletedPreview
-                                    ? com.google.android.material.R.attr.colorOnSurface
-                                    : com.google.android.material.R.attr.colorOnSurfaceVariant
+                    hasDraft
+                            ? com.google.android.material.R.attr.colorPrimary
+                            : missedCall
+                                    ? com.google.android.material.R.attr.colorError
+                                    : unread && !deletedPreview
+                                            ? com.google.android.material.R.attr.colorOnSurface
+                                            : com.google.android.material.R.attr.colorOnSurfaceVariant
             );
             preview.setTextColor(previewColor);
             InboxPreviewKind previewKind = ConversationPreviewHelper.previewKind(conversation);
@@ -198,7 +216,7 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                 previewIcon = CallPreviewIcon.forCall(
                         conversation.getLastMessageContent(), missedCall);
             }
-            if (!hasPreviewLine || previewIcon == 0) {
+            if (!hasPreviewLine || previewIcon == 0 || hasDraft) {
                 previewTypeIcon.setVisibility(View.GONE);
             } else {
                 previewTypeIcon.setImageResource(previewIcon);

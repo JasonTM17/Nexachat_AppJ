@@ -124,6 +124,26 @@ public class ConversationMuteArchiveService {
     }
 
     /**
+     * Marks a fully-read conversation unread for the caller only. Sets
+     * {@code lastReadSeq} to {@code lastMessageSeq - 1} so {@code unreadCount}
+     * becomes at least 1. Does not broadcast {@code MESSAGE_READ} — peers keep
+     * their existing ticks. Idempotent when the row is already unread or empty.
+     *
+     * @throws ApiException {@code CONVERSATION_NOT_FOUND}, {@code NOT_MEMBER}
+     */
+    @Transactional
+    public void markUnread(UUID userId, UUID conversationId) {
+        ConversationMember member = requireMember(conversationId, userId);
+        Long latest = member.getConversation().getLastMessageSeq();
+        long latestSeq = latest == null ? 0L : latest;
+        if (latestSeq <= 0L || member.getLastReadSeq() < latestSeq) {
+            return;
+        }
+        member.rewindReadTo(latestSeq - 1L);
+        memberRepository.save(member);
+    }
+
+    /**
      * Loads the caller's membership row, enforcing the 404-before-403 order.
      */
     private ConversationMember requireMember(UUID conversationId, UUID userId) {

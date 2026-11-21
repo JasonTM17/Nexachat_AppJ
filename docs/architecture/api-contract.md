@@ -42,6 +42,7 @@ Android client can consume the API but no dedicated screen is merged into
 | Feature | Server version | Android UI | Tests |
 |---|---|---|---|
 | Per-member conversation mute/archive | V12 | Shipped — inbox long-press and chat overflow (`ConversationPreferenceMenu`, `MutePresets`) | `ConversationMuteArchiveControllerTest`, `ConversationMuteArchiveServiceTest`, `ConversationMuteArchiveFlowIT`, Android `MutePresetsTest`, `ConversationSummaryMuteTest` |
+| Mark as unread | No migration (rewinds caller `lastReadSeq`) | Shipped — inbox long-press mark unread/read; local composer drafts show `Draft:` inbox preview | `ConversationMuteArchiveControllerTest`, `ConversationMuteArchiveServiceTest`, Android `ConversationRepositoryTest`, `InboxViewModelTest`, `ComposerDraftRepositoryTest` |
 | Per-conversation AI opt-out | V13 | Shipped — chat `aiOptOut` switch | `ConversationAiOptOutIT`, `SummaryOptOutIT`, `SummaryCacheWinnerOptOutTest`, `AskOptOutUncitedCacheIT`, `AiOptOutContractTest` |
 | Shared recurring reminders | V14 | Shipped — `feature/reminder` board | `ReminderControllerTest`, `ReminderFlowIT`, `ReminderSchedulerIT`, `ReminderRepeatTest`, `FcmReminderPushSenderTest`, Android `ReminderViewModelTest`, `ReminderRepositoryTest`, `ReminderTimeTest` |
 | Group polls | V15 | Shipped — `feature/poll` board | `PollFlowTest`, `PollRateLimiterTest`, `PollTest`, Android `PollViewModelTest`, `PollRepositoryTest`, `PollDraftTest`, `PollTimeTest` |
@@ -644,6 +645,7 @@ uses the server-authorized message DELETE.
 | `DELETE /conversations/{conversationId}/mute` | Bearer member | — | `204` empty (idempotent no-op when already unmuted) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `PUT /conversations/{conversationId}/archive` | Bearer member | — | `204` empty (idempotent; hidden from the default inbox) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `DELETE /conversations/{conversationId}/archive` | Bearer member | — | `204` empty (idempotent no-op when not archived) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `PUT /conversations/{conversationId}/unread` | Bearer member | — | `204` empty (idempotent; rewinds only the caller's `lastReadSeq` to `lastMessageSeq - 1` when fully read; peers are not notified) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `PUT /conversations/{conversationId}/pin` | Bearer member | — | `204` empty (idempotent; pinned conversations sort first in the caller's inbox; ≤5 pinned conversations per user) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 · `CONVERSATION_PIN_LIMIT` 409 |
 | `DELETE /conversations/{conversationId}/pin` | Bearer member | — | `204` empty (idempotent no-op when not pinned) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `PUT /conversations/{conversationId}/ai-opt-out` | Bearer member | — | `200` `{conversationId, aiOptOut: true}` (idempotent; sets the caller's own opt-out for this conversation) | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
@@ -718,9 +720,14 @@ History, search, delta sync and STOMP message frames expose these fields only to
 current conversation members. Archive items and AI opt-out state responses do
 not include structured mention metadata.
 
-Mute, archive and pin are **per-member preferences**: they are stored on the
+Mute, archive, pin and **mark as unread** are **per-member preferences**: they are stored on the
 caller's `conversation_members` row and are never visible to, or affect, any
-other member. Pinned conversations sort ahead of the activity order (pinned
+other member. `PUT /conversations/{id}/unread` rewinds only the caller's
+`lastReadSeq` to `lastMessageSeq - 1` when the conversation is fully read, so
+`unreadCount` becomes at least 1. It does **not** broadcast `MESSAGE_READ` —
+peer ticks stay as they were. An already-unread or empty conversation is an
+idempotent `204`. Clearing the badge without opening the chat uses the existing
+`POST /conversations/{id}/read` with `upToSeq` equal to the latest sequence. Pinned conversations sort ahead of the activity order (pinned
 rows first, then `lastMessageSeq DESC` within each group); the pin ceiling is
 five conversations per user and applies only to NEW pins, so re-pinning an
 already pinned conversation is an idempotent `204` even at the ceiling.

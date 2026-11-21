@@ -21,6 +21,7 @@ import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.data.AttachmentRepository;
 import com.nexachat.data.AttachmentUploadEvent;
+import com.nexachat.data.ComposerDraftRepository;
 import com.nexachat.data.ChatMessage;
 import com.nexachat.data.ConversationRepository;
 import com.nexachat.data.ConversationSummary;
@@ -123,6 +124,7 @@ public final class ChatViewModel extends ViewModel {
     private final MutableLiveData<AiOptOutState> aiOptOutState =
             new MutableLiveData<>(new AiOptOutState());
     @Nullable private final TranslationRepository translationRepository;
+    @Nullable private final ComposerDraftRepository composerDraftRepository;
     private final MutableLiveData<Map<String, TranslationUiState>> translationStates =
             new MutableLiveData<>(java.util.Map.of());
     private final MutableLiveData<TranslatePrefsState> translatePrefsState =
@@ -149,6 +151,8 @@ public final class ChatViewModel extends ViewModel {
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final SerialDisposable searchDisposable = new SerialDisposable();
     private final SerialDisposable initialHistoryDisposable = new SerialDisposable();
+    private final SerialDisposable draftPersistDisposable = new SerialDisposable();
+    private boolean restoringComposerDraft;
     private boolean initialHistoryReloadInFlight;
     private final Map<String, CompositeDisposable> uploadDisposables = new LinkedHashMap<>();
     /** Reply id captured when an upload batch starts, keyed by that batch's local ids. */
@@ -180,10 +184,11 @@ public final class ChatViewModel extends ViewModel {
             @Nullable SettingsRepository settingsRepository,
             KeysetTrustStore keysetTrustStore,
             @Nullable SafetyRepository safetyRepository,
-            TranslationRepository translationRepository) {
+            TranslationRepository translationRepository,
+            ComposerDraftRepository composerDraftRepository) {
         this(savedStateHandle, messageRepository, conversationRepository, attachmentRepository,
                 session, tokenStore, settingsRepository, ephemeralRouter, keysetTrustStore,
-                safetyRepository, translationRepository);
+                safetyRepository, translationRepository, composerDraftRepository);
     }
 
     /** Compatibility constructor for existing focused ViewModel tests. */
@@ -226,6 +231,24 @@ public final class ChatViewModel extends ViewModel {
             @Nullable KeysetTrustStore keysetTrustStore,
             @Nullable SafetyRepository safetyRepository,
             @Nullable TranslationRepository translationRepository) {
+        this(savedStateHandle, messageRepository, conversationRepository, attachmentRepository,
+                session, tokenStore, settingsRepository, ephemeralRouter, keysetTrustStore,
+                safetyRepository, translationRepository, null);
+    }
+
+    private ChatViewModel(
+            SavedStateHandle savedStateHandle,
+            MessageRepository messageRepository,
+            ConversationRepository conversationRepository,
+            AttachmentRepository attachmentRepository,
+            RealtimeSession session,
+            TokenStore tokenStore,
+            @Nullable SettingsRepository settingsRepository,
+            @Nullable EphemeralStateRouter ephemeralRouter,
+            @Nullable KeysetTrustStore keysetTrustStore,
+            @Nullable SafetyRepository safetyRepository,
+            @Nullable TranslationRepository translationRepository,
+            @Nullable ComposerDraftRepository composerDraftRepository) {
         this.savedStateHandle = Objects.requireNonNull(savedStateHandle, "savedStateHandle");
         this.messageRepository = Objects.requireNonNull(messageRepository, "messageRepository");
         this.conversationRepository = Objects.requireNonNull(
@@ -235,6 +258,7 @@ public final class ChatViewModel extends ViewModel {
         this.session = Objects.requireNonNull(session, "session");
         this.ephemeralRouter = ephemeralRouter;
         this.translationRepository = translationRepository;
+        this.composerDraftRepository = composerDraftRepository;
         if (tokenStore != null) {
             disposables.add(tokenStore.observeRecallWindowConfig()
                     .subscribeOn(Schedulers.io())
@@ -258,8 +282,10 @@ public final class ChatViewModel extends ViewModel {
         this.editSession = new MutableLiveData<>(restoreEditSession());
         disposables.add(searchDisposable);
         disposables.add(initialHistoryDisposable);
+        disposables.add(draftPersistDisposable);
         observeRepositoryState();
         initializeConversation();
+        restoreComposerDraftIfNeeded(input);
     }
 
     /** True when the initial-history error screen may offer retry. */
@@ -1288,6 +1314,56 @@ public final class ChatViewModel extends ViewModel {
         savedStateHandle.set(KEY_MENTION_ALL_OFFSET, safe.getMentionAllOffset());
         savedStateHandle.set(KEY_MENTION_ALL_LENGTH, safe.getMentionAllLength());
         onInputChange(safe.getContent());
+        persistComposerDraftDebounced(safe);
+    }
+
+    private void restoreComposerDraftIfNeeded(@Nullable String savedInput) {
+        if (composerDraftRepository == null || conversationId.isBlank()) {
+            return;
+        }
+        if (savedInput != null && !savedInput.isEmpty()) {
+            return;
+        }
+        disposables.add(composerDraftRepository.load(conversationId)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(draft -> {
+                    if (!getMentionDraft().getContent().isEmpty()) {
+                        return;
+                    }
+                    restoringComposerDraft = true;
+                    onComposerDraftChange(draft);
+                    restoringComposerDraft = false;
+                }, ignored -> {}));
+    }
+
+    private void persistComposerDraftDebounced(@NonNull MentionDraft draft) {
+        if (composerDraftRepository == null || conversationId.isBlank() || restoringComposerDraft) {
+            return;
+        }
+        draftPersistDisposable.set(
+                Completable.timer(400, TimeUnit.MILLISECONDS, Schedulers.io())
+                        .andThen(composerDraftRepository.save(conversationId, draft))
+                        .subscribe(() -> {}, ignored -> {}));
+    }
+
+    private void clearPersistedComposerDraft() {
+        if (composerDraftRepository == null || conversationId.isBlank()) {
+            return;
+        }
+        draftPersistDisposable.set(Disposable.empty());
+        disposables.add(composerDraftRepository.clear(conversationId)
+                .subscribe(() -> {}, ignored -> {}));
+    }
+
+    private void flushComposerDraft() {
+        if (composerDraftRepository == null || conversationId.isBlank()) {
+            return;
+        }
+        draftPersistDisposable.set(Disposable.empty());
+        composerDraftRepository.save(conversationId, getMentionDraft())
+                .subscribeOn(Schedulers.io())
+                .subscribe(() -> {}, ignored -> {});
     }
 
     private SavedStateHandle savedState() {
@@ -1321,6 +1397,7 @@ public final class ChatViewModel extends ViewModel {
         String replyToId = replyTarget == null ? null : replyTarget.getMessageId();
         savedState().set(KEY_INPUT, "");
         clearMentionDraft();
+        clearPersistedComposerDraft();
         updateUiState(current -> current.withInput("").withReplyTarget(null));
         io.reactivex.rxjava3.core.Completable send = draft.getMentions().isEmpty() && !draft.isMentionAll()
                 ? messageRepository.send(conversationId, text, replyToId, MessageDto.TYPE_TEXT, List.of())
@@ -2111,6 +2188,7 @@ public final class ChatViewModel extends ViewModel {
 
     @Override
     protected void onCleared() {
+        flushComposerDraft();
         disposables.clear();
         uploadDisposables.clear();
         attachmentReplyIds.clear();
