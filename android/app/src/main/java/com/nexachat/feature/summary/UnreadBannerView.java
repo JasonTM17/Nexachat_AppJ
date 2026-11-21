@@ -15,8 +15,13 @@ public final class UnreadBannerView extends FrameLayout {
         if (binding == null) {
             binding = IncludeUnreadBannerBinding.inflate(LayoutInflater.from(getContext()), this, true);
         }
-        binding.unreadBannerText.setText(
-                com.nexachat.res.QuantityStrings.unreadBanner(getResources(), count));
+        CharSequence bannerText =
+                com.nexachat.res.QuantityStrings.unreadBanner(getResources(), count);
+        binding.unreadBannerText.setText(bannerText);
+        // The banner card is the tap target (summarize), so it carries the
+        // count text as its own name — the child text is invisible to a flat
+        // dump that flags the clickable node (#254).
+        setContentDescription(bannerText);
         setOnClickListener(v -> onSummarize.run());
         binding.dismissUnreadBanner.setOnClickListener(v -> onDismiss.run());
     }

@@ -246,6 +246,7 @@
     </plurals>
     <string name="reply_unavailable">Tin nhắn không khả dụng</string>
     <string name="cd_cancel_reply">Hủy trả lời</string>
+    <string name="cd_reply_quote">Trả lời %1$s: %2$s</string>
     <string name="action_jump_to_message">Đi tới tin nhắn</string>
     <string name="error_pin_limit">Chỉ ghim được tối đa 3 tin nhắn</string>
     <string name="error_conversation_pin_limit">Chỉ ghim được tối đa 5 cuộc trò chuyện</string>

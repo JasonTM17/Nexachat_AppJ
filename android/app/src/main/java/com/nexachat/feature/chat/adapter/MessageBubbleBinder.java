@@ -59,6 +59,7 @@ import com.nexachat.feature.chat.ChatBubbleColors;
 import com.nexachat.feature.chat.ChatBubbleRules;
 import com.nexachat.feature.chat.ui.MessageActionListener;
 import java.text.DateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.function.Function;
@@ -312,6 +313,109 @@ public final class MessageBubbleBinder {
                 item.isStarred());
         bindReactions(root, message);
         applyMediaOnlyFrame(root, bubble, message, mentionedMe);
+        if (!systemMessage) {
+            // System notices are plain labels, never focus targets; every other
+            // row is a clickable container whose merged announcement TalkBack
+            // already composes from the children — the row description pins the
+            // same parts for the flat sweep dump (#254, the #260 row pattern).
+            root.setContentDescription(rowAccessibilityDescription(root));
+        } else {
+            root.setContentDescription(null);
+        }
+    }
+
+    /**
+     * One focus target per bubble row: the clickable row announces sender,
+     * reply quote, primary content, then the meta row and reaction chips in
+     * the order pinned for {@code messageList} rows by
+     * docs/quality/a11y-critical-screens.md §4.3. Child views keep their own
+     * labels; nothing merged here is lost, and a flat uiautomator dump reads
+     * the same label TalkBack announces.
+     */
+    private String rowAccessibilityDescription(@NonNull View root) {
+        List<String> parts = new ArrayList<>();
+        addVisibleText(parts, root.findViewById(R.id.senderName));
+        addVisibleDescription(parts, root.findViewById(R.id.replyQuote));
+        addPrimaryContent(parts, root);
+        addVisibleDescription(parts, metaChild(root, R.id.starIcon));
+        addVisibleText(parts, metaChild(root, R.id.editedLabel));
+        addVisibleText(parts, metaChild(root, R.id.timeLabel));
+        addVisibleDescription(parts, metaChild(root, R.id.timerIcon));
+        addVisibleDescription(parts, metaChild(root, R.id.sendingProgress));
+        addVisibleDescription(parts, metaChild(root, R.id.deliveryIcon));
+        addVisibleText(parts, metaChild(root, R.id.deliveryStatusText));
+        addReactionDescriptions(parts, root);
+        return String.join(", ", parts);
+    }
+
+    /** Meta-row children live inside the {@code bubbleMeta} include. */
+    @Nullable
+    private static View metaChild(@NonNull View root, @IdRes int id) {
+        View metaInclude = root.findViewById(R.id.bubbleMeta);
+        return metaInclude == null ? null : metaInclude.findViewById(id);
+    }
+
+    /**
+     * The row's content label is its first visible content view — the bubble
+     * body, a shared-card/file label, the system notice, or the media control.
+     * Content views that are themselves click targets (attachment image, play
+     * button) keep their own descriptions and are not duplicated here.
+     */
+    private static void addPrimaryContent(@NonNull List<String> parts, @NonNull View root) {
+        for (@IdRes int id : new int[] {
+                R.id.messageBody, R.id.fileName, R.id.systemLabel,
+                R.id.messageImage, R.id.playButton, R.id.voicePlayButton}) {
+            View view = root.findViewById(id);
+            if (view == null || view.getVisibility() != View.VISIBLE) {
+                continue;
+            }
+            CharSequence description = view.getContentDescription();
+            if (description != null && description.length() > 0) {
+                parts.add(description.toString());
+            } else if (view instanceof TextView text && text.getText().length() > 0) {
+                parts.add(text.getText().toString());
+            } else {
+                continue;
+            }
+            return;
+        }
+    }
+
+    private static void addReactionDescriptions(@NonNull List<String> parts, @NonNull View root) {
+        View reactionsInclude = root.findViewById(R.id.reactionsRow);
+        if (reactionsInclude == null || reactionsInclude.getVisibility() != View.VISIBLE) {
+            return;
+        }
+        ChipGroup group = reactionsInclude instanceof ChipGroup
+                ? (ChipGroup) reactionsInclude
+                : reactionsInclude.findViewById(R.id.reactionChipGroup);
+        if (group == null) {
+            return;
+        }
+        for (int index = 0; index < group.getChildCount(); index++) {
+            addVisibleDescription(parts, group.getChildAt(index));
+        }
+    }
+
+    private static void addVisibleText(@NonNull List<String> parts, @Nullable View view) {
+        if (view == null || view.getVisibility() != View.VISIBLE
+                || !(view instanceof TextView label)) {
+            return;
+        }
+        CharSequence text = label.getText();
+        if (text != null && text.length() > 0) {
+            parts.add(text.toString());
+        }
+    }
+
+    private static void addVisibleDescription(@NonNull List<String> parts, @Nullable View view) {
+        if (view == null || view.getVisibility() != View.VISIBLE) {
+            return;
+        }
+        CharSequence description = view.getContentDescription();
+        if (description != null && description.length() > 0) {
+            parts.add(description.toString());
+        }
     }
 
     /**
@@ -545,6 +649,13 @@ public final class MessageBubbleBinder {
                     ? ""
                     : SharedContentUi.previewText(root.getContext(), snippet));
         }
+        // The quote jumps to the original message, so it is its own click
+        // target and needs its own name: "Reply to <author>: <snippet>"
+        // (sweep evidence #254 — a clickable node with only child text).
+        replyInclude.setContentDescription(root.getContext().getString(
+                R.string.cd_reply_quote,
+                sender != null ? sender : "",
+                snippet == null ? "" : SharedContentUi.previewText(root.getContext(), snippet)));
         replyInclude.setOnClickListener(v -> {
             if (actionListener != null) {
                 actionListener.onReplyQuoteTap(replyId);
