@@ -5,68 +5,77 @@
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground">
 
-    <androidx.core.widget.NestedScrollView
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:fillViewport="true">
-
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingHorizontal="@dimen/space_md"
-        android:paddingBottom="@dimen/space_lg">
+        android:layout_height="match_parent"
+        android:orientation="vertical">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/recoveryFormToolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
+            android:background="?attr/colorSurface"
             app:navigationContentDescription="@string/cd_back"
-            app:navigationIcon="@drawable/ic_arrow_back" />
+            app:navigationIcon="@drawable/ic_arrow_back"
+            app:titleTextAppearance="?attr/textAppearanceTitleLarge" />
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/recoveryFormEmailLayout"
-            style="@style/Widget.NexaChat.TextInputLayout"
+        <androidx.core.widget.NestedScrollView
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_sm"
-            android:hint="@string/recovery_email_field_label">
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:fillViewport="true">
 
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/recoveryFormEmailInput"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:autofillHints="emailAddress"
-                android:contentDescription="@string/cd_recovery_email_input"
-                android:imeOptions="actionDone"
-                android:inputType="textEmailAddress"
-                android:maxLines="1" />
-        </com.google.android.material.textfield.TextInputLayout>
+                android:orientation="vertical"
+                android:paddingHorizontal="@dimen/space_md"
+                android:paddingBottom="@dimen/space_lg">
 
-        <TextView
-            android:id="@+id/recoveryFormError"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_sm"
-            android:accessibilityLiveRegion="polite"
-            android:background="@drawable/bg_auth_inline_error"
-            android:drawableStart="@drawable/ic_error_outline"
-            android:drawableTint="?attr/colorError"
-            android:drawablePadding="@dimen/space_sm"
-            android:padding="@dimen/space_inset"
-            android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:textColor="?attr/colorOnErrorContainer"
-            android:visibility="gone" />
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/recoveryFormEmailLayout"
+                    style="@style/Widget.NexaChat.TextInputLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:hint="@string/recovery_email_field_label">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/recoveryFormSend"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            android:minHeight="@dimen/min_touch_target"
-            android:text="@string/recovery_email_send_code" />
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/recoveryFormEmailInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:autofillHints="emailAddress"
+                        android:contentDescription="@string/cd_recovery_email_input"
+                        android:imeOptions="actionDone"
+                        android:inputType="textEmailAddress"
+                        android:maxLines="1" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <TextView
+                    android:id="@+id/recoveryFormError"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:accessibilityLiveRegion="polite"
+                    android:background="@drawable/bg_auth_inline_error"
+                    android:drawableStart="@drawable/ic_error_outline"
+                    android:drawableTint="?attr/colorError"
+                    android:drawablePadding="@dimen/space_sm"
+                    android:padding="@dimen/space_inset"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?attr/colorOnErrorContainer"
+                    android:visibility="gone" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/recoveryFormSend"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:minHeight="@dimen/min_touch_target"
+                    android:text="@string/recovery_email_send_code" />
+            </LinearLayout>
+        </androidx.core.widget.NestedScrollView>
     </LinearLayout>
-    </androidx.core.widget.NestedScrollView>
 
     <com.nexachat.core.ui.components.LoadingStateView
         android:id="@+id/recoveryFormLoading"

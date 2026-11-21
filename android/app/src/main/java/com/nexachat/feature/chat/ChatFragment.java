@@ -1367,8 +1367,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         bindGroupInfoShortcut(state.isGroup(), peerTitle);
         renderSubtitle();
         boolean calls = ChatToolbarPolicy.callAvailable(state.isGroup());
-        boolean compactActions = ChatToolbarPolicy.compactToolbarActions(
-                getResources().getConfiguration().screenWidthDp);
+        boolean compactActions = ChatToolbarPolicy.compactToolbarActions(windowWidthDp());
         binding.callButton.setVisibility(calls ? View.VISIBLE : View.GONE);
         binding.videoCallButton.setVisibility(
                 calls && !compactActions ? View.VISIBLE : View.GONE);
@@ -1910,7 +1909,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
 
         binding.emptyState.setVisibility(showEmpty ? View.VISIBLE : View.GONE);
         if (showEmpty) {
-            binding.emptyState.setMessage(getString(R.string.search_in_chat_no_results));
+            binding.emptyState.setTitle(getString(R.string.search_in_chat_no_results));
+            binding.emptyState.setMessage(getString(R.string.search_in_chat_empty_hint));
             binding.emptyState.clearAction();
         }
 
@@ -1977,8 +1977,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                 System.currentTimeMillis());
         List<CharSequence> labels = new ArrayList<>();
         List<Integer> actions = new ArrayList<>();
-        if (!flags.group && ChatToolbarPolicy.compactToolbarActions(
-                getResources().getConfiguration().screenWidthDp)) {
+        if (!flags.group && ChatToolbarPolicy.compactToolbarActions(windowWidthDp())) {
             labels.add(getString(R.string.cd_video_call));
             actions.add(MENU_VIDEO_CALL);
         }
@@ -2776,6 +2775,15 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         viewModel.refreshPeerBlocked();
     }
 
+    private int windowWidthDp() {
+        float density = getResources().getDisplayMetrics().density;
+        int fromPixels = density > 0f
+                ? Math.round(getResources().getDisplayMetrics().widthPixels / density)
+                : 0;
+        return ChatToolbarPolicy.resolvedWidthDp(
+                getResources().getConfiguration().screenWidthDp, fromPixels);
+    }
+
     @Override public void onPause() {
         foregroundConversationTracker.onConversationPaused(conversationId);
         if (streakViewModel != null) streakViewModel.onScreenHidden();
@@ -2864,6 +2872,17 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
          */
         static boolean compactToolbarActions(int widthDp) {
             return widthDp < 360;
+        }
+
+        /**
+         * Prefer the smaller of configuration and pixel-derived width so a
+         * 320dp emulator window is not treated as a tablet by a stale config.
+         */
+        static int resolvedWidthDp(int configWidthDp, int pixelWidthDp) {
+            if (configWidthDp > 0 && pixelWidthDp > 0) {
+                return Math.min(configWidthDp, pixelWidthDp);
+            }
+            return configWidthDp > 0 ? configWidthDp : pixelWidthDp;
         }
 
         /** Title start inset in dp; matches {@code fragment_chat.xml} {@code titleMarginStart}. */

@@ -81,6 +81,15 @@ class ConversationMuteArchiveControllerTest {
     }
 
     @Test
+    void markUnread_returns204AndDelegates() {
+        ResponseEntity<Void> response =
+                controller.markUnread(new JwtPrincipal(userId), conversationId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        verify(muteArchiveService).markUnread(userId, conversationId);
+    }
+
+    @Test
     void missingPrincipal_isRejectedBeforeTheServiceRuns() {
         ApiException ex = catchThrowableOfType(ApiException.class,
                 () -> controller.mute(null, conversationId, new MuteRequest(until, null)));

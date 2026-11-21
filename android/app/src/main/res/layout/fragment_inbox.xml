@@ -19,8 +19,8 @@
             android:layout_height="wrap_content"
             android:minHeight="@dimen/app_bar_min_height"
             android:background="?attr/colorSurface"
-            app:contentInsetStart="16dp"
-            app:contentInsetEnd="8dp"
+            app:contentInsetStart="@dimen/space_md"
+            app:contentInsetEnd="@dimen/space_sm"
             app:title="">
 
             <LinearLayout
@@ -114,12 +114,12 @@
                 android:gravity="center_vertical"
                 android:minHeight="@dimen/min_touch_target"
                 android:orientation="horizontal"
-                android:paddingHorizontal="16dp">
+                android:paddingHorizontal="@dimen/space_md">
 
                 <ImageView
                     android:id="@+id/inboxSearchIcon"
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
+                    android:layout_width="@dimen/icon_size_sm"
+                    android:layout_height="@dimen/icon_size_sm"
                     android:importantForAccessibility="no"
                     android:src="@drawable/ic_search"
                     app:tint="?attr/colorOnSurfaceVariant" />
@@ -128,7 +128,7 @@
                     android:importantForAccessibility="no"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
+                    android:layout_marginStart="@dimen/space_inset"
                     android:layout_weight="1"
                     android:text="@string/inbox_search_hint"
                     android:textAppearance="?attr/textAppearanceBodyMedium"

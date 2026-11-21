@@ -28,6 +28,10 @@ public final class ConversationPreferenceMenu {
         default void onTogglePin(boolean pin) {}
 
         default void onSetAiOptOut(boolean optOut) {}
+
+        default void onMarkUnread() {}
+
+        default void onMarkRead() {}
     }
 
     private static final int ACTION_UNMUTE = 1;
@@ -41,6 +45,8 @@ public final class ConversationPreferenceMenu {
     private static final int ACTION_UNPIN = 9;
     private static final int ACTION_AI_OPT_OUT = 10;
     private static final int ACTION_MANAGE_LABELS = 11;
+    private static final int ACTION_MARK_UNREAD = 12;
+    private static final int ACTION_MARK_READ = 13;
 
     private ConversationPreferenceMenu() {}
 
@@ -65,6 +71,11 @@ public final class ConversationPreferenceMenu {
                 ? R.string.action_unpin_conversation
                 : R.string.action_pin_conversation));
         actions.add(pinned ? ACTION_UNPIN : ACTION_PIN);
+        boolean unread = conversation.getUnreadCount() > 0;
+        labels.add(context.getString(unread
+                ? R.string.action_mark_read
+                : R.string.action_mark_unread));
+        actions.add(unread ? ACTION_MARK_READ : ACTION_MARK_UNREAD);
 
         boolean muted = conversation.isMutedAt(System.currentTimeMillis());
         addMuteItems(context, muted, labels, actions);
@@ -90,6 +101,10 @@ public final class ConversationPreferenceMenu {
                         manageLabels.run();
                     } else if (action == ACTION_AI_OPT_OUT) {
                         listener.onSetAiOptOut(!conversation.isAiOptOut());
+                    } else if (action == ACTION_MARK_UNREAD) {
+                        listener.onMarkUnread();
+                    } else if (action == ACTION_MARK_READ) {
+                        listener.onMarkRead();
                     } else {
                         dispatch(action, listener);
                     }

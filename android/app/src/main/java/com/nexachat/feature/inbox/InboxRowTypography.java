@@ -20,8 +20,15 @@ public final class InboxRowTypography {
      */
     public static void applyPreviewStyle(
             @NonNull TextView view, boolean unread, boolean deleted) {
+        applyPreviewStyle(view, unread, deleted, false);
+    }
+
+    public static void applyPreviewStyle(
+            @NonNull TextView view, boolean unread, boolean deleted, boolean draft) {
         int style;
         if (deleted) {
+            style = Typeface.ITALIC;
+        } else if (draft) {
             style = Typeface.ITALIC;
         } else if (unread) {
             style = Typeface.BOLD;

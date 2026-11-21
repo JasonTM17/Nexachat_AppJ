@@ -1,81 +1,90 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground"
-    android:fillViewport="true">
+    android:orientation="vertical">
 
-    <LinearLayout
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/recoveryEmailToolbar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingHorizontal="@dimen/space_md"
-        android:paddingBottom="@dimen/space_lg">
+        android:layout_height="?attr/actionBarSize"
+        android:background="?attr/colorSurface"
+        app:navigationContentDescription="@string/cd_back"
+        app:navigationIcon="@drawable/ic_arrow_back"
+        app:titleTextAppearance="?attr/textAppearanceTitleLarge" />
 
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/recoveryEmailToolbar"
-            android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            app:navigationContentDescription="@string/cd_back"
-            app:navigationIcon="@drawable/ic_arrow_back" />
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
 
-        <TextView
-            android:id="@+id/recoveryEmailStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_sm"
-            android:textAppearance="?attr/textAppearanceBodyLarge"
-            android:textColor="?attr/colorOnSurface" />
-
-        <TextView
-            android:id="@+id/recoveryEmailError"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_inset"
-            android:accessibilityLiveRegion="polite"
-            android:background="@drawable/bg_auth_inline_error"
-            android:drawableStart="@drawable/ic_error_outline"
-            android:drawableTint="?attr/colorError"
-            android:drawablePadding="@dimen/space_sm"
-            android:padding="@dimen/space_inset"
-            android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:textColor="?attr/colorOnErrorContainer"
-            android:visibility="gone" />
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/space_md"
+            android:paddingBottom="@dimen/space_lg">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/recoveryEmailChange"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            android:minHeight="@dimen/min_touch_target"
-            android:text="@string/recovery_email_change" />
+            <TextView
+                android:id="@+id/recoveryEmailStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:textAppearance="?attr/textAppearanceBodyLarge"
+                android:textColor="?attr/colorOnSurface" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/recoveryEmailRemove"
-            style="@style/Widget.NexaChat.Button.Destructive"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_sm"
-            android:minHeight="@dimen/min_touch_target"
-            android:text="@string/recovery_email_remove" />
+            <TextView
+                android:id="@+id/recoveryEmailError"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_inset"
+                android:accessibilityLiveRegion="polite"
+                android:background="@drawable/bg_auth_inline_error"
+                android:drawableStart="@drawable/ic_error_outline"
+                android:drawableTint="?attr/colorError"
+                android:drawablePadding="@dimen/space_sm"
+                android:padding="@dimen/space_inset"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnErrorContainer"
+                android:visibility="gone" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/recoveryEmailAdd"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            android:minHeight="@dimen/min_touch_target"
-            android:text="@string/recovery_email_add" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/recoveryEmailChange"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:minHeight="@dimen/min_touch_target"
+                android:text="@string/recovery_email_change" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/recoveryEmailRetry"
-            style="@style/Widget.NexaChat.Button.Outlined"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            android:minHeight="@dimen/min_touch_target"
-            android:text="@string/action_retry"
-            android:visibility="gone" />
-    </LinearLayout>
-</androidx.core.widget.NestedScrollView>
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/recoveryEmailRemove"
+                style="@style/Widget.NexaChat.Button.Destructive"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:minHeight="@dimen/min_touch_target"
+                android:text="@string/recovery_email_remove" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/recoveryEmailAdd"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:minHeight="@dimen/min_touch_target"
+                android:text="@string/recovery_email_add" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/recoveryEmailRetry"
+                style="@style/Widget.NexaChat.Button.Outlined"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:minHeight="@dimen/min_touch_target"
+                android:text="@string/action_retry"
+                android:visibility="gone" />
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</LinearLayout>

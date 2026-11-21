@@ -24,7 +24,7 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="@dimen/space_inset"
-        android:layout_marginEnd="8dp"
+        android:layout_marginEnd="@dimen/space_sm"
         android:ellipsize="end"
         android:maxLines="1"
         android:textAppearance="@style/TextAppearance.NexaChat.InboxTitle"

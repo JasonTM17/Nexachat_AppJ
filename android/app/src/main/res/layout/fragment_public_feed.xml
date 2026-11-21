@@ -17,6 +17,7 @@
         app:navigationContentDescription="@string/cd_back"
         app:navigationIcon="@drawable/ic_arrow_back"
         app:title="@string/feed_title"
+        app:titleTextAppearance="?attr/textAppearanceTitleLarge"
         app:titleTextColor="?attr/colorOnSurface" />
 
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout

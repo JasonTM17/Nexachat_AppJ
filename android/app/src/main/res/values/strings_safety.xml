@@ -9,6 +9,7 @@
     <string name="user_unblocked_snackbar">Unblocked</string>
     <string name="blocked_users_title">Blocked users</string>
     <string name="blocked_users_empty">No blocked users</string>
+    <string name="blocked_users_empty_hint">People you block will show up here.</string>
     <string name="blocked_composer_banner">You blocked this contact</string>
     <string name="action_star">Star</string>
     <string name="action_unstar">Unstar</string>

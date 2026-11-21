@@ -41,6 +41,7 @@ import com.nexachat.core.network.dto.InboxLastMessageDto;
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.core.network.dto.ConversationMemberDto;
 import com.nexachat.core.network.dto.MuteRequest;
+import com.nexachat.core.network.dto.ReadRequest;
 import com.nexachat.core.network.dto.SyncRequest;
 import com.nexachat.core.network.dto.SyncResponse;
 import com.nexachat.core.network.stomp.ChatEvent;
@@ -1150,6 +1151,66 @@ public final class ConversationRepositoryTest {
         assertTrue(result instanceof Result.Failure<?>);
         assertTrue(dao().rows.get("conv-m").isMuted());
         assertEquals(Long.valueOf(2_000L), dao().rows.get("conv-m").getMutedUntilEpochMs());
+    }
+
+    @Test
+    public void markUnreadBumpsLocalBadgeAndRewindsWatermark() {
+        buildRepository();
+        dao().upsert(conversation("conv-u", 5)).blockingAwait();
+        inboxReadWatermarkCache.adopt("conv-u", 5L);
+        when(settingsApi.markUnread("conv-u"))
+                .thenReturn(asCall(Response.<Void>success(204, null)));
+
+        Result<Void> result = repository.markUnread("conv-u").blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        assertEquals(1, dao().rows.get("conv-u").getUnreadCount());
+        assertEquals(4L, inboxReadWatermarkCache.peek("conv-u"));
+        verify(settingsApi).markUnread("conv-u");
+    }
+
+    @Test
+    public void markUnreadDoesNotBumpWhenAlreadyUnread() {
+        buildRepository();
+        dao().upsert(conversation("conv-u", 5)).blockingAwait();
+        dao().incrementUnread("conv-u", 2).blockingAwait();
+        when(settingsApi.markUnread("conv-u"))
+                .thenReturn(asCall(Response.<Void>success(204, null)));
+
+        Result<Void> result = repository.markUnread("conv-u").blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        assertEquals(2, dao().rows.get("conv-u").getUnreadCount());
+    }
+
+    @Test
+    public void failedMarkUnreadRollsTheLocalBadgeBack() {
+        buildRepository();
+        dao().upsert(conversation("conv-u", 5)).blockingAwait();
+        when(settingsApi.markUnread("conv-u")).thenReturn(asCall(Response.error(403,
+                ResponseBody.create(okhttp3.MediaType.parse("application/json"),
+                        "{\"error\":{\"code\":\"NOT_MEMBER\"}}"))));
+
+        Result<Void> result = repository.markUnread("conv-u").blockingGet();
+
+        assertTrue(result instanceof Result.Failure<?>);
+        assertEquals(0, dao().rows.get("conv-u").getUnreadCount());
+    }
+
+    @Test
+    public void markReadUpToLatestClearsTheBadge() {
+        buildRepository();
+        dao().upsert(conversation("conv-u", 5)).blockingAwait();
+        dao().incrementUnread("conv-u", 3).blockingAwait();
+        when(messageApi.markRead(eq("conv-u"), eq(new ReadRequest(5))))
+                .thenReturn(asCall(Response.<Void>success(204, null)));
+
+        Result<Void> result = repository.markReadUpToLatest("conv-u").blockingGet();
+
+        assertTrue(result instanceof Result.Success<?>);
+        assertEquals(0, dao().rows.get("conv-u").getUnreadCount());
+        assertEquals(5L, inboxReadWatermarkCache.peek("conv-u"));
+        verify(messageApi).markRead(eq("conv-u"), eq(new ReadRequest(5)));
     }
 
     @Test
@@ -2484,7 +2545,8 @@ public final class ConversationRepositoryTest {
         public Completable incrementUnread(String conversationId, int delta) {
             return Completable.fromAction(() -> {
                 ConversationEntity row = rows.get(conversationId);
-                if (row != null) rows.put(conversationId, withUnread(row, row.getUnreadCount() + delta));
+                if (row != null) rows.put(conversationId, withUnread(row,
+                        Math.max(0, row.getUnreadCount() + delta)));
                 publish();
             });
         }

@@ -22,6 +22,15 @@ public final class InboxReadWatermarkCache {
         byConversation.merge(conversationId, lastReadSeq, Math::max);
     }
 
+    /**
+     * Caller-only unread bookmark. Unlike {@link #adopt}, this may move the
+     * cached watermark backward so opening the chat after mark-as-unread still
+     * treats the latest message as unread.
+     */
+    public void rewind(@NonNull String conversationId, long lastReadSeq) {
+        byConversation.put(conversationId, Math.max(0L, lastReadSeq));
+    }
+
     public long peek(@NonNull String conversationId) {
         Long seq = byConversation.get(conversationId);
         return seq == null ? 0L : seq;

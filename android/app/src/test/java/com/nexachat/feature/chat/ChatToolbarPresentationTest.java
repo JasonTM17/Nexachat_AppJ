@@ -38,6 +38,14 @@ public final class ChatToolbarPresentationTest {
     }
 
     @Test
+    public void resolvedWidthPrefersTheNarrowerMeasurement() {
+        assertEquals(320, ChatFragment.ChatToolbarPolicy.resolvedWidthDp(411, 320));
+        assertEquals(320, ChatFragment.ChatToolbarPolicy.resolvedWidthDp(320, 411));
+        assertEquals(320, ChatFragment.ChatToolbarPolicy.resolvedWidthDp(0, 320));
+        assertEquals(360, ChatFragment.ChatToolbarPolicy.resolvedWidthDp(360, 0));
+    }
+
+    @Test
     public void titleMarginStartKeepsTitleClearOfHeaderAvatar() {
         int withAvatar = ChatFragment.ChatToolbarPolicy.titleMarginStartDp(false);
         assertTrue(withAvatar > 0);

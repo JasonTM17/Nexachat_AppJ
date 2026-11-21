@@ -10,6 +10,7 @@ import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.common.Result;
 import com.nexachat.core.storage.TokenStore;
+import com.nexachat.data.ComposerDraftRepository;
 import com.nexachat.data.ConversationRepository;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.data.TimeAndJwt;
@@ -19,6 +20,7 @@ import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.UnaryOperator;
@@ -35,9 +37,12 @@ public final class InboxViewModel extends ViewModel {
 
     private final SavedStateHandle savedStateHandle;
     private final ConversationRepository conversationRepository;
+    @Nullable private final ComposerDraftRepository composerDraftRepository;
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final MutableLiveData<InboxUiState> mutableUiState =
             new MutableLiveData<>(new InboxUiState());
+    private final MutableLiveData<Map<String, String>> composerDrafts =
+            new MutableLiveData<>(Map.of());
     private final MutableLiveData<ApiError> pinError = new MutableLiveData<>(null);
     private final InboxSingleLiveEvent<InboxEvent> events = new InboxSingleLiveEvent<>();
     private InboxUiState currentState = mutableUiState.getValue();
@@ -51,8 +56,9 @@ public final class InboxViewModel extends ViewModel {
             SavedStateHandle savedStateHandle,
             ConversationRepository conversationRepository,
             @Nullable TokenStore tokenStore,
-            @Nullable Moshi moshi) {
-        this(savedStateHandle, conversationRepository);
+            @Nullable Moshi moshi,
+            ComposerDraftRepository composerDraftRepository) {
+        this(savedStateHandle, conversationRepository, composerDraftRepository);
         start(tokenStore, moshi);
     }
 
@@ -72,10 +78,18 @@ public final class InboxViewModel extends ViewModel {
     private InboxViewModel(
             SavedStateHandle savedStateHandle,
             ConversationRepository conversationRepository) {
+        this(savedStateHandle, conversationRepository, null);
+    }
+
+    private InboxViewModel(
+            SavedStateHandle savedStateHandle,
+            ConversationRepository conversationRepository,
+            @Nullable ComposerDraftRepository composerDraftRepository) {
         this.savedStateHandle =
                 Objects.requireNonNull(savedStateHandle, "savedStateHandle");
         this.conversationRepository =
                 Objects.requireNonNull(conversationRepository, "conversationRepository");
+        this.composerDraftRepository = composerDraftRepository;
         InboxFilter restoredFilter = InboxFilter.fromSavedValue(
                 savedStateHandle.get(KEY_SELECTED_FILTER));
         currentState = new InboxUiState().withSelectedFilter(restoredFilter);
@@ -84,6 +98,11 @@ public final class InboxViewModel extends ViewModel {
 
     public LiveData<InboxUiState> getUiState() {
         return mutableUiState;
+    }
+
+    /** Unsent composer bodies for inbox {@code Draft:} previews. */
+    public LiveData<Map<String, String>> getComposerDrafts() {
+        return composerDrafts;
     }
 
     /** One-shot preference failures for the inbox surface. */
@@ -224,6 +243,22 @@ public final class InboxViewModel extends ViewModel {
                 null);
     }
 
+    /** Marks a fully-read conversation unread for this caller. */
+    public void markConversationUnread(@NonNull String conversationId) {
+        runPreference(
+                conversationRepository.markUnread(conversationId),
+                R.string.conversation_marked_unread,
+                () -> markConversationRead(conversationId));
+    }
+
+    /** Clears the unread badge without opening the chat. */
+    public void markConversationRead(@NonNull String conversationId) {
+        runPreference(
+                conversationRepository.markReadUpToLatest(conversationId),
+                R.string.conversation_marked_read,
+                () -> markConversationUnread(conversationId));
+    }
+
     /** Archives or restores one conversation for the caller. */
     public void setConversationArchived(@NonNull String conversationId, boolean archived) {
         runPreference(
@@ -308,6 +343,13 @@ public final class InboxViewModel extends ViewModel {
                 .subscribe(
                         notice -> events.postEvent(new InboxGroupRemovalEvent(notice.title())),
                         RxJavaPlugins::onError));
+        if (composerDraftRepository != null) {
+            disposables.add(composerDraftRepository.observePreviewBodies()
+                    .subscribeOn(Schedulers.io())
+                    .subscribe(
+                            composerDrafts::postValue,
+                            ignored -> composerDrafts.postValue(Map.of())));
+        }
         refresh();
     }
 

@@ -17,9 +17,9 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.UUID;
 
 /**
- * Per-member mute and archive routes under {@code /api/v1/conversations}.
+ * Per-member mute, archive and unread routes under {@code /api/v1/conversations}.
  *
- * <p>All four are member-only, idempotent and return an empty {@code 204}: the
+ * <p>All are member-only, idempotent and return an empty {@code 204}: the
  * state itself is read back from the inbox (or delta sync), so there is no
  * response body to keep in sync. Validation is fail-closed — see
  * {@link ConversationMuteArchiveService#mute}.
@@ -64,6 +64,18 @@ public class ConversationMuteArchiveController {
             @AuthenticationPrincipal JwtPrincipal principal,
             @PathVariable UUID conversationId) {
         muteArchiveService.unarchive(requireUserId(principal), conversationId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Caller-only unread bookmark. Empty 204; the inbox {@code unreadCount} is
+     * the source of truth on the next fetch. Peers are not notified.
+     */
+    @PutMapping("/{conversationId}/unread")
+    public ResponseEntity<Void> markUnread(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @PathVariable UUID conversationId) {
+        muteArchiveService.markUnread(requireUserId(principal), conversationId);
         return ResponseEntity.noContent().build();
     }
 

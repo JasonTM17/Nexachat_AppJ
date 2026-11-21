@@ -76,7 +76,8 @@ public final class PollFragment extends Fragment {
         binding.pollList.setLayoutManager(new LinearLayoutManager(requireContext()));
         binding.pollList.setAdapter(adapter);
         binding.pollEmpty.setIcon(R.drawable.ic_format_list_bulleted);
-        binding.pollEmpty.setMessage(getString(R.string.poll_empty));
+        binding.pollEmpty.setTitle(getString(R.string.poll_empty));
+        binding.pollEmpty.setMessage(getString(R.string.poll_empty_hint));
         binding.pollLoading.setLabel(getString(R.string.poll_loading));
         binding.pollAdd.setOnClickListener(ignored -> openCreateSheet());
         binding.pollList.addOnScrollListener(new RecyclerView.OnScrollListener() {
@@ -163,7 +164,8 @@ public final class PollFragment extends Fragment {
             binding.pollError.setOnRetry(null);
         }
         if (showEmpty) {
-            binding.pollEmpty.setMessage(getString(R.string.poll_empty));
+            binding.pollEmpty.setTitle(getString(R.string.poll_empty));
+            binding.pollEmpty.setMessage(getString(R.string.poll_empty_hint));
         }
 
         PollRepository.Failure refreshError = state.getRefreshError();

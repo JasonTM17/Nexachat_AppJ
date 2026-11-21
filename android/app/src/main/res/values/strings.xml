@@ -67,6 +67,11 @@
     <string name="unmute">Unmute notifications</string>
     <string name="conversation_archive">Archive</string>
     <string name="conversation_unarchive">Unarchive</string>
+    <string name="action_mark_unread">Mark as unread</string>
+    <string name="action_mark_read">Mark as read</string>
+    <string name="conversation_marked_unread">Marked as unread</string>
+    <string name="conversation_marked_read">Marked as read</string>
+    <string name="inbox_preview_draft">Draft: %1$s</string>
     <string name="conversation_muted">Notifications muted</string>
     <string name="conversation_unmuted">Notifications on</string>
     <string name="conversation_archived">Archived</string>
@@ -120,10 +125,11 @@
     <string name="contacts_empty_hint">Add a person by phone, or search NexaChat.</string>
     <string name="a11y_contacts_section_jump">Jump to %1$s contacts</string>
     <string name="a11y_contacts_section_other">Jump to other contacts</string>
-    <string name="search_title">Search</string>
+    <string name="search_title">Find people</string>
     <string name="search_label">Phone or name</string>
     <string name="search_no_results">No users found</string>
-    <string name="search_press_to_find">Press search to find people on NexaChat</string>
+    <string name="search_no_results_hint">Try a different phone number or name.</string>
+    <string name="search_press_to_find">Enter a phone or name, then tap search.</string>
     <string name="add_by_phone_title">Add by phone</string>
     <string name="contact_added">Added to contacts</string>
     <string name="contact_alias_label">Alias</string>
@@ -289,6 +295,7 @@
     <string name="group_name_label">Group name</string>
     <string name="group_detail_title">Group info</string>
     <string name="group_members_empty">No members to show</string>
+    <string name="group_members_empty_hint">People in this group will appear here.</string>
     <string name="group_members_label">Members</string>
     <string name="group_add_member_empty">All your contacts are already in this group</string>
     <string name="group_role_admin">Admin</string>
@@ -355,10 +362,12 @@
     <!-- In-Chat Search -->
     <string name="search_in_chat_placeholder">Search in conversation…</string>
     <string name="search_in_chat_no_results">No messages found</string>
+    <string name="search_in_chat_empty_hint">Try a different name or phrase.</string>
     <string name="search_in_chat_error">Could not search messages</string>
     <string name="search_in_chat_too_short">Type at least 2 characters</string>
     <string name="cd_search_in_chat">Search in chat</string>
     <string name="cd_clear_search">Clear search</string>
+    <string name="cd_close_search">Close search</string>
     <string name="cd_call">Call</string>
     <string name="cd_video_call">Video call</string>
 
@@ -468,6 +477,7 @@
 
     <string name="reminder_add">New reminder</string>
     <string name="reminder_empty">No upcoming reminders</string>
+    <string name="reminder_empty_hint">Reminders you set in this chat will show up here.</string>
     <string name="reminder_loading">Loading reminders</string>
     <string name="reminder_error">Couldn’t load reminders</string>
     <string name="reminder_error_title_required">Enter a title</string>
@@ -504,6 +514,7 @@
 
     <string name="poll_add">New poll</string>
     <string name="poll_empty">No polls yet</string>
+    <string name="poll_empty_hint">Create a poll so everyone can vote.</string>
     <string name="poll_loading">Loading polls</string>
     <string name="poll_error">Couldn’t load polls</string>
     <string name="poll_not_group">Polls are only available in group chats.</string>

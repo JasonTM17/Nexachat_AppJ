@@ -105,7 +105,8 @@ public final class GroupDetailFragment extends Fragment {
         binding.leaveGroupButton.setOnClickListener(v -> onLeaveClicked());
         binding.muteTile.setOnClickListener(v -> onMuteClicked());
         binding.errorState.setOnRetry(viewModel::loadMembers);
-        binding.emptyState.setMessage(getString(R.string.group_members_empty));
+        binding.emptyState.setTitle(getString(R.string.group_members_empty));
+        binding.emptyState.setMessage(getString(R.string.group_members_empty_hint));
         binding.emptyState.setIcon(R.drawable.ic_person_outline);
         viewModel.getUiState()
                 .observe(getViewLifecycleOwner(), this::render);

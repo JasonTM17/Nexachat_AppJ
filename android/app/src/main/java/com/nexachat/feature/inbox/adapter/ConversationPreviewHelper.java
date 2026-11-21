@@ -25,6 +25,20 @@ public final class ConversationPreviewHelper {
             @NonNull ConversationSummary conversation,
             @Nullable String currentUserId
     ) {
+        return previewText(context, conversation, currentUserId, null);
+    }
+
+    @NonNull
+    public static String previewText(
+            @NonNull Context context,
+            @NonNull ConversationSummary conversation,
+            @Nullable String currentUserId,
+            @Nullable String composerDraft
+    ) {
+        if (composerDraft != null && !composerDraft.isBlank()) {
+            return context.getString(
+                    R.string.inbox_preview_draft, clipDraft(composerDraft));
+        }
         if (conversation.getLastMessageDeleted()) {
             return context.getString(R.string.message_deleted);
         }
@@ -119,6 +133,12 @@ public final class ConversationPreviewHelper {
             default:
                 return null;
         }
+    }
+
+    @NonNull
+    static String clipDraft(@NonNull String draft) {
+        String clipped = draft.trim().replaceAll("\\s+", " ");
+        return clipped.length() > 80 ? clipped.substring(0, 80) : clipped;
     }
 
     @NonNull

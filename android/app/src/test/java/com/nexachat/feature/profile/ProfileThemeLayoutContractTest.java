@@ -38,7 +38,7 @@ public final class ProfileThemeLayoutContractTest {
         assertTrue(
                 "Chips should not use the 72dp settings-row indent",
                 marginStart.isEmpty() || !marginStart.contains("72"));
-        assertEquals("16dp", chips.getAttributeNS(ANDROID, "layout_marginHorizontal"));
+        assertEquals("@dimen/space_md", chips.getAttributeNS(ANDROID, "layout_marginHorizontal"));
     }
 
     private static Element requireId(String file, String id) throws Exception {

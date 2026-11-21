@@ -17,7 +17,7 @@
         android:layout_height="@dimen/min_touch_target"
         android:background="?attr/selectableItemBackground"
         android:contentDescription="@string/cd_attach"
-        android:padding="10dp"
+        android:padding="@dimen/list_item_padding_vertical"
         android:src="@drawable/ic_add"
         app:tint="?attr/colorOnSurfaceVariant" />
 
@@ -91,7 +91,7 @@
             android:layout_height="match_parent"
             android:background="@drawable/bg_send_button"
             android:contentDescription="@string/cd_send"
-            android:padding="10dp"
+            android:padding="@dimen/list_item_padding_vertical"
             android:src="@drawable/ic_send"
             android:visibility="gone"
             app:tint="@color/brand_on_fill" />
@@ -102,7 +102,7 @@
             android:layout_height="match_parent"
             android:background="@drawable/bg_mic_button"
             android:contentDescription="@string/cd_record_voice"
-            android:padding="10dp"
+            android:padding="@dimen/list_item_padding_vertical"
             android:src="@drawable/ic_mic"
             android:visibility="visible"
             app:tint="?attr/colorOnPrimaryContainer" />

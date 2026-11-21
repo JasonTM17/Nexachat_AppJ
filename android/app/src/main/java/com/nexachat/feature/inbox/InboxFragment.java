@@ -51,6 +51,7 @@ import com.nexachat.feature.streak.StreakViewModel;
 import dagger.hilt.android.AndroidEntryPoint;
 import javax.inject.Inject;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -75,6 +76,7 @@ public final class InboxFragment extends Fragment {
     @Nullable private RecyclerView.OnScrollListener paginationScrollListener;
     @Nullable private InboxUiState lastState;
     @Nullable private LabelUiState lastLabelState;
+    @NonNull private Map<String, String> lastComposerDrafts = Map.of();
     private List<ConversationLabel> renderedLabels = List.of();
     private boolean labelFiltersInitialized;
     @Nullable private String boundUserId;
@@ -186,6 +188,8 @@ public final class InboxFragment extends Fragment {
         binding.emptyState.setIcon(R.drawable.ic_empty_chat);
         viewModel.getUiState()
                 .observe(getViewLifecycleOwner(), this::render);
+        viewModel.getComposerDrafts()
+                .observe(getViewLifecycleOwner(), this::renderComposerDrafts);
         labelViewModel.getUiState()
                 .observe(getViewLifecycleOwner(), this::renderLabels);
         viewModel.getEvents().observe(getViewLifecycleOwner(), raw -> {
@@ -397,7 +401,15 @@ public final class InboxFragment extends Fragment {
                 currentUserId,
                 getString(R.string.time_just_now),
                 getString(R.string.time_yesterday));
+        adapter.setComposerDrafts(lastComposerDrafts);
         binding.conversationList.setAdapter(adapter);
+    }
+
+    private void renderComposerDrafts(@Nullable Map<String, String> drafts) {
+        lastComposerDrafts = drafts == null ? Map.of() : Map.copyOf(drafts);
+        if (adapter != null) {
+            adapter.setComposerDrafts(lastComposerDrafts);
+        }
     }
 
     private void showPreferenceActions(@NonNull ConversationSummary conversation) {
@@ -432,6 +444,16 @@ public final class InboxFragment extends Fragment {
                     @Override
                     public void onSetAiOptOut(boolean optOut) {
                         viewModel.setConversationAiOptOut(conversation.getId(), optOut);
+                    }
+
+                    @Override
+                    public void onMarkUnread() {
+                        viewModel.markConversationUnread(conversation.getId());
+                    }
+
+                    @Override
+                    public void onMarkRead() {
+                        viewModel.markConversationRead(conversation.getId());
                     }
                 }, () -> LabelDialogFragment.show(requireActivity(), conversation.getId()));
     }

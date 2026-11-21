@@ -6,6 +6,10 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+hilt {
+    enableAggregatingTask = false
+}
+
 // `google-services.json` is a gitignored local file: apply the plugin only when it is
 // present so a fresh clone without it still builds and the no-Firebase code path is
 // exercised. The plugin fails the build on a malformed file when it is present.

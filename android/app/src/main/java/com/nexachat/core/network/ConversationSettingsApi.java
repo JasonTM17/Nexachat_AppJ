@@ -29,6 +29,10 @@ public interface ConversationSettingsApi {
     @DELETE("api/v1/conversations/{id}/archive")
     Call<Void> unarchive(@Path("id") String conversationId);
 
+    /** Caller-only unread bookmark. Empty 204; peers are not notified. */
+    @PUT("api/v1/conversations/{id}/unread")
+    Call<Void> markUnread(@Path("id") String conversationId);
+
     @GET("api/v1/conversations/{id}/ai-opt-out")
     Call<ConversationAiOptOutDto> getAiOptOut(@Path("id") String conversationId);
 

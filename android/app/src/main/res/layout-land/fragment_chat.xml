@@ -43,8 +43,8 @@
 
     <ImageView
         android:id="@+id/e2eeLock"
-        android:layout_width="20dp"
-        android:layout_height="20dp"
+        android:layout_width="@dimen/icon_size_sm"
+        android:layout_height="@dimen/icon_size_sm"
         android:layout_marginEnd="@dimen/space_xs"
         android:contentDescription="@string/cd_e2ee_lock"
         android:src="@drawable/ic_lock"
@@ -57,8 +57,8 @@
     <ImageView
         android:id="@+id/disappearingChip"
         android:contentDescription="@string/cd_disappearing_bubble"
-        android:layout_width="20dp"
-        android:layout_height="20dp"
+        android:layout_width="@dimen/icon_size_sm"
+        android:layout_height="@dimen/icon_size_sm"
         android:layout_marginEnd="@dimen/space_xs"
         android:src="@drawable/ic_hourglass_top"
         android:visibility="gone"
@@ -123,8 +123,8 @@
         app:layout_constraintTop_toBottomOf="@id/unreadBanner">
 
         <ImageView
-            android:layout_width="20dp"
-            android:layout_height="20dp"
+            android:layout_width="@dimen/icon_size_sm"
+            android:layout_height="@dimen/icon_size_sm"
             android:importantForAccessibility="no"
             android:src="@drawable/ic_search"
             app:tint="?attr/colorOnSurfaceVariant" />
@@ -146,7 +146,7 @@
             android:layout_width="@dimen/min_touch_target"
             android:layout_height="@dimen/min_touch_target"
             android:background="?attr/selectableItemBackground"
-            android:contentDescription="@string/cd_clear_search"
+            android:contentDescription="@string/cd_close_search"
             android:src="@drawable/ic_close"
             app:tint="?attr/colorOnSurfaceVariant" />
     </LinearLayout>

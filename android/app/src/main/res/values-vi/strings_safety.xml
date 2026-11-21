@@ -8,6 +8,7 @@
     <string name="user_unblocked_snackbar">Đã bỏ chặn</string>
     <string name="blocked_users_title">Người dùng bị chặn</string>
     <string name="blocked_users_empty">Không có người dùng bị chặn</string>
+    <string name="blocked_users_empty_hint">Người bạn chặn sẽ hiện ở đây.</string>
     <string name="blocked_composer_banner">Bạn đã chặn liên hệ này</string>
     <string name="action_star">Đánh dấu</string>
     <string name="action_unstar">Bỏ đánh dấu</string>

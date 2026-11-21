@@ -67,6 +67,11 @@
     <string name="unmute">Bật thông báo</string>
     <string name="conversation_archive">Lưu trữ</string>
     <string name="conversation_unarchive">Bỏ lưu trữ</string>
+    <string name="action_mark_unread">Đánh dấu chưa đọc</string>
+    <string name="action_mark_read">Đánh dấu đã đọc</string>
+    <string name="conversation_marked_unread">Đã đánh dấu chưa đọc</string>
+    <string name="conversation_marked_read">Đã đánh dấu đã đọc</string>
+    <string name="inbox_preview_draft">Nháp: %1$s</string>
     <string name="conversation_muted">Đã tắt thông báo</string>
     <string name="conversation_unmuted">Đã bật thông báo</string>
     <string name="conversation_archived">Đã lưu trữ</string>
@@ -123,7 +128,8 @@
     <string name="search_title">Tìm người</string>
     <string name="search_label">SĐT hoặc tên</string>
     <string name="search_no_results">Không tìm thấy người dùng</string>
-    <string name="search_press_to_find">Nhấn tìm kiếm để tìm người trên NexaChat</string>
+    <string name="search_no_results_hint">Thử số điện thoại hoặc tên khác.</string>
+    <string name="search_press_to_find">Nhập SĐT hoặc tên, rồi nhấn tìm kiếm.</string>
     <string name="add_by_phone_title">Thêm theo SĐT</string>
     <string name="contact_added">Đã thêm vào danh bạ</string>
     <string name="contact_alias_label">Biệt danh</string>
@@ -286,6 +292,7 @@
     <string name="group_name_label">Tên nhóm</string>
     <string name="group_detail_title">Thông tin nhóm</string>
     <string name="group_members_empty">Không có thành viên</string>
+    <string name="group_members_empty_hint">Thành viên của nhóm sẽ hiện ở đây.</string>
     <string name="group_members_label">Thành viên</string>
     <string name="group_add_member_empty">Tất cả liên hệ của bạn đã có trong nhóm này</string>
     <string name="group_role_admin">Quản trị viên</string>
@@ -352,10 +359,12 @@
     <!-- In-Chat Search -->
     <string name="search_in_chat_placeholder">Tìm trong trò chuyện…</string>
     <string name="search_in_chat_no_results">Không tìm thấy tin nhắn</string>
+    <string name="search_in_chat_empty_hint">Thử tên hoặc cụm từ khác.</string>
     <string name="search_in_chat_error">Không tìm kiếm được. Hãy thử lại.</string>
     <string name="search_in_chat_too_short">Nhập ít nhất 2 ký tự</string>
     <string name="cd_search_in_chat">Tìm trong trò chuyện</string>
     <string name="cd_clear_search">Xóa tìm kiếm</string>
+    <string name="cd_close_search">Đóng tìm kiếm</string>
     <string name="cd_call">Gọi thoại</string>
     <string name="cd_video_call">Gọi video</string>
 
@@ -464,6 +473,7 @@
 
     <string name="reminder_add">Nhắc hẹn mới</string>
     <string name="reminder_empty">Chưa có nhắc hẹn nào</string>
+    <string name="reminder_empty_hint">Nhắc hẹn bạn đặt trong cuộc trò chuyện sẽ hiện ở đây.</string>
     <string name="reminder_loading">Đang tải nhắc hẹn…</string>
     <string name="reminder_error">Không tải được nhắc hẹn. Hãy thử lại.</string>
     <string name="reminder_error_title_required">Nhập tiêu đề</string>
@@ -500,6 +510,7 @@
 
     <string name="poll_add">Bình chọn mới</string>
     <string name="poll_empty">Chưa có bình chọn nào</string>
+    <string name="poll_empty_hint">Tạo bình chọn để mọi người cùng bỏ phiếu.</string>
     <string name="poll_loading">Đang tải bình chọn…</string>
     <string name="poll_error">Không tải được bình chọn. Hãy thử lại.</string>
     <string name="poll_not_group">Bình chọn chỉ dùng trong nhóm.</string>
