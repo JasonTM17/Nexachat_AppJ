@@ -528,6 +528,65 @@ public final class SummaryViewModelTest {
         }
     }
 
+    @Test
+    public void changingConversationDropsThePreviousSavedSummaryId() throws Exception {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            ControlledRepository controlled = new ControlledRepository();
+            SavedStateHandle saved = conversationHandle();
+            SummaryViewModel viewModel = new SummaryViewModel(saved, controlled.repository);
+            viewModel.request(SummaryScope.UNREAD, null);
+            controlled.callbacks.get(0).onSuccess(summaryResponse("previous-chat"));
+            assertEquals("previous-chat", saved.get("summary_last_id"));
+
+            saved.set(SummaryViewModel.ARG_CONVERSATION_ID, "conversation-2");
+            viewModel.request(SummaryScope.TODAY, null);
+
+            assertNull(saved.get("summary_last_id"));
+            assertNull(viewModel.state().getValue().getLastSummaryId());
+            assertNull(viewModel.state().getValue().getSummary());
+        }
+    }
+
+    @Test
+    public void loadingObserverDismissPreventsAnObsoleteSummaryRequest() {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            ControlledRepository controlled = new ControlledRepository();
+            SummaryViewModel viewModel = new SummaryViewModel(conversationHandle(),
+                    controlled.repository);
+            viewModel.state().observeForever(value -> {
+                if (value.getStatus() == SummaryUiState.Status.LOADING) {
+                    viewModel.dismiss();
+                }
+            });
+
+            viewModel.request(SummaryScope.UNREAD, null);
+
+            assertTrue(controlled.callbacks.isEmpty());
+            assertEquals(SummaryUiState.Status.IDLE, viewModel.state().getValue().getStatus());
+        }
+    }
+
+    @Test
+    public void queuedTimezoneRetryCannotSupersedeTheNewScope() throws Exception {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            ControlledRepository controlled = new ControlledRepository();
+            QueuedExecutor main = new QueuedExecutor();
+            SummaryViewModel viewModel = new SummaryViewModel(conversationHandle(),
+                    controlled.repository, main, System::currentTimeMillis);
+            viewModel.request(SummaryScope.TODAY, null);
+            main.drain();
+            controlled.callbacks.get(0).onError(SummaryError.INVALID_TIME_ZONE);
+            viewModel.request(SummaryScope.LAST_N, 20);
+            controlled.callbacks.get(1).onSuccess(summaryResponse("latest-scope"));
+
+            main.drain();
+
+            assertEquals(2, controlled.callbacks.size());
+            assertEquals(SummaryScope.LAST_N, viewModel.state().getValue().getScope());
+            assertEquals("latest-scope", viewModel.state().getValue().getSummary().getSummaryId());
+        }
+    }
+
     private static SavedStateHandle conversationHandle() {
         return new SavedStateHandle(Map.of(SummaryViewModel.ARG_CONVERSATION_ID, "conversation-1"));
     }

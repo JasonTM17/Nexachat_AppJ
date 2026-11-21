@@ -337,7 +337,7 @@ public final class AskViewModelTest {
         viewModel.submitSuggestion("New chat question?");
 
         assertEquals("conversation-2", api.conversationId);
-        assertTrue(api.request.getPriorTurns().isEmpty());
+        assertNull(api.request.getPriorTurns());
         assertTrue(viewModel.state().getValue().getTurns().isEmpty());
     }
 

@@ -10,6 +10,7 @@ import java.time.ZoneId;
 import java.util.Objects;
 import java.util.TimeZone;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.LongSupplier;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -31,6 +32,7 @@ public final class SummaryViewModel extends ViewModel {
 
     private SummaryScope lastScope;
     private Integer lastLimit;
+    private String boundConversationId;
     private volatile long requestGeneration;
     private SummaryRepository.Cancellable activeRequest;
 
@@ -57,6 +59,7 @@ public final class SummaryViewModel extends ViewModel {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.lastScope = restoredScope();
         this.lastLimit = restoredLimit(this.lastScope);
+        this.boundConversationId = savedStateHandle.get(ARG_CONVERSATION_ID);
         this.state = new MutableLiveData<>(restoreState());
     }
 
@@ -112,11 +115,13 @@ public final class SummaryViewModel extends ViewModel {
         cancelActiveRequest();
         savedStateHandle.remove(KEY_SUMMARY_ID);
         SummaryScope scope = lastScope == null ? restoredScope() : lastScope;
-        publish(requestGeneration, SummaryUiState.idle(scope, lastLimit, null));
+        publish(requestGeneration, savedStateHandle.get(ARG_CONVERSATION_ID),
+                () -> applyState(SummaryUiState.idle(scope, lastLimit, null)));
     }
 
     @Override
     protected void onCleared() {
+        requestGeneration++;
         cancelActiveRequest();
         super.onCleared();
     }
@@ -144,38 +149,56 @@ public final class SummaryViewModel extends ViewModel {
         }
 
         String conversationId = savedStateHandle.get(ARG_CONVERSATION_ID);
+        if (!Objects.equals(boundConversationId, conversationId)) {
+            boundConversationId = conversationId;
+            savedStateHandle.remove(KEY_SUMMARY_ID);
+        }
         String lastSummaryId = savedStateHandle.get(KEY_SUMMARY_ID);
         if (conversationId == null || conversationId.trim().isEmpty()) {
-            publish(token, SummaryUiState.error(scope, limit, SummaryError.UNKNOWN, lastSummaryId));
+            publish(token, conversationId,
+                    () -> applyState(SummaryUiState.error(scope, limit, SummaryError.UNKNOWN, lastSummaryId)));
             return;
         }
 
-        publish(token, SummaryUiState.loading(scope, limit, lastSummaryId));
+        publish(token, conversationId,
+                () -> applyState(SummaryUiState.loading(scope, limit, lastSummaryId)));
+        // LiveData observers may synchronously dismiss or supersede a loading request.
+        if (!isCurrent(token, conversationId)) {
+            return;
+        }
         SummaryRequest request = requestFor(scope, limit, refresh, zoneFallback);
+        AtomicBoolean completed = new AtomicBoolean();
         SummaryRepository.Cancellable handle = repository.request(conversationId, request,
                 new SummaryRepository.Callback() {
                     @Override
                     public void onSuccess(SummaryResponse response) {
-                        publish(token, SummaryUiState.ready(scope, limit, response));
+                        publish(token, conversationId, () -> {
+                            completed.set(true);
+                            activeRequest = null;
+                            applyState(SummaryUiState.ready(scope, limit, response));
+                        });
                     }
 
                     @Override
                     public void onError(SummaryError error) {
-                        if (error == SummaryError.INVALID_TIME_ZONE
-                                && !zoneFallback
-                                && token == requestGeneration) {
-                            start(scope, limit, refresh, true);
-                            return;
-                        }
-                        publish(token, SummaryUiState.error(scope, limit,
-                                error == SummaryError.INVALID_TIME_ZONE
-                                        ? SummaryError.UNKNOWN
-                                        : error,
-                                lastSummaryId));
+                        publish(token, conversationId, () -> {
+                            completed.set(true);
+                            activeRequest = null;
+                            if (error == SummaryError.INVALID_TIME_ZONE && !zoneFallback) {
+                                start(scope, limit, refresh, true);
+                                return;
+                            }
+                            applyState(SummaryUiState.error(scope, limit,
+                                    error == SummaryError.INVALID_TIME_ZONE
+                                            ? SummaryError.UNKNOWN : error,
+                                    lastSummaryId));
+                        });
                     }
                 });
-        if (token == requestGeneration) {
+        if (isCurrent(token, conversationId) && !completed.get()) {
             activeRequest = handle;
+        } else {
+            handle.cancel();
         }
     }
 
@@ -194,18 +217,26 @@ public final class SummaryViewModel extends ViewModel {
                 TimeZone.getDefault().getID());
     }
 
-    private void publish(long token, SummaryUiState nextState) {
+    private boolean isCurrent(long token, String conversationId) {
+        return token == requestGeneration
+                && Objects.equals(conversationId, savedStateHandle.get(ARG_CONVERSATION_ID));
+    }
+
+    private void publish(long token, String conversationId, Runnable update) {
         mainExecutor.execute(() -> {
-            if (token != requestGeneration) {
-                return;
+            if (isCurrent(token, conversationId)) {
+                update.run();
             }
-            if (nextState.getStatus() == SummaryUiState.Status.READY
-                    && nextState.getSummary() != null) {
-                savedStateHandle.set(KEY_SCOPE, nextState.getScope().name());
-                savedStateHandle.set(KEY_SUMMARY_ID, nextState.getSummary().getSummaryId());
-            }
-            state.setValue(nextState);
         });
+    }
+
+    private void applyState(SummaryUiState nextState) {
+        if (nextState.getStatus() == SummaryUiState.Status.READY
+                && nextState.getSummary() != null) {
+            savedStateHandle.set(KEY_SCOPE, nextState.getScope().name());
+            savedStateHandle.set(KEY_SUMMARY_ID, nextState.getSummary().getSummaryId());
+        }
+        state.setValue(nextState);
     }
 
     private SummaryUiState restoreState() {

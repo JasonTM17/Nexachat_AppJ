@@ -30,6 +30,8 @@ public final class AskViewModel extends ViewModel {
 
     private String draft = "";
     private String pendingConsentQuestion;
+    private String boundConversationId;
+    private volatile boolean sessionInvalidated;
     private long requestGeneration;
     private boolean consentRetryUsed;
     private AskRepository.Cancellable activeRequest;
@@ -44,10 +46,13 @@ public final class AskViewModel extends ViewModel {
         this.repository = Objects.requireNonNull(repository, "repository");
         this.mainExecutor = Objects.requireNonNull(mainExecutor, "mainExecutor");
         this.state = new MutableLiveData<>(AskUiState.idle(draft));
+        this.boundConversationId = savedStateHandle.get(ARG_CONVERSATION_ID);
         this.sessionSubscription = Objects.requireNonNull(sessionEvents, "sessionEvents")
                 .getEvents()
                 .subscribe(event -> {
                     if (event instanceof SessionEvents.Event.LoggedOut) {
+                        // Fence answers already queued ahead of the main-thread logout cleanup.
+                        sessionInvalidated = true;
                         this.mainExecutor.execute(this::clearForLogout);
                     }
                 });
@@ -164,11 +169,23 @@ public final class AskViewModel extends ViewModel {
         requestGeneration++;
         long token = requestGeneration;
         cancelActiveRequest();
+        String conversationId = savedStateHandle.get(ARG_CONVERSATION_ID);
+        if (!Objects.equals(boundConversationId, conversationId)) {
+            boundConversationId = conversationId;
+            pendingConsentQuestion = null;
+            state.setValue(AskUiState.idle(draft));
+        }
+        if (sessionInvalidated) {
+            return;
+        }
         consentRetryUsed = afterConsent;
         List<AskTurn> turns = turnsForNewRequest(question);
         state.setValue(AskUiState.loading(draft, turns));
 
-        String conversationId = savedStateHandle.get(ARG_CONVERSATION_ID);
+        // Loading observers can synchronously cancel or switch the active conversation.
+        if (!isCurrent(token, conversationId)) {
+            return;
+        }
         if (conversationId == null || conversationId.trim().isEmpty()) {
             state.setValue(AskUiState.fromTurns(
                     draft, AskUiState.append(turns, AskTurn.error(question, AskError.CHAT_UNAVAILABLE)),
@@ -182,7 +199,7 @@ public final class AskViewModel extends ViewModel {
                 new AskRepository.ResultCallback() {
                     @Override
                     public void onSuccess(@NonNull AskResponse response) {
-                        publish(token, () -> {
+                        publish(token, conversationId, () -> {
                             activeRequest = null;
                             String answer = response.getAnswer();
                             AskTurn turn;
@@ -204,7 +221,7 @@ public final class AskViewModel extends ViewModel {
 
                     @Override
                     public void onError(@NonNull AskErrorMapping mapping) {
-                        publish(token, () -> {
+                        publish(token, conversationId, () -> {
                             activeRequest = null;
                             AskTurn turn;
                             if (mapping.getError() == AskError.CONSENT_REQUIRED
@@ -221,7 +238,7 @@ public final class AskViewModel extends ViewModel {
                         });
                     }
                 });
-        if (token == requestGeneration
+        if (isCurrent(token, conversationId)
                 && state.getValue() != null
                 && state.getValue().getStatus() == AskUiState.Status.LOADING) {
             activeRequest = request;
@@ -230,9 +247,14 @@ public final class AskViewModel extends ViewModel {
         }
     }
 
-    private void publish(long token, Runnable update) {
+    private boolean isCurrent(long token, String conversationId) {
+        return token == requestGeneration && !sessionInvalidated
+                && Objects.equals(conversationId, savedStateHandle.get(ARG_CONVERSATION_ID));
+    }
+
+    private void publish(long token, String conversationId, Runnable update) {
         mainExecutor.execute(() -> {
-            if (token == requestGeneration) {
+            if (isCurrent(token, conversationId)) {
                 update.run();
             }
         });
