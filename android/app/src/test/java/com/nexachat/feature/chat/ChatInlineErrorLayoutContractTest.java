@@ -121,6 +121,18 @@ public final class ChatInlineErrorLayoutContractTest {
         assertEquals("48dp", target.getTextContent().trim());
     }
 
+    @Test
+    public void composerAttachIsExcludedFromTheBackGesture() throws Exception {
+        String source = new String(
+                java.nio.file.Files.readAllBytes(
+                        java.nio.file.Path.of(
+                                "src/main/java/com/nexachat/feature/chat/ChatFragment.java")),
+                java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(
+                "attach must keep a system-gesture exclusion so edge-back cannot steal the tap",
+                source.contains("setSystemGestureExclusionRects"));
+    }
+
     private static Document parse(String path) throws Exception {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(true);
