@@ -196,7 +196,7 @@ public class SummaryService {
         // the whole bound per round would outlive the client's own read timeout.
         long waitDeadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(singleFlightWaitMs);
         for (int round = 0; round < SINGLE_FLIGHT_ROUNDS; round++) {
-            SummaryResponse replayed = replayIfCached(conversationId, window, request, readContext, prepared, optedOut);
+            SummaryResponse replayed = replayIfCached(userId, conversationId, window, request, readContext, prepared, optedOut);
             if (replayed != null) {
                 return replayed;
             }
@@ -209,7 +209,7 @@ public class SummaryService {
                 try {
                     // A previous flight may have filled this key just before this
                     // leader registered: re-check before spending a provider call.
-                    SummaryResponse winner = replayIfCached(conversationId, window, request, readContext, prepared, optedOut);
+                    SummaryResponse winner = replayIfCached(userId, conversationId, window, request, readContext, prepared, optedOut);
                     if (winner == null) {
                         GeneratePreparation gen = preparedForGenerate(
                                 userId, readContext, prepared, window, false);
@@ -238,7 +238,7 @@ public class SummaryService {
         }
         // The last wait may have ended the moment the leader finished: probe once
         // more before spending a provider call of our own.
-        SummaryResponse finalReplay = replayIfCached(conversationId, window, request, readContext, prepared, optedOut);
+        SummaryResponse finalReplay = replayIfCached(userId, conversationId, window, request, readContext, prepared, optedOut);
         if (finalReplay != null) {
             return finalReplay;
         }
@@ -336,6 +336,7 @@ public class SummaryService {
      * under a consent, policy or routing downgrade stay invisible to it.
      */
     private SummaryResponse replayIfCached(
+            UUID userId,
             UUID conversationId,
             SummaryWindow window,
             SummaryRequest request,
@@ -352,7 +353,7 @@ public class SummaryService {
             SummaryCacheEntry entry = cached.get();
             if (citationsWithinWindow(entry.payload().content(), window)
                     && replayAllowed(entry, window, optedOut)) {
-                return cachedResponse(entry, window, request, readContext, prepared, optedOut);
+                return cachedResponse(userId, entry, window, request, readContext, prepared, optedOut);
             }
             // A previous external summary cites a message whose author has
             // since opted out. It must never be replayed; remove it and let
@@ -390,7 +391,7 @@ public class SummaryService {
                     fallbackHash, "LOCAL", request.language());
             return null;
         }
-        return cachedResponse(entry, window, request, readContext, prepared, optedOut);
+        return cachedResponse(userId, entry, window, request, readContext, prepared, optedOut);
     }
 
     private static SummaryFallbackReason fallbackReasonOf(String raw) {
@@ -402,6 +403,7 @@ public class SummaryService {
     }
 
     private SummaryResponse cachedResponse(
+            UUID userId,
             SummaryCacheEntry entry,
             SummaryWindow window,
             SummaryRequest request,
@@ -409,6 +411,9 @@ public class SummaryService {
             PreparedSummaryProvider prepared,
             Set<UUID> optedOut) {
         SummaryGeneration generation = forRequest(entry.payload().toGeneration(), prepared, null);
+        consentRecheck.verifyUnchanged(userId, generation.generatedBy(),
+                new SummaryConsentRepository.ConsentSnapshot(
+                        readContext.aiSummaryConsent(), readContext.consentEpoch()));
         return SummaryResponse.create(entry.id(), window, generation, true,
                 contextOmitted(generation, window, optedOut), entry.createdAt(), request, readContext.period());
     }
