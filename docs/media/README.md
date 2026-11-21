@@ -1,10 +1,13 @@
 # Demo media
 
-Still frames captured from live Android emulators (`emulator-5554` / `nexachat-audit` and `emulator-5556` / `campuscore-p07-native`, 1080×2400 portrait, 2400×1080 landscape) running the R8-minified release build against the local Spring Boot 3 + PostgreSQL 16 backend.
+Still frames captured from live Android emulators (`emulator-5554` / `nexachat-audit` and `emulator-5556` / `campuscore-p07-native`, 1080×2400 portrait, 2400×1080 landscape) against the local Spring Boot 3 + PostgreSQL 16 backend — the showcase frames on the R8-minified release build, the current Tonal Plum gallery on the debug build.
 
-> Every frame below predates the Tonal Plum palette refresh (seed `#733F68`; see
+> The showcase frames below — `stitch-*` and the suffixed `01-*`..`17-*`
+> feature frames — predate the Tonal Plum palette refresh (seed `#733F68`; see
 > [docs/design/design-notes.md](../design/design-notes.md)) — treat them as
-> layout references, not current colors.
+> layout references, not current colors. The unsuffixed
+> `screens/01-*`..`screens/06-*` gallery frames in the next section are
+> current Tonal Plum captures.
 
 ## Current Tonal Plum frames (`screens/01-*` .. `screens/06-*`)
 
