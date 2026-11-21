@@ -6519,9 +6519,18 @@ def _offline_wait_conv_body(context: dict[str, Any],
     inbox mid-burst, so messageBody nodes vanished for the rest of the
     deadline). When the inbox resurfaces, the matching row is tapped again
     and the wait keeps going instead of burning the budget outside the
-    chat."""
+    chat.
+
+    A reopened conversation can also settle at a scroll position where the
+    reconciled tail rows sit below the rendered window (run-21: three
+    deterministic "reconciled tail edit was not rendered" failures with the
+    edits confirmed applied host-side). While the chat stays open, an
+    occasional upward swipe inside messageList walks the viewport toward the
+    newest rows so a present-but-off-screen match is found instead of timing
+    out. A genuinely absent message still fails on the deadline."""
     ui = context["device"]
     deadline = time.monotonic() + timeout
+    next_scroll = time.monotonic() + 8.0
     while True:
         nodes = _ui_nodes(context)
         if _dismiss_occluder(context, nodes):
@@ -6539,6 +6548,21 @@ def _offline_wait_conv_body(context: dict[str, Any],
             if row is not None:
                 ui.tap_node(row)
                 time.sleep(1.2)
+                continue
+        else:
+            message_list = next(
+                (node for node in nodes
+                 if _rid_ends(node, "messageList")), None)
+            if message_list is not None and time.monotonic() >= next_scroll:
+                bounds = message_list.box
+                if bounds is not None:
+                    cx = bounds[0] + (bounds[2] - bounds[0]) // 2
+                    top = bounds[1]
+                    bottom = bounds[3]
+                    ui.swipe(cx, top + int((bottom - top) * 0.7),
+                             cx, top + int((bottom - top) * 0.3),
+                             duration_ms=350)
+                next_scroll = time.monotonic() + 4.0
                 continue
         time.sleep(0.7)
 
