@@ -23,6 +23,7 @@ key-files:
     - android/app/src/test/java/com/nexachat/summary/SummaryRepositoryTest.java
     - android/app/src/test/java/com/nexachat/summary/SummaryViewModelTest.java
     - android/app/src/test/java/com/nexachat/feature/ask/AskViewModelTest.java
+    - android/app/src/main/java/com/nexachat/di/SummaryModule.java
 key-decisions:
   - "A newer Summary request owns cache eligibility even if it fails; older same-epoch callers can receive their own result without filling the cache."
   - "Invalidate Ask publication immediately on receipt of logout, then clear UI state on its main executor."
@@ -116,3 +117,48 @@ None. Verification is offline with fake providers.
 ## Next Phase Readiness
 
 Android lifecycle requirements are ready for parent verification and consent-flow integration. Backend integration and phase-wide requirement completion remain owned by the root orchestrator.
+
+## Review Gap Closure Addendum
+
+Closed both blockers in `01-ANDROID-REVIEW.md` through a scoped continuation of this plan; prior tasks were not re-executed.
+
+### Additional Commits
+
+| Stage | Commit | Change |
+|-------|--------|--------|
+| RED | `c96e4a45` | Reproduce three session/cache and four queued-publication/invalidation defects; introduce the session-aware constructor contract |
+| GREEN | `3f024bda` | Bind the singleton to synchronous session events, fence queued publication, and cover cleanup/new-query interactions |
+
+### Delivered Guards
+
+- The Hilt provider passes `SessionEvents` into `SummaryRepository`. Session closing, logout and reauthentication synchronously close request admission and invalidate cached/pending work. Session availability starts with a fresh epoch, including direct account replacement without logout. Refresh lifecycle events preserve the active session cache.
+- Invalidation synchronously advances each subscribed ViewModel's atomic query generation. Saved IDs, obsolete READY/loading state and cancellation are cleaned on the main executor. Cache epoch validation and the actual UI update share the repository monitor with invalidation, so no callback selected under an old epoch can publish after a clear.
+- A new request started before queued cleanup drains recognizes the changed epoch, drops the previous saved ID and keeps its own handle/result. `NOT_MEMBER` invalidation preserves the membership error while removing cached content and its saved ID. Cleared ViewModels reject queued invalidation cleanup and unsubscribe from future invalidations.
+- Existing cache TTL, capacity, latest-fill ownership, ordinary caller completion, JSON/API schemas and framework choices remain unchanged.
+
+### Measured Verification
+
+- RED: `SummaryRepositoryTest,SummaryViewModelTest` ran **42 tests / 7 expected failures**. These failures were behavioral assertions; the source constructor addition only supplied the new session-binding contract.
+- Initial GREEN: `com.nexachat.summary.*` ran **63 tests / 7 suites / 0 failures / 0 errors / 0 skipped**.
+- Final GREEN after three cleanup/error regressions: **118 tests / 17 suites / 0 failures / 0 errors / 0 skipped**, `BUILD SUCCESSFUL` in 56 seconds.
+
+```powershell
+$env:ANDROID_HOME='D:\Android\Sdk'
+android\gradlew.bat -p android :app:testDebugUnitTest `
+  --tests 'com.nexachat.feature.ask.*' `
+  --tests 'com.nexachat.summary.*' `
+  --tests 'com.nexachat.feature.summary.*' --console=plain
+```
+
+Reports: `android/app/build/test-results/testDebugUnitTest/`; run log: `android/app/build/gsd-summary-review-final.log`. Regression fixtures use real repositories, controlled Retrofit calls, synthetic summaries, session events and a manually drained main executor; no live provider/device verification is claimed.
+
+### Additional Deviations
+
+1. **[Rule 1 - Bug] Session cache invalidation was missing at the process singleton boundary.** Added the existing `SessionEvents` DI binding and closed-session admission guard; equal-consent A→B and pending-old-fill tests pass.
+2. **[Rule 1 - Bug] Cache epochs stopped at callback selection instead of actual UI publication.** Added synchronous invalidation subscriptions and an atomic query fence with repository-monitor publication ordering; network/cached success, timezone retry, READY cleanup and subsequent-query regressions pass.
+
+No new endpoint, authorization scheme, storage/schema or external trust boundary was introduced. Global STATE/ROADMAP/REQUIREMENTS closure remains parent-owned.
+
+## Self-Check: PASSED
+
+Both added commits exist; all seven plan/continuation source and test paths exist. `git diff --check` passed. No tracked deletions or new TODO/FIXME/placeholder implementation was introduced. Parent review and final backend/phase verification remain required before phase completion.
