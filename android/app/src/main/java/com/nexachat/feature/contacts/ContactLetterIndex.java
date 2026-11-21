@@ -73,7 +73,17 @@ public final class ContactLetterIndex {
      * stays fully scrollable either way.
      */
     public static boolean isRailVisible(int sectionCount, float fontScale) {
-        return sectionCount >= MIN_SECTIONS && fontScale < LARGE_FONT_SCALE;
+        return isRailVisible(sectionCount, fontScale, Integer.MAX_VALUE);
+    }
+
+    /**
+     * Same visibility rule, plus a narrow-width cutoff: a 48dp rail on a
+     * 320dp phone eats too much of each row even with end padding reserved.
+     */
+    public static boolean isRailVisible(int sectionCount, float fontScale, int widthDp) {
+        return sectionCount >= MIN_SECTIONS
+                && fontScale < LARGE_FONT_SCALE
+                && widthDp >= 360;
     }
 
     /**

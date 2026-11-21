@@ -13,7 +13,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.ContactsContract;
 import android.provider.Settings;
+import android.graphics.Rect;
 import android.graphics.Typeface;
+import android.os.Build;
 import android.text.Editable;
 import android.text.Spannable;
 import android.text.TextUtils;
@@ -139,6 +141,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     private static final int MENU_REPORT = 15;
     private static final int MENU_STARRED = 16;
     private static final int MENU_DISAPPEARING = 17;
+    private static final int MENU_VIDEO_CALL = 18;
     private final CompositeDisposable subscriptions = new CompositeDisposable();
     private FragmentChatBinding binding;
     private ChatViewModel viewModel;
@@ -352,17 +355,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         // a11y sweep's flat dump (#254).
         com.nexachat.core.ui.components.A11yContainerRules.suppressFocusTarget(
                 binding.chatToolbarActions);
-        binding.callButton.setOnClickListener(v -> {
-            String peerId = state.getOtherUserId();
-            if (peerId == null) peerId = state.getMessages().stream().filter(m -> !m.getMine()).map(ChatMessage::getSenderId).findFirst().orElse("");
-            CallLauncher.start(requireContext(), conversationId, peerId, state.getPeerName() == null ? "" : state.getPeerName());
-        });
-        binding.videoCallButton.setOnClickListener(v -> {
-            String peerId = state.getOtherUserId();
-            if (peerId == null) peerId = state.getMessages().stream().filter(m -> !m.getMine()).map(ChatMessage::getSenderId).findFirst().orElse("");
-            CallLauncher.start(requireContext(), conversationId, peerId, state.getPeerName() == null ? "" : state.getPeerName(),
-                    null, CallMediaType.VIDEO);
-        });
+        binding.callButton.setOnClickListener(v -> startVoiceCall());
+        binding.videoCallButton.setOnClickListener(v -> startVideoCall());
         binding.moreButton.setOnClickListener(v -> showMoreOptions());
         binding.unblockPeerButton.setOnClickListener(v -> viewModel.unblockPeer());
         binding.closeChatSearch.setOnClickListener(v -> setSearchOpen(false));
@@ -375,6 +369,42 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) { if (searchOpen) viewModel.search(s.toString()); }
             @Override public void afterTextChanged(Editable s) {}
         });
+    }
+
+    private void startVoiceCall() {
+        if (state == null) return;
+        String peerId = state.getOtherUserId();
+        if (peerId == null) {
+            peerId = state.getMessages().stream()
+                    .filter(m -> !m.getMine())
+                    .map(ChatMessage::getSenderId)
+                    .findFirst()
+                    .orElse("");
+        }
+        CallLauncher.start(
+                requireContext(),
+                conversationId,
+                peerId,
+                state.getPeerName() == null ? "" : state.getPeerName());
+    }
+
+    private void startVideoCall() {
+        if (state == null) return;
+        String peerId = state.getOtherUserId();
+        if (peerId == null) {
+            peerId = state.getMessages().stream()
+                    .filter(m -> !m.getMine())
+                    .map(ChatMessage::getSenderId)
+                    .findFirst()
+                    .orElse("");
+        }
+        CallLauncher.start(
+                requireContext(),
+                conversationId,
+                peerId,
+                state.getPeerName() == null ? "" : state.getPeerName(),
+                null,
+                CallMediaType.VIDEO);
     }
 
     /**
@@ -408,6 +438,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                         .show(getChildFragmentManager(), AttachmentPickerSheet.TAG);
             }
         });
+        binding.composerBar.getRoot().addOnLayoutChangeListener(
+                (v, l, t, r, b, ol, ot, or, ob) -> excludeAttachFromBackGesture());
+        excludeAttachFromBackGesture();
         binding.composerBar.sendButton.setOnClickListener(v -> {
             if (!binding.composerBar.sendButton.isEnabled()) {
                 return;
@@ -458,6 +491,27 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             @Override public void afterTextChanged(Editable s) {}
         });
         configureVoiceRecording();
+    }
+
+    /** Keeps the attach button's touch zone out of the system back gesture. */
+    private void excludeAttachFromBackGesture() {
+        if (binding == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return;
+        }
+        View root = binding.composerBar.getRoot();
+        View attach = binding.composerBar.attachButton;
+        if (root == null || attach == null) {
+            return;
+        }
+        Rect rootRect = new Rect();
+        Rect attachRect = new Rect();
+        root.getGlobalVisibleRect(rootRect);
+        if (!attach.getGlobalVisibleRect(attachRect)) {
+            root.setSystemGestureExclusionRects(Collections.emptyList());
+            return;
+        }
+        attachRect.offset(-rootRect.left, -rootRect.top);
+        root.setSystemGestureExclusionRects(Collections.singletonList(attachRect));
     }
 
     private void configureMentionPicker() {
@@ -1312,8 +1366,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         }
         bindGroupInfoShortcut(state.isGroup(), peerTitle);
         renderSubtitle();
-        binding.callButton.setVisibility(ChatToolbarPolicy.callAvailable(state.isGroup()) ? View.VISIBLE : View.GONE);
-        binding.videoCallButton.setVisibility(ChatToolbarPolicy.callAvailable(state.isGroup()) ? View.VISIBLE : View.GONE);
+        boolean calls = ChatToolbarPolicy.callAvailable(state.isGroup());
+        boolean compactActions = ChatToolbarPolicy.compactToolbarActions(
+                getResources().getConfiguration().screenWidthDp);
+        binding.callButton.setVisibility(calls ? View.VISIBLE : View.GONE);
+        binding.videoCallButton.setVisibility(
+                calls && !compactActions ? View.VISIBLE : View.GONE);
         applyLargeTypeToolbar();
         renderConversationState();
         binding.chatError.setVisibility(state.getError() == null ? View.GONE : View.VISIBLE);
@@ -1375,8 +1433,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
 
     private void applyLargeTypeToolbar() {
         float scale = getResources().getConfiguration().fontScale;
-        int widthDp = getResources().getConfiguration().screenWidthDp;
-        boolean hideAvatar = scale >= 1.5f || widthDp < 360;
+        boolean hideAvatar = ChatToolbarPolicy.hideHeaderAvatar(scale);
         binding.chatHeaderAvatar.setVisibility(hideAvatar ? View.GONE : View.VISIBLE);
         int titleMarginRes = hideAvatar
                 ? R.dimen.space_md
@@ -1400,7 +1457,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         binding.errorState.setVisibility(ChatEmptyPolicy.showError(hasError, hasMessages)
                 ? View.VISIBLE : View.GONE);
         if (ChatEmptyPolicy.showEmpty(state.isLoading(), hasError, hasMessages)) {
-            binding.emptyState.setMessage(getString(R.string.chat_empty));
+            binding.emptyState.setIcon(R.drawable.ic_empty_chat);
+            binding.emptyState.setTitle(getString(R.string.chat_empty));
+            binding.emptyState.setMessage(getString(R.string.chat_empty_hint));
             binding.emptyState.clearAction();
         }
         if (ChatEmptyPolicy.showError(hasError, hasMessages)) {
@@ -1918,6 +1977,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                 System.currentTimeMillis());
         List<CharSequence> labels = new ArrayList<>();
         List<Integer> actions = new ArrayList<>();
+        if (!flags.group && ChatToolbarPolicy.compactToolbarActions(
+                getResources().getConfiguration().screenWidthDp)) {
+            labels.add(getString(R.string.cd_video_call));
+            actions.add(MENU_VIDEO_CALL);
+        }
         if (!flags.e2ee) {
             labels.add(getString(R.string.ask_action));
             actions.add(MENU_ASK);
@@ -2014,6 +2078,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             viewModel.unblockPeer();
         } else if (action == MENU_REPORT) {
             openPeerReport();
+        } else if (action == MENU_VIDEO_CALL) {
+            startVideoCall();
         }
     }
 
@@ -2785,6 +2851,19 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
 
         static boolean summaryAvailable() {
             return true;
+        }
+
+        /** Hide the header avatar only when large type would collide with the title. */
+        static boolean hideHeaderAvatar(float fontScale) {
+            return fontScale >= 1.5f;
+        }
+
+        /**
+         * Narrow phones cannot fit call + video + overflow beside the peer name.
+         * Video moves into the overflow so the subtitle stays readable.
+         */
+        static boolean compactToolbarActions(int widthDp) {
+            return widthDp < 360;
         }
 
         /** Title start inset in dp; matches {@code fragment_chat.xml} {@code titleMarginStart}. */

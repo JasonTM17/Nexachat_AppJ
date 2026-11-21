@@ -18,6 +18,7 @@
     <string name="action_report_desc">Report this message</string>
     <string name="starred_messages_title">Starred messages</string>
     <string name="starred_messages_empty">No starred messages</string>
+    <string name="starred_messages_empty_hint">Star a message in a chat to find it here.</string>
     <string name="report_title">Report</string>
     <string name="report_reason_spam">Spam</string>
     <string name="report_reason_harassment">Harassment</string>

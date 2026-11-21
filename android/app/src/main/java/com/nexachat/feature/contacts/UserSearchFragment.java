@@ -67,7 +67,8 @@ public final class UserSearchFragment extends Fragment {
         binding.resultsList.setAdapter(adapter);
         binding.toolbar.setNavigationOnClickListener(v -> NavHostFragment.findNavController(this).navigateUp());
         binding.errorState.setOnRetry(viewModel::search);
-        binding.emptyState.setMessage(getString(R.string.search_no_results));
+        binding.emptyState.setTitle(getString(R.string.search_no_results));
+        binding.emptyState.setMessage(getString(R.string.search_press_to_find));
         binding.emptyState.setIcon(R.drawable.ic_search_outline);
         binding.clearSearchButton.setOnClickListener(v -> binding.searchInput.setText(""));
         binding.searchSubmitButton.setOnClickListener(v -> viewModel.search());
@@ -153,11 +154,13 @@ public final class UserSearchFragment extends Fragment {
         binding.emptyState.setVisibility(showEmpty ? View.VISIBLE : View.GONE);
         binding.errorState.setVisibility(showError ? View.VISIBLE : View.GONE);
         if (showEmpty) {
-            binding.emptyState.setMessage(getString(
-                    state.isSearched() ? R.string.search_no_results
-                            : query.trim().isEmpty()
-                                    ? R.string.search_label
-                                    : R.string.search_press_to_find));
+            if (state.isSearched()) {
+                binding.emptyState.setTitle(getString(R.string.search_no_results));
+                binding.emptyState.setMessage(getString(R.string.search_press_to_find));
+            } else {
+                binding.emptyState.setTitle("");
+                binding.emptyState.setMessage(getString(R.string.search_press_to_find));
+            }
         }
         if (showError && error != null) {
             binding.errorState.setMessage(getString(ContactErrorIds.messageId(error)));

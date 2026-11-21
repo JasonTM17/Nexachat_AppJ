@@ -80,7 +80,8 @@ public final class PublicFeedFragment extends Fragment implements ReportSheetFra
             }
         });
         binding.feedRefresh.setOnRefreshListener(viewModel::refresh);
-        binding.feedEmpty.setMessage(getString(R.string.feed_empty));
+        binding.feedEmpty.setTitle(getString(R.string.feed_empty));
+        binding.feedEmpty.setMessage(getString(R.string.feed_empty_hint));
         binding.feedEmpty.setIcon(R.drawable.ic_public);
         binding.feedError.setMessage(getString(R.string.feed_error));
         binding.feedError.setOnRetry(viewModel::retry);

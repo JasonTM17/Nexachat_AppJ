@@ -17,6 +17,7 @@
     <string name="action_report_desc">Báo cáo tin nhắn này</string>
     <string name="starred_messages_title">Tin nhắn đánh dấu</string>
     <string name="starred_messages_empty">Chưa có tin nhắn đánh dấu</string>
+    <string name="starred_messages_empty_hint">Đánh dấu một tin trong cuộc trò chuyện để xem lại tại đây.</string>
     <string name="report_title">Báo cáo</string>
     <string name="report_reason_spam">Thư rác</string>
     <string name="report_reason_harassment">Quấy rối</string>

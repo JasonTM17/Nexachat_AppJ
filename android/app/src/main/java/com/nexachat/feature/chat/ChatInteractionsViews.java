@@ -27,15 +27,22 @@ public final class ChatInteractionsViews {
             @NonNull Runnable jump) {
         ((TextView) root.findViewById(R.id.pinnedText)).setText(text);
         TextView count = root.findViewById(R.id.pinnedCount);
+        View refresh = root.findViewById(R.id.pinnedRefreshIcon);
         String spoken;
         if (total > 1) {
             count.setText(root.getContext().getString(
                     R.string.pinned_count, position + 1, total));
             count.setVisibility(View.VISIBLE);
+            if (refresh != null) {
+                refresh.setVisibility(View.VISIBLE);
+            }
             spoken = root.getContext().getResources().getQuantityString(
                     R.plurals.pinned_position, total, position + 1, total);
         } else {
             count.setVisibility(View.GONE);
+            if (refresh != null) {
+                refresh.setVisibility(View.GONE);
+            }
             spoken = root.getContext().getString(R.string.pinned_title);
         }
         root.setContentDescription(spoken + ", " + text);
