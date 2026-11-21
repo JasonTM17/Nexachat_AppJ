@@ -91,6 +91,11 @@ public final class ContactsFragment extends Fragment {
         binding.contactList.setLayoutManager(new LinearLayoutManager(requireContext()));
         binding.contactList.addItemDecoration(new ContactLetterHeaderDecoration(adapter));
         binding.contactList.setAdapter(adapter);
+        // Label-free list surface: the contact rows are the focus targets, so
+        // the RecyclerView's constructor-set focusability only surfaces an
+        // unlabeled node to the a11y sweep's flat dump (#254).
+        com.nexachat.core.ui.components.A11yContainerRules.suppressFocusTarget(
+                binding.contactList);
         binding.letterRail.setListener(new ContactLetterRailView.Listener() {
             @Override
             public void onLetterActivated(@NonNull String letter, float anchorY) {

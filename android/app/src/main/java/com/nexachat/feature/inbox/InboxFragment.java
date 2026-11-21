@@ -122,6 +122,17 @@ public final class InboxFragment extends Fragment {
         binding.moreButton.setOnClickListener(this::showInboxMenu);
         layoutManager = new LinearLayoutManager(requireContext());
         binding.conversationList.setLayoutManager(layoutManager);
+        // Label-free scroll surfaces: rows, chips and the active-now strip's
+        // avatars are the focus targets, so the containers' constructor-set
+        // focusability only adds unlabeled stops for TalkBack and findings for
+        // the a11y sweep's flat dump (#254 — conversationList,
+        // inboxFilterScroll, activeNowScroll). Scroll semantics stay intact.
+        com.nexachat.core.ui.components.A11yContainerRules.suppressFocusTarget(
+                binding.conversationList);
+        com.nexachat.core.ui.components.A11yContainerRules.suppressFocusTarget(
+                binding.inboxFilterScroll);
+        com.nexachat.core.ui.components.A11yContainerRules.suppressFocusTarget(
+                binding.activeNowScroll);
         attachSwipeGestureHelper();
         paginationScrollListener = new RecyclerView.OnScrollListener() {
             @Override

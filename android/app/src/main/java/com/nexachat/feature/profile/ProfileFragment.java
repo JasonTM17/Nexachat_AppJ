@@ -111,6 +111,11 @@ public final class ProfileFragment extends Fragment {
         streakSettingsViewModel = new ViewModelProvider(this).get(StreakSettingsViewModel.class);
         binding.profileToolbar.setTitle(R.string.profile_title);
         binding.profileToolbar.setNavigationOnClickListener(v -> NavHostFragment.findNavController(this).navigateUp());
+        // The settings column is a label-free scroll surface: its rows are the
+        // focus targets, so the NestedScrollView's constructor-set focusability
+        // only surfaces an unlabeled node to the a11y sweep's flat dump (#254).
+        com.nexachat.core.ui.components.A11yContainerRules.suppressFocusTarget(
+                binding.profileScroll);
         binding.profileAvatar.setOnClickListener(v -> avatarPicker.launch("image/*"));
         if (binding.cameraBadge != null) {
             binding.cameraBadge.setOnClickListener(v -> avatarPicker.launch("image/*"));

@@ -323,6 +323,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         layout.setStackFromEnd(true);
         list.setLayoutManager(layout);
         list.setAdapter(adapter);
+        // The list surface is label-free by design: its rows are the focus
+        // targets, so the RecyclerView's constructor-set focusability only adds
+        // a dead unlabeled stop for TalkBack and a finding for the a11y sweep's
+        // flat dump (#254). Same suppression the mention picker already uses.
+        com.nexachat.core.ui.components.A11yContainerRules.suppressFocusTarget(list);
         new androidx.recyclerview.widget.ItemTouchHelper(new ReplySwipeCallback(
                 adapter, () -> searchOpen || viewModel.isEditing(), viewModel::setReplyTarget)).attachToRecyclerView(list);
         list.addOnScrollListener(new RecyclerView.OnScrollListener() {
@@ -340,6 +345,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
 
     private void configureToolbar() {
         binding.chatToolbar.setNavigationOnClickListener(v -> requireActivity().onBackPressed());
+        // The actions rail is a label-free scroll container: its call/video/
+        // actions buttons are the focus targets, so the HorizontalScrollView's
+        // constructor-set focusability only surfaces an unlabeled node to the
+        // a11y sweep's flat dump (#254).
+        com.nexachat.core.ui.components.A11yContainerRules.suppressFocusTarget(
+                binding.chatToolbarActions);
         binding.callButton.setOnClickListener(v -> {
             String peerId = state.getOtherUserId();
             if (peerId == null) peerId = state.getMessages().stream().filter(m -> !m.getMine()).map(ChatMessage::getSenderId).findFirst().orElse("");
@@ -1298,7 +1309,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             }
             binding.chatHeaderAvatar.setOnlineStatus(peerOnline);
         }
-        bindGroupInfoShortcut(state.isGroup());
+        bindGroupInfoShortcut(state.isGroup(), peerTitle);
         renderSubtitle();
         binding.callButton.setVisibility(ChatToolbarPolicy.callAvailable(state.isGroup()) ? View.VISIBLE : View.GONE);
         binding.videoCallButton.setVisibility(ChatToolbarPolicy.callAvailable(state.isGroup()) ? View.VISIBLE : View.GONE);
@@ -1404,10 +1415,14 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     }
 
     /** In a group, tapping the header name or avatar opens the group details, as in most messengers. */
-    private void bindGroupInfoShortcut(boolean group) {
+    private void bindGroupInfoShortcut(boolean group, @Nullable String peerTitle) {
         View.OnClickListener open = group ? v -> openGroupInfo() : null;
         binding.chatToolbar.setOnClickListener(open);
         binding.chatToolbar.setClickable(group);
+        // The toolbar's own name, so the clickable group header reads its
+        // title for TalkBack and the flat sweep dump alike (#254): the title
+        // child alone is invisible to a dump that flags the click target.
+        binding.chatToolbar.setContentDescription(group ? peerTitle : null);
         // TalkBack says "double-tap to open group info" instead of a bare "double-tap to activate".
         if (group) {
             androidx.core.view.ViewCompat.replaceAccessibilityAction(binding.chatToolbar,

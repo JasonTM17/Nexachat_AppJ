@@ -24,6 +24,7 @@
             android:backgroundTint="?attr/colorSurfaceContainerLowest">
 
             <ImageView
+                android:id="@+id/pinnedIcon"
                 android:layout_width="@dimen/icon_size_sm"
                 android:layout_height="@dimen/icon_size_sm"
                 android:layout_gravity="center"
@@ -69,6 +70,7 @@
             android:visibility="gone" />
 
         <ImageView
+            android:id="@+id/pinnedRefreshIcon"
             android:layout_width="24dp"
             android:layout_height="24dp"
             android:layout_marginStart="@dimen/space_sm"

@@ -305,28 +305,29 @@ checks on each dumped UI tree (a screenshot-only cell is never a pass;
 cells whose oracle cannot run report BLOCKED_CAPABILITY), and restores
 locale, night mode, font scale, TalkBack and animator state in `finally`.
 
-Status of the `emulator-5554` board (refreshed 2026-11-21 from the recorded
-journey evidence; each status is a fact about that run, not a promise about
-the next checkout):
+Status of the `emulator-5554` board (refreshed 2026-11-21 after the
+board-v1216b run at `851e8905` and the post-#264 verification run at
+`4561c11b`; each status is a fact about that run, not a promise about the
+next checkout):
 
 | Row | Status | Note |
 | --- | --- | --- |
 | `auth-login` | `PASS` | seeded sign-in reaches the inbox |
 | `chat-send-receive` | `PASS` | device send renders; peer REST/STOMP agree |
-| `chat-interactions` | `PASS` | react, reply, edit, recall, forward and receipt on device + peer |
-| `offline-sync` | `PASS` | full journey: offline queue, force-stop survival, exactly-once flush, >100-conversation paged inbox, multi-batch `POST /api/v1/sync`, ABA re-login |
+| `chat-interactions` | `PASS` | react, reply, edit, recall, forward and receipt on device + peer. Fresh-install rerun after #264's writer-starvation fix passed attempt-1 |
+| `offline-sync` | `PASS` | full journey: offline queue, force-stop survival, exactly-once flush, >100-conversation paged inbox, multi-batch `POST /api/v1/sync`, ABA re-login. Post-#264 rerun passed attempt-2 (attempt-1 timed out mid fresh-install drain — the drain still takes minutes; it no longer wedges live writes) |
 | `injected-notifications` | `PASS` | `NEW_MESSAGE`/`REMINDER` shade posts without leaking payload bodies |
 | `archive-preferences` | `PASS` | tabs, paging and filters; caller-only flag privacy |
 | `labels-lifecycle` | `PASS` | create/assign/filter/delete with one dialog surface across rotation and stop-start |
+| `groups-contacts` | `PASS` | attempt-2; attempt-1's pending-request queue arrival classified as product flake, not reproduced |
+| `polls-reminders` | `PASS` | typed-error classification for `reminder_clock` (#248) held |
+| `summary-ask` | `PASS` | ask flow and citation footer render on device |
+| `calls-injected-notification` | `PASS` | injected incoming-call notification drives the call UI |
 | `account-deletion` | wired (`--dstack`) | mail/REST deletion plus the in-app UI slice when the disposable stack owns the app's compile-time port (run alone, shared server stopped); otherwise the REST/OTP deletion plus the explicit gap — never a silent pass |
-| `accessibility-sweep` | no clean pass yet | first campaign invalidated by three harness bugs; fixes sit on `fix/a11y-sweep-tok-callable` pending merge, recapture in progress |
-| `polls-reminders` | runnable | `reminder_clock` failures classify via typed errors (#248); no clean board pass recorded in this refresh |
-| `otp-forgot-password` | runnable (`--dstack`) | no current board run recorded in this refresh |
-| `groups-contacts` | runnable | no current board run recorded in this refresh |
-| `summary-ask` | runnable | no current board run recorded in this refresh |
-| `calls-injected-notification` | runnable | no current board run recorded in this refresh |
+| `accessibility-sweep` | evidence captured, findings filed | 56/56 cells captured (EN/VI × light/dark × 100%/200% × 7 screens); 372 oracle findings filed as issue #254 — product half partially addressed by #260 (inbox row descriptions), oracle decorative-rid blind spot fixed by #258; not a release gate |
+| `otp-forgot-password` | runnable (`--dstack`) | requires the disposable stack; not run in this refresh |
+| `media` | driver landed (#257) | media fixture push driver + upload byte-hash oracle merged; board pass not yet recorded |
 | `auth-session-lifecycle` | `BLOCKED_CAPABILITY` | REST token lifecycle and the barrier-tunnel paused-frame A→B isolation run; the register-UI scenario needs the mail sink applied to the shared server and the password-change dialog has no wired UI driver. Its executor still runs: it proves the REST session ops on disposable accounts (register/login, invalid credentials, refresh rotation with the rotated-away token rejected, logout, logout-all killing a concurrent session, password change with the old password rejected) and returns partial coverage naming the exact undriven scenarios instead of a silent pass |
-| `media` | `BLOCKED_CAPABILITY` | needs the media/picker and byte-hash oracle driver (plan 2.4, in progress) |
 | `calls-signaling` | `BLOCKED_CAPABILITY` | needs a maintained call UI driver; `call_e2e.py` proves signaling only |
 | `room-13-14-upgrade` | `BLOCKED_CAPABILITY` | needs the RC build; `AppDatabase` is version 21 now, so the verified v1.1.0/v1.1.1 fixtures are not a 13→14 migration pair |
 | `v111-rc-upgrade` | `BLOCKED_CAPABILITY` | needs the v1.2 RC build (`com.nexachat.debug` cannot replace the release package in place) |

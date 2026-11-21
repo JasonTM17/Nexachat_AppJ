@@ -84,6 +84,12 @@ public final class ArchiveFragment extends Fragment {
     }
 
     private void configureTabs() {
+        // The tab rail is a label-free scroll container: the tabs themselves
+        // are the focus targets, so the TabLayout's (HorizontalScrollView)
+        // constructor-set focusability only surfaces an unlabeled node to the
+        // a11y sweep's flat dump (#254).
+        com.nexachat.core.ui.components.A11yContainerRules.suppressFocusTarget(
+                binding.archiveTabs);
         binding.archiveTabs.addTab(binding.archiveTabs.newTab()
                 .setText(R.string.archive_tab_media), true);
         binding.archiveTabs.addTab(binding.archiveTabs.newTab()
@@ -132,6 +138,10 @@ public final class ArchiveFragment extends Fragment {
     }
 
     private void configureFilters() {
+        // Label-free scroll surface: the filter buttons inside are the focus
+        // targets (#254 container suppression).
+        com.nexachat.core.ui.components.A11yContainerRules.suppressFocusTarget(
+                binding.archiveFiltersScroll);
         binding.archiveSenderFilter.setOnClickListener(ignored -> showSenderFilter());
         binding.archiveDateFilter.setOnClickListener(ignored -> showDateFilter());
         binding.archiveClearFilters.setOnClickListener(ignored -> {
@@ -142,6 +152,9 @@ public final class ArchiveFragment extends Fragment {
     }
 
     private void configurePaging() {
+        // Label-free list surface: archive rows are the focus targets (#254).
+        com.nexachat.core.ui.components.A11yContainerRules.suppressFocusTarget(
+                binding.archiveList);
         binding.archiveList.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {

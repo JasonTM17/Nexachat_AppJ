@@ -249,6 +249,7 @@
     </plurals>
     <string name="reply_unavailable">Message unavailable</string>
     <string name="cd_cancel_reply">Cancel reply</string>
+    <string name="cd_reply_quote">Reply to %1$s: %2$s</string>
     <string name="action_jump_to_message">Go to message</string>
     <string name="error_pin_limit">You can pin at most 3 messages</string>
     <string name="error_conversation_pin_limit">You can pin at most 5 conversations</string>
