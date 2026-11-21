@@ -651,6 +651,8 @@ class MembershipGuardMatrixIT extends SecurityITBase {
                 "/api/v1/conversations/{conversationId}/mute", Map.of("forever", true)));
         ops.put("rest-089", member("rest-089", "PUT",
                 "/api/v1/conversations/{conversationId}/pin"));
+        ops.put("rest-177", member("rest-177", "PUT",
+                "/api/v1/conversations/{conversationId}/unread"));
 
         // Group administration: existence, then conversation type, then
         // membership, then the admin role.
