@@ -14,6 +14,7 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.time.ZoneOffset;
 import java.util.Date;
 import java.util.UUID;
@@ -164,7 +165,7 @@ class JwtServiceTest {
 
     @Test
     void generateAccessToken_atTheCutoffSecond_mintsOneSecondPastTheCutoff() {
-        Instant now = Instant.parse("2026-11-21T10:00:00Z");
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         User user = userWithId(UUID.randomUUID());
         user.invalidateAccessTokens(now);
         JwtService pinned = new JwtService(new JwtProperties(SECRET, 900, 14),
@@ -181,7 +182,7 @@ class JwtServiceTest {
 
     @Test
     void generateAccessToken_afterTheCutoffSecond_mintsAtTheClockSecond() {
-        Instant now = Instant.parse("2026-11-21T10:00:00Z");
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         User user = userWithId(UUID.randomUUID());
         user.invalidateAccessTokens(now.minusSeconds(10));
         JwtService pinned = new JwtService(new JwtProperties(SECRET, 900, 14),
