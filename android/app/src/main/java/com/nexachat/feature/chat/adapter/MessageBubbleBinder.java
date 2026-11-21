@@ -266,7 +266,8 @@ public final class MessageBubbleBinder {
         if (systemMessage) {
             bubble.setBackgroundResource(R.drawable.bg_date_separator);
         } else {
-            applyBubbleShape(bubble, item.getGroupPosition(), message.getMine());
+            applyBubbleShape(root.getContext(), bubble, item.getGroupPosition(), message.getMine(),
+                    MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs()));
         }
         applyBubbleColors(root.getContext(), bubble, message, item.isPulsing());
         boolean mentionedMe = isMentionedUser(message, currentUserId);
@@ -289,10 +290,6 @@ public final class MessageBubbleBinder {
                 if (item.isPulsing()) {
                     senderColor = resolveThemeColor(
                             root.getContext(), com.google.android.material.R.attr.colorOnTertiaryContainer);
-                } else if (MessageUiRules.isTombstone(
-                        message.isDeleted(), message.getDeletedAtEpochMs())) {
-                    senderColor = resolveThemeColor(
-                            root.getContext(), com.google.android.material.R.attr.colorOnSurface);
                 } else {
                     int colorIndex = ChatBubbleRules.resolveSenderPaletteIndex(message.getSenderId());
                     senderColor = ContextCompat.getColor(
@@ -502,7 +499,13 @@ public final class MessageBubbleBinder {
         });
     }
 
-    private void applyBubbleShape(View bubble, MessageGroupPosition position, boolean mine) {
+    private void applyBubbleShape(
+            android.content.Context context,
+            View bubble,
+            MessageGroupPosition position,
+            boolean mine,
+            boolean tombstone
+    ) {
         float radius = bubble.getResources().getDimension(R.dimen.corner_xl);
         float tailRadius = bubble.getResources().getDimension(R.dimen.corner_xs);
         boolean tailOnRight = mine != (bubble.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL);
@@ -515,9 +518,17 @@ public final class MessageBubbleBinder {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setShape(GradientDrawable.RECTANGLE);
         drawable.setCornerRadii(radii);
-        ColorStateList tint = bubble.getBackgroundTintList();
-        if (tint != null) {
-            drawable.setColor(tint.getDefaultColor());
+        if (tombstone) {
+            drawable.setColor(resolveThemeColor(
+                    context, com.google.android.material.R.attr.colorSurfaceContainerLow));
+            drawable.setStroke(
+                    bubble.getResources().getDimensionPixelSize(R.dimen.control_stroke_width),
+                    resolveThemeColor(context, com.google.android.material.R.attr.colorOutlineVariant));
+        } else {
+            ColorStateList tint = bubble.getBackgroundTintList();
+            if (tint != null) {
+                drawable.setColor(tint.getDefaultColor());
+            }
         }
         bubble.setBackground(drawable);
     }
@@ -541,7 +552,10 @@ public final class MessageBubbleBinder {
         } else if (MessageViewTypeMapper.isSystemMessage(message)) {
             colorInt = resolveThemeColor(context, com.google.android.material.R.attr.colorSurfaceVariant);
         } else if (MessageUiRules.isTombstone(message.isDeleted(), message.getDeletedAtEpochMs())) {
-            colorInt = resolveThemeColor(context, com.google.android.material.R.attr.colorSurfaceContainerHigh);
+            // Tombstone fill and outline are painted on the shape itself; a tint
+            // would mask the fill, so drop whatever a recycled row left behind.
+            bubble.setBackgroundTintList(null);
+            return;
         } else {
             switch (ChatBubbleRules.resolveBubbleContainerRole(message.getStatus(), message.getMine())) {
                 case ERROR:
@@ -558,6 +572,11 @@ public final class MessageBubbleBinder {
             }
         }
         bubble.setBackgroundTintList(ColorStateList.valueOf(colorInt));
+    }
+
+    private static void applyBodyTypeface(@NonNull TextView body, int style) {
+        Typeface resolved = body.getTypeface();
+        body.setTypeface(Typeface.create(resolved, style), style);
     }
 
     private static int resolveThemeColor(android.content.Context context, int attr) {
@@ -611,7 +630,11 @@ public final class MessageBubbleBinder {
         }
         ChatMessage original = resolveOriginal != null ? resolveOriginal.apply(replyId) : null;
         String snippet = message.getReplyToSnippet();
-        if (message.isReplyToEncrypted()
+        boolean originalTombstone = original != null
+                && MessageUiRules.isTombstone(original.isDeleted(), original.getDeletedAtEpochMs());
+        if (originalTombstone) {
+            snippet = root.getContext().getString(R.string.message_deleted);
+        } else if (message.isReplyToEncrypted()
                 || (original != null && original.isDecryptFailed())) {
             snippet = root.getContext().getString(R.string.e2ee_message_placeholder);
         } else if (snippet == null && original != null) {
@@ -732,12 +755,36 @@ public final class MessageBubbleBinder {
         MessageContentKind kind = MessageViewTypeMapper.resolveContentKind(message);
 
         if (tombstone) {
+            View translationBlock = root.findViewById(R.id.translationBlock);
+            if (translationBlock != null) {
+                translationBlock.setVisibility(View.GONE);
+            }
             if (body != null) {
                 body.setVisibility(View.VISIBLE);
-                body.setContentDescription(null);
                 body.setText(R.string.message_deleted);
+                applyBodyTypeface(body, Typeface.ITALIC);
+                body.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_delete, 0, 0, 0);
+                TextViewCompat.setCompoundDrawableTintList(body, ColorStateList.valueOf(
+                        resolveThemeColor(root.getContext(),
+                                com.google.android.material.R.attr.colorOnSurfaceVariant)));
+                body.setCompoundDrawablePadding(
+                        root.getResources().getDimensionPixelSize(R.dimen.space_sm));
+                body.setAlpha(0.7f);
+                body.setMaxLines(2);
+                body.setEllipsize(TextUtils.TruncateAt.END);
+                body.setContentDescription(root.getContext().getString(R.string.message_deleted));
             }
             return;
+        }
+
+        if (body != null) {
+            body.setTypeface(null, Typeface.NORMAL);
+            body.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0);
+            TextViewCompat.setCompoundDrawableTintList(body, null);
+            body.setAlpha(1f);
+            body.setMaxLines(Integer.MAX_VALUE);
+            body.setEllipsize(null);
+            body.setContentDescription(null);
         }
 
         if (kind == MessageContentKind.SYSTEM) {
@@ -820,7 +867,7 @@ public final class MessageBubbleBinder {
             String raw = message.getContent() != null ? message.getContent() : message.getType();
             if (message.isDecryptFailed()) {
                 body.setText(R.string.e2ee_message_undecryptable);
-                body.setTypeface(null, android.graphics.Typeface.ITALIC);
+                applyBodyTypeface(body, Typeface.ITALIC);
                 body.setCompoundDrawablesRelativeWithIntrinsicBounds(
                         R.drawable.ic_lock, 0, 0, 0);
                 body.setCompoundDrawablePadding(
@@ -829,8 +876,6 @@ public final class MessageBubbleBinder {
                         root.getContext().getString(R.string.e2ee_message_undecryptable));
                 return;
             }
-            body.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0);
-            body.setTypeface(null, android.graphics.Typeface.NORMAL);
             SharedContent.Shared shared = raw == null ? null : SharedContent.parse(raw);
             if (shared instanceof SharedContent.Location location && locationCard != null) {
                 body.setVisibility(View.GONE);
@@ -1256,7 +1301,7 @@ public final class MessageBubbleBinder {
             deliveryText.setAlpha(1.0f);
         }
 
-        if (!isMine) {
+        if (!isMine || tombstone) {
             return;
         }
 

@@ -157,6 +157,7 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
             applyTitlePresenceDescription(displayTitle, onlineStatus);
 
             boolean unread = conversation.getUnreadCount() > 0;
+            boolean deletedPreview = conversation.getLastMessageDeleted();
             InboxRowTypography.applyUnreadWeight(title, unread);
             String previewText = ConversationPreviewHelper.previewText(
                     itemView.getContext(),
@@ -172,13 +173,13 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                 preview.setText("");
             }
             applyTitleVerticalAlignment(hasPreviewLine);
-            InboxRowTypography.applyUnreadWeight(preview, unread);
+            InboxRowTypography.applyPreviewStyle(preview, unread, deletedPreview);
             boolean missedCall = ConversationPreviewHelper.isMissedCall(conversation, currentUserId);
             int previewColor = resolveThemeColor(
                     itemView.getContext(),
                     missedCall
                             ? com.google.android.material.R.attr.colorError
-                            : unread
+                            : unread && !deletedPreview
                                     ? com.google.android.material.R.attr.colorOnSurface
                                     : com.google.android.material.R.attr.colorOnSurfaceVariant
             );

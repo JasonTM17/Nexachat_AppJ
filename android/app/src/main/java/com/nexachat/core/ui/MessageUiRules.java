@@ -16,6 +16,32 @@ public final class MessageUiRules {
     }
 
     /**
+     * Copy for a surface that still occupies space after a delete or crypto
+     * placeholder: tombstones win, then the encrypted placeholder, then the
+     * live preview. Empty live content must not fall through to a raw type
+     * token such as {@code TEXT} when the row is already a tombstone.
+     */
+    public static String resolvePlaceholderPreview(
+            boolean tombstone,
+            boolean encryptedPlaceholder,
+            String livePreview,
+            String emptyFallback,
+            String deletedLabel,
+            String e2eePlaceholder
+    ) {
+        if (tombstone) {
+            return deletedLabel;
+        }
+        if (encryptedPlaceholder) {
+            return e2eePlaceholder;
+        }
+        if (livePreview == null || livePreview.isEmpty()) {
+            return emptyFallback == null ? "" : emptyFallback;
+        }
+        return livePreview;
+    }
+
+    /**
      * Determines whether the "Edited" / "Đã chỉnh sửa" label should be displayed.
      * Only shown if editedAt is present AND message is not deleted.
      */
