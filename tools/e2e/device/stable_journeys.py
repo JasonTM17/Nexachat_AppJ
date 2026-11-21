@@ -7547,15 +7547,21 @@ def run_offline_sync(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]
         # Post-relaunch the DM row has rendered the fresh last-message text
         # as its title instead of the peer name (run-31 attempt-1); either
         # string identifies the same unambiguous row.
-        _offline_open_direct(context, title=("Binh", probe_text))
+        _offline_open_direct(
+            context, title=("Binh", probe_text) + _CHAT_TOMBSTONE_MARKERS)
         _offline_wait_conv_body(
-            context, "Binh",
+            context, ("Binh", probe_text) + _CHAT_TOMBSTONE_MARKERS,
             lambda node: probe_text in (node.text or ""),
             "the post-restart peer text did not render in the direct chat",
             timeout=60)
         last_edit = edited_to[edit_src[-1]]
+        # After the 95-message recall burst the DM row's newest activity is a
+        # tombstone, so its inbox title/preview can render "This message was
+        # deleted" instead of the peer name or the probe text — neither of
+        # the earlier aliases then matches the row (exact-match lookup) even
+        # though it is visible at the top of the list.
         _offline_wait_conv_body(
-            context, ("Binh", probe_text, last_edit),
+            context, ("Binh", probe_text, last_edit) + _CHAT_TOMBSTONE_MARKERS,
             lambda node: node.text.strip() == last_edit,
             "the reconciled tail edit was not rendered", timeout=60)
         _wait_ui_node(
