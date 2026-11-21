@@ -12,7 +12,9 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Date;
 import java.util.UUID;
 
@@ -24,7 +26,8 @@ class JwtServiceTest {
     private static final String SECRET = "unit-test-secret-key-at-least-64-chars-long-0123456789";
     private static final SecretKey KEY = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
 
-    private final JwtService jwtService = new JwtService(new JwtProperties(SECRET, 900, 14));
+    private final JwtService jwtService = new JwtService(
+            new JwtProperties(SECRET, 900, 14), Clock.systemUTC());
 
     private static User userWithId(UUID id) {
         User user = User.create("+84912345678", "hash", "Minh");
@@ -154,8 +157,41 @@ class JwtServiceTest {
 
     @Test
     void constructor_secretBelow256Bits_failsFast() {
-        assertThat(catchThrowableOfType(IllegalStateException.class, 
-                () -> new JwtService(new JwtProperties("short", 900, 14))))
+        assertThat(catchThrowableOfType(IllegalStateException.class,
+                () -> new JwtService(new JwtProperties("short", 900, 14), Clock.systemUTC())))
                 .isNotNull();
+    }
+
+    @Test
+    void generateAccessToken_atTheCutoffSecond_mintsOneSecondPastTheCutoff() {
+        Instant now = Instant.parse("2026-11-21T10:00:00Z");
+        User user = userWithId(UUID.randomUUID());
+        user.invalidateAccessTokens(now);
+        JwtService pinned = new JwtService(new JwtProperties(SECRET, 900, 14),
+                Clock.fixed(now, ZoneOffset.UTC));
+
+        JwtService.AccessTokenClaims claims =
+                pinned.parseAccessTokenClaims(pinned.generateAccessToken(user));
+
+        // A naive now-second mint would equal the cutoff and be rejected
+        // inclusively; the mint must move past it instead.
+        assertThat(claims.issuedAt()).isEqualTo(now.plusSeconds(1));
+        assertThat(claims.expiresAt()).isEqualTo(now.plusSeconds(1).plusSeconds(900));
+    }
+
+    @Test
+    void generateAccessToken_afterTheCutoffSecond_mintsAtTheClockSecond() {
+        Instant now = Instant.parse("2026-11-21T10:00:00Z");
+        User user = userWithId(UUID.randomUUID());
+        user.invalidateAccessTokens(now.minusSeconds(10));
+        JwtService pinned = new JwtService(new JwtProperties(SECRET, 900, 14),
+                Clock.fixed(now, ZoneOffset.UTC));
+
+        JwtService.AccessTokenClaims claims =
+                pinned.parseAccessTokenClaims(pinned.generateAccessToken(user));
+
+        // The bump only applies at or below the cutoff; otherwise iat is the
+        // ordinary clock second.
+        assertThat(claims.issuedAt()).isEqualTo(now);
     }
 }

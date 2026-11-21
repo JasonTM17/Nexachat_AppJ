@@ -64,6 +64,8 @@ class AuthServiceTest {
     @Mock
     private RateLimitService rateLimitService;
     @Mock
+    private SignInFailureBudget signInFailureBudget;
+    @Mock
     private AccessTokenRevocationService accessTokenRevocationService;
     @Mock
     private ApplicationEventPublisher eventPublisher;
@@ -107,7 +109,7 @@ class AuthServiceTest {
                 .thenReturn(new SimpleTransactionStatus());
         lenient().when(transactionManagerProvider.getObject()).thenReturn(transactionManager);
         authService = new AuthService(userRepository, entityManager, phoneService, passwordEncoder,
-                tokenService, accessTokenRevocationService, rateLimitService,
+                tokenService, accessTokenRevocationService, rateLimitService, signInFailureBudget,
                 new AuthResponseFactory(jwtService, new MessageRecallProperties()),
                 (boundary, operation, userId, tokenId) -> { }, eventPublisher, transactionManagerProvider,
                 revocationFence, e2eeDeviceService, adminRoleBootstrap,
@@ -340,6 +342,118 @@ class AuthServiceTest {
         verify(rateLimitService, org.mockito.Mockito.times(2)).tryConsume(
                 org.mockito.ArgumentMatchers.eq("login|email|minh@example.com"),
                 org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any());
+    }
+
+    // ---------------------------------------- shared per-account sign-in budget
+
+    @Test
+    void login_phonePath_chargesTheSharedAccountBudgetKeyedByTheAccountsPhone() {
+        User user = userWithId("+84912345678", "stored-hash", "Minh");
+        when(phoneService.toE164("0912345678")).thenReturn("+84912345678");
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("nope", "stored-hash")).thenReturn(false);
+
+        catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest("0912345678", "nope"), null));
+
+        verify(signInFailureBudget).chargeAttempt("phone|+84912345678");
+    }
+
+    @Test
+    void login_emailPathOnAnAccountWithAPhone_chargesTheSameSharedKey() {
+        // The named gap: both identifier paths of ONE account must drain a
+        // single budget, not one budget per claimed credential.
+        User user = userWithId("+84912345678", "stored-hash", "Minh");
+        ownVerifiedEmail(user, "minh@example.com");
+        when(userRepository.findActiveByVerifiedEmail("minh@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("nope", "stored-hash")).thenReturn(false);
+
+        catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest(null, "minh@example.com", "nope"), null));
+
+        verify(signInFailureBudget).chargeAttempt("phone|+84912345678");
+    }
+
+    @Test
+    void login_emailOnlyAccount_chargesTheEmailKeyedBudget() {
+        User user = User.createEmailAccount("Minh", "minh@example.com", "stored-hash",
+                java.time.Instant.parse("2026-11-17T00:00:00Z"));
+        ReflectionTestUtils.setField(user, "id", UUID.randomUUID());
+        when(userRepository.findActiveByVerifiedEmail("minh@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("nope", "stored-hash")).thenReturn(false);
+
+        catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest(null, "minh@example.com", "nope"), null));
+
+        verify(signInFailureBudget).chargeAttempt("email|minh@example.com");
+    }
+
+    @Test
+    void login_success_chargesThenResetsTheSharedAccountBudget() {
+        User user = userWithId("+84912345678", "stored-hash", "Minh");
+        when(phoneService.toE164("0912345678")).thenReturn("+84912345678");
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("secret123", "stored-hash")).thenReturn(true);
+
+        authService.login(new LoginRequest("0912345678", "secret123"), "JUnit");
+
+        verify(signInFailureBudget).chargeAttempt("phone|+84912345678");
+        verify(signInFailureBudget).onSuccessfulSignIn("phone|+84912345678");
+    }
+
+    @Test
+    void login_wrongPassword_chargesTheBudgetButNeverResetsIt() {
+        User user = userWithId("+84912345678", "stored-hash", "Minh");
+        when(phoneService.toE164("0912345678")).thenReturn("+84912345678");
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("nope", "stored-hash")).thenReturn(false);
+
+        catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest("0912345678", "nope"), null));
+
+        verify(signInFailureBudget).chargeAttempt("phone|+84912345678");
+        verify(signInFailureBudget, never()).onSuccessfulSignIn(anyString());
+    }
+
+    @Test
+    void login_suspendedAccount_chargesTheBudgetWithoutResettingIt() {
+        User user = userWithId("+84912345678", "stored-hash", "Minh");
+        user.suspend(java.time.Instant.parse("2026-11-17T00:00:00Z"), "moderation", UUID.randomUUID());
+        when(phoneService.toE164("0912345678")).thenReturn("+84912345678");
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84912345678")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("secret123", "stored-hash")).thenReturn(true);
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest("0912345678", "secret123"), null));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.ACCOUNT_SUSPENDED);
+        verify(signInFailureBudget).chargeAttempt("phone|+84912345678");
+        // A suspended sign-in is refused, not successful, so the charge stands.
+        verify(signInFailureBudget, never()).onSuccessfulSignIn(anyString());
+    }
+
+    @Test
+    void login_unknownAccountAndUnparseableIdentifiers_neverTouchTheAccountBudget() {
+        when(phoneService.toE164(anyString())).thenReturn("+84999999999");
+        when(userRepository.findByPhoneAndDeletedAtIsNull("+84999999999")).thenReturn(Optional.empty());
+
+        catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest("0999999999", "whatever123"), null));
+
+        when(phoneService.toE164(anyString())).thenThrow(new IllegalArgumentException("bad phone"));
+        catchThrowableOfType(ApiException.class,
+                () -> authService.login(new LoginRequest("not-a-phone", "whatever123"), null));
+
+        // No account row was resolved, so nothing was charged — unknown
+        // identifiers keep the uniform 401 contract with no budget signal.
+        verify(signInFailureBudget, never()).chargeAttempt(anyString());
+        verify(signInFailureBudget, never()).onSuccessfulSignIn(anyString());
     }
 
     @Test

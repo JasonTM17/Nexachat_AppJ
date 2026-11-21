@@ -6,11 +6,14 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.Set;
 import java.util.UUID;
@@ -38,8 +41,21 @@ public class JwtService {
 
     private final SecretKey key;
     private final long accessTtlSeconds;
+    private final Clock clock;
 
+    /**
+     * Access tokens are minted on the real wall clock — never the shared
+     * Spring {@code Clock} bean, which tests freeze to pin unrelated
+     * rate-limit windows; a token minted under a frozen clock would be
+     * born already expired.
+     */
+    @Autowired
     public JwtService(JwtProperties properties) {
+        this(properties, Clock.systemUTC());
+    }
+
+    /** Pinned-clock seam for tests that must control the mint instant. */
+    public JwtService(JwtProperties properties, Clock clock) {
         byte[] secretBytes = properties.secret() == null
                 ? new byte[0]
                 : properties.secret().getBytes(StandardCharsets.UTF_8);
@@ -50,18 +66,36 @@ public class JwtService {
         }
         this.key = Keys.hmacShaKeyFor(secretBytes);
         this.accessTtlSeconds = properties.accessTtlSeconds();
+        this.clock = clock;
     }
 
+    /**
+     * Mints an access token whose {@code iat} survives the revocation cutoff.
+     *
+     * <p>JWT {@code iat} has one-second resolution and {@link JwtAuthFilter}
+     * rejects {@code iat <= cutoff} inclusively, so a token minted in the same
+     * wall-clock second as a just-stamped cutoff (logout-all then immediate
+     * re-login on a fast stack) would be born dead for its whole TTL. When the
+     * fresh, locked user snapshot carries a cutoff at or after the mint
+     * second, the issue instant moves one second past the cutoff. Tokens
+     * issued before a later revocation keep {@code iat <= cutoff} and still
+     * die; the callers hold the owner row lock, so the cutoff they see cannot
+     * be older than the one a concurrent revocation would stamp.
+     */
     public String generateAccessToken(User user) {
-        Instant now = Instant.now();
+        Instant issuedAt = clock.instant().truncatedTo(ChronoUnit.SECONDS);
+        Instant cutoff = user.getTokensValidAfter();
+        if (cutoff != null && !issuedAt.isAfter(cutoff)) {
+            issuedAt = cutoff.plusSeconds(1);
+        }
         return Jwts.builder()
                 .id(UUID.randomUUID().toString())
                 .issuer(ISSUER)
                 .audience().single(AUDIENCE)
                 .subject(user.getId().toString())
                 .claim(CLAIM_TYPE, TYPE_ACCESS)
-                .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plusSeconds(accessTtlSeconds)))
+                .issuedAt(Date.from(issuedAt))
+                .expiration(Date.from(issuedAt.plusSeconds(accessTtlSeconds)))
                 .signWith(key)
                 .compact();
     }

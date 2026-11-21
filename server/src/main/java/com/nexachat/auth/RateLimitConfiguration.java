@@ -1,6 +1,7 @@
 package com.nexachat.auth;
 
 import io.github.bucket4j.TimeMeter;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -13,6 +14,7 @@ import org.springframework.context.annotation.Configuration;
  * meter, which makes the number of admitted requests deterministic.
  */
 @Configuration
+@EnableConfigurationProperties(SignInBudgetProperties.class)
 public class RateLimitConfiguration {
 
     @Bean

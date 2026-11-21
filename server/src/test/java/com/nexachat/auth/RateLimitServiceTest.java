@@ -76,6 +76,33 @@ class RateLimitServiceTest {
     }
 
     @Test
+    void resetBucketDropsOneSubjectLeavingEveryOtherBucketIntact() {
+        Duration window = Duration.ofMinutes(5);
+        for (int i = 0; i < 10; i++) {
+            rateLimitService.tryConsume("signin-budget|phone|+84912345678", 10, window);
+            rateLimitService.tryConsume("login|10.0.0.1", 10, window);
+        }
+        assertThat(rateLimitService.tryConsume("signin-budget|phone|+84912345678", 10, window).allowed())
+                .isFalse();
+        assertThat(rateLimitService.tryConsume("login|10.0.0.1", 10, window).allowed())
+                .isFalse();
+
+        rateLimitService.resetBucket("signin-budget|phone|+84999999999");
+        assertThat(rateLimitService.bucketCount())
+                .as("resetting a missing key is a no-op")
+                .isEqualTo(2);
+
+        rateLimitService.resetBucket("signin-budget|phone|+84912345678");
+
+        assertThat(rateLimitService.tryConsume("signin-budget|phone|+84912345678", 10, window).allowed())
+                .as("the reset subject starts from a full budget")
+                .isTrue();
+        assertThat(rateLimitService.tryConsume("login|10.0.0.1", 10, window).allowed())
+                .as("other buckets keep their charge")
+                .isFalse();
+    }
+
+    @Test
     void aFrozenTimeMeterDeniesExactlyAtCapacityAndRefillsOnlyWhenTimeMoves() {
         MutableTimeMeter meter = new MutableTimeMeter();
         RateLimitService service = new RateLimitService(10, Duration.ofMinutes(15), meter);
