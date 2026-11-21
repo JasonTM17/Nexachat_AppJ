@@ -18,6 +18,8 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.LinkedHashSet;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -75,6 +77,22 @@ class SummaryServiceTest {
         service = new SummaryService(rateLimiter, windowService, providerSelector, cacheRepository,
                 ConversationAiOptOuts.none(), Clock.systemUTC(), 120_000L, consentRepository,
                 new SummaryConsentRecheck(consentRepository, transactionManager));
+    }
+
+    @Test
+    void externalContentHashNamesTheCompleteSortedExclusionSetAndPreservesEmptyIdentity() {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        Set<UUID> forward = new LinkedHashSet<>(List.of(first, second));
+        Set<UUID> reverse = new LinkedHashSet<>(List.of(second, first));
+        String empty = SummaryService.contentHash(window, request(false), null, 0L, Set.of());
+        String both = SummaryService.contentHash(window, request(false), null, 0L, forward);
+
+        assertThat(empty).isEqualTo(hash("LLM"));
+        assertThat(both).isEqualTo(SummaryService.contentHash(window, request(false), null, 0L, reverse));
+        assertThat(both).isNotEqualTo(empty)
+                .isNotEqualTo(SummaryService.contentHash(window, request(false), null, 0L, Set.of(first)))
+                .isNotEqualTo(SummaryService.contentHash(window, request(false), null, 0L, Set.of(second)));
     }
 
     @Test
@@ -253,6 +271,11 @@ class SummaryServiceTest {
                 new StubProvider("LOCAL"), "LOCAL", SummaryFallbackReason.NO_CONSENT);
         SummaryGeneration previouslyGenerated = generation("LOCAL", "Stored output", null);
         SummaryCacheEntry entry = cacheEntry(previouslyGenerated, "LOCAL");
+        ConversationAiOptOuts exclusions = mock(ConversationAiOptOuts.class);
+        when(exclusions.optedOutUserIds(conversationId)).thenReturn(Set.of(), Set.of(userId));
+        service = new SummaryService(rateLimiter, windowService, providerSelector, cacheRepository,
+                exclusions, Clock.systemUTC(), 120_000L, consentRepository,
+                new SummaryConsentRecheck(consentRepository, transactionManager));
         when(windowService.load(conversationId, userId, request))
                 .thenReturn(new SummaryReadContext(window, false, 0L, null));
         when(providerSelector.prepare(org.mockito.ArgumentMatchers.eq(false), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(prepared);

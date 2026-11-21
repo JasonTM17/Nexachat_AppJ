@@ -177,7 +177,8 @@ public class SummaryService {
                     request.scope(), window.messageCount(), MIN_MESSAGES, readContext.period());
         }
 
-        Set<UUID> optedOut = aiOptOuts.optedOutUserIds(conversationId);
+        // Bind the complete prompt exclusion context, including uncited overview sources.
+        Set<UUID> optedOut = Set.copyOf(aiOptOuts.optedOutUserIds(conversationId));
         PreparedSummaryProvider prepared = providerSelector.prepare(readContext.aiSummaryConsent(), window, request.refresh());
         if (request.refresh()) {
             // An explicit refresh always regenerates: it neither replays nor waits on a flight.
@@ -186,7 +187,7 @@ public class SummaryService {
             return generateAndStore(userId, conversationId, window, request, readContext, gen, generated, optedOut);
         }
         String flightKey = flightKey(conversationId, window, request, readContext.period(), prepared,
-                readContext.consentEpoch());
+                readContext.consentEpoch(), optedOut);
         // Single-flight: one provider call per cache-cold key. Every request that
         // arrives while the key is being filled waits, then replays the winner.
         // A waiter whose leader failed, timed out or was rejected re-enters the
@@ -320,10 +321,12 @@ public class SummaryService {
             SummaryRequest request,
             SummaryPeriod period,
             PreparedSummaryProvider prepared,
-            long consentEpoch) {
+            long consentEpoch,
+            Set<UUID> optedOut) {
         long lookupEpoch = "LLM".equals(prepared.cacheProvider()) ? consentEpoch : -1L;
         return conversationId + "|" + window.fromSeq() + "|" + window.toSeq() + "|"
-                + contentHash(window, request, period, lookupEpoch) + "|"
+                + contentHash(window, request, period, lookupEpoch,
+                        "LLM".equals(prepared.cacheProvider()) ? optedOut : Set.of()) + "|"
                 + prepared.cacheProvider() + "|" + request.language().name();
     }
 
@@ -346,7 +349,8 @@ public class SummaryService {
         long consentEpoch = "LLM".equals(prepared.cacheProvider()) ? readContext.consentEpoch() : -1L;
         // The key names the scope, the resolved day and zone, every included message and, for
         // external AI, the consent generation, so a result is never replayed under other access.
-        String contentHash = contentHash(window, request, readContext.period(), consentEpoch);
+        String contentHash = contentHash(window, request, readContext.period(), consentEpoch,
+                "LLM".equals(prepared.cacheProvider()) ? optedOut : Set.of());
         Optional<SummaryCacheEntry> cached = cacheRepository.findValid(conversationId, window.fromSeq(),
                 window.toSeq(), contentHash, prepared.cacheProvider(), request.language());
         if (cached.isPresent()) {
@@ -414,8 +418,10 @@ public class SummaryService {
         consentRecheck.verifyUnchanged(userId, generation.generatedBy(),
                 new SummaryConsentRepository.ConsentSnapshot(
                         readContext.aiSummaryConsent(), readContext.consentEpoch()));
+        Set<UUID> currentOptedOut = verifyExclusionsUnchanged(
+                window.conversationId(), generation.generatedBy(), optedOut);
         return SummaryResponse.create(entry.id(), window, generation, true,
-                contextOmitted(generation, window, optedOut), entry.createdAt(), request, readContext.period());
+                contextOmitted(generation, window, currentOptedOut), entry.createdAt(), request, readContext.period());
     }
 
     /**
@@ -464,7 +470,11 @@ public class SummaryService {
         // one the generation was authorized under, which can be newer than the window
         // read's when consent moved before the provider call.
         String storeHash = contentHash(window, request, readContext.period(),
-                "LLM".equals(generated.generatedBy()) ? generationConsentEpoch : -1L);
+                "LLM".equals(generated.generatedBy()) ? generationConsentEpoch : -1L,
+                "LLM".equals(generated.generatedBy()) ? optedOut : Set.of());
+        // The provider re-reads opt-outs at prompt time. If it observed a different set,
+        // suppress its output rather than publishing it under this request's old identity.
+        verifyExclusionsUnchanged(conversationId, generated.generatedBy(), optedOut);
         SummaryCacheEntry entry;
         boolean cached;
         if (request.refresh()) {
@@ -477,6 +487,7 @@ public class SummaryService {
                     generated);
             entry = saved.entry();
             cached = !saved.inserted();
+            verifyExclusionsUnchanged(conversationId, entry.payload().generatedBy(), optedOut);
             if (cached && !(citationsWithinWindow(entry.payload().content(), window)
                     && replayAllowed(entry, window, optedOut))) {
                 // A concurrent fill that started before the opt-out won the
@@ -494,9 +505,26 @@ public class SummaryService {
         // the winner's row, not this request's own labels.
         SummaryGeneration responseGeneration = forRequest(
                 entry.payload().toGeneration(), prepared, cached ? null : generated);
+        if (cached) {
+            consentRecheck.verifyUnchanged(userId, responseGeneration.generatedBy(),
+                    new SummaryConsentRepository.ConsentSnapshot(
+                            readContext.aiSummaryConsent(), generationConsentEpoch));
+        }
+        Set<UUID> currentOptedOut = verifyExclusionsUnchanged(
+                conversationId, responseGeneration.generatedBy(), optedOut);
         return SummaryResponse.create(entry.id(), window, responseGeneration, cached,
-                contextOmitted(responseGeneration, window, optedOut), entry.createdAt(),
+                contextOmitted(responseGeneration, window, currentOptedOut), entry.createdAt(),
                 request, readContext.period());
+    }
+
+    /** Citation guards cannot prove which authors contributed uncited overview text. */
+    private Set<UUID> verifyExclusionsUnchanged(UUID conversationId, String generatedBy, Set<UUID> expected) {
+        Set<UUID> current = Set.copyOf(aiOptOuts.optedOutUserIds(conversationId));
+        if ("LLM".equals(generatedBy) && !expected.equals(current)) {
+            throw ApiException.of(ApiErrorCode.AI_CONSENT_REQUIRED,
+                    "AI summary exclusions changed while the summary was being generated");
+        }
+        return current;
     }
 
     private static SummaryGeneration forRequest(
@@ -621,6 +649,11 @@ public class SummaryService {
     }
 
     static String contentHash(SummaryWindow window, SummaryRequest request, SummaryPeriod period, long consentEpoch) {
+        return contentHash(window, request, period, consentEpoch, Set.of());
+    }
+
+    static String contentHash(SummaryWindow window, SummaryRequest request, SummaryPeriod period,
+            long consentEpoch, Set<UUID> optedOut) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             if (request != null) {
@@ -640,6 +673,13 @@ public class SummaryService {
                 updateHashField(digest, message.text());
                 updateHashField(digest, message.createdAt() == null ? null : message.createdAt().toString());
                 updateHashField(digest, message.editedAt() == null ? null : message.editedAt().toString());
+            }
+            // Preserve historical empty-set hashes and local keys. Length-prefixed sorted
+            // UUID fields give every nonempty complete exclusion set a stable identity.
+            if (!optedOut.isEmpty()) {
+                updateHashField(digest, "AI_EXCLUSIONS");
+                updateHashField(digest, Integer.toString(optedOut.size()));
+                optedOut.stream().map(UUID::toString).sorted().forEach(id -> updateHashField(digest, id));
             }
             return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException ex) {
