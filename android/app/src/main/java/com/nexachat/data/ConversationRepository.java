@@ -315,6 +315,14 @@ public final class ConversationRepository implements AutoCloseable {
                             for (ConversationEntity row : rows) summaries.add(toSummary(row, presence));
                             return Collections.unmodifiableList(summaries);
                         })
+                // Drain observer counter (issue #266 phase 0): counting only,
+                // emission semantics untouched; no-op unless the SyncDrain
+                // logcat gate is enabled.
+                .doOnNext(summaries -> {
+                    SyncDrainProbe probe = messageRepository == null
+                            ? null : messageRepository.drainProbe();
+                    if (probe != null) probe.onInboxEmission();
+                })
                 .subscribeOn(Schedulers.io());
     }
 

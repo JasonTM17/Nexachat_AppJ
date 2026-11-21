@@ -79,6 +79,11 @@ public final class SyncEngine {
     private long flightEpoch = Long.MIN_VALUE;
     private final SyncPageStore pageStore;
     @VisibleForTesting Runnable onFlightJoined = () -> {};
+    /**
+     * Drain instrumentation seam (issue #266 phase 0): dormant unless the
+     * {@code SyncDrain} logcat gate is enabled; never changes drain behavior.
+     */
+    @VisibleForTesting final SyncDrainProbe drainProbe = new SyncDrainProbe();
 
     /** Test seam without E2EE; production wiring uses the injected constructor. */
     public SyncEngine(
@@ -120,6 +125,7 @@ public final class SyncEngine {
         this.attachmentsAdapter = moshi.adapter(Types.newParameterizedType(List.class, AttachmentDto.class));
         this.pageStore = new SyncPageStore(appDatabase, tokenRefresher, tokenStore, moshi,
                 e2eeSession);
+        this.pageStore.drainProbe = this.drainProbe;
     }
 
     /** Compatibility constructor for existing package-local sync tests. */
@@ -191,8 +197,15 @@ public final class SyncEngine {
             if (cursor.userId == null) return Completable.complete();
             return conversationDao.getAllWatermarks().flatMapCompletable(watermarks ->
                     Completable.create(emitter -> {
+                        // Drain totals (issue #266 phase 0): wall clock of the whole
+                        // consumer drain plus the engine's pending-continuation state.
+                        // The flag stays open across the drain so the observer
+                        // counters in the repositories can attribute emissions.
+                        drainProbe.beginDrain();
+                        long drainStart = drainProbe.recording() ? System.nanoTime() : 0L;
                         try {
-                            boolean pending = new SyncV2Consumer(pageStore, tokenRefresher, this::fetchDeltaResponse)
+                            boolean pending = new SyncV2Consumer(pageStore, tokenRefresher,
+                                    this::fetchDeltaResponse, drainProbe)
                                     .sync(cursor.userId, expectedEpoch, watermarks);
                             if (!emitter.isDisposed()) {
                                 tokenRefresher.runIfSessionCurrent(expectedEpoch,
@@ -201,7 +214,11 @@ public final class SyncEngine {
                             }
                         } catch (Throwable failure) {
                             io.reactivex.rxjava3.exceptions.Exceptions.throwIfFatal(failure);
+                            drainProbe.drainError(failure);
                             emitter.tryOnError(failure);
+                        } finally {
+                            drainProbe.endDrain(hasPendingContinuation.get(),
+                                    drainStart == 0L ? 0L : System.nanoTime() - drainStart);
                         }
                     })
                     .onErrorResumeNext(error -> error instanceof SyncPageStore.LegacyRequired

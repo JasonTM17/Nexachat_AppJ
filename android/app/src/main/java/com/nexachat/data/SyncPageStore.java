@@ -19,6 +19,11 @@ final class SyncPageStore {
     private final MessageStateApplier messages;
     Runnable beforeCommit = () -> {};
     Runnable afterCommit = () -> {};
+    /**
+     * Drain instrumentation seam (issue #266 phase 0): the engine overwrites
+     * this with its shared probe; standalone stores keep the dormant default.
+     */
+    volatile SyncDrainProbe drainProbe = new SyncDrainProbe();
     private volatile long legacyEpoch = Long.MIN_VALUE;
 
     SyncPageStore(AppDatabase db, TokenRefresher refresher, TokenStore tokens, Moshi moshi) {
@@ -113,108 +118,125 @@ final class SyncPageStore {
     List<String> apply(String owner, long epoch, Map<String, SyncCursorEntity> requested,
             SyncResponse response) {
         List<String> pending = new ArrayList<>();
+        // Drain split timer (issue #266 phase 0): read once per page so the
+        // guarded spans cost nothing while the probe is dormant.
+        boolean timed = drainProbe.recording();
         fenced(owner, epoch, () -> db.runInTransaction(() -> {
             // Reject pages whose cache/cursor scope changed while HTTP was in flight.
             // Only synchronous statements run inside the held writer transaction
             // (issue #184): a queued Rx read or write parks this thread behind
-            // the executor while the fresh-install drain saturates it.
-            for (SyncCursorEntity expected : requested.values()) {
-                if (!same(expected, read(owner, expected.conversationId))
-                        || db.conversationDao().byIdSync(expected.conversationId) == null) {
-                    throw new CancellationException("Sync cache changed before page commit");
+            // the executor while the fresh-install drain saturates it. The
+            // drainProbe hooks below keep that contract: plain memory writes
+            // only, never logging or a Room/Rx statement.
+            long guardStart = timed ? System.nanoTime() : 0L;
+            boolean guardMismatch = false;
+            try {
+                for (SyncCursorEntity expected : requested.values()) {
+                    if (!same(expected, read(owner, expected.conversationId))
+                            || db.conversationDao().byIdSync(expected.conversationId) == null) {
+                        guardMismatch = true;
+                        throw new CancellationException("Sync cache changed before page commit");
+                    }
                 }
+            } finally {
+                if (timed) drainProbe.pageGuard(System.nanoTime() - guardStart, guardMismatch);
             }
-            Set<String> returned = new HashSet<>();
-            for (SyncResponse.ConversationDeltaDto delta : response.getDeltas()) {
-                String conversation = delta.getConversationId();
-                returned.add(conversation);
-                SyncCursorEntity current = requested.get(conversation);
-                if (delta.getReset()) {
-                    // Reset never deletes queued sends or another account's outbox.
-                    // Synchronous *InTransaction deletes only: no blockingAwait
-                    // inside a held writer transaction (issue #184).
-                    db.messageDao().deleteForConversationInTransaction(conversation);
-                    db.messageTranslationDao().deleteForConversationInTransaction(conversation);
-                    db.reactionDao().deleteForConversationInTransaction(conversation);
-                    db.pinDao().deleteForConversationInTransaction(conversation);
-                    db.syncCursorDao().delete(owner, conversation);
-                    put(new SyncCursorEntity(owner, conversation, delta.getGeneration(), 0,
-                            null, null, null, true));
-                    pending.add(conversation);
-                    continue;
-                }
-                if (delta.isReactionsFullRefresh() && !current.rebuildingReactions) {
-                    db.reactionDao().deleteForConversationInTransaction(conversation);
-                    put(new SyncCursorEntity(owner, conversation, delta.getGeneration(), 0,
-                            null, null, response.getServerTime(), true));
-                    pending.add(conversation);
-                    continue;
-                }
-                if (current.rebuildingReactions && current.changeCursor == 0) {
-                    db.reactionDao().deleteForConversationInTransaction(conversation);
-                }
-                for (MessageDto row : delta.getChanges()) {
-                    boolean isNew = row.getId() != null
-                            && db.messageDao().byIdInTransaction(row.getId()) == null;
-                    boolean accepted = messages.apply(
-                            row, conversation, delta.getGeneration(), owner, current.rebuildingReactions);
-                    MessageEntity committed = row.getId() == null
-                            ? null : db.messageDao().byIdInTransaction(row.getId());
-                    if (accepted && isNew && committed != null && committed.getDeletedAtEpochMs() == null
-                            && !owner.equals(committed.getSenderId())) {
-                        db.conversationDao().incrementUnreadInTransaction(conversation, 1);
+            long deltaStart = timed ? System.nanoTime() : 0L;
+            try {
+                Set<String> returned = new HashSet<>();
+                for (SyncResponse.ConversationDeltaDto delta : response.getDeltas()) {
+                    String conversation = delta.getConversationId();
+                    returned.add(conversation);
+                    SyncCursorEntity current = requested.get(conversation);
+                    if (delta.getReset()) {
+                        // Reset never deletes queued sends or another account's outbox.
+                        // Synchronous *InTransaction deletes only: no blockingAwait
+                        // inside a held writer transaction (issue #184).
+                        db.messageDao().deleteForConversationInTransaction(conversation);
+                        db.messageTranslationDao().deleteForConversationInTransaction(conversation);
+                        db.reactionDao().deleteForConversationInTransaction(conversation);
+                        db.pinDao().deleteForConversationInTransaction(conversation);
+                        db.syncCursorDao().delete(owner, conversation);
+                        put(new SyncCursorEntity(owner, conversation, delta.getGeneration(), 0,
+                                null, null, null, true));
+                        pending.add(conversation);
+                        continue;
                     }
-                    if (committed != null && row.getClientMessageId() != null
-                            && owner.equals(committed.getSenderId())
-                            && conversation.equals(committed.getConversationId())
-                            && owner.equals(row.getResolvedSenderId())
-                            && (committed.getClientMessageId() == null
-                            || row.getClientMessageId().equals(committed.getClientMessageId()))) {
-                        db.outboxDao().deleteInTransaction(row.getClientMessageId(), owner);
+                    if (delta.isReactionsFullRefresh() && !current.rebuildingReactions) {
+                        db.reactionDao().deleteForConversationInTransaction(conversation);
+                        put(new SyncCursorEntity(owner, conversation, delta.getGeneration(), 0,
+                                null, null, response.getServerTime(), true));
+                        pending.add(conversation);
+                        continue;
                     }
-                }
-                if (!delta.isReactionsFullRefresh()) {
-                    for (ReactionUpdateDto update : delta.getReactionUpdates()) {
-                        if (update.getMessageId() == null) continue;
-                        MessageEntity row = db.messageDao().byIdInTransaction(update.getMessageId());
-                        // Reaction and message pages have independent orderings. Preserve
-                        // unknown-message aggregates before acknowledging the reaction cursor.
-                        if (row == null || (conversation.equals(row.getConversationId())
-                                && row.getDeletedAtEpochMs() == null)) {
-                            db.reactionDao().replaceForMessageInTransaction(update.getMessageId(),
-                                    MessageStateApplier.reactions(update.getReactions(), update.getMessageId(),
-                                            conversation, owner));
+                    if (current.rebuildingReactions && current.changeCursor == 0) {
+                        db.reactionDao().deleteForConversationInTransaction(conversation);
+                    }
+                    for (MessageDto row : delta.getChanges()) {
+                        boolean isNew = row.getId() != null
+                                && db.messageDao().byIdInTransaction(row.getId()) == null;
+                        boolean accepted = messages.apply(
+                                row, conversation, delta.getGeneration(), owner, current.rebuildingReactions);
+                        MessageEntity committed = row.getId() == null
+                                ? null : db.messageDao().byIdInTransaction(row.getId());
+                        if (accepted && isNew && committed != null && committed.getDeletedAtEpochMs() == null
+                                && !owner.equals(committed.getSenderId())) {
+                            db.conversationDao().incrementUnreadInTransaction(conversation, 1);
+                        }
+                        if (committed != null && row.getClientMessageId() != null
+                                && owner.equals(committed.getSenderId())
+                                && conversation.equals(committed.getConversationId())
+                                && owner.equals(row.getResolvedSenderId())
+                                && (committed.getClientMessageId() == null
+                                || row.getClientMessageId().equals(committed.getClientMessageId()))) {
+                            db.outboxDao().deleteInTransaction(row.getClientMessageId(), owner);
                         }
                     }
+                    if (!delta.isReactionsFullRefresh()) {
+                        for (ReactionUpdateDto update : delta.getReactionUpdates()) {
+                            if (update.getMessageId() == null) continue;
+                            MessageEntity row = db.messageDao().byIdInTransaction(update.getMessageId());
+                            // Reaction and message pages have independent orderings. Preserve
+                            // unknown-message aggregates before acknowledging the reaction cursor.
+                            if (row == null || (conversation.equals(row.getConversationId())
+                                    && row.getDeletedAtEpochMs() == null)) {
+                                db.reactionDao().replaceForMessageInTransaction(update.getMessageId(),
+                                        MessageStateApplier.reactions(update.getReactions(), update.getMessageId(),
+                                                conversation, owner));
+                            }
+                        }
+                    }
+                    preferences(delta);
+                    String baseline = current.reactionBaseline != null
+                            ? current.reactionBaseline : response.getServerTime();
+                    boolean rebuilding = current.rebuildingReactions;
+                    String since = current.reactionSince;
+                    Long reactionCursor = delta.getReactionCursor();
+                    boolean more = delta.isHasMore() || delta.getChangeHasMore();
+                    boolean replayBaseline = rebuilding && !delta.getChangeHasMore() && !more;
+                    if (replayBaseline || !more) {
+                        since = baseline;
+                        baseline = null;
+                        reactionCursor = null;
+                        rebuilding = false;
+                    }
+                    if (more && delta.getChangeCursor() == current.changeCursor
+                            && Objects.equals(reactionCursor, current.reactionCursor)
+                            && !replayBaseline) throw new IllegalStateException("v2 sync page made no progress");
+                    put(new SyncCursorEntity(owner, conversation, delta.getGeneration(), delta.getChangeCursor(),
+                            since, reactionCursor, baseline, rebuilding));
+                    if (more || replayBaseline) pending.add(conversation);
                 }
-                preferences(delta);
-                String baseline = current.reactionBaseline != null
-                        ? current.reactionBaseline : response.getServerTime();
-                boolean rebuilding = current.rebuildingReactions;
-                String since = current.reactionSince;
-                Long reactionCursor = delta.getReactionCursor();
-                boolean more = delta.isHasMore() || delta.getChangeHasMore();
-                boolean replayBaseline = rebuilding && !delta.getChangeHasMore() && !more;
-                if (replayBaseline || !more) {
-                    since = baseline;
-                    baseline = null;
-                    reactionCursor = null;
-                    rebuilding = false;
+                for (String conversation : requested.keySet()) {
+                    if (!returned.contains(conversation)) {
+                        LocalConversationCleaner.deleteInTransaction(db, conversation, owner);
+                        db.syncCursorDao().delete(owner, conversation);
+                    }
                 }
-                if (more && delta.getChangeCursor() == current.changeCursor
-                        && Objects.equals(reactionCursor, current.reactionCursor)
-                        && !replayBaseline) throw new IllegalStateException("v2 sync page made no progress");
-                put(new SyncCursorEntity(owner, conversation, delta.getGeneration(), delta.getChangeCursor(),
-                        since, reactionCursor, baseline, rebuilding));
-                if (more || replayBaseline) pending.add(conversation);
+                beforeCommit.run();
+            } finally {
+                if (timed) drainProbe.pageDelta(System.nanoTime() - deltaStart);
             }
-            for (String conversation : requested.keySet()) {
-                if (!returned.contains(conversation)) {
-                    LocalConversationCleaner.deleteInTransaction(db, conversation, owner);
-                    db.syncCursorDao().delete(owner, conversation);
-                }
-            }
-            beforeCommit.run();
         }));
         if (legacyEpoch == epoch) legacyEpoch = Long.MIN_VALUE;
         afterCommit.run();

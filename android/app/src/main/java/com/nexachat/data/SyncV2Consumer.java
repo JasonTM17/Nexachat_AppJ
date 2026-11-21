@@ -15,12 +15,14 @@ final class SyncV2Consumer {
     private final SyncPageStore store;
     private final TokenRefresher refresher;
     private final Function<SyncRequest, Single<SyncResponse>> fetch;
+    private final SyncDrainProbe probe;
 
     SyncV2Consumer(SyncPageStore store, TokenRefresher refresher,
-            Function<SyncRequest, Single<SyncResponse>> fetch) {
+            Function<SyncRequest, Single<SyncResponse>> fetch, SyncDrainProbe probe) {
         this.store = store;
         this.refresher = refresher;
         this.fetch = fetch;
+        this.probe = probe;
     }
 
     boolean sync(String owner, long epoch, List<ConversationWatermark> watermarks) throws Exception {
@@ -52,9 +54,16 @@ final class SyncV2Consumer {
                             .isBefore(java.time.Instant.parse(since))) since = cursor.reactionSince;
                 }
                 SyncRequest request = new SyncRequest(requested, 50, missingSince ? null : since, 2);
+                // Drain split timer (issue #266 phase 0): HTTP fetch vs local apply per page.
+                boolean timed = probe.recording();
+                long fetchStart = timed ? System.nanoTime() : 0L;
                 SyncResponse response = fetch.apply(request).blockingGet();
+                long fetchNanos = timed ? System.nanoTime() - fetchStart : 0L;
                 SyncPageStore.validate(response, snapshots);
+                long applyStart = timed ? System.nanoTime() : 0L;
                 next = store.apply(owner, epoch, snapshots, response);
+                long applyNanos = timed ? System.nanoTime() - applyStart : 0L;
+                probe.onPage(requested.size(), response, next.size(), fetchNanos, applyNanos);
             }
             if (!next.isEmpty()) pending = true;
         }

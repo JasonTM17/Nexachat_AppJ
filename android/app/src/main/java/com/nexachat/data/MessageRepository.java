@@ -425,7 +425,21 @@ public final class MessageRepository {
                             .filter(item -> !storedClientIds.contains(item.getClientMessageId()))
                             .map(this::toChatMessage).forEach(result::add);
                     return result;
-                })).subscribeOn(Schedulers.io());
+                }))
+                // Drain observer counter (issue #266 phase 0): counting only,
+                // emission semantics untouched; no-op unless the SyncDrain
+                // logcat gate is enabled.
+                .doOnNext(messages -> {
+                    if (syncEngine != null) syncEngine.drainProbe.onMessagesEmission();
+                })
+                .subscribeOn(Schedulers.io());
+    }
+
+    /** Shared drain probe of the attached sync engine; null when no engine is wired. */
+    @Nullable
+    SyncDrainProbe drainProbe() {
+        SyncEngine engine = this.syncEngine;
+        return engine == null ? null : engine.drainProbe;
     }
 
     /**
