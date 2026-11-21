@@ -12,6 +12,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.DrawableRes;
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.widget.ImageViewCompat;
 import com.google.android.material.color.MaterialColors;
@@ -61,6 +62,7 @@ public class SettingsRowView extends LinearLayout {
         if (titleView != null) {
             titleView.setText(title);
         }
+        updateRowAccessibilityDescription();
     }
 
     public void setSubtitle(@Nullable CharSequence subtitle) {
@@ -72,6 +74,36 @@ public class SettingsRowView extends LinearLayout {
                 subtitleView.setVisibility(VISIBLE);
             }
             applyTypeGrowth();
+        }
+        updateRowAccessibilityDescription();
+    }
+
+    /**
+     * The row is one tap target: its own description merges the visible title,
+     * subtitle and trailing value (the same composed-row pattern the inbox
+     * conversation rows use since #260), so TalkBack and the a11y sweep's
+     * flat dump both read one label per row instead of a clickable node whose
+     * label only lives in child views (#254).
+     */
+    private void updateRowAccessibilityDescription() {
+        if (titleView == null) {
+            return;
+        }
+        java.util.List<String> parts = new java.util.ArrayList<>(3);
+        addVisibleText(parts, titleView);
+        addVisibleText(parts, subtitleView);
+        addVisibleText(parts, valueView);
+        setContentDescription(parts.isEmpty() ? null : String.join(", ", parts));
+    }
+
+    private static void addVisibleText(
+            @NonNull java.util.List<String> parts, @Nullable TextView view) {
+        if (view == null || view.getVisibility() != VISIBLE) {
+            return;
+        }
+        CharSequence text = view.getText();
+        if (text != null && text.length() > 0) {
+            parts.add(text.toString());
         }
     }
 
@@ -109,6 +141,7 @@ public class SettingsRowView extends LinearLayout {
             }
             applyTrailingValueLayout(getWidth());
         }
+        updateRowAccessibilityDescription();
     }
 
     public void setTrailingEmphasis(boolean emphasized) {
