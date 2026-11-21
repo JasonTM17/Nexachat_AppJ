@@ -189,7 +189,8 @@ def restore_device_settings(before: dict[str, str]) -> dict[str, str]:
     if before.get("system_locales") not in (None, "", "null"):
         current_locale = adb("shell", "settings", "get", "system", "system_locales")
         if current_locale != before["system_locales"]:
-            adb("shell", "cmd", "locale", "set", before["system_locales"], check_result=False)
+            adb("shell", "settings", "put", "system", "system_locales",
+                before["system_locales"], check_result=False)
     if before.get("navigation_mode") not in (None, "", "null"):
         current_nav = adb("shell", "settings", "get", "secure", "navigation_mode")
         if current_nav != before["navigation_mode"]:
