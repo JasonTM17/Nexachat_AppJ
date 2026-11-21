@@ -125,6 +125,7 @@ public class JwtService {
     public AccessTokenClaims parseAccessTokenClaims(String token) {
         Claims claims = Jwts.parser()
                 .verifyWith(key)
+                .clock(() -> Date.from(clock.instant()))
                 .clockSkewSeconds(0)
                 .build()
                 .parseSignedClaims(token)
