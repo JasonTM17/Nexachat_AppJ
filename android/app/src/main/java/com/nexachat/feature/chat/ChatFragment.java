@@ -56,6 +56,7 @@ import com.nexachat.core.common.Result;
 import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.MessageMention;
 import com.nexachat.core.storage.RecallWindowConfig;
+import com.nexachat.core.ui.MessageUiRules;
 import com.nexachat.core.ui.components.DateSeparatorLabels;
 import com.nexachat.core.ui.RecallWindowRules;
 import com.nexachat.data.ChatMessage;
@@ -1518,11 +1519,15 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         List<ChatMessage> pins = state.getPins();
         if (pins.isEmpty()) { root.setVisibility(View.GONE); return; }
         ChatMessage pin = pins.get(pinIndex % pins.size());
-        String pinText = pin.isDecryptFailed() || (pin.isEncrypted() && pin.getContent() == null)
-                ? getString(R.string.e2ee_message_placeholder)
-                : (pin.getContent() == null
-                        ? pin.getType()
-                        : SharedContentUi.previewText(requireContext(), pin.getContent()));
+        String pinText = MessageUiRules.resolvePlaceholderPreview(
+                MessageUiRules.isTombstone(pin.isDeleted(), pin.getDeletedAtEpochMs()),
+                pin.isDecryptFailed() || (pin.isEncrypted() && pin.getContent() == null),
+                pin.getContent() == null
+                        ? null
+                        : SharedContentUi.previewText(requireContext(), pin.getContent()),
+                pin.getType(),
+                getString(R.string.message_deleted),
+                getString(R.string.e2ee_message_placeholder));
         ChatInteractionsViews.bindPinnedBanner(root, pinText, pinIndex % pins.size(), pins.size(),
                 () -> { viewModel.jumpToMessage(pin.getId()); pinIndex++; renderPinned(); });
     }

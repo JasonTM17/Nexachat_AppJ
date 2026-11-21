@@ -9,6 +9,26 @@ import static org.junit.Assert.assertTrue;
 public class MessageUiRulesTest {
 
     @Test
+    public void placeholderPreviewPrefersTombstoneLabelOverTypeFallback() {
+        assertEquals("This message was deleted",
+                MessageUiRules.resolvePlaceholderPreview(
+                        true, false, "still here", "TEXT",
+                        "This message was deleted", "Encrypted message"));
+        assertEquals("Encrypted message",
+                MessageUiRules.resolvePlaceholderPreview(
+                        false, true, "cipher", "TEXT",
+                        "This message was deleted", "Encrypted message"));
+        assertEquals("hello",
+                MessageUiRules.resolvePlaceholderPreview(
+                        false, false, "hello", "TEXT",
+                        "This message was deleted", "Encrypted message"));
+        assertEquals("TEXT",
+                MessageUiRules.resolvePlaceholderPreview(
+                        false, false, "", "TEXT",
+                        "This message was deleted", "Encrypted message"));
+    }
+
+    @Test
     public void tombstoneRuleIdentifiesDeletedMessages() {
         assertTrue(MessageUiRules.isTombstone(true, null));
         assertTrue(MessageUiRules.isTombstone(false, 1730000000000L));

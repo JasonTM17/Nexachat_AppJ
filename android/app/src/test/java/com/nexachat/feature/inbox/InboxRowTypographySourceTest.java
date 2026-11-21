@@ -22,7 +22,19 @@ public final class InboxRowTypographySourceTest {
     public void conversationListAdapter_defersToInboxRowTypography() throws Exception {
         String source = readAdapterSource();
         assertTrue(source.contains("InboxRowTypography.applyUnreadWeight"));
+        assertTrue(source.contains("InboxRowTypography.applyPreviewStyle"));
+        assertTrue(source.contains("unread && !deletedPreview"));
         assertFalse(source.contains("setTypeface(null"));
+    }
+
+    @Test
+    public void previewStyleItalicsDeletedAndNeverBoldsThem() throws Exception {
+        String source = readTypoSource();
+        assertTrue(source.contains("applyPreviewStyle"));
+        assertTrue(source.contains("Typeface.ITALIC"));
+        int deleted = source.indexOf("if (deleted)");
+        int unread = source.indexOf("else if (unread)", deleted);
+        assertTrue("deleted italic must win over unread bold", deleted >= 0 && unread > deleted);
     }
 
     @Test

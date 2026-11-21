@@ -10,6 +10,7 @@ import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.RecyclerView;
 import com.nexachat.R;
 import com.nexachat.core.network.dto.MessageDto;
+import com.nexachat.core.ui.MessageUiRules;
 import com.nexachat.feature.chat.SharedContentUi;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
@@ -54,9 +55,17 @@ public final class StarredMessageAdapter
                 ? holder.itemView.getContext().getString(R.string.archive_unknown_sender)
                 : sender);
         String content = message.getContent();
-        holder.snippet.setText(content == null || content.isBlank()
-                ? holder.itemView.getContext().getString(R.string.inbox_preview_file)
-                : SharedContentUi.previewText(holder.itemView.getContext(), content));
+        String livePreview = content == null || content.isBlank()
+                ? null
+                : SharedContentUi.previewText(holder.itemView.getContext(), content);
+        String snippet = MessageUiRules.resolvePlaceholderPreview(
+                message.getDeletedAt() != null && !message.getDeletedAt().isBlank(),
+                false,
+                livePreview,
+                holder.itemView.getContext().getString(R.string.inbox_preview_file),
+                holder.itemView.getContext().getString(R.string.message_deleted),
+                holder.itemView.getContext().getString(R.string.e2ee_message_placeholder));
+        holder.snippet.setText(snippet);
         holder.time.setText(formatTime(holder, row.starredAt()));
         // One tap target per row: the announced label names sender and snippet
         // so TalkBack reads the message instead of three detached strings.
@@ -65,9 +74,7 @@ public final class StarredMessageAdapter
                 sender == null || sender.isBlank()
                         ? holder.itemView.getContext().getString(R.string.archive_unknown_sender)
                         : sender,
-                content == null || content.isBlank()
-                        ? holder.itemView.getContext().getString(R.string.inbox_preview_file)
-                        : SharedContentUi.previewText(holder.itemView.getContext(), content)));
+                snippet));
         holder.itemView.setOnClickListener(ignored -> listener.onOpen(row));
     }
 

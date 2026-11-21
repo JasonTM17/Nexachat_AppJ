@@ -98,6 +98,43 @@ public final class ChatRowAccessibilitySourceTest {
     }
 
     @Test
+    public void messageBinder_tombstonesUseDeleteGlyphNotBlockUser() throws Exception {
+        String source = readBinder();
+        int bind = source.indexOf("private void bindPrimaryContent");
+        assertTrue("expected bindPrimaryContent", bind >= 0);
+        String body = source.substring(bind, source.indexOf("if (kind == MessageContentKind.SYSTEM)", bind));
+        assertTrue(body.contains("R.string.message_deleted"));
+        assertTrue(body.contains("R.drawable.ic_delete"));
+        assertTrue("block-user glyph must not stand in for a deleted message",
+                !body.contains("R.drawable.ic_block"));
+        assertTrue(body.contains("Typeface.ITALIC"));
+    }
+
+    @Test
+    public void messageBinder_tombstonesHideDeliveryReceipts() throws Exception {
+        String source = readBinder();
+        assertTrue("deleted bubbles must not keep sent/read ticks",
+                source.contains("if (!isMine || tombstone)"));
+    }
+
+    @Test
+    public void messageBinder_quotesDeletedOriginalsAsTombstones() throws Exception {
+        String source = readBinder();
+        assertTrue(source.contains("originalTombstone"));
+        assertTrue(source.contains("R.string.message_deleted"));
+    }
+
+    @Test
+    public void chatFragment_pinnedBannerUsesPlaceholderPreview() throws Exception {
+        String source = readFragment();
+        int pinned = source.indexOf("private void renderPinned");
+        assertTrue(pinned >= 0);
+        String body = source.substring(pinned, source.indexOf("private void renderReplyEditBanner"));
+        assertTrue(body.contains("MessageUiRules.resolvePlaceholderPreview"));
+        assertTrue(body.contains("R.string.message_deleted"));
+    }
+
+    @Test
     public void pinnedBannerIcons_carryIdsMarkedDecorative() throws Exception {
         Document doc = DocumentBuilderFactory.newInstance().newDocumentBuilder()
                 .parse(locateLayout().toFile());
