@@ -8,10 +8,14 @@ import static org.junit.Assert.assertTrue;
 
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule;
 import androidx.lifecycle.SavedStateHandle;
+import androidx.lifecycle.ViewModelStore;
 import com.nexachat.core.network.SessionEvents;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayDeque;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.Rule;
 import org.junit.Test;
 
@@ -237,6 +241,134 @@ public final class AskViewModelTest {
         assertTrue(viewModel.state().getValue().suggestionsVisible());
         viewModel.updateDraft("Hi");
         assertFalse(viewModel.state().getValue().suggestionsVisible());
+    }
+
+    @Test
+    public void queuedSuccessCannotReplaceTheThreadAfterCancelOrDraftEdit() {
+        for (boolean edit : new boolean[] {false, true}) {
+            FakeAskApi api = new FakeAskApi();
+            QueuedExecutor main = new QueuedExecutor();
+            AskViewModel viewModel = new AskViewModel(conversationHandle(), new AskRepository(api),
+                    main, new SessionEvents());
+            viewModel.submitSuggestion("First question?");
+            api.lastCall().succeed(response("First answer", "LLM"));
+            main.drain();
+            viewModel.submitSuggestion("Second question?");
+            api.lastCall().succeed(response("Obsolete answer", "LLM"));
+            if (edit) {
+                viewModel.updateDraft("Edited draft");
+            } else {
+                viewModel.cancel();
+            }
+
+            main.drain();
+
+            assertEquals(1, viewModel.state().getValue().getTurns().size());
+            assertEquals("First answer", viewModel.state().getValue().getResponse().getAnswer());
+            assertEquals(edit ? "Edited draft" : "Second question?",
+                    viewModel.state().getValue().getDraft());
+        }
+    }
+
+    @Test
+    public void queuedSuccessAndErrorCannotPublishAfterCloseOrClear() {
+        for (boolean clear : new boolean[] {false, true}) {
+            FakeAskApi api = new FakeAskApi();
+            QueuedExecutor main = new QueuedExecutor();
+            AskViewModel viewModel = new AskViewModel(conversationHandle(), new AskRepository(api),
+                    main, new SessionEvents());
+            ViewModelStore store = new ViewModelStore();
+            store.put("ask", viewModel);
+            viewModel.submitSuggestion("Private question?");
+            api.lastCall().succeed(response("Private answer", "LLM"));
+            api.lastCall().fail(500, "{\"error\":{\"code\":\"INTERNAL_ERROR\"}}");
+            if (clear) {
+                store.clear();
+            } else {
+                viewModel.close();
+            }
+
+            main.drain();
+
+            assertTrue(viewModel.state().getValue().getTurns().isEmpty());
+            assertNull(viewModel.state().getValue().getResponse());
+        }
+    }
+
+    @Test
+    public void aLogoutEventInvalidatesAlreadyQueuedAnswersBeforeTheyCanBeShown() {
+        FakeAskApi api = new FakeAskApi();
+        QueuedExecutor main = new QueuedExecutor();
+        SessionEvents sessions = new SessionEvents();
+        AskViewModel viewModel = new AskViewModel(conversationHandle(), new AskRepository(api),
+                main, sessions);
+        AtomicInteger answersShown = new AtomicInteger();
+        viewModel.state().observeForever(value -> {
+            if (value.getStatus() == AskUiState.Status.ANSWER) {
+                answersShown.incrementAndGet();
+            }
+        });
+        viewModel.submitSuggestion("Private question?");
+        api.lastCall().succeed(response("Private answer", "LLM"));
+
+        sessions.emitLoggedOut();
+        main.drain();
+
+        assertEquals(0, answersShown.get());
+        assertTrue(viewModel.state().getValue().getTurns().isEmpty());
+    }
+
+    @Test
+    public void changingConversationRejectsQueuedCallbacksAndDropsOldPriorTurns() {
+        FakeAskApi api = new FakeAskApi();
+        QueuedExecutor main = new QueuedExecutor();
+        SavedStateHandle saved = conversationHandle();
+        AskViewModel viewModel = new AskViewModel(saved, new AskRepository(api), main,
+                new SessionEvents());
+        viewModel.submitSuggestion("First chat question?");
+        api.lastCall().succeed(response("First chat answer", "LLM"));
+        main.drain();
+        viewModel.submitSuggestion("Old pending question?");
+        api.lastCall().succeed(response("Old queued answer", "LLM"));
+        saved.set(AskViewModel.ARG_CONVERSATION_ID, "conversation-2");
+
+        main.drain();
+        assertEquals(1, viewModel.state().getValue().getTurns().size());
+        viewModel.submitSuggestion("New chat question?");
+
+        assertEquals("conversation-2", api.conversationId);
+        assertTrue(api.request.getPriorTurns().isEmpty());
+        assertTrue(viewModel.state().getValue().getTurns().isEmpty());
+    }
+
+    @Test
+    public void loadingObserverCancellationPreventsAnObsoleteNetworkRequest() {
+        FakeAskApi api = new FakeAskApi();
+        AskViewModel viewModel = createViewModel(api, new SessionEvents());
+        viewModel.state().observeForever(value -> {
+            if (value.getStatus() == AskUiState.Status.LOADING) {
+                viewModel.cancel();
+            }
+        });
+
+        viewModel.submitSuggestion("Canceled at loading?");
+
+        assertTrue(api.calls.isEmpty());
+        assertEquals(AskUiState.Status.IDLE, viewModel.state().getValue().getStatus());
+    }
+
+    private static SavedStateHandle conversationHandle() {
+        return new SavedStateHandle(Map.of(AskViewModel.ARG_CONVERSATION_ID, "conversation-1"));
+    }
+
+    private static final class QueuedExecutor implements Executor {
+        private final ArrayDeque<Runnable> queued = new ArrayDeque<>();
+        @Override public void execute(Runnable command) { queued.addLast(command); }
+        private void drain() {
+            while (!queued.isEmpty()) {
+                queued.removeFirst().run();
+            }
+        }
     }
 
     private static AskViewModel createViewModel(FakeAskApi api, SessionEvents sessionEvents) {

@@ -11,14 +11,19 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import androidx.lifecycle.SavedStateHandle;
+import androidx.lifecycle.ViewModelStore;
 import com.squareup.moshi.Moshi;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.Map;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.TimeZone;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.Executor;
 import org.junit.Test;
 
 public final class SummaryViewModelTest {
@@ -411,6 +416,144 @@ public final class SummaryViewModelTest {
             viewModel.revalidate();
             awaitState(viewModel, SummaryUiState.Status.READY, "summary-2");
             assertEquals(2, calls.get());
+        }
+    }
+
+    @Test
+    public void clearingTheViewModelRejectsSuccessAlreadyQueuedForPublication() throws Exception {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            ControlledRepository controlled = new ControlledRepository();
+            QueuedExecutor main = new QueuedExecutor();
+            SavedStateHandle saved = conversationHandle();
+            SummaryViewModel viewModel = new SummaryViewModel(saved, controlled.repository, main,
+                    System::currentTimeMillis);
+            ViewModelStore store = new ViewModelStore();
+            store.put("summary", viewModel);
+            viewModel.request(SummaryScope.UNREAD, null);
+            main.drain();
+            controlled.callbacks.get(0).onSuccess(summaryResponse("obsolete"));
+
+            store.clear();
+            main.drain();
+
+            assertEquals(SummaryUiState.Status.LOADING, viewModel.state().getValue().getStatus());
+            assertNull(saved.get("summary_last_id"));
+            assertEquals(1, controlled.canceled.get());
+        }
+    }
+
+    @Test
+    public void aQueuedTimezoneErrorCannotRetryAfterDismiss() throws Exception {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            ControlledRepository controlled = new ControlledRepository();
+            QueuedExecutor main = new QueuedExecutor();
+            SummaryViewModel viewModel = new SummaryViewModel(conversationHandle(),
+                    controlled.repository, main, System::currentTimeMillis);
+            viewModel.request(SummaryScope.TODAY, null);
+            main.drain();
+            controlled.callbacks.get(0).onError(SummaryError.INVALID_TIME_ZONE);
+            assertEquals("retry must run on the publication executor", 1, controlled.callbacks.size());
+
+            viewModel.dismiss();
+            main.drain();
+
+            assertEquals(1, controlled.callbacks.size());
+            assertEquals(SummaryUiState.Status.IDLE, viewModel.state().getValue().getStatus());
+        }
+    }
+
+    @Test
+    public void changedScopeRejectsQueuedSuccessAndErrorBeforePublishingTheCurrentResult()
+            throws Exception {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            ControlledRepository controlled = new ControlledRepository();
+            QueuedExecutor main = new QueuedExecutor();
+            SavedStateHandle saved = conversationHandle();
+            SummaryViewModel viewModel = new SummaryViewModel(saved, controlled.repository, main,
+                    System::currentTimeMillis);
+            viewModel.request(SummaryScope.UNREAD, null);
+            main.drain();
+            controlled.callbacks.get(0).onSuccess(summaryResponse("old"));
+            controlled.callbacks.get(0).onError(SummaryError.NETWORK);
+            viewModel.request(SummaryScope.LAST_N, 20);
+            controlled.callbacks.get(1).onSuccess(summaryResponse("current"));
+
+            main.drain();
+
+            assertEquals("current", viewModel.state().getValue().getSummary().getSummaryId());
+            assertEquals(SummaryScope.LAST_N, viewModel.state().getValue().getScope());
+            assertEquals("current", saved.get("summary_last_id"));
+        }
+    }
+
+    @Test
+    public void aChangedConversationRejectsAnOldQueuedSummary() throws Exception {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            ControlledRepository controlled = new ControlledRepository();
+            QueuedExecutor main = new QueuedExecutor();
+            SavedStateHandle saved = conversationHandle();
+            SummaryViewModel viewModel = new SummaryViewModel(saved, controlled.repository, main,
+                    System::currentTimeMillis);
+            viewModel.request(SummaryScope.UNREAD, null);
+            main.drain();
+            controlled.callbacks.get(0).onSuccess(summaryResponse("old-conversation"));
+            saved.set(SummaryViewModel.ARG_CONVERSATION_ID, "conversation-2");
+
+            main.drain();
+
+            assertNull(saved.get("summary_last_id"));
+            assertNull(viewModel.state().getValue().getSummary());
+            viewModel.request(SummaryScope.UNREAD, null);
+            assertEquals("conversation-2", controlled.conversations.get(1));
+        }
+    }
+
+    @Test
+    public void aHandleReturnedAfterReentrantDismissIsCanceled() throws Exception {
+        try (LiveDataTestExecutor ignored = new LiveDataTestExecutor()) {
+            SummaryRepository repository = mock(SummaryRepository.class);
+            AtomicInteger canceled = new AtomicInteger();
+            AtomicReference<SummaryViewModel> current = new AtomicReference<>();
+            when(repository.request(anyString(), any(), any())).thenAnswer(invocation -> {
+                current.get().dismiss();
+                return (SummaryRepository.Cancellable) canceled::incrementAndGet;
+            });
+            SummaryViewModel viewModel = new SummaryViewModel(conversationHandle(), repository);
+            current.set(viewModel);
+
+            viewModel.request(SummaryScope.UNREAD, null);
+
+            assertEquals(1, canceled.get());
+            assertEquals(SummaryUiState.Status.IDLE, viewModel.state().getValue().getStatus());
+        }
+    }
+
+    private static SavedStateHandle conversationHandle() {
+        return new SavedStateHandle(Map.of(SummaryViewModel.ARG_CONVERSATION_ID, "conversation-1"));
+    }
+
+    private static final class ControlledRepository {
+        private final SummaryRepository repository = mock(SummaryRepository.class);
+        private final List<SummaryRepository.Callback> callbacks = new ArrayList<>();
+        private final List<String> conversations = new ArrayList<>();
+        private final AtomicInteger canceled = new AtomicInteger();
+
+        private ControlledRepository() {
+            when(repository.request(anyString(), any(), any())).thenAnswer(invocation -> {
+                conversations.add(invocation.getArgument(0));
+                callbacks.add(invocation.getArgument(2));
+                return (SummaryRepository.Cancellable) canceled::incrementAndGet;
+            });
+        }
+    }
+
+    private static final class QueuedExecutor implements Executor {
+        private final ArrayDeque<Runnable> queued = new ArrayDeque<>();
+        @Override public void execute(Runnable command) { queued.addLast(command); }
+        private void drain() {
+            while (!queued.isEmpty()) {
+                queued.removeFirst().run();
+            }
         }
     }
 
