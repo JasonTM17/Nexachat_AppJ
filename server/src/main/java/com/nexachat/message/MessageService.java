@@ -99,7 +99,7 @@ public class MessageService {
     public static final int SYNC_LIMIT_PER_CONV_MAX = 100;
     public static final int SYNC_LIMIT_PER_CONV_DEFAULT = 50;
     /** V2 negotiated change feed page ceiling (matches the shipped Android decoder). */
-    public static final int SYNC_V2_CHANGE_PAGE_MAX = 50;
+    public static final int SYNC_V2_CHANGE_PAGE_MAX = 200;
 
     /** Cap on {@code attachmentIds} per send (phase-09) — bounds the bind work per message. */
     static final int MAX_ATTACHMENTS_PER_MESSAGE = 10;

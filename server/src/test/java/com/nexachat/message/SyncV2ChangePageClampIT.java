@@ -37,9 +37,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class SyncV2ChangePageClampIT {
 
-    private static final int MUTATION_COUNT = 60;
-    private static final int REQUESTED_LIMIT = 100;
-    private static final int V2_CHANGE_PAGE_MAX = 50;
+    private static final int MUTATION_COUNT = 210;
+    private static final int REQUESTED_LIMIT = 500;
+    private static final int V2_CHANGE_PAGE_MAX = 200;
 
     @DynamicPropertySource
     static void datasourceProps(DynamicPropertyRegistry registry) {
@@ -72,7 +72,7 @@ class SyncV2ChangePageClampIT {
     }
 
     @Test
-    void v2ChangePageClampsToFiftyAndContinuesWithoutGapOrDuplicate() throws Exception {
+    void v2ChangePageClampsToServerMaxAndContinuesWithoutGapOrDuplicate() throws Exception {
         UUID conversationId = createGroup("v2-clamp-" + System.nanoTime());
         List<UUID> messageIds = seedMessages(conversationId, MUTATION_COUNT);
 

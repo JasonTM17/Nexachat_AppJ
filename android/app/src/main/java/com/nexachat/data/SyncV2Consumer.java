@@ -25,15 +25,37 @@ final class SyncV2Consumer {
         this.probe = probe;
     }
 
+    /**
+     * Change rows requested per conversation per page (issue #266 Fix C).
+     * Raised 50 → 200 so a 2,000-change conversation drains in 10 pages
+     * instead of 40; the server clamp mirrors it
+     * ({@code MessageService.SYNC_V2_CHANGE_PAGE_MAX}). Shared with
+     * {@link SyncPageStore}'s validator bound.
+     */
+    static final int CHANGE_PAGE_LIMIT = 200;
+
+    /**
+     * Response-size guard paired with the page-size bump (issue #266): one
+     * page stays under ~{@value} change rows so the commit transaction is
+     * bounded. The per-request limit is adaptive —
+     * {@code min(CHANGE_PAGE_LIMIT, budget / watermarks)} — so a full
+     * 100-watermark batch keeps the legacy 50 rows/conversation while the
+     * {@code wm=1} continuation pages that dominate measured drains fetch
+     * the full 200.
+     */
+    static final int TOTAL_RESPONSE_ROWS_BUDGET = 5000;
+    static final int WATERMARKS_PER_PAGE = 100;
+    static final int MIN_PAGE_LIMIT = 50;
+
     boolean sync(String owner, long epoch, List<ConversationWatermark> watermarks) throws Exception {
         boolean pending = false;
         List<ConversationWatermark> ordered = new ArrayList<>(watermarks);
         ordered.sort(Comparator.comparing(ConversationWatermark::getConversationId));
         Map<String, Long> seqs = new HashMap<>();
         ordered.forEach(w -> seqs.put(w.getConversationId(), w.getMaxSeq()));
-        for (int start = 0; start < ordered.size(); start += 100) {
+        for (int start = 0; start < ordered.size(); start += WATERMARKS_PER_PAGE) {
             List<String> next = new ArrayList<>();
-            for (ConversationWatermark watermark : ordered.subList(start, Math.min(start + 100, ordered.size()))) {
+            for (ConversationWatermark watermark : ordered.subList(start, Math.min(start + WATERMARKS_PER_PAGE, ordered.size()))) {
                 next.add(watermark.getConversationId());
             }
             int budget = SyncEngine.MAX_DRAIN_PAGES * (SyncEngine.MAX_BOUNDED_RETRIES + 1);
@@ -53,7 +75,9 @@ final class SyncV2Consumer {
                     else if (since == null || java.time.Instant.parse(cursor.reactionSince)
                             .isBefore(java.time.Instant.parse(since))) since = cursor.reactionSince;
                 }
-                SyncRequest request = new SyncRequest(requested, 50, missingSince ? null : since, 2);
+                int pageLimit = Math.max(MIN_PAGE_LIMIT,
+                        Math.min(CHANGE_PAGE_LIMIT, TOTAL_RESPONSE_ROWS_BUDGET / next.size()));
+                SyncRequest request = new SyncRequest(requested, pageLimit, missingSince ? null : since, 2);
                 // Drain split timer (issue #266 phase 0): HTTP fetch vs local apply per page.
                 boolean timed = probe.recording();
                 long fetchStart = timed ? System.nanoTime() : 0L;

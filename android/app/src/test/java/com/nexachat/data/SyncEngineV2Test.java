@@ -626,7 +626,30 @@ public final class SyncEngineV2Test {
         };
         engine.sync().blockingAwait(); restart(); engine.sync().blockingAwait();
         assertTrue(reactionRows.get("m-" + changed[0]).isEmpty());
-        assertEquals("2026-11-12T00:00:10Z", requests.get(2).getSince());
+        int firstSyncBatches =
+                (101 + SyncV2Consumer.WATERMARKS_PER_PAGE - 1) / SyncV2Consumer.WATERMARKS_PER_PAGE;
+        assertEquals("2026-11-12T00:00:10Z", requests.get(firstSyncBatches).getSince());
+    }
+
+    @Test public void pageLimitAdaptsToWatermarkCountWithinRowBudget() {
+        for (int n = 0; n < 101; n++) conversations.add(new ConversationWatermark("c" + n, 900L));
+        server = request -> envelope(request.getWatermarks().stream()
+                .map(w -> delta(w.getConversationId(), 1, false, "")).toList(), 1);
+        engine.sync().blockingAwait();
+
+        assertEquals("full batch must keep the bounded legacy page",
+                Integer.valueOf(50), requests.get(0).getLimitPerConv());
+        SyncRequest tail = requests.stream()
+                .filter(r -> r.getWatermarks().size() == 1).findFirst().orElseThrow();
+        assertEquals("the 1-watermark tail batch earns the large page",
+                Integer.valueOf(SyncV2Consumer.CHANGE_PAGE_LIMIT), tail.getLimitPerConv());
+
+        conversations.clear();
+        requests.clear();
+        conversations.add(new ConversationWatermark("c0", 900L));
+        engine.sync().blockingAwait();
+        assertEquals("a lone continuation must fetch the large page",
+                Integer.valueOf(SyncV2Consumer.CHANGE_PAGE_LIMIT), requests.get(0).getLimitPerConv());
     }
 
     @Test public void largeScalarCursorDoesNotLoseIntegerPrecision() throws Exception {

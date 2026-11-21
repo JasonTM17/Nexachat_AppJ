@@ -69,7 +69,7 @@ final class SyncPageStore {
                     || delta.getGeneration() == null || delta.getGeneration() <= 0
                     || delta.getHasMoreField() == null || delta.getChangeHasMore() == null || delta.getReset() == null
                     || delta.getChangeCursor() < 0 || delta.getChangeUpperBound() < delta.getChangeCursor()
-                    || delta.getChanges().size() > 50
+                    || delta.getChanges().size() > SyncV2Consumer.CHANGE_PAGE_LIMIT
                     || (delta.getReactionCursor() != null && delta.getReactionCursor() < 0)) throw new LegacyRequired();
             if (delta.getGeneration() < current.generation
                     || (!delta.getReset() && delta.getChangeCursor() < current.changeCursor)) {
