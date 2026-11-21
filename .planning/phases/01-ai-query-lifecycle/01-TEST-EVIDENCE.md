@@ -1,7 +1,7 @@
 # AI query verification evidence
 
 **Updated:** 2026-11-21 (UTC)
-**Status:** Final executable gates passed; independent phase verification follows.
+**Status:** Passed: 346 executable tests, 12/12 independent must-haves and 7/7 requirements.
 
 ## Final gates
 
@@ -91,6 +91,8 @@ This is an existing synthetic lexical corpus, not a live-provider evaluation. Th
 
 ## Additional workflow checks
 
+- Independent GSD goal-backward verification passed at `2026-11-21T18:44:39Z`, with 12/12 must-haves, 7/7 requirements and no overrides. See `01-VERIFICATION.md`.
+- RAG, Android and Summary reviews are clean with zero open findings; original findings and closure evidence are retained.
 - `git diff --check` passed.
 - GSD schema drift check reported no drift. Real Flyway/Hibernate validation ran in the final PostgreSQL gate.
 - Codebase drift check was skipped because this scoped project has no STRUCTURE.md.
