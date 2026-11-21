@@ -131,9 +131,22 @@ final class SyncPageStore {
             long guardStart = timed ? System.nanoTime() : 0L;
             boolean guardMismatch = false;
             try {
-                for (SyncCursorEntity expected : requested.values()) {
-                    if (!same(expected, read(owner, expected.conversationId))
-                            || db.conversationDao().byIdSync(expected.conversationId) == null) {
+                Iterator<SyncCursorEntity> guarded = requested.values().iterator();
+                while (guarded.hasNext()) {
+                    SyncCursorEntity expected = guarded.next();
+                    if (db.conversationDao().byIdSync(expected.conversationId) == null) {
+                        // The conversation was removed locally while this page's
+                        // HTTP fetch was in flight (inbox reconcile prune whose
+                        // drain-window re-check ran before the drain opened, a
+                        // STOMP self-removal frame, or a leave): its row and —
+                        // via the sync_*_cache_loss triggers — its sync cursor
+                        // are gone, so there is nothing left to commit for it.
+                        // Coalesce it out of this page instead of aborting the
+                        // whole drain with a restart (issue #266 residual).
+                        guarded.remove();
+                        continue;
+                    }
+                    if (!same(expected, read(owner, expected.conversationId))) {
                         guardMismatch = true;
                         throw new CancellationException("Sync cache changed before page commit");
                     }
@@ -148,6 +161,7 @@ final class SyncPageStore {
                     String conversation = delta.getConversationId();
                     returned.add(conversation);
                     SyncCursorEntity current = requested.get(conversation);
+                    if (current == null) continue; // coalesced out by the guard: removed mid-page
                     if (delta.getReset()) {
                         // Reset never deletes queued sends or another account's outbox.
                         // Synchronous *InTransaction deletes only: no blockingAwait
