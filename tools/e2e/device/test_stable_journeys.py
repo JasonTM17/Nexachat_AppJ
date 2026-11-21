@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import sys
 import tempfile
 import unittest
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -14,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import stable_journeys as journeys
 import patch_window
+from e2e_common import Response
 
 
 class SerialAndProductionGuardsTest(unittest.TestCase):
@@ -58,13 +62,17 @@ class MatrixAndDryRunTest(unittest.TestCase):
         self.assertTrue(expected.issubset(refs), sorted(expected - refs))
         runnable = {row.id for row in journeys.ROWS if row.capability_gap is None}
         self.assertEqual(runnable, {
-            "auth-login", "auth-session-lifecycle", "chat-send-receive",
+            "auth-login", "chat-send-receive",
             "chat-interactions", "summary-ask", "otp-forgot-password",
             "archive-preferences", "groups-contacts", "labels-lifecycle",
             "polls-reminders", "offline-sync",
             "calls-injected-notification", "injected-notifications",
             "accessibility-sweep",
         })
+        self.assertIn("REST session ops",
+                      journeys.ROW_BY_ID["auth-session-lifecycle"].capability_gap)
+        self.assertIn("STOMP hold",
+                      journeys.ROW_BY_ID["auth-session-lifecycle"].capability_gap)
         self.assertEqual(journeys.ROWS[-1].id, "account-deletion")
         self.assertEqual(len(journeys.ACCESSIBILITY_VARIANTS), 8)
         for row in journeys.ROWS:
@@ -703,7 +711,7 @@ class WiringDecisionTest(unittest.TestCase):
             else:
                 runnable.append(row_id)
         self.assertEqual(runnable, [
-            "auth-login", "auth-session-lifecycle", "otp-forgot-password",
+            "auth-login", "otp-forgot-password",
             "chat-send-receive", "chat-interactions",
             "groups-contacts", "polls-reminders", "archive-preferences",
             "labels-lifecycle",
@@ -714,6 +722,9 @@ class WiringDecisionTest(unittest.TestCase):
         self.assertIn("Room 14", blocked["room-13-14-upgrade"])
         self.assertIn("Room 14", blocked["v111-rc-upgrade"])
         self.assertIn("seed user", blocked["account-deletion"])
+        self.assertIn("REST session ops", blocked["auth-session-lifecycle"])
+        self.assertIn("STOMP hold", blocked["auth-session-lifecycle"])
+        self.assertIn("stays unproven", blocked["auth-session-lifecycle"])
         self.assertNotIn("calls-injected-notification", blocked)
         self.assertNotIn("injected-notifications", blocked)
         self.assertNotIn("summary-ask", blocked)
@@ -771,9 +782,14 @@ class WiringDecisionTest(unittest.TestCase):
 
     def test_auth_session_lifecycle_dispatches_to_its_executor(self):
         row = journeys.ROW_BY_ID["auth-session-lifecycle"]
-        self.assertIsNone(row.capability_gap)
+        # The gap now states the partial-coverage contract (plan 2.3(b)): the
+        # REST session ops are proven, the paused-frame STOMP hold stays
+        # unproven. The registered executor still runs — a gap never silences
+        # dispatch.
+        self.assertIn("REST session ops", row.capability_gap)
+        self.assertIn("STOMP hold", row.capability_gap)
         # No serial in context: the executor must run and fail as a harness
-        # error, proving the row is no longer capability-blocked at dispatch.
+        # error, proving the row still dispatches despite its gap.
         with self.assertRaises(journeys.HarnessError):
             journeys.run_registered_row(row, {"mail_sink": object()})
 
@@ -1722,11 +1738,9 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
         return json.loads(
             (Path(self.tmp.name) / "auth-scenarios.json").read_text(encoding="utf-8"))
 
-    def test_rest_and_paused_frame_driven_device_scenarios_blocked(self):
+    def test_rest_and_paused_frame_driven_reports_partial_coverage(self):
         context = self._context()
-        with self.assertRaises(journeys.CapabilityBlocked) as caught:
-            journeys.run_auth_session_lifecycle(self.row, context)
-        message = str(caught.exception)
+        result = journeys.run_auth_session_lifecycle(self.row, context)
         artifact = self._artifact()
         driven = {item["scenario"] for item in artifact["scenarios"]}
         blocked = {item["scenario"]: item["reason"] for item in artifact["blocked"]}
@@ -1744,8 +1758,16 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
                      "logout-ui", "logout-all-ui", "account-switch-ui"):
             self.assertIn("device-bound campaign context", blocked[name])
         self.assertIn("mail sink", blocked["register-ui"])
-        self.assertIn("register-ui", message)
-        self.assertIn("account-switch-ui", message)
+        # The row passes on its REST-provable core and reports the undriven
+        # scenarios explicitly instead of collapsing into BLOCKED_CAPABILITY.
+        self.assertEqual(set(result["scenarios"]), driven)
+        self.assertEqual(result["blocked"], artifact["blocked"])
+        self.assertIn("partial", result["coverage"])
+        self.assertIn("the REST session lifecycle is proven", result["coverage"])
+        self.assertIn("unproven: register-ui", result["coverage"])
+        self.assertIn("account-switch-ui", result["coverage"])
+        # The driven STOMP hold is never listed as unproven.
+        self.assertNotIn("paused-frame-a-to-b-isolation", result["coverage"])
         # REST lifecycle really issued the auth calls.
         paths = [path for _method, path in self.client.calls]
         for expected in ("/api/v1/auth/register", "/api/v1/auth/login",
@@ -1778,6 +1800,7 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
                        journeys._AUTH_NEW_PASSWORD):
             self.assertNotIn(secret,
                              json.dumps(artifact))
+            self.assertNotIn(secret, json.dumps(result))
 
     def test_held_frame_crossing_into_b_fails_the_row(self):
         readers = self._reader_factory({
@@ -1801,6 +1824,363 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
         with self.assertRaises(journeys.ProductFailure) as caught:
             journeys.run_auth_session_lifecycle(self.row, context)
         self.assertIn("was not held", str(caught.exception))
+
+    def test_rest_only_stack_reports_the_stomp_hold_as_unproven(self):
+        """Plan 2.3(b): without a WS hold tunnel the row still passes its
+        REST-provable core and names the paused-frame hold as unproven."""
+
+        def unavailable_factory(upstream):
+            raise RuntimeError("no WS tunnel on this stack")
+
+        context = self._context()
+        context["barrier_factory"] = unavailable_factory
+        result = journeys.run_auth_session_lifecycle(self.row, context)
+        artifact = self._artifact()
+        driven = {item["scenario"] for item in artifact["scenarios"]}
+        self.assertEqual(driven, {
+            "register", "login", "invalid-credentials-rest", "refresh",
+            "logout", "logout-all", "password-change",
+        })
+        blocked = {item["scenario"]: item["reason"] for item in artifact["blocked"]}
+        self.assertIn("the WS hold tunnel could not be established",
+                      blocked["paused-frame-a-to-b-isolation"])
+        self.assertIn("stays unproven on this stack",
+                      blocked["paused-frame-a-to-b-isolation"])
+        self.assertIn("unproven: paused-frame-a-to-b-isolation",
+                      result["coverage"])
+        self.assertIn("the REST session lifecycle is proven", result["coverage"])
+        # The disposable accounts (rest + the two pause accounts registered
+        # before the tunnel attempt) were still cleaned up.
+        self.assertEqual(len(self.client.deleted_users), 3)
+
+    def test_rotated_away_refresh_token_reuse_fails_the_row(self):
+        class ReusingRefresh(self.FakeAuthClient):
+            """Defect: rotation leaves the rotated-away refresh token usable."""
+
+            def post(self, path, token=None, body=None, headers=None):
+                if path == "/api/v1/auth/refresh":
+                    self.calls.append(("POST", path))
+                    refresh = (body or {}).get("refreshToken")
+                    owner = next((user for user in self.users.values()
+                                  if refresh in user["refresh_alive"]), None)
+                    if owner is None:
+                        return AuthSessionLifecycleExecutorTest.Response(401, {})
+                    phone = self._phone_of(self.users, owner)
+                    return AuthSessionLifecycleExecutorTest.Response(
+                        200, self._issue(phone))
+                return super().post(path, token=token, body=body, headers=headers)
+
+        context = self._context()
+        context["client"] = ReusingRefresh()
+        with self.assertRaises(journeys.ProductFailure) as caught:
+            journeys.run_auth_session_lifecycle(self.row, context)
+        self.assertIn("rotated-away refresh token rejection returned HTTP 200",
+                      str(caught.exception))
+        # Cleanup still removed the disposable account after the failure.
+        self.assertEqual(len(context["client"].deleted_users), 1)
+
+    def test_logout_all_sparing_a_concurrent_session_fails_the_row(self):
+        class SparingLogoutAll(self.FakeAuthClient):
+            """Defect: logout-all revokes only the newest session's token."""
+
+            def post(self, path, token=None, body=None, headers=None):
+                if path == "/api/v1/auth/logout-all":
+                    self.calls.append(("POST", path))
+                    user = self._user_for_token(token)
+                    if user is None:
+                        return AuthSessionLifecycleExecutorTest.Response(401, {})
+                    user["access_floor"] = self.clock
+                    refreshes = sorted(user["refresh_alive"])
+                    user["refresh_alive"].clear()
+                    if refreshes:
+                        user["refresh_alive"].add(refreshes[-1])
+                    return AuthSessionLifecycleExecutorTest.Response(204, {})
+                return super().post(path, token=token, body=body, headers=headers)
+
+        context = self._context()
+        context["client"] = SparingLogoutAll()
+        with self.assertRaises(journeys.ProductFailure) as caught:
+            journeys.run_auth_session_lifecycle(self.row, context)
+        self.assertIn("logout-all concurrent session refresh token rejection "
+                      "returned HTTP 200", str(caught.exception))
+        self.assertEqual(len(context["client"].deleted_users), 1)
+
+    def test_single_logout_killing_every_session_fails_the_row(self):
+        class LogoutKillsAll(self.FakeAuthClient):
+            """Defect: single logout revokes every session like logout-all."""
+
+            def post(self, path, token=None, body=None, headers=None):
+                if path == "/api/v1/auth/logout":
+                    self.calls.append(("POST", path))
+                    user = self._user_for_token(token)
+                    if user is None:
+                        return AuthSessionLifecycleExecutorTest.Response(401, {})
+                    user["access_floor"] = self.clock
+                    user["refresh_alive"].clear()
+                    return AuthSessionLifecycleExecutorTest.Response(204, {})
+                return super().post(path, token=token, body=body, headers=headers)
+
+        context = self._context()
+        context["client"] = LogoutKillsAll()
+        with self.assertRaises(journeys.ProductFailure) as caught:
+            journeys.run_auth_session_lifecycle(self.row, context)
+        self.assertIn("concurrent-session refresh after single logout "
+                      "returned HTTP 401", str(caught.exception))
+        self.assertEqual(len(context["client"].deleted_users), 1)
+
+
+class SeedFixtureHealTest(unittest.TestCase):
+    """Offline REST world for the local-mode seed fixture self-heal.
+
+    The fake server answers the same endpoints the healer drives through the
+    recording client: PATCH /users/me echoes the stored display_name, the
+    inbox serves default and archived views, and POST /conversations/group
+    re-creates the consumed forward target. A drift the server refuses to
+    heal must surface as FAIL_HARNESS_OR_ENVIRONMENT, never as a silent
+    pass.
+    """
+
+    PHONE_AN = "+84900000001"
+    PHONE_BINH = "+84900000002"
+    PHONE_CHI = "+84900000003"
+    PHONE_DUNG = "+84900000004"
+    TOKENS = {PHONE_AN: "tok-an", PHONE_BINH: "tok-binh",
+              PHONE_CHI: "tok-chi", PHONE_DUNG: "tok-dung"}
+
+    class Response:
+        def __init__(self, status, body=None):
+            self.status = status
+            self._body = body
+
+        def json(self):
+            return self._body
+
+    class Api:
+        USER_A = {"phone": "+84900000001", "name": "An"}
+        USER_B = {"phone": "+84900000003", "name": "Chi"}
+        USER_C = {"phone": "+84900000002", "name": "Binh"}
+
+        def __init__(self):
+            self.direct_status = 200
+
+        def direct_conversation(self, recorder, token, phone):
+            return self.direct_status, {"id": "conv-an-binh"}
+
+    GROUP = {"id": "conv-team", "type": "GROUP", "title": "NexaChat Team",
+             "members": [{"userId": "user-an"}, {"userId": "user-binh"},
+                         {"userId": "user-chi"}, {"userId": "user-dung"}]}
+
+    class Client:
+        """Canned local server: profile PATCHes, inbox views, group ops."""
+
+        def __init__(self, display_names, inbox, archived=None, search_ids=None):
+            self.display_names = dict(display_names)
+            self.inbox = list(inbox)
+            self.archived = list(archived or [])
+            self.search_ids = dict(search_ids or {})
+            self.calls = []
+            self.patch_status = 200
+            self.group_create_status = 201
+            self.member_add_status = 200
+
+        def _response(self, status, body=None):
+            return SeedFixtureHealTest.Response(status, body)
+
+        def get(self, path, token=None, params=None, headers=None):
+            if path == "/api/v1/conversations":
+                if (params or {}).get("archived") == "true":
+                    return self._response(200, list(self.archived))
+                return self._response(200, list(self.inbox))
+            if path == "/api/v1/users/search":
+                found = self.search_ids.get((params or {}).get("phone"))
+                return self._response(200, [{"id": found}] if found else [])
+            return self._response(404)
+
+        def patch(self, path, token=None, body=None, headers=None):
+            self.calls.append(("PATCH", path, dict(body or {})))
+            if self.patch_status != 200:
+                return self._response(self.patch_status, {})
+            phone = next(item for item, value in SeedFixtureHealTest.TOKENS.items()
+                         if value == token)
+            name = (body or {}).get("displayName")
+            self.display_names[phone] = name
+            return self._response(200, {"displayName": name})
+
+        def post(self, path, token=None, body=None, headers=None):
+            self.calls.append(("POST", path, dict(body or {})))
+            if path == "/api/v1/conversations/group":
+                if self.group_create_status != 201:
+                    return self._response(self.group_create_status, {})
+                member_ids = list((body or {}).get("memberIds") or [])
+                entry = {"id": "conv-team-new", "type": "GROUP",
+                         "title": (body or {}).get("title"),
+                         "members": [{"userId": "user-an"}] +
+                         [{"userId": member} for member in member_ids]}
+                self.inbox.append(entry)
+                return self._response(201, {"id": entry["id"]})
+            if path.endswith("/members"):
+                if self.member_add_status != 200:
+                    return self._response(self.member_add_status, {})
+                entry = next(item for item in self.inbox + self.archived
+                             if item.get("id") == path.split("/")[4])
+                entry.setdefault("members", []).append(
+                    {"userId": ((body or {}).get("userIds") or [None])[0]})
+                return self._response(200, {})
+            return self._response(404)
+
+        def delete(self, path, token=None, params=None, headers=None):
+            self.calls.append(("DELETE", path, None))
+            if path.endswith("/archive"):
+                entry = next(item for item in self.archived
+                             if item.get("id") == path.split("/")[4])
+                self.archived.remove(entry)
+                self.inbox.append(entry)
+                return self._response(204, {})
+            return self._response(404)
+
+    def _sessions(self, client):
+        def session(api, recorder, phone):
+            return {
+                "accessToken": SeedFixtureHealTest.TOKENS[phone],
+                "user": {"id": "user-" + SeedFixtureHealTest.TOKENS[phone][4:],
+                         "phone": phone,
+                         "displayName": client.display_names.get(phone, "")},
+            }
+        return session
+
+    def _healthy_names(self):
+        return {self.PHONE_AN: "An", self.PHONE_BINH: "Binh",
+                self.PHONE_CHI: "Chi", self.PHONE_DUNG: "Dung"}
+
+    def _ensure(self, api, client):
+        with mock.patch.object(journeys, "_actor_session",
+                                side_effect=self._sessions(client)):
+            return journeys.ensure_seed_fixture_state(api, client)
+
+    def test_healthy_fixture_reports_no_heals(self):
+        client = self.Client(self._healthy_names(), [dict(self.GROUP)])
+        report = self._ensure(self.Api(), client)
+        self.assertEqual(report["heals"], [])
+        self.assertEqual(
+            [call[0] for call in client.calls], [])  # no PATCH/POST was needed
+        self.assertEqual(report["checked"][-1], "NexaChat Team")
+
+    def test_drifted_display_names_are_restored_over_rest(self):
+        names = self._healthy_names()
+        names[self.PHONE_AN] = "An Nguyen"      # the observed board drift
+        names[self.PHONE_BINH] = "Binh Le"
+        client = self.Client(names, [dict(self.GROUP)])
+        report = self._ensure(self.Api(), client)
+        self.assertEqual(client.display_names, self._healthy_names())
+        patches = [call for call in client.calls if call[0] == "PATCH"]
+        self.assertEqual([call[2]["displayName"] for call in patches],
+                         ["An", "Binh"])
+        self.assertTrue(any("An" in heal and "An Nguyen" in heal
+                            for heal in report["heals"]))
+        self.assertTrue(any("Binh" in heal and "Binh Le" in heal
+                            for heal in report["heals"]))
+
+    def test_display_name_heal_refused_by_server_is_environment_failure(self):
+        names = self._healthy_names()
+        names[self.PHONE_AN] = "An Nguyen"
+        client = self.Client(names, [dict(self.GROUP)])
+        client.patch_status = 400
+        with self.assertRaisesRegex(journeys.EnvironmentFailure, "An Nguyen"):
+            self._ensure(self.Api(), client)
+
+    def test_missing_forward_target_is_recreated_with_seed_peers(self):
+        client = self.Client(self._healthy_names(), [],
+                             search_ids={self.PHONE_CHI: "user-chi",
+                                         self.PHONE_DUNG: "user-dung"})
+        an = {"accessToken": self.TOKENS[self.PHONE_AN], "user": {"id": "user-an"}}
+        binh = {"accessToken": self.TOKENS[self.PHONE_BINH],
+                "user": {"id": "user-binh"}}
+        group_id, heals = journeys._ensure_forward_target_group(
+            self.Api(), client, an, binh)
+        self.assertEqual(group_id, "conv-team-new")
+        create = next(call for call in client.calls
+                      if call[0] == "POST" and call[1] == "/api/v1/conversations/group")
+        self.assertEqual(create[2]["title"], "NexaChat Team")
+        self.assertEqual(create[2]["memberIds"],
+                         ["user-binh", "user-chi", "user-dung"])
+        self.assertTrue(any("re-created" in heal for heal in heals))
+
+    def test_unresolvable_seed_peers_still_yield_a_binh_group(self):
+        client = self.Client(self._healthy_names(), [])  # search answers empty
+        an = {"accessToken": self.TOKENS[self.PHONE_AN], "user": {"id": "user-an"}}
+        binh = {"accessToken": self.TOKENS[self.PHONE_BINH],
+                "user": {"id": "user-binh"}}
+        group_id, _heals = journeys._ensure_forward_target_group(
+            self.Api(), client, an, binh)
+        create = next(call for call in client.calls
+                      if call[0] == "POST" and call[1] == "/api/v1/conversations/group")
+        self.assertEqual(create[2]["memberIds"], ["user-binh"])
+        self.assertEqual(group_id, "conv-team-new")
+
+    def test_failed_group_recreate_is_environment_failure(self):
+        client = self.Client(self._healthy_names(), [])
+        client.group_create_status = 500
+        an = {"accessToken": self.TOKENS[self.PHONE_AN], "user": {"id": "user-an"}}
+        binh = {"accessToken": self.TOKENS[self.PHONE_BINH],
+                "user": {"id": "user-binh"}}
+        with self.assertRaisesRegex(journeys.EnvironmentFailure, "re-seeding"):
+            journeys._ensure_forward_target_group(self.Api(), client, an, binh)
+
+    def test_archived_forward_target_is_restored_to_the_default_inbox(self):
+        client = self.Client(self._healthy_names(), [], archived=[dict(self.GROUP)])
+        an = {"accessToken": self.TOKENS[self.PHONE_AN], "user": {"id": "user-an"}}
+        binh = {"accessToken": self.TOKENS[self.PHONE_BINH],
+                "user": {"id": "user-binh"}}
+        group_id, heals = journeys._ensure_forward_target_group(
+            self.Api(), client, an, binh)
+        self.assertEqual(group_id, "conv-team")
+        self.assertTrue(any("archived forward target" in heal for heal in heals))
+        self.assertEqual(client.inbox[0]["id"], "conv-team")
+        self.assertFalse(any(call[0] == "POST" for call in client.calls))
+
+    def test_forward_target_that_lost_binh_regains_him(self):
+        group = dict(self.GROUP)
+        group["members"] = [{"userId": "user-an"}]
+        client = self.Client(self._healthy_names(), [group])
+        an = {"accessToken": self.TOKENS[self.PHONE_AN], "user": {"id": "user-an"}}
+        binh = {"accessToken": self.TOKENS[self.PHONE_BINH],
+                "user": {"id": "user-binh"}}
+        group_id, heals = journeys._ensure_forward_target_group(
+            self.Api(), client, an, binh)
+        self.assertEqual(group_id, "conv-team")
+        add = next(call for call in client.calls
+                   if call[0] == "POST" and call[1].endswith("/members"))
+        self.assertEqual(add[2], {"userIds": ["user-binh"]})
+        self.assertTrue(any("regained Binh" in heal for heal in heals))
+
+    def test_member_add_refused_falls_back_to_a_fresh_group(self):
+        group = dict(self.GROUP)
+        group["members"] = [{"userId": "user-an"}]
+        client = self.Client(self._healthy_names(), [group])
+        client.member_add_status = 403  # An is no longer the group admin
+        an = {"accessToken": self.TOKENS[self.PHONE_AN], "user": {"id": "user-an"}}
+        binh = {"accessToken": self.TOKENS[self.PHONE_BINH],
+                "user": {"id": "user-binh"}}
+        group_id, heals = journeys._ensure_forward_target_group(
+            self.Api(), client, an, binh)
+        self.assertEqual(group_id, "conv-team-new")
+        self.assertTrue(any("re-created" in heal for heal in heals))
+
+    def test_recreated_direct_conversation_is_reported_as_a_heal(self):
+        api = self.Api()
+        api.direct_status = 201
+        client = self.Client(self._healthy_names(), [dict(self.GROUP)])
+        report = self._ensure(api, client)
+        self.assertTrue(any("direct conversation re-created" in heal
+                            for heal in report["heals"]))
+
+    def test_run_campaign_preflight_wiring_heals_only_shared_local_runs(self):
+        # The healer itself is covered above; this pins the gating: rows that
+        # provision their own --dstack backend never trigger the shared-local
+        # fixture heal.
+        self.assertIsInstance(journeys._DSTACK_SELF_PROVISIONED_ROWS, frozenset)
+        self.assertIn("otp-forgot-password", journeys._DSTACK_SELF_PROVISIONED_ROWS)
+        self.assertIn("account-deletion", journeys._DSTACK_SELF_PROVISIONED_ROWS)
 
 
 class ChatInteractionsExecutorTest(unittest.TestCase):
@@ -1899,6 +2279,9 @@ class ChatInteractionsExecutorTest(unittest.TestCase):
             self.picker_open = False
             self.picker_selected = False
             self.read_upto = 0
+            # Seed drift simulation: True means earlier journeys consumed the
+            # 'NexaChat Team' group so it is absent from every inbox view.
+            self.hide_group = False
 
         def tree(self):
             N = ChatInteractionsExecutorTest.Node
@@ -2108,8 +2491,12 @@ class ChatInteractionsExecutorTest(unittest.TestCase):
             if path == "/api/v1/conversations":
                 # 'NexaChat Team' sits beyond page 1 of An's stale-heavy inbox;
                 # a paged fetch must never see it — the executor reads unpaged.
-                items = [{"id": self.direct_id, "type": "DIRECT"},
-                         {"id": self.group_id, "type": "GROUP", "title": "NexaChat Team"}]
+                items = [{"id": self.direct_id, "type": "DIRECT"}]
+                if not self.world.hide_group:
+                    items.append({"id": self.group_id, "type": "GROUP",
+                                  "title": "NexaChat Team",
+                                  "members": [{"userId": "user-an"},
+                                              {"userId": "user-binh"}]})
                 if (params or {}).get("limit"):
                     items = items[:1]
                 return ChatInteractionsExecutorTest.Response(200, items)
@@ -2120,6 +2507,11 @@ class ChatInteractionsExecutorTest(unittest.TestCase):
             return ChatInteractionsExecutorTest.Response(404)
 
         def post(self, path, token=None, body=None, headers=None):
+            if path == "/api/v1/conversations/group":
+                # The executor's re-seed path: the consumed forward target is
+                # re-created, so it reappears in every inbox view.
+                self.world.hide_group = False
+                return ChatInteractionsExecutorTest.Response(201, {"id": self.group_id})
             if path.endswith("/read"):
                 self.world.read_upto = int((body or {}).get("upToSeq") or 0)
                 self.store.events.append((f"/topic/conversations.{self.direct_id}", {
@@ -2272,6 +2664,51 @@ class ChatInteractionsExecutorTest(unittest.TestCase):
         # though the reaction assertion failed.
         self.assertEqual(len(store.messages[direct_id]), 1)
         self.assertTrue(store.messages[direct_id][0]["deletedAt"])
+
+    def test_executor_reseeds_a_consumed_forward_target_instead_of_env_failing(self):
+        store, world, client, reader, direct_id, group_id = self._world_fixture()
+        world.hide_group = True  # earlier journeys consumed the seed group
+        row = journeys.ROW_BY_ID["chat-interactions"]
+
+        class Api:
+            USER_A = {"phone": "+84900000001", "name": "An"}
+            USER_B = {"phone": "+84900000003", "name": "Chi"}
+            USER_C = {"phone": "+84900000002", "name": "Binh"}
+
+            @staticmethod
+            def direct_conversation(client_obj, token, phone):
+                return 200, {"id": direct_id}
+
+        def session(api, recorder, phone):
+            if phone.endswith("0001"):
+                return {"accessToken": "tok-an", "user": {"id": "user-an", "phone": phone}}
+            return {"accessToken": "tok-binh", "user": {"id": "user-binh", "phone": phone}}
+
+        context = {
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "row": row,
+            "row_dir": Path(tempfile.mkdtemp()),
+            "adb": self.Adb(),
+            "device": self.Device(world),
+            "helpers": (Api(), None, self.Patch()),
+            "client": client,
+            "stomp_events": [],
+            "frame_reader": None,
+            "frame_reader_factory": lambda url, token: reader,
+            "ui_timeout": 2,
+        }
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session):
+            result = journeys.run_chat_interactions(row, context)
+
+        # The forward landed in the re-seeded group and was swept afterwards.
+        self.assertTrue(result["forward"])
+        group_msgs = store.messages[group_id]
+        self.assertEqual(len(group_msgs), 1)
+        self.assertTrue(group_msgs[0]["deletedAt"])
+        self.assertFalse(world.hide_group)
+        self.assertTrue(context["seed_heals"])
 
 
 class SummaryAskExecutorTest(unittest.TestCase):
@@ -6656,6 +7093,423 @@ class AccessibilitySweepExecutorTest(unittest.TestCase):
         cells = json.loads((context["row_dir"] / "a11y-sweep-cells.json").read_text())
         self.assertEqual(cells[0]["status"], "FINDINGS")
         self.assertEqual(cells[0]["findings"][0]["rid"], "sendButton")
+
+
+class MediaUploadSliceExecutorTest(unittest.TestCase):
+    """Offline fake device+REST world for run_media_upload_slice.
+
+    The Adb fake implements push/sha256sum/rm against a real byte store, so
+    the host->device hash chain is genuine (the fixture bytes written by
+    media_driver are hashed back through the fake sha256sum). The Device fake
+    walks inbox -> chat -> attach sheet -> system picker exactly like the app
+    surfaces, dumpsys reports the resumed component, and the Client fake
+    plays the attachment REST surface (multipart upload, attachmentIds message
+    send, content/files serving with Range, the owner/member/non-member rule,
+    and message tombstones). The row must stay BLOCKED_CAPABILITY even when
+    every provable slice passes.
+    """
+
+    class Node:
+        def __init__(self, text="", desc="", rid="", box=(0, 0, 320, 48),
+                     clickable=True, cls="android.widget.TextView"):
+            self.text = text
+            self.desc = desc
+            self.attrs = {"resource-id": ("com.nexachat.debug:id/" + rid) if rid else ""}
+            self.box = box
+            self.clickable = clickable
+            self.cls = cls
+
+        @property
+        def center(self):
+            left, top, right, bottom = self.box
+            return (left + right) // 2, (top + bottom) // 2
+
+    class World:
+        def __init__(self):
+            self.screen = "inbox"
+            self.component = None
+
+        def tree(self):
+            N = MediaUploadSliceExecutorTest.Node
+            nodes = []
+            if self.screen == "inbox":
+                nodes.append(N(rid="inboxUserAvatar"))
+                nodes.append(N(text="Binh", rid="conversationListItem"))
+            elif self.screen == "chat":
+                nodes.append(N(rid="attachButton"))
+                nodes.append(N(rid="messageInput"))
+            elif self.screen == "sheet":
+                nodes.append(N(rid="attachButton"))
+                nodes.append(N(rid="pickVisualRow"))
+                nodes.append(N(rid="pickDocumentRow"))
+            # "picker" is system UI: the app exposes no tree there.
+            return nodes
+
+    class Device:
+        def __init__(self, world):
+            self.world = world
+
+        def nodes(self):
+            return self.world.tree()
+
+        def tap_node(self, node):
+            world = self.world
+            rid = str(node.attrs.get("resource-id", "")).rsplit("/", 1)[-1]
+            if world.screen == "inbox" and node.text.strip() == "Binh":
+                world.screen = "chat"
+            elif world.screen == "chat" and rid == "attachButton":
+                world.screen = "sheet"
+            elif world.screen == "sheet" and rid == "pickVisualRow":
+                world.screen = "picker"
+                world.component = ("com.google.android.providers.media.module/"
+                                   "com.google.android.providers.media.photopicker.activity.PickerActivity")
+            elif world.screen == "sheet" and rid == "pickDocumentRow":
+                world.screen = "picker"
+                world.component = ("com.android.documentsui/"
+                                   "com.android.documentsui.picker.PickActivity")
+
+        def key(self, code):
+            world = self.world
+            if world.screen == "picker":
+                world.screen = "chat"
+            elif world.screen == "sheet":
+                world.screen = "chat"
+            elif world.screen == "chat":
+                world.screen = "inbox"
+
+        def screenshot(self, path):
+            Path(path).write_bytes(b"png")
+
+    class Adb:
+        serial = "emulator-5554"
+
+        def __init__(self, world):
+            self.world = world
+            self.files = {}
+            self.commands = []
+            self.fail_push = False
+
+        def command(self, *args, timeout=60.0, check=True):
+            argv = tuple(str(value) for value in args)
+            self.commands.append(argv)
+            if argv[0] == "push":
+                if self.fail_push:
+                    raise RuntimeError("device offline")
+                self.files[argv[2]] = Path(argv[1]).read_bytes()
+                return "1 file pushed"
+            if argv[:2] == ("shell", "sha256sum"):
+                data = self.files.get(argv[2])
+                if data is None:
+                    return f"sha256sum: {argv[2]}: No such file or directory"
+                return hashlib.sha256(data).hexdigest() + "  " + argv[2]
+            if argv[:3] == ("shell", "dumpsys", "activity"):
+                if self.world.screen == "picker":
+                    return f"topResumedActivity=ComponentInfo{{{self.world.component}}}"
+                return ("topResumedActivity=ComponentInfo{"
+                        "com.nexachat.debug/com.nexachat.MainActivity}")
+            if argv[:2] == ("shell", "rm"):
+                self.files.pop(argv[-1], None)
+                return ""
+            if argv[:3] == ("shell", "cmd", "statusbar"):
+                return ""
+            raise AssertionError(f"unexpected adb command {argv}")
+
+    class Store:
+        def __init__(self):
+            self.attachments = {}
+            self.messages = []
+            self.deleted = []
+            self.mutate_served = None
+
+    class Client:
+        base_url = "http://127.0.0.1:18093"
+        timeout = 30
+
+        def __init__(self, store):
+            self.store = store
+
+        def request(self, method, path, token=None, body=None, params=None,
+                    raw_body=None, headers=None):
+            if method == "POST" and path == "/api/v1/attachments":
+                return self._upload(raw_body)
+            if method == "POST" and path.endswith("/messages"):
+                return self._send_message(path, token, body)
+            if method == "GET":
+                return self._get(path, token, headers)
+            if method == "DELETE" and "/messages/" in path:
+                message_id = path.rsplit("/", 1)[1]
+                message = next((m for m in self.store.messages
+                                if m["id"] == message_id), None)
+                if message is None:
+                    return Response(404, {}, b'{"error":{"code":"NOT_FOUND"}}')
+                message["deletedAt"] = "2026-01-01T00:00:00Z"
+                self.store.deleted.append(message_id)
+                return Response(204, {}, b"")
+            return Response(404, {}, b'{"error":{"code":"NOT_FOUND"}}')
+
+        def get(self, path, token=None, params=None, headers=None):
+            return self.request("GET", path, token=token, headers=headers)
+
+        def post(self, path, token=None, body=None, headers=None):
+            return self.request("POST", path, token=token, body=body,
+                                headers=headers)
+
+        def delete(self, path, token=None, params=None, headers=None):
+            return self.request("DELETE", path, token=token, params=params,
+                                headers=headers)
+
+        def _upload(self, raw_body):
+            data, content_type = raw_body
+            boundary = re.search(r"boundary=(\S+)", content_type).group(1)
+            payload = b""
+            mime = None
+            filename = None
+            for part in data.split((f"--{boundary}").encode()):
+                if b'name="file"' not in part:
+                    continue
+                filename = re.search(rb'filename="([^"]+)"', part).group(1).decode()
+                mime = re.search(rb"Content-Type: ([^\r]+)", part).group(1).decode()
+                payload = part.split(b"\r\n\r\n", 1)[1]
+                if payload.endswith(b"\r\n"):
+                    payload = payload[:-2]
+            attachment_id = str(uuid.uuid4())
+            self.store.attachments[attachment_id] = {
+                "id": attachment_id,
+                "url": f"/api/v1/files/attachments/{attachment_id}",
+                "mimeType": mime, "sizeBytes": len(payload),
+                "owner": token if False else None,
+                "members": {"tok-an", "tok-binh"}, "data": payload,
+            }
+            attachment = self.store.attachments[attachment_id]
+            return Response(201, {}, json.dumps({
+                "id": attachment_id,
+                "url": attachment["url"],
+                "originalName": filename,
+                "mimeType": mime,
+                "sizeBytes": len(payload),
+            }).encode())
+
+        def _send_message(self, path, token, body):
+            attachment_id = str((body or {}).get("attachmentIds")[0])
+            attachment = self.store.attachments.get(attachment_id)
+            if attachment is None:
+                return Response(404, {}, b'{"error":{"code":"ATTACHMENT_NOT_FOUND"}}')
+            attachment["owner"] = token
+            message = {"id": f"m-{len(self.store.messages) + 1}",
+                       "conversationId": path.split("/")[4],
+                       "type": (body or {}).get("type"),
+                       "attachmentIds": [attachment_id],
+                       "deletedAt": None}
+            self.store.messages.append(message)
+            return Response(201, {}, json.dumps(message).encode())
+
+        def _serve(self, attachment, headers):
+            data = attachment["data"]
+            if self.store.mutate_served is not None:
+                data = self.store.mutate_served(data)
+            range_header = (headers or {}).get("Range")
+            if range_header is not None:
+                start, end = (int(value) for value in
+                              range_header[len("bytes="):].split("-"))
+                end = min(end, len(data) - 1)
+                return Response(206, {
+                    "Content-Range": f"bytes {start}-{end}/{len(data)}",
+                    "Content-Type": attachment["mimeType"],
+                }, data[start:end + 1])
+            return Response(200, {"Content-Type": attachment["mimeType"]}, data)
+
+        def _refused(self):
+            return Response(403, {}, b'{"error":{"code":"NOT_MEMBER"}}')
+
+        def _get(self, path, token, headers):
+            if path.startswith("/api/v1/attachments/") and path.endswith("/content"):
+                attachment_id = path[len("/api/v1/attachments/"):-len("/content")]
+                attachment = self.store.attachments.get(attachment_id)
+                if attachment is None:
+                    return Response(404, {}, b'{"error":{"code":"ATTACHMENT_NOT_FOUND"}}')
+                if token != attachment["owner"] and token not in attachment["members"]:
+                    return self._refused()
+                return self._serve(attachment, headers)
+            if path.startswith("/api/v1/files/"):
+                key = path[len("/api/v1/files/"):]
+                attachment = next((a for a in self.store.attachments.values()
+                                  if a["url"].endswith("/" + key)), None)
+                if attachment is None:
+                    return Response(404, {}, b'{"error":{"code":"ATTACHMENT_NOT_FOUND"}}')
+                if token != attachment["owner"] and token not in attachment["members"]:
+                    return self._refused()
+                return self._serve(attachment, headers)
+            return Response(404, {}, b'{"error":{"code":"NOT_FOUND"}}')
+
+    class Patch:
+        @staticmethod
+        def ui_nodes(device, timeout=8):
+            return device.nodes()
+
+        @staticmethod
+        def named_conversation_row(nodes, display_name):
+            return next((n for n in nodes
+                         if n.text.strip() == display_name or n.desc.strip() == display_name),
+                        None)
+
+    @staticmethod
+    def _session(api, recorder, phone):
+        if phone.endswith("0001"):
+            return {"accessToken": "tok-an", "user": {"id": "user-an", "phone": phone}}
+        if phone.endswith("0002"):
+            return {"accessToken": "tok-binh", "user": {"id": "user-binh", "phone": phone}}
+        return {"accessToken": "tok-chi", "user": {"id": "user-chi", "phone": phone}}
+
+    def _fixture(self):
+        world = self.World()
+        adb = self.Adb(world)
+        client = self.Client(self.Store())
+
+        class Api:
+            USER_A = {"phone": "+84900000001"}
+            USER_B = {"phone": "+84900000003"}
+            USER_C = {"phone": "+84900000002"}
+
+            @staticmethod
+            def direct_conversation(client_obj, token, phone):
+                return 200, {"id": "conv-an-binh", "e2eeEnabled": False}
+
+        context = {
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "row": journeys.ROW_BY_ID["media"],
+            "row_dir": Path(tempfile.mkdtemp()),
+            "adb": adb,
+            "device": self.Device(world),
+            "helpers": (Api(), None, self.Patch()),
+            "client": client,
+            "ui_timeout": 1,
+        }
+        return context, world, adb, client
+
+    def test_media_slice_proves_upload_bytes_and_stays_blocked(self):
+        context, world, adb, client = self._fixture()
+        row = journeys.ROW_BY_ID["media"]
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session",
+                                  side_effect=self._session):
+            with self.assertRaises(journeys.CapabilityBlocked) as caught:
+                journeys.run_media_upload_slice(row, context)
+        message = str(caught.exception)
+        self.assertIn("upload slice proven", message)
+        self.assertIn("system picker", message)
+        self.assertIn("voice recording/playback", message)
+        self.assertEqual(journeys._status_for_error(caught.exception),
+                         "BLOCKED_CAPABILITY")
+
+        evidence = json.loads(
+            (context["row_dir"] / "media-slice.json").read_text(encoding="utf-8"))
+        # 1. push: both fixtures landed on the device hash-verified.
+        self.assertEqual(len(evidence["pushed"]), 2)
+        remotes = {item["remote_path"] for item in evidence["pushed"]}
+        self.assertEqual(len(remotes), 2)
+        for item in evidence["pushed"]:
+            self.assertEqual(item["verified_by"], "sha256sum")
+            self.assertRegex(item["sha256"], r"^[0-9a-f]{64}$")
+        # 2. attach: the app's sheet delegated to both system pickers.
+        attach = evidence["attach"]
+        self.assertEqual(attach["attach_sheet"], "opened")
+        self.assertEqual({d["sheet_row"] for d in attach["delegations"]},
+                         {"pickVisualRow", "pickDocumentRow"})
+        media_driver = journeys._import_media_driver()
+        for delegation in attach["delegations"]:
+            self.assertFalse(delegation["pick_completed"])
+            self.assertTrue(media_driver.is_system_picker_component(
+                delegation["system_picker"]))
+        self.assertEqual(len(attach["unproven"]), 2)
+        # 3. bytes: both uploads round-tripped with 206 + 403 evidence.
+        verified = evidence["verified"]
+        self.assertEqual(len(verified), 2)
+        self.assertEqual({item["msg_type"] for item in verified}, {"FILE", "IMAGE"})
+        for item in verified:
+            self.assertTrue(item["ok"])
+            self.assertTrue(item["owner_sha256_match"])
+            self.assertTrue(item["member_sha256_match"])
+            self.assertEqual(len(item["ranges"]), 2)
+            self.assertEqual(item["non_member_refused"]["content"],
+                             {"status": 403, "refused_with": "NOT_MEMBER"})
+            self.assertEqual(item["non_member_refused"]["files"]["status"], 403)
+        # The server stored exactly the fixture bytes that were pushed.
+        pdf = media_driver.build_fixture("pdf")
+        for attachment in client.store.attachments.values():
+            digest = hashlib.sha256(attachment["data"]).hexdigest()
+            self.assertIn(digest, {pdf.sha256,
+                                   media_driver.build_fixture(
+                                       "png", width=32, height=24).sha256})
+        # Cleanup swept the seeded messages and the device fixtures.
+        self.assertEqual(len(client.store.deleted), 2)
+        self.assertTrue(all(m["deletedAt"] for m in client.store.messages))
+        rm_remotes = {argv[3] for argv in adb.commands
+                      if argv[:2] == ("shell", "rm") and len(argv) > 3}
+        self.assertEqual(rm_remotes, remotes)
+        self.assertEqual(adb.files, {})
+        self.assertEqual(world.screen, "inbox")
+        for name in ("attach-visual.png", "attach-document.png",
+                     "system-picker-visual.png", "system-picker-document.png"):
+            self.assertTrue((context["row_dir"] / name).is_file(), name)
+
+    def test_served_byte_corruption_is_a_product_failure(self):
+        context, _world, _adb, client = self._fixture()
+        client.store.mutate_served = lambda data: data + b"x"
+        row = journeys.ROW_BY_ID["media"]
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session",
+                                  side_effect=self._session):
+            with self.assertRaises(journeys.ProductFailure) as caught:
+                journeys.run_media_upload_slice(row, context)
+        self.assertIn("media byte oracle failed", str(caught.exception))
+        self.assertEqual(journeys._status_for_error(caught.exception),
+                         "FAIL_PRODUCT")
+        evidence = json.loads(
+            (context["row_dir"] / "media-slice.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(evidence["pushed"]), 2)
+        self.assertEqual(evidence["verified"], [])
+        # The failure hit the first REST verify, so the attach slice ran and
+        # recorded both delegations before the oracle stopped it.
+        self.assertEqual(len(evidence["attach"]["delegations"]), 2)
+
+    def test_push_failure_is_environment_failure(self):
+        context, _world, adb, _client = self._fixture()
+        adb.fail_push = True
+        row = journeys.ROW_BY_ID["media"]
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session",
+                                  side_effect=self._session):
+            with self.assertRaises(journeys.EnvironmentFailure) as caught:
+                journeys.run_media_upload_slice(row, context)
+        self.assertIn("media fixture push failed", str(caught.exception))
+        self.assertEqual(journeys._status_for_error(caught.exception),
+                         "FAIL_HARNESS_OR_ENVIRONMENT")
+        evidence = json.loads(
+            (context["row_dir"] / "media-slice.json").read_text(encoding="utf-8"))
+        self.assertEqual(evidence["pushed"], [])
+        self.assertIsNone(evidence["attach"])
+        self.assertEqual(len(evidence["unproven"]), 2)
+
+    def test_media_row_dispatches_to_the_slice_executor(self):
+        self.assertEqual(journeys._ROW_EXECUTOR_NAMES["media"],
+                         "run_media_upload_slice")
+        row = journeys.ROW_BY_ID["media"]
+        calls = []
+
+        def fake_executor(row_arg, context_arg):
+            calls.append((row_arg.id, context_arg["row"].id))
+            return {"proved": True}
+
+        with mock.patch.object(journeys, "run_media_upload_slice", fake_executor):
+            result = journeys.run_registered_row(
+                row, {"row": row, "row_dir": Path(tempfile.mkdtemp())})
+        self.assertEqual(calls, [("media", "media")])
+        self.assertEqual(result, {"proved": True})
+        # The registered executor owns the gate, but the campaign disposition
+        # stays BLOCKED_CAPABILITY until the residual gaps are closed.
+        self.assertTrue(row.capability_gap)
+        self.assertIn("BLOCKED_CAPABILITY:", journeys.render_list((row,)))
 
 
 if __name__ == "__main__":

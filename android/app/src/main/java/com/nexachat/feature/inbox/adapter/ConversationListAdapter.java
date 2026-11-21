@@ -27,6 +27,7 @@ import com.nexachat.feature.label.ConversationLabel;
 import com.nexachat.feature.streak.StreakBadge;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -266,11 +267,59 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                 labelChips.setVisibility(labelChips.getChildCount() > 0 ? View.VISIBLE : View.GONE);
             }
 
+            itemView.setContentDescription(rowAccessibilityDescription());
             itemView.setOnClickListener(v -> listener.onConversationClick(conversation.getId()));
             itemView.setOnLongClickListener(v -> {
                 listener.onConversationLongClick(conversation);
                 return true;
             });
+        }
+
+        /**
+         * One focus target per row: the clickable row announces its own merged
+         * content — title, time, preview, unread count, then the conditional
+         * badge and label descriptions — in the order pinned for
+         * {@code conversationList} rows by
+         * docs/quality/a11y-critical-screens.md §4.2. Child views keep their
+         * own labels but stop being announced separately once the row carries
+         * one, so nothing the merged children said is lost.
+         */
+        private String rowAccessibilityDescription() {
+            List<String> parts = new ArrayList<>();
+            CharSequence titleDesc = title.getContentDescription();
+            parts.add(titleDesc != null ? titleDesc.toString() : title.getText().toString());
+            addVisibleText(parts, time);
+            addVisibleText(parts, preview);
+            addVisibleDescription(parts, unreadBadge);
+            addVisibleDescription(parts, streakBadge);
+            addVisibleDescription(parts, pinIndicator);
+            addVisibleDescription(parts, muteIcon);
+            if (labelChips != null) {
+                for (int index = 0; index < labelChips.getChildCount(); index++) {
+                    addVisibleDescription(parts, labelChips.getChildAt(index));
+                }
+            }
+            return String.join(", ", parts);
+        }
+
+        private static void addVisibleText(List<String> parts, @Nullable TextView view) {
+            if (view == null || view.getVisibility() != View.VISIBLE) {
+                return;
+            }
+            CharSequence text = view.getText();
+            if (text != null && text.length() > 0) {
+                parts.add(text.toString());
+            }
+        }
+
+        private static void addVisibleDescription(List<String> parts, @Nullable View view) {
+            if (view == null || view.getVisibility() != View.VISIBLE) {
+                return;
+            }
+            CharSequence description = view.getContentDescription();
+            if (description != null && description.length() > 0) {
+                parts.add(description.toString());
+            }
         }
 
         private void applyTitlePresenceDescription(
@@ -315,6 +364,9 @@ public final class ConversationListAdapter extends ListAdapter<ConversationSumma
                             || !itemView.isAttachedToWindow()) return;
                     muteExpiryRefresh = null;
                     bindMuteIndicator(conversation);
+                    // The mute badge folds into the row description, so an
+                    // expired mute must drop out of it in the same refresh.
+                    itemView.setContentDescription(rowAccessibilityDescription());
                 }
             };
             muteExpiryRefresh = refresh;
