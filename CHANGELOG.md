@@ -6,6 +6,11 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.16] - 2026-11-21
+
+Server + Android release. See
+[docs/release-notes/v1.2.16.md](docs/release-notes/v1.2.16.md).
+
 ### Added
 - Website: a new bilingual landing page for nexachat.io.vn with the main
   features, app screenshots and a download button.
@@ -28,6 +33,15 @@ All notable changes to NexaChat are documented here. The format follows
 - Live E2E journeys for feed moderation, AI privacy (RAG ask/opt-out/translate),
   groups privacy (rejoin visibility, disappearing, blocks, E2EE devices) and
   admin console/streaks, with a sequential runner.
+- Device E2E harness: stable emulator journeys for sign-in, send/receive,
+  call injection, polls/reminders, archive/labels and an offline-sync journey
+  covering queued sends surviving process death, reconnect delta sync,
+  large-inbox paging, edit/recall/reaction reconcile and account switching;
+  plus disposable-stack (`--dstack`) mail/OTP and account-deletion journeys
+  and an accessibility sweep oracle.
+- `ai_privacy_e2e` gains refund-on-provider-failure and revoke-mid-batch
+  scenarios, and a real rollback IT (`TranslateTxRollbackIT`) proves the
+  translate transaction boundary on Postgres.
 
 ### Changed
 - Admin console: light and dark themes apply on every page including sign-in,
@@ -130,6 +144,22 @@ All notable changes to NexaChat are documented here. The format follows
   pins and cursors when an archive lands while the inbox is syncing; the
   single-page reconcile now confirms the prune through the delta endpoint
   before deleting local rows.
+- Translation tokens are refunded when a consumed token buys no translation —
+  provider chain failure, rejected output, or a consent revoke winning the
+  post-generation race — on the single and batch lanes alike; batch consent
+  is re-read per item so a mid-batch revoke stops later items reaching the
+  provider; and a blank provider response counts as a circuit-breaker
+  failure instead of a success and is never cached.
+- The group member cap is now enforced on the creation path too, matching
+  join/invite; invite approval keeps its row lock, proven by a concurrent
+  approval race IT and cap±1 boundary tests across all four entry paths.
+- Android: chat row rendering is memoized with day-bucket inputs and STOMP
+  liveness is kept in the foreground, so long sessions stop re-rendering
+  whole frames and socket deaths surface within seconds.
+- Android: racing inbox refreshes can no longer latch pagination off, and
+  the profile screen binds to the shared activity-scoped state.
+- Admin console: list and detail fetches ignore out-of-order responses, and
+  dismissing a drawer cancels its in-flight detail fetch.
 
 ## [1.2.15] - 2026-11-17
 

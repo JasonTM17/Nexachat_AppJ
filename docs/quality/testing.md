@@ -161,8 +161,9 @@ including the literal `FCM_ENABLED=false`, retention settings and admin phone.
 emulator (`--serial emulator-5554` only; it refuses other serials and any
 production base URL) and writes per-attempt evidence — screenshots, UI trees,
 logcat, REST/STOMP transcripts — to an `--evidence-dir` outside the repo.
-Rows whose capability disposition reads `Runnable with existing helpers`
-(`python tools/e2e/device/stable_journeys.py --list`):
+Rows the harness can drive today (capability disposition from
+`python tools/e2e/device/stable_journeys.py --list`; the `--dstack` mail
+rows follow the table):
 
 | Row | Asserts |
 | --- | --- |
@@ -177,9 +178,30 @@ Rows whose capability disposition reads `Runnable with existing helpers`
 | `labels-lifecycle` | Label create/assign/filter/unfilter/delete via UI = REST; rotation + force-stop keep exactly one dialog surface; reopen refetches (#181); runtime chips must be clickable |
 | `polls-reminders` | Group board Polls + Reminders tabs: poll create/vote/change/close agree with peer REST (`version`, `voterCount`, `myOptionIds`, `/polls/changes` monotonic, closed-poll vote refused); reminder create/edit/delete agree with REST; `reminder_clock` pulls the persisted one-off due under the real scheduler and the board drops it; a near-term `remindAt` PATCH lets the production sweep fire a DAILY row whose next occurrence shows on the board. Needs `NEXACHAT_E2E_REMINDER_DB` when the stack's database is not `nexachat` |
 | `offline-sync` | Cuts wifi/data, queues two texts + a 👍 through the real UI, survives force-stop offline, then flushes exactly once per `clientMessageId` (REST + optional `docker exec` DB count via `NEXACHAT_E2E_DB_CONTAINER`/`NEXACHAT_E2E_DB_NAME`, default `nexachat-db-1`/`nexachat`). Seeds 105 disposable groups so the paged inbox walk reaches the deepest-seeded row `sj-os-<tag>-001`, proving >100 conversations sit in Room, then reconciles 30 edits + 30 recalls + a marker in the second 100-watermark `POST /api/v1/sync` batch across a cold restart (OkHttp logcat lines prove the multi-batch fan-out). Ends with a real profile sign-out/login A→B→A: B cannot see the An/Chi-only fixture and A's inbox reconverges. Room itself is not queried — `nexachat.db` is SQLCipher and the device image has no `sqlite3`, so local truth is asserted through the UI render |
+| `accessibility-sweep` | Walks the `CRITICAL_SCREENS` inventory (inbox, direct chat, group chat, archive, settings, labels, contacts) under every EN/VI × light/dark × 100%/200% variant, runs the `a11y_oracle` checks on each dumped UI tree (a screenshot-only cell is never a pass; oracle-less cells report `BLOCKED_CAPABILITY`), and restores locale, night mode, font scale, TalkBack and animator state in `finally` |
 
-Every other row is `BLOCKED_CAPABILITY` until its missing driver or oracle is
-built; `--list` prints the exact blocker per row. API 36 notes: runtime
+Blocked rows and their missing drivers: `media` (reusable picker/media
+fixture and byte-hash oracle, in progress), `calls-signaling` (a maintained
+call UI driver), `room-13-14-upgrade` and `v111-rc-upgrade` (the RC build —
+the Android database is Room schema v21 now, so the verified v1.1.0/v1.1.1
+fixtures are not an upgrade pair), and `auth-session-lifecycle`, whose REST
+token lifecycle and barrier-tunnel paused-frame check run while its
+register-UI and password-change-UI scenarios lack drivers (REST slice in
+progress). `--list` prints the static gap for the first four; the auth row
+reports its undriven scenarios at run time.
+
+Board state on `emulator-5554` (2026-11-21): `auth-login`,
+`chat-send-receive`, `chat-interactions`, `offline-sync`,
+`injected-notifications`, `archive-preferences` and `labels-lifecycle` are
+`PASS` (offline-sync is the full journey); `account-deletion` is wired
+through `--dstack`, its in-app UI slice gated on the disposable stack owning
+the app's compile-time port; `accessibility-sweep` has no clean pass yet —
+its first campaign was invalidated by three harness bugs whose fixes wait on
+the `fix/a11y-sweep-tok-callable` merge while the recapture runs; and
+`polls-reminders` classifies `reminder_clock` failures via typed errors
+(#248) with no clean board pass recorded in this refresh.
+
+API 36 notes: runtime
 notification permission must be granted after each `pm clear`, `cmd
 notification cancel` no longer exists (cleanup goes through the DUMP-gated
 debug receiver), and `am broadcast` arrives with an unattributed sender uid.
