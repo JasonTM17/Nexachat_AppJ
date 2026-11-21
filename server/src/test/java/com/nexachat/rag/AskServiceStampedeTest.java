@@ -350,11 +350,10 @@ class AskServiceStampedeTest {
             assertThat(embeddingCalls.get()).isEqualTo(1);
 
             // The timed-out follower detached only that stalled flight; a later caller can lead.
-            when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any()))
-                    .thenAnswer(invocation -> {
+            doAnswer(invocation -> {
                         answerProviderCalls.incrementAndGet();
                         return new RagLlmAnswer("Recovered current answer.", List.of(fact.id()));
-                    });
+                    }).when(llmAnswerService).answer(any(), any(), any(), any(), any(), any(), any());
             AskResponse recovered = service.ask(conversationId, userId, request(SummaryLanguage.EN));
             assertThat(recovered.answer()).isEqualTo("Recovered current answer.");
             assertThat(answerProviderCalls.get()).isEqualTo(2);

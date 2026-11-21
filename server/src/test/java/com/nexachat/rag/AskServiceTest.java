@@ -61,6 +61,8 @@ class AskServiceTest {
         when(memberRepository.findJoinedAt(conversationId, userId)).thenReturn(java.util.Optional.of(java.time.Instant.EPOCH));
         setConsent(false);
         when(questionCache.citationsValid(any(), any())).thenReturn(true);
+        when(questionCache.contextSnapshot(any())).thenReturn(new RagQuestionCache.ContextSnapshot(1, null));
+        when(questionCache.contextUnchanged(any(), any())).thenReturn(true);
     }
 
     @Test
@@ -164,7 +166,7 @@ class AskServiceTest {
         RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(
                 "The budget is 1,200 dollars.",
                 List.of(new RagCitation(fact.id(), 1, "The budget is 1,200 dollars.")),
-                "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.EN);
+                "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.EN, 1);
         setConsent(true);
         when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.of(cached));
 
@@ -184,7 +186,7 @@ class AskServiceTest {
         RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(
                 "Provider answer from another member's consented request.",
                 List.of(new RagCitation(fact.id(), fact.seq(), fact.content())),
-                "LLM", List.of(fact.id()), "hash", SummaryLanguage.EN);
+                "LLM", List.of(fact.id()), "hash", SummaryLanguage.EN, 1);
         when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.of(cached));
 
         AskResponse response = service.ask(conversationId, userId,
@@ -205,7 +207,7 @@ class AskServiceTest {
         RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(
                 "La migration est le 14 mars.",
                 List.of(new RagCitation(fact.id(), 1, fact.content())),
-                "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.VI);
+                "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.VI, 1);
         setConsent(true);
         when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.of(cached));
 
@@ -224,7 +226,7 @@ class AskServiceTest {
         RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(
                 "La migration est le 14 mars.",
                 List.of(new RagCitation(fact.id(), 1, fact.content())),
-                "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.VI);
+                "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.VI, 1);
         setConsent(true);
         RagEmbeddingService.EmbeddingOutcome embedding = embeddings.embedQuestion(question, false);
         when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.empty());
@@ -262,7 +264,7 @@ class AskServiceTest {
         RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(
                 "Unrelated cached answer about Tuesday lunch.",
                 List.of(new RagCitation(fact.id(), 1, fact.content())),
-                "LLM", List.of(fact.id()), "hash", SummaryLanguage.EN);
+                "LLM", List.of(fact.id()), "hash", SummaryLanguage.EN, 1);
         setConsent(true);
         RagEmbeddingService.EmbeddingOutcome embedding = embeddings.embedQuestion(question, false);
         when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.empty());

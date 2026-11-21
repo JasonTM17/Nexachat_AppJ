@@ -19,14 +19,17 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 
 /**
@@ -147,10 +150,17 @@ public class AskService {
                 : request.language();
         String questionHash = RagHashes.questionHash(hashInput(question, priorTurns));
 
-        AskKey key = new AskKey(conversationId, userId, questionHash, language, consentSnapshot);
-        AskResponse response = computeOnce(key, () -> compute(
+        RagQuestionCache.ContextSnapshot context = questionCache.contextSnapshot(conversationId);
+        AskKey key = new AskKey(conversationId, userId, questionHash, language, consentSnapshot,
+                admittedFrom, context);
+        AskResponse response = computeOnce(key, contextOmitted, () -> compute(
                 conversationId, userId, question, language, questionHash, consentSnapshot, contextOmitted,
-                admittedFrom, priorTurns));
+                admittedFrom, priorTurns, context));
+        // Followers select their own response only while the context they joined is still current.
+        if (!questionCache.contextUnchanged(conversationId, context)) {
+            stats.recordNotFound();
+            response = AskResponse.notFound(aiOptOuts.hasOptedOutMessages(conversationId));
+        }
         return new AskExecution(consentSnapshot, response);
     }
 
@@ -161,11 +171,11 @@ public class AskService {
      * recomputes. Callers that arrive after the leader removed the entry fall
      * through to the exact cache, which the leader has already written.
      */
-    private AskResponse computeOnce(AskKey key, Supplier<AskResponse> computation) {
+    private AskResponse computeOnce(AskKey key, boolean contextOmitted, Supplier<AskResponse> computation) {
         CompletableFuture<AskResponse> leader = new CompletableFuture<>();
         CompletableFuture<AskResponse> pending = inFlight.putIfAbsent(key, leader);
         if (pending != null) {
-            return await(pending);
+            return await(key, pending, contextOmitted);
         }
         try {
             AskResponse response = computation.get();
@@ -180,10 +190,19 @@ public class AskService {
         }
     }
 
-    private AskResponse await(CompletableFuture<AskResponse> pending) {
+    private AskResponse await(AskKey key, CompletableFuture<AskResponse> pending, boolean contextOmitted) {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(properties.getAsk().getSingleFlightWaitMs());
         try {
-            return pending.join();
-        } catch (CompletionException exception) {
+            return pending.get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+        } catch (TimeoutException exception) {
+            // Detach only the observed stalled leader. Its late finally must not remove a replacement.
+            inFlight.remove(key, pending);
+            stats.recordNotFound();
+            return AskResponse.notFound(contextOmitted);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Interrupted while waiting for an AI answer");
+        } catch (ExecutionException exception) {
             Throwable cause = exception.getCause();
             if (cause instanceof RuntimeException runtimeException) {
                 throw runtimeException;
@@ -191,7 +210,7 @@ public class AskService {
             if (cause instanceof Error error) {
                 throw error;
             }
-            throw exception;
+            throw new IllegalStateException("AI answer computation failed", cause);
         }
     }
 
@@ -204,7 +223,8 @@ public class AskService {
             SummaryConsentRepository.ConsentSnapshot consentSnapshot,
             boolean contextOmitted,
             java.time.Instant admittedFrom,
-            List<AskPriorTurn> priorTurns) {
+            List<AskPriorTurn> priorTurns,
+            RagQuestionCache.ContextSnapshot context) {
         boolean consented = consentSnapshot.consented();
         // Cached answers are shared per conversation and may cite or paraphrase content from
         // before this member's admission, so a late or returning member always recomputes.
@@ -216,6 +236,7 @@ public class AskService {
             Optional<RagQuestionCache.CachedAsk> exact = questionCache.findExact(
                     conversationId, questionEmbedding.model(), questionHash);
             if (exact.isPresent()
+                    && exact.get().expectedContentVersion() == context.revision()
                     && exact.get().language() == language
                     && questionCache.citationsValid(exact.get().citedIds(), exact.get().citedHash())) {
                 stats.recordCacheHit();
@@ -229,6 +250,7 @@ public class AskService {
                 for (RagQuestionCache.CachedQuestion candidate : questionCache.findCandidates(
                         conversationId, questionEmbedding.model())) {
                     if (VectorCodec.cosine(questionEmbedding.vector(), candidate.vector()) >= semanticThreshold
+                            && candidate.ask().expectedContentVersion() == context.revision()
                             && candidate.ask().language() == language
                             && questionCache.citationsValid(candidate.ask().citedIds(), candidate.ask().citedHash())) {
                         stats.recordCacheHit();
@@ -238,7 +260,6 @@ public class AskService {
             }
         }
 
-        long contentVersion = questionCache.contentVersion(conversationId);
         RetrievalResult retrieval = retrievalService.retrieve(
                 conversationId, question, language, consented, admittedFrom);
         if (retrieval.isEmpty()
@@ -250,7 +271,7 @@ public class AskService {
         if (isLookupLike(question)
                 && retrieval.bestScore() >= properties.getRetrieval().getExtractiveThreshold()) {
             return answerExtractive(conversationId, questionEmbedding, questionHash, language, retrieval,
-                    userId, consentSnapshot, contextOmitted, contentVersion);
+                    userId, consentSnapshot, contextOmitted, context);
         }
 
         if (consented) {
@@ -259,7 +280,7 @@ public class AskService {
                     priorTurns);
             if (llmAnswer != null) {
                 RagQuestionCache.CachedAsk answer = toCachedAsk(
-                        llmAnswer, retrieval.messages(), AskMode.LLM, language, contentVersion);
+                        llmAnswer, retrieval.messages(), AskMode.LLM, language, context);
                 if (answer != null) {
                     saveAnswer(userId, consentSnapshot, conversationId, questionEmbedding, questionHash, answer);
                     stats.recordLlmCall(retrieval.inputChars(), "fallback".equals(llmAnswer.provider()));
@@ -271,7 +292,7 @@ public class AskService {
 
         if (retrieval.bestScore() >= properties.getRetrieval().getExtractiveThreshold()) {
             return answerExtractive(conversationId, questionEmbedding, questionHash, language, retrieval,
-                    userId, consentSnapshot, contextOmitted, contentVersion);
+                    userId, consentSnapshot, contextOmitted, context);
         }
         stats.recordNotFound();
         return AskResponse.notFound(contextOmitted);
@@ -286,9 +307,9 @@ public class AskService {
             UUID userId,
             SummaryConsentRepository.ConsentSnapshot consentSnapshot,
             boolean contextOmitted,
-            long contentVersion) {
+            RagQuestionCache.ContextSnapshot context) {
         RagQuestionCache.CachedAsk answer = toCachedAsk(
-                retrieval.topMessage(), retrieval.messages(), AskMode.EXTRACTIVE, language, contentVersion);
+                retrieval.topMessage(), retrieval.messages(), AskMode.EXTRACTIVE, language, context);
         if (answer == null) {
             stats.recordNotFound();
             return AskResponse.notFound(contextOmitted);
@@ -319,7 +340,7 @@ public class AskService {
             Map<UUID, RagMessage> messages,
             AskMode mode,
             SummaryLanguage language,
-            long contentVersion) {
+            RagQuestionCache.ContextSnapshot context) {
         if (message == null) {
             return null;
         }
@@ -331,7 +352,7 @@ public class AskService {
                 List.of(message.id()),
                 RagHashes.citationsHash(List.of(message)),
                 language,
-                contentVersion);
+                context.revision(), context.expiresAt());
     }
 
     private RagQuestionCache.CachedAsk toCachedAsk(
@@ -339,7 +360,7 @@ public class AskService {
             Map<UUID, RagMessage> messages,
             AskMode mode,
             SummaryLanguage language,
-            long contentVersion) {
+            RagQuestionCache.ContextSnapshot context) {
         List<RagCitation> citations = new ArrayList<>();
         List<UUID> citedIds = new ArrayList<>();
         List<RagMessage> citedMessages = new ArrayList<>();
@@ -362,7 +383,7 @@ public class AskService {
                 citedIds,
                 RagHashes.citationsHash(citedMessages),
                 language,
-                contentVersion);
+                context.revision(), context.expiresAt());
     }
 
     private AskResponse cachedResponse(RagQuestionCache.CachedAsk answer, boolean contextOmitted) {
@@ -424,6 +445,8 @@ public class AskService {
             UUID userId,
             String questionHash,
             SummaryLanguage language,
-            SummaryConsentRepository.ConsentSnapshot consentSnapshot) {
+            SummaryConsentRepository.ConsentSnapshot consentSnapshot,
+            Instant admittedFrom,
+            RagQuestionCache.ContextSnapshot context) {
     }
 }

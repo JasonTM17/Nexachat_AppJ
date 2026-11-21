@@ -129,7 +129,7 @@ class AskServiceFallbackTest {
         RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(
                 "The budget is 1,200 dollars.",
                 List.of(new RagCitation(fact.id(), 1, "The budget is 1,200 dollars.")),
-                "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.EN);
+                "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.EN, 1);
         when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.of(cached));
         setConsent(true);
 
@@ -174,6 +174,8 @@ class AskServiceFallbackTest {
         when(conversationRepository.existsById(conversationId)).thenReturn(true);
         when(memberRepository.findJoinedAt(conversationId, userId)).thenReturn(java.util.Optional.of(java.time.Instant.EPOCH));
         when(questionCache.citationsValid(any(), any())).thenReturn(true);
+        when(questionCache.contextSnapshot(any())).thenReturn(new RagQuestionCache.ContextSnapshot(1, null));
+        when(questionCache.contextUnchanged(any(), any())).thenReturn(true);
     }
 
     private RagMessage addMessage(UUID conversationId, UUID senderId, long seq, String content) {
