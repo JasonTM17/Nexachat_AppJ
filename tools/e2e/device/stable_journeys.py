@@ -6549,6 +6549,14 @@ def _offline_wait_conv_body(context: dict[str, Any],
                 ui.tap_node(row)
                 time.sleep(1.2)
                 continue
+            # The row can sit far below the rendered window — the fixture
+            # seeds >100 group conversations after bumping the DM, so the
+            # post-restart inbox sorts the DM deep. Sweep the list toward
+            # older rows instead of polling a viewport that never contains
+            # it; the deadline still bounds the total search.
+            if time.monotonic() >= next_scroll:
+                _offline_inbox_scroll(context)
+                next_scroll = time.monotonic() + 1.5
         else:
             message_list = next(
                 (node for node in nodes
