@@ -8790,6 +8790,37 @@ def _auth_note(scenarios: list[dict[str, Any]], name: str, evidence: str) -> Non
     scenarios.append({"scenario": name, "status": "driven", "evidence": evidence})
 
 
+_AUTH_LOGIN_BACKOFF_MAX_SECONDS = 60
+
+
+def _auth_login_once(client: Any, phone: str, password: str) -> Any:
+    return client.post("/api/v1/auth/login",
+                       body={"phone": phone, "password": password})
+
+
+def _auth_login_with_rate_limit_backoff(client: Any, phone: str,
+                                        password: str) -> Any:
+    """POST /auth/login, retrying once after a bounded 429 backoff.
+
+    Serial board runs push the per-phone login limiter over the edge; the
+    server answers HTTP 429 with error.details.retryAfterSeconds. Sleep
+    exactly that long and retry ONCE when the hint is present and at most
+    the bound; a second 429, a missing hint, or a larger hint is returned
+    to the caller so the rate limit surfaces, never masked.
+    """
+    response = _auth_login_once(client, phone, password)
+    if response.status == 429:
+        details = ((response.json() or {}).get("error") or {}).get("details") or {}
+        try:
+            retry_after = int(details.get("retryAfterSeconds") or 0)
+        except (TypeError, ValueError):
+            retry_after = 0
+        if 1 <= retry_after <= _AUTH_LOGIN_BACKOFF_MAX_SECONDS:
+            time.sleep(retry_after)
+            response = _auth_login_once(client, phone, password)
+    return response
+
+
 def _auth_rest_lifecycle(context: dict[str, Any], client: Any,
                          scenarios: list[dict[str, Any]],
                          accounts: list[dict[str, Any]]) -> None:
@@ -8808,8 +8839,7 @@ def _auth_rest_lifecycle(context: dict[str, Any], client: Any,
                "201 with a token pair; duplicate phone rejected with HTTP 409")
 
     def login(password: str) -> dict[str, Any]:
-        response = client.post("/api/v1/auth/login",
-                               body={"phone": phone, "password": password})
+        response = _auth_login_with_rate_limit_backoff(client, phone, password)
         _expect_status(response, {200}, "auth login")
         data = response.json() or {}
         if not data.get("accessToken") or not data.get("refreshToken"):
@@ -9134,9 +9164,8 @@ def _auth_cleanup_accounts(client: Any,
         try:
             for attempt in range(2):
                 if not token:
-                    login = client.post("/api/v1/auth/login",
-                                        body={"phone": account["phone"],
-                                              "password": account["password"]})
+                    login = _auth_login_with_rate_limit_backoff(
+                        client, account["phone"], account["password"])
                     if login.status != 200:
                         errors.append(f"{label}: relogin HTTP {login.status}")
                         break

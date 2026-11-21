@@ -1802,6 +1802,92 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
             journeys.run_auth_session_lifecycle(self.row, context)
         self.assertIn("was not held", str(caught.exception))
 
+    def test_login_retries_once_after_a_bounded_429(self):
+        class RateLimitedLoginClient(self.FakeAuthClient):
+            def __init__(self):
+                super().__init__()
+                self.login_posts = 0
+
+            def post(self, path, token=None, body=None, headers=None):
+                if path == "/api/v1/auth/login":
+                    self.login_posts += 1
+                    if self.login_posts == 1:
+                        return AuthSessionLifecycleExecutorTest.Response(
+                            429, {"error": {"code": "RATE_LIMITED",
+                                            "details": {"retryAfterSeconds": 1}}})
+                return super().post(path, token=token, body=body, headers=headers)
+
+        client = RateLimitedLoginClient()
+        context = self._context()
+        context["client"] = client
+        sleeps = []
+        with mock.patch.object(journeys.time, "sleep",
+                               lambda seconds: sleeps.append(seconds)):
+            with self.assertRaises(journeys.CapabilityBlocked):
+                journeys.run_auth_session_lifecycle(self.row, context)
+        artifact = self._artifact()
+        driven = {item["scenario"] for item in artifact["scenarios"]}
+        self.assertEqual(driven, {
+            "register", "login", "invalid-credentials-rest", "refresh",
+            "logout", "logout-all", "password-change",
+            "paused-frame-a-to-b-isolation",
+        })
+        # Exactly one backoff sleep of the hinted second, then the retried
+        # POST answered 200 and the journey kept going.
+        self.assertEqual(sleeps, [1])
+        self.assertGreaterEqual(client.login_posts, 2)
+
+    def test_login_fails_after_a_second_429_without_masking(self):
+        class AlwaysRateLimitedClient(self.FakeAuthClient):
+            def post(self, path, token=None, body=None, headers=None):
+                if path == "/api/v1/auth/login":
+                    return AuthSessionLifecycleExecutorTest.Response(
+                        429, {"error": {"code": "RATE_LIMITED",
+                                        "details": {"retryAfterSeconds": 1}}})
+                return super().post(path, token=token, body=body, headers=headers)
+
+        client = AlwaysRateLimitedClient()
+        context = self._context()
+        context["client"] = client
+        sleeps = []
+        with mock.patch.object(journeys.time, "sleep",
+                               lambda seconds: sleeps.append(seconds)):
+            with self.assertRaises(journeys.ProductFailure) as caught:
+                journeys.run_auth_session_lifecycle(self.row, context)
+        # The second 429 surfaces as a row failure; the backoff retried once.
+        self.assertIn("auth login returned HTTP 429", str(caught.exception))
+        self.assertEqual(sleeps, [1])
+
+    def test_login_backoff_requires_a_usable_retry_hint(self):
+        cases = (
+            ({}, "no hint at all"),
+            ({"error": {"code": "RATE_LIMITED",
+                        "details": {"retryAfterSeconds": 61}}},
+             "hint above the bound"),
+            ({"error": {"code": "RATE_LIMITED",
+                        "details": {"retryAfterSeconds": "soon"}}},
+             "non-numeric hint"),
+        )
+        for response_body, why in cases:
+            with self.subTest(why):
+                class Client(self.FakeAuthClient):
+                    def post(self, path, token=None, body=None, headers=None):
+                        if path == "/api/v1/auth/login":
+                            return AuthSessionLifecycleExecutorTest.Response(
+                                429, response_body)
+                        return super().post(path, token=token, body=body,
+                                            headers=headers)
+
+                client = Client()
+                sleeps = []
+                with mock.patch.object(journeys.time, "sleep",
+                                       lambda seconds: sleeps.append(seconds)):
+                    response = journeys._auth_login_with_rate_limit_backoff(
+                        client, self.PHONE_REST, journeys.DISPOSABLE_PASSWORD)
+                # Without a bounded numeric hint the 429 is returned untouched.
+                self.assertEqual(response.status, 429)
+                self.assertEqual(sleeps, [])
+
 
 class ChatInteractionsExecutorTest(unittest.TestCase):
     """Offline fake device+REST world for run_chat_interactions.
