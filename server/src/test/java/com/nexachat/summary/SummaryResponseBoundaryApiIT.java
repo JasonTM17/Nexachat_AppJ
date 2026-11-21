@@ -9,21 +9,40 @@ import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.ConnectionHolder;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.util.AopTestUtils;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.WriteListener;
+import javax.sql.DataSource;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.sql.Connection;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import java.util.List;
 import java.util.UUID;
@@ -35,6 +54,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doCallRealMethod;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -57,13 +77,16 @@ class SummaryResponseBoundaryApiIT {
     }
 
     @Autowired private MockMvc mockMvc;
-    @Autowired private ObjectMapper objectMapper;
+    @MockitoSpyBean private ObjectMapper objectMapper;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private UserRepository users;
     @Autowired private ConversationRepository conversations;
     @Autowired private JwtService jwtService;
     @MockitoSpyBean private SummaryService summaryService;
     @MockitoSpyBean private SummaryProviderSelector providerSelector;
+    @MockitoSpyBean private SummaryConsentRepository consentRepository;
+    @Autowired private SummaryResponseWriter responseWriter;
+    @Autowired private DataSource dataSource;
 
     private User caller;
     private User peer;
@@ -122,22 +145,26 @@ class SummaryResponseBoundaryApiIT {
             postSummary(false).andExpect(status().isOk()).andExpect(jsonPath("$.cached").value(false));
         }
         doAnswer(invocation -> {
-            SummaryResponse selected = (SummaryResponse) invocation.callRealMethod();
+            SummaryExecution execution = (SummaryExecution) invocation.callRealMethod();
+            SummaryResponse selected = execution.response();
             assertThat(selected.overview()).contains("alpha-bravo");
             assertThat(selected.cached()).isEqualTo(mode == Mode.CACHED);
             switch (mutation) {
-                case REVOKE -> jdbcTemplate.update("UPDATE users SET ai_summary_consent = FALSE WHERE id = ?", caller.getId());
+                case REVOKE -> jdbcTemplate.update("UPDATE users SET ai_summary_consent = FALSE, "
+                        + "ai_summary_consent_epoch = ai_summary_consent_epoch + 1 WHERE id = ?", caller.getId());
                 case REGRANT -> {
-                    jdbcTemplate.update("UPDATE users SET ai_summary_consent = FALSE WHERE id = ?", caller.getId());
-                    jdbcTemplate.update("UPDATE users SET ai_summary_consent = TRUE WHERE id = ?", caller.getId());
+                    jdbcTemplate.update("UPDATE users SET ai_summary_consent = FALSE, "
+                            + "ai_summary_consent_epoch = ai_summary_consent_epoch + 1 WHERE id = ?", caller.getId());
+                    jdbcTemplate.update("UPDATE users SET ai_summary_consent = TRUE, "
+                            + "ai_summary_consent_epoch = ai_summary_consent_epoch + 1 WHERE id = ?", caller.getId());
                 }
                 case OPT_OUT -> jdbcTemplate.update(
                         "INSERT INTO conversation_ai_opt_outs (conversation_id, user_id) VALUES (?, ?)",
                         conversationId, peer.getId());
             }
-            return selected;
+            return execution;
         }).when((SummaryService) AopTestUtils.getUltimateTargetObject(summaryService))
-                .summarize(eq(conversationId), eq(caller.getId()), any());
+                .summarizeForResponse(eq(conversationId), eq(caller.getId()), any());
 
         var result = postSummary(mode == Mode.REFRESH).andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value("AI_CONSENT_REQUIRED")).andReturn();
@@ -147,6 +174,164 @@ class SummaryResponseBoundaryApiIT {
     static Stream<Arguments> boundaryCases() {
         return Stream.of(Mode.values()).flatMap(mode -> Stream.of(Mutation.values())
                 .map(mutation -> Arguments.of(mode, mutation)));
+    }
+
+    @ParameterizedTest
+    @EnumSource(Lane.class)
+    void unchangedJsonShapeAndLocalReplayRemainCompatible(Lane lane) throws Exception {
+        if (lane == Lane.LOCAL) {
+            doCallRealMethod().when(providerSelector).prepare(anyBoolean(), any(), anyBoolean());
+        }
+        SummaryExecution execution = summaryService.summarizeForResponse(conversationId, caller.getId(), request());
+        var expectedJson = objectMapper.readTree(objectMapper.writeValueAsString(execution.response()));
+        if (lane == Lane.LOCAL) {
+            assertThat(execution.consentSnapshot()).isNull();
+            assertThat(execution.expectedExclusions()).isEmpty();
+            jdbcTemplate.update("UPDATE users SET ai_summary_consent = FALSE WHERE id = ?", caller.getId());
+            jdbcTemplate.update("INSERT INTO conversation_ai_opt_outs (conversation_id, user_id) VALUES (?, ?)",
+                    conversationId, peer.getId());
+        }
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        responseWriter.write(caller.getId(), execution, response);
+        var actual = objectMapper.readTree(response.getContentAsString());
+        assertThat(actual).isEqualTo(expectedJson);
+        assertThat(actual.has("consentSnapshot")).isFalse();
+        assertThat(actual.has("expectedExclusions")).isFalse();
+        assertThat(response.getContentType()).startsWith(MediaType.APPLICATION_JSON_VALUE);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Mutation.class, names = {"REVOKE", "OPT_OUT"})
+    void serializationHoldsBothAuthorizationLocksUntilJsonExists(Mutation mutation) throws Exception {
+        SummaryExecution execution = summaryService.summarizeForResponse(conversationId, caller.getId(), request());
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        AtomicReference<Future<?>> mutationTask = new AtomicReference<>();
+        doAnswer(invocation -> {
+            if (invocation.getArgument(0) instanceof SummaryResponse) {
+                assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
+                ConnectionHolder holder = (ConnectionHolder) TransactionSynchronizationManager.getResource(dataSource);
+                assertThat(holder).isNotNull();
+                int writerPid = jdbcTemplate.queryForObject("SELECT pg_backend_pid()", Integer.class);
+                AtomicReference<Integer> mutationPid = new AtomicReference<>();
+                CountDownLatch started = new CountDownLatch(1);
+                mutationTask.set(executor.submit(() -> {
+                    try (Connection connection = dataSource.getConnection();
+                         var pidQuery = connection.createStatement();
+                         var pidRow = pidQuery.executeQuery("SELECT pg_backend_pid()")) {
+                        assertThat(pidRow.next()).isTrue();
+                        mutationPid.set(pidRow.getInt(1));
+                        String sql = mutation == Mutation.REVOKE
+                                ? "UPDATE users SET ai_summary_consent = FALSE WHERE id = ?"
+                                : "INSERT INTO conversation_ai_opt_outs (conversation_id, user_id) VALUES (?, ?)";
+                        try (var statement = connection.prepareStatement(sql)) {
+                            statement.setObject(1, mutation == Mutation.REVOKE ? caller.getId() : conversationId);
+                            if (mutation == Mutation.OPT_OUT) {
+                                statement.setObject(2, peer.getId());
+                            }
+                            started.countDown();
+                            statement.executeUpdate();
+                        }
+                    }
+                    return null;
+                }));
+                assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+                boolean blocked = false;
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                while (!blocked && System.nanoTime() < deadline) {
+                    blocked = Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                            "SELECT ? = ANY(pg_blocking_pids(?))", Boolean.class, writerPid, mutationPid.get()));
+                }
+                assertThat(blocked).as("the actual mutation waits on the writer's user/conversation lock").isTrue();
+                assertThat(mutationTask.get().isDone()).isFalse();
+            }
+            return invocation.callRealMethod();
+        }).when(objectMapper).writeValueAsBytes(any());
+        try {
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            responseWriter.write(caller.getId(), execution, response);
+            mutationTask.get().get(5, TimeUnit.SECONDS);
+            assertThat(response.getContentAsString()).contains("alpha-bravo");
+            assertThat(objectMapper.readTree(response.getContentAsString()))
+                    .isEqualTo(objectMapper.readTree(objectMapper.writeValueAsString(execution.response())));
+        } finally {
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void blockedHttpWriteReleasesDatabaseLeaseAndBothMutationLocks() throws Exception {
+        SummaryExecution execution = summaryService.summarizeForResponse(conversationId, caller.getId(), request());
+        AtomicReference<Connection> writerLease = new AtomicReference<>();
+        doAnswer(invocation -> {
+            Object result = invocation.callRealMethod();
+            ConnectionHolder holder = (ConnectionHolder) TransactionSynchronizationManager.getResource(dataSource);
+            assertThat(holder).isNotNull();
+            writerLease.set(holder.getConnection());
+            return result;
+        }).when(consentRepository).lockForResponse(caller.getId());
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        BlockingResponse response = new BlockingResponse(entered, release);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> write = executor.submit(() -> {
+                responseWriter.write(caller.getId(), execution, response);
+                return null;
+            });
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(writerLease.get()).isNotNull();
+            assertThat(writerLease.get().isClosed()).as("the pooled lease is returned before HTTP I/O").isTrue();
+            Future<?> mutations = executor.submit(() -> {
+                jdbcTemplate.update("UPDATE users SET ai_summary_consent = FALSE WHERE id = ?", caller.getId());
+                jdbcTemplate.update("INSERT INTO conversation_ai_opt_outs (conversation_id, user_id) VALUES (?, ?)",
+                        conversationId, peer.getId());
+            });
+            mutations.get(5, TimeUnit.SECONDS);
+            assertThat(write.isDone()).isFalse();
+            release.countDown();
+            write.get(5, TimeUnit.SECONDS);
+            assertThat(response.body.toString(StandardCharsets.UTF_8)).contains("alpha-bravo");
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    private SummaryRequest request() {
+        return new SummaryRequest(SummaryScope.LAST_N, 5, SummaryLanguage.EN, false);
+    }
+
+    private static final class BlockingResponse extends MockHttpServletResponse {
+        private final ByteArrayOutputStream body = new ByteArrayOutputStream();
+        private final CountDownLatch entered;
+        private final CountDownLatch release;
+
+        private BlockingResponse(CountDownLatch entered, CountDownLatch release) {
+            this.entered = entered;
+            this.release = release;
+        }
+
+        @Override
+        public ServletOutputStream getOutputStream() {
+            return new ServletOutputStream() {
+                @Override public boolean isReady() { return true; }
+                @Override public void setWriteListener(WriteListener listener) { }
+                @Override public void write(int value) throws IOException {
+                    entered.countDown();
+                    try {
+                        if (!release.await(10, TimeUnit.SECONDS)) {
+                            throw new IOException("Timed out waiting for the controlled HTTP writer");
+                        }
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException(exception);
+                    }
+                    body.write(value);
+                }
+            };
+        }
     }
 
     private org.springframework.test.web.servlet.ResultActions postSummary(boolean refresh) throws Exception {
@@ -159,4 +344,5 @@ class SummaryResponseBoundaryApiIT {
 
     enum Mode { FRESH, CACHED, REFRESH }
     enum Mutation { REVOKE, REGRANT, OPT_OUT }
+    enum Lane { LLM, LOCAL }
 }

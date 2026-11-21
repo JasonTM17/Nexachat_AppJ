@@ -13,13 +13,14 @@ import java.util.UUID;
 
 /**
  * Post-generation consent re-check for the external summary lane. The
- * response is suppressed when the snapshot moved between the window read
- * and the store: the check takes a shared row lock via
+ * selected result is suppressed when the snapshot moved before this
+ * preliminary check: it takes a shared row lock via
  * {@link SummaryConsentRepository#lockForResponse(UUID)} and re-reads the
  * snapshot, so a consent revoke, which uses a conflicting write lock on the
- * same row, either commits before this lock (the snapshot differs) or after
- * it (the response was already serialized). The check is one locked SELECT:
- * no extra LLM call.
+ * same row, either commits before this check or after its transaction ends.
+ * This check does not serialize the response. SummaryResponseWriter carries
+ * the expected snapshot to the final lock and JSON serialization boundary.
+ * The preliminary check is one locked SELECT with no extra LLM call.
  *
  * <p>Only the external lane is checked: a local-tier generation never sent
  * text outside, so a mid-flight consent flip must not discard it. A

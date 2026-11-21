@@ -408,7 +408,7 @@ class SummaryServiceTest {
 
         assertThat(response.overview()).isEqualTo("External output");
         assertThat(response.cached()).isFalse();
-        verify(consentRepository).lockForResponse(userId);
+        verify(consentRepository, times(2)).lockForResponse(userId);
         verify(cacheRepository).saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(hash("LLM")),
                 eq("LLM"), eq(SummaryLanguage.EN), eq(generated));
     }
