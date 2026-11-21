@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import com.nexachat.common.error.ApiErrorCode;
+import com.nexachat.common.error.ApiException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -66,6 +70,9 @@ class AskServiceStampedeTest {
     private final AtomicInteger answerProviderCalls = new AtomicInteger();
     private final AtomicBoolean consented = new AtomicBoolean();
     private final AtomicLong consentEpoch = new AtomicLong();
+    private final AtomicReference<RagQuestionCache.ContextSnapshot> context =
+            new AtomicReference<>(new RagQuestionCache.ContextSnapshot(1, null));
+    private final AtomicReference<Instant> admittedFrom = new AtomicReference<>(Instant.EPOCH);
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     private AskService service;
@@ -90,7 +97,8 @@ class AskServiceStampedeTest {
         properties.getRetrieval().setExtractiveThreshold(1.01);
 
         when(conversationRepository.existsById(conversationId)).thenReturn(true);
-        when(memberRepository.findJoinedAt(eq(conversationId), any())).thenReturn(java.util.Optional.of(java.time.Instant.EPOCH));
+        when(memberRepository.findJoinedAt(eq(conversationId), any()))
+                .thenAnswer(invocation -> Optional.of(admittedFrom.get()));
         when(consentRepository.isConsented(any())).thenAnswer(invocation -> consented.get());
         when(consentRepository.snapshot(any())).thenAnswer(invocation ->
                 new ConsentSnapshot(consented.get(), consentEpoch.get()));
@@ -109,9 +117,17 @@ class AskServiceStampedeTest {
                 Optional.ofNullable(cachedByQuestionHash.get(invocation.getArgument(2))));
         when(questionCache.findCandidates(any(), any())).thenReturn(List.of());
         when(questionCache.citationsValid(any(), any())).thenReturn(true);
+        when(questionCache.contextSnapshot(any())).thenAnswer(invocation -> context.get());
+        when(questionCache.contextUnchanged(any(), any())).thenAnswer(invocation ->
+                context.get().equals(invocation.getArgument(1)));
         doAnswer(invocation -> {
-            cachedByQuestionHash.put(invocation.getArgument(4), invocation.getArgument(6));
-            return true;
+            RagQuestionCache.CachedAsk answer = invocation.getArgument(6);
+            boolean current = answer.expectedContentVersion() == context.get().revision()
+                    && java.util.Objects.equals(answer.expectedContextExpiry(), context.get().expiresAt());
+            if (current) {
+                cachedByQuestionHash.put(invocation.getArgument(4), answer);
+            }
+            return current;
         }).when(questionCache).saveIfConsentSnapshotMatches(any(), any(), any(), any(), any(), any(), any());
 
         service = new AskService(rateLimiter, conversationRepository, memberRepository,
@@ -278,6 +294,168 @@ class AskServiceStampedeTest {
         assertThat(response.answer()).isEqualTo(ANSWER);
         assertThat(embeddingCalls.get()).isEqualTo(2);
         assertThat(answerProviderCalls.get()).isEqualTo(1);
+    }
+
+    @Test
+    void distinctQuestionsAndFollowupHistoriesDoNotJoin() throws Exception {
+        CountDownLatch entered = new CountDownLatch(3);
+        CountDownLatch release = new CountDownLatch(1);
+        answerWith(release, entered);
+        List<Future<AskResponse>> asks = List.of(
+                executor.submit(() -> service.ask(conversationId, userId, request(SummaryLanguage.EN))),
+                executor.submit(() -> service.ask(conversationId, userId,
+                        new AskRequest("Summarize the release decisions and review timing?", SummaryLanguage.EN))),
+                executor.submit(() -> service.ask(conversationId, userId,
+                        new AskRequest(QUESTION, SummaryLanguage.EN,
+                                List.of(new AskPriorTurn("What was the plan?", "March migration."))))));
+        try {
+            assertThat(entered.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            release.countDown();
+        }
+        assertThat(collect(asks)).hasSize(3);
+        assertThat(answerProviderCalls.get()).isEqualTo(3);
+    }
+
+    @Test
+    void aNewAdmissionDoesNotJoinThePreviousMembershipFlight() throws Exception {
+        assertNewVisibilityFlight(() -> admittedFrom.set(Instant.parse("2026-01-01T00:00:00Z")), false);
+    }
+
+    @Test
+    void aNewContextRevisionDoesNotJoinOrReturnOldWork() throws Exception {
+        assertNewVisibilityFlight(() -> context.set(new RagQuestionCache.ContextSnapshot(2, null)), true);
+    }
+
+    @Test
+    void anExpiryBoundaryDoesNotJoinOrReturnOldWork() throws Exception {
+        context.set(new RagQuestionCache.ContextSnapshot(1, Instant.now().plusSeconds(60)));
+        assertNewVisibilityFlight(() -> context.set(new RagQuestionCache.ContextSnapshot(1, null)), true);
+    }
+
+    @Test
+    void aStalledLeaderTimesOutWithoutExtraProviderWorkAndLaterRequestsRecover() throws Exception {
+        properties.getAsk().setSingleFlightWaitMs(25);
+        CountDownLatch firstEntered = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        answerWith(releaseFirst, firstEntered);
+        Future<AskResponse> first = executor.submit(
+                () -> service.ask(conversationId, userId, request(SummaryLanguage.EN)));
+        try {
+            assertThat(firstEntered.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
+            Future<AskResponse> follower = executor.submit(
+                    () -> service.ask(conversationId, userId, request(SummaryLanguage.EN)));
+            assertThat(follower.get(1, TimeUnit.SECONDS).mode()).isEqualTo(AskMode.NOT_FOUND);
+            assertThat(answerProviderCalls.get()).isEqualTo(1);
+            assertThat(embeddingCalls.get()).isEqualTo(1);
+
+            // The timed-out follower detached only that stalled flight; a later caller can lead.
+            when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any()))
+                    .thenAnswer(invocation -> {
+                        answerProviderCalls.incrementAndGet();
+                        return new RagLlmAnswer("Recovered current answer.", List.of(fact.id()));
+                    });
+            AskResponse recovered = service.ask(conversationId, userId, request(SummaryLanguage.EN));
+            assertThat(recovered.answer()).isEqualTo("Recovered current answer.");
+            assertThat(answerProviderCalls.get()).isEqualTo(2);
+        } finally {
+            releaseFirst.countDown();
+        }
+        first.get(WAIT_SECONDS, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void interruptedFollowerStopsPromptlyAndPreservesTheInterruptFlag() throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        answerWith(release, entered);
+        Future<AskResponse> leader = executor.submit(
+                () -> service.ask(conversationId, userId, request(SummaryLanguage.EN)));
+        try {
+            assertThat(entered.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
+            Future<Boolean> interrupted = executor.submit(() -> {
+                Thread.currentThread().interrupt();
+                try {
+                    service.ask(conversationId, userId, request(SummaryLanguage.EN));
+                    return false;
+                } catch (ApiException exception) {
+                    return exception.getCode() == ApiErrorCode.INTERNAL_ERROR
+                            && Thread.currentThread().isInterrupted();
+                } finally {
+                    Thread.interrupted();
+                }
+            });
+            assertThat(interrupted.get(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(answerProviderCalls.get()).isEqualTo(1);
+        } finally {
+            release.countDown();
+        }
+        leader.get(WAIT_SECONDS, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void aLateOldLeaderCannotRemoveItsReplacementFlight() throws Exception {
+        properties.getAsk().setSingleFlightWaitMs(25);
+        CountDownLatch oldEntered = new CountDownLatch(1);
+        CountDownLatch newEntered = new CountDownLatch(1);
+        CountDownLatch releaseOld = new CountDownLatch(1);
+        CountDownLatch releaseNew = new CountDownLatch(1);
+        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    int call = answerProviderCalls.incrementAndGet();
+                    (call == 1 ? oldEntered : newEntered).countDown();
+                    (call == 1 ? releaseOld : releaseNew).await(WAIT_SECONDS, TimeUnit.SECONDS);
+                    return new RagLlmAnswer(ANSWER, List.of(fact.id()));
+                });
+        Future<AskResponse> oldLeader = executor.submit(
+                () -> service.ask(conversationId, userId, request(SummaryLanguage.EN)));
+        try {
+            assertThat(oldEntered.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
+            assertThat(executor.submit(() -> service.ask(conversationId, userId, request(SummaryLanguage.EN)))
+                    .get(1, TimeUnit.SECONDS).mode()).isEqualTo(AskMode.NOT_FOUND);
+            Future<AskResponse> replacement = executor.submit(
+                    () -> service.ask(conversationId, userId, request(SummaryLanguage.EN)));
+            assertThat(newEntered.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
+            releaseOld.countDown();
+            oldLeader.get(WAIT_SECONDS, TimeUnit.SECONDS);
+            cachedByQuestionHash.clear();
+            assertThat(executor.submit(() -> service.ask(conversationId, userId, request(SummaryLanguage.EN)))
+                    .get(1, TimeUnit.SECONDS).mode()).isEqualTo(AskMode.NOT_FOUND);
+            assertThat(answerProviderCalls.get()).isEqualTo(2);
+            releaseNew.countDown();
+            replacement.get(WAIT_SECONDS, TimeUnit.SECONDS);
+        } finally {
+            releaseOld.countDown();
+            releaseNew.countDown();
+        }
+    }
+
+    private void assertNewVisibilityFlight(Runnable mutation, boolean suppressOld) throws Exception {
+        CountDownLatch firstEntered = new CountDownLatch(1);
+        CountDownLatch secondEntered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    int call = answerProviderCalls.incrementAndGet();
+                    (call == 1 ? firstEntered : secondEntered).countDown();
+                    release.await(WAIT_SECONDS, TimeUnit.SECONDS);
+                    return new RagLlmAnswer(ANSWER, List.of(fact.id()));
+                });
+        Future<AskResponse> first = executor.submit(
+                () -> service.ask(conversationId, userId, request(SummaryLanguage.EN)));
+        try {
+            assertThat(firstEntered.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
+            mutation.run();
+            Future<AskResponse> second = executor.submit(
+                    () -> service.ask(conversationId, userId, request(SummaryLanguage.EN)));
+            assertThat(secondEntered.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();
+            release.countDown();
+            assertThat(first.get(WAIT_SECONDS, TimeUnit.SECONDS).mode())
+                    .isEqualTo(suppressOld ? AskMode.NOT_FOUND : AskMode.LLM);
+            assertThat(second.get(WAIT_SECONDS, TimeUnit.SECONDS).mode()).isEqualTo(AskMode.LLM);
+        } finally {
+            release.countDown();
+        }
     }
 
     private void answerWith(CountDownLatch releaseProvider, CountDownLatch providerEntrances) {

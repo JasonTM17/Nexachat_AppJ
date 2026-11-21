@@ -291,6 +291,16 @@ public class RagProperties {
         private int rateLimitPerMinute = 20;
         private int rateLimitPerDay = 200;
         private int cacheTtlHours = 24;
+        private long singleFlightWaitMs = 120_000L;
+
+        public long getSingleFlightWaitMs() {
+            return singleFlightWaitMs;
+        }
+
+        public void setSingleFlightWaitMs(long singleFlightWaitMs) {
+            // Leave headroom under Android's 130-second AI read timeout.
+            this.singleFlightWaitMs = Math.clamp(singleFlightWaitMs, 1L, 120_000L);
+        }
 
         public int getRateLimitPerMinute() {
             return rateLimitPerMinute;
