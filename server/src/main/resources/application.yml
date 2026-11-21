@@ -109,6 +109,14 @@ nexachat:
     refresh-replay:
       key: ${NEXACHAT_REFRESH_REPLAY_KEY:}
       cleanup-batch-size: 500
+    # Shared per-account failed-sign-in budget: 10 failures per 15 min, keyed by
+    # the account's canonical phone (verified email when no phone exists) so an
+    # account attacked through both identifiers or from rotating addresses has
+    # ONE budget. Exhaustion answers 429 SIGN_IN_LOCKED; a successful sign-in
+    # resets it. Values below 1 fail startup.
+    sign-in-budget:
+      max-failures: ${NEXACHAT_AUTH_SIGN_IN_BUDGET_MAX_FAILURES:10}
+      window-seconds: ${NEXACHAT_AUTH_SIGN_IN_BUDGET_WINDOW_SECONDS:900}
   google:
     # "Sign in with Google" (OpenID Connect). Off by default; the owner creates
     # the OAuth clients in Google Cloud and supplies the web client ID.

@@ -32,6 +32,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -44,6 +45,14 @@ import java.util.UUID;
  * (unlike register, where bad input honestly returns {@code VALIDATION_FAILED}).
  * Unknown accounts and unparseable phones both pay one bcrypt compare against a
  * dummy hash to reduce timing-based account-enumeration signals.
+ *
+ * <p>Sign-in attempts are bounded on three layers: per source address
+ * ({@link RateLimitInterceptor}), per claimed credential
+ * ({@link #enforceCredentialRateLimit}), and one shared per-account budget
+ * ({@link SignInFailureBudget}) that both identifier paths of one account
+ * drain together and a successful sign-in resets. Its {@code 429 SIGN_IN_LOCKED}
+ * response only appears after that account's budget is exhausted, so below the
+ * threshold every failure stays uniform {@code INVALID_CREDENTIALS}.
  *
  * <p>Transaction note: {@link #refresh} is deliberately NOT {@code @Transactional}
  * at this level — when {@link TokenService#rotate} reports reuse/expiry, the
@@ -63,6 +72,7 @@ public class AuthService {
     private final TokenService tokenService;
     private final AccessTokenRevocationService accessTokenRevocationService;
     private final RateLimitService rateLimitService;
+    private final SignInFailureBudget signInFailureBudget;
     private final AuthResponseFactory responseFactory;
     private final RefreshReplayConfiguration.BoundaryHook boundaryHook;
     private final ApplicationEventPublisher eventPublisher;
@@ -87,6 +97,7 @@ public class AuthService {
                        TokenService tokenService,
                        AccessTokenRevocationService accessTokenRevocationService,
                        RateLimitService rateLimitService,
+                       SignInFailureBudget signInFailureBudget,
                        AuthResponseFactory responseFactory,
                        RefreshReplayConfiguration.BoundaryHook boundaryHook,
                        ApplicationEventPublisher eventPublisher,
@@ -103,6 +114,7 @@ public class AuthService {
         this.tokenService = tokenService;
         this.accessTokenRevocationService = accessTokenRevocationService;
         this.rateLimitService = rateLimitService;
+        this.signInFailureBudget = signInFailureBudget;
         this.responseFactory = responseFactory;
         this.boundaryHook = boundaryHook;
         this.eventPublisher = eventPublisher;
@@ -221,6 +233,16 @@ public class AuthService {
         }
         // The unlocked read above may already have placed a pre-lock snapshot in this persistence context.
         entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
+        // One shared failure budget per ACCOUNT (the locked row's canonical phone,
+        // or its verified email when no phone exists), charged after the row is
+        // locked and before the bcrypt compare: email- and phone-path attempts
+        // against the same account drain one bucket even when the source address
+        // rotates, and a locked account pays no hash cost. A null key (row lost
+        // both identifiers) skips the charge — such a row cannot sign in anyway.
+        String accountBudgetKey = accountBudgetKey(user);
+        if (accountBudgetKey != null) {
+            signInFailureBudget.chargeAttempt(accountBudgetKey);
+        }
         // The identifier that located this account must still belong to it once the row is locked: an email
         // removed or replaced (or an account deleted) between the lookup and the lock must not authorize a login.
         boolean stillOwned = user.getDeletedAt() == null
@@ -236,6 +258,11 @@ public class AuthService {
         }
         if (user.isSuspended()) {
             throw ApiException.of(ApiErrorCode.ACCOUNT_SUSPENDED, "Account is suspended");
+        }
+        // A sign-in that reached this point succeeded, so the account's budget
+        // starts the next window clean.
+        if (accountBudgetKey != null) {
+            signInFailureBudget.onSuccessfulSignIn(accountBudgetKey);
         }
         return issueSession(user, deviceLabel);
     }
@@ -390,6 +417,25 @@ public class AuthService {
      */
     private void enforcePhoneRateLimit(String action, String phone) {
         enforceCredentialRateLimit(action, "phone|" + phone);
+    }
+
+    /**
+     * Budget key for the ACCOUNT behind a locked row: its canonical E.164
+     * phone when present, else its verified email (lowercased defensively;
+     * addresses are normalized before they are stored). Accounts reached by
+     * login always carry at least one of the two; a defensive null means no
+     * charge happens rather than all rows sharing one key.
+     */
+    private static String accountBudgetKey(User user) {
+        String phone = user.getPhone();
+        if (phone != null && !phone.isBlank()) {
+            return "phone|" + phone;
+        }
+        String email = user.getEmail();
+        if (email != null && !email.isBlank()) {
+            return "email|" + email.toLowerCase(Locale.ROOT);
+        }
+        return null;
     }
 
     private void enforceCredentialRateLimit(String action, String subject) {

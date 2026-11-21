@@ -49,6 +49,8 @@ Boolean feature flags and `*.enabled` settings (for example `FCM_ENABLED`,
 | `NEXACHAT_VALIDITY_CACHE_TTL_SECONDS` | No (TTL for token revocation cutoff cache) | `60` | `60` |
 | `NEXACHAT_TRUSTED_PROXY_CIDRS` | No (comma-separated CIDRs/exact IPs of reverse proxies that may set `X-Forwarded-For`; empty = rate limits always use the socket peer) | Empty | `10.0.0.0/8,172.16.0.0/12` |
 | `NEXACHAT_CLIENT_IP_HEADER` | No (header read for the client address when the peer is a trusted proxy; `X-Forwarded-For` is read right to left) | `X-Forwarded-For` | `CF-Connecting-IP` |
+| `NEXACHAT_AUTH_SIGN_IN_BUDGET_MAX_FAILURES` | No (shared per-account failed-sign-in budget on `/auth/login`; `429 SIGN_IN_LOCKED` when exhausted, reset by a successful sign-in; values below 1 fail startup) | `10` | `10` |
+| `NEXACHAT_AUTH_SIGN_IN_BUDGET_WINDOW_SECONDS` | No (refill window for the per-account budget; refills greedily, one attempt per `window/max-failures` after a drain) | `900` (15 min) | `900` |
 | `NEXACHAT_GOOGLE_SIGNIN_ENABLED` | No (optional "Sign in with Google"; all Google routes answer 404 while off) | `false` | `false` |
 | `NEXACHAT_GOOGLE_WEB_CLIENT_ID` | Yes when Google sign-in is enabled; startup fails closed without it | Empty | `<id>.apps.googleusercontent.com` |
 | `NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS` | Yes when Google sign-in is enabled (comma-separated Android OAuth client IDs trusted as token `azp`) | Empty while disabled | `<id>.apps.googleusercontent.com` |
