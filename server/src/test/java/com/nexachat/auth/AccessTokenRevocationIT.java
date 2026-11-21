@@ -188,6 +188,31 @@ class AccessTokenRevocationIT extends SecurityITBase {
                 .andExpect(jsonPath("$.error.code").value("TOKEN_INVALID"));
     }
 
+    /**
+     * Regression for the fresh-token-born-dead race: on a fast stack,
+     * logout-all and the immediate re-login land in the same wall-clock
+     * second, so the re-login's naive {@code iat} equals the cutoff and the
+     * new token is rejected for its whole TTL. The mint must move past the
+     * cutoff instead, while pre-revocation tokens (the test above) still die.
+     */
+    @Test
+    void loginRightAfterLogoutAllInTheSameSecondMintsAWorkingAccessToken() throws Exception {
+        String phone = ItPhoneRanges.phoneFor(AccessTokenRevocationIT.class, "+84905551207");
+        Registered user = register(phone);
+        Instant registerSecond = jwtService.parseAccessTokenClaims(user.accessToken()).issuedAt();
+        // Pin the logout-all and the re-login inside the register second, so
+        // the cutoff is stamped at exactly the second a naive mint would use.
+        cutoffClock.set(registerSecond);
+
+        postJson("/api/v1/auth/logout-all", Map.of(), user.accessToken())
+                .andExpect(status().isNoContent());
+        Registered relogin = login(phone);
+        cutoffClock.useSystemTime();
+
+        getWithAuth("/api/v1/users/me", relogin.accessToken())
+                .andExpect(status().isOk());
+    }
+
     private void setCutoffOneSecondBefore(UUID userId, String accessToken) {
         Instant issuedAt = jwtService.parseAccessTokenClaims(accessToken).issuedAt();
         jdbcTemplate.update("UPDATE users SET tokens_valid_after = ? WHERE id = ?",
