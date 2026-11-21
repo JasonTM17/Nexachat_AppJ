@@ -11,6 +11,7 @@ import java.util.Objects;
 import java.util.TimeZone;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -33,7 +34,10 @@ public final class SummaryViewModel extends ViewModel {
     private SummaryScope lastScope;
     private Integer lastLimit;
     private String boundConversationId;
-    private volatile long requestGeneration;
+    private final AtomicLong requestGeneration = new AtomicLong();
+    private long boundCacheEpoch;
+    private final SummaryRepository.Cancellable cacheInvalidationSubscription;
+    private volatile boolean cleared;
     private SummaryRepository.Cancellable activeRequest;
 
     @Inject
@@ -60,7 +64,12 @@ public final class SummaryViewModel extends ViewModel {
         this.lastScope = restoredScope();
         this.lastLimit = restoredLimit(this.lastScope);
         this.boundConversationId = savedStateHandle.get(ARG_CONVERSATION_ID);
+        this.boundCacheEpoch = repository.cacheEpoch();
         this.state = new MutableLiveData<>(restoreState());
+        this.cacheInvalidationSubscription = repository.onCacheInvalidated(this::onCacheInvalidated);
+        if (boundCacheEpoch != repository.cacheEpoch()) {
+            onCacheInvalidated(null);
+        }
     }
 
     public LiveData<SummaryUiState> state() {
@@ -111,18 +120,22 @@ public final class SummaryViewModel extends ViewModel {
     }
 
     public void dismiss() {
-        requestGeneration++;
+        long token = requestGeneration.incrementAndGet();
         cancelActiveRequest();
         savedStateHandle.remove(KEY_SUMMARY_ID);
         SummaryScope scope = lastScope == null ? restoredScope() : lastScope;
-        publish(requestGeneration, savedStateHandle.get(ARG_CONVERSATION_ID),
+        publish(token, savedStateHandle.get(ARG_CONVERSATION_ID),
                 () -> applyState(SummaryUiState.idle(scope, lastLimit, null)));
     }
 
     @Override
     protected void onCleared() {
-        requestGeneration++;
+        cleared = true;
+        requestGeneration.incrementAndGet();
         cancelActiveRequest();
+        if (cacheInvalidationSubscription != null) {
+            cacheInvalidationSubscription.cancel();
+        }
         super.onCleared();
     }
 
@@ -136,8 +149,7 @@ public final class SummaryViewModel extends ViewModel {
      */
     private void start(SummaryScope scope, Integer limit, boolean refresh, boolean zoneFallback) {
         Objects.requireNonNull(scope, "scope");
-        requestGeneration++;
-        long token = requestGeneration;
+        long token = requestGeneration.incrementAndGet();
         cancelActiveRequest();
         lastScope = scope;
         lastLimit = limit;
@@ -149,8 +161,10 @@ public final class SummaryViewModel extends ViewModel {
         }
 
         String conversationId = savedStateHandle.get(ARG_CONVERSATION_ID);
-        if (!Objects.equals(boundConversationId, conversationId)) {
+        long epoch = repository.cacheEpoch();
+        if (!Objects.equals(boundConversationId, conversationId) || boundCacheEpoch != epoch) {
             boundConversationId = conversationId;
+            boundCacheEpoch = epoch;
             savedStateHandle.remove(KEY_SUMMARY_ID);
         }
         String lastSummaryId = savedStateHandle.get(KEY_SUMMARY_ID);
@@ -218,14 +232,40 @@ public final class SummaryViewModel extends ViewModel {
     }
 
     private boolean isCurrent(long token, String conversationId) {
-        return token == requestGeneration
+        return !cleared && token == requestGeneration.get()
                 && Objects.equals(conversationId, savedStateHandle.get(ARG_CONVERSATION_ID));
     }
 
     private void publish(long token, String conversationId, Runnable update) {
+        long epoch = repository.cacheEpoch();
         mainExecutor.execute(() -> {
-            if (isCurrent(token, conversationId)) {
-                update.run();
+            // Share the repository monitor so a cache clear and actual publication are ordered.
+            synchronized (repository) {
+                if (isCurrent(token, conversationId) && epoch == repository.cacheEpoch()) {
+                    update.run();
+                }
+            }
+        });
+    }
+
+    private void onCacheInvalidated(SummaryError reason) {
+        if (cleared) {
+            return;
+        }
+        // This fence is immediate even when invalidation arrives on a network/session thread.
+        long token = requestGeneration.incrementAndGet();
+        mainExecutor.execute(() -> {
+            synchronized (repository) {
+                if (cleared || token != requestGeneration.get()) {
+                    return;
+                }
+                cancelActiveRequest();
+                boundCacheEpoch = repository.cacheEpoch();
+                savedStateHandle.remove(KEY_SUMMARY_ID);
+                SummaryScope scope = lastScope == null ? restoredScope() : lastScope;
+                applyState(reason == SummaryError.NOT_MEMBER
+                        ? SummaryUiState.error(scope, lastLimit, reason, null)
+                        : SummaryUiState.idle(scope, lastLimit, null));
             }
         });
     }

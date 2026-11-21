@@ -8,6 +8,7 @@ import static org.junit.Assert.assertNull;
 
 import com.squareup.moshi.Moshi;
 import com.nexachat.core.network.SessionEvents;
+import com.nexachat.di.SummaryModule;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -278,7 +279,7 @@ public final class SummaryRepositoryTest {
     public void aNewSessionWithTheSameConsentCannotReplayThePreviousAccountsSummary() {
         ControlledApi api = new ControlledApi();
         SessionEvents sessions = new SessionEvents();
-        SummaryRepository repository = new SummaryRepository(api, sessions);
+        SummaryRepository repository = SummaryModule.provideSummaryRepository(api, sessions);
         sessions.emitSessionAvailable();
         repository.request("conversation-1", unread(), new ResultCapture());
         api.calls.get(0).succeed(summary("account-a"));

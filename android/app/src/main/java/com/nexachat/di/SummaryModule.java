@@ -4,6 +4,7 @@ import com.nexachat.summary.AiConsentApi;
 import com.nexachat.summary.AiConsentRepository;
 import com.nexachat.summary.SummaryApi;
 import com.nexachat.summary.SummaryRepository;
+import com.nexachat.core.network.SessionEvents;
 import com.nexachat.feature.ask.AskApi;
 import com.nexachat.feature.ask.AskRepository;
 import android.os.Handler;
@@ -45,8 +46,8 @@ public final class SummaryModule {
 
     @Provides
     @Singleton
-    public static SummaryRepository provideSummaryRepository(SummaryApi api) {
-        return new SummaryRepository(api);
+    public static SummaryRepository provideSummaryRepository(SummaryApi api, SessionEvents sessionEvents) {
+        return new SummaryRepository(api, sessionEvents);
     }
 
     @Provides

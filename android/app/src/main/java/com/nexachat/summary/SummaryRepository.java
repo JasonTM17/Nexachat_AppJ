@@ -1,6 +1,7 @@
 package com.nexachat.summary;
 
 import com.nexachat.core.network.SessionEvents;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import java.io.IOException;
 import java.time.DateTimeException;
 import java.time.Instant;
@@ -11,6 +12,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 import okhttp3.ResponseBody;
 import retrofit2.Call;
@@ -22,7 +25,8 @@ import retrofit2.Response;
  *
  * <p>The cache key names the conversation, the scope, the LAST_N count, the language, the device zone and,
  * for TODAY, the local date the result belongs to. A summary is therefore never replayed for a
- * different scope, day or zone, and losing membership or changing AI consent drops the cache.
+ * different scope, day or zone. Membership/consent changes and session boundaries invalidate
+ * cached and pending work. The repository monitor also orders cache clears with UI publication.
  */
 public final class SummaryRepository {
     static final long CACHE_TTL_MILLIS = 5 * 60 * 1000L;
@@ -32,7 +36,12 @@ public final class SummaryRepository {
     private final LongSupplier clock;
     private final Map<CacheKey, CacheEntry> cache = new LinkedHashMap<>(16, 0.75f, true);
     private final Map<CacheKey, RequestHandle> latestFills = new HashMap<>();
+    private final CopyOnWriteArrayList<Consumer<SummaryError>> invalidationListeners =
+            new CopyOnWriteArrayList<>();
+    // The repository is a process singleton, matching the lifetime of these subscriptions.
+    private final CompositeDisposable sessionSubscriptions = new CompositeDisposable();
     private long cacheEpoch;
+    private boolean sessionOpen = true;
 
     public SummaryRepository(SummaryApi api) {
         this(api, System::currentTimeMillis);
@@ -41,6 +50,25 @@ public final class SummaryRepository {
     public SummaryRepository(SummaryApi api, SessionEvents sessionEvents) {
         this(api);
         Objects.requireNonNull(sessionEvents, "sessionEvents");
+        sessionSubscriptions.add(sessionEvents.getEvents().subscribe(this::onSessionEvent));
+        sessionSubscriptions.add(sessionEvents.getLifecycleEvents().subscribe(this::onSessionEvent));
+    }
+
+    private void onSessionEvent(SessionEvents.Event event) {
+        if (event instanceof SessionEvents.Event.SessionClosing
+                || event instanceof SessionEvents.Event.LoggedOut
+                || event instanceof SessionEvents.Event.ReauthenticationRequired) {
+            synchronized (this) {
+                sessionOpen = false;
+                clearCache();
+            }
+        } else if (event instanceof SessionEvents.Event.SessionAvailable) {
+            synchronized (this) {
+                sessionOpen = true;
+                // Also handles replacing an account without an intervening logout event.
+                clearCache();
+            }
+        }
     }
 
     SummaryRepository(SummaryApi api, LongSupplier clock) {
@@ -58,7 +86,11 @@ public final class SummaryRepository {
 
         CacheKey key = keyFor(conversationId, request);
         final RequestHandle handle;
-        synchronized (cache) {
+        synchronized (this) {
+            if (!sessionOpen) {
+                callback.onError(SummaryError.UNKNOWN);
+                return new RequestHandle(key, cacheEpoch);
+            }
             if (!request.isRefresh()) {
                 SummaryResponse cached = findCached(key);
                 if (cached != null) {
@@ -118,13 +150,30 @@ public final class SummaryRepository {
         return Optional.of(response);
     }
 
-    /** Drops every cached summary; used when AI consent changes. */
+    /** Drops cached and pending summaries at the same epoch boundary as UI publication. */
     public void clearCache() {
-        synchronized (cache) {
+        invalidateCache(null);
+    }
+
+    private void invalidateCache(SummaryError reason) {
+        synchronized (this) {
             cacheEpoch++;
             cache.clear();
             latestFills.clear();
+            for (Consumer<SummaryError> listener : invalidationListeners) {
+                listener.accept(reason);
+            }
         }
+    }
+
+    synchronized long cacheEpoch() {
+        return cacheEpoch;
+    }
+
+    synchronized Cancellable onCacheInvalidated(Consumer<SummaryError> listener) {
+        Objects.requireNonNull(listener, "listener");
+        invalidationListeners.add(listener);
+        return () -> invalidationListeners.remove(listener);
     }
 
     private CacheKey keyFor(String conversationId, SummaryRequest request) {
@@ -147,7 +196,7 @@ public final class SummaryRepository {
     }
 
     private SummaryResponse findCached(CacheKey key) {
-        synchronized (cache) {
+        synchronized (this) {
             CacheEntry entry = cache.get(key);
             if (entry == null) {
                 return null;
@@ -162,7 +211,7 @@ public final class SummaryRepository {
     }
 
     private void putCached(CacheKey key, SummaryResponse response) {
-        synchronized (cache) {
+        synchronized (this) {
             cache.put(key, new CacheEntry(response, clock.getAsLong()));
             while (cache.size() > MAX_CACHE_ENTRIES) {
                 Iterator<CacheKey> keys = cache.keySet().iterator();
@@ -207,7 +256,7 @@ public final class SummaryRepository {
 
         @Override
         public void cancel() {
-            synchronized (cache) {
+            synchronized (SummaryRepository.this) {
                 if (cancelled) {
                     return;
                 }
@@ -221,7 +270,7 @@ public final class SummaryRepository {
         }
 
         private void finishSuccess(SummaryResponse response, Callback callback) {
-            synchronized (cache) {
+            synchronized (SummaryRepository.this) {
                 if (cancelled || finished) {
                     return;
                 }
@@ -242,7 +291,7 @@ public final class SummaryRepository {
         }
 
         private void finishError(SummaryError error, Callback callback) {
-            synchronized (cache) {
+            synchronized (SummaryRepository.this) {
                 if (cancelled || finished) {
                     return;
                 }
@@ -253,7 +302,7 @@ public final class SummaryRepository {
                     return;
                 }
                 if (error == SummaryError.NOT_MEMBER) {
-                    clearCache();
+                    invalidateCache(error);
                 }
                 callback.onError(error);
             }
