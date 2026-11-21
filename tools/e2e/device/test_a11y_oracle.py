@@ -3,7 +3,9 @@
 Everything runs without a device: oracles are pure functions over synthetic
 node dicts and a realistic ``uiautomator dump`` XML fixture; command builders
 are asserted as strings only. Compatibility with the real ``adb_ui.Node``
-shape is proven by wrapping the same fixture elements in that class.
+shape is proven by wrapping the same fixture elements in that class. The
+decorative-rid resolution reads the app's own layout XML (synthetic layout
+dirs, plus the repo's checked-out default) -- still no device.
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ import json
 import sys
 import tempfile
 import unittest
+import warnings
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest import mock
@@ -69,6 +72,63 @@ CLEAN_XML = """<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
     <node index="1" text="" resource-id="com.nexachat.debug:id/brandMark" class="android.widget.ImageView" package="com.nexachat.debug" content-desc="NexaChat logo" clickable="false" focusable="false" enabled="true" bounds="[420,900][660,1140]" />
   </node>
 </hierarchy>"""
+
+# Synthetic app-layout dir for decorative-rid resolution: both markers the
+# app's own XML uses (view_settings_row.xml pins the real rowIcon/rowChevron
+# pair), a non-decorative control that must stay flagged, a decorative element
+# with no resolvable id, and a platform id that must never match. The second
+# file drops xmlns:android to pin the namespace-optional attribute fallback.
+DECORATIVE_LAYOUTS = {
+    "view_row.xml": """<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rowContent"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <ImageView
+        android:id="@+id/rowIcon"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_settings" />
+
+    <ImageView
+        android:id="@+id/rowChevron"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_arrow" />
+
+    <ImageView
+        android:id="@+id/sendButton"
+        android:layout_width="48dp"
+        android:layout_height="48dp" />
+
+    <ImageView
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:importantForAccessibility="no" />
+
+    <ImageView
+        android:id="@android:id/text1"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:importantForAccessibility="no" />
+</LinearLayout>
+""",
+    "view_row_plain.xml": """<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout id="@+id/plainContent"
+    layout_width="match_parent"
+    layout_height="wrap_content">
+
+    <ImageView
+        id="@+id/plainIcon"
+        layout_width="24dp"
+        layout_height="24dp"
+        importantForAccessibility="no" />
+</LinearLayout>
+""",
+}
 
 FIXTURE_NODES = oracle.parse_ui_xml(FIXTURE_XML)
 
@@ -394,6 +454,116 @@ class MissingDescImagesTest(unittest.TestCase):
         brand_logo = next(f for f in findings if f["rid"] == "brandLogo")
         self.assertIs(brand_logo.get("naf"), True)
 
+    def test_decorative_rids_are_suppressed_and_non_decorative_stay_flagged(self):
+        # The API 36 blind spot: rowIcon sits in the dump without a desc, but
+        # the app's own layout marks it decorative; sendButton is a genuine
+        # unnamed image and must survive the suppression.
+        nodes = [
+            N(**{"class": "android.widget.ImageView",
+                 "resource-id": "com.nexachat.debug:id/rowIcon"},
+               bounds="[0,0][24,24]"),
+            N(**{"class": "android.widget.ImageView",
+                 "resource-id": "com.nexachat.debug:id/sendButton"},
+               bounds="[0,100][148,148]"),
+        ]
+        findings = oracle.missing_desc_images(nodes, decorative_rids={"rowIcon"})
+        self.assertEqual([f["rid"] for f in findings], ["sendButton"])
+        # Without the static signal the dump-only oracle still flags both.
+        self.assertEqual(sorted(f["rid"] for f in oracle.missing_desc_images(nodes)),
+                         ["rowIcon", "sendButton"])
+
+    def test_none_or_empty_decorative_rids_keep_the_dump_only_behavior(self):
+        for empty in (None, frozenset()):
+            with self.subTest(empty=empty):
+                self.assertEqual(
+                    sorted(f["rid"] for f in oracle.missing_desc_images(
+                        FIXTURE_NODES, decorative_rids=empty)),
+                    ["brandLogo", "passwordToggle"])
+
+    def test_suppression_only_touches_findings_never_named_images(self):
+        nodes = [
+            N(**{"class": "android.widget.ImageView",
+                 "resource-id": "com.nexachat.debug:id/rowIcon",
+                 "content-desc": "Settings"}, bounds="[0,0][24,24]"),
+        ]
+        self.assertEqual(
+            oracle.missing_desc_images(nodes, decorative_rids={"rowIcon"}), [])
+
+
+class DecorativeRidResolutionTest(unittest.TestCase):
+    """The static decorative-rid resolution that unblinds missing_desc_images.
+
+    API 36 uiautomator dumps include views the app marked
+    ``importantForAccessibility='no'`` (the settings rowIcon/rowChevron
+    evidence from the first completed sweep run) but carry no attribute
+    identifying them, so suppression must come from the app's own layout XML
+    and stay auditable.
+    """
+
+    def setUp(self) -> None:
+        # Each test scans its layout dir fresh; the load cache is per path.
+        oracle.load_decorative_rids.cache_clear()
+        self.addCleanup(oracle.load_decorative_rids.cache_clear)
+
+    def _layout_dir(self, files: dict[str, str] | None = None,
+                    broken: bool = False) -> Path:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        base = Path(tmp.name)
+        for name, xml in (files if files is not None else DECORATIVE_LAYOUTS).items():
+            (base / name).write_text(xml, encoding="utf-8")
+        if broken:
+            (base / "broken.xml").write_text("<LinearLayout not-closed",
+                                             encoding="utf-8")
+        return base
+
+    def test_scans_both_decorative_markers_from_the_layout_dir(self):
+        rids = oracle.load_decorative_rids(self._layout_dir())
+        # rowIcon: importantForAccessibility='no'; rowChevron:
+        # contentDescription='@null'; plainIcon: the namespace-less fallback.
+        self.assertEqual(rids, {"rowIcon", "rowChevron", "plainIcon"})
+
+    def test_missing_layout_dir_degrades_to_no_suppression_with_a_warning(self):
+        missing = self._layout_dir(files={}) / "no-such-layout-dir"
+        with self.assertWarns(UserWarning) as caught:
+            rids = oracle.load_decorative_rids(missing)
+        self.assertEqual(rids, frozenset())
+        self.assertIn("decorative suppression is disabled", str(caught.warning))
+
+    def test_unreadable_layout_files_are_skipped_with_a_warning(self):
+        base = self._layout_dir(broken=True)
+        with self.assertWarns(UserWarning):
+            rids = oracle.load_decorative_rids(base)
+        # broken.xml is skipped; the good files still resolve.
+        self.assertEqual(rids, {"rowIcon", "rowChevron", "plainIcon"})
+
+    def test_none_disables_suppression_without_a_warning(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            self.assertEqual(oracle.load_decorative_rids(None), frozenset())
+        self.assertEqual(caught, [])
+
+    def test_the_layout_scan_runs_once_per_path(self):
+        # A sweep calls summarize_findings per (variant, screen) cell; the
+        # scan itself must happen only once per layout dir.
+        base = self._layout_dir()
+        first = oracle.load_decorative_rids(base)
+        second = oracle.load_decorative_rids(base)
+        info = oracle.load_decorative_rids.cache_info()
+        self.assertEqual(first, second)
+        self.assertEqual(info.misses, 1)
+        self.assertEqual(info.hits, 1)
+
+    def test_the_repo_default_marks_the_settings_row_icons_decorative(self):
+        # The exact false positives from the sweep evidence: the checked-out
+        # view_settings_row.xml declares rowIcon/rowChevron decorative.
+        rids = oracle.load_decorative_rids()
+        self.assertIn("rowIcon", rids)
+        self.assertIn("rowChevron", rids)
+        # The fixture's planted defects are decorative nowhere in the repo.
+        self.assertNotIn("brandLogo", rids)
+        self.assertNotIn("passwordToggle", rids)
+
 
 class FocusOrderTest(unittest.TestCase):
     SCREEN = (1080, 2400)
@@ -527,6 +697,76 @@ class SummarizeReportTest(unittest.TestCase):
         self.assertEqual(checks["missing_desc_images"]["count"], 2)
         self.assertEqual(checks["focus_order_issues"]["count"], 2)
         self.assertEqual(checks["focus_order_issues"]["screen"], [1080, 2400])
+        # The repo layouts mark neither fixture image decorative: nothing is
+        # suppressed, and the count still says so explicitly.
+        self.assertEqual(checks["missing_desc_images"]["suppressed_decorative"], 0)
+
+    def _brand_logo_layout_dir(self) -> Path:
+        """A layout dir whose one file declares brandLogo decorative."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        (Path(tmp.name) / "view_brand.xml").write_text(
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<ImageView xmlns:android="http://schemas.android.com/apk/res/android"\n'
+            '    android:id="@+id/brandLogo"\n'
+            '    android:importantForAccessibility="no" />\n',
+            encoding="utf-8")
+        return Path(tmp.name)
+
+    def test_decorative_suppression_is_counted_and_stays_auditable(self):
+        # brandLogo is suppressed via the app's own layout declaration;
+        # passwordToggle is a genuine unnamed ImageButton and stays flagged.
+        report = oracle.summarize_findings(
+            FIXTURE_NODES, screen="auto", layout_dir=self._brand_logo_layout_dir())
+        self.assertFalse(report["ok"])
+        images = report["checks"]["missing_desc_images"]
+        self.assertEqual([f["rid"] for f in images["findings"]], ["passwordToggle"])
+        self.assertEqual(images["count"], 1)
+        self.assertEqual(images["ok"], False)
+        self.assertEqual(images["suppressed_decorative"], 1)
+        # The suppression count must survive the evidence-capture round trip.
+        self.assertEqual(json.loads(json.dumps(report)), report)
+
+    def test_full_suppression_leaves_the_check_ok_with_the_audit_count(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        (Path(tmp.name) / "view_brand.xml").write_text(
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<merge xmlns:android="http://schemas.android.com/apk/res/android">\n'
+            '    <ImageView android:id="@+id/brandLogo"\n'
+            '        android:importantForAccessibility="no" />\n'
+            '    <ImageButton android:id="@+id/passwordToggle"\n'
+            '        android:contentDescription="@null" />\n'
+            '</merge>\n',
+            encoding="utf-8")
+        report = oracle.summarize_findings(
+            FIXTURE_NODES, screen="auto", layout_dir=Path(tmp.name))
+        images = report["checks"]["missing_desc_images"]
+        self.assertEqual(images["count"], 0)
+        self.assertTrue(images["ok"])
+        self.assertEqual(images["suppressed_decorative"], 2)
+        # Suppression never silences the other oracles: the toggle is still an
+        # unlabeled interactive node and a small touch target.
+        self.assertEqual(report["checks"]["unlabeled_interactive"]["count"], 2)
+        self.assertEqual(report["checks"]["small_touch_targets"]["count"], 1)
+
+    def test_layout_dir_none_disables_suppression_without_a_scan(self):
+        with mock.patch.object(oracle, "load_decorative_rids") as load:
+            report = oracle.summarize_findings(
+                FIXTURE_NODES, screen="auto", layout_dir=None)
+        load.assert_not_called()
+        images = report["checks"]["missing_desc_images"]
+        self.assertEqual(images["count"], 2)
+        self.assertEqual(images["suppressed_decorative"], 0)
+
+    def test_a_missing_layout_dir_degrades_to_unsuppressed_findings(self):
+        missing = self._brand_logo_layout_dir() / "no-such-layout-dir"
+        with self.assertWarns(UserWarning):
+            report = oracle.summarize_findings(
+                FIXTURE_NODES, screen="auto", layout_dir=missing)
+        images = report["checks"]["missing_desc_images"]
+        self.assertEqual(images["count"], 2)
+        self.assertEqual(images["suppressed_decorative"], 0)
 
     def test_expected_order_lifts_the_focus_count(self):
         report = oracle.summarize_findings(
@@ -589,6 +829,26 @@ class CliTest(unittest.TestCase):
         focus = json.loads(out)["checks"]["focus_order_issues"]
         self.assertEqual(focus["count"], 3)
         self.assertIn("sendButton", [f.get("rid") for f in focus["findings"]])
+
+    def test_sweep_layout_dir_plumbs_into_decorative_suppression(self):
+        layouts = tempfile.TemporaryDirectory()
+        self.addCleanup(layouts.cleanup)
+        (Path(layouts.name) / "view_brand.xml").write_text(
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<ImageView xmlns:android="http://schemas.android.com/apk/res/android"\n'
+            '    android:id="@+id/brandLogo"\n'
+            '    android:importantForAccessibility="no" />\n',
+            encoding="utf-8")
+        code, out, _ = self._run([
+            "sweep", "--xml", str(self._write(FIXTURE_XML)),
+            "--layout-dir", layouts.name,
+        ])
+        # The fixture keeps its other defects, so the sweep still reports them.
+        self.assertEqual(code, 1)
+        images = json.loads(out)["checks"]["missing_desc_images"]
+        self.assertEqual(images["count"], 1)
+        self.assertEqual(images["suppressed_decorative"], 1)
+        self.assertEqual([f["rid"] for f in images["findings"]], ["passwordToggle"])
 
     def test_sweep_rejects_a_bad_screen_and_missing_dump(self):
         code, _, err = self._run(["sweep", "--xml", str(self._write(FIXTURE_XML)),

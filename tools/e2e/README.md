@@ -239,8 +239,10 @@ response — the rule method is the STOMP command (`CONNECT`, `SEND`,
 `MESSAGE`, ...) and the path is the STOMP destination header, while
 `token_contains` matches the Authorization captured from the tunnelled
 `CONNECT`. HTTP `CONNECT` requests and non-WebSocket upgrades return
-**501**. A held frame does not by itself prove Android's realtime journey.
-Request chunking and `Expect:
+**501**. A held frame does not by itself prove Android's realtime journey;
+the `auth-session-lifecycle` row drives the paused-frame hold through the
+tunnel when it can be established and reports that scenario as unproven
+otherwise. Request chunking and `Expect:
 100-continue` are rejected; upstream chunked responses are decoded and buffered.
 HEAD, duplicate response headers, HTTP error status/body and ordinary binary
 request/response bodies are preserved. Bodies default to at most 32 MiB each;
@@ -323,7 +325,7 @@ the next checkout):
 | `groups-contacts` | runnable | no current board run recorded in this refresh |
 | `summary-ask` | runnable | no current board run recorded in this refresh |
 | `calls-injected-notification` | runnable | no current board run recorded in this refresh |
-| `auth-session-lifecycle` | `BLOCKED_CAPABILITY` | REST token lifecycle and the barrier-tunnel paused-frame A→B isolation run; the register-UI scenario needs the mail sink applied to the shared server and the password-change dialog has no wired UI driver (REST slice in progress) |
+| `auth-session-lifecycle` | `BLOCKED_CAPABILITY` | REST token lifecycle and the barrier-tunnel paused-frame A→B isolation run; the register-UI scenario needs the mail sink applied to the shared server and the password-change dialog has no wired UI driver. Its executor still runs: it proves the REST session ops on disposable accounts (register/login, invalid credentials, refresh rotation with the rotated-away token rejected, logout, logout-all killing a concurrent session, password change with the old password rejected) and returns partial coverage naming the exact undriven scenarios instead of a silent pass |
 | `media` | `BLOCKED_CAPABILITY` | needs the media/picker and byte-hash oracle driver (plan 2.4, in progress) |
 | `calls-signaling` | `BLOCKED_CAPABILITY` | needs a maintained call UI driver; `call_e2e.py` proves signaling only |
 | `room-13-14-upgrade` | `BLOCKED_CAPABILITY` | needs the RC build; `AppDatabase` is version 21 now, so the verified v1.1.0/v1.1.1 fixtures are not a 13→14 migration pair |

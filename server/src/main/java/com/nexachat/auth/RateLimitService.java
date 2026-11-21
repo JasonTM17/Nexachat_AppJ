@@ -152,4 +152,15 @@ public class RateLimitService {
             buckets.clear();
         }
     }
+
+    /**
+     * Drops one subject's bucket so its next charge starts from a full budget
+     * (a successful sign-in resets the account's failure budget). A missing
+     * key is a no-op: nothing was charged, nothing needs refunding.
+     */
+    public void resetBucket(String bucketKey) {
+        synchronized (bucketLock) {
+            buckets.remove(bucketKey);
+        }
+    }
 }

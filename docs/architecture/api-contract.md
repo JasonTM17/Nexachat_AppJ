@@ -122,6 +122,8 @@ Android client can consume the API but no dedicated screen is merged into
 |---|---|---|
 | `nexachat.message.recall-window` | `PT24H` | Author recall window; inclusive boundary; valid `PT1M`–`P7D`; a current group admin bypasses it. |
 | `nexachat.auth.refresh-replay.key` (`NEXACHAT_REFRESH_REPLAY_KEY`) | empty | Optional Base64 encoding of exactly 32 random bytes; enables encrypted response recovery for matching keyed refresh retries during the fixed 30-second window. |
+| `nexachat.auth.sign-in-budget.max-failures` (`NEXACHAT_AUTH_SIGN_IN_BUDGET_MAX_FAILURES`) | `10` | Failed sign-in attempts one account admits per window on `POST /auth/login` before `429 SIGN_IN_LOCKED`; the budget is shared across both identifier paths of the account and resets on a successful sign-in. Values below 1 fail startup. |
+| `nexachat.auth.sign-in-budget.window-seconds` (`NEXACHAT_AUTH_SIGN_IN_BUDGET_WINDOW_SECONDS`) | `900` | Refill window for the per-account budget; after a drain one attempt is re-admitted every `window/max-failures`. |
 | `nexachat.google.signin.enabled` (`NEXACHAT_GOOGLE_SIGNIN_ENABLED`) | `false` | Enables the Google Identity endpoints; every one answers 404 while off. |
 | `nexachat.google.signin.web-client-id` (`NEXACHAT_GOOGLE_WEB_CLIENT_ID`) | empty | Required when the feature is on; the expected `aud` of the ID token and the client ID the Android app passes to Credential Manager. |
 | `nexachat.google.signin.android-client-ids` (`NEXACHAT_GOOGLE_ANDROID_CLIENT_IDS`) | empty | Required when Google sign-in is enabled; comma-separated Android OAuth client IDs trusted as the ID token's `azp`. |
@@ -272,6 +274,7 @@ These keys are Spring properties; override them with the matching
 | `FILE_TOO_LARGE` | 413 | Upload exceeds the configured max size |
 | `PAYLOAD_TOO_LARGE` | 413 | JSON request body exceeds `nexachat.security.max-json-body-bytes` (default 1 MiB) |
 | `RATE_LIMITED` | 429 | Per-user/IP rate limit exceeded |
+| `SIGN_IN_LOCKED` | 429 | The account's shared failed-sign-in budget is exhausted (`details.retryAfterSeconds`, `details.scope=account`); only possible for an account that exists |
 | `E2EE_DEVICE_CONFLICT` | 409 | Device id reused with a different key/owner, or the id was revoked |
 | `E2EE_DEVICE_LIMIT` | 409 | User already has 10 active devices |
 | `E2EE_UNSUPPORTED_CONVERSATION` | 409 | E2EE state read/toggle attempted on a non-DIRECT conversation |
@@ -309,6 +312,12 @@ These keys are Spring properties; override them with the matching
   ceiling; an over-size upload is `413 FILE_TOO_LARGE`.
 - `429 RATE_LIMITED` carries `details.retryAfterSeconds`. Buckets are per user
   when authenticated, otherwise per client IP.
+- `429 SIGN_IN_LOCKED` carries `details.retryAfterSeconds` and
+  `details.scope=account`: the one shared failed-sign-in budget for that
+  account (both identifier paths, any source address) is exhausted. Below the
+  threshold every failed login stays uniform `401 INVALID_CREDENTIALS`; only
+  the exhausted state discloses that the account exists. Both 429 codes mirror
+  `retryAfterSeconds` into the HTTP `Retry-After` header.
 - Unknown paths return `404 NOT_FOUND`; a wrong method on an existing path
   returns `405 METHOD_NOT_ALLOWED`; a bad `Content-Type` returns
   `415 UNSUPPORTED_MEDIA_TYPE`.
@@ -463,7 +472,7 @@ Each item of `attachments` is an `AttachmentResponse` =
 | Method & path | Auth | Request | Success | Errors |
 |---|---|---|---|---|
 | `POST /auth/register` | Public | `{phone, password, displayName}` — password 8+ chars and ≤72 UTF-8 bytes, no NUL; displayName ≤60 | `201` `AuthResponse` | `VALIDATION_FAILED` 400 · `PHONE_EXISTS` 409 · `RATE_LIMITED` 429 |
-| `POST /auth/login` | Public | `{phone, password}` or `{identifier, password}` (`identifier`: a verified email or a phone number) | `200` `AuthResponse` | `VALIDATION_FAILED` 400 · `INVALID_CREDENTIALS` 401 · `RATE_LIMITED` 429 |
+| `POST /auth/login` | Public | `{phone, password}` or `{identifier, password}` (`identifier`: a verified email or a phone number) | `200` `AuthResponse` | `VALIDATION_FAILED` 400 · `INVALID_CREDENTIALS` 401 · `RATE_LIMITED` 429 · `SIGN_IN_LOCKED` 429 (per-account failed-sign-in budget) |
 | `POST /auth/refresh` | Public | `{refreshToken}`; optional canonical UUIDv4 `Idempotency-Key` | `200` `AuthResponse` (new token pair or original response replay) | `VALIDATION_FAILED` 400 · `TOKEN_INVALID` / `TOKEN_EXPIRED` / `TOKEN_REUSED` 401 · `REFRESH_RECOVERY_UNAVAILABLE` 409 · `REFRESH_SERVICE_UNAVAILABLE` 503 · `RATE_LIMITED` 429 |
 | `POST /auth/logout` | Bearer | `{refreshToken}` | `204` empty | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 |
 | `POST /auth/logout-all` | Bearer | — | `204` empty | `UNAUTHORIZED` 401 |

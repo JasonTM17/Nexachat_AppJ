@@ -54,11 +54,11 @@ public class GlobalExceptionHandler {
     /**
      * Mirrors a rate-limit {@code retryAfterSeconds} detail into the standard
      * HTTP {@code Retry-After} header, so a generic client (and any proxy) can
-     * back off without parsing the envelope. Non-rate-limit errors carry no
-     * header.
+     * back off without parsing the envelope. Both 429 codes carry the header;
+     * other errors never do.
      */
     private static Long retryAfterSeconds(ApiException ex) {
-        if (ex.getCode() != ApiErrorCode.RATE_LIMITED) {
+        if (ex.getCode() != ApiErrorCode.RATE_LIMITED && ex.getCode() != ApiErrorCode.SIGN_IN_LOCKED) {
             return null;
         }
         Object value = ex.getDetails().get("retryAfterSeconds");
