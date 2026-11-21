@@ -221,6 +221,89 @@ public final class SyncDrainProbeTest {
                 drain.contains("guardMs="));
     }
 
+    /**
+     * The residual drain-restart interleaving (post-#269): a conversation
+     * removed locally while a page's HTTP fetch is in flight loses its
+     * {@code conversations} row and — via the {@code sync_*_cache_loss}
+     * triggers — its {@code sync_cursors} row. Sources that can land there:
+     * the inbox reconcile prune whose #269 drain-window re-check runs outside
+     * the prune transaction (a drain that opens between the check and the
+     * writer acquisition still gets pruned mid-page), the STOMP self-removal
+     * frame, and a user-initiated leave. The page guard must coalesce the
+     * removed conversation out of the page instead of aborting the whole drain
+     * with {@code CancellationException ... restarts=1}.
+     */
+    @Test public void midPageConversationRemovalIsCoalescedOutOfThePageNotARestart() {
+        seed();
+        removeConversationRowOnDelete();
+        AtomicBoolean windowOpenWhenPruneLanded = new AtomicBoolean();
+        server = request -> {
+            // The prune landed inside the fetch window: the drain window was
+            // already open, exactly the case the outside-the-transaction
+            // re-check cannot atomically prevent.
+            windowOpenWhenPruneLanded.set(engine.drainProbe.isDrainActive());
+            db.runInTransaction(() -> LocalConversationCleaner.deleteInTransaction(db, "c0", "A"));
+            return envelope(List.of(delta("c0", 2, false, message("c0", 2))), 2);
+        };
+
+        engine.sync().onErrorComplete().blockingAwait();
+
+        SyncDrainProbe probe = engine.drainProbe;
+        assertTrue("the prune landed while the drain window was open", windowOpenWhenPruneLanded.get());
+        assertEquals("a mid-page removal is coalesced, not a counted restart", 0, probe.restarts);
+        assertNull("the drain no longer dies with CancellationException", probe.drainErrorClass);
+        assertEquals("the page still committed", 1, probe.pages);
+        assertNull("the removed conversation's cursor is gone", cursors.get("A:c0"));
+        String drain = sink.drainLine();
+        assertTrue(drain.contains("pages=1"));
+        assertTrue(drain.contains("restarts=0"));
+        assertFalse("no error field on the totals line", drain.contains("error="));
+
+        // The next drain completes cleanly and never asks for the removed conversation.
+        server = request -> envelope(List.of(), 3);
+        engine.sync().onErrorComplete().blockingAwait();
+        assertEquals("the follow-up drain is clean", 0, probe.restarts);
+        assertNull(probe.drainErrorClass);
+        assertEquals("no watermark remains, so the follow-up drain fetches no page", 0, probe.pages);
+    }
+
+    @Test public void midPageRemovalLetsTheSurvivingConversationsCommitAndFinishTheDrain() {
+        conversations.add(new ConversationWatermark("c0", 900L));
+        conversations.add(new ConversationWatermark("c1", 900L));
+        cursors.put("A:c0", new SyncCursorEntity("A", "c0", 1, 0,
+                "2026-11-12T00:00:00Z", null, null, false));
+        cursors.put("A:c1", new SyncCursorEntity("A", "c1", 1, 0,
+                "2026-11-12T00:00:00Z", null, null, false));
+        removeConversationRowOnDelete();
+        server = request -> {
+            db.runInTransaction(() -> LocalConversationCleaner.deleteInTransaction(db, "c0", "A"));
+            return envelope(List.of(delta("c0", 2, false, message("c0", 2)),
+                    delta("c1", 2, false, message("c1", 2))), 2);
+        };
+
+        engine.sync().onErrorComplete().blockingAwait();
+
+        SyncDrainProbe probe = engine.drainProbe;
+        assertEquals(0, probe.restarts);
+        assertNull(probe.drainErrorClass);
+        assertEquals(1, probe.pages);
+        assertEquals("the surviving conversation's page committed", 2, cursors.get("A:c1").changeCursor);
+        assertEquals("its row landed", "v2", rows.get("m-c1").getContent());
+        assertNull("the removed conversation left no cursor", cursors.get("A:c0"));
+        assertFalse("the drain finished without pending work", engine.hasPendingContinuation());
+        String drain = sink.drainLine();
+        assertTrue(drain.contains("restarts=0"));
+        assertFalse(drain.contains("error="));
+    }
+
+    /** Makes the fixture's conversation row disappear when the cleaner deletes it. */
+    private void removeConversationRowOnDelete() {
+        doAnswer(i -> {
+            conversations.removeIf(c -> c.getConversationId().equals(i.getArgument(0)));
+            return null;
+        }).when(inbox).deleteByIdInTransaction(anyString());
+    }
+
     @Test public void drainWindowFlagIsOpenOnlyAcrossTheConsumerDrain() {
         seed();
         AtomicBoolean sawOpenWindow = new AtomicBoolean();
