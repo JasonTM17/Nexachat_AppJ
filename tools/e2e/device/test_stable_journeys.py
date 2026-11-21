@@ -6539,6 +6539,18 @@ class AccessibilitySweepExecutorTest(unittest.TestCase):
         for screen in journeys.CRITICAL_SCREENS:
             marker = screen["marker_rid"]
             with self.subTest(screen=screen["screen"]):
+                if marker.startswith("text:"):
+                    # Programmatic screens (the labels dialog) carry no
+                    # resource ids; their marker is localized title text and
+                    # every alternate must be a real string resource.
+                    strings = "\n".join(
+                        path.read_text(encoding="utf-8")
+                        for path in (journeys.ROOT / "android" / "app" / "src" /
+                                     "main" / "res").glob("values*/strings.xml"))
+                    for title in marker[5:].split("|"):
+                        self.assertIn(f">{title}<", strings,
+                                      f"marker title {title!r} is not a string resource")
+                    continue
                 self.assertTrue(
                     f"@+id/{marker}" in xml or marker in framework_ids,
                     f"marker rid {marker!r} does not exist in the layouts")

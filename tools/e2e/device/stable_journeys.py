@@ -1511,6 +1511,15 @@ def _dismiss_occluder(context: dict[str, Any], nodes: list[Any]) -> bool:
     if done is not None:
         context["device"].tap_node(done)
         return True
+    # A pulled-down notification shade / quick-settings panel replaces the
+    # app's whole a11y tree with com.android.systemui nodes, so every app
+    # marker reads absent until the shade is collapsed (attempt: the seeded
+    # sweep group 'never reached the inbox' while the panel was up).
+    if nodes and all(
+            "systemui" in (node.attrs.get("package") or "")
+            for node in nodes):
+        context["device"].key("KEYCODE_BACK")
+        return True
     return False
 
 
@@ -5915,7 +5924,7 @@ CRITICAL_SCREENS: tuple[dict[str, str], ...] = (
     {"screen": "group-chat", "marker_rid": "messageInput"},
     {"screen": "archive", "marker_rid": "archiveTabs"},
     {"screen": "settings", "marker_rid": "profileName"},
-    {"screen": "labels", "marker_rid": "select_dialog_listview"},
+    {"screen": "labels", "marker_rid": "text:Conversation labels|Nhãn trò chuyện"},
     {"screen": "contacts", "marker_rid": "contactList"},
 )
 
@@ -8532,10 +8541,20 @@ def _a11y_sweep_cell(context: dict[str, Any], oracle: Any, density: float,
     name = screen["screen"]
     marker = screen["marker_rid"]
     _a11y_open_screen(context, name, group_title)
-    _wait_ui_node(
-        context,
-        lambda node: _rid_ends(node, marker),
-        f"the {name} screen did not expose {marker}")
+    if marker.startswith("text:"):
+        # The labels dialog is built programmatically and carries no resource
+        # ids at all — a rid marker can never fire, so these screens match on
+        # localized title text instead ("text:EN|VI").
+        texts = tuple(marker[5:].split("|"))
+        _wait_ui_node(
+            context,
+            lambda node: node.text.strip() in texts,
+            f"the {name} screen did not expose {marker}")
+    else:
+        _wait_ui_node(
+            context,
+            lambda node: _rid_ends(node, marker),
+            f"the {name} screen did not expose {marker}")
     nodes = _ui_nodes(context)
     cell: dict[str, Any] = {
         "screen": name, "locale": variant["locale"],
@@ -8620,7 +8639,7 @@ def run_accessibility_sweep(row: JourneyRow, context: dict[str, Any]) -> dict[st
     if not group_id:
         raise EnvironmentFailure("the sweep group create returned no id")
     for conversation_id in (direct_id, group_id):
-        _offline_send_rest(recorder, an["accessToken"], conversation_id, marker_text)
+        _offline_send_rest(recorder, lambda: an["accessToken"], conversation_id, marker_text)
 
     # The activity-scoped ViewModels only fetch once per process lifetime, so
     # the REST-seeded group needs a cold start before it can render.
@@ -8628,14 +8647,26 @@ def run_accessibility_sweep(row: JourneyRow, context: dict[str, Any]) -> dict[st
     adb.command("shell", "am", "start", "-n", f"{PACKAGE}/{MAIN_ACTIVITY}", timeout=30)
     _wait_ui_node(
         context,
-        lambda node: _rid_ends(node, "inboxUserAvatar"),
+        lambda node: (_rid_ends(node, "conversationList")
+                      or _rid_ends(node, "inboxUserAvatar")),
         "the inbox did not reload after the sweep fixture relaunch",
-        timeout=30)
-    _wait_ui_node(
-        context,
-        lambda node: node.text.strip() == group_title,
-        "the seeded sweep group did not reach the inbox",
-        timeout=30)
+        timeout=60)
+    # A just-seeded group can render below the fold on a loaded inbox — use
+    # the scrolling finder instead of a bare text wait (same class of fix as
+    # the below-fold row waits elsewhere).
+    deadline = time.monotonic() + 60
+    while not _inbox_row_found_scrolled(context, group_title):
+        if time.monotonic() >= deadline:
+            raise ProductFailure("the seeded sweep group did not reach the inbox")
+        time.sleep(0.5)
+    # The Binh DM also carries a fresh fixture message; give its row the same
+    # convergence budget so the direct-chat cell never hunts a row whose sync
+    # is still landing after the cold start.
+    deadline = time.monotonic() + 60
+    while not _inbox_row_found_scrolled(context, "Binh"):
+        if time.monotonic() >= deadline:
+            raise ProductFailure("the seeded peer conversation did not reach the inbox")
+        time.sleep(0.5)
 
     density = _a11y_density(adb)
     before = snapshot_settings(adb, patch)
@@ -9307,6 +9338,9 @@ def execute_rows(rows: Iterable[JourneyRow], context: dict[str, Any],
             except Exception as error:
                 status = _status_for_error(error)
                 reason = sanitize_text(str(error))[:1000]
+                if os.environ.get("SJ_DEBUG_TRACEBACK"):
+                    import traceback
+                    traceback.print_exc()
                 if context.get("cleanup_errors"):
                     assertions = {"cleanup_errors": list(context["cleanup_errors"])}
             finally:
@@ -9382,7 +9416,10 @@ def set_accessibility_variant(adb: Adb, variant: dict[str, str]) -> None:
         raise HarnessError("unexpected accessibility locale")
     adb.command("shell", "settings", "put", "system", "font_scale", variant["font_scale"])
     adb.command("shell", "cmd", "uimode", "night", variant["night"])
-    adb.command("shell", "cmd", "locale", "set", variant["locale"])
+    # `cmd locale set` does not exist on this emulator's locale service
+    # (API 36 exposes only `help`); the system_locales setting is the
+    # working per-device locale switch here.
+    adb.command("shell", "settings", "put", "system", "system_locales", variant["locale"])
 
 
 def preflight(base_url: str, apk: Path, adb: Adb, recorder: RecordingClient,
