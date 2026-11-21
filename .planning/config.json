@@ -1,0 +1,16 @@
+{
+  "mode": "yolo",
+  "granularity": "coarse",
+  "parallelization": true,
+  "commit_docs": true,
+  "model_profile": "inherit",
+  "response_language": "vi",
+  "workflow": {
+    "research": true,
+    "plan_check": true,
+    "verifier": true,
+    "code_review": true,
+    "use_worktrees": false,
+    "nyquist_validation": false
+  }
+}
