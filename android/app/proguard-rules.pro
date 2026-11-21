@@ -34,6 +34,7 @@
 -keep class com.nexachat.core.network.DeviceTokenApi$* { *; }
 -keep class com.nexachat.summary.** { *; }
 -keep class com.nexachat.feature.ask.AskRequest { *; }
+-keep class com.nexachat.feature.ask.AskPriorTurn { *; }
 -keep class com.nexachat.feature.ask.AskResponse { *; }
 -keep class com.nexachat.feature.ask.AskCitation { *; }
 -keep class com.nexachat.feature.ask.AskUsage { *; }

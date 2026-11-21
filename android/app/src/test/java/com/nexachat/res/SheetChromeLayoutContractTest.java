@@ -94,7 +94,7 @@ public final class SheetChromeLayoutContractTest {
         assertSheetSurface("layout/bottom_sheet_ask_chat.xml", "askSheetRoot");
         assertSheetSurface("layout/sheet_reminder_editor.xml", null);
         assertSheetSurface("layout/sheet_message_actions.xml", null);
-        assertTonalStrokelessCard("layout/bottom_sheet_ask_chat.xml", "askAnswerCard", false);
+        assertTonalStrokelessCard("layout/item_ask_turn.xml", "askTurnAnswerCard", false);
         assertTonalStrokelessCard("layout/item_archive_row.xml", "archiveRowCard", false);
         assertTonalStrokelessCard("layout/item_archive_media.xml", "archiveMediaCard", false);
     }
