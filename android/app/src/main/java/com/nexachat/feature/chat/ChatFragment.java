@@ -13,7 +13,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.ContactsContract;
 import android.provider.Settings;
+import android.graphics.Rect;
 import android.graphics.Typeface;
+import android.os.Build;
 import android.text.Editable;
 import android.text.Spannable;
 import android.text.TextUtils;
@@ -436,6 +438,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                         .show(getChildFragmentManager(), AttachmentPickerSheet.TAG);
             }
         });
+        binding.composerBar.getRoot().addOnLayoutChangeListener(
+                (v, l, t, r, b, ol, ot, or, ob) -> excludeAttachFromBackGesture());
+        excludeAttachFromBackGesture();
         binding.composerBar.sendButton.setOnClickListener(v -> {
             if (!binding.composerBar.sendButton.isEnabled()) {
                 return;
@@ -486,6 +491,27 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             @Override public void afterTextChanged(Editable s) {}
         });
         configureVoiceRecording();
+    }
+
+    /** Keeps the attach button's touch zone out of the system back gesture. */
+    private void excludeAttachFromBackGesture() {
+        if (binding == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return;
+        }
+        View root = binding.composerBar.getRoot();
+        View attach = binding.composerBar.attachButton;
+        if (root == null || attach == null) {
+            return;
+        }
+        Rect rootRect = new Rect();
+        Rect attachRect = new Rect();
+        root.getGlobalVisibleRect(rootRect);
+        if (!attach.getGlobalVisibleRect(attachRect)) {
+            root.setSystemGestureExclusionRects(Collections.emptyList());
+            return;
+        }
+        attachRect.offset(-rootRect.left, -rootRect.top);
+        root.setSystemGestureExclusionRects(Collections.singletonList(attachRect));
     }
 
     private void configureMentionPicker() {
@@ -1431,7 +1457,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         binding.errorState.setVisibility(ChatEmptyPolicy.showError(hasError, hasMessages)
                 ? View.VISIBLE : View.GONE);
         if (ChatEmptyPolicy.showEmpty(state.isLoading(), hasError, hasMessages)) {
-            binding.emptyState.setMessage(getString(R.string.chat_empty));
+            binding.emptyState.setIcon(R.drawable.ic_empty_chat);
+            binding.emptyState.setTitle(getString(R.string.chat_empty));
+            binding.emptyState.setMessage(getString(R.string.chat_empty_hint));
             binding.emptyState.clearAction();
         }
         if (ChatEmptyPolicy.showError(hasError, hasMessages)) {

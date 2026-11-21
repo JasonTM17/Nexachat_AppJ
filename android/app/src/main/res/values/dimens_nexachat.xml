@@ -57,7 +57,7 @@
     <dimen name="call_end_size">72dp</dimen>
     <dimen name="chip_min_height">32dp</dimen>
     <dimen name="button_min_height">48dp</dimen>
-    <dimen name="fab_clearance">88dp</dimen>
+    <dimen name="fab_clearance">96dp</dimen>
     <dimen name="value_max_width">140dp</dimen>
     <dimen name="dialog_padding">24dp</dimen>
     <dimen name="row_min_height_dialog">52dp</dimen>

@@ -21,114 +21,145 @@
         android:textStyle="bold" />
 
     <LinearLayout
-        android:id="@+id/pickVisualRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="?attr/selectableItemBackground"
-        android:gravity="center_vertical"
-        android:minHeight="@dimen/sheet_action_row_min_height"
         android:orientation="horizontal"
-        android:paddingHorizontal="@dimen/space_md"
-        android:paddingVertical="@dimen/space_inset">
+        android:paddingHorizontal="@dimen/space_sm"
+        android:paddingBottom="@dimen/space_sm">
 
-        <ImageView
-            android:layout_width="@dimen/icon_size"
-            android:layout_height="@dimen/icon_size"
-            android:importantForAccessibility="no"
-            android:src="@drawable/ic_image"
-            app:tint="?attr/colorOnSurfaceVariant" />
-
-        <TextView
+        <LinearLayout
+            android:id="@+id/pickVisualRow"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="@dimen/space_md"
             android:layout_weight="1"
-            android:text="@string/media_pick_visual"
-            android:textAppearance="?attr/textAppearanceBodyLarge"
-            android:textColor="?attr/colorOnSurface" />
-    </LinearLayout>
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_horizontal"
+            android:minHeight="@dimen/list_item_two_line_min_height"
+            android:orientation="vertical"
+            android:padding="@dimen/space_sm">
 
-    <LinearLayout
-        android:id="@+id/pickDocumentRow"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="?attr/selectableItemBackground"
-        android:gravity="center_vertical"
-        android:minHeight="@dimen/sheet_action_row_min_height"
-        android:orientation="horizontal"
-        android:paddingHorizontal="@dimen/space_md"
-        android:paddingVertical="@dimen/space_inset">
+            <ImageView
+                android:layout_width="@dimen/min_touch_target"
+                android:layout_height="@dimen/min_touch_target"
+                android:background="@drawable/bg_quick_action_icon_accent"
+                android:importantForAccessibility="no"
+                android:padding="@dimen/space_sm"
+                android:src="@drawable/ic_image"
+                app:tint="?attr/colorOnPrimaryContainer" />
 
-        <ImageView
-            android:layout_width="@dimen/icon_size"
-            android:layout_height="@dimen/icon_size"
-            android:importantForAccessibility="no"
-            android:src="@drawable/ic_description"
-            app:tint="?attr/colorOnSurfaceVariant" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:gravity="center"
+                android:maxLines="2"
+                android:text="@string/media_pick_visual"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:textColor="?attr/colorOnSurface" />
+        </LinearLayout>
 
-        <TextView
+        <LinearLayout
+            android:id="@+id/pickDocumentRow"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="@dimen/space_md"
             android:layout_weight="1"
-            android:text="@string/media_pick_document"
-            android:textAppearance="?attr/textAppearanceBodyLarge"
-            android:textColor="?attr/colorOnSurface" />
-    </LinearLayout>
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_horizontal"
+            android:minHeight="@dimen/list_item_two_line_min_height"
+            android:orientation="vertical"
+            android:padding="@dimen/space_sm">
 
-    <LinearLayout
-        android:id="@+id/pickLocationRow"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="?attr/selectableItemBackground"
-        android:gravity="center_vertical"
-        android:minHeight="@dimen/sheet_action_row_min_height"
-        android:orientation="horizontal"
-        android:paddingHorizontal="@dimen/space_md"
-        android:paddingVertical="@dimen/space_inset">
+            <ImageView
+                android:layout_width="@dimen/min_touch_target"
+                android:layout_height="@dimen/min_touch_target"
+                android:background="@drawable/bg_quick_action_icon_accent"
+                android:backgroundTint="?attr/colorSecondaryContainer"
+                android:importantForAccessibility="no"
+                android:padding="@dimen/space_sm"
+                android:src="@drawable/ic_description"
+                app:tint="?attr/colorOnSecondaryContainer" />
 
-        <ImageView
-            android:layout_width="@dimen/icon_size"
-            android:layout_height="@dimen/icon_size"
-            android:importantForAccessibility="no"
-            android:src="@drawable/ic_location"
-            app:tint="?attr/colorOnSurfaceVariant" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:gravity="center"
+                android:maxLines="2"
+                android:text="@string/media_pick_document"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:textColor="?attr/colorOnSurface" />
+        </LinearLayout>
 
-        <TextView
+        <LinearLayout
+            android:id="@+id/pickLocationRow"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="@dimen/space_md"
             android:layout_weight="1"
-            android:text="@string/media_pick_location"
-            android:textAppearance="?attr/textAppearanceBodyLarge"
-            android:textColor="?attr/colorOnSurface" />
-    </LinearLayout>
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_horizontal"
+            android:minHeight="@dimen/list_item_two_line_min_height"
+            android:orientation="vertical"
+            android:padding="@dimen/space_sm">
 
-    <LinearLayout
-        android:id="@+id/pickContactRow"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="?attr/selectableItemBackground"
-        android:gravity="center_vertical"
-        android:minHeight="@dimen/sheet_action_row_min_height"
-        android:orientation="horizontal"
-        android:paddingHorizontal="@dimen/space_md"
-        android:paddingVertical="@dimen/space_inset">
+            <ImageView
+                android:layout_width="@dimen/min_touch_target"
+                android:layout_height="@dimen/min_touch_target"
+                android:background="@drawable/bg_quick_action_icon_accent"
+                android:backgroundTint="?attr/colorTertiaryContainer"
+                android:importantForAccessibility="no"
+                android:padding="@dimen/space_sm"
+                android:src="@drawable/ic_location"
+                app:tint="?attr/colorOnTertiaryContainer" />
 
-        <ImageView
-            android:layout_width="@dimen/icon_size"
-            android:layout_height="@dimen/icon_size"
-            android:importantForAccessibility="no"
-            android:src="@drawable/ic_person_outline"
-            app:tint="?attr/colorOnSurfaceVariant" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:gravity="center"
+                android:maxLines="2"
+                android:text="@string/media_pick_location"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:textColor="?attr/colorOnSurface" />
+        </LinearLayout>
 
-        <TextView
+        <LinearLayout
+            android:id="@+id/pickContactRow"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="@dimen/space_md"
             android:layout_weight="1"
-            android:text="@string/media_pick_contact"
-            android:textAppearance="?attr/textAppearanceBodyLarge"
-            android:textColor="?attr/colorOnSurface" />
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_horizontal"
+            android:minHeight="@dimen/list_item_two_line_min_height"
+            android:orientation="vertical"
+            android:padding="@dimen/space_sm">
+
+            <ImageView
+                android:layout_width="@dimen/min_touch_target"
+                android:layout_height="@dimen/min_touch_target"
+                android:background="@drawable/bg_quick_action_icon_accent"
+                android:backgroundTint="?attr/colorSurfaceContainerHighest"
+                android:importantForAccessibility="no"
+                android:padding="@dimen/space_sm"
+                android:src="@drawable/ic_person_outline"
+                app:tint="?attr/colorOnSurface" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:gravity="center"
+                android:maxLines="2"
+                android:text="@string/media_pick_contact"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:textColor="?attr/colorOnSurface" />
+        </LinearLayout>
     </LinearLayout>
 </LinearLayout>

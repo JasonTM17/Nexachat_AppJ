@@ -194,8 +194,13 @@ public final class ChatActionSheetLayoutContractTest {
                 !source.contains("setItems"));
 
         Document sheet = parse("src/main/res/layout/sheet_attachment_picker.xml");
-        assertNotNull(findById(sheet, "pickVisualRow"));
-        assertNotNull(findById(sheet, "pickDocumentRow"));
+        Element visual = findById(sheet, "pickVisualRow");
+        Element document = findById(sheet, "pickDocumentRow");
+        assertNotNull(visual);
+        assertNotNull(document);
+        assertEquals("vertical", visual.getAttributeNS(ANDROID, "orientation"));
+        assertEquals("vertical", document.getAttributeNS(ANDROID, "orientation"));
+        assertEquals("1", visual.getAttributeNS(ANDROID, "layout_weight"));
     }
 
     @Test

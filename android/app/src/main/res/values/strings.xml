@@ -26,6 +26,7 @@
     <string name="error_current_password_required">Enter your current password</string>
     <string name="action_sign_in">Sign in</string>
     <string name="action_create_account">Create account</string>
+    <string name="auth_tagline">Private messages, calls, and groups</string>
 
     <!-- Auth field validation -->
     <string name="error_phone_required">Enter your phone number</string>
@@ -46,6 +47,7 @@
     <!-- Inbox -->
     <string name="inbox_title">Chats</string>
     <string name="inbox_empty">No conversations yet</string>
+    <string name="inbox_empty_hint">Tap New chat to find someone on NexaChat.</string>
     <string name="inbox_empty_unread">No unread chats</string>
     <string name="inbox_empty_groups">No group chats</string>
     <string name="inbox_search_hint">Find people</string>
@@ -90,6 +92,7 @@
     <string name="archive_file_details" translatable="false">%1$s · %2$s</string>
     <string name="archive_clear_filters">Clear</string>
     <string name="archive_empty">Nothing here yet</string>
+    <string name="archive_empty_hint">Photos, files, and links from this chat will show up here.</string>
     <string name="archive_loading">Loading shared items</string>
     <string name="archive_error">Couldn’t load shared items</string>
     <string name="archive_offline">You’re offline. Check your connection and try again.</string>
@@ -114,6 +117,7 @@
     <!-- Contacts & user search -->
     <string name="contacts_title">Contacts</string>
     <string name="contacts_empty">No contacts yet</string>
+    <string name="contacts_empty_hint">Add a person by phone, or search NexaChat.</string>
     <string name="a11y_contacts_section_jump">Jump to %1$s contacts</string>
     <string name="a11y_contacts_section_other">Jump to other contacts</string>
     <string name="search_title">Search</string>
@@ -161,6 +165,7 @@
     <!-- Chat placeholder -->
     <string name="chat_title">Chat</string>
     <string name="chat_empty">No messages yet</string>
+    <string name="chat_empty_hint">Say hello to start the conversation.</string>
     <string name="a11y_open_chat_actions">Message actions</string>
 
     <!-- Chat -->

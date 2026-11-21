@@ -21,7 +21,6 @@
             android:background="?attr/colorSurface"
             app:contentInsetStart="16dp"
             app:contentInsetEnd="8dp"
-            app:layout_scrollFlags="scroll|enterAlways"
             app:title="">
 
             <LinearLayout
@@ -309,9 +308,12 @@
         </LinearLayout>
 
         <FrameLayout
+            android:id="@+id/inboxListViewport"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1">
+            android:layout_weight="1"
+            android:clipToPadding="true"
+            android:paddingBottom="@dimen/fab_clearance">
 
             <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
                 android:id="@+id/swipeRefresh"
@@ -323,7 +325,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:clipToPadding="true"
-                    android:paddingBottom="@dimen/fab_clearance"
+                    android:paddingBottom="0dp"
                     android:paddingHorizontal="0dp"
                     android:paddingTop="0dp"
                     tools:listitem="@layout/item_inbox_conversation" />

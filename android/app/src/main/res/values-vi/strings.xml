@@ -26,6 +26,7 @@
     <string name="error_current_password_required">Nhập mật khẩu hiện tại</string>
     <string name="action_sign_in">Đăng nhập</string>
     <string name="action_create_account">Tạo tài khoản</string>
+    <string name="auth_tagline">Tin nhắn, gọi điện và nhóm — riêng tư</string>
 
     <!-- Auth field validation -->
     <string name="error_phone_required">Nhập số điện thoại</string>
@@ -46,6 +47,7 @@
     <!-- Inbox -->
     <string name="inbox_title">Tin nhắn</string>
     <string name="inbox_empty">Chưa có cuộc trò chuyện nào</string>
+    <string name="inbox_empty_hint">Nhấn Tin nhắn mới để tìm người trên NexaChat.</string>
     <string name="inbox_empty_unread">Không có tin chưa đọc</string>
     <string name="inbox_empty_groups">Chưa có nhóm nào</string>
     <string name="inbox_search_hint">Tìm người</string>
@@ -90,6 +92,7 @@
     <string name="archive_file_details" translatable="false">%1$s · %2$s</string>
     <string name="archive_clear_filters">Xóa lọc</string>
     <string name="archive_empty">Chưa có nội dung nào</string>
+    <string name="archive_empty_hint">Ảnh, tệp và liên kết trong cuộc trò chuyện này sẽ hiện ở đây.</string>
     <string name="archive_loading">Đang tải nội dung…</string>
     <string name="archive_error">Không tải được nội dung. Hãy thử lại.</string>
     <string name="archive_offline">Không có kết nối mạng. Hãy kiểm tra mạng và thử lại.</string>
@@ -114,6 +117,7 @@
     <!-- Contacts & user search -->
     <string name="contacts_title">Danh bạ</string>
     <string name="contacts_empty">Chưa có liên hệ nào</string>
+    <string name="contacts_empty_hint">Thêm người theo số điện thoại, hoặc tìm trên NexaChat.</string>
     <string name="a11y_contacts_section_jump">Chuyển đến liên hệ %1$s</string>
     <string name="a11y_contacts_section_other">Chuyển đến liên hệ khác</string>
     <string name="search_title">Tìm người</string>
@@ -159,6 +163,7 @@
     <!-- Chat placeholder -->
     <string name="chat_title">Trò chuyện</string>
     <string name="chat_empty">Chưa có tin nhắn</string>
+    <string name="chat_empty_hint">Hãy chào để bắt đầu cuộc trò chuyện.</string>
     <string name="a11y_open_chat_actions">Tùy chọn tin nhắn</string>
 
     <!-- Chat -->

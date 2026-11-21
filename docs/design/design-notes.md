@@ -64,7 +64,7 @@ Corner scale (`dimens_nexachat.xml`): `corner_xs` `2dp`, `corner_sm` `4dp`, `cor
 | Message rows | `feature/chat/adapter/MessageBubbleBinder.java`, `res/layout/item_message_*.xml` | Sender/date/system-aware grouping, 78% maximum row width, RTL-aware bubble tails, embedded reply quotes, media timestamp scrims, reactions, clickable links (`ACTION_VIEW`, strictly http/https via `LinkUtils`), inline receipts. |
 | `SectionHeaderView` | `com/nexachat/core/ui/components/SectionHeaderView.java` | All-caps bold sub-headers for grouped lists (Profile, Settings, Members). |
 | `SettingsRowView` | `com/nexachat/core/ui/components/SettingsRowView.java` | Interactive preference row with leading icon, chevron/value trailing affordance, destructive styling mode, >= 48dp touch target. |
-| `EmptyStateView` | `com/nexachat/core/ui/components/EmptyStateView.java` | Calm centered empty state supporting vector illustrations (`ic_empty_chat.xml`), single concise helper line. |
+| `EmptyStateView` | `com/nexachat/core/ui/components/EmptyStateView.java` | Calm centered empty state supporting vector illustrations (`ic_empty_chat.xml`), optional title plus a concise helper line. |
 | `LoadingStateView` / `ErrorStateView` | `com/nexachat/core/ui/components/LoadingStateView.java`, `ErrorStateView.java` | Reusable loading and error placeholders for feature screens and sheets. |
 | `LinkUtils` | `com/nexachat/core/ui/components/LinkUtils.java` | Safe URI parsing using `java.net.URI`, strictly allowing `http`/`https` protocols while rejecting `file`, `javascript`, and `intent`. |
 
@@ -157,7 +157,7 @@ The refreshed chat screen uses the v2 semantic roles and the bundled Inter type 
 
 The shipped Android palette is the v2 semantic system in `android/app/src/main/res/values/colors_nexachat.xml` and `values-night/colors_nexachat.xml`. Night mode is a color overlay on `Theme.NexaChat.Views`; there is no separate night theme, type, or shape file. Historical Midnight Obsidian / Electric Violet hex values are not the current palette.
 
-Inbox keeps its filter chips, the active-now strip, and the new-chat action. There is no four-tab bottom navigation bar. Directory search stays “Find people” / “Tìm người”. In-chat search, conversation info, and summary are overflow actions on the chat toolbar. The chat header avatar is 36dp and hides at font scale 1.5 or when the window is narrower than 360dp.
+Inbox keeps its filter chips, the active-now strip, and the new-chat action. There is no four-tab bottom navigation bar. Directory search stays “Find people” / “Tìm người”. In-chat search, conversation info, and summary are overflow actions on the chat toolbar. The chat header avatar is 36dp and hides only at font scale 1.5. On widths under 360dp the inbox brand bar stays pinned, filter chips wrap, and video call moves into the chat overflow.
 
 Copy, Share, and Regenerate on the summary sheet sit in a footer outside the scrolling body. Settings rows and group member names grow with large type. The add-member sheet adds `max(IME, system bars)` once on top of its base padding.
 

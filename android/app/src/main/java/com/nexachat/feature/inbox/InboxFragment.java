@@ -181,7 +181,8 @@ public final class InboxFragment extends Fragment {
                 viewModel.refresh();
             }
         });
-        binding.emptyState.setMessage(getString(R.string.inbox_empty));
+        binding.emptyState.setTitle(getString(R.string.inbox_empty));
+        binding.emptyState.setMessage(getString(R.string.inbox_empty_hint));
         binding.emptyState.setIcon(R.drawable.ic_empty_chat);
         viewModel.getUiState()
                 .observe(getViewLifecycleOwner(), this::render);
@@ -501,12 +502,16 @@ public final class InboxFragment extends Fragment {
                 ConversationLabel selected = lastLabelState.getLabels().stream()
                         .filter(label -> label.getId().equals(lastLabelState.getSelectedFilterId()))
                         .findFirst().orElse(null);
-                binding.emptyState.setMessage(selected == null
+                binding.emptyState.setTitle(selected == null
                         ? getString(R.string.label_empty_manage)
                         : getString(R.string.label_empty_filter, selected.getName()));
+                binding.emptyState.setMessage("");
                 binding.emptyState.clearAction();
             } else {
-                binding.emptyState.setMessage(getString(emptyMessageFor(state.getSelectedFilter())));
+                binding.emptyState.setTitle(getString(emptyMessageFor(state.getSelectedFilter())));
+                binding.emptyState.setMessage(state.getSelectedFilter() == InboxFilter.ALL
+                        ? getString(R.string.inbox_empty_hint)
+                        : "");
                 if (state.getSelectedFilter() == InboxFilter.ALL) {
                     binding.emptyState.setAction(
                             R.string.inbox_new_chat,

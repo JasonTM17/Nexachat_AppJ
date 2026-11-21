@@ -74,7 +74,8 @@ public final class ArchiveFragment extends Fragment {
         binding.archiveToolbar.setNavigationOnClickListener(
                 ignored -> NavHostFragment.findNavController(this).navigateUp());
         binding.archiveEmpty.setIcon(R.drawable.ic_image);
-        binding.archiveEmpty.setMessage(getString(R.string.archive_empty));
+        binding.archiveEmpty.setTitle(getString(R.string.archive_empty));
+        binding.archiveEmpty.setMessage(getString(R.string.archive_empty_hint));
         configureTabs();
         configureAdapters();
         configureFilters();

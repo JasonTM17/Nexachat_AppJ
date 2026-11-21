@@ -170,6 +170,7 @@ public final class SharedStateViewsLayoutContractTest {
     public void viewClassesInflateTheirTemplates() throws Exception {
         assertInflates("LoadingStateView.java", "R.layout.view_loading_state", "R.id.loadingLabel");
         assertInflates("EmptyStateView.java", "R.layout.view_empty_state", "R.id.emptyMessage");
+        assertInflates("EmptyStateView.java", "R.layout.view_empty_state", "R.id.emptyTitle");
         assertInflates("ErrorStateView.java", "R.layout.view_error_state", "R.id.errorMessage");
     }
 

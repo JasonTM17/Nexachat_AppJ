@@ -127,7 +127,8 @@ public final class ContactsFragment extends Fragment {
         binding.createGroupEntry.setOnClickListener(
                 v -> NavHostFragment.findNavController(this).navigate(R.id.groupCreateFragment));
         binding.errorState.setOnRetry(viewModel::loadContacts);
-        binding.emptyState.setMessage(getString(R.string.contacts_empty));
+        binding.emptyState.setTitle(getString(R.string.contacts_empty));
+        binding.emptyState.setMessage(getString(R.string.contacts_empty_hint));
         binding.emptyState.setIcon(R.drawable.ic_person_outline);
         viewModel.getUiState()
                 .observe(getViewLifecycleOwner(), this::render);
