@@ -55,10 +55,11 @@ public class RagQuestionCache {
     public Optional<CachedAsk> findExact(UUID conversationId, String model, String questionHash) {
         List<CachedAsk> entries = jdbcTemplate.query(
                 """
-                SELECT payload_json::text AS payload_json, cited_message_ids, cited_content_hash,
-                       language, created_at, expires_at
-                FROM rag_ask_cache
-                WHERE conversation_id = ? AND model = ? AND question_hash = ? AND expires_at > ?
+                SELECT a.payload_json::text AS payload_json, a.cited_message_ids, a.cited_content_hash,
+                       a.language, a.created_at, a.expires_at, a.context_version
+                FROM rag_ask_cache a JOIN conversations c ON c.id = a.conversation_id
+                WHERE a.conversation_id = ? AND a.model = ? AND a.question_hash = ? AND a.expires_at > ?
+                  AND a.context_version = c.ai_context_version
                 """,
                 statement -> {
                     statement.setObject(1, conversationId);
@@ -73,11 +74,12 @@ public class RagQuestionCache {
     public List<CachedQuestion> findCandidates(UUID conversationId, String model) {
         return jdbcTemplate.query(
                 """
-                SELECT payload_json::text AS payload_json, cited_message_ids, cited_content_hash,
-                       language, question_vector, question_hash, created_at, expires_at
-                FROM rag_ask_cache
-                WHERE conversation_id = ? AND model = ? AND expires_at > ?
-                ORDER BY created_at DESC
+                SELECT a.payload_json::text AS payload_json, a.cited_message_ids, a.cited_content_hash,
+                       a.language, a.question_vector, a.question_hash, a.created_at, a.expires_at, a.context_version
+                FROM rag_ask_cache a JOIN conversations c ON c.id = a.conversation_id
+                WHERE a.conversation_id = ? AND a.model = ? AND a.expires_at > ?
+                  AND a.context_version = c.ai_context_version
+                ORDER BY a.created_at DESC
                 LIMIT ?
                 """,
                 statement -> {
@@ -95,11 +97,34 @@ public class RagQuestionCache {
     }
 
     public long contentVersion(UUID conversationId) {
-        Long version = jdbcTemplate.queryForObject(
-                "SELECT COALESCE(MAX(seq), 0) FROM messages WHERE conversation_id = ? AND type = 'TEXT'",
-                Long.class,
-                conversationId);
-        return version == null ? 0 : version;
+        return contextSnapshot(conversationId).revision();
+    }
+
+    /** One SQL snapshot binds mutations and time-based expiry before any provider work. */
+    public ContextSnapshot contextSnapshot(UUID conversationId) {
+        List<ContextSnapshot> snapshots = jdbcTemplate.query("""
+                SELECT c.ai_context_version, (
+                    SELECT MIN(m.expires_at) FROM messages m
+                    WHERE m.conversation_id = c.id AND m.type = 'TEXT'
+                      AND m.deleted_at IS NULL AND m.encryption IS NULL
+                      AND m.content IS NOT NULL AND btrim(m.content) <> ''
+                      AND m.expires_at > now()
+                      AND NOT EXISTS (SELECT 1 FROM conversation_ai_opt_outs o
+                          WHERE o.conversation_id = m.conversation_id AND o.user_id = m.sender_id)
+                ) AS context_expiry
+                FROM conversations c WHERE c.id = ?
+                """, (rs, rowNum) -> {
+            Timestamp expiry = rs.getTimestamp("context_expiry");
+            return new ContextSnapshot(rs.getLong("ai_context_version"),
+                    expiry == null ? null : expiry.toInstant());
+        }, conversationId);
+        return snapshots.stream().findFirst().orElse(new ContextSnapshot(-1, null));
+    }
+
+    public boolean contextUnchanged(UUID conversationId, ContextSnapshot expected) {
+        return expected != null && expected.revision() >= 0
+                && (expected.expiresAt() == null || clock.instant().isBefore(expected.expiresAt()))
+                && expected.equals(contextSnapshot(conversationId));
     }
 
     @Transactional
@@ -111,7 +136,7 @@ public class RagQuestionCache {
             String questionHash,
             float[] questionVector,
             CachedAsk ask) {
-        if (!expectedConsent.consented()) {
+        if (!expectedConsent.consented() || ask.expectedContentVersion() < 0) {
             return false;
         }
         List<SummaryConsentRepository.ConsentSnapshot> consentSnapshots = jdbcTemplate.query(
@@ -127,14 +152,28 @@ public class RagQuestionCache {
         if (consentSnapshots.isEmpty() || !expectedConsent.equals(consentSnapshots.getFirst())) {
             return false;
         }
+        // Source transactions hold the parent row before their cache-invalidation advisory lock.
+        // Take the locks in that same order so a cache fill cannot deadlock with an edit.
+        List<Long> versions = jdbcTemplate.query(
+                "SELECT ai_context_version FROM conversations WHERE id = ? FOR SHARE",
+                (rs, rowNum) -> rs.getLong(1), conversationId);
+        if (versions.isEmpty() || versions.getFirst() != ask.expectedContentVersion()) {
+            return false;
+        }
         lockConversation(conversationId);
-        if (contentVersion(conversationId) != ask.expectedContentVersion()) {
+        if (!contextUnchanged(conversationId,
+                new ContextSnapshot(ask.expectedContentVersion(), ask.expectedContextExpiry()))
+                || !citationsValid(ask.citedIds(), ask.citedHash())) {
             return false;
         }
 
         Instant createdAt = clock.instant();
         Instant expiresAt = createdAt.plusSeconds(
                 Math.max(1, properties.getAsk().getCacheTtlHours()) * 3600L);
+        if (ask.expectedContextExpiry() != null && ask.expectedContextExpiry().isBefore(expiresAt)) {
+            expiresAt = ask.expectedContextExpiry();
+        }
+        Instant cacheExpiry = expiresAt;
         String payload;
         try {
             payload = objectMapper.writeValueAsString(new CachedAskPayload(
@@ -146,8 +185,8 @@ public class RagQuestionCache {
                 """
                 INSERT INTO rag_ask_cache
                     (conversation_id, model, question_hash, question_vector, language,
-                     payload_json, cited_message_ids, cited_content_hash, created_at, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?)
+                     payload_json, cited_message_ids, cited_content_hash, created_at, expires_at, context_version)
+                VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?)
                 ON CONFLICT (conversation_id, model, question_hash) DO UPDATE SET
                     question_vector = EXCLUDED.question_vector,
                     language = EXCLUDED.language,
@@ -155,7 +194,8 @@ public class RagQuestionCache {
                     cited_message_ids = EXCLUDED.cited_message_ids,
                     cited_content_hash = EXCLUDED.cited_content_hash,
                     created_at = EXCLUDED.created_at,
-                    expires_at = EXCLUDED.expires_at
+                    expires_at = EXCLUDED.expires_at,
+                    context_version = EXCLUDED.context_version
                 """,
                 statement -> {
                     statement.setObject(1, conversationId);
@@ -168,7 +208,8 @@ public class RagQuestionCache {
                             "uuid", ask.citedIds().toArray(UUID[]::new)));
                     statement.setString(8, ask.citedHash());
                     statement.setObject(9, OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC));
-                    statement.setObject(10, OffsetDateTime.ofInstant(expiresAt, ZoneOffset.UTC));
+                    statement.setObject(10, OffsetDateTime.ofInstant(cacheExpiry, ZoneOffset.UTC));
+                    statement.setLong(11, ask.expectedContentVersion());
                 });
         return true;
     }
@@ -226,14 +267,15 @@ public class RagQuestionCache {
                 citedIds = uuids;
             }
         }
-        Timestamp createdAt = rs.getTimestamp("created_at");
         return new CachedAsk(
                 payload.answer(),
                 payload.citations(),
                 payload.mode(),
                 List.of(citedIds),
                 rs.getString("cited_content_hash"),
-                SummaryLanguage.valueOf(rs.getString("language")));
+                SummaryLanguage.valueOf(rs.getString("language")),
+                rs.getLong("context_version"),
+                null);
     }
 
     public record CachedAsk(
@@ -243,7 +285,13 @@ public class RagQuestionCache {
             List<UUID> citedIds,
             String citedHash,
             SummaryLanguage language,
-            long expectedContentVersion) {
+            long expectedContentVersion,
+            Instant expectedContextExpiry) {
+
+        public CachedAsk(String answer, List<RagCitation> citations, String mode, List<UUID> citedIds,
+                         String citedHash, SummaryLanguage language, long expectedContentVersion) {
+            this(answer, citations, mode, citedIds, citedHash, language, expectedContentVersion, null);
+        }
 
         public CachedAsk(
                 String answer,
@@ -262,6 +310,9 @@ public class RagQuestionCache {
     }
 
     public record CachedQuestion(CachedAsk ask, float[] vector, String questionHash) {
+    }
+
+    public record ContextSnapshot(long revision, Instant expiresAt) {
     }
 
     public record CachedAskPayload(String answer, List<RagCitation> citations, String mode) {
