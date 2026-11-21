@@ -427,6 +427,13 @@
 
     <string name="ask_action">Hỏi trong trò chuyện</string>
     <string name="ask_title">Hỏi trong trò chuyện</string>
+    <string name="ask_empty_helper">Hỏi về cuộc trò chuyện này. Câu trả lời sẽ dẫn nguồn từ tin nhắn.</string>
+    <string name="ask_suggestions_label">Gợi ý câu hỏi</string>
+    <string name="ask_suggestion_decide">Chúng ta đã quyết định gì?</string>
+    <string name="ask_suggestion_when">Việc này diễn ra khi nào?</string>
+    <string name="ask_suggestion_who">Ai đang tham gia?</string>
+    <string name="ask_suggestion_next">Bước tiếp theo là gì?</string>
+    <string name="ask_follow_up_hint">Hỏi thêm</string>
     <string name="ask_question_hint">Câu hỏi</string>
     <string name="ask_send">Hỏi</string>
     <string name="ask_cancel">Hủy</string>

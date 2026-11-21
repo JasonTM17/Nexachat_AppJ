@@ -168,7 +168,7 @@ class RagBenchmarkEvaluationTest {
         when(consentRepository.isConsented(any())).thenReturn(true);
         when(consentRepository.snapshot(any())).thenReturn(new ConsentSnapshot(true, 1));
         when(questionCache.citationsValid(any(), any())).thenReturn(true);
-        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
             List<RagContextItem> context = invocation.getArgument(4);
             if (context.isEmpty()) {
                 return null;

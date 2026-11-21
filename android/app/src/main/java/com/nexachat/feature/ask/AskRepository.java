@@ -35,7 +35,8 @@ public final class AskRepository {
 
         final Call<AskResponse> call;
         try {
-            call = api.ask(conversationId, new AskRequest(question, request.getLanguage()));
+            call = api.ask(conversationId, new AskRequest(
+                    question, request.getLanguage(), request.getPriorTurns()));
         } catch (RuntimeException failure) {
             callback.onError(AskErrorMapper.fromFailure(failure));
             return RequestHandle.empty();

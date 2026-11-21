@@ -1,6 +1,7 @@
 package com.nexachat.feature.ask;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.SavedStateHandle;
@@ -8,15 +9,18 @@ import androidx.lifecycle.ViewModel;
 import com.nexachat.core.network.SessionEvents;
 import dagger.hilt.android.lifecycle.HiltViewModel;
 import io.reactivex.rxjava3.disposables.Disposable;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Executor;
 import javax.inject.Inject;
 import javax.inject.Named;
 
-/** Keeps the question draft and transient response in memory across sheet rotation. */
+/** Keeps the question draft, sheet thread, and transient response across rotation. */
 @HiltViewModel
 public final class AskViewModel extends ViewModel {
     public static final String ARG_CONVERSATION_ID = "conversationId";
+    static final int MAX_PRIOR_TURNS = 3;
 
     private final SavedStateHandle savedStateHandle;
     private final AskRepository repository;
@@ -65,13 +69,20 @@ public final class AskViewModel extends ViewModel {
             requestGeneration++;
             cancelActiveRequest();
         }
-        state.setValue(AskUiState.idle(draft));
+        publishTurns(false);
+    }
+
+    public void submitSuggestion(@NonNull String suggestion) {
+        updateDraft(Objects.requireNonNull(suggestion, "suggestion"));
+        submit();
     }
 
     public void submit() {
         String question = draft.trim();
         if (question.isEmpty() || question.length() > 500) {
-            state.setValue(AskUiState.error(draft, AskError.VALIDATION));
+            state.setValue(AskUiState.fromTurns(
+                    draft, AskUiState.append(currentTurns(), AskTurn.error(question, AskError.VALIDATION)),
+                    false));
             return;
         }
         pendingConsentQuestion = null;
@@ -79,6 +90,14 @@ public final class AskViewModel extends ViewModel {
     }
 
     public void retry() {
+        AskTurn last = lastTurn();
+        if (last != null && (last.getStatus() == AskTurn.Status.ERROR
+                || last.getStatus() == AskTurn.Status.RATE_LIMITED
+                || last.getStatus() == AskTurn.Status.CONSENT_REQUIRED)) {
+            draft = last.getQuestion();
+            startRequest(last.getQuestion(), false);
+            return;
+        }
         submit();
     }
 
@@ -86,7 +105,7 @@ public final class AskViewModel extends ViewModel {
         requestGeneration++;
         cancelActiveRequest();
         pendingConsentQuestion = null;
-        state.setValue(AskUiState.idle(draft));
+        publishTurns(false);
     }
 
     public void retryAfterConsentOnce() {
@@ -102,12 +121,15 @@ public final class AskViewModel extends ViewModel {
 
     public void declineConsent() {
         pendingConsentQuestion = null;
-        state.setValue(AskUiState.error(draft, AskError.CONSENT_REQUIRED));
+        publishTurns(false);
     }
 
     public void consentUpdateFailed() {
         pendingConsentQuestion = null;
-        state.setValue(AskUiState.error(draft, AskError.UNKNOWN));
+        List<AskTurn> turns = dropLastConsentTurn(currentTurns());
+        state.setValue(AskUiState.fromTurns(
+                draft, AskUiState.append(turns, AskTurn.error(lastQuestion(), AskError.UNKNOWN)),
+                false));
     }
 
     /** Clears all transient ask data when the sheet is closed. */
@@ -134,30 +156,38 @@ public final class AskViewModel extends ViewModel {
         long token = requestGeneration;
         cancelActiveRequest();
         consentRetryUsed = afterConsent;
-        state.setValue(AskUiState.loading(draft));
+        List<AskTurn> turns = turnsForNewRequest(question);
+        state.setValue(AskUiState.loading(draft, turns));
 
         String conversationId = savedStateHandle.get(ARG_CONVERSATION_ID);
         if (conversationId == null || conversationId.trim().isEmpty()) {
-            state.setValue(AskUiState.error(draft, AskError.CHAT_UNAVAILABLE));
+            state.setValue(AskUiState.fromTurns(
+                    draft, AskUiState.append(turns, AskTurn.error(question, AskError.CHAT_UNAVAILABLE)),
+                    false));
             return;
         }
 
         AskRepository.Cancellable request = repository.ask(
                 conversationId,
-                new AskRequest(question, "AUTO"),
+                new AskRequest(question, "AUTO", priorTurns(turns)),
                 new AskRepository.ResultCallback() {
                     @Override
                     public void onSuccess(@NonNull AskResponse response) {
                         publish(token, () -> {
                             activeRequest = null;
                             String answer = response.getAnswer();
+                            AskTurn turn;
+                            String nextDraft = draft;
                             if ("NOT_FOUND".equals(response.getMode())
                                     || answer == null || answer.trim().isEmpty()) {
-                                state.setValue(AskUiState.notFound(
-                                        draft, response.isContextOmitted()));
+                                turn = AskTurn.notFound(question, response.isContextOmitted());
                             } else {
-                                state.setValue(AskUiState.answer(draft, response));
+                                turn = AskTurn.answer(question, response);
+                                draft = "";
+                                nextDraft = "";
                             }
+                            state.setValue(AskUiState.fromTurns(
+                                    nextDraft, AskUiState.append(turns, turn), false));
                         });
                     }
 
@@ -165,16 +195,18 @@ public final class AskViewModel extends ViewModel {
                     public void onError(@NonNull AskErrorMapping mapping) {
                         publish(token, () -> {
                             activeRequest = null;
+                            AskTurn turn;
                             if (mapping.getError() == AskError.CONSENT_REQUIRED
                                     && !consentRetryUsed) {
                                 pendingConsentQuestion = question;
-                                state.setValue(AskUiState.consentRequired(draft));
+                                turn = AskTurn.consentRequired(question);
                             } else if (mapping.getError() == AskError.RATE_LIMITED) {
-                                state.setValue(AskUiState.rateLimited(
-                                        draft, mapping.getRetryAfterSeconds()));
+                                turn = AskTurn.rateLimited(question, mapping.getRetryAfterSeconds());
                             } else {
-                                state.setValue(AskUiState.error(draft, mapping.getError()));
+                                turn = AskTurn.error(question, mapping.getError());
                             }
+                            state.setValue(AskUiState.fromTurns(
+                                    draft, AskUiState.append(turns, turn), false));
                         });
                     }
                 });
@@ -193,6 +225,68 @@ public final class AskViewModel extends ViewModel {
                 update.run();
             }
         });
+    }
+
+    private void publishTurns(boolean loading) {
+        state.setValue(AskUiState.fromTurns(draft, currentTurns(), loading));
+    }
+
+    private List<AskTurn> currentTurns() {
+        AskUiState current = state.getValue();
+        return current == null ? List.of() : current.getTurns();
+    }
+
+    private List<AskTurn> turnsForNewRequest(String question) {
+        List<AskTurn> turns = currentTurns();
+        if (turns.isEmpty()) {
+            return turns;
+        }
+        AskTurn last = turns.get(turns.size() - 1);
+        if (last.getQuestion().equals(question) && last.getStatus() != AskTurn.Status.ANSWER) {
+            return new ArrayList<>(turns.subList(0, turns.size() - 1));
+        }
+        return turns;
+    }
+
+    @Nullable
+    private AskTurn lastTurn() {
+        List<AskTurn> turns = currentTurns();
+        return turns.isEmpty() ? null : turns.get(turns.size() - 1);
+    }
+
+    private String lastQuestion() {
+        AskTurn last = lastTurn();
+        return last == null ? draft.trim() : last.getQuestion();
+    }
+
+    private static List<AskTurn> dropLastConsentTurn(List<AskTurn> turns) {
+        if (turns.isEmpty()) {
+            return turns;
+        }
+        AskTurn last = turns.get(turns.size() - 1);
+        if (last.getStatus() != AskTurn.Status.CONSENT_REQUIRED) {
+            return turns;
+        }
+        return new ArrayList<>(turns.subList(0, turns.size() - 1));
+    }
+
+    static List<AskPriorTurn> priorTurns(List<AskTurn> turns) {
+        List<AskPriorTurn> prior = new ArrayList<>();
+        if (turns == null) {
+            return prior;
+        }
+        for (int index = turns.size() - 1; index >= 0 && prior.size() < MAX_PRIOR_TURNS; index--) {
+            AskTurn turn = turns.get(index);
+            if (turn.getStatus() != AskTurn.Status.ANSWER || turn.getResponse() == null) {
+                continue;
+            }
+            String answer = turn.getResponse().getAnswer();
+            if (answer == null || answer.isBlank()) {
+                continue;
+            }
+            prior.add(0, new AskPriorTurn(turn.getQuestion(), answer));
+        }
+        return prior;
     }
 
     private void clearForLogout() {

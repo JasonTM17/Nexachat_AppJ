@@ -76,6 +76,17 @@ public class RagLlmAnswerService {
             SummaryLanguage language,
             List<RagContextItem> context,
             Map<UUID, RagMessage> contextMessages) {
+        return answer(userId, conversationId, question, language, context, contextMessages, List.of());
+    }
+
+    public RagLlmAnswer answer(
+            UUID userId,
+            UUID conversationId,
+            String question,
+            SummaryLanguage language,
+            List<RagContextItem> context,
+            Map<UUID, RagMessage> contextMessages,
+            List<AskPriorTurn> priorTurns) {
         if (!consentRepository.isConsented(userId)) {
             return null;
         }
@@ -102,7 +113,7 @@ public class RagLlmAnswerService {
             return null;
         }
 
-        RagPrompt prompt = promptBuilder.build(question, language, externalContext);
+        RagPrompt prompt = promptBuilder.build(question, language, externalContext, priorTurns);
         boolean primaryAttempted = false;
         boolean breakerRecorded = false;
         try {

@@ -17,6 +17,9 @@ four modes:
 
 The route is `POST /api/v1/conversations/{id}/ask`; see
 [`docs/architecture/api-contract.md`](api-contract.md) for the wire format.
+The Android Ask sheet keeps an in-memory follow-up thread and may send up to
+three `priorTurns`. Older servers ignore the unknown field; current servers
+use it only in the LLM prompt and the question-cache key.
 
 ## Retrieval pipeline
 

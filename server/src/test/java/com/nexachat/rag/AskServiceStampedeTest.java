@@ -213,7 +213,7 @@ class AskServiceStampedeTest {
         CountDownLatch firstProviderEntered = new CountDownLatch(1);
         CountDownLatch secondProviderEntered = new CountDownLatch(1);
         CountDownLatch releaseProvider = new CountDownLatch(1);
-        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
             int call = answerProviderCalls.incrementAndGet();
             (call == 1 ? firstProviderEntered : secondProviderEntered).countDown();
             if (!releaseProvider.await(WAIT_SECONDS, TimeUnit.SECONDS)) {
@@ -281,7 +281,7 @@ class AskServiceStampedeTest {
     }
 
     private void answerWith(CountDownLatch releaseProvider, CountDownLatch providerEntrances) {
-        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
             answerProviderCalls.incrementAndGet();
             if (providerEntrances != null) {
                 providerEntrances.countDown();

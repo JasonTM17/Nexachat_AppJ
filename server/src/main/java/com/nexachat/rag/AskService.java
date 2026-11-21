@@ -141,15 +141,16 @@ public class AskService {
         }
 
         String question = request.question().strip();
+        List<AskPriorTurn> priorTurns = request.priorTurns();
         SummaryLanguage language = request.language() == null || request.language() == SummaryLanguage.AUTO
                 ? detectQuestionLanguage(question)
                 : request.language();
-        String questionHash = RagHashes.questionHash(RagQuestionNormalizer.normalize(question));
+        String questionHash = RagHashes.questionHash(hashInput(question, priorTurns));
 
         AskKey key = new AskKey(conversationId, userId, questionHash, language, consentSnapshot);
         AskResponse response = computeOnce(key, () -> compute(
                 conversationId, userId, question, language, questionHash, consentSnapshot, contextOmitted,
-                admittedFrom));
+                admittedFrom, priorTurns));
         return new AskExecution(consentSnapshot, response);
     }
 
@@ -202,7 +203,8 @@ public class AskService {
             String questionHash,
             SummaryConsentRepository.ConsentSnapshot consentSnapshot,
             boolean contextOmitted,
-            java.time.Instant admittedFrom) {
+            java.time.Instant admittedFrom,
+            List<AskPriorTurn> priorTurns) {
         boolean consented = consentSnapshot.consented();
         // Cached answers are shared per conversation and may cite or paraphrase content from
         // before this member's admission, so a late or returning member always recomputes.
@@ -221,13 +223,17 @@ public class AskService {
             }
 
             double semanticThreshold = properties.getRetrieval().getSemanticCacheThreshold();
-            for (RagQuestionCache.CachedQuestion candidate : questionCache.findCandidates(
-                    conversationId, questionEmbedding.model())) {
-                if (VectorCodec.cosine(questionEmbedding.vector(), candidate.vector()) >= semanticThreshold
-                        && candidate.ask().language() == language
-                        && questionCache.citationsValid(candidate.ask().citedIds(), candidate.ask().citedHash())) {
-                    stats.recordCacheHit();
-                    return cachedResponse(candidate.ask(), contextOmitted);
+            // Follow-up questions like "what about Tuesday?" must not replay an
+            // unrelated cached answer for a similar current-question embedding.
+            if (priorTurns.isEmpty()) {
+                for (RagQuestionCache.CachedQuestion candidate : questionCache.findCandidates(
+                        conversationId, questionEmbedding.model())) {
+                    if (VectorCodec.cosine(questionEmbedding.vector(), candidate.vector()) >= semanticThreshold
+                            && candidate.ask().language() == language
+                            && questionCache.citationsValid(candidate.ask().citedIds(), candidate.ask().citedHash())) {
+                        stats.recordCacheHit();
+                        return cachedResponse(candidate.ask(), contextOmitted);
+                    }
                 }
             }
         }
@@ -249,7 +255,8 @@ public class AskService {
 
         if (consented) {
             RagLlmAnswer llmAnswer = llmAnswerService.answer(
-                    userId, conversationId, question, language, retrieval.context(), retrieval.messages());
+                    userId, conversationId, question, language, retrieval.context(), retrieval.messages(),
+                    priorTurns);
             if (llmAnswer != null) {
                 RagQuestionCache.CachedAsk answer = toCachedAsk(
                         llmAnswer, retrieval.messages(), AskMode.LLM, language, contentVersion);
@@ -401,6 +408,15 @@ public class AskService {
             return text;
         }
         return text.substring(0, text.offsetByCodePoints(0, maxCodePoints));
+    }
+
+    static String hashInput(String question, List<AskPriorTurn> priorTurns) {
+        String normalized = RagQuestionNormalizer.normalize(question);
+        String fingerprint = AskPriorTurns.fingerprint(priorTurns);
+        if (fingerprint.isEmpty()) {
+            return normalized;
+        }
+        return normalized + "\nprior:" + fingerprint;
     }
 
     private record AskKey(

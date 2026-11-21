@@ -59,4 +59,23 @@ class RagPromptBuilderTest {
 
         assertThat(prompt.messageIdsByIndex()).containsEntry(1, List.of(first, second));
     }
+
+    @Test
+    void priorTurnsAreRedactedInsideUntrustedJson() throws Exception {
+        RagContextItem item = new RagContextItem(1, List.of(UUID.randomUUID()), 1, "U1",
+                "Meet at the office");
+
+        RagPrompt prompt = builder.build(
+                "What about my phone?",
+                SummaryLanguage.EN,
+                List.of(item),
+                List.of(new AskPriorTurn("Call me at +84912345678", "Use +84912345678")));
+
+        JsonNode data = new ObjectMapper().readTree(prompt.userMessage());
+        JsonNode prior = data.path("priorTurns").get(0);
+        assertThat(prior.path("question").asText()).contains("[REDACTED_PHONE]");
+        assertThat(prior.path("answer").asText()).contains("[REDACTED_PHONE]");
+        assertThat(prompt.userMessage()).doesNotContain("+84912345678");
+        assertThat(prompt.systemMessage()).contains("priorTurns");
+    }
 }

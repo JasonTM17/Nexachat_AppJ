@@ -83,6 +83,7 @@
             android:orientation="horizontal">
             <ImageButton android:id="@+id/callButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_call" android:src="@drawable/ic_call" android:background="?attr/selectableItemBackground" app:tint="?attr/colorPrimary"/>
             <ImageButton android:id="@+id/videoCallButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/cd_video_call" android:src="@drawable/ic_videocam" android:background="?attr/selectableItemBackground" app:tint="?attr/colorPrimary"/>
+            <ImageButton android:id="@+id/askButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/ask_action" android:src="@drawable/ic_ask" android:background="?attr/selectableItemBackground" android:visibility="gone" app:tint="?attr/colorPrimary"/>
             <ImageButton android:id="@+id/moreButton" android:layout_width="@dimen/min_touch_target" android:layout_height="@dimen/min_touch_target" android:contentDescription="@string/a11y_open_chat_actions" android:src="@drawable/ic_more_vert" android:background="?attr/selectableItemBackground" app:tint="?attr/colorOnSurfaceVariant"/>
         </LinearLayout>
     </HorizontalScrollView>

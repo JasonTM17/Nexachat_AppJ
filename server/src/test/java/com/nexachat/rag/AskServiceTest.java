@@ -90,7 +90,7 @@ class AskServiceTest {
         assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
         assertThat(response.answer()).isNull();
         assertThat(response.usage().llmCalls()).isZero();
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any());
+        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -104,7 +104,7 @@ class AskServiceTest {
         assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
         assertThat(response.citations()).extracting(RagCitation::messageId).contains(fact.id());
         assertThat(response.usage().llmCalls()).isZero();
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any());
+        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -113,7 +113,7 @@ class AskServiceTest {
         RagMessage fact = addMessage(conversationId, senderId, 1,
                 "The server migration is scheduled for March 14 at 02:00.");
         setConsent(true);
-        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any()))
+        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new RagLlmAnswer("The migration is on March 14.", List.of(fact.id())));
 
         AskResponse response = service.ask(conversationId, userId,
@@ -123,7 +123,7 @@ class AskServiceTest {
         assertThat(response.answer()).contains("March 14");
         assertThat(response.usage().llmCalls()).isEqualTo(1);
         assertThat(response.usage().inputChars()).isPositive();
-        verify(llmAnswerService).answer(eq(userId), eq(conversationId), any(), any(), any(), any());
+        verify(llmAnswerService).answer(eq(userId), eq(conversationId), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -135,7 +135,7 @@ class AskServiceTest {
                 new AskRequest("Summarize everything we decided about the migration plan?", SummaryLanguage.EN));
 
         assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any());
+        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -174,7 +174,7 @@ class AskServiceTest {
         assertThat(response.mode()).isEqualTo(AskMode.CACHE);
         assertThat(response.usage().cached()).isTrue();
         assertThat(response.usage().llmCalls()).isZero();
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any());
+        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -195,7 +195,7 @@ class AskServiceTest {
         assertThat(response.answer()).doesNotContain("Provider answer");
         verify(questionCache, never()).findExact(any(), any(), any());
         verify(questionCache, never()).findCandidates(any(), any());
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any());
+        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -252,6 +252,34 @@ class AskServiceTest {
         assertThat(response.citations()).extracting(RagCitation::messageId).doesNotContain(secret.id());
         assertThat(response.citations()).extracting(RagCitation::messageId).contains(ship.id());
         assertThat(response.answer()).doesNotContain("alpha-bravo");
+    }
+
+    @Test
+    void priorTurnsSkipSemanticCacheAndChangeTheQuestionHash() {
+        String question = "What about Tuesday?";
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "The server migration is scheduled for March 14 at 02:00.");
+        RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(
+                "Unrelated cached answer about Tuesday lunch.",
+                List.of(new RagCitation(fact.id(), 1, fact.content())),
+                "LLM", List.of(fact.id()), "hash", SummaryLanguage.EN);
+        setConsent(true);
+        RagEmbeddingService.EmbeddingOutcome embedding = embeddings.embedQuestion(question, false);
+        when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.empty());
+        when(questionCache.findCandidates(any(), any())).thenReturn(List.of(
+                new RagQuestionCache.CachedQuestion(cached, embedding.vector(), "other-question")));
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest(question, SummaryLanguage.EN,
+                        List.of(new AskPriorTurn("When is the migration?", "March 14."))));
+
+        assertThat(response.mode()).isNotEqualTo(AskMode.CACHE);
+        verify(questionCache, never()).findCandidates(any(), any());
+        String withPrior = AskService.hashInput(question,
+                List.of(new AskPriorTurn("When is the migration?", "March 14.")));
+        String withoutPrior = AskService.hashInput(question, List.of());
+        assertThat(withPrior).isNotEqualTo(withoutPrior);
+        verify(questionCache).findExact(any(), any(), eq(RagHashes.questionHash(withPrior)));
     }
 
     private RagMessage addMessage(UUID conversationId, UUID senderId, long seq, String content) {

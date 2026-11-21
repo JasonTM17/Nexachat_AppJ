@@ -30,6 +30,15 @@ public final class AskRepositoryTest {
         repository.ask("conversation-1", new AskRequest("When is it?", "AUTO"),
                 callback(new AtomicReference<>(), new AtomicReference<>()));
         assertEquals("A second ask creates a fresh call", 2, api.calls.size());
+
+        repository.ask("conversation-1",
+                new AskRequest("Who owns it?", "AUTO",
+                        java.util.List.of(new AskPriorTurn("When is it?", "Friday."))),
+                callback(new AtomicReference<>(), new AtomicReference<>()));
+        assertEquals("Who owns it?", api.request.getQuestion());
+        assertEquals(1, api.request.getPriorTurns().size());
+        assertEquals("When is it?", api.request.getPriorTurns().get(0).getQuestion());
+        assertEquals("Friday.", api.request.getPriorTurns().get(0).getAnswer());
     }
 
     @Test

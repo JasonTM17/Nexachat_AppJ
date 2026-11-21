@@ -1420,11 +1420,22 @@ and Android Ask screen are available.
 Request:
 
 ```json
-{ "question": "When is the server migration?", "language": "AUTO" }
+{
+  "question": "When is the server migration?",
+  "language": "AUTO",
+  "priorTurns": [
+    { "question": "What did we decide?", "answer": "Ship on Friday." }
+  ]
+}
 ```
 
 `question` is trimmed, 1–500 characters; `language` is `AUTO|VI|EN`
-(default `AUTO`, detected from the question).
+(default `AUTO`, detected from the question). `priorTurns` is optional, at most
+3 `{question, answer}` pairs from this sheet; missing or empty is a first-shot
+ask. Retrieval still uses the current question. The LLM prompt may include the
+redacted prior turns only to resolve follow-up references. Semantic cache
+replay is skipped when `priorTurns` is present so a vague follow-up cannot
+reuse an unrelated cached answer.
 
 Response `200`:
 

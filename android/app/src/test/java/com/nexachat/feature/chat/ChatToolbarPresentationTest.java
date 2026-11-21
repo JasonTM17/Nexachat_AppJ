@@ -14,6 +14,8 @@ public final class ChatToolbarPresentationTest {
         assertFalse(ChatFragment.ChatToolbarPolicy.infoAvailable(false));
         assertTrue(ChatFragment.ChatToolbarPolicy.searchAvailable());
         assertTrue(ChatFragment.ChatToolbarPolicy.summaryAvailable());
+        assertTrue(ChatFragment.ChatToolbarPolicy.askAvailable(false));
+        assertFalse(ChatFragment.ChatToolbarPolicy.askAvailable(true));
     }
 
     @Test

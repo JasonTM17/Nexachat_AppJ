@@ -357,6 +357,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                 binding.chatToolbarActions);
         binding.callButton.setOnClickListener(v -> startVoiceCall());
         binding.videoCallButton.setOnClickListener(v -> startVideoCall());
+        binding.askButton.setOnClickListener(v -> showAsk());
         binding.moreButton.setOnClickListener(v -> showMoreOptions());
         binding.unblockPeerButton.setOnClickListener(v -> viewModel.unblockPeer());
         binding.closeChatSearch.setOnClickListener(v -> setSearchOpen(false));
@@ -1372,6 +1373,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         binding.callButton.setVisibility(calls ? View.VISIBLE : View.GONE);
         binding.videoCallButton.setVisibility(
                 calls && !compactActions ? View.VISIBLE : View.GONE);
+        binding.askButton.setVisibility(
+                ChatToolbarPolicy.askAvailable(state.isE2eeEnabled()) ? View.VISIBLE : View.GONE);
         applyLargeTypeToolbar();
         renderConversationState();
         binding.chatError.setVisibility(state.getError() == null ? View.GONE : View.VISIBLE);
@@ -2851,6 +2854,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
 
         static boolean summaryAvailable() {
             return true;
+        }
+
+        /** Ask stays on the bar so it is not buried in overflow. Hidden only for E2EE. */
+        static boolean askAvailable(boolean e2ee) {
+            return !e2ee;
         }
 
         /** Hide the header avatar only when large type would collide with the title. */

@@ -430,6 +430,13 @@
 
     <string name="ask_action">Ask this chat</string>
     <string name="ask_title">Ask this chat</string>
+    <string name="ask_empty_helper">Ask about this chat. Answers cite the messages they came from.</string>
+    <string name="ask_suggestions_label">Try asking</string>
+    <string name="ask_suggestion_decide">What did we decide?</string>
+    <string name="ask_suggestion_when">When is this happening?</string>
+    <string name="ask_suggestion_who">Who is involved?</string>
+    <string name="ask_suggestion_next">What is the next step?</string>
+    <string name="ask_follow_up_hint">Ask a follow-up</string>
     <string name="ask_question_hint">Question</string>
     <string name="ask_send">Ask</string>
     <string name="ask_cancel">Cancel</string>
