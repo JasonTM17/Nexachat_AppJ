@@ -49,15 +49,26 @@ public class AvatarView extends FrameLayout {
         initialsView.setEllipsize(TextUtils.TruncateAt.END);
         initialsView.setTypeface(Typeface.DEFAULT_BOLD);
         initialsView.setIncludeFontPadding(false);
+        // Decoration: the avatar container's own content description carries
+        // the accessible name, so the raw initial would only be announced twice.
+        initialsView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         addView(initialsView, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
         imageView = new ImageView(context);
         imageView.setScaleType(ImageView.ScaleType.CENTER_CROP);
         imageView.setVisibility(GONE);
+        // Decoration for a11y services: the container's description is the
+        // announcement. Flat uiautomator dumps still surface this view (API 36
+        // keeps importantForAccessibility="no" nodes in the dump and carries no
+        // marker for them), so setName() keeps its description in sync to keep
+        // the sweep oracle reading a label, never an unnamed image (#254).
+        imageView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         addView(imageView, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
         statusDotView = new View(context);
         statusDotView.setVisibility(GONE);
+        // The presence dot is color-only; the surrounding text carries the state.
+        statusDotView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         int dotPx = dpToPx(AvatarPresenceDotRules.MIN_DOT_DP);
         LayoutParams dotLp = new LayoutParams(dotPx, dotPx, Gravity.BOTTOM | Gravity.END);
         addView(statusDotView, dotLp);
@@ -66,6 +77,7 @@ public class AvatarView extends FrameLayout {
     public void setName(String name) {
         displayName = name == null ? "" : name;
         setContentDescription(displayName);
+        imageView.setContentDescription(displayName);
         applyColors();
         initialsView.setText(MessageUiRules.extractInitials(displayName));
         if (getWidth() > 0 && getHeight() > 0) {
