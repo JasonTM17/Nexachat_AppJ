@@ -16,10 +16,12 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -193,22 +195,27 @@ class AccessTokenRevocationIT extends SecurityITBase {
      * logout-all and the immediate re-login land in the same wall-clock
      * second, so the re-login's naive {@code iat} equals the cutoff and the
      * new token is rejected for its whole TTL. The mint must move past the
-     * cutoff instead, while pre-revocation tokens (the test above) still die.
+     * cutoff instead, while pre-revocation tokens (the test above) still
+     * die. The cutoff is stamped two seconds in the future so a naive
+     * {@code iat = now} mint lands inside the rejection window on every
+     * run — not only when the stack happens to hit the same second.
      */
     @Test
     void loginRightAfterLogoutAllInTheSameSecondMintsAWorkingAccessToken() throws Exception {
         String phone = ItPhoneRanges.phoneFor(AccessTokenRevocationIT.class, "+84905551207");
         Registered user = register(phone);
-        Instant registerSecond = jwtService.parseAccessTokenClaims(user.accessToken()).issuedAt();
-        // Pin the logout-all and the re-login inside the register second, so
-        // the cutoff is stamped at exactly the second a naive mint would use.
-        cutoffClock.set(registerSecond);
-
         postJson("/api/v1/auth/logout-all", Map.of(), user.accessToken())
                 .andExpect(status().isNoContent());
-        Registered relogin = login(phone);
-        cutoffClock.useSystemTime();
 
+        Instant cutoff = Instant.now().plusSeconds(2).truncatedTo(ChronoUnit.SECONDS);
+        jdbcTemplate.update("UPDATE users SET tokens_valid_after = ? WHERE id = ?",
+                Timestamp.from(cutoff), user.userId());
+        validityCache.evict(user.userId());
+
+        Registered relogin = login(phone);
+        Instant mintedAt = jwtService.parseAccessTokenClaims(relogin.accessToken()).issuedAt();
+        assertTrue(mintedAt.isAfter(cutoff),
+                "re-login token must be minted past the cutoff, got iat=" + mintedAt);
         getWithAuth("/api/v1/users/me", relogin.accessToken())
                 .andExpect(status().isOk());
     }

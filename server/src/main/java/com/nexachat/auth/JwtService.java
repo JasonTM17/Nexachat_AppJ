@@ -6,6 +6,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
@@ -42,6 +43,18 @@ public class JwtService {
     private final long accessTtlSeconds;
     private final Clock clock;
 
+    /**
+     * Access tokens are minted on the real wall clock — never the shared
+     * Spring {@code Clock} bean, which tests freeze to pin unrelated
+     * rate-limit windows; a token minted under a frozen clock would be
+     * born already expired.
+     */
+    @Autowired
+    public JwtService(JwtProperties properties) {
+        this(properties, Clock.systemUTC());
+    }
+
+    /** Pinned-clock seam for tests that must control the mint instant. */
     public JwtService(JwtProperties properties, Clock clock) {
         byte[] secretBytes = properties.secret() == null
                 ? new byte[0]

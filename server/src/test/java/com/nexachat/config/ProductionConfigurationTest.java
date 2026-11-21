@@ -17,7 +17,6 @@ import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.env.SystemEnvironmentPropertySource;
 
 import java.io.IOException;
-import java.time.Clock;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -209,7 +208,7 @@ class ProductionConfigurationTest {
 
         @Bean
         JwtService jwtService(JwtProperties properties) {
-            return new JwtService(properties, Clock.systemUTC());
+            return new JwtService(properties);
         }
     }
 }
