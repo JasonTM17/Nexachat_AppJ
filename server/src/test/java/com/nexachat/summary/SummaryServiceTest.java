@@ -294,6 +294,47 @@ class SummaryServiceTest {
     }
 
     @Test
+    void consentMovementDuringOwnCacheInsertSuppressesTheExternalResponse() {
+        assertOwnSaveConsentMovementSuppressed(false);
+    }
+
+    @Test
+    void consentMovementDuringRefreshReplaceSuppressesTheExternalResponse() {
+        assertOwnSaveConsentMovementSuppressed(true);
+    }
+
+    private void assertOwnSaveConsentMovementSuppressed(boolean refresh) {
+        SummaryRequest request = request(refresh);
+        PreparedSummaryProvider prepared = new PreparedSummaryProvider(new StubProvider("LLM"), "LLM", null);
+        SummaryGeneration generated = generation("LLM", "External own output", null);
+        SummaryCacheEntry entry = cacheEntry(generated, "LLM");
+        AtomicReference<SummaryConsentRepository.ConsentSnapshot> consent = new AtomicReference<>(
+                new SummaryConsentRepository.ConsentSnapshot(true, 0L));
+        when(windowService.load(conversationId, userId, request))
+                .thenReturn(new SummaryReadContext(window, true, 0L, null));
+        when(providerSelector.prepare(eq(true), any(), anyBoolean())).thenReturn(prepared);
+        when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenReturn(generated);
+        when(consentRepository.lockForResponse(userId)).thenAnswer(invocation -> consent.get());
+        if (refresh) {
+            when(cacheRepository.replace(any(), any(), any(), anyString(), eq("LLM"), any(), eq(generated)))
+                    .thenAnswer(invocation -> {
+                        consent.set(new SummaryConsentRepository.ConsentSnapshot(false, 1L));
+                        return entry;
+                    });
+        } else {
+            when(cacheRepository.saveIfAbsent(any(), any(), any(), anyString(), eq("LLM"), any(), eq(generated)))
+                    .thenAnswer(invocation -> {
+                        consent.set(new SummaryConsentRepository.ConsentSnapshot(false, 1L));
+                        return new SummaryCacheRepository.SavedSummary(entry, true);
+                    });
+        }
+
+        assertThatThrownBy(() -> service.summarize(conversationId, userId, request))
+                .isInstanceOfSatisfying(ApiException.class,
+                        ex -> assertThat(ex.getCode()).isEqualTo(ApiErrorCode.AI_CONSENT_REQUIRED));
+    }
+
+    @Test
     void consentRevokedDuringGenerationSuppressesTheResponseAndSkipsTheCacheWrite() {
         SummaryRequest request = request(false);
         PreparedSummaryProvider prepared = new PreparedSummaryProvider(new StubProvider("LLM"), "LLM", null);
