@@ -138,9 +138,10 @@ lines; the server does not log the device label) or `E2E_PUSH_LOG_FILE` for
 the offline self-test. With
 neither set, that scenario is `NOT_RUN` and does not fail the process.
 
-There is no account-delete or conversation-delete endpoint, so the throwaway
-accounts, their DIRECT conversation and the test GROUP conversations remain in
-the database; all mutable state is reverted. Run it against a disposable local
+The suite does not drive the account-deletion flow (`DELETE /users/me`,
+`POST /account-deletion/request` + `/confirm`), so the throwaway accounts,
+their DIRECT conversation and the test GROUP conversations remain in the
+database; all mutable state is reverted. Run it against a disposable local
 database.
 
 ## Final-pass scenarios
@@ -177,7 +178,9 @@ python tools/e2e/final/final_live.py --phase retention-observe --expect deleted 
 `response_barrier.py` is a standard-library HTTP reverse proxy for the
 `auth-session-lifecycle` paused-response account-switch scenario. It forwards
 the request immediately, buffers the complete upstream response, then holds
-**all response headers and body** until release. A `/held` entry therefore
+**all response headers and body** until release. WebSocket upgrades are
+tunnelled so a STOMP frame can be held with the same rules (see Limits).
+A `/held` entry therefore
 means the upstream has completed; switch the client to account B before
 releasing account A's response. This utility alone does not prove Android's
 account isolation; the app journey must assert that separately.
@@ -230,10 +233,14 @@ completion across independent client sockets. A reset does not cancel requests
 or undo upstream writes. Install rules before triggering account A's request.
 
 Limits: REST over **plain HTTP only** on both legs, with no TLS termination,
-HTTPS upstream or CONNECT tunneling. WebSocket upgrades return **501** with a
-REST-only explanation and a warning; the proxy **does not carry STOMP**, whose
-URL is also derived from Android's API base URL. Use it for isolated REST race
-testing, not a complete realtime journey. Request chunking and `Expect:
+HTTPS upstream or CONNECT tunneling. WebSocket upgrades are tunnelled frame
+by frame: a STOMP frame can be held or delayed with the same rules as a REST
+response — the rule method is the STOMP command (`CONNECT`, `SEND`,
+`MESSAGE`, ...) and the path is the STOMP destination header, while
+`token_contains` matches the Authorization captured from the tunnelled
+`CONNECT`. HTTP `CONNECT` requests and non-WebSocket upgrades return
+**501**. A held frame does not by itself prove Android's realtime journey.
+Request chunking and `Expect:
 100-continue` are rejected; upstream chunked responses are decoded and buffered.
 HEAD, duplicate response headers, HTTP error status/body and ordinary binary
 request/response bodies are preserved. Bodies default to at most 32 MiB each;
@@ -285,7 +292,9 @@ ordered last and is limited to a disposable account.
 Runnable rows are `auth-login`, `chat-send-receive`, `chat-interactions`,
 `calls-injected-notification`, `injected-notifications`, `summary-ask`,
 `archive-preferences`, `groups-contacts`, `labels-lifecycle`,
-`polls-reminders`, and `accessibility-sweep`. The two push rows call
+`polls-reminders`, `offline-sync`, `accessibility-sweep`, and — provisioned
+by `--dstack` — the mail rows `otp-forgot-password` and `account-deletion`
+(always last; disposable account only). The two push rows call
 `device/inject_push.py` rather than assembling a broadcast. The
 `accessibility-sweep` row walks the `CRITICAL_SCREENS` inventory (inbox,
 direct chat, group chat, archive, settings, labels, contacts) under every
@@ -293,11 +302,38 @@ EN/VI x light/dark x 100%/200% variant, runs the `device/a11y_oracle.py`
 checks on each dumped UI tree (a screenshot-only cell is never a pass;
 cells whose oracle cannot run report BLOCKED_CAPABILITY), and restores
 locale, night mode, font scale, TalkBack and animator state in `finally`.
-`auth-session-lifecycle`, `otp-forgot-password`, `media`, both upgrade
-rows, and `account-deletion` stay
-`BLOCKED_CAPABILITY`; `--list` names the remaining gap (server restart and OTP
-expiry, in-app deletion, the missing Room 14 build, and STOMP through the
-REST-only barrier).
+
+Status of the `emulator-5554` board (refreshed 2026-11-21 from the recorded
+journey evidence; each status is a fact about that run, not a promise about
+the next checkout):
+
+| Row | Status | Note |
+| --- | --- | --- |
+| `auth-login` | `PASS` | seeded sign-in reaches the inbox |
+| `chat-send-receive` | `PASS` | device send renders; peer REST/STOMP agree |
+| `chat-interactions` | `PASS` | react, reply, edit, recall, forward and receipt on device + peer |
+| `offline-sync` | `PASS` | full journey: offline queue, force-stop survival, exactly-once flush, >100-conversation paged inbox, multi-batch `POST /api/v1/sync`, ABA re-login |
+| `injected-notifications` | `PASS` | `NEW_MESSAGE`/`REMINDER` shade posts without leaking payload bodies |
+| `archive-preferences` | `PASS` | tabs, paging and filters; caller-only flag privacy |
+| `labels-lifecycle` | `PASS` | create/assign/filter/delete with one dialog surface across rotation and stop-start |
+| `account-deletion` | wired (`--dstack`) | mail/REST deletion plus the in-app UI slice when the disposable stack owns the app's compile-time port (run alone, shared server stopped); otherwise the REST/OTP deletion plus the explicit gap — never a silent pass |
+| `accessibility-sweep` | no clean pass yet | first campaign invalidated by three harness bugs; fixes sit on `fix/a11y-sweep-tok-callable` pending merge, recapture in progress |
+| `polls-reminders` | runnable | `reminder_clock` failures classify via typed errors (#248); no clean board pass recorded in this refresh |
+| `otp-forgot-password` | runnable (`--dstack`) | no current board run recorded in this refresh |
+| `groups-contacts` | runnable | no current board run recorded in this refresh |
+| `summary-ask` | runnable | no current board run recorded in this refresh |
+| `calls-injected-notification` | runnable | no current board run recorded in this refresh |
+| `auth-session-lifecycle` | `BLOCKED_CAPABILITY` | REST token lifecycle and the barrier-tunnel paused-frame A→B isolation run; the register-UI scenario needs the mail sink applied to the shared server and the password-change dialog has no wired UI driver (REST slice in progress) |
+| `media` | `BLOCKED_CAPABILITY` | needs the media/picker and byte-hash oracle driver (plan 2.4, in progress) |
+| `calls-signaling` | `BLOCKED_CAPABILITY` | needs a maintained call UI driver; `call_e2e.py` proves signaling only |
+| `room-13-14-upgrade` | `BLOCKED_CAPABILITY` | needs the RC build; `AppDatabase` is version 21 now, so the verified v1.1.0/v1.1.1 fixtures are not a 13→14 migration pair |
+| `v111-rc-upgrade` | `BLOCKED_CAPABILITY` | needs the v1.2 RC build (`com.nexachat.debug` cannot replace the release package in place) |
+
+`--list` prints the static disposition per row — `Runnable with existing
+helpers`, or the exact gap for `media`, `calls-signaling`, both upgrade rows
+and `account-deletion` (whose mail/REST flow still executes under `--dstack`).
+Rows whose gap is a missing runtime driver, such as `auth-session-lifecycle`,
+report the exact undriven scenario at run time instead.
 
 With `--dstack` the mail rows provision a disposable backend via
 `disposable_stack.py`: `otp-forgot-password` then runs the full

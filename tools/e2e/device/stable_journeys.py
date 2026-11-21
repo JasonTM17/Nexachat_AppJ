@@ -207,8 +207,13 @@ ROWS: tuple[JourneyRow, ...] = (
         cleanup=("Delete only messages/attachments created by this row when the API permits it"),
         rest_plan=(("POST", "/api/v1/attachments"), ("GET", "/api/v1/attachments/{id}/content"),
                    ("GET", "/api/v1/files/{key}")),
-        capability_gap=("No reusable picker/media fixture driver or byte-hash oracle is available in adb_ui; "
-                        "the row also includes hardware recording/playback, which an emulator cannot prove."),
+        capability_gap=("the pick completes in system picker UI (DocumentsUI/PhotoPicker) "
+                        "uiautomator cannot drive reliably, so the in-app pick-to-upload "
+                        "pipeline and 'no stuck upload state' stay unproven; voice "
+                        "recording/playback needs hardware audio an emulator cannot prove. "
+                        "The upload slice itself (device push, attach-sheet delegation, "
+                        "byte-hash/range/403 oracle) is proven by media_driver + media_oracle "
+                        "through the app's documented REST path"),
     ),
     JourneyRow(
         id="groups-contacts",
@@ -822,6 +827,23 @@ HELPER_CALLS = {
         {"helper": "inject_push.main", "kind": "reminder", "serial": SERIAL},
         {"helper": "adb", "args": ["shell", "dumpsys", "notification", "--noredact"]},
     ),
+    "media": (
+        {"helper": "media_driver.push_fixture",
+         "target": "adb push deterministic png/pdf fixtures to /sdcard/Download",
+         "assert": "on-device sha256sum equals the fixture digest (pull fallback)"},
+        {"helper": "adb_ui.Device.tap_node",
+         "target": "resource-id attachButton -> pickVisualRow/pickDocumentRow",
+         "assert": "the app's attach sheet opens; dumpsys shows the system "
+                   "PhotoPicker/DocumentsUI resumed; the pick itself stays unproven"},
+        {"helper": "media_driver.verify_upload_slice",
+         "target": "POST /api/v1/attachments multipart + messages{attachmentIds}",
+         "actor": "An (owner), Binh (member), Chi (non-member)",
+         "assert": "owner+member receive SHA-256-equal bytes; Range is 206 with "
+                   "exact slices; non-member GET is 403 NOT_MEMBER"},
+        {"helper": "none (BLOCKED_CAPABILITY)",
+         "blocked": "voice recording/playback needs hardware audio an emulator "
+                    "cannot provide; pick completion is system picker UI"},
+    ),
     "room-13-14-upgrade": (
         {"helper": "fixture_apks.fetch", "tag": "v1.1.0"},
         {"helper": "fixture_apks.fetch", "tag": "v1.1.1"},
@@ -862,7 +884,9 @@ UI_MARKERS = {
         "resource-id:forwardDialogRoot", "resource-id:forwardSend",
         "content-desc:Read",
     ),
-    "media": ("text:unique media fixture name", "text:voice duration"),
+    "media": ("resource-id:attachButton", "resource-id:pickVisualRow",
+              "resource-id:pickDocumentRow", "text:unique media fixture name",
+              "text:voice duration"),
     "groups-contacts": (
         "resource-id:inboxContactsButton", "resource-id:contactList",
         "resource-id:createGroupEntry", "resource-id:groupNameInput",
@@ -5909,6 +5933,248 @@ _OFFLINE_SYNC_POLL_S = 180.0
 _OFFLINE_ROW_SWEEP_LIMIT = 56  # ~1-viewport page-downs per inbox row scan cycle
 
 
+# --- media upload slice --------------------------------------------------------
+# The 'media' row stays BLOCKED_CAPABILITY by design. Two slices can never be
+# proven on an emulator and are deliberately NOT driven here:
+#   - voice recording/playback: the composer micButton -> recordingOverlay ->
+#     MediaViewer audio path needs real hardware capture/render an emulator
+#     cannot provide (negative scope; see _MEDIA_SLICE_UNPROVEN);
+#   - pick completion: tapping the app's own attach-sheet rows delegates to
+#     SYSTEM pickers (DocumentsUI for OpenDocument, PhotoPicker for
+#     PickVisualMedia) whose surface is owned by the OS -- uiautomator cannot
+#     reliably select a file in them, so the in-app upload pipeline
+#     (ImageCompressor re-encode, upload progress UI, 'no stuck upload state')
+#     stays unproven.
+# What the slice DOES prove with evidence (media-slice.json):
+#   1. push: deterministic media_oracle fixtures land on the device unchanged
+#      (on-device sha256sum, adb-pull fallback);
+#   2. attach: the app's composer attach sheet opens and both rows delegate to
+#      the system pickers (dumpsys proves the resumed components);
+#   3. bytes: upload through the app's documented REST path -- the same
+#      POST /api/v1/attachments multipart + SendMessageRequest.attachmentIds
+#      surface AttachmentRepository/MessageRepository call after a completed
+#      pick -- then owner+member SHA-256 byte equality, exact 206 Range
+#      slices, and a non-member GET refused 403 NOT_MEMBER on both serve
+#      endpoints (the row's 'Persisted byte hash and MIME are correct' and
+#      'Range is 206 and non-member is denied' assertions).
+_MEDIA_SLICE_UNPROVEN = (
+    "the pick completes in system picker UI (DocumentsUI/PhotoPicker) that "
+    "uiautomator cannot drive reliably, so the in-app pick-to-upload pipeline "
+    "(ImageCompressor, upload progress, 'no stuck upload state') is unproven",
+    "voice recording/playback needs hardware audio capture/render an "
+    "emulator cannot prove",
+)
+_MEDIA_PNG_WIDTH = 32
+_MEDIA_PNG_HEIGHT = 24
+
+
+def _import_media_driver():
+    if str(DEVICE_DIR) not in sys.path:
+        sys.path.insert(0, str(DEVICE_DIR))
+    return importlib.import_module("media_driver")
+
+
+def _media_push_fixture(context: dict[str, Any], fixture: Any) -> dict[str, Any]:
+    """Push one deterministic fixture onto the device and hash-verify it there."""
+    driver = _import_media_driver()
+    try:
+        return driver.push_fixture(
+            context["adb"], fixture, host_dir=context["row_dir"]
+        )
+    except driver.MediaDeviceError as error:
+        raise EnvironmentFailure(f"media fixture push failed: {error}") from error
+
+
+def _media_picker_launch(context: dict[str, Any], what: str) -> str:
+    """Poll `dumpsys activity activities` until a system picker is resumed.
+
+    Returns the resumed system-picker component; a missing app surface is the
+    caller's ProductFailure while an unreadable dumpsys raises
+    EnvironmentFailure. The pick itself is never completed (system UI) -- the
+    caller records that as unproven.
+    """
+    driver = _import_media_driver()
+    adb: Adb = context["adb"]
+    component = None
+    deadline = time.monotonic() + 12
+    while time.monotonic() < deadline:
+        try:
+            dump = adb.command("shell", "dumpsys", "activity", "activities",
+                               timeout=20, check=False)
+        except Exception as error:
+            raise EnvironmentFailure(f"dumpsys could not be read: {error}") from error
+        component = driver.resumed_activity_component(dump)
+        if driver.is_system_picker_component(component):
+            return component
+        time.sleep(0.5)
+    raise ProductFailure(
+        f"tapping the {what} row did not launch a system picker "
+        f"(last resumed component: {component!r})"
+    )
+
+
+def _media_attach_via_ui(context: dict[str, Any]) -> dict[str, Any]:
+    """Open the composer attach sheet and prove both rows delegate to system
+    pickers: visual -> PhotoPicker provider, document -> DocumentsUI.
+
+    The sheet rows are the app's own surface (attachButton /
+    pickVisualRow / pickDocumentRow), so a missing sheet or a row that fails
+    to delegate is a product failure. Each launched system picker is dismissed
+    with KEYCODE_BACK so the chat is restored for the REST slice.
+    """
+    ui = context["device"]
+    row_dir = Path(context["row_dir"])
+    delegations: list[dict[str, Any]] = []
+    for row_rid, what, evidence in (
+        ("pickVisualRow", "visual media", "attach-visual.png"),
+        ("pickDocumentRow", "document", "attach-document.png"),
+    ):
+        attach = _wait_ui_node(
+            context, lambda node: _rid_ends(node, "attachButton"),
+            "the chat composer attach control was not visible",
+        )
+        ui.tap_node(attach)
+        row_node = _wait_ui_node(
+            context, lambda node: _rid_ends(node, row_rid),
+            "the composer attach sheet did not open",
+        )
+        ui.screenshot(str(row_dir / evidence))
+        ui.tap_node(row_node)
+        component = _media_picker_launch(context, what)
+        ui.screenshot(str(row_dir / f"system-picker-{'visual' if 'Visual' in row_rid else 'document'}.png"))
+        ui.key("KEYCODE_BACK")
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "attachButton"),
+            "the chat did not return after leaving the system picker",
+        )
+        delegations.append({"sheet_row": row_rid, "system_picker": component,
+                            "pick_completed": False})
+    return {
+        "attach_sheet": "opened",
+        "delegations": delegations,
+        "pick_completed": False,
+        "unproven": list(_MEDIA_SLICE_UNPROVEN),
+    }
+
+
+def _media_verify_bytes(context: dict[str, Any], owner: dict[str, Any],
+                        member: dict[str, Any], outsider: dict[str, Any],
+                        conversation_id: str, fixture: Any, msg_type: str,
+                        *, width: int | None = None,
+                        height: int | None = None) -> dict[str, Any]:
+    """Upload one fixture through the app's documented REST path and run the
+    byte-hash oracle: owner+member SHA-256 equality, 206 Range slices, and the
+    outsider's 403 NOT_MEMBER refusal on both serve endpoints."""
+    driver = _import_media_driver()
+    try:
+        return driver.verify_upload_slice(
+            context["client"],
+            owner_token=owner["accessToken"],
+            member_token=member["accessToken"],
+            outsider_token=outsider["accessToken"],
+            conversation_id=conversation_id,
+            fixture=fixture,
+            msg_type=msg_type,
+            image_width=width,
+            image_height=height,
+        )
+    except driver.MediaProductError as error:
+        raise ProductFailure(f"media byte oracle failed: {error}") from error
+    except driver.MediaDeviceError as error:
+        raise EnvironmentFailure(f"media byte oracle could not run: {error}") from error
+
+
+def run_media_upload_slice(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
+    """Prove the media upload slice; the row still ends BLOCKED_CAPABILITY.
+
+    Runs only the assertions an emulator can evidence: fixtures pushed to the
+    device and hash-verified there, the attach sheet delegating to the system
+    pickers, and the documented REST upload path serving back byte-identical
+    content with exact 206 Range slices and a non-member 403 refusal. The
+    pick-to-upload app pipeline and voice recording/playback stay unproven,
+    so after the evidence is written the executor raises CapabilityBlocked
+    with the residual gaps -- the row never reports PASS.
+    """
+    _campaign_serial(context)
+    _campaign_base_url(context)
+    _prepare_seeded_an(context)
+    api, _adb_ui, patch = context["helpers"]
+    driver = _import_media_driver()
+    row_dir = Path(context["row_dir"])
+    pushed: list[dict[str, Any]] = []
+    verified: list[dict[str, Any]] = []
+    seeded: list[tuple[str, str]] = []  # (message id, owner token) for the sweep
+    attach_slice: dict[str, Any] | None = None
+    primary_error: Exception | None = None
+    try:
+        nodes = patch.ui_nodes(context["device"], timeout=15)
+        row_node = patch.named_conversation_row(nodes, "Binh")
+        if row_node is None:
+            raise EnvironmentFailure(
+                "seed An↔Binh conversation is not visible in the device inbox")
+        context["device"].tap_node(row_node)
+        _wait_ui_node(
+            context, lambda node: _rid_ends(node, "attachButton"),
+            "the chat composer attach control was not visible",
+        )
+
+        an, binh, conversation_id, _a_uid, _b_uid = _seed_pair(context)
+        _, conversation = api.direct_conversation(
+            context["client"], an["accessToken"], api.USER_C["phone"])
+        if conversation.get("e2eeEnabled"):
+            raise EnvironmentFailure(
+                "the seeded An↔Binh conversation is E2EE; the app hides media "
+                "rows there by design, so the upload slice cannot run in it")
+        chi = _actor_session(api, context["client"], api.USER_B["phone"])
+
+        # 1. deterministic fixtures land on the device unchanged.
+        pdf = driver.build_fixture("pdf")
+        png = driver.build_fixture("png", width=_MEDIA_PNG_WIDTH,
+                                   height=_MEDIA_PNG_HEIGHT)
+        pushed.append(_media_push_fixture(context, pdf))
+        pushed.append(_media_push_fixture(context, png))
+
+        # 2. the app's attach sheet delegates to the system pickers.
+        attach_slice = _media_attach_via_ui(context)
+
+        # 3. byte oracle through the app's documented upload path.
+        pdf_result = _media_verify_bytes(
+            context, an, binh, chi, conversation_id, pdf, "FILE")
+        verified.append(pdf_result)
+        seeded.append((pdf_result["message_id"], an["accessToken"]))
+        png_result = _media_verify_bytes(
+            context, an, binh, chi, conversation_id, png, "IMAGE",
+            width=_MEDIA_PNG_WIDTH, height=_MEDIA_PNG_HEIGHT)
+        verified.append(png_result)
+        seeded.append((png_result["message_id"], an["accessToken"]))
+
+        context["device"].key("KEYCODE_BACK")  # back to the inbox
+    except Exception as error:
+        primary_error = error
+        raise
+    finally:
+        for message_id, token in seeded:
+            failure = driver.soft_delete_message(
+                context["client"], token, conversation_id, message_id)
+            if failure:
+                context.setdefault("cleanup_errors", []).append(f"media: {failure}")
+        for item in pushed:
+            driver.remove_device_file(context["adb"], item["remote_path"])
+        _write_json(row_dir / "media-slice.json", {
+            "row": row.id,
+            "pushed": pushed,
+            "attach": attach_slice,
+            "verified": verified,
+            "unproven": list(_MEDIA_SLICE_UNPROVEN),
+        })
+        if primary_error is None and context.get("cleanup_errors"):
+            raise HarnessError("media slice cleanup failed")
+    raise CapabilityBlocked(
+        "upload slice proven (device push hashes, attach-sheet delegation, "
+        "byte-identity/range/403 oracle; evidence in media-slice.json); row "
+        "stays blocked: " + "; ".join(_MEDIA_SLICE_UNPROVEN))
+
+
 # --- accessibility-sweep ------------------------------------------------------
 # The accepted critical-screen inventory: every (locale, night, font_scale)
 # variant must visit each screen below and pass the a11y_oracle checks on its
@@ -9231,6 +9497,7 @@ _ROW_EXECUTOR_NAMES: dict[str, str] = {
     "otp-forgot-password": "run_otp_forgot_password",
     "account-deletion": "run_account_deletion",
     "accessibility-sweep": "run_accessibility_sweep",
+    "media": "run_media_upload_slice",
 }
 
 
