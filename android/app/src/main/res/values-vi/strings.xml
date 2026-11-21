@@ -381,7 +381,7 @@
     <string name="reminder_notification_generic">Đến giờ nhắc</string>
     <string name="reminder_notification_channel">Lời nhắc</string>
     <string name="reminder_notification_channel_description">Lời nhắc và nhắc giữ chuỗi</string>
-    <string name="theme_system">Theo hệ thống</string>
+    <string name="theme_system">Hệ thống</string>
     <string name="theme_light">Sáng</string>
     <string name="theme_dark">Tối</string>
     <string name="settings_chat_color">Màu trò chuyện</string>

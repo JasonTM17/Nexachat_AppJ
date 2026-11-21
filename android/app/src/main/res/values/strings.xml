@@ -384,7 +384,7 @@
     <string name="reminder_notification_generic">A reminder is due</string>
     <string name="reminder_notification_channel">Reminders</string>
     <string name="reminder_notification_channel_description">Reminders and streak check-ins</string>
-    <string name="theme_system">System default</string>
+    <string name="theme_system">System</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
     <string name="settings_chat_color">Chat color</string>

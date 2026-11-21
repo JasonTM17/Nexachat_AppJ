@@ -154,6 +154,8 @@ public final class ContactLetterIndexTest {
         assertTrue(ContactLetterIndex.isRailVisible(26, 1.29f));
         assertFalse(ContactLetterIndex.isRailVisible(26, 1.3f));
         assertFalse(ContactLetterIndex.isRailVisible(26, 2.0f));
+        assertFalse(ContactLetterIndex.isRailVisible(26, 1.0f, 320));
+        assertTrue(ContactLetterIndex.isRailVisible(26, 1.0f, 360));
     }
 
     private static Contact contact(String userId, String displayName) {

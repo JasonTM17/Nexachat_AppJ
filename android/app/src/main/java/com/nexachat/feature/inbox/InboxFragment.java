@@ -31,13 +31,11 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.network.dto.UserDto;
 import com.nexachat.data.ConversationSummary;
-import com.nexachat.data.ThemeMode;
 import com.nexachat.databinding.FragmentInboxBinding;
 import com.nexachat.feature.chat.ChatErrorIds;
 import com.nexachat.feature.inbox.adapter.ConversationListAdapter;
@@ -46,7 +44,6 @@ import com.nexachat.feature.label.LabelDialogFragment;
 import com.nexachat.feature.label.LabelText;
 import com.nexachat.feature.label.LabelUiState;
 import com.nexachat.feature.label.LabelViewModel;
-import com.nexachat.feature.profile.AppSettingsViewModel;
 import com.nexachat.feature.profile.ProfileViewModel;
 import com.nexachat.feature.streak.StreakCheckInCoordinator;
 import com.nexachat.feature.streak.StreakMilestoneSheet;
@@ -62,15 +59,14 @@ import java.util.Set;
 public final class InboxFragment extends Fragment {
 
     private static final int LOAD_MORE_REMAINING_ITEMS = 5;
-    private static final int MENU_CONTACTS = 1;
+    private static final int MENU_FEED = 1;
     private static final int MENU_NEW_GROUP = 2;
-    private static final int MENU_THEME = 3;
+    private static final int MENU_STARRED = 3;
     private static final String ALL_LABEL_FILTER = "__all_labels__";
 
     private FragmentInboxBinding binding;
     private InboxViewModel viewModel;
     private LabelViewModel labelViewModel;
-    private AppSettingsViewModel settingsViewModel;
     private ProfileViewModel profileViewModel;
     private StreakViewModel streakViewModel;
     @Inject StreakCheckInCoordinator streakCheckIn;
@@ -101,7 +97,6 @@ public final class InboxFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle state) {
         viewModel = new ViewModelProvider(this).get(InboxViewModel.class);
         labelViewModel = new ViewModelProvider(requireActivity()).get(LabelViewModel.class);
-        settingsViewModel = new ViewModelProvider(requireActivity()).get(AppSettingsViewModel.class);
         profileViewModel = new ViewModelProvider(requireActivity()).get(ProfileViewModel.class);
         labelViewModel.load();
 
@@ -350,48 +345,26 @@ public final class InboxFragment extends Fragment {
         }
     }
 
-    private void showThemeDialog() {
-        ThemeMode[] modes = {ThemeMode.SYSTEM, ThemeMode.LIGHT, ThemeMode.DARK};
-        String[] labels = {
-            getString(R.string.theme_system),
-            getString(R.string.theme_light),
-            getString(R.string.theme_dark)
-        };
-        ThemeMode current = settingsViewModel.getThemeMode().getValue();
-        int checkedIndex = current == null ? 0 : current.ordinal();
-        new MaterialAlertDialogBuilder(requireContext())
-                .setTitle(R.string.settings_theme_title)
-                .setSingleChoiceItems(
-                        labels,
-                        checkedIndex,
-                        (dialog, which) -> {
-                            settingsViewModel.setThemeMode(modes[which]);
-                            dialog.dismiss();
-                        })
-                .setNegativeButton(R.string.action_cancel, null)
-                .show();
-    }
-
     private void showInboxMenu(@NonNull View anchor) {
         PopupMenu menu = new PopupMenu(requireContext(), anchor);
-        menu.getMenu().add(Menu.NONE, MENU_CONTACTS, Menu.NONE, R.string.contacts_title);
+        menu.getMenu().add(Menu.NONE, MENU_FEED, Menu.NONE, R.string.feed_title);
         menu.getMenu().add(Menu.NONE, MENU_NEW_GROUP, Menu.NONE, R.string.group_create_title);
-        menu.getMenu().add(Menu.NONE, MENU_THEME, Menu.NONE, R.string.settings_theme_title);
+        menu.getMenu().add(Menu.NONE, MENU_STARRED, Menu.NONE, R.string.starred_messages_title);
         menu.setOnMenuItemClickListener(this::onInboxMenuItemSelected);
         menu.show();
     }
 
     private boolean onInboxMenuItemSelected(@NonNull MenuItem item) {
-        if (item.getItemId() == MENU_CONTACTS) {
-            NavHostFragment.findNavController(this).navigate(R.id.contactsFragment);
+        if (item.getItemId() == MENU_FEED) {
+            NavHostFragment.findNavController(this).navigate(R.id.publicFeedFragment);
             return true;
         }
         if (item.getItemId() == MENU_NEW_GROUP) {
             NavHostFragment.findNavController(this).navigate(R.id.groupCreateFragment);
             return true;
         }
-        if (item.getItemId() == MENU_THEME) {
-            showThemeDialog();
+        if (item.getItemId() == MENU_STARRED) {
+            NavHostFragment.findNavController(this).navigate(R.id.starredMessagesFragment);
             return true;
         }
         return false;
@@ -657,7 +630,8 @@ public final class InboxFragment extends Fragment {
      */
     private void applyFilterChipRowLayout() {
         if (binding == null || !InboxFilterChipLayoutRules.chipsWrapOntoMultipleRows(
-                getResources().getConfiguration().fontScale)) {
+                getResources().getConfiguration().fontScale,
+                getResources().getConfiguration().screenWidthDp)) {
             return;
         }
         WidthDrivenLayoutAction action = new WidthDrivenLayoutAction(
@@ -791,6 +765,12 @@ public final class InboxFragment extends Fragment {
             return;
         }
         float fontScale = getResources().getConfiguration().fontScale;
+        List<ConversationSummary> onlinePeers = ActiveNowPeerRules.selectOnlineDirectPeers(
+                InboxFilterRules.apply(rows, InboxFilter.ALL));
+        binding.activeNowSection.setVisibility(onlinePeers.isEmpty() ? View.GONE : View.VISIBLE);
+        if (onlinePeers.isEmpty()) {
+            return;
+        }
         activeNowStripBinder.bind(
                 boundInboxUser,
                 rows,

@@ -19,4 +19,12 @@ public final class InboxFilterChipLayoutRulesTest {
         assertTrue(InboxFilterChipLayoutRules.chipsWrapOntoMultipleRows(1.3f));
         assertTrue(InboxFilterChipLayoutRules.chipsWrapOntoMultipleRows(2.0f));
     }
+
+    @Test
+    public void narrowWidthWrapsSoArchivedStaysOnScreen() {
+        assertTrue(InboxFilterChipLayoutRules.chipsWrapOntoMultipleRows(1.0f, 320));
+        assertTrue(InboxFilterChipLayoutRules.chipsWrapOntoMultipleRows(1.0f, 359));
+        assertFalse(InboxFilterChipLayoutRules.chipsWrapOntoMultipleRows(1.0f, 360));
+        assertFalse(InboxFilterChipLayoutRules.chipsWrapOntoMultipleRows(1.0f, 411));
+    }
 }

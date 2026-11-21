@@ -23,6 +23,21 @@ public final class ChatToolbarPresentationTest {
     }
 
     @Test
+    public void headerAvatarStaysOnNarrowWidthAndYieldsOnlyAtLargeType() {
+        assertFalse(ChatFragment.ChatToolbarPolicy.hideHeaderAvatar(1.0f));
+        assertFalse(ChatFragment.ChatToolbarPolicy.hideHeaderAvatar(1.49f));
+        assertTrue(ChatFragment.ChatToolbarPolicy.hideHeaderAvatar(1.5f));
+    }
+
+    @Test
+    public void compactWidthMovesVideoOutOfTheToolbar() {
+        assertTrue(ChatFragment.ChatToolbarPolicy.compactToolbarActions(320));
+        assertTrue(ChatFragment.ChatToolbarPolicy.compactToolbarActions(359));
+        assertFalse(ChatFragment.ChatToolbarPolicy.compactToolbarActions(360));
+        assertFalse(ChatFragment.ChatToolbarPolicy.compactToolbarActions(411));
+    }
+
+    @Test
     public void titleMarginStartKeepsTitleClearOfHeaderAvatar() {
         int withAvatar = ChatFragment.ChatToolbarPolicy.titleMarginStartDp(false);
         assertTrue(withAvatar > 0);

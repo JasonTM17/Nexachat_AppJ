@@ -221,7 +221,8 @@ public final class ContactsFragment extends Fragment {
         boolean show = showList
                 && ContactLetterIndex.isRailVisible(
                         letters.size(),
-                        getResources().getConfiguration().fontScale);
+                        getResources().getConfiguration().fontScale,
+                        getResources().getConfiguration().screenWidthDp);
         binding.letterRail.setVisibility(show ? View.VISIBLE : View.GONE);
         if (show) {
             binding.letterRail.setLetters(letters);
