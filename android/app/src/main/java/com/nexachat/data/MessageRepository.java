@@ -443,6 +443,18 @@ public final class MessageRepository {
     }
 
     /**
+     * Forwards a completed inbox page persist to the sync engine (issue
+     * #270): a startup sync may have drained zero pages because that
+     * persist had not landed yet, and no other path re-triggers it. The
+     * engine coalesces to one epoch-guarded drain per session epoch; no-op
+     * when no engine is wired.
+     */
+    void onInboxPagePersistCompleted() {
+        SyncEngine engine = this.syncEngine;
+        if (engine != null) engine.onInboxPagePersistCompleted();
+    }
+
+    /**
      * Pinned messages for the banner, newest pin first. Messages outside local
      * history still appear as id-only stubs so the banner count matches server state.
      */
