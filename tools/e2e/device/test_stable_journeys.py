@@ -1803,6 +1803,260 @@ class AuthSessionLifecycleExecutorTest(unittest.TestCase):
         self.assertIn("was not held", str(caught.exception))
 
 
+class SeedFixtureHealTest(unittest.TestCase):
+    """Offline REST world for the local-mode seed fixture self-heal.
+
+    The fake server answers the same endpoints the healer drives through the
+    recording client: PATCH /users/me echoes the stored display_name, the
+    inbox serves default and archived views, and POST /conversations/group
+    re-creates the consumed forward target. A drift the server refuses to
+    heal must surface as FAIL_HARNESS_OR_ENVIRONMENT, never as a silent
+    pass.
+    """
+
+    PHONE_AN = "+84900000001"
+    PHONE_BINH = "+84900000002"
+    PHONE_CHI = "+84900000003"
+    PHONE_DUNG = "+84900000004"
+    TOKENS = {PHONE_AN: "tok-an", PHONE_BINH: "tok-binh",
+              PHONE_CHI: "tok-chi", PHONE_DUNG: "tok-dung"}
+
+    class Response:
+        def __init__(self, status, body=None):
+            self.status = status
+            self._body = body
+
+        def json(self):
+            return self._body
+
+    class Api:
+        USER_A = {"phone": "+84900000001", "name": "An"}
+        USER_B = {"phone": "+84900000003", "name": "Chi"}
+        USER_C = {"phone": "+84900000002", "name": "Binh"}
+
+        def __init__(self):
+            self.direct_status = 200
+
+        def direct_conversation(self, recorder, token, phone):
+            return self.direct_status, {"id": "conv-an-binh"}
+
+    GROUP = {"id": "conv-team", "type": "GROUP", "title": "NexaChat Team",
+             "members": [{"userId": "user-an"}, {"userId": "user-binh"},
+                         {"userId": "user-chi"}, {"userId": "user-dung"}]}
+
+    class Client:
+        """Canned local server: profile PATCHes, inbox views, group ops."""
+
+        def __init__(self, display_names, inbox, archived=None, search_ids=None):
+            self.display_names = dict(display_names)
+            self.inbox = list(inbox)
+            self.archived = list(archived or [])
+            self.search_ids = dict(search_ids or {})
+            self.calls = []
+            self.patch_status = 200
+            self.group_create_status = 201
+            self.member_add_status = 200
+
+        def _response(self, status, body=None):
+            return SeedFixtureHealTest.Response(status, body)
+
+        def get(self, path, token=None, params=None, headers=None):
+            if path == "/api/v1/conversations":
+                if (params or {}).get("archived") == "true":
+                    return self._response(200, list(self.archived))
+                return self._response(200, list(self.inbox))
+            if path == "/api/v1/users/search":
+                found = self.search_ids.get((params or {}).get("phone"))
+                return self._response(200, [{"id": found}] if found else [])
+            return self._response(404)
+
+        def patch(self, path, token=None, body=None, headers=None):
+            self.calls.append(("PATCH", path, dict(body or {})))
+            if self.patch_status != 200:
+                return self._response(self.patch_status, {})
+            phone = next(item for item, value in SeedFixtureHealTest.TOKENS.items()
+                         if value == token)
+            name = (body or {}).get("displayName")
+            self.display_names[phone] = name
+            return self._response(200, {"displayName": name})
+
+        def post(self, path, token=None, body=None, headers=None):
+            self.calls.append(("POST", path, dict(body or {})))
+            if path == "/api/v1/conversations/group":
+                if self.group_create_status != 201:
+                    return self._response(self.group_create_status, {})
+                member_ids = list((body or {}).get("memberIds") or [])
+                entry = {"id": "conv-team-new", "type": "GROUP",
+                         "title": (body or {}).get("title"),
+                         "members": [{"userId": "user-an"}] +
+                         [{"userId": member} for member in member_ids]}
+                self.inbox.append(entry)
+                return self._response(201, {"id": entry["id"]})
+            if path.endswith("/members"):
+                if self.member_add_status != 200:
+                    return self._response(self.member_add_status, {})
+                entry = next(item for item in self.inbox + self.archived
+                             if item.get("id") == path.split("/")[4])
+                entry.setdefault("members", []).append(
+                    {"userId": ((body or {}).get("userIds") or [None])[0]})
+                return self._response(200, {})
+            return self._response(404)
+
+        def delete(self, path, token=None, params=None, headers=None):
+            self.calls.append(("DELETE", path, None))
+            if path.endswith("/archive"):
+                entry = next(item for item in self.archived
+                             if item.get("id") == path.split("/")[4])
+                self.archived.remove(entry)
+                self.inbox.append(entry)
+                return self._response(204, {})
+            return self._response(404)
+
+    def _sessions(self, client):
+        def session(api, recorder, phone):
+            return {
+                "accessToken": SeedFixtureHealTest.TOKENS[phone],
+                "user": {"id": "user-" + SeedFixtureHealTest.TOKENS[phone][4:],
+                         "phone": phone,
+                         "displayName": client.display_names.get(phone, "")},
+            }
+        return session
+
+    def _healthy_names(self):
+        return {self.PHONE_AN: "An", self.PHONE_BINH: "Binh",
+                self.PHONE_CHI: "Chi", self.PHONE_DUNG: "Dung"}
+
+    def _ensure(self, api, client):
+        with mock.patch.object(journeys, "_actor_session",
+                                side_effect=self._sessions(client)):
+            return journeys.ensure_seed_fixture_state(api, client)
+
+    def test_healthy_fixture_reports_no_heals(self):
+        client = self.Client(self._healthy_names(), [dict(self.GROUP)])
+        report = self._ensure(self.Api(), client)
+        self.assertEqual(report["heals"], [])
+        self.assertEqual(
+            [call[0] for call in client.calls], [])  # no PATCH/POST was needed
+        self.assertEqual(report["checked"][-1], "NexaChat Team")
+
+    def test_drifted_display_names_are_restored_over_rest(self):
+        names = self._healthy_names()
+        names[self.PHONE_AN] = "An Nguyen"      # the observed board drift
+        names[self.PHONE_BINH] = "Binh Le"
+        client = self.Client(names, [dict(self.GROUP)])
+        report = self._ensure(self.Api(), client)
+        self.assertEqual(client.display_names, self._healthy_names())
+        patches = [call for call in client.calls if call[0] == "PATCH"]
+        self.assertEqual([call[2]["displayName"] for call in patches],
+                         ["An", "Binh"])
+        self.assertTrue(any("An" in heal and "An Nguyen" in heal
+                            for heal in report["heals"]))
+        self.assertTrue(any("Binh" in heal and "Binh Le" in heal
+                            for heal in report["heals"]))
+
+    def test_display_name_heal_refused_by_server_is_environment_failure(self):
+        names = self._healthy_names()
+        names[self.PHONE_AN] = "An Nguyen"
+        client = self.Client(names, [dict(self.GROUP)])
+        client.patch_status = 400
+        with self.assertRaisesRegex(journeys.EnvironmentFailure, "An Nguyen"):
+            self._ensure(self.Api(), client)
+
+    def test_missing_forward_target_is_recreated_with_seed_peers(self):
+        client = self.Client(self._healthy_names(), [],
+                             search_ids={self.PHONE_CHI: "user-chi",
+                                         self.PHONE_DUNG: "user-dung"})
+        an = {"accessToken": self.TOKENS[self.PHONE_AN], "user": {"id": "user-an"}}
+        binh = {"accessToken": self.TOKENS[self.PHONE_BINH],
+                "user": {"id": "user-binh"}}
+        group_id, heals = journeys._ensure_forward_target_group(
+            self.Api(), client, an, binh)
+        self.assertEqual(group_id, "conv-team-new")
+        create = next(call for call in client.calls
+                      if call[0] == "POST" and call[1] == "/api/v1/conversations/group")
+        self.assertEqual(create[2]["title"], "NexaChat Team")
+        self.assertEqual(create[2]["memberIds"],
+                         ["user-binh", "user-chi", "user-dung"])
+        self.assertTrue(any("re-created" in heal for heal in heals))
+
+    def test_unresolvable_seed_peers_still_yield_a_binh_group(self):
+        client = self.Client(self._healthy_names(), [])  # search answers empty
+        an = {"accessToken": self.TOKENS[self.PHONE_AN], "user": {"id": "user-an"}}
+        binh = {"accessToken": self.TOKENS[self.PHONE_BINH],
+                "user": {"id": "user-binh"}}
+        group_id, _heals = journeys._ensure_forward_target_group(
+            self.Api(), client, an, binh)
+        create = next(call for call in client.calls
+                      if call[0] == "POST" and call[1] == "/api/v1/conversations/group")
+        self.assertEqual(create[2]["memberIds"], ["user-binh"])
+        self.assertEqual(group_id, "conv-team-new")
+
+    def test_failed_group_recreate_is_environment_failure(self):
+        client = self.Client(self._healthy_names(), [])
+        client.group_create_status = 500
+        an = {"accessToken": self.TOKENS[self.PHONE_AN], "user": {"id": "user-an"}}
+        binh = {"accessToken": self.TOKENS[self.PHONE_BINH],
+                "user": {"id": "user-binh"}}
+        with self.assertRaisesRegex(journeys.EnvironmentFailure, "re-seeding"):
+            journeys._ensure_forward_target_group(self.Api(), client, an, binh)
+
+    def test_archived_forward_target_is_restored_to_the_default_inbox(self):
+        client = self.Client(self._healthy_names(), [], archived=[dict(self.GROUP)])
+        an = {"accessToken": self.TOKENS[self.PHONE_AN], "user": {"id": "user-an"}}
+        binh = {"accessToken": self.TOKENS[self.PHONE_BINH],
+                "user": {"id": "user-binh"}}
+        group_id, heals = journeys._ensure_forward_target_group(
+            self.Api(), client, an, binh)
+        self.assertEqual(group_id, "conv-team")
+        self.assertTrue(any("archived forward target" in heal for heal in heals))
+        self.assertEqual(client.inbox[0]["id"], "conv-team")
+        self.assertFalse(any(call[0] == "POST" for call in client.calls))
+
+    def test_forward_target_that_lost_binh_regains_him(self):
+        group = dict(self.GROUP)
+        group["members"] = [{"userId": "user-an"}]
+        client = self.Client(self._healthy_names(), [group])
+        an = {"accessToken": self.TOKENS[self.PHONE_AN], "user": {"id": "user-an"}}
+        binh = {"accessToken": self.TOKENS[self.PHONE_BINH],
+                "user": {"id": "user-binh"}}
+        group_id, heals = journeys._ensure_forward_target_group(
+            self.Api(), client, an, binh)
+        self.assertEqual(group_id, "conv-team")
+        add = next(call for call in client.calls
+                   if call[0] == "POST" and call[1].endswith("/members"))
+        self.assertEqual(add[2], {"userIds": ["user-binh"]})
+        self.assertTrue(any("regained Binh" in heal for heal in heals))
+
+    def test_member_add_refused_falls_back_to_a_fresh_group(self):
+        group = dict(self.GROUP)
+        group["members"] = [{"userId": "user-an"}]
+        client = self.Client(self._healthy_names(), [group])
+        client.member_add_status = 403  # An is no longer the group admin
+        an = {"accessToken": self.TOKENS[self.PHONE_AN], "user": {"id": "user-an"}}
+        binh = {"accessToken": self.TOKENS[self.PHONE_BINH],
+                "user": {"id": "user-binh"}}
+        group_id, heals = journeys._ensure_forward_target_group(
+            self.Api(), client, an, binh)
+        self.assertEqual(group_id, "conv-team-new")
+        self.assertTrue(any("re-created" in heal for heal in heals))
+
+    def test_recreated_direct_conversation_is_reported_as_a_heal(self):
+        api = self.Api()
+        api.direct_status = 201
+        client = self.Client(self._healthy_names(), [dict(self.GROUP)])
+        report = self._ensure(api, client)
+        self.assertTrue(any("direct conversation re-created" in heal
+                            for heal in report["heals"]))
+
+    def test_run_campaign_preflight_wiring_heals_only_shared_local_runs(self):
+        # The healer itself is covered above; this pins the gating: rows that
+        # provision their own --dstack backend never trigger the shared-local
+        # fixture heal.
+        self.assertIsInstance(journeys._DSTACK_SELF_PROVISIONED_ROWS, frozenset)
+        self.assertIn("otp-forgot-password", journeys._DSTACK_SELF_PROVISIONED_ROWS)
+        self.assertIn("account-deletion", journeys._DSTACK_SELF_PROVISIONED_ROWS)
+
+
 class ChatInteractionsExecutorTest(unittest.TestCase):
     """Offline fake device+REST world for run_chat_interactions.
 
@@ -1899,6 +2153,9 @@ class ChatInteractionsExecutorTest(unittest.TestCase):
             self.picker_open = False
             self.picker_selected = False
             self.read_upto = 0
+            # Seed drift simulation: True means earlier journeys consumed the
+            # 'NexaChat Team' group so it is absent from every inbox view.
+            self.hide_group = False
 
         def tree(self):
             N = ChatInteractionsExecutorTest.Node
@@ -2108,8 +2365,12 @@ class ChatInteractionsExecutorTest(unittest.TestCase):
             if path == "/api/v1/conversations":
                 # 'NexaChat Team' sits beyond page 1 of An's stale-heavy inbox;
                 # a paged fetch must never see it — the executor reads unpaged.
-                items = [{"id": self.direct_id, "type": "DIRECT"},
-                         {"id": self.group_id, "type": "GROUP", "title": "NexaChat Team"}]
+                items = [{"id": self.direct_id, "type": "DIRECT"}]
+                if not self.world.hide_group:
+                    items.append({"id": self.group_id, "type": "GROUP",
+                                  "title": "NexaChat Team",
+                                  "members": [{"userId": "user-an"},
+                                              {"userId": "user-binh"}]})
                 if (params or {}).get("limit"):
                     items = items[:1]
                 return ChatInteractionsExecutorTest.Response(200, items)
@@ -2120,6 +2381,11 @@ class ChatInteractionsExecutorTest(unittest.TestCase):
             return ChatInteractionsExecutorTest.Response(404)
 
         def post(self, path, token=None, body=None, headers=None):
+            if path == "/api/v1/conversations/group":
+                # The executor's re-seed path: the consumed forward target is
+                # re-created, so it reappears in every inbox view.
+                self.world.hide_group = False
+                return ChatInteractionsExecutorTest.Response(201, {"id": self.group_id})
             if path.endswith("/read"):
                 self.world.read_upto = int((body or {}).get("upToSeq") or 0)
                 self.store.events.append((f"/topic/conversations.{self.direct_id}", {
@@ -2272,6 +2538,51 @@ class ChatInteractionsExecutorTest(unittest.TestCase):
         # though the reaction assertion failed.
         self.assertEqual(len(store.messages[direct_id]), 1)
         self.assertTrue(store.messages[direct_id][0]["deletedAt"])
+
+    def test_executor_reseeds_a_consumed_forward_target_instead_of_env_failing(self):
+        store, world, client, reader, direct_id, group_id = self._world_fixture()
+        world.hide_group = True  # earlier journeys consumed the seed group
+        row = journeys.ROW_BY_ID["chat-interactions"]
+
+        class Api:
+            USER_A = {"phone": "+84900000001", "name": "An"}
+            USER_B = {"phone": "+84900000003", "name": "Chi"}
+            USER_C = {"phone": "+84900000002", "name": "Binh"}
+
+            @staticmethod
+            def direct_conversation(client_obj, token, phone):
+                return 200, {"id": direct_id}
+
+        def session(api, recorder, phone):
+            if phone.endswith("0001"):
+                return {"accessToken": "tok-an", "user": {"id": "user-an", "phone": phone}}
+            return {"accessToken": "tok-binh", "user": {"id": "user-binh", "phone": phone}}
+
+        context = {
+            "serial": "emulator-5554",
+            "base_url": "http://127.0.0.1:18093",
+            "row": row,
+            "row_dir": Path(tempfile.mkdtemp()),
+            "adb": self.Adb(),
+            "device": self.Device(world),
+            "helpers": (Api(), None, self.Patch()),
+            "client": client,
+            "stomp_events": [],
+            "frame_reader": None,
+            "frame_reader_factory": lambda url, token: reader,
+            "ui_timeout": 2,
+        }
+        with mock.patch.object(journeys, "_assert_device_account_an"), \
+                mock.patch.object(journeys, "_actor_session", side_effect=session):
+            result = journeys.run_chat_interactions(row, context)
+
+        # The forward landed in the re-seeded group and was swept afterwards.
+        self.assertTrue(result["forward"])
+        group_msgs = store.messages[group_id]
+        self.assertEqual(len(group_msgs), 1)
+        self.assertTrue(group_msgs[0]["deletedAt"])
+        self.assertFalse(world.hide_group)
+        self.assertTrue(context["seed_heals"])
 
 
 class SummaryAskExecutorTest(unittest.TestCase):

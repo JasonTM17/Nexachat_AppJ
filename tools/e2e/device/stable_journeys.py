@@ -1721,25 +1721,21 @@ def run_chat_interactions(row: JourneyRow, context: dict[str, Any]) -> dict[str,
     _campaign_serial(context)
     _campaign_base_url(context)
     _prepare_seeded_an(context)
+    api = context["helpers"][0]
     patch = context["helpers"][2]
     recorder: RecordingClient = context["client"]
     ui = context["device"]
     an, binh, conversation_id, _recipient_id, binh_user_id = _seed_pair(context)
     an_user_id = str((an.get("user") or {}).get("id") or "")
 
-    # Resolve the seeded forward target by title — the UUID is never embedded.
-    # Unpaged on purpose: stale run leftovers push the seed group past page 1.
-    inbox = recorder.get("/api/v1/conversations", token=an["accessToken"])
-    if inbox.status != 200:
-        raise EnvironmentFailure(f"conversation inbox returned HTTP {inbox.status}")
-    inbox_body = inbox.json() or []
-    inbox_items = inbox_body.get("items") if isinstance(inbox_body, dict) else inbox_body
-    group = next((item for item in (inbox_items or [])
-                  if item.get("type") == "GROUP"
-                  and item.get("title") == _CHAT_FORWARD_TARGET_TITLE), None)
-    if group is None or not group.get("id"):
-        raise EnvironmentFailure("seeded 'NexaChat Team' forward target was absent from the inbox")
-    group_id = str(group["id"])
+    # Resolve the seeded forward target by title — the UUID is never embedded
+    # and the lookup stays unpaged: stale run leftovers push the seed group
+    # past any paged read. A consumed/renamed/archived target is re-seeded
+    # REST-only here (board evidence: absent twice after earlier journeys
+    # consumed it) instead of env-failing the row mid-journey.
+    group_id, group_heals = _ensure_forward_target_group(api, recorder, an, binh)
+    if group_heals:
+        context.setdefault("seed_heals", []).extend(group_heals)
 
     # Open the seeded direct conversation on the device.
     row_node = patch.named_conversation_row(_ui_nodes(context), "Binh")
@@ -7599,6 +7595,172 @@ def _seed_pair(context: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any],
     return an, binh, conversation_id, recipient_id, caller_id
 
 
+# --- seed fixture self-healing -----------------------------------------------
+# The demo stack's seed rows are shared mutable state: earlier journeys,
+# one-off probes and manual renames consume, archive or rename them. Run
+# evidence: the 'NexaChat Team' forward target was absent from An's inbox
+# twice after earlier journeys consumed it, and An's display_name drifted
+# 'An'->'An Nguyen' after a rename journey, breaking the accessibility
+# sweep's account verification (the manual fix was UPDATE users SET
+# display_name='An'). Drifted fixture state is REST-reseedable, so the
+# local-mode preflight verifies and heals it instead of env-failing a row
+# mid-journey. A missing seed ACCOUNT is still an environment failure: only
+# the psql demo seed can restore its contact graph and history.
+
+_SEED_DUNG_FALLBACK = {"phone": _GROUPS_DUNG_PHONE, "name": "Dung"}
+
+
+def _seed_fixture_users(api: Any) -> tuple[dict[str, str], ...]:
+    """Fixture accounts of the local seed contract: An, Binh, Chi, Dung."""
+    dung = getattr(api, "USER_D", None)
+    if not (isinstance(dung, dict) and dung.get("phone") and dung.get("name")):
+        dung = _SEED_DUNG_FALLBACK
+    return (api.USER_A, api.USER_C, api.USER_B, dung)
+
+
+def _heal_seed_display_name(api: Any, recorder: RecordingClient,
+                            fixture: dict[str, str]) -> str | None:
+    """Verify one seed account's display_name; PATCH it back when drifted.
+
+    The actor session already carries the live displayName (fresh login
+    response or the token cache's validating GET /users/me), so a healthy
+    fixture costs no extra call. Returns a heal note, or None when healthy.
+    """
+    phone, expected = str(fixture["phone"]), str(fixture["name"])
+    session = _actor_session(api, recorder, phone)
+    current = str((session.get("user") or {}).get("displayName") or "").strip()
+    if current == expected:
+        return None
+    healed = recorder.patch(
+        "/api/v1/users/me", token=session["accessToken"], body={"displayName": expected})
+    body = (healed.json() or {}) if healed.status == 200 else {}
+    restored = str(body.get("displayName") or "") if isinstance(body, dict) else ""
+    if healed.status != 200 or restored != expected:
+        raise EnvironmentFailure(
+            f"seed account {expected!r} display_name drifted to {current or '(blank)'!r} "
+            f"and the REST heal returned HTTP {healed.status}")
+    return f"display_name {expected!r} restored from {current or '(blank)'!r}"
+
+
+def _forward_target_entry(recorder: RecordingClient, an_token: str,
+                          *, archived: bool) -> dict[str, Any] | None:
+    """The seeded 'NexaChat Team' GROUP inbox entry, or None.
+
+    Unpaged on purpose: stale run leftovers push the seed group past any
+    paged read."""
+    response = recorder.get(
+        "/api/v1/conversations", token=an_token,
+        params={"archived": "true"} if archived else None)
+    if response.status != 200:
+        raise EnvironmentFailure(f"conversation inbox returned HTTP {response.status}")
+    body = response.json() or []
+    items = body.get("items") if isinstance(body, dict) else body
+    return next((item for item in (items or [])
+                 if item.get("type") == "GROUP"
+                 and item.get("title") == _CHAT_FORWARD_TARGET_TITLE
+                 and item.get("id")), None)
+
+
+def _forward_target_member_ids(entry: dict[str, Any]) -> set[str]:
+    return {str((member or {}).get("userId") or "")
+            for member in (entry.get("members") or [])}
+
+
+def _search_user_id(recorder: RecordingClient, token: str, phone: str) -> str | None:
+    """Best-effort seed member id via GET /users/search?phone= (no login)."""
+    try:
+        response = recorder.get("/api/v1/users/search", token=token, params={"phone": phone})
+    except Exception:
+        return None
+    if response.status != 200:
+        return None
+    rows = response.json() or []
+    return str((rows[0] or {}).get("id") or "") if rows else None
+
+
+def _ensure_forward_target_group(api: Any, recorder: RecordingClient,
+                                 an: dict[str, Any],
+                                 binh: dict[str, Any]) -> tuple[str, list[str]]:
+    """Verify the seeded 'NexaChat Team' forward target; re-seed it over REST.
+
+    Heals in order: an archived row is unarchived back into the default
+    inbox view; a group that lost Binh regains him through the admin member
+    add; a consumed/renamed/never-seeded target is re-created as a fresh
+    group (creator An, Binh, plus Chi/Dung when their accounts still
+    resolve). Raises EnvironmentFailure only when the re-seed itself fails,
+    so drifted fixture state never env-fails the row mid-journey again.
+    """
+    heals: list[str] = []
+    an_token = an["accessToken"]
+    binh_id = str((binh.get("user") or {}).get("id") or "")
+    group = _forward_target_entry(recorder, an_token, archived=False)
+    if group is None:
+        group = _forward_target_entry(recorder, an_token, archived=True)
+        if group is not None:
+            restored = recorder.delete(
+                f"/api/v1/conversations/{group['id']}/archive", token=an_token)
+            if restored.status not in (200, 204):
+                raise EnvironmentFailure(
+                    f"re-seeding {_CHAT_FORWARD_TARGET_TITLE!r}: unarchive returned "
+                    f"HTTP {restored.status}")
+            heals.append("archived forward target restored to the default inbox")
+    if group is not None and binh_id and binh_id not in _forward_target_member_ids(group):
+        added = recorder.post(
+            f"/api/v1/conversations/{group['id']}/members",
+            token=an_token, body={"userIds": [binh_id]})
+        if added.status in (200, 201, 204):
+            heals.append("forward target regained Binh as a member")
+        else:
+            # A shell group An cannot administrate cannot carry the row's
+            # forwards; drop it and re-seed a fresh one below.
+            group = None
+    if group is None:
+        member_ids = [binh_id]
+        for fixture in _seed_fixture_users(api)[2:]:
+            extra_id = _search_user_id(recorder, an_token, str(fixture["phone"]))
+            if extra_id and extra_id not in member_ids:
+                member_ids.append(extra_id)
+        created = recorder.post(
+            "/api/v1/conversations/group", token=an_token,
+            body={"title": _CHAT_FORWARD_TARGET_TITLE, "memberIds": member_ids})
+        body = (created.json() or {}) if created.status in (200, 201) else {}
+        if created.status not in (200, 201) or not isinstance(body, dict) or not body.get("id"):
+            raise EnvironmentFailure(
+                f"re-seeding {_CHAT_FORWARD_TARGET_TITLE!r} returned HTTP {created.status}")
+        group = body
+        heals.append("forward target re-created for An with the resolvable seed peers")
+    return str(group["id"]), heals
+
+
+def ensure_seed_fixture_state(api: Any, recorder: RecordingClient) -> dict[str, Any]:
+    """Verify and REST-re-seed the local demo fixture before any row runs.
+
+    The seed contract (demo/seed.sql expressed as REST calls): the fixture
+    accounts with their fixture display_names, the An<->Binh DIRECT
+    conversation, and the 'NexaChat Team' group An forwards into. Rows
+    consume this shared state between runs, so every campaign start
+    re-verifies it and heals the drift instead of env-failing mid-journey.
+    """
+    heals: list[str] = []
+    for fixture in _seed_fixture_users(api):
+        note = _heal_seed_display_name(api, recorder, fixture)
+        if note:
+            heals.append(note)
+    an = _actor_session(api, recorder, api.USER_A["phone"])
+    binh = _actor_session(api, recorder, api.USER_C["phone"])
+    status, _conversation = api.direct_conversation(
+        recorder, an["accessToken"], api.USER_C["phone"])
+    if status == 201:
+        heals.append("An<->Binh direct conversation re-created")
+    _, group_heals = _ensure_forward_target_group(api, recorder, an, binh)
+    heals.extend(group_heals)
+    return {
+        "checked": [*(str(item["name"]) for item in _seed_fixture_users(api)),
+                    "An<->Binh direct conversation", _CHAT_FORWARD_TARGET_TITLE],
+        "heals": heals,
+    }
+
+
 def _cancel_injected_notifications(adb: Adb, dump: str) -> None:
     # API 36 removed `cmd notification cancel` entirely, so cleanup goes through
     # the debug receiver's DUMP-gated CLEAR_NOTIFICATIONS action instead.
@@ -9314,7 +9476,7 @@ def execute_rows(rows: Iterable[JourneyRow], context: dict[str, Any],
         for attempt in range(1, ATTEMPTS_PER_ROW + 1):
             context.update({"row": row, "row_dir": row_dir / f"attempt-{attempt}",
                             "attempt": attempt, "stomp_events": [],
-                            "cleanup_errors": []})
+                            "cleanup_errors": [], "seed_heals": []})
             attempt_dir: Path = context["row_dir"]
             attempt_dir.mkdir(parents=True, exist_ok=True)
             record_start = len(context["client"].records)
@@ -9363,6 +9525,7 @@ def execute_rows(rows: Iterable[JourneyRow], context: dict[str, Any],
                 _write_json(attempt_dir / "summary.json", {
                     "row_id": row.id, "attempt": attempt, "status": status,
                     "reason": reason, "assertions": assertions, "captures": captures,
+                    "seed_heals": list(context.get("seed_heals") or []),
                 })
             attempts.append({"number": attempt, "status": status,
                              "reason": reason,
@@ -9484,6 +9647,7 @@ def run_campaign(rows: Iterable[JourneyRow], *, base_url: str, serial: str,
         "package": PACKAGE, "api_level": 36, **source_identity(),
         "apk_name": apk.name, "apk_sha256": None, "rows": [], "settings_before": None,
         "settings_after_restore": None, "device_touched": False,
+        "seed_fixture": None,
     }
     context: dict[str, Any] = {"evidence_root": run_root, "client": recorder, "adb": adb,
                                "reset_app_data": reset_app_data, "helpers": helpers,
@@ -9503,6 +9667,13 @@ def run_campaign(rows: Iterable[JourneyRow], *, base_url: str, serial: str,
                            if row.id not in _DSTACK_SELF_PROVISIONED_ROWS]
             preflight(base_url, apk, adb, recorder,
                       require_shared_server=not (dstack and not shared_rows))
+            if shared_rows:
+                # Local-mode seed preflight: the demo fixture is shared
+                # mutable state that earlier journeys consume/rename/archive,
+                # so verify and REST-re-seed it here (display names, the
+                # An<->Binh direct, the 'NexaChat Team' forward target)
+                # instead of letting a row env-fail mid-journey on drift.
+                summary["seed_fixture"] = ensure_seed_fixture_state(api, recorder)
         except Exception as error:
             status = _status_for_error(error)
             reason = sanitize_text(str(error))[:1000]
