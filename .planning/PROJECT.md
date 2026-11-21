@@ -4,6 +4,8 @@
 
 An existing Android Java chat application with a Spring Boot 3.5 / Java 21 backend and PostgreSQL. This GSD milestone completes and verifies the existing conversation RAG and catch-up summary flows under concurrent requests.
 
+Phase 1 is complete: all seven requirements and twelve independent must-haves are verified, with 346 passing scoped tests and no open review findings.
+
 ## Core Value
 
 Every AI query returns an answer grounded in the caller's current conversation context, and obsolete requests never overwrite current UI state or reuse invalid work.
@@ -15,12 +17,13 @@ Every AI query returns an answer grounded in the caller's current conversation c
 - Conversation-scoped hybrid RAG retrieval, citations, cache, consent and extractive fallback already exist.
 - Structured catch-up summaries with scoped windows, provider routing, cache and consent already exist.
 - Android Ask and Summary sheets, repositories and ViewModels already exist.
+- Complete AI flow coverage and concrete backend/Android concurrency fixes are verified.
+- Duplicate-query waiting is bounded; work and cache eligibility follow visibility, consent and source context.
+- Synthetic tests verify cache freshness, HTTP authorization/serialization locks and queued/session UI publication.
 
 ### Active
 
-- Complete query flow coverage and close concrete concurrency gaps in backend and Android.
-- Bound duplicate-query waiting and isolate work by all inputs that affect visibility and responses.
-- Verify cache freshness and deterministic concurrency regressions without external AI calls.
+None for this milestone.
 
 ### Out of Scope
 
@@ -43,8 +46,8 @@ Initial checkout: main, clean worktree. No existing .planning or AGENTS.md found
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| One scoped milestone on the existing codebase | The request targets existing functionality | Pending |
-| Offline synthetic verification | Reproducible tests without external message disclosure or provider charges | Pending |
+| One scoped milestone on the existing codebase | The request targets existing functionality | Delivered: 4 plans, 7 requirements verified |
+| Offline synthetic verification | Reproducible tests without external message disclosure or provider charges | Delivered: 147 backend unit, 81 PostgreSQL/API and 118 Android JVM tests |
 
 ---
 Last updated: 2026-11-21
