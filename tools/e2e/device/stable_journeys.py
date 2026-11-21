@@ -1511,6 +1511,15 @@ def _dismiss_occluder(context: dict[str, Any], nodes: list[Any]) -> bool:
     if done is not None:
         context["device"].tap_node(done)
         return True
+    # A pulled-down notification shade / quick-settings panel replaces the
+    # app's whole a11y tree with com.android.systemui nodes, so every app
+    # marker reads absent until the shade is collapsed (attempt: the seeded
+    # sweep group 'never reached the inbox' while the panel was up).
+    if nodes and all(
+            "systemui" in (node.attrs.get("package") or "")
+            for node in nodes):
+        context["device"].key("KEYCODE_BACK")
+        return True
     return False
 
 
