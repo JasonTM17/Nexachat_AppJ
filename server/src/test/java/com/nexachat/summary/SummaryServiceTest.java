@@ -139,6 +139,114 @@ class SummaryServiceTest {
     }
 
     @Test
+    void cachedExternalSummaryRejectsConsentMovementWithoutCallingProvider() {
+        SummaryRequest request = request(false);
+        PreparedSummaryProvider prepared = new PreparedSummaryProvider(new StubProvider("LLM"), "LLM", null);
+        when(windowService.load(conversationId, userId, request))
+                .thenReturn(new SummaryReadContext(window, true, 0L, null));
+        when(providerSelector.prepare(eq(true), any(), anyBoolean())).thenReturn(prepared);
+        when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
+                hash("LLM"), "LLM", SummaryLanguage.EN))
+                .thenReturn(Optional.of(cacheEntry(generation("LLM", "Cached external", null), "LLM")));
+        // A revoke followed by a regrant still invalidates the read epoch.
+        when(consentRepository.lockForResponse(userId))
+                .thenReturn(new SummaryConsentRepository.ConsentSnapshot(true, 2L));
+
+        assertThatThrownBy(() -> service.summarize(conversationId, userId, request))
+                .isInstanceOfSatisfying(ApiException.class,
+                        ex -> assertThat(ex.getCode()).isEqualTo(ApiErrorCode.AI_CONSENT_REQUIRED));
+        verify(providerSelector, never()).generate(any(), any(), any());
+    }
+
+    @Test
+    void cachedExternalSummaryWithUnchangedConsentUsesResponseLock() {
+        SummaryRequest request = request(false);
+        PreparedSummaryProvider prepared = new PreparedSummaryProvider(new StubProvider("LLM"), "LLM", null);
+        when(windowService.load(conversationId, userId, request))
+                .thenReturn(new SummaryReadContext(window, true, 0L, null));
+        when(providerSelector.prepare(eq(true), any(), anyBoolean())).thenReturn(prepared);
+        when(cacheRepository.findValid(conversationId, window.fromSeq(), window.toSeq(),
+                hash("LLM"), "LLM", SummaryLanguage.EN))
+                .thenReturn(Optional.of(cacheEntry(generation("LLM", "Cached external", null), "LLM")));
+
+        SummaryResponse response = service.summarize(conversationId, userId, request);
+
+        assertThat(response.cached()).isTrue();
+        assertThat(response.overview()).isEqualTo("Cached external");
+        verify(consentRepository).lockForResponse(userId);
+        verify(providerSelector, never()).generate(any(), any(), any());
+    }
+
+    @Test
+    void waiterRechecksItsReadConsentAfterTheLeaderFillsTheCache() throws Exception {
+        SummaryRequest request = request(false);
+        UUID waiterId = UUID.randomUUID();
+        PreparedSummaryProvider prepared = new PreparedSummaryProvider(new StubProvider("LLM"), "LLM", null);
+        SummaryGeneration generated = generation("LLM", "Leader output", null);
+        SummaryCacheEntry entry = cacheEntry(generated, "LLM");
+        AtomicReference<SummaryCacheEntry> cached = new AtomicReference<>();
+        AtomicReference<SummaryConsentRepository.ConsentSnapshot> waiterConsent = new AtomicReference<>(
+                new SummaryConsentRepository.ConsentSnapshot(true, 0L));
+        CountDownLatch providerStarted = new CountDownLatch(1);
+        CountDownLatch releaseProvider = new CountDownLatch(1);
+        CountDownLatch waiterProbed = new CountDownLatch(1);
+        when(windowService.load(eq(conversationId), any(), eq(request)))
+                .thenReturn(new SummaryReadContext(window, true, 0L, null));
+        when(providerSelector.prepare(eq(true), any(), anyBoolean())).thenReturn(prepared);
+        when(consentRepository.lockForResponse(waiterId)).thenAnswer(invocation -> waiterConsent.get());
+        when(cacheRepository.findValid(eq(conversationId), anyLong(), anyLong(), eq(hash("LLM")),
+                eq("LLM"), eq(SummaryLanguage.EN))).thenAnswer(invocation -> {
+                    if (Thread.currentThread().getName().equals("consent-cache-waiter")) {
+                        waiterProbed.countDown();
+                    }
+                    return Optional.ofNullable(cached.get());
+                });
+        when(providerSelector.generate(prepared, window, SummaryLanguage.EN)).thenAnswer(invocation -> {
+            providerStarted.countDown();
+            assertThat(releaseProvider.await(5, TimeUnit.SECONDS)).isTrue();
+            return generated;
+        });
+        when(cacheRepository.saveIfAbsent(eq(userId), eq(conversationId), eq(window), eq(hash("LLM")),
+                eq("LLM"), eq(SummaryLanguage.EN), eq(generated))).thenAnswer(invocation -> {
+                    cached.set(entry);
+                    return new SummaryCacheRepository.SavedSummary(entry, true);
+                });
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        AtomicReference<Throwable> waiterFailure = new AtomicReference<>();
+        Thread waiter = new Thread(() -> {
+            try {
+                service.summarize(conversationId, waiterId, request);
+            } catch (Throwable failure) {
+                waiterFailure.set(failure);
+            }
+        }, "consent-cache-waiter");
+        try {
+            Future<SummaryResponse> leader = executor.submit(() -> service.summarize(conversationId, userId, request));
+            assertThat(providerStarted.await(5, TimeUnit.SECONDS)).isTrue();
+            waiter.start();
+            assertThat(waiterProbed.await(5, TimeUnit.SECONDS)).isTrue();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (waiter.getState() != Thread.State.TIMED_WAITING && System.nanoTime() < deadline) {
+                Thread.onSpinWait();
+            }
+            assertThat(waiter.getState()).isEqualTo(Thread.State.TIMED_WAITING);
+            waiterConsent.set(new SummaryConsentRepository.ConsentSnapshot(false, 1L));
+            releaseProvider.countDown();
+            assertThat(leader.get(5, TimeUnit.SECONDS).overview()).isEqualTo("Leader output");
+            waiter.join(5_000);
+            assertThat(waiter.isAlive()).isFalse();
+            assertThat(waiterFailure.get()).isInstanceOfSatisfying(ApiException.class,
+                    ex -> assertThat(ex.getCode()).isEqualTo(ApiErrorCode.AI_CONSENT_REQUIRED));
+            verify(providerSelector, times(1)).generate(any(), any(), any());
+        } finally {
+            releaseProvider.countDown();
+            waiter.interrupt();
+            waiter.join(5_000);
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void cacheHitReflectsCurrentConsentFallbackAndSkipsProviderCall() {
         SummaryRequest request = request(false);
         PreparedSummaryProvider prepared = new PreparedSummaryProvider(
@@ -157,6 +265,7 @@ class SummaryServiceTest {
         assertThat(response.cached()).isTrue();
         assertThat(response.generatedBy()).isEqualTo("LOCAL");
         assertThat(response.fallbackReason()).isEqualTo("NO_CONSENT");
+        verify(consentRepository, never()).lockForResponse(any());
         verify(providerSelector, never()).generate(org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
