@@ -4,12 +4,12 @@ import java.io.IOException;
 import java.time.DateTimeException;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.LongSupplier;
 import okhttp3.ResponseBody;
 import retrofit2.Call;
@@ -19,7 +19,7 @@ import retrofit2.Response;
 /**
  * Summary API boundary with typed errors and a process-local five-minute cache.
  *
- * <p>The cache key names the conversation, the scope, the LAST_N count, the device zone and,
+ * <p>The cache key names the conversation, the scope, the LAST_N count, the language, the device zone and,
  * for TODAY, the local date the result belongs to. A summary is therefore never replayed for a
  * different scope, day or zone, and losing membership or changing AI consent drops the cache.
  */
@@ -30,6 +30,8 @@ public final class SummaryRepository {
     private final SummaryApi api;
     private final LongSupplier clock;
     private final Map<CacheKey, CacheEntry> cache = new LinkedHashMap<>(16, 0.75f, true);
+    private final Map<CacheKey, RequestHandle> latestFills = new HashMap<>();
+    private long cacheEpoch;
 
     public SummaryRepository(SummaryApi api) {
         this(api, System::currentTimeMillis);
@@ -49,50 +51,49 @@ public final class SummaryRepository {
         Objects.requireNonNull(callback, "callback");
 
         CacheKey key = keyFor(conversationId, request);
-        if (!request.isRefresh()) {
-            SummaryResponse cached = findCached(key);
-            if (cached != null) {
-                callback.onSuccess(cached.asCached());
-                return new RequestHandle(null);
+        final RequestHandle handle;
+        synchronized (cache) {
+            if (!request.isRefresh()) {
+                SummaryResponse cached = findCached(key);
+                if (cached != null) {
+                    callback.onSuccess(cached.asCached());
+                    return new RequestHandle(key, cacheEpoch);
+                }
             }
+            handle = new RequestHandle(key, cacheEpoch);
+            latestFills.put(key, handle);
         }
 
         final Call<SummaryResponse> call;
         try {
-            call = api.summarize(conversationId, request);
+            call = Objects.requireNonNull(api.summarize(conversationId, request), "summary call");
         } catch (RuntimeException failure) {
-            callback.onError(SummaryErrorMapper.fromFailure(failure));
-            return new RequestHandle(null);
+            handle.finishError(SummaryErrorMapper.fromFailure(failure), callback);
+            return handle;
         }
 
-        RequestHandle handle = new RequestHandle(call);
-        call.enqueue(new retrofit2.Callback<SummaryResponse>() {
-            @Override
-            public void onResponse(Call<SummaryResponse> ignored, Response<SummaryResponse> response) {
-                if (handle.isCancelled()) {
-                    return;
+        handle.call = call;
+        try {
+            call.enqueue(new retrofit2.Callback<SummaryResponse>() {
+                @Override
+                public void onResponse(Call<SummaryResponse> ignored, Response<SummaryResponse> response) {
+                    if (response.isSuccessful() && response.body() != null) {
+                        handle.finishSuccess(response.body(), callback);
+                        return;
+                    }
+                    SummaryError error = SummaryErrorMapper.fromHttp(
+                            response.code(), readBody(response.errorBody()));
+                    handle.finishError(error, callback);
                 }
-                if (response.isSuccessful() && response.body() != null) {
-                    putCached(key, response.body());
-                    callback.onSuccess(response.body());
-                    return;
-                }
-                SummaryError error = SummaryErrorMapper.fromHttp(
-                        response.code(), readBody(response.errorBody()));
-                if (error == SummaryError.NOT_MEMBER) {
-                    // Access is gone: nothing cached for this conversation may be shown again.
-                    clearCache();
-                }
-                callback.onError(error);
-            }
 
-            @Override
-            public void onFailure(Call<SummaryResponse> ignored, Throwable failure) {
-                if (!handle.isCancelled()) {
-                    callback.onError(SummaryErrorMapper.fromFailure(failure));
+                @Override
+                public void onFailure(Call<SummaryResponse> ignored, Throwable failure) {
+                    handle.finishError(SummaryErrorMapper.fromFailure(failure), callback);
                 }
-            }
-        });
+            });
+        } catch (RuntimeException failure) {
+            handle.finishError(SummaryErrorMapper.fromFailure(failure), callback);
+        }
         return handle;
     }
 
@@ -114,14 +115,17 @@ public final class SummaryRepository {
     /** Drops every cached summary; used when AI consent changes. */
     public void clearCache() {
         synchronized (cache) {
+            cacheEpoch++;
             cache.clear();
+            latestFills.clear();
         }
     }
 
     private CacheKey keyFor(String conversationId, SummaryRequest request) {
         String zone = request.getTimeZone();
         String localDate = request.getScope() == SummaryScope.TODAY ? localDate(zone) : null;
-        return new CacheKey(conversationId, request.getScope(), request.getLimit(), zone, localDate);
+        return new CacheKey(conversationId, request.getScope(), request.getLimit(),
+                request.getLanguage(), zone, localDate);
     }
 
     private String localDate(String zone) {
@@ -183,23 +187,70 @@ public final class SummaryRepository {
         void cancel();
     }
 
-    private static final class RequestHandle implements Cancellable {
-        private final Call<?> call;
-        private final AtomicBoolean cancelled = new AtomicBoolean();
+    private final class RequestHandle implements Cancellable {
+        private final CacheKey key;
+        private final long epoch;
+        private volatile Call<?> call;
+        private boolean cancelled;
+        private boolean finished;
 
-        private RequestHandle(Call<?> call) {
-            this.call = call;
+        private RequestHandle(CacheKey key, long epoch) {
+            this.key = key;
+            this.epoch = epoch;
         }
 
         @Override
         public void cancel() {
-            if (cancelled.compareAndSet(false, true) && call != null) {
-                call.cancel();
+            synchronized (cache) {
+                if (cancelled) {
+                    return;
+                }
+                cancelled = true;
+                latestFills.remove(key, this);
+            }
+            Call<?> pending = call;
+            if (pending != null) {
+                pending.cancel();
             }
         }
 
-        private boolean isCancelled() {
-            return cancelled.get();
+        private void finishSuccess(SummaryResponse response, Callback callback) {
+            synchronized (cache) {
+                if (cancelled || finished) {
+                    return;
+                }
+                finished = true;
+                boolean currentEpoch = epoch == cacheEpoch;
+                // A newer request owns this key even if it has already failed or finished.
+                if (latestFills.remove(key, this) && currentEpoch) {
+                    putCached(key, response);
+                }
+                // Delivery and invalidation have one ordering point. A consent clear that
+                // already ran cannot be followed by success from its old request epoch.
+                if (currentEpoch) {
+                    callback.onSuccess(response);
+                } else {
+                    callback.onError(SummaryError.UNKNOWN);
+                }
+            }
+        }
+
+        private void finishError(SummaryError error, Callback callback) {
+            synchronized (cache) {
+                if (cancelled || finished) {
+                    return;
+                }
+                finished = true;
+                latestFills.remove(key, this);
+                if (epoch != cacheEpoch) {
+                    callback.onError(SummaryError.UNKNOWN);
+                    return;
+                }
+                if (error == SummaryError.NOT_MEMBER) {
+                    clearCache();
+                }
+                callback.onError(error);
+            }
         }
     }
 
@@ -207,6 +258,7 @@ public final class SummaryRepository {
         private final String conversationId;
         private final SummaryScope scope;
         private final Integer limit;
+        private final SummaryLanguage language;
         private final String timeZone;
         private final String localDate;
 
@@ -214,11 +266,13 @@ public final class SummaryRepository {
                 String conversationId,
                 SummaryScope scope,
                 Integer limit,
+                SummaryLanguage language,
                 String timeZone,
                 String localDate) {
             this.conversationId = conversationId;
             this.scope = scope;
             this.limit = limit;
+            this.language = language;
             this.timeZone = timeZone;
             this.localDate = localDate;
         }
@@ -235,13 +289,14 @@ public final class SummaryRepository {
             return conversationId.equals(that.conversationId)
                     && scope == that.scope
                     && Objects.equals(limit, that.limit)
+                    && language == that.language
                     && Objects.equals(timeZone, that.timeZone)
                     && Objects.equals(localDate, that.localDate);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(conversationId, scope, limit, timeZone, localDate);
+            return Objects.hash(conversationId, scope, limit, language, timeZone, localDate);
         }
     }
 
