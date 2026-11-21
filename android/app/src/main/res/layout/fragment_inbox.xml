@@ -21,7 +21,6 @@
             android:background="?attr/colorSurface"
             app:contentInsetStart="16dp"
             app:contentInsetEnd="8dp"
-            app:layout_scrollFlags="scroll|enterAlways"
             app:title="">
 
             <LinearLayout
@@ -62,6 +61,7 @@
                     android:background="?attr/selectableItemBackground"
                     android:contentDescription="@string/feed_entry_cd"
                     android:src="@drawable/ic_public"
+                    android:visibility="gone"
                     app:tint="?attr/colorOnSurfaceVariant" />
 
                 <ImageButton
@@ -308,9 +308,12 @@
         </LinearLayout>
 
         <FrameLayout
+            android:id="@+id/inboxListViewport"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1">
+            android:layout_weight="1"
+            android:clipToPadding="true"
+            android:paddingBottom="@dimen/fab_clearance">
 
             <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
                 android:id="@+id/swipeRefresh"
@@ -321,8 +324,8 @@
                     android:id="@+id/conversationList"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:clipToPadding="false"
-                    android:paddingBottom="104dp"
+                    android:clipToPadding="true"
+                    android:paddingBottom="0dp"
                     android:paddingHorizontal="0dp"
                     android:paddingTop="0dp"
                     tools:listitem="@layout/item_inbox_conversation" />
@@ -350,16 +353,14 @@
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/createGroupFab"
-        android:layout_width="56dp"
-        android:layout_height="56dp"
+        style="@style/Widget.NexaChat.FloatingActionButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
         android:layout_marginEnd="@dimen/space_md"
         android:layout_marginBottom="@dimen/space_lg"
         android:contentDescription="@string/inbox_new_chat"
         app:backgroundTint="@color/stitch_fab_fill"
-        app:elevation="0dp"
-        app:hoveredFocusedTranslationZ="0dp"
-        app:pressedTranslationZ="0dp"
         app:srcCompat="@drawable/ic_edit_compose"
         app:tint="@color/brand_on_fill" />
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

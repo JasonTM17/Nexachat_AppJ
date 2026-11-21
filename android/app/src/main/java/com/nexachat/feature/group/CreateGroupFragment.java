@@ -52,7 +52,8 @@ public final class CreateGroupFragment extends Fragment {
         binding.toolbar.setNavigationOnClickListener(v -> NavHostFragment.findNavController(this).navigateUp());
         binding.errorState.setOnRetry(viewModel::loadContacts);
         binding.membersHeader.setTitle(getString(R.string.group_members_label));
-        binding.emptyState.setMessage(getString(R.string.contacts_empty));
+        binding.emptyState.setTitle(getString(R.string.contacts_empty));
+        binding.emptyState.setMessage(getString(R.string.contacts_empty_hint));
         binding.emptyState.setIcon(R.drawable.ic_person_outline);
         binding.groupNameInput.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int c, int d) {}

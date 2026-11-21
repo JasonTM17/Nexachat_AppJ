@@ -9,6 +9,7 @@
     <string name="feed_compose_submit">Post</string>
     <string name="feed_compose_counter" translatable="false">%1$d/%2$d</string>
     <string name="feed_empty">No posts yet</string>
+    <string name="feed_empty_hint">Be the first to share something public.</string>
     <string name="feed_error">Couldn\'t load the feed</string>
     <string name="feed_notice_title">Posts here are public</string>
     <string name="feed_notice_body">Anyone on NexaChat can read them.</string>

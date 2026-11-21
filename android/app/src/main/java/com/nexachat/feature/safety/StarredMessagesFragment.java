@@ -69,7 +69,8 @@ public final class StarredMessagesFragment extends Fragment {
             }
         });
         binding.starredEmpty.setIcon(R.drawable.ic_star_outline);
-        binding.starredEmpty.setMessage(getString(R.string.starred_messages_empty));
+        binding.starredEmpty.setTitle(getString(R.string.starred_messages_empty));
+        binding.starredEmpty.setMessage(getString(R.string.starred_messages_empty_hint));
         binding.starredError.setOnRetry(() -> viewModel.retry());
         viewModel.getUiState().observe(getViewLifecycleOwner(), state -> {
             adapter.submit(state.getItems());

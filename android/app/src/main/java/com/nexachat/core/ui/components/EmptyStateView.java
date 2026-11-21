@@ -22,6 +22,7 @@ import com.nexachat.R;
 public class EmptyStateView extends FrameLayout {
 
     private final ImageView iconView;
+    private final TextView titleView;
     private final TextView messageView;
     private final MaterialButton actionButton;
 
@@ -40,12 +41,21 @@ public class EmptyStateView extends FrameLayout {
 
         LayoutInflater.from(context).inflate(R.layout.view_empty_state, column, true);
         iconView = column.findViewById(R.id.emptyIcon);
+        titleView = column.findViewById(R.id.emptyTitle);
         messageView = column.findViewById(R.id.emptyMessage);
         actionButton = column.findViewById(R.id.emptyAction);
     }
 
+    public void setTitle(CharSequence title) {
+        boolean hasTitle = title != null && title.length() > 0;
+        titleView.setText(title);
+        titleView.setVisibility(hasTitle ? VISIBLE : GONE);
+    }
+
     public void setMessage(CharSequence message) {
+        boolean hasMessage = message != null && message.length() > 0;
         messageView.setText(message);
+        messageView.setVisibility(hasMessage ? VISIBLE : GONE);
     }
 
     public void setIcon(@DrawableRes int iconRes) {

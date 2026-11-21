@@ -14,6 +14,8 @@ public final class ChatPinnedBannerA11ySourceTest {
         assertTrue(source.contains("R.string.pinned_title"));
         assertTrue(source.contains("setContentDescription"));
         assertTrue(source.contains("\", \" + text"));
+        assertTrue("single-pin banners must hide the cycle refresh icon",
+                source.contains("pinnedRefreshIcon"));
     }
 
     private static String readChatInteractionsSource() throws Exception {

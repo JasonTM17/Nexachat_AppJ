@@ -9,6 +9,7 @@
     <string name="feed_compose_submit">Đăng</string>
     <string name="feed_compose_counter" translatable="false">%1$d/%2$d</string>
     <string name="feed_empty">Chưa có bài viết nào</string>
+    <string name="feed_empty_hint">Hãy là người đầu tiên đăng bài công khai.</string>
     <string name="feed_error">Không tải được bảng tin</string>
     <string name="feed_notice_title">Bài viết ở đây là công khai</string>
     <string name="feed_notice_body">Mọi người trên NexaChat đều đọc được.</string>

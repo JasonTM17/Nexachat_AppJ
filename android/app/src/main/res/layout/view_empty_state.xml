@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <merge xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto">
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools">
     <ImageView
         android:id="@+id/emptyIcon"
         android:layout_width="@dimen/state_icon_size"
@@ -9,6 +10,17 @@
         android:layout_marginBottom="@dimen/space_md"
         android:importantForAccessibility="no"
         android:visibility="gone" />
+    <TextView
+        android:id="@+id/emptyTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:accessibilityHeading="true"
+        android:gravity="center"
+        android:paddingBottom="@dimen/space_xs"
+        android:textAppearance="?attr/textAppearanceTitleLarge"
+        android:textColor="?attr/colorOnSurface"
+        android:visibility="gone"
+        tools:targetApi="p" />
     <TextView
         android:id="@+id/emptyMessage"
         android:layout_width="match_parent"

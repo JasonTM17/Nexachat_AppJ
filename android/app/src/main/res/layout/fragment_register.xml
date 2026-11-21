@@ -51,6 +51,16 @@
                     android:textAppearance="?attr/textAppearanceHeadlineMedium"
                     android:textColor="?attr/colorOnSurface" />
 
+                <TextView
+                    android:id="@+id/authTagline"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:paddingHorizontal="@dimen/space_md"
+                    android:text="@string/auth_tagline"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+
                 <LinearLayout
                     android:id="@+id/authModeSwitch"
                     android:layout_width="match_parent"
