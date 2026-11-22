@@ -201,6 +201,22 @@ the `fix/a11y-sweep-tok-callable` merge while the recapture runs; and
 `polls-reminders` classifies `reminder_clock` failures via typed errors
 (#248) with no clean board pass recorded in this refresh.
 
+2026-11-21 follow-up on `offline-sync`: five consecutive runs reached the
+final assertion and failed identically —
+`FAIL_PRODUCT: the reconciled tail edit was not rendered`. Root cause was
+traced to the harness, not the product: after the 95-message recall burst
+the seeded DM's inbox row can render `This message was deleted` as its
+title (the documented transient where a row title shows last-message
+content), which the exact-match row lookup never accepted, so the wait
+loop never re-tapped into the chat. The same loop also only scanned the
+rendered inbox viewport — the DM can sit >100 seeded groups deep after the
+post-restart re-sort. Both gaps were fixed in #285 (tombstone aliases at
+the reopen sites + bounded inbox sweep); a clean board pass on the patched
+harness is pending — the day's remaining runs were consumed by
+uiautomator-daemon wedges on the emulator (`FAIL_HARNESS_OR_ENVIRONMENT`,
+cleared by `pkill -f uiautomator`), so the row's PASS above still refers
+to the earlier full-journey pass, not a post-#285 verification.
+
 API 36 notes: runtime
 notification permission must be granted after each `pm clear`, `cmd
 notification cancel` no longer exists (cleanup goes through the DUMP-gated
