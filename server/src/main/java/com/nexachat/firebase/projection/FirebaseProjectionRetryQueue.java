@@ -1,5 +1,6 @@
 package com.nexachat.firebase.projection;
 
+import com.nexachat.firebase.FirebaseFailures;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -80,7 +81,7 @@ public class FirebaseProjectionRetryQueue {
                         metrics.retryBacklog(pending.size());
                         metrics.retry("failure");
                         log.warn("Firebase authorization retry remains pending ({})",
-                                failure.getClass().getSimpleName());
+                                FirebaseFailures.describe(failure));
                     }
                 }
             });
