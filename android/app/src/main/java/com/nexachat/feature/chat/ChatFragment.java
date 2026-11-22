@@ -1131,9 +1131,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
      */
     private Snackbar anchoredSnackbar(View host, int messageId, int length) {
         Snackbar bar = Snackbar.make(host, messageId, length);
-        bar.setAnchorView(binding.scrollDownFab.getVisibility() == View.VISIBLE
-                ? binding.scrollDownFab
-                : binding.composerBar.getRoot());
+        if (binding.scrollDownFab.getVisibility() == View.VISIBLE) {
+            bar.setAnchorView(binding.scrollDownFab);
+        } else {
+            bar.setAnchorView(binding.composerBar.getRoot());
+        }
         return bar;
     }
 
