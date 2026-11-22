@@ -35,6 +35,7 @@ import com.google.android.material.snackbar.Snackbar;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.network.dto.UserDto;
+import com.nexachat.core.ui.SnackbarDurations;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.databinding.FragmentInboxBinding;
 import com.nexachat.feature.chat.ChatErrorIds;
@@ -210,6 +211,7 @@ public final class InboxFragment extends Fragment {
                         binding.getRoot(), success.getMessageId(), Snackbar.LENGTH_LONG)
                         .setAnchorView(binding.createGroupFab);
                 if (success.getUndo() != null) {
+                    snackbar.setDuration(SnackbarDurations.UNDO_MS);
                     snackbar.setAction(R.string.action_undo, ignored -> success.getUndo().run());
                 }
                 snackbar.show();

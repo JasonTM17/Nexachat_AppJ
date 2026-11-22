@@ -59,6 +59,7 @@ import com.nexachat.core.network.dto.AttachmentDto;
 import com.nexachat.core.network.dto.MessageMention;
 import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.ui.MessageUiRules;
+import com.nexachat.core.ui.SnackbarDurations;
 import com.nexachat.core.ui.components.DateSeparatorLabels;
 import com.nexachat.core.ui.RecallWindowRules;
 import com.nexachat.data.ChatMessage;
@@ -1297,6 +1298,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                 Snackbar snackbar = anchoredSnackbar(
                         binding.getRoot(), preferenceMessage(changed.getKind()), Snackbar.LENGTH_LONG);
                 if (changed.getUndo() != null) {
+                    snackbar.setDuration(SnackbarDurations.UNDO_MS);
                     snackbar.setAction(R.string.action_undo, ignored -> changed.getUndo().run());
                 }
                 snackbar.show();
@@ -2129,6 +2131,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         if (inboxFab != null) {
             bar.setAnchorView(inboxFab);
         }
+        bar.setDuration(SnackbarDurations.UNDO_MS);
         bar.setAction(R.string.action_undo,
                         ignored -> sharedInboxViewModel.setConversationArchived(archivedId, false))
                 .show();
@@ -2452,6 +2455,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                     if (binding != null) {
                         anchoredSnackbar(binding.getRoot(), R.string.user_blocked_snackbar,
                                         Snackbar.LENGTH_LONG)
+                                .setDuration(SnackbarDurations.UNDO_MS)
                                 .setAction(R.string.action_undo,
                                         ignored -> viewModel.unblockPeer())
                                 .show();

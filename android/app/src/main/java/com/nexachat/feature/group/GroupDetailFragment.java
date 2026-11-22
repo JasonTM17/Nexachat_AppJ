@@ -27,6 +27,7 @@ import com.google.android.material.textfield.TextInputLayout;
 import com.nexachat.R;
 import com.nexachat.core.common.ApiError;
 import com.nexachat.core.ui.GroupDetailListRules;
+import com.nexachat.core.ui.SnackbarDurations;
 import com.nexachat.data.GroupMember;
 import com.nexachat.databinding.FragmentGroupDetailBinding;
 import com.nexachat.feature.group.adapter.GroupMemberAdapter;
@@ -288,6 +289,7 @@ public final class GroupDetailFragment extends Fragment {
                 Snackbar.LENGTH_LONG);
         Runnable undo = feedback.getUndo();
         if (undo != null) {
+            snackbar.setDuration(SnackbarDurations.UNDO_MS);
             snackbar.setAction(R.string.action_undo, ignored -> undo.run());
         }
         snackbar.show();

@@ -27,6 +27,8 @@ All notable changes to NexaChat are documented here. The format follows
   now at least 48dp while the picture stays the same size.
 - Android: Undo after archiving a conversation brings the conversation back
   to the inbox right away instead of waiting for the next refresh.
+- Android: snackbars with an Undo action stay on screen longer, so the Undo
+  button is reachable before the message disappears.
 
 ## [1.2.16] - 2026-11-21
 
