@@ -995,6 +995,34 @@ public final class SyncEngineTest {
         org.junit.Assert.assertEquals("Room and cursor each need an epoch fence", 2, fenceCalls.get());
     }
 
+    @Test
+    public void staleSessionEmptyDeltaPageIsFencedLikeANonEmptyPage() {
+        TokenRefresher sessionGate = mock(TokenRefresher.class);
+        when(sessionGate.sessionEpoch()).thenReturn(1L);
+        when(sessionGate.isSessionCurrent(1L)).thenReturn(true);
+        when(sessionGate.runIfSessionCurrent(eq(1L), any(Runnable.class)))
+                .thenReturn(false);
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("conversation-a", 0L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+        when(tokenStore.readTokens()).thenReturn(Maybe.just(
+                new Tokens(jwt("user-a"), 1800000000000L, "refresh-a")));
+        // An empty page with no serverTime skips the cursor-write fence, so the
+        // delta-bundle fence is the only epoch check this page can hit.
+        SyncResponse response = new SyncResponse(Collections.emptyList(), null);
+        Call<SyncResponse> call = responseCall(response);
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(call);
+        SyncEngine gatedSyncEngine = new SyncEngine(
+                appDatabase, messageApi, messageDao, conversationDao, reactionDao,
+                tokenStore, moshi, sessionGate, operationTracker);
+
+        TestObserver<Void> observer = gatedSyncEngine.sync().test();
+        observer.awaitDone(5, TimeUnit.SECONDS).assertComplete();
+
+        verify(sessionGate, times(1)).runIfSessionCurrent(eq(1L), any(Runnable.class));
+        verify(tokenStore, never()).saveSyncServerTime(any(), any());
+    }
+
     private void assertDelayedResponseDiscardedAfterSessionChange(String nextUserId) throws Exception {
         when(messageDao.getAllMaxSeqs()).thenReturn(
                 Single.just(List.of(new ConversationWatermark("conversation-a", 0L))));

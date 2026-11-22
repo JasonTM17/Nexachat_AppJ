@@ -673,6 +673,9 @@ public final class SyncEngine {
             @Nullable String ownerUserId,
             long expectedEpoch) {
         if (response == null || response.getDeltas().isEmpty()) {
+            if (!tokenRefresher.runIfSessionCurrent(expectedEpoch, () -> { })) {
+                throw new CancellationException("Sync session changed before Room transaction");
+            }
             return;
         }
 
