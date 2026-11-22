@@ -3865,6 +3865,103 @@ class ArchivePreferencesExecutorTest(unittest.TestCase):
         self.assertEqual(store.flags["an"]["labels"], set())
 
 
+class InboxRowVisibilityTest(unittest.TestCase):
+    """Unit coverage for the partially-clipped inbox-row oracle.
+
+    On the 320x640 emulator the inbox header consumes most of the viewport,
+    so a restored conversation row can sit in the ui tree with its bottom
+    edge clipped by the conversationList bounds. The visible-fraction lookup
+    must accept that row (it is readable and tappable) while still rejecting
+    a row that is effectively off-screen — the wait may not degrade into an
+    unconditional pass.
+    """
+
+    class Node:
+        def __init__(self, text="", desc="", rid="", box=None):
+            self.text = text
+            self.desc = desc
+            self.attrs = {"resource-id": ("com.nexachat.debug:id/" + rid) if rid else ""}
+            self.box = box
+
+    class Device:
+        def __init__(self, nodes):
+            self._nodes = nodes
+
+        def nodes(self):
+            return list(self._nodes)
+
+        def swipe(self, *args, **kwargs):
+            return None
+
+    class Patch:
+        @staticmethod
+        def ui_nodes(device, timeout=8):
+            return device.nodes()
+
+    def _context(self, nodes):
+        return {
+            "device": self.Device(nodes),
+            "helpers": (None, None, self.Patch),
+            "ui_timeout": 0.5,
+        }
+
+    def _inbox(self, *row_boxes):
+        N = self.Node
+        nodes = [
+            # The active-now strip also labels a card 'Binh' above the list;
+            # it must never satisfy the row lookup.
+            N(text="Binh", desc="Binh, Active now", box=(100, 196, 184, 283)),
+            N(rid="conversationList", box=(0, 347, 320, 620)),
+        ]
+        for box in row_boxes:
+            nodes.append(N(text="Binh", desc="Binh, Online", box=box))
+        return nodes
+
+    def test_half_visible_row_counts_as_present(self):
+        # Bottom edge clipped below the list viewport: 30px of a 50px row is
+        # still on screen, so the row is readable/tappable.
+        context = self._context(self._inbox((76, 590, 263, 640)))
+        self.assertIsNone(journeys._inbox_conversation_row(context, "Binh"))
+        self.assertIsNotNone(
+            journeys._inbox_conversation_row_visible(context, "Binh"))
+        journeys._wait_binh_row(context, True, "row should be found")
+
+    def test_top_clipped_row_counts_as_present(self):
+        # Row scrolled up under the header: its a11y bounds can start above
+        # the container top while most of the row remains visible.
+        context = self._context(self._inbox((76, 330, 263, 390)))
+        self.assertIsNone(journeys._inbox_conversation_row(context, "Binh"))
+        self.assertIsNotNone(
+            journeys._inbox_conversation_row_visible(context, "Binh"))
+
+    def test_sliver_row_is_rejected(self):
+        # Only 6px of the row is inside the list — not enough to read or
+        # tap — so the bounded sweep must still report it missing.
+        context = self._context(self._inbox((76, 614, 263, 650)))
+        with mock.patch.object(journeys.time, "sleep"):
+            self.assertFalse(journeys._inbox_row_found_scrolled(context, "Binh"))
+            with self.assertRaises(journeys.ProductFailure):
+                journeys._wait_binh_row(
+                    context, True, "sliver row must not satisfy the wait",
+                    timeout=0.2)
+
+    def test_presence_strip_card_is_not_a_row(self):
+        context = self._context(self._inbox())
+        self.assertIsNone(journeys._inbox_conversation_row_visible(context, "Binh"))
+
+    def test_absence_wait_rejects_partially_visible_row(self):
+        context = self._context(self._inbox((76, 590, 263, 640)))
+        with mock.patch.object(journeys.time, "sleep"):
+            with self.assertRaises(journeys.ProductFailure):
+                journeys._wait_binh_row(
+                    context, False, "a clipped row is still present",
+                    timeout=0.2)
+
+    def test_absence_wait_passes_when_row_is_gone(self):
+        context = self._context(self._inbox())
+        journeys._wait_binh_row(context, False, "unreachable", timeout=0.2)
+
+
 class GroupsContactsExecutorTest(unittest.TestCase):
     """Offline fake device+REST world for run_groups_contacts.
 
@@ -7020,6 +7117,8 @@ class AccessibilitySweepExecutorTest(unittest.TestCase):
             mock.patch.object(journeys, "_offline_send_rest"),
             mock.patch.object(journeys, "_wait_ui_node", return_value=None),
             mock.patch.object(journeys, "_inbox_conversation_row", return_value=object()),
+            mock.patch.object(journeys, "_inbox_conversation_row_visible",
+                              return_value=object()),
             mock.patch.object(journeys, "_open_chat_menu"),
             mock.patch.object(journeys, "_open_assign_dialog"),
             mock.patch.object(journeys, "_tap_dialog_button"),

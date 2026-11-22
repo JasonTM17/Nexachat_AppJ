@@ -2802,6 +2802,42 @@ def _inbox_conversation_row(context: dict[str, Any], title: str | tuple,
     return None
 
 
+def _inbox_conversation_row_visible(context: dict[str, Any], title: str | tuple,
+                                    nodes: list | None = None) -> Any | None:
+    """Like `_inbox_conversation_row` but also accepts a row clipped by the
+    viewport when at least half of it is still on screen.
+
+    On the 320x640 emulator the inbox header (active-now strip, wrapped
+    filter chips, label chips, Manage labels) shrinks the conversationList to
+    a sliver, so a restored top row renders partially below the fold — it is
+    present in the ui tree yet fails the fully-inside-bounds check
+    (final-journeys2 archive-preferences: Undo restored the row but the wait
+    reported it missing). A node whose visible height covers its center is
+    readable and tappable, so it counts as present; the match still requires
+    the node to exist in the dump inside the conversationList bounds.
+    """
+    titles = (title,) if isinstance(title, str) else tuple(title)
+    if nodes is None:
+        nodes = _ui_nodes(context)
+    container = next((node for node in nodes
+                      if _rid_ends(node, "conversationList")), None)
+    if container is None or not container.box:
+        return None
+    top, bottom = container.box[1], container.box[3]
+    for node in nodes:
+        if node.text.strip() not in titles and node.desc.strip() not in titles:
+            continue
+        if not node.box:
+            continue
+        height = node.box[3] - node.box[1]
+        if height <= 0:
+            continue
+        visible = min(node.box[3], bottom) - max(node.box[1], top)
+        if visible * 2 >= height:
+            return node
+    return None
+
+
 def _open_inbox_actions(context: dict[str, Any]) -> None:
     """Long-press the seeded peer row until the actions dialog opens."""
     ui = context["device"]
@@ -2813,7 +2849,7 @@ def _open_inbox_actions(context: dict[str, Any]) -> None:
             if time.monotonic() >= deadline:
                 raise ProductFailure("the seeded peer row was not on the inbox")
             continue
-        row = _inbox_conversation_row(context, "Binh")
+        row = _inbox_conversation_row_visible(context, "Binh")
         if row is None:
             if time.monotonic() >= deadline:
                 raise ProductFailure("the seeded peer row was not on the inbox")
@@ -2844,7 +2880,9 @@ def _wait_binh_row(context: dict[str, Any], present: bool, what: str,
     else:
         deadline = time.monotonic() + float(timeout or _ui_timeout(context))
         while True:
-            if _inbox_conversation_row(context, "Binh") is None:
+            # A partially clipped row still proves the row is in the tree, so
+            # the absence wait must use the same visibility test as presence.
+            if _inbox_conversation_row_visible(context, "Binh") is None:
                 return
             if time.monotonic() >= deadline:
                 raise ProductFailure(what)
@@ -2898,7 +2936,7 @@ def _inbox_row_found_scrolled(context: dict[str, Any], title: str | tuple,
     ui = context["device"]
     for _ in range(swipes):
         nodes = _ui_nodes(context)
-        if _inbox_conversation_row(context, title, nodes) is not None:
+        if _inbox_conversation_row_visible(context, title, nodes) is not None:
             return True
         container = next((node for node in nodes
                           if _rid_ends(node, "conversationList")), None)
