@@ -422,6 +422,21 @@ public final class SyncEngineV2Test {
         assertEquals(1, requests.size());
     }
 
+    @Test public void requestedConversationAbsentFromASinglePageKeepsItsHistoryAndCursor() {
+        // Regression for the verify-285-final wipe: a conversation requested on
+        // a page but absent from that page's response must keep its local
+        // history and sync cursor. Absence is not an authoritative removal
+        // signal; only an authoritative path (leave, STOMP self-removal,
+        // inbox reconcile) may delete cached scope.
+        seed(1, 1);
+        server = request -> envelope(List.of(), 1);
+        engine.sync().blockingAwait();
+        assertNotNull("absence from one page must not wipe local history", rows.get("m-c0"));
+        assertNotNull("absence from one page must not wipe the account's sync cursor",
+                cursors.get("A:c0"));
+        verify(db.outboxDao(), never()).deleteForConversationInTransaction(anyString(), anyString());
+    }
+
     @Test public void membershipOmissionDeletesOnlyItsAccountCursorAndCachedScope() {
         seed(1, 1);
         cursors.put("B:other", new SyncCursorEntity("B", "other", 1, 9, null, null, null, true));
