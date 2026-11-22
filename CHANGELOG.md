@@ -6,6 +6,26 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Android: the Undo and Retry actions on inbox, chat and feed snackbars are
+  no longer hidden behind the floating action button, so Undo after
+  archiving a conversation is tappable again.
+- Android: the Dark theme chip on the profile screen is no longer cut off
+  when the system font size is set large; the theme chips now wrap to a
+  second line.
+- Android: choosing "Not now" on the AI summary consent prompt no longer
+  reopens the prompt immediately, retrying a failed question keeps any new
+  text you already typed, the sheet scrolls to show each new answer, and
+  the question-length counter is announced by screen readers.
+- Android: a half-written message is saved as a draft as soon as you leave
+  a chat instead of only when the screen fully closes, so switching away
+  quickly no longer loses it.
+- Android: the unread badge can no longer go negative or lose newly arrived
+  messages when marking a conversation read or unread fails at the same
+  moment a message arrives.
+- Android: the avatar in a chat header is easier to tap: its touch area is
+  now at least 48dp while the picture stays the same size.
+
 ## [1.2.16] - 2026-11-21
 
 Server + Android release. See
