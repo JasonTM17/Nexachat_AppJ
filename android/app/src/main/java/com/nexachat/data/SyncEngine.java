@@ -569,29 +569,6 @@ public final class SyncEngine {
     }
 
     /**
-     * A successful delta response lists every conversation the caller can still
-     * access. An omitted watermark therefore means the conversation was deleted
-     * or the caller lost membership, so its local cache is removed atomically
-     * with the pages already applied.
-     */
-    private static List<String> missingConversations(
-            List<SyncRequest.Watermark> requested, SyncResponse response) {
-        java.util.Set<String> returned = new java.util.HashSet<>();
-        for (SyncResponse.ConversationDeltaDto delta : response.getDeltas()) {
-            if (delta.getConversationId() != null) {
-                returned.add(delta.getConversationId());
-            }
-        }
-        List<String> missing = new ArrayList<>();
-        for (SyncRequest.Watermark watermark : requested) {
-            if (!returned.contains(watermark.getConversationId())) {
-                missing.add(watermark.getConversationId());
-            }
-        }
-        return missing;
-    }
-
-    /**
      * Splits watermarks into requests the server evaluates whole: it reads at
      * most {@link #MAX_WATERMARKS_PER_REQUEST} watermarks per call and ignores
      * the rest, so larger sets must be asked in chunks.
@@ -699,8 +676,7 @@ public final class SyncEngine {
         if (response == null) {
             return;
         }
-        List<String> missing = missingConversations(requested, response);
-        if (response.getDeltas().isEmpty() && missing.isEmpty()) {
+        if (response.getDeltas().isEmpty()) {
             return;
         }
 
@@ -864,9 +840,12 @@ public final class SyncEngine {
                         // 6. Peer receipt watermarks advance ONLY from the peer's own read/delivered
                         //    frames; a delta bundle says nothing about what the peer has read.
                     }
-                    for (String conversationId : missing) {
-                        LocalConversationCleaner.deleteInTransaction(appDatabase, conversationId, myUserId);
-                    }
+                    // A conversation omitted from this bundle is NOT authoritatively
+                    // removed: the omission contract is unwritable from a single
+                    // response (issue #288), and wiping on it destroyed live
+                    // conversations (verify-285-final). Authoritative removal keeps
+                    // its dedicated paths: self-leave, STOMP self-removal frames,
+                    // and the inbox reconcile prune.
                 }));
         if (!applied) {
             throw new CancellationException("Sync session changed before Room transaction");

@@ -156,10 +156,8 @@ final class SyncPageStore {
             }
             long deltaStart = timed ? System.nanoTime() : 0L;
             try {
-                Set<String> returned = new HashSet<>();
                 for (SyncResponse.ConversationDeltaDto delta : response.getDeltas()) {
                     String conversation = delta.getConversationId();
-                    returned.add(conversation);
                     SyncCursorEntity current = requested.get(conversation);
                     if (current == null) continue; // coalesced out by the guard: removed mid-page
                     if (delta.getReset()) {
@@ -241,12 +239,16 @@ final class SyncPageStore {
                             since, reactionCursor, baseline, rebuilding));
                     if (more || replayBaseline) pending.add(conversation);
                 }
-                for (String conversation : requested.keySet()) {
-                    if (!returned.contains(conversation)) {
-                        LocalConversationCleaner.deleteInTransaction(db, conversation, owner);
-                        db.syncCursorDao().delete(owner, conversation);
-                    }
-                }
+                // Absence from a page is NOT an authoritative removal signal
+                // (issue #288, verify-285-final wipe). The server omits a
+                // requested conversation whenever its member row is not
+                // visible at query time, and a still-valid conversation can be
+                // missing from one page while later data proves it alive:
+                // wiping local history on a single page's absence destroys
+                // conversations the user never left (all 62 fixture sends were
+                // server-side and the inbox row re-formed from a later read).
+                // Authoritative removal keeps its dedicated paths: self-leave,
+                // the STOMP self-removal frame, and the inbox reconcile prune.
                 beforeCommit.run();
             } finally {
                 if (timed) drainProbe.pageDelta(System.nanoTime() - deltaStart);

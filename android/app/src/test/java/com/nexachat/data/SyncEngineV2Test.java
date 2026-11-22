@@ -437,15 +437,16 @@ public final class SyncEngineV2Test {
         verify(db.outboxDao(), never()).deleteForConversationInTransaction(anyString(), anyString());
     }
 
-    @Test public void membershipOmissionDeletesOnlyItsAccountCursorAndCachedScope() {
+    @Test public void membershipOmissionDeletesNoCachedScopeAndNoAccountCursor() {
         seed(1, 1);
         cursors.put("B:other", new SyncCursorEntity("B", "other", 1, 9, null, null, null, true));
         server = request -> envelope(List.of(), 1);
         engine.sync().blockingAwait();
-        assertNull(cursors.get("A:c0"));
+        assertNotNull("omission is not authoritative: history must survive", rows.get("m-c0"));
+        assertNotNull("omission is not authoritative: the caller's cursor must survive",
+                cursors.get("A:c0"));
         assertNotNull(cursors.get("B:other"));
-        assertTrue(rows.isEmpty());
-        verify(db.outboxDao()).deleteForConversationInTransaction("c0", "A");
+        verify(db.outboxDao(), never()).deleteForConversationInTransaction(anyString(), anyString());
     }
 
     @Test public void cacheLossStartsFromZeroEvenWhenInboxSeqIsHigh() {

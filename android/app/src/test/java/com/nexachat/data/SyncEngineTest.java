@@ -852,7 +852,11 @@ public final class SyncEngineTest {
     }
 
     @Test
-    public void syncRemovesConversationOmittedFromASuccessfulDeltaResponse() {
+    public void syncKeepsConversationAbsentFromASuccessfulDeltaResponse() {
+        // A single response's omission is not an authoritative removal signal:
+        // wiping on it destroyed live conversations (verify-285-final).
+        // Removal keeps its dedicated authoritative paths (self-leave, STOMP
+        // self-removal frame, inbox reconcile prune).
         when(tokenStore.readTokens()).thenReturn(
                 Maybe.just(new Tokens(jwt("user-1"), 1800000000000L, "refresh")));
         when(tokenStore.readSyncServerTime("user-1")).thenReturn(Maybe.just("cursor-start"));
@@ -873,11 +877,11 @@ public final class SyncEngineTest {
 
         syncEngine.sync().blockingAwait();
 
-        verify(conversationDao).deleteByIdInTransaction("c2");
-        verify(messageDao).deleteForConversationInTransaction("c2");
-        verify(reactionDao).deleteForConversationInTransaction("c2");
-        verify(pinDao).deleteForConversationInTransaction("c2");
-        verify(outboxDao).deleteForConversationInTransaction("c2", "user-1");
+        verify(conversationDao, never()).deleteByIdInTransaction("c2");
+        verify(messageDao, never()).deleteForConversationInTransaction("c2");
+        verify(reactionDao, never()).deleteForConversationInTransaction("c2");
+        verify(pinDao, never()).deleteForConversationInTransaction("c2");
+        verify(outboxDao, never()).deleteForConversationInTransaction("c2", "user-1");
         verify(conversationDao, never()).deleteByIdInTransaction("c1");
         verify(tokenStore).saveSyncServerTime("user-1", "cursor-end");
     }
