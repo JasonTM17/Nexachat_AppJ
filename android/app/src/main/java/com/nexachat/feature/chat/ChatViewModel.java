@@ -164,6 +164,7 @@ public final class ChatViewModel extends ViewModel {
             .concatMapCompletable(op -> op.onErrorComplete())
             .subscribe();
     private boolean restoringComposerDraft;
+    private boolean composerDraftMayBePersisted;
     private boolean initialHistoryReloadInFlight;
     private final Map<String, CompositeDisposable> uploadDisposables = new LinkedHashMap<>();
     /** Reply id captured when an upload batch starts, keyed by that batch's local ids. */
@@ -1342,6 +1343,7 @@ public final class ChatViewModel extends ViewModel {
                     if (!getMentionDraft().getContent().isEmpty()) {
                         return;
                     }
+                    composerDraftMayBePersisted = true;
                     restoringComposerDraft = true;
                     onComposerDraftChange(draft);
                     restoringComposerDraft = false;
@@ -1351,6 +1353,9 @@ public final class ChatViewModel extends ViewModel {
     private void persistComposerDraftDebounced(@NonNull MentionDraft draft) {
         if (composerDraftRepository == null || conversationId.isBlank() || restoringComposerDraft) {
             return;
+        }
+        if (!draft.getContent().isEmpty()) {
+            composerDraftMayBePersisted = true;
         }
         draftPersistDisposable.set(
                 Completable.timer(400, TimeUnit.MILLISECONDS, Schedulers.io())
@@ -1370,14 +1375,19 @@ public final class ChatViewModel extends ViewModel {
     /**
      * Persists the current composer draft immediately, cancelling the pending
      * debounce. Called on pause/stop so a draft is never lost before
-     * {@link #onCleared()}. An empty draft deletes the stored row.
+     * {@link #onCleared()}. An empty draft deletes the stored row; the write is
+     * skipped entirely when nothing was ever drafted or restored.
      */
     public void flushComposerDraft() {
         if (composerDraftRepository == null || conversationId.isBlank()) {
             return;
         }
+        MentionDraft draft = getMentionDraft();
+        if (draft.getContent().isEmpty() && !composerDraftMayBePersisted) {
+            return;
+        }
         draftPersistDisposable.set(Disposable.empty());
-        draftWrites.onNext(composerDraftRepository.save(conversationId, getMentionDraft()));
+        draftWrites.onNext(composerDraftRepository.save(conversationId, draft));
     }
 
     private SavedStateHandle savedState() {

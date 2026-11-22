@@ -371,6 +371,24 @@ public final class ChatViewModelTest {
     }
 
     @Test
+    public void composerFlushSkipsWriteWhenNothingWasEverDrafted() {
+        ComposerDraftRepository drafts = Mockito.mock(ComposerDraftRepository.class);
+        when(drafts.load(anyString())).thenReturn(Maybe.empty());
+        when(drafts.save(anyString(), any())).thenReturn(Completable.complete());
+        ChatViewModel vm = new ChatViewModel(
+                new SavedStateHandle(Map.of("conversationId", CONVERSATION_ID)),
+                messageRepository, conversationRepository, attachmentRepository,
+                session, tokenStore, null, null, null, null, null, drafts);
+        viewModelStore.put("chat-" + (++viewModelCount), vm);
+
+        vm.flushComposerDraft();
+
+        // No row can exist: nothing was typed and the store emitted none, so
+        // the delete is a guaranteed no-op and must not hit Room at all.
+        verify(drafts, never()).save(anyString(), any());
+    }
+
+    @Test
     public void sendClearIsSerializedAfterInFlightDebouncedSave() {
         ComposerDraftRepository drafts = Mockito.mock(ComposerDraftRepository.class);
         when(drafts.load(anyString())).thenReturn(Maybe.empty());
