@@ -422,7 +422,7 @@ public final class SyncEngine {
         SyncRequest request = new SyncRequest(
                 watermarks, DELTA_LIMIT_PER_CONVERSATION, since);
         return fetchDeltaResponse(request).flatMapCompletable(response -> {
-            applyDeltaBundle(response, watermarks, ownerUserId, expectedEpoch);
+            applyDeltaBundle(response, ownerUserId, expectedEpoch);
             if (response.getServerTime() == null) {
                 missingServerTime.set(true);
             } else {
@@ -670,13 +670,9 @@ public final class SyncEngine {
 
     private void applyDeltaBundle(
             SyncResponse response,
-            List<SyncRequest.Watermark> requested,
             @Nullable String ownerUserId,
             long expectedEpoch) {
-        if (response == null) {
-            return;
-        }
-        if (response.getDeltas().isEmpty()) {
+        if (response == null || response.getDeltas().isEmpty()) {
             return;
         }
 

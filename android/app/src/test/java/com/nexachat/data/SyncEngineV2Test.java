@@ -437,6 +437,26 @@ public final class SyncEngineV2Test {
         verify(db.outboxDao(), never()).deleteForConversationInTransaction(anyString(), anyString());
     }
 
+    @Test public void omittedPageThenReturnedPageResumesFromTheSameCursor() {
+        seed(1, 1);
+        AtomicInteger pages = new AtomicInteger();
+        server = request -> {
+            if (pages.incrementAndGet() == 1) return envelope(List.of(), 1); // omits c0
+            assertEquals("the follow-up page still asks from the committed cursor",
+                    1L, cursor(request.getWatermarks().get(0)));
+            return envelope(List.of(delta("c0", 2, false, message("c0", 2))), 2);
+        };
+        engine.sync().blockingAwait();
+        assertNotNull("the omitted page left the cursor in place", cursors.get("A:c0"));
+        assertEquals(1L, cursors.get("A:c0").changeCursor);
+        assertNotNull("the omitted page left the history in place", rows.get("m-c0"));
+
+        engine.sync().blockingAwait();
+        assertEquals("the returned page applies on top of the surviving row",
+                "v2", rows.get("m-c0").getContent());
+        assertEquals("the cursor advanced from the surviving position", 2L, cursors.get("A:c0").changeCursor);
+    }
+
     @Test public void membershipOmissionDeletesNoCachedScopeAndNoAccountCursor() {
         seed(1, 1);
         cursors.put("B:other", new SyncCursorEntity("B", "other", 1, 9, null, null, null, true));
