@@ -47,6 +47,7 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
     private boolean consentDialogShowing;
     private boolean consentSavePending;
     private boolean suggestionsBound;
+    private int renderedTurnCount;
 
     @NonNull
     public static AskBottomSheetFragment newInstance(@NonNull String conversationId) {
@@ -167,7 +168,13 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
         binding.askSkeleton.setVisibility(loading ? View.VISIBLE : View.GONE);
         binding.askCancel.setVisibility(loading ? View.VISIBLE : View.GONE);
 
+        int previousTurnCount = renderedTurnCount;
         renderTurns(state.getTurns());
+        renderedTurnCount = state.getTurns().size();
+        if (renderedTurnCount > previousTurnCount) {
+            binding.askContentScroll.post(() ->
+                    binding.askContentScroll.fullScroll(View.FOCUS_DOWN));
+        }
 
         boolean showStatus = state.getStatus() == AskUiState.Status.NOT_FOUND;
         binding.askStatusMessage.setVisibility(showStatus ? View.VISIBLE : View.GONE);

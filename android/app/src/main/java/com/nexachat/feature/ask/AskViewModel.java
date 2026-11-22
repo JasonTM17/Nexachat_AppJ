@@ -94,7 +94,9 @@ public final class AskViewModel extends ViewModel {
         if (last != null && (last.getStatus() == AskTurn.Status.ERROR
                 || last.getStatus() == AskTurn.Status.RATE_LIMITED
                 || last.getStatus() == AskTurn.Status.CONSENT_REQUIRED)) {
-            draft = last.getQuestion();
+            if (draft.isBlank()) {
+                draft = last.getQuestion();
+            }
             startRequest(last.getQuestion(), false);
             return;
         }
@@ -121,7 +123,14 @@ public final class AskViewModel extends ViewModel {
 
     public void declineConsent() {
         pendingConsentQuestion = null;
-        publishTurns(false);
+        List<AskTurn> turns = currentTurns();
+        if (draft.isEmpty()) {
+            AskTurn last = turns.isEmpty() ? null : turns.get(turns.size() - 1);
+            if (last != null && last.getStatus() == AskTurn.Status.CONSENT_REQUIRED) {
+                draft = last.getQuestion();
+            }
+        }
+        state.setValue(AskUiState.fromTurns(draft, dropLastConsentTurn(turns), false));
     }
 
     public void consentUpdateFailed() {
@@ -183,8 +192,10 @@ public final class AskViewModel extends ViewModel {
                                 turn = AskTurn.notFound(question, response.isContextOmitted());
                             } else {
                                 turn = AskTurn.answer(question, response);
-                                draft = "";
-                                nextDraft = "";
+                                if (draft.trim().equals(question)) {
+                                    draft = "";
+                                }
+                                nextDraft = draft;
                             }
                             state.setValue(AskUiState.fromTurns(
                                     nextDraft, AskUiState.append(turns, turn), false));

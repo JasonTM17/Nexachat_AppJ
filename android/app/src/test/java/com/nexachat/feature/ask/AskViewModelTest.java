@@ -172,6 +172,48 @@ public final class AskViewModelTest {
     }
 
     @Test
+    public void declineConsentDropsConsentStateWithoutReopeningTheDialog() {
+        FakeAskApi api = new FakeAskApi();
+        AskViewModel viewModel = createViewModel(api, new SessionEvents());
+        viewModel.updateDraft("Question?");
+        viewModel.submit();
+        api.lastCall().fail(403,
+                "{\"error\":{\"code\":\"AI_SUMMARY_CONSENT_REQUIRED\"}}");
+        assertEquals(AskUiState.Status.CONSENT_REQUIRED,
+                viewModel.state().getValue().getStatus());
+
+        viewModel.declineConsent();
+
+        AskUiState declined = viewModel.state().getValue();
+        assertEquals(AskUiState.Status.IDLE, declined.getStatus());
+        assertTrue("the consent turn must be dropped so render() cannot reopen the dialog",
+                declined.getTurns().isEmpty());
+        assertEquals("Question?", declined.getDraft());
+    }
+
+    @Test
+    public void retryAfterFailureKeepsNewlyTypedDraft() {
+        FakeAskApi api = new FakeAskApi();
+        AskViewModel viewModel = createViewModel(api, new SessionEvents());
+        viewModel.updateDraft("Old question?");
+        viewModel.submit();
+        api.lastCall().fail(500, "{\"error\":{\"code\":\"INTERNAL_ERROR\"}}");
+        assertEquals(AskUiState.Status.ERROR, viewModel.state().getValue().getStatus());
+
+        viewModel.updateDraft("New draft question?");
+        viewModel.retry();
+
+        assertEquals("retry resubmits the failed turn, not the new draft",
+                "Old question?", api.request.getQuestion());
+        assertEquals(AskUiState.Status.LOADING, viewModel.state().getValue().getStatus());
+        assertEquals("New draft question?", viewModel.state().getValue().getDraft());
+
+        api.lastCall().succeed(response("Answer", "LLM"));
+        assertEquals("a typed draft must survive the retry answer",
+                "New draft question?", viewModel.state().getValue().getDraft());
+    }
+
+    @Test
     public void logoutClearsDraftAndTransientAnswer() {
         FakeAskApi api = new FakeAskApi();
         SessionEvents sessionEvents = new SessionEvents();
