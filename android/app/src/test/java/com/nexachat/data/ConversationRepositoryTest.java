@@ -1551,6 +1551,84 @@ public final class ConversationRepositoryTest {
     }
 
     @Test
+    public void archiveFlightSuccessReassertsLocalFlag() throws Exception {
+        buildRepository();
+        dao().upsert(conversation("conv-reassert")).blockingAwait();
+        HoldVoidCall heldArchive = new HoldVoidCall();
+        when(settingsApi.archive("conv-reassert")).thenReturn(heldArchive);
+
+        Thread flight = new Thread(
+                () -> repository.setConversationArchived("conv-reassert", true).subscribe(),
+                "reassert-flight");
+        flight.start();
+        heldArchive.awaitExecuteReached();
+        // Only the optimistic write has landed; the post-flight re-assert waits.
+        assertEquals(List.of("conv-reassert=true"), dao().archivedWrites);
+
+        heldArchive.completeSuccess();
+        flight.join(5_000);
+        // The resolved flight re-asserts the same value so a second Room
+        // invalidation fires once the lane is quiet.
+        assertEquals(List.of("conv-reassert=true", "conv-reassert=true"),
+                dao().archivedWrites);
+        assertTrue(dao().rows.get("conv-reassert").isArchived());
+    }
+
+    @Test
+    public void staleArchiveFlightDoesNotReassertItsOldValue() throws Exception {
+        buildRepository();
+        dao().upsert(conversation("conv-stale")).blockingAwait();
+        HoldVoidCall heldArchive = new HoldVoidCall();
+        when(settingsApi.archive("conv-stale")).thenReturn(heldArchive);
+        when(settingsApi.unarchive("conv-stale"))
+                .thenReturn(asCall(Response.<Void>success(204, null)));
+
+        Thread archiveThread = new Thread(
+                () -> repository.setConversationArchived("conv-stale", true).subscribe(),
+                "stale-flight");
+        archiveThread.start();
+        heldArchive.awaitExecuteReached();
+
+        // The undo supersedes the held archive before it resolves.
+        repository.setConversationArchived("conv-stale", false).blockingGet();
+        heldArchive.completeSuccess();
+        archiveThread.join(5_000);
+
+        // The stale archive flight must not re-assert `true`; only the
+        // still-current undo re-asserts `false` when it settles.
+        long trueWrites = dao().archivedWrites.stream()
+                .filter(write -> write.endsWith("=true")).count();
+        assertEquals(1, trueWrites);
+        assertEquals(List.of(
+                        "conv-stale=true", "conv-stale=false", "conv-stale=false"),
+                dao().archivedWrites);
+        assertFalse(dao().rows.get("conv-stale").isArchived());
+    }
+
+    @Test
+    public void failedArchiveFlightSkipsTheReassert() {
+        buildRepository();
+        dao().upsert(conversation("conv-fail-ra")).blockingAwait();
+        when(settingsApi.archive("conv-fail-ra"))
+                .thenReturn(asCall(Response.<Void>success(204, null)));
+        when(settingsApi.unarchive("conv-fail-ra")).thenReturn(asCall(Response.error(503,
+                ResponseBody.create(okhttp3.MediaType.parse("application/json"), "{}"))));
+
+        repository.setConversationArchived("conv-fail-ra", true).blockingGet();
+        Result<Void> undo =
+                repository.setConversationArchived("conv-fail-ra", false).blockingGet();
+
+        assertTrue(undo instanceof Result.Failure<?>);
+        // Optimistic + post-flight re-assert for the archive; optimistic undo;
+        // rollback to confirmed. The failed undo itself never re-asserts.
+        assertEquals(List.of(
+                        "conv-fail-ra=true", "conv-fail-ra=true",
+                        "conv-fail-ra=false", "conv-fail-ra=true"),
+                dao().archivedWrites);
+        assertTrue(dao().rows.get("conv-fail-ra").isArchived());
+    }
+
+    @Test
     public void aiOptOutReadsWritesAndClearsTheCallerState() {
         buildRepository();
         dao().upsert(conversation("conv-a")).blockingAwait();
@@ -2486,6 +2564,9 @@ public final class ConversationRepositoryTest {
         private final Map<String, ConversationEntity> rows = new LinkedHashMap<>();
         private final BehaviorProcessor<List<ConversationEntity>> inbox =
                 BehaviorProcessor.createDefault(Collections.emptyList());
+        /** Every executed {@code updateArchived} write, as "id=value", in order. */
+        private final List<String> archivedWrites =
+                new java.util.concurrent.CopyOnWriteArrayList<>();
 
         @Override
         public Completable upsert(ConversationEntity conversation) {
@@ -2654,6 +2735,7 @@ public final class ConversationRepositoryTest {
         @Override
         public Completable updateArchived(String conversationId, boolean archived) {
             return Completable.fromAction(() -> {
+                archivedWrites.add(conversationId + '=' + archived);
                 ConversationEntity row = rows.get(conversationId);
                 if (row != null) {
                     rows.put(conversationId, withPreferences(

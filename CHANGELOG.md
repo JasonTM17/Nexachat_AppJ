@@ -25,6 +25,8 @@ All notable changes to NexaChat are documented here. The format follows
   moment a message arrives.
 - Android: the avatar in a chat header is easier to tap: its touch area is
   now at least 48dp while the picture stays the same size.
+- Android: Undo after archiving a conversation brings the conversation back
+  to the inbox right away instead of waiting for the next refresh.
 
 ## [1.2.16] - 2026-11-21
 
