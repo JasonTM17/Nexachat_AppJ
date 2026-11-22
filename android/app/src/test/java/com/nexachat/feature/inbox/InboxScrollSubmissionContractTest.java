@@ -29,6 +29,26 @@ public final class InboxScrollSubmissionContractTest {
                 unchangedRowsGuard < listSubmission);
     }
 
+    @Test
+    public void topAnchoredSubmitScrollsBackToPositionZero() throws Exception {
+        String source = readUtf8(locateJavaFile(
+                "com/nexachat/feature/inbox/InboxFragment.java"));
+        int methodStart = source.indexOf("private void submitRowsPreservingPosition(");
+        int methodEnd = source.indexOf("private void maybeLoadMore()", methodStart);
+        String method = source.substring(methodStart, methodEnd);
+
+        // Undoing an archive re-inserts the row at position 0. Re-anchoring to
+        // the displaced first item keeps the restored row one row-height above
+        // the viewport — submitted but never laid out. When the list was at the
+        // top the submit must scroll to position 0 instead.
+        assertTrue("a list already at the top must scroll to position 0 so a "
+                        + "row restored above the previous anchor becomes visible",
+                method.contains("scrollToPositionWithOffset(0,"));
+        assertTrue("the scroll-to-top must be gated on the pre-submit top position",
+                method.contains("atTop")
+                        && method.indexOf("atTop") < method.indexOf("adapter.submitList(rows"));
+    }
+
     private static File locateJavaFile(String relativePath) {
         File[] candidates = {
                 new File("src/main/java/" + relativePath),

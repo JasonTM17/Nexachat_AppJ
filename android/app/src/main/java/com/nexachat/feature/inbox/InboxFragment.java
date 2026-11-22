@@ -564,18 +564,27 @@ public final class InboxFragment extends Fragment {
         if (adapter.getCurrentList().equals(rows)) return;
         int firstPosition = layoutManager == null ? RecyclerView.NO_POSITION
                 : layoutManager.findFirstVisibleItemPosition();
+        // A row restored at the very top (archive undo, a newer message bump)
+        // must become visible: re-anchoring to the displaced first item leaves
+        // it one row-height above the viewport — submitted but never laid out.
+        boolean atTop = firstPosition <= 0;
         String anchorId = null;
         int anchorOffset = 0;
-        if (firstPosition != RecyclerView.NO_POSITION && firstPosition < adapter.getItemCount()) {
+        if (!atTop && firstPosition < adapter.getItemCount()) {
             anchorId = adapter.getCurrentList().get(firstPosition).getId();
             View anchor = layoutManager.findViewByPosition(firstPosition);
             if (anchor != null) anchorOffset = anchor.getTop() - binding.conversationList.getPaddingTop();
         }
         final String preservedId = anchorId;
         final int preservedOffset = anchorOffset;
+        final boolean scrollToTop = atTop;
         adapter.submitList(rows, () -> {
             if (binding == null) return;
-            if (preservedId != null && layoutManager != null) {
+            if (scrollToTop) {
+                if (layoutManager != null) {
+                    layoutManager.scrollToPositionWithOffset(0, binding.conversationList.getPaddingTop());
+                }
+            } else if (preservedId != null && layoutManager != null) {
                 List<ConversationSummary> current = adapter.getCurrentList();
                 for (int i = 0; i < current.size(); i++) {
                     if (preservedId.equals(current.get(i).getId())) {
