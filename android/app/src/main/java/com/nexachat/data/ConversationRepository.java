@@ -591,7 +591,7 @@ public final class ConversationRepository implements AutoCloseable {
                     return local.andThen(callVoid(settingsApi.markUnread(conversationId)))
                             .flatMap(result -> {
                                 if (result instanceof Result.Failure<?> && bump) {
-                                    return conversationDao.incrementUnread(conversationId, -1)
+                                    return conversationDao.decrementUnread(conversationId)
                                             .andThen(Single.just(result));
                                 }
                                 if (result instanceof Result.Success<?> && row != null) {
@@ -624,7 +624,7 @@ public final class ConversationRepository implements AutoCloseable {
                                     conversationId, new ReadRequest(seq))))
                             .flatMap(result -> {
                                 if (result instanceof Result.Failure<?> && previousUnread > 0) {
-                                    return conversationDao.incrementUnread(
+                                    return conversationDao.restoreUnreadAtLeast(
                                                     conversationId, previousUnread)
                                             .andThen(Single.just(result));
                                 }

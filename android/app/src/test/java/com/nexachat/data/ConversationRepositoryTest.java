@@ -200,6 +200,31 @@ public final class ConversationRepositoryTest {
         return new ImmediateCall<>(response);
     }
 
+    /** A call whose execution first runs {@code race}, simulating a concurrent local write. */
+    private <T> Call<T> racingCall(Response<T> response, Runnable race) {
+        Call<T> delegate = asCall(response);
+        return new Call<>() {
+            @Override
+            public Response<T> execute() throws java.io.IOException {
+                race.run();
+                return delegate.execute();
+            }
+
+            @Override
+            public void enqueue(Callback<T> callback) {
+                race.run();
+                delegate.enqueue(callback);
+            }
+
+            @Override public boolean isExecuted() { return delegate.isExecuted(); }
+            @Override public void cancel() { delegate.cancel(); }
+            @Override public boolean isCanceled() { return delegate.isCanceled(); }
+            @Override public Call<T> clone() { return this; }
+            @Override public Request request() { return delegate.request(); }
+            @Override public Timeout timeout() { return delegate.timeout(); }
+        };
+    }
+
     private void stubInbox(List<ConversationInboxDto> items) throws Exception {
         String json = inboxAdapter.toJson(items);
         when(messageApi.getConversations(any(), any()))
@@ -1211,6 +1236,44 @@ public final class ConversationRepositoryTest {
         assertEquals(0, dao().rows.get("conv-u").getUnreadCount());
         assertEquals(5L, inboxReadWatermarkCache.peek("conv-u"));
         verify(messageApi).markRead(eq("conv-u"), eq(new ReadRequest(5)));
+    }
+
+    @Test
+    public void failedMarkUnreadRollbackNeverDrivesBadgeBelowZero() {
+        buildRepository();
+        dao().upsert(conversation("conv-u", 5)).blockingAwait();
+        // A concurrent markRead clears the badge between the local bump and the
+        // API failure; the rollback must not decrement past zero.
+        when(settingsApi.markUnread("conv-u")).thenReturn(racingCall(
+                Response.error(500,
+                        ResponseBody.create(okhttp3.MediaType.parse("application/json"),
+                                "{\"error\":{\"code\":\"INTERNAL_ERROR\"}}")),
+                () -> dao().clearUnread("conv-u").blockingAwait()));
+
+        Result<Void> result = repository.markUnread("conv-u").blockingGet();
+
+        assertTrue(result instanceof Result.Failure<?>);
+        assertEquals(0, dao().rows.get("conv-u").getUnreadCount());
+    }
+
+    @Test
+    public void failedMarkReadRollbackKeepsConcurrentArrivals() {
+        buildRepository();
+        dao().upsert(conversation("conv-u", 5)).blockingAwait();
+        dao().incrementUnread("conv-u", 3).blockingAwait();
+        // New messages arrive after the local clear, before the rollback runs;
+        // the rollback must not overwrite the newer, larger count additively.
+        when(messageApi.markRead(eq("conv-u"), eq(new ReadRequest(5))))
+                .thenReturn(racingCall(
+                        Response.error(500,
+                                ResponseBody.create(okhttp3.MediaType.parse("application/json"),
+                                        "{\"error\":{\"code\":\"INTERNAL_ERROR\"}}")),
+                        () -> dao().incrementUnread("conv-u", 5).blockingAwait()));
+
+        Result<Void> result = repository.markReadUpToLatest("conv-u").blockingGet();
+
+        assertTrue(result instanceof Result.Failure<?>);
+        assertEquals(5, dao().rows.get("conv-u").getUnreadCount());
     }
 
     @Test
@@ -2545,8 +2608,32 @@ public final class ConversationRepositoryTest {
         public Completable incrementUnread(String conversationId, int delta) {
             return Completable.fromAction(() -> {
                 ConversationEntity row = rows.get(conversationId);
+                // Mirrors raw SQL: no clamp — callers must guard the badge.
                 if (row != null) rows.put(conversationId, withUnread(row,
-                        Math.max(0, row.getUnreadCount() + delta)));
+                        row.getUnreadCount() + delta));
+                publish();
+            });
+        }
+
+        @Override
+        public Completable decrementUnread(String conversationId) {
+            return Completable.fromAction(() -> {
+                ConversationEntity row = rows.get(conversationId);
+                if (row != null && row.getUnreadCount() > 0) {
+                    rows.put(conversationId, withUnread(row, row.getUnreadCount() - 1));
+                }
+                publish();
+            });
+        }
+
+        @Override
+        public Completable restoreUnreadAtLeast(String conversationId, int previousUnread) {
+            return Completable.fromAction(() -> {
+                ConversationEntity row = rows.get(conversationId);
+                if (row != null) {
+                    rows.put(conversationId, withUnread(row,
+                            Math.max(row.getUnreadCount(), previousUnread)));
+                }
                 publish();
             });
         }

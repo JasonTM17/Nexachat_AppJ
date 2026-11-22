@@ -142,6 +142,16 @@ public interface ConversationDao {
     @Query("UPDATE conversations SET unreadCount = unreadCount + :delta WHERE id = :conversationId")
     Completable incrementUnread(String conversationId, int delta);
 
+    /** Rollback of the mark-unread bump: never drives the badge below zero. */
+    @Query("UPDATE conversations SET unreadCount = unreadCount - 1 "
+            + "WHERE id = :conversationId AND unreadCount > 0")
+    Completable decrementUnread(String conversationId);
+
+    /** Rollback of a cleared badge: restores the old count without clobbering newer arrivals. */
+    @Query("UPDATE conversations SET unreadCount = MAX(unreadCount, :previousUnread) "
+            + "WHERE id = :conversationId")
+    Completable restoreUnreadAtLeast(String conversationId, int previousUnread);
+
     /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
     @Query("UPDATE conversations SET unreadCount = unreadCount + :delta WHERE id = :conversationId")
     void incrementUnreadInTransaction(String conversationId, int delta);
