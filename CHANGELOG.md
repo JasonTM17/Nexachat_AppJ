@@ -6,7 +6,51 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.17] - 2026-11-23
+
+Server + Android release. See
+[docs/release-notes/v1.2.17.md](docs/release-notes/v1.2.17.md).
+
+### Added
+- Android: "Ask this chat" sits on the conversation toolbar (hidden for
+  end-to-end encrypted chats); the Ask sheet offers starter questions and
+  keeps the Q&A thread so a follow-up does not wipe the previous answer. The
+  server accepts optional `priorTurns` context and skips the semantic cache
+  for follow-ups.
+- Android: unsent composer text is kept as a draft (Room v22) and the inbox
+  shows a `Draft:` preview until it is sent.
+- Mark a conversation as unread or read from the inbox long-press menu; the
+  server rewinds only your own read position and does not broadcast a read
+  receipt.
+- Android: every empty state has a title plus a next-step hint; login and
+  register show the product tagline.
+- Server: a shared per-account failed-sign-in budget (`429 SIGN_IN_LOCKED`
+  with `retryAfterSeconds`, `NEXACHAT_AUTH_SIGN_IN_BUDGET_*`, defaults 10
+  failures per 900 s).
+
+### Changed
+- Android: below 360dp the chat toolbar moves video calls into the overflow
+  menu, inbox filter chips wrap to a second row and the contacts letter rail
+  hides; the inbox menu offers Feed and Starred messages; the Active-now strip
+  hides when nobody is online.
+- Android: deleted messages render as outlined, italic tombstones and are
+  announced by screen readers; replies to a deleted message quote the deleted
+  label.
+- Sync: v2 change pages grow to 200 rows for continuation pages (server
+  `SYNC_V2_CHANGE_PAGE_MAX` 50 → 200; older clients are unaffected).
+
 ### Fixed
+- Server: a sign-in that lands in the same second as "sign out everywhere"
+  or a refresh-reuse revocation no longer receives an access token that is
+  already revoked; parsed access tokens are validated against the same clock
+  that minted them.
+- Android: live messages, send acknowledgements and chat screens no longer
+  stall while a fresh install runs its first sync drain.
+- Android: a conversation missing from one sync page no longer has its local
+  history wiped; a conversation removed mid-page is skipped instead of
+  restarting the whole drain, and inbox prunes wait for an active drain.
+- Android: a stale-session empty sync page is now ignored like a non-empty
+  one, and a sent message can no longer reappear as a draft.
 - Android: the Undo and Retry actions on inbox, chat and feed snackbars are
   no longer hidden behind the floating action button, so Undo after
   archiving a conversation is tappable again.
