@@ -40,8 +40,10 @@ import io.reactivex.rxjava3.processors.BehaviorProcessor;
 import io.reactivex.rxjava3.processors.PublishProcessor;
 import io.reactivex.rxjava3.schedulers.TestScheduler;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import io.reactivex.rxjava3.subjects.CompletableSubject;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import com.nexachat.core.network.dto.MessageMention;
 import java.util.Map;
@@ -366,6 +368,34 @@ public final class ChatViewModelTest {
 
         verify(drafts, Mockito.atLeastOnce()).save(eq(CONVERSATION_ID),
                 ArgumentMatchers.argThat(d -> d.getContent().isEmpty()));
+    }
+
+    @Test
+    public void sendClearIsSerializedAfterInFlightDebouncedSave() {
+        ComposerDraftRepository drafts = Mockito.mock(ComposerDraftRepository.class);
+        when(drafts.load(anyString())).thenReturn(Maybe.empty());
+        // The save stays in flight until the test commits it, modelling a slow
+        // Room write that cannot be un-committed once it lands.
+        CompletableSubject saveGate = CompletableSubject.create();
+        List<String> order = Collections.synchronizedList(new ArrayList<>());
+        when(drafts.save(anyString(), any()))
+                .thenAnswer(inv -> saveGate.doOnComplete(() -> order.add("save")));
+        when(drafts.clear(anyString()))
+                .thenReturn(Completable.fromAction(() -> order.add("clear")));
+        ChatViewModel vm = new ChatViewModel(
+                new SavedStateHandle(Map.of("conversationId", CONVERSATION_ID)),
+                messageRepository, conversationRepository, attachmentRepository,
+                session, tokenStore, null, null, null, null, null, drafts);
+        viewModelStore.put("chat-" + (++viewModelCount), vm);
+
+        vm.onComposerDraftChange(MentionDraft.empty("sent text"));
+        Assert.assertTrue("debounced save should be in flight", saveGate.hasObservers());
+        vm.send();
+        saveGate.onComplete();
+
+        // If the in-flight save can commit after the clear, the sent text is
+        // resurrected as a draft row.
+        assertEquals(List.of("save", "clear"), order);
     }
 
     @Test
