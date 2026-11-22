@@ -2,6 +2,7 @@ package com.nexachat.firebase.auth;
 
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
+import com.google.firebase.auth.AuthErrorCode;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.auth.oauth2.GoogleCredentials;
@@ -30,12 +31,19 @@ public final class FirebaseAdminAuthClient implements FirebaseAdminClient, AutoC
                 .setReadTimeout(readTimeoutMillis)
                 .setWriteTimeout(readTimeoutMillis)
                 .build();
+        FirebaseApp firebaseApp;
         try {
-            this.app = FirebaseApp.initializeApp(options, APP_NAME);
+            firebaseApp = FirebaseApp.initializeApp(options, APP_NAME);
         } catch (IllegalStateException ex) {
             throw new IllegalStateException("Firebase Admin app could not be initialized");
         }
-        this.auth = FirebaseAuth.getInstance(app);
+        this.app = firebaseApp;
+        this.auth = FirebaseAuth.getInstance(firebaseApp);
+    }
+
+    FirebaseAdminAuthClient(FirebaseApp app, FirebaseAuth auth) {
+        this.app = app;
+        this.auth = auth;
     }
 
     @Override
@@ -52,6 +60,9 @@ public final class FirebaseAdminAuthClient implements FirebaseAdminClient, AutoC
         try {
             auth.revokeRefreshTokens(uid);
         } catch (FirebaseAuthException ex) {
+            if (ex.getAuthErrorCode() == AuthErrorCode.USER_NOT_FOUND) {
+                return;
+            }
             throw new FirebaseProviderException("Firebase Auth session revocation failed");
         }
     }

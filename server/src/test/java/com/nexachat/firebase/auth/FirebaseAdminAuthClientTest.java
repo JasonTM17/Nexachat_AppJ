@@ -3,6 +3,12 @@ package com.nexachat.firebase.auth;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.firebase.ErrorCode;
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.auth.AuthErrorCode;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseAuthException;
+import com.nexachat.firebase.client.FirebaseProviderException;
 import com.nexachat.google.GoogleServiceAccountCredentialsFactory;
 import org.junit.jupiter.api.Test;
 
@@ -14,6 +20,10 @@ import java.util.Base64;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 
 class FirebaseAdminAuthClientTest {
 
@@ -51,6 +61,33 @@ class FirebaseAdminAuthClientTest {
             verifier.update((parts[0] + "." + parts[1]).getBytes(StandardCharsets.US_ASCII));
             assertThat(verifier.verify(Base64.getUrlDecoder().decode(parts[2]))).isTrue();
         }
+    }
+
+    @Test
+    void revokeRefreshTokensTreatsMissingFirebaseUserAsNothingToRevoke() throws Exception {
+        FirebaseAuth auth = mock(FirebaseAuth.class);
+        doThrow(new FirebaseAuthException(ErrorCode.NOT_FOUND,
+                "No user record found for the provided uid", null, null, AuthErrorCode.USER_NOT_FOUND))
+                .when(auth).revokeRefreshTokens("uid-without-firebase-user");
+
+        FirebaseAdminAuthClient client = new FirebaseAdminAuthClient(mock(FirebaseApp.class), auth);
+
+        assertThatCode(() -> client.revokeRefreshTokens("uid-without-firebase-user"))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void revokeRefreshTokensStillWrapsOtherAuthFailures() throws Exception {
+        FirebaseAuth auth = mock(FirebaseAuth.class);
+        doThrow(new FirebaseAuthException(ErrorCode.UNAVAILABLE,
+                "backend error", null, null, AuthErrorCode.CONFIGURATION_NOT_FOUND))
+                .when(auth).revokeRefreshTokens("uid");
+
+        FirebaseAdminAuthClient client = new FirebaseAdminAuthClient(mock(FirebaseApp.class), auth);
+
+        assertThatThrownBy(() -> client.revokeRefreshTokens("uid"))
+                .isInstanceOf(FirebaseProviderException.class)
+                .hasMessage("Firebase Auth session revocation failed");
     }
 
     private String serviceAccountJson(String email, String projectId, KeyPair keyPair) throws Exception {
