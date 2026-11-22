@@ -218,7 +218,7 @@
                     app:chipSpacingHorizontal="@dimen/space_xs"
                     app:chipSpacingVertical="@dimen/space_xs"
                     app:selectionRequired="true"
-                    app:singleLine="true"
+                    app:singleLine="false"
                     app:singleSelection="true">
 
                     <com.google.android.material.chip.Chip

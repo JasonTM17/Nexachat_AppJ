@@ -41,6 +41,14 @@ public final class ProfileThemeLayoutContractTest {
         assertEquals("@dimen/space_md", chips.getAttributeNS(ANDROID, "layout_marginHorizontal"));
     }
 
+    @Test
+    public void themeChipsWrapSoDarkIsNotClippedAtLargeFontScale() throws Exception {
+        Element chips = requireId("fragment_profile.xml", "themeQuickChips");
+        assertEquals(
+                "The match_parent chip group must wrap; single-line clips the Dark chip at font scale 1.3",
+                "false", chips.getAttributeNS(APP, "singleLine"));
+    }
+
     private static Element requireId(String file, String id) throws Exception {
         Element element = view(file, id);
         assertNotNull(element);
