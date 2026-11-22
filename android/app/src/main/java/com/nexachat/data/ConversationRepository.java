@@ -1684,9 +1684,7 @@ public final class ConversationRepository implements AutoCloseable {
                     preferenceNetwork.seedArchiveIfUnknown(conversationId, existing.isArchived());
                     return conversationDao.updateArchived(conversationId, archived)
                             .andThen(preferenceNetwork.submitArchive(
-                                    conversationId, ticket, archived, callForArchived))
-                            .flatMap(result -> reassertArchiveAfterFlight(
-                                    conversationId, ticket.version, archived, result));
+                                    conversationId, ticket, archived, callForArchived));
                 })
                 .switchIfEmpty(Single.defer(() -> {
                     // The begun ticket never reached the queue; settle it so
@@ -1698,30 +1696,6 @@ public final class ConversationRepository implements AutoCloseable {
                     return Single.just(Result.failure(
                             new ApiError.Unknown("CONVERSATION_NOT_FOUND")));
                 }));
-    }
-
-    /**
-     * Re-asserts the desired archived flag once the ordered flight resolves.
-     * The optimistic write can be starved or its invalidation coalesced while a
-     * held writer transaction occupies the single SQLCipher connection; the
-     * idempotent re-write forces a fresh Room emission carrying the final flag.
-     * A stale ticket or a failed flight changes nothing — the rollback path
-     * owns failures. The re-assert never alters the returned result.
-     */
-    @NonNull
-    private Single<Result<Void>> reassertArchiveAfterFlight(
-            @NonNull String conversationId,
-            long version,
-            boolean archived,
-            @NonNull Result<Void> result) {
-        if (result instanceof Result.Failure<?>
-                || preferenceLanes.isStale(
-                        conversationId, ConversationPreferenceLanes.Kind.ARCHIVE, version)) {
-            return Single.just(result);
-        }
-        return conversationDao.updateArchived(conversationId, archived)
-                .onErrorComplete()
-                .andThen(Single.just(result));
     }
 
     @NonNull
