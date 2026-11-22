@@ -23,14 +23,22 @@
         app:navigationContentDescription="@string/cd_back"
         app:navigationIcon="@drawable/ic_arrow_back" />
 
-    <com.nexachat.core.ui.components.AvatarView
-        android:id="@+id/chatHeaderAvatar"
-        android:layout_width="@dimen/avatar_chat_size"
-        android:layout_height="@dimen/avatar_chat_size"
-        android:layout_marginStart="@dimen/min_touch_target"
+    <FrameLayout
+        android:id="@+id/chatHeaderAvatarHit"
+        android:layout_width="@dimen/min_touch_target"
+        android:layout_height="@dimen/min_touch_target"
+        android:layout_marginStart="42dp"
         app:layout_constraintBottom_toBottomOf="@id/chatToolbar"
         app:layout_constraintStart_toStartOf="@id/chatToolbar"
-        app:layout_constraintTop_toTopOf="@id/chatToolbar" />
+        app:layout_constraintTop_toTopOf="@id/chatToolbar">
+
+        <com.nexachat.core.ui.components.AvatarView
+            android:id="@+id/chatHeaderAvatar"
+            android:layout_width="@dimen/avatar_chat_size"
+            android:layout_height="@dimen/avatar_chat_size"
+            android:layout_gravity="center"
+            android:importantForAccessibility="no" />
+    </FrameLayout>
 
     <com.nexachat.feature.streak.StreakBadge
         android:id="@+id/chatStreakBadge"

@@ -1369,6 +1369,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         applyChatTitleWrapping();
         if (binding.chatHeaderAvatar != null) {
             binding.chatHeaderAvatar.setName(peerTitle);
+            binding.chatHeaderAvatarHit.setContentDescription(peerTitle);
             Boolean peerOnline = null;
             if (!state.isGroup() && state.getPeerPresence() != null) {
                 peerOnline = Boolean.valueOf(state.getPeerPresence().getOnline());
@@ -1448,7 +1449,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     private void applyLargeTypeToolbar() {
         float scale = getResources().getConfiguration().fontScale;
         boolean hideAvatar = ChatToolbarPolicy.hideHeaderAvatar(scale);
-        binding.chatHeaderAvatar.setVisibility(hideAvatar ? View.GONE : View.VISIBLE);
+        binding.chatHeaderAvatarHit.setVisibility(hideAvatar ? View.GONE : View.VISIBLE);
         int titleMarginRes = hideAvatar
                 ? R.dimen.space_md
                 : R.dimen.chat_toolbar_title_start_with_avatar;
@@ -1510,8 +1511,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                     android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK.getId());
         }
         if (binding.chatHeaderAvatar != null) {
-            binding.chatHeaderAvatar.setOnClickListener(open);
-            binding.chatHeaderAvatar.setClickable(group);
+            binding.chatHeaderAvatarHit.setOnClickListener(open);
+            binding.chatHeaderAvatarHit.setClickable(group);
         }
     }
 
