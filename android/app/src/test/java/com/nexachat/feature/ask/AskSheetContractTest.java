@@ -1,6 +1,7 @@
 package com.nexachat.feature.ask;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Path;
@@ -24,8 +25,16 @@ public final class AskSheetContractTest {
         String source = read(
                 "src/main/java/com/nexachat/feature/ask/AskBottomSheetFragment.java");
         assertTrue("new turns must trigger a posted scroll to the bottom",
-                source.contains("askContentScroll.post(")
-                        && source.contains("fullScroll(View.FOCUS_DOWN)"));
+                source.contains("fullScroll(View.FOCUS_DOWN)"));
+        int call = source.indexOf("fullScroll");
+        int post = source.lastIndexOf(".post(", call);
+        int arrow = source.lastIndexOf("->", call);
+        assertTrue("the scroll must run inside a posted runnable",
+                post >= 0 && arrow > post);
+        String runnable = source.substring(arrow, source.indexOf(";", call));
+        assertFalse("the posted runnable must not dereference binding;"
+                        + " onDestroyView nulls it before the runnable may run",
+                runnable.contains("binding."));
     }
 
     @Test

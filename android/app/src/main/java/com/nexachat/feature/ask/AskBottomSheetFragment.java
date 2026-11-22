@@ -13,6 +13,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.widget.NestedScrollView;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import com.google.android.material.bottomsheet.BottomSheetDialog;
@@ -172,8 +173,8 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
         renderTurns(state.getTurns());
         renderedTurnCount = state.getTurns().size();
         if (renderedTurnCount > previousTurnCount) {
-            binding.askContentScroll.post(() ->
-                    binding.askContentScroll.fullScroll(View.FOCUS_DOWN));
+            NestedScrollView scroll = binding.askContentScroll;
+            scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
         }
 
         boolean showStatus = state.getStatus() == AskUiState.Status.NOT_FOUND;
