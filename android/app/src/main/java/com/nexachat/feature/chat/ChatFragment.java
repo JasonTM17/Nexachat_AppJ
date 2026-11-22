@@ -232,7 +232,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                                         granted, rationale, recordAudioPermissionRequested());
                         if (action == VoiceRecordPermissionHelper.ResultAction.NONE) {
                             if (!VoiceRecordPermissionHelper.shouldBeginRecordingAfterPermissionGrant()) {
-                                Snackbar.make(binding.getRoot(), R.string.voice_too_short,
+                                anchoredSnackbar(binding.getRoot(), R.string.voice_too_short,
                                         Snackbar.LENGTH_SHORT).show();
                             }
                             return;
@@ -600,7 +600,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         }
         binding.mentionPicker.setVisibility(View.GONE);
         updateComposerButtons(false);
-        Snackbar.make(binding.getRoot(), R.string.mention_limit_exceeded, Snackbar.LENGTH_LONG).show();
+        anchoredSnackbar(binding.getRoot(), R.string.mention_limit_exceeded, Snackbar.LENGTH_LONG).show();
     }
 
     private void applyMentionSpans(EditText input, MentionDraft draft) {
@@ -781,7 +781,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     }
 
     private void e2eeMediaUnsupported() {
-        Snackbar.make(binding.getRoot(), R.string.e2ee_composer_unsupported,
+        anchoredSnackbar(binding.getRoot(), R.string.e2ee_composer_unsupported,
                 Snackbar.LENGTH_SHORT).show();
     }
 
@@ -874,7 +874,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                     .show();
             return;
         }
-        Snackbar.make(binding.getRoot(), R.string.voice_permission_required,
+        anchoredSnackbar(binding.getRoot(), R.string.voice_permission_required,
                 Snackbar.LENGTH_LONG).show();
     }
 
@@ -957,7 +957,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                     .show();
             return;
         }
-        Snackbar.make(binding.getRoot(), R.string.location_permission_required,
+        anchoredSnackbar(binding.getRoot(), R.string.location_permission_required,
                 Snackbar.LENGTH_LONG).show();
     }
 
@@ -976,12 +976,12 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                                 .show(getChildFragmentManager(), SharedContentSheet.TAG);
                     }
                 }
-                case DISABLED -> Snackbar.make(binding.getRoot(),
+                case DISABLED -> anchoredSnackbar(binding.getRoot(),
                                 R.string.location_disabled, Snackbar.LENGTH_LONG)
                         .setAction(R.string.action_open_app_settings,
                                 v -> openLocationSettings())
                         .show();
-                default -> Snackbar.make(binding.getRoot(),
+                default -> anchoredSnackbar(binding.getRoot(),
                                 R.string.location_unavailable, Snackbar.LENGTH_LONG)
                         .show();
             }
@@ -1015,13 +1015,13 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             return;
         }
         if (number == null || number.isBlank()) {
-            Snackbar.make(binding.getRoot(), R.string.contact_pick_error,
+            anchoredSnackbar(binding.getRoot(), R.string.contact_pick_error,
                     Snackbar.LENGTH_LONG).show();
             return;
         }
         String phone = PhoneNormalizer.toE164(number);
         if (!SharedContent.isE164(phone)) {
-            Snackbar.make(binding.getRoot(), R.string.contact_invalid_phone,
+            anchoredSnackbar(binding.getRoot(), R.string.contact_invalid_phone,
                     Snackbar.LENGTH_LONG).show();
             return;
         }
@@ -1120,9 +1120,21 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         if (binding == null || !isAdded()) {
             return;
         }
-        Snackbar.make(binding.getRoot(), messageId, Snackbar.LENGTH_SHORT)
-                .setAnchorView(binding.composerBar.getRoot())
+        anchoredSnackbar(binding.getRoot(), messageId, Snackbar.LENGTH_SHORT)
                 .show();
+    }
+
+
+    /**
+     * Anchors to the scroll-down FAB while it is shown and to the composer bar
+     * otherwise, so the action row is never covered by the floating button.
+     */
+    private Snackbar anchoredSnackbar(View host, int messageId, int length) {
+        Snackbar bar = Snackbar.make(host, messageId, length);
+        bar.setAnchorView(binding.scrollDownFab.getVisibility() == View.VISIBLE
+                ? binding.scrollDownFab
+                : binding.composerBar.getRoot());
+        return bar;
     }
 
     private ExecutorService voiceStartExecutor() {
@@ -1271,7 +1283,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             ChatActionEvent event = raw == null ? null : raw.consume();
             if (event instanceof ChatActionEvent.MessageEdited) render();
             if (event instanceof ChatActionEvent.MessageForwarded forwarded) {
-                Snackbar.make(binding.getRoot(), R.string.forwarded_snackbar, Snackbar.LENGTH_LONG)
+                anchoredSnackbar(binding.getRoot(), R.string.forwarded_snackbar, Snackbar.LENGTH_LONG)
                         .setAction(R.string.action_view, v -> openConversation(forwarded.getTargetConversationId()))
                         .show();
             }
@@ -1280,7 +1292,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                         && leaveChatForArchivedConversation()) {
                     return;
                 }
-                Snackbar snackbar = Snackbar.make(
+                Snackbar snackbar = anchoredSnackbar(
                         binding.getRoot(), preferenceMessage(changed.getKind()), Snackbar.LENGTH_LONG);
                 if (changed.getUndo() != null) {
                     snackbar.setAction(R.string.action_undo, ignored -> changed.getUndo().run());
@@ -1513,7 +1525,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             args.putString(ARG_CONVERSATION_ID, conversationId);
             nav.navigate(R.id.groupDetailFragment, args);
         } catch (IllegalStateException ignored) {
-            Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
+            anchoredSnackbar(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
         }
     }
 
@@ -2108,9 +2120,13 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         if (!popped) {
             return false;
         }
-        Snackbar.make(
-                hostView, R.string.conversation_archived_snackbar, Snackbar.LENGTH_LONG)
-                .setAction(R.string.action_undo,
+        Snackbar bar = Snackbar.make(
+                hostView, R.string.conversation_archived_snackbar, Snackbar.LENGTH_LONG);
+        View inboxFab = hostView.findViewById(R.id.createGroupFab);
+        if (inboxFab != null) {
+            bar.setAnchorView(inboxFab);
+        }
+        bar.setAction(R.string.action_undo,
                         ignored -> sharedInboxViewModel.setConversationArchived(archivedId, false))
                 .show();
         return true;
@@ -2185,7 +2201,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             NavHostFragment.findNavController(this).navigate(R.id.encryptionFragment, args);
         } catch (IllegalStateException ignored) {
             if (binding != null) {
-                Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
+                anchoredSnackbar(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
             }
         }
     }
@@ -2413,7 +2429,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                     .navigate(R.id.starredMessagesFragment);
         } catch (RuntimeException ignored) {
             if (binding != null) {
-                Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
+                anchoredSnackbar(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
             }
         }
     }
@@ -2431,7 +2447,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                 .setPositiveButton(R.string.block_user, (dialog, which) -> {
                     viewModel.blockPeer();
                     if (binding != null) {
-                        Snackbar.make(binding.getRoot(), R.string.user_blocked_snackbar,
+                        anchoredSnackbar(binding.getRoot(), R.string.user_blocked_snackbar,
                                         Snackbar.LENGTH_LONG)
                                 .setAction(R.string.action_undo,
                                         ignored -> viewModel.unblockPeer())
@@ -2476,7 +2492,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             NavHostFragment.findNavController(this).navigate(R.id.groupBoardFragment, args);
         } catch (RuntimeException ignored) {
             if (binding != null) {
-                Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
+                anchoredSnackbar(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
             }
         }
     }
@@ -2491,7 +2507,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             NavHostFragment.findNavController(this).navigate(R.id.archiveFragment, args);
         } catch (RuntimeException ignored) {
             if (binding != null) {
-                Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
+                anchoredSnackbar(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
             }
         }
     }
@@ -2556,7 +2572,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         Bundle args = new Bundle(); args.putString(ARG_CONVERSATION_ID, id);
         try { NavHostFragment.findNavController(this).navigate(R.id.chatFragment, args); } catch (IllegalStateException ignored) {
             if (binding != null) {
-                Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
+                anchoredSnackbar(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
             }
         }
     }
@@ -2617,7 +2633,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     }
     @Override public void onReportSent() {
         if (binding != null) {
-            Snackbar.make(binding.getRoot(), R.string.report_sent_snackbar,
+            anchoredSnackbar(binding.getRoot(), R.string.report_sent_snackbar,
                     Snackbar.LENGTH_SHORT).show();
         }
     }
@@ -2638,7 +2654,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         }
         try { NavHostFragment.findNavController(this).navigate(R.id.mediaViewerFragment, args); } catch (RuntimeException ignored) {
             if (binding != null) {
-                Snackbar.make(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
+                anchoredSnackbar(binding.getRoot(), R.string.error_generic, Snackbar.LENGTH_SHORT).show();
             }
         }
     }
@@ -2713,7 +2729,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                     ContactsContract.CommonDataKinds.Phone.CONTENT_URI));
         } catch (android.content.ActivityNotFoundException ignored) {
             if (binding != null) {
-                Snackbar.make(binding.getRoot(), R.string.contact_pick_error,
+                anchoredSnackbar(binding.getRoot(), R.string.contact_pick_error,
                         Snackbar.LENGTH_LONG).show();
             }
         }
@@ -2732,7 +2748,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     }
     @Override public void onAddContact(@NonNull SharedContent.Contact contact) {
         if (isAdded() && !SharedContentUi.addContact(requireContext(), contact) && binding != null) {
-            Snackbar.make(binding.getRoot(), R.string.contact_add_error,
+            anchoredSnackbar(binding.getRoot(), R.string.contact_add_error,
                     Snackbar.LENGTH_LONG).show();
         }
     }

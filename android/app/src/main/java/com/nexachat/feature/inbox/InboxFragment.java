@@ -201,12 +201,14 @@ public final class InboxFragment extends Fragment {
                 Snackbar.make(binding.getRoot(),
                                 ChatErrorIds.messageId(failure.getError()),
                                 Snackbar.LENGTH_LONG)
+                        .setAnchorView(binding.createGroupFab)
                         .show();
                 return;
             }
             if (event instanceof InboxPreferenceSuccess success) {
                 Snackbar snackbar = Snackbar.make(
-                        binding.getRoot(), success.getMessageId(), Snackbar.LENGTH_LONG);
+                        binding.getRoot(), success.getMessageId(), Snackbar.LENGTH_LONG)
+                        .setAnchorView(binding.createGroupFab);
                 if (success.getUndo() != null) {
                     snackbar.setAction(R.string.action_undo, ignored -> success.getUndo().run());
                 }
@@ -220,6 +222,7 @@ public final class InboxFragment extends Fragment {
                                         ? getString(R.string.inbox_removed_from_group)
                                         : getString(R.string.inbox_removed_from_group_named, groupTitle),
                                 Snackbar.LENGTH_LONG)
+                        .setAnchorView(binding.createGroupFab)
                         .show();
             }
         });
@@ -618,6 +621,7 @@ public final class InboxFragment extends Fragment {
         if (lastPaginationErrorMessageId == messageId || binding == null) return;
         lastPaginationErrorMessageId = messageId;
         Snackbar.make(binding.getRoot(), messageId, Snackbar.LENGTH_LONG)
+                .setAnchorView(binding.createGroupFab)
                 .setAction(R.string.action_retry, ignored -> viewModel.loadNextPage())
                 .show();
     }

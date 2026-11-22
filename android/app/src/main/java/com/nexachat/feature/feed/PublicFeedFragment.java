@@ -159,7 +159,9 @@ public final class PublicFeedFragment extends Fragment implements ReportSheetFra
         if (binding == null) {
             return;
         }
-        Snackbar.make(binding.getRoot(), message, Snackbar.LENGTH_SHORT).show();
+        Snackbar.make(binding.getRoot(), message, Snackbar.LENGTH_SHORT)
+                .setAnchorView(binding.feedCompose)
+                .show();
     }
 
     @Override
