@@ -713,7 +713,7 @@ HELPER_CALLS = {
          "assert": "groupTitle and the REST entry title both carry the new name"},
         {"helper": "adb_ui.Device.tap_node",
          "target": "addMemberButton -> addMemberList Chi -> addMemberConfirm; "
-                   "member row content-desc 'Remove Chi from this group?' -> Remove",
+                   "member row content-desc 'Remove Chi from the group' -> Remove",
          "assert": "memberList and REST members gain then drop Chi; Chi inbox/messages denied"},
         {"helper": "adb_ui.Device.tap_node",
          "target": "inviteLinkButton -> approvalSwitch -> createLinkButton",
@@ -4671,7 +4671,7 @@ def run_groups_contacts(row: JourneyRow, context: dict[str, Any]) -> dict[str, A
         # === remove the member through the row button ======================
         remove_button = _wait_ui_node(
             context,
-            lambda node: node.desc.strip() == "Remove Chi from this group?",
+            lambda node: node.desc.strip() == "Remove Chi from the group",
             "the member row did not expose Chi's remove button")
         ui.tap_node(remove_button)
         _wait_ui_node(

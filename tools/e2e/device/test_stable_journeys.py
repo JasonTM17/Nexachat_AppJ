@@ -4066,7 +4066,7 @@ class GroupsContactsExecutorTest(unittest.TestCase):
                         nodes.append(N(text="Admin", rid="memberRole",
                                        box=(210, top, 300, top + 40)))
                     else:
-                        nodes.append(N(desc=f"Remove {member['displayName']} from this group?",
+                        nodes.append(N(desc=f"Remove {member['displayName']} from the group",
                                        rid="removeMember",
                                        box=(270, top, 318, top + 40)))
                     top += 60
@@ -4243,7 +4243,7 @@ class GroupsContactsExecutorTest(unittest.TestCase):
                     w.add_sheet = True
                 elif rid.endswith("removeMember"):
                     w.remove_dialog = node.desc.replace("Remove ", "").replace(
-                        " from this group?", "")
+                        " from the group", "")
                 elif rid.endswith("inviteLinkButton"):
                     w.share_url = None  # fresh load: plaintext token is not re-served
                     w.go("invite-manage")
