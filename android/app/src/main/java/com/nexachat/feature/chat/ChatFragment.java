@@ -2805,6 +2805,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
 
     @Override public void onPause() {
         foregroundConversationTracker.onConversationPaused(conversationId);
+        if (viewModel != null) viewModel.flushComposerDraft();
         if (streakViewModel != null) streakViewModel.onScreenHidden();
         super.onPause();
     }

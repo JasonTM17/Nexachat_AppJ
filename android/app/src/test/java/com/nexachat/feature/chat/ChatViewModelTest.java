@@ -17,6 +17,7 @@ import com.nexachat.core.storage.TokenStore;
 import com.nexachat.data.AttachmentRepository;
 import com.nexachat.data.AttachmentUploadEvent;
 import com.nexachat.data.ChatMessage;
+import com.nexachat.data.ComposerDraftRepository;
 import com.nexachat.data.ConversationRepository;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.data.DeliveryStatus;
@@ -328,6 +329,43 @@ public final class ChatViewModelTest {
             int count) {
         verify(repository, times(count)).send(
                 eq(conversationId), eq(content), eq(replyToId), eq(type), eq(attachments));
+    }
+
+    @Test
+    public void composerFlushPersistsLatestDraftImmediately() {
+        ComposerDraftRepository drafts = Mockito.mock(ComposerDraftRepository.class);
+        when(drafts.load(anyString())).thenReturn(Maybe.empty());
+        when(drafts.save(anyString(), any())).thenReturn(Completable.complete());
+        ChatViewModel vm = new ChatViewModel(
+                new SavedStateHandle(Map.of("conversationId", CONVERSATION_ID)),
+                messageRepository, conversationRepository, attachmentRepository,
+                session, tokenStore, null, null, null, null, null, drafts);
+        viewModelStore.put("chat-" + (++viewModelCount), vm);
+
+        vm.onComposerDraftChange(MentionDraft.empty("latest draft"));
+        vm.flushComposerDraft();
+
+        verify(drafts, Mockito.atLeastOnce()).save(eq(CONVERSATION_ID),
+                ArgumentMatchers.argThat(d -> "latest draft".equals(d.getContent())));
+    }
+
+    @Test
+    public void composerFlushDeletesRowWhenDraftIsEmpty() {
+        ComposerDraftRepository drafts = Mockito.mock(ComposerDraftRepository.class);
+        when(drafts.load(anyString())).thenReturn(Maybe.empty());
+        when(drafts.save(anyString(), any())).thenReturn(Completable.complete());
+        ChatViewModel vm = new ChatViewModel(
+                new SavedStateHandle(Map.of("conversationId", CONVERSATION_ID)),
+                messageRepository, conversationRepository, attachmentRepository,
+                session, tokenStore, null, null, null, null, null, drafts);
+        viewModelStore.put("chat-" + (++viewModelCount), vm);
+
+        vm.onComposerDraftChange(MentionDraft.empty("typed then erased"));
+        vm.onComposerDraftChange(MentionDraft.empty(""));
+        vm.flushComposerDraft();
+
+        verify(drafts, Mockito.atLeastOnce()).save(eq(CONVERSATION_ID),
+                ArgumentMatchers.argThat(d -> d.getContent().isEmpty()));
     }
 
     @Test

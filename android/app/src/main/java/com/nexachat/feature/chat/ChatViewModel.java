@@ -1356,7 +1356,12 @@ public final class ChatViewModel extends ViewModel {
                 .subscribe(() -> {}, ignored -> {}));
     }
 
-    private void flushComposerDraft() {
+    /**
+     * Persists the current composer draft immediately, cancelling the pending
+     * debounce. Called on pause/stop so a draft is never lost before
+     * {@link #onCleared()}. An empty draft deletes the stored row.
+     */
+    public void flushComposerDraft() {
         if (composerDraftRepository == null || conversationId.isBlank()) {
             return;
         }
