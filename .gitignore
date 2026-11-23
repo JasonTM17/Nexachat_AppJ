@@ -155,3 +155,6 @@ pom.xml.versionsBackup
 # ---- Local-only capture evidence ----
 docs/evidence/
 
+# ---- Local worktrees (shared checkout dirs) ----
+/wt-*/
+
