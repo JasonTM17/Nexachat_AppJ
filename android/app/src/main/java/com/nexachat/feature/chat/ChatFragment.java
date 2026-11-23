@@ -1157,7 +1157,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
      * otherwise, so the action row is never covered by the floating button.
      */
     private Snackbar anchoredSnackbar(View host, int messageId, int length) {
-        Snackbar bar = Snackbar.make(host, messageId, length);
+        return anchoredSnackbar(host, getString(messageId), length);
+    }
+
+    private Snackbar anchoredSnackbar(View host, CharSequence message, int length) {
+        Snackbar bar = Snackbar.make(host, message, length);
         if (binding.scrollDownFab.getVisibility() == View.VISIBLE) {
             bar.setAnchorView(binding.scrollDownFab);
         } else {
@@ -2144,14 +2148,14 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             return;
         }
         if (state != null && state.isE2eeEnabled()) {
-            Snackbar.make(binding.getRoot(), R.string.scheduled_error_e2ee,
+            anchoredSnackbar(binding.getRoot(), R.string.scheduled_error_e2ee,
                     Snackbar.LENGTH_LONG).show();
             return;
         }
         String draft = composerMentionDraft == null
                 ? "" : composerMentionDraft.getContent();
         if (draft.isBlank()) {
-            Snackbar.make(binding.getRoot(), R.string.scheduled_error_body_required,
+            anchoredSnackbar(binding.getRoot(), R.string.scheduled_error_body_required,
                     Snackbar.LENGTH_LONG).show();
             return;
         }
@@ -2194,7 +2198,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             viewModel.clearComposerDraft();
             updateComposerButtons(false);
         }
-        Snackbar.make(binding.getRoot(),
+        anchoredSnackbar(binding.getRoot(),
                 getString(R.string.scheduled_snackbar,
                         ScheduledMessageText.dateTime(requireContext(), message.getSendAt())),
                 Snackbar.LENGTH_LONG).show();
