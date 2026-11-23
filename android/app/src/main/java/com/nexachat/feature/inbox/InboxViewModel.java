@@ -335,8 +335,16 @@ public final class InboxViewModel extends ViewModel {
                     .subscribeOn(Schedulers.io())
                     .subscribe(
                             userId -> {
-                                updateState(state -> state.withCurrentUserId(
-                                        userId.orElse(null)));
+                                updateState(state -> {
+                                    String next = userId.orElse(null);
+                                    // Account switch: drop the previous user's rows in the
+                                    // same update, so publishShortcuts can never pair them
+                                    // with the new id. Same-id refreshes leave the list alone.
+                                    if (!java.util.Objects.equals(next, state.getCurrentUserId())) {
+                                        state = state.withConversations(java.util.List.of(), true);
+                                    }
+                                    return state.withCurrentUserId(next);
+                                });
                                 publishShortcuts();
                             },
                             error -> updateState(state -> state.withCurrentUserId(null))));

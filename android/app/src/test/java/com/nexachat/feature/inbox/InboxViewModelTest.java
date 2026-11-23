@@ -435,6 +435,43 @@ public final class InboxViewModelTest {
     }
 
     @Test
+    public void resolvingNewIdentityDropsStaleConversationsFromPriorAccount() {
+        // After a partial wipe, Room can still emit the previous account's rows
+        // before the token Maybe resolves; the launcher publish must never pair
+        // them with the new user id.
+        com.nexachat.core.storage.TokenStore tokenStore =
+                org.mockito.Mockito.mock(com.nexachat.core.storage.TokenStore.class);
+        com.nexachat.feature.shortcut.ConversationShortcuts shortcuts =
+                org.mockito.Mockito.mock(com.nexachat.feature.shortcut.ConversationShortcuts.class);
+        com.squareup.moshi.Moshi moshi = new com.squareup.moshi.Moshi.Builder().build();
+        io.reactivex.rxjava3.subjects.MaybeSubject<com.nexachat.core.storage.Tokens> tokens =
+                io.reactivex.rxjava3.subjects.MaybeSubject.create();
+        when(tokenStore.readTokens()).thenReturn(tokens);
+
+        viewModel = new InboxViewModel(savedStateHandle, repository,
+                tokenStore, moshi, null, shortcuts);
+        inboxFlow.onNext(List.of(conversation("stale-a", 4)));
+
+        tokens.onSuccess(new com.nexachat.core.storage.Tokens(
+                jwt("user-b"), System.currentTimeMillis() + 60_000L, "refresh"));
+
+        assertTrue(viewModel.getUiState().getValue().getConversations().isEmpty());
+        org.mockito.Mockito.verify(shortcuts).publish(
+                eq("user-b"), eq(java.util.List.of()));
+
+        // Same-id re-resolution must not clear the repopulated list.
+        inboxFlow.onNext(List.of(conversation("b-row", 1)));
+        assertEquals(1, viewModel.getUiState().getValue().getConversations().size());
+    }
+
+    private static String jwt(String userId) {
+        String payload = "{\"sub\":\"" + userId + "\"}";
+        return "e30." + java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                + ".signature";
+    }
+
+    @Test
     public void muteFailureSurfacesThroughTheOneShotEvent() {
         ApiError failure = new ApiError.Network("down");
         when(repository.muteConversation(eq("c-1"), any(Instant.class)))
