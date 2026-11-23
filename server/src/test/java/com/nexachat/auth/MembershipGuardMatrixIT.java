@@ -562,6 +562,9 @@ class MembershipGuardMatrixIT extends SecurityITBase {
                 .replace("{pollId}", probe.pollId().toString())
                 .replace("{reminderId}", probe.reminderId().toString())
                 .replace("{requestId}", probe.requestId().toString())
+                // Never resolved: every scheduled-message assertion is decided
+                // at the membership check, before the row id matters.
+                .replace("{scheduledId}", probe.messageId().toString())
                 .replace("{emoji}", PROBE_EMOJI);
         if (path.contains("{id}")) {
             String id = op.probeId().equals("rest-019")
@@ -620,6 +623,21 @@ class MembershipGuardMatrixIT extends SecurityITBase {
                 "/api/v1/conversations/{conversationId}/pins"));
         ops.put("rest-035", member("rest-035", "GET",
                 "/api/v1/conversations/{conversationId}/reminders"));
+
+        // Scheduled messages: the list resolves the conversation row first,
+        // while create and cancel check the membership row first — the same
+        // split the message routes use.
+        ops.put("rest-179", member("rest-179", "GET",
+                "/api/v1/conversations/{conversationId}/scheduled-messages"));
+        ops.put("rest-180", new Op("rest-180", "POST",
+                "/api/v1/conversations/{conversationId}/scheduled-messages",
+                Map.of("clientMessageId", UUID.randomUUID().toString(), "body",
+                        "membership probe",
+                        "sendAt", Instant.now().plus(2, ChronoUnit.DAYS).toString()),
+                null, null, NOT_MEMBER, NOT_MEMBER, NOT_MEMBER, null, null));
+        ops.put("rest-178", new Op("rest-178", "DELETE",
+                "/api/v1/conversations/{conversationId}/scheduled-messages/{scheduledId}",
+                null, null, null, NOT_MEMBER, NOT_MEMBER, NOT_MEMBER, null, null));
         // The streak read resolves membership first, so an unknown conversation
         // and a non-member conversation are the same answer.
         ops.put("rest-159", new Op("rest-159", "GET",
