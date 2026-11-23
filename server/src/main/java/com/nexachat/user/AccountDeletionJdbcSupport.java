@@ -78,6 +78,30 @@ class AccountDeletionJdbcSupport {
     }
 
     /**
+     * Cancels the account's still-PENDING scheduled messages. Users are
+     * tombstoned, never row-deleted, so the sender FK's cascade can never
+     * clean these up — without this the dispatcher would keep retrying a
+     * ghost's queue until each row dead-letters (Wukong amendment 1). The
+     * update also drops the claim pair and scrubs the body, matching every
+     * other terminal transition; a row mid-dispatch holds its row lock, and
+     * the serialised outcome (send commits -> PENDING predicate misses, or
+     * this wins -> the claim token dies with it) is safe either way.
+     */
+    void cancelPendingScheduledMessages(UUID userId) {
+        JdbcTemplate jdbcTemplate = jdbc();
+        if (jdbcTemplate == null) {
+            return;
+        }
+        jdbcTemplate.update("""
+                UPDATE scheduled_messages
+                SET status = 'CANCELED', failure_code = 'ACCOUNT_DELETED', body = '',
+                    claimed_at = NULL, claim_token = NULL, next_attempt_at = NULL,
+                    updated_at = now()
+                WHERE sender_id = ? AND status = 'PENDING'
+                """, userId);
+    }
+
+    /**
      * Soft-deletes the account's public feed content and drops its reactions.
      *
      * <p>The rows stay for the retention job, which purges them together with

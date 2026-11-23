@@ -170,6 +170,9 @@ public class AccountDeletionService {
         jdbcSupport.deleteGoogleIdentityData(userId);
         jdbcSupport.deleteEmailOtps(userId);
         jdbcSupport.softDeleteFeedContent(userId);
+        // Tombstoned users never fire the sender FK cascade, so their queued
+        // scheduled messages are canceled explicitly (amendment 1).
+        jdbcSupport.cancelPendingScheduledMessages(userId);
 
         tokenService.revokeAllForUser(userId);
         var e2eeDevices = e2eeDeviceService.getIfAvailable();
