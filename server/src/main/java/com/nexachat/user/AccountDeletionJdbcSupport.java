@@ -27,6 +27,18 @@ class AccountDeletionJdbcSupport {
         if (jdbcTemplate == null) {
             return;
         }
+        // The opt-out DELETE fires the V47 ai-context trigger per row, which
+        // locks each affected conversations row in scan order. Pre-locking
+        // the distinct set in id order keeps every transaction's parent-lock
+        // order conversations-first, so two concurrent deletions sharing
+        // opted-out conversations cannot invert each other.
+        jdbcTemplate.queryForList("""
+                SELECT conv.id FROM conversations conv
+                WHERE conv.id IN (
+                    SELECT DISTINCT conversation_id FROM conversation_ai_opt_outs WHERE user_id = ?
+                )
+                ORDER BY conv.id FOR UPDATE
+                """, UUID.class, userId);
         jdbcTemplate.update("DELETE FROM conversation_ai_opt_outs WHERE user_id = ?", userId);
         jdbcTemplate.update("DELETE FROM summary_request_limits WHERE user_id = ?", userId);
         jdbcTemplate.update("DELETE FROM rag_ask_request_limits WHERE user_id = ?", userId);

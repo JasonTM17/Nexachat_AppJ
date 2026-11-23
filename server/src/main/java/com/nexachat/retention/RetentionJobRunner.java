@@ -206,25 +206,45 @@ public class RetentionJobRunner {
             return new JobRunResult(candidates == null ? 0 : candidates, 0, 0);
         }
 
+        // Lock order must match the writers': every message-writing
+        // transaction locks the conversation row first, then the message.
+        // The V47 ai-context trigger makes the UPDATE below take the parent
+        // lock through the trigger, so locking candidates first would be an
+        // messages->conversations inversion against delete/send transactions
+        // (deadlock). parent_locks takes the distinct conversation rows in id
+        // order before any message row is locked; locked then forces the
+        // evaluation order through the join.
         Integer purged = jdbcTemplate.queryForObject("""
                 WITH candidates AS MATERIALIZED (
-                    SELECT candidate.id
+                    SELECT candidate.id, candidate.conversation_id
                     FROM messages candidate
                     WHERE %s
                     ORDER BY candidate.deleted_at, candidate.id
                     LIMIT ?
-                    FOR UPDATE OF candidate SKIP LOCKED
+                ), parent_locks AS MATERIALIZED (
+                    SELECT conv.id
+                    FROM conversations conv
+                    WHERE conv.id IN (SELECT DISTINCT conversation_id FROM candidates)
+                    ORDER BY conv.id
+                    FOR UPDATE
+                ), locked AS MATERIALIZED (
+                    SELECT m.id
+                    FROM candidates c
+                    JOIN parent_locks pl ON pl.id = c.conversation_id
+                    JOIN messages m ON m.id = c.id
+                    ORDER BY m.id
+                    FOR UPDATE OF m SKIP LOCKED
                 ), cleared AS (
                     UPDATE messages m SET content = NULL, mention_all = FALSE
-                    FROM candidates c
+                    FROM locked c
                     WHERE m.id = c.id AND (m.content IS NOT NULL OR m.mention_all)
                     RETURNING 1
                 ), embeddings AS (
-                    DELETE FROM message_embeddings e USING candidates c
+                    DELETE FROM message_embeddings e USING locked c
                     WHERE e.message_id = c.id
                     RETURNING 1
                 ), mentions AS (
-                    DELETE FROM message_mentions mm USING candidates c
+                    DELETE FROM message_mentions mm USING locked c
                     WHERE mm.message_id = c.id
                     RETURNING 1
                 )
