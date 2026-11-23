@@ -989,6 +989,22 @@ class ClippedAndFrameworkSkipsTest(unittest.TestCase):
         self.assertEqual(sorted(skipped[0]["descendant_labels"]), ["Cancel", "OK"])
         self.assertEqual(section["framework_skipped_count"], 1)
 
+    def test_appcompat_button_panel_rid_is_skipped(self):
+        # appcompat AlertDialog (MaterialAlertDialogBuilder) renumbers the
+        # buttonPanel id into the app package — the skip must not depend on
+        # the ``android:`` prefix (post-v1.2.18 labels-dialog sweep failure).
+        nodes = [
+            N(clickable="true", **{"resource-id": "com.nexachat.debug:id/buttonPanel"},
+              bounds="[0,500][320,600]"),
+            N(text="Done", clickable="true", bounds="[180,520][300,568]"),
+        ]
+        section = self._section(nodes, "unlabeled_interactive")
+        self.assertEqual(section["findings"], [])
+        skipped = section["framework_skipped"]
+        self.assertEqual([f["rid"] for f in skipped], ["buttonPanel"])
+        self.assertEqual(skipped[0]["descendant_labels"], ["Done"])
+        self.assertEqual(section["framework_skipped_count"], 1)
+
     def test_button_panel_without_a_labeled_child_remains_a_finding(self):
         nodes = [
             N(clickable="true", **{"resource-id": "android:id/buttonPanel"},

@@ -494,7 +494,10 @@ def _contained_labels(node: Any, nodes: list[Any]) -> list[str]:
 
 # Framework AlertDialog button bar: its own text is empty by design and the
 # labels live on the child buttons. Exact match only -- app rids never qualify.
-FRAMEWORK_LABELLED_CONTAINER_RID = "android:id/buttonPanel"
+# Local id name, not a full resource-id: appcompat AlertDialog (every
+# MaterialAlertDialogBuilder dialog) reports ``<pkg>:id/buttonPanel`` while the
+# platform AlertDialog reports ``android:id/buttonPanel``.
+FRAMEWORK_LABELLED_CONTAINER_RID_SUFFIX = "buttonPanel"
 
 
 def _unlabeled_with_skipped(
@@ -522,7 +525,7 @@ def _unlabeled_with_skipped(
             for label in (node_text(other).strip(), node_desc(other).strip())
             if label
         ]
-        if node_rid(node) == FRAMEWORK_LABELLED_CONTAINER_RID and interactive_labels:
+        if rid_suffix(node) == FRAMEWORK_LABELLED_CONTAINER_RID_SUFFIX and interactive_labels:
             framework_skipped.append(entry)
             continue
         findings.append(entry)
@@ -538,8 +541,10 @@ def unlabeled_interactive(nodes: list[Any]) -> list[dict[str, Any]]:
     is a defect candidate even when a child somewhere carries text. Each
     finding lists ``descendant_labels`` so a TalkBack pass can confirm which
     ones the merge actually announces. The one exception is the framework
-    ``android:id/buttonPanel`` container with labeled children: it is listed in
-    the report's ``framework_skipped`` list instead of being a finding.
+    ``buttonPanel`` container (``android:id/buttonPanel`` for the platform
+    AlertDialog, ``<pkg>:id/buttonPanel`` for appcompat dialogs) with labeled
+    children: it is listed in the report's ``framework_skipped`` list instead
+    of being a finding.
     """
     return _unlabeled_with_skipped(nodes)[0]
 
