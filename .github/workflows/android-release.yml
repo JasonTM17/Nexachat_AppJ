@@ -144,7 +144,7 @@ jobs:
           else
             echo '::warning::RELEASE_GOOGLE_WEB_CLIENT_ID is not set: this APK hides every Google entry point.'
           fi
-          ./gradlew :app:assembleRelease \
+          ./gradlew :app:assembleRelease :app:bundleRelease \
             --no-daemon --no-build-cache --no-configuration-cache --no-parallel --max-workers=2 \
             "-PapiBaseUrl=$RELEASE_API_BASE_URL" \
             "-PreleaseVersionName=${{ steps.release_version.outputs.version_name }}" \
