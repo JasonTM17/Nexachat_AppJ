@@ -413,6 +413,15 @@ def sign_in_as_device_account(ui: Device, evidence_dir: Path) -> None:
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
         nodes = ui_nodes(ui, timeout=10)
+        # A queued streak milestone sheet hides the whole inbox tree (its own
+        # window wins the dump); --reset-app-data wipes the local shown-flag,
+        # so it re-pops on every seeded sign-in while the streak sits at a
+        # milestone. Dismiss it like stable_journeys._dismiss_occluder does.
+        done = node_by_id(nodes, "streakMilestoneDone")
+        if done is not None and done.clickable:
+            ui.tap_node(done)
+            time.sleep(1)
+            continue
         if inbox_visible(nodes):
             ui.screenshot(str(evidence_dir / "f4-device-home.png"))
             return
