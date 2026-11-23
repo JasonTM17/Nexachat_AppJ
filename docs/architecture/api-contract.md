@@ -18,6 +18,7 @@
 | [Groups](#groups--apiv1conversations-type-group) | `/api/v1/conversations/group` | Group creation, member addition/removal, admin roles, title/avatar updates |
 | [Group Invite Links](#group-invite-links--apiv1conversationsidinvite-link-and-apiv1invite-links) | `/api/v1/conversations/{id}/invite-link`, `/api/v1/invite-links` | High-entropy hashed invite link tokens, admin approval toggle, member preview & join, approval queue |
 | [Reminders](#reminders--apiv1conversationsidreminders) | `/api/v1/conversations/{id}/reminders` | Shared "Nhắc hẹn" board, repeat rules, durable FCM fan-out |
+| [Scheduled messages](#scheduled-messages--apiv1conversationsidscheduled-messages) | `/api/v1/conversations/{id}/scheduled-messages` | Author-scoped future TEXT sends, durable claim/lease dispatch |
 | [Group polls](#group-polls--apiv1conversationsidpolls) | `/api/v1/conversations/{id}/polls` | Poll creation, voting, results, close/delete, versioned change feed |
 | [Attachments](#attachments--apiv1attachments) | `/api/v1/attachments` | Multipart upload with magic-byte sniff, BlurHash, and metadata |
 | [Interactions (Reactions & Pins)](#interactions--reactions-apiv1messages-pins-apiv1conversationsidpins) | `/api/v1/messages`, `/api/v1/conversations` | Idempotent emoji reactions (POST/PUT/DELETE) and pinned messages |
@@ -114,6 +115,7 @@ Android client can consume the API but no dedicated screen is merged into
 | V42 | `V42__chat_streaks.sql` | `conversation_streaks` (one row per DIRECT pair) and `user_streaks` (app check-in streak) with weekly grace day and reminder bookkeeping. |
 | V43 | `V43__public_feed.sql` | `public_posts`, `public_comments`, `public_post_reactions`, `public_images`; extends `reports.target_type` with `POST`/`COMMENT`. |
 | V44 | `V44__streak_contiguous_run_floors.sql` | Per-side contiguous-run floor columns (`low_cont`/`high_cont`, `open_cont`/`sent_cont`) on the streak tables so late-arriving records can still complete a streak day. |
+| V46 | `V46__scheduled_messages.sql` | `scheduled_messages` author queue (PENDING/SENT/CANCELED/FAILED, claim lease, retry backoff) with the `(sender_id, client_message_id)` idempotency key. |
 
 ## Operational notes
 
@@ -141,6 +143,12 @@ Android client can consume the API but no dedicated screen is merged into
 | `nexachat.reminders.claim-lease-seconds` | `600` | Claim lease; a crashed claim becomes due again after this. |
 | `nexachat.retention.jobs.reminders.retention-days` | `30` | Completed one-off reminders are purged after this many days; the job is opt-in (`nexachat.retention.jobs.reminders.enabled`, default `false`). |
 | `nexachat.reminders.push-timeout-ms` | `10000` | Reminder FCM fan-out timeout. |
+| `nexachat.scheduled.enabled` | `true` | Enables the scheduled-message dispatcher (`ScheduledMessageScheduler`). |
+| `nexachat.scheduled.poll-ms` | `15000` | Maximum idle between due-row scans; the timer wakes earlier at the next due/lease-expiry/retry instant. |
+| `nexachat.scheduled.batch-size` | `20` | Due rows claimed per scan. |
+| `nexachat.scheduled.claim-lease-seconds` | `60` | Claim lease; a crashed claim becomes dispatchable again after this. The same value bounds the DELETE cancel guard. |
+| `nexachat.scheduled.drain-budget-ms` | `30000` | Per-tick budget for draining due batches before yielding. |
+| `nexachat.scheduled.worker-threads` | `4` | Per-row send+mark worker pool size. |
 | `nexachat.group.max-members` | `100` | Group capacity enforced on invite joins and approvals (minimum 2). |
 | `nexachat.rate-limit.labels.writes-per-minute` | `30` | Shared label create/patch/delete/assign/unassign budget. |
 | `nexachat.rate-limit.polls.create-per-minute` | `10` | Poll creation budget. |
@@ -149,8 +157,10 @@ Android client can consume the API but no dedicated screen is merged into
 | `nexachat.rate-limit.invite.resolve-per-minute` | `60` | Invite preview budget, per user and per client IP. |
 | `nexachat.rate-limit.invite.join-per-minute` | `20` | Invite join budget, per user and per client IP. |
 | `nexachat.rate-limit.reminders.create-per-minute` | `30` | Reminder creation budget. |
+| `nexachat.rate-limit.scheduled.create-per-minute` | `30` | Scheduled-message creation budget. |
 | `nexachat.rate-limit.messages.edit-delete-per-minute` | `30` | Shared message edit/delete budget. |
 | `nexachat.rate-limit.messages.search-per-minute` | `60` | Message search budget. |
+| `nexachat.rate-limit.messages.scheduled-send-per-minute` | `60` | Per-sender smoothing for scheduled-message dispatch; a denied attempt releases the claim for the bucket's retry-after. |
 | `nexachat.rate-limit.stomp.messages-per-window` | `30` | STOMP message sends per `window-seconds` (10). |
 | `nexachat.rate-limit.stomp.typing-per-window` | `60` | STOMP typing frames per `typing-window-seconds` (10). |
 | `nexachat.rate-limit.stomp.acks-per-window` | `120` | STOMP delivery/read ack frames per `ack-window-seconds` (10). |
@@ -281,6 +291,9 @@ These keys are Spring properties; override them with the matching
 | `E2EE_UNSUPPORTED_CONVERSATION` | 409 | E2EE state read/toggle attempted on a non-DIRECT conversation |
 | `E2EE_PEER_NOT_READY` | 409 | Enabling E2EE while some member has no active device |
 | `E2EE_V1_ACTIVATION_DISABLED` | 409 | New E2EE activation while the experimental rollout flag is off — only false→true; reads and disabling stay allowed |
+| `SCHEDULED_LIMIT` | 409 | Sender already has 50 PENDING scheduled messages in the conversation (`details.limit = 50`) |
+| `SCHEDULED_INVALID` | 409 | Scheduled-message `clientMessageId` replayed after the row reached a terminal state (`details.status`) |
+| `DISPATCHING` | 409 | Scheduled message cannot be canceled — a dispatch claim is in flight or the row already terminated (`details.status`) |
 | `E2EE_REQUIRED` | 409 | Send to an `e2ee_enabled` conversation without `encryption: "E2EE_V1"` |
 | `E2EE_NOT_ENABLED` | 409 | `encryption` sent to a conversation that is not `e2ee_enabled` |
 | `E2EE_STALE_DEVICES` | 409 | An envelope targets a revoked, unknown, or non-member device — client refetches `GET /conversations/{id}/e2ee` and retries |
@@ -1077,6 +1090,87 @@ event; clients refresh `GET /conversations/{id}/reminders` when the board opens
 and when a `REMINDER` push arrives. Conversation mute does not filter reminder
 pushes: every current member with a registered device token receives the
 pointer (shared tokens de-duplicated), online or not.
+
+## Scheduled messages — `/api/v1/conversations/{id}/scheduled-messages`
+
+An author-scoped queue: a member schedules a TEXT message for later, the
+server sends it through the ordinary message path at `sendAt` (never early;
+an instance that was asleep sends late on its next wake). Only the author
+sees their scheduled rows — other members learn nothing until the message
+lands as a normal `MESSAGE_CREATED`.
+
+| Method & path | Auth | Request | Success | Errors |
+|---|---|---|---|---|
+| `GET /conversations/{conversationId}/scheduled-messages` | Bearer member | — | `200` `ScheduledMessageResponse[]`, `sendAt` ascending — the caller's PENDING + FAILED + SENT (last 24h) rows | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
+| `POST /conversations/{conversationId}/scheduled-messages` | Bearer member | `{clientMessageId, body, sendAt}` — body is the TEXT content contract (1–10,000 chars, no NUL); `sendAt` is clamped to `[now+60s, now+365d]` and the response echoes the clamped value | `201` created / `200` idempotent replay of a still-PENDING row — `ScheduledMessageResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `E2EE_REQUIRED` 409 · `SCHEDULED_LIMIT` 409 · `SCHEDULED_INVALID` 409 · `RATE_LIMITED` 429 (30/min per user) |
+| `DELETE /conversations/{conversationId}/scheduled-messages/{scheduledId}` | Bearer member, author of the row | — | `204` empty | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_FOUND` 404 · `DISPATCHING` 409 (`details.status`) |
+
+`ScheduledMessageResponse`:
+
+```json
+{
+  "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "conversationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "clientMessageId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  "body": "Nhắc bạn họp lúc 9h",
+  "sendAt": "2026-12-01T02:00:00Z",
+  "status": "PENDING",
+  "failureCode": null,
+  "sentMessageId": null,
+  "createdAt": "2026-11-23T09:00:00Z",
+  "updatedAt": "2026-11-23T09:00:00Z"
+}
+```
+
+- `clientMessageId` is both the POST idempotency key (unique per sender) and
+  the `clientMessageId` the dispatched message carries — a replayed POST and a
+  retried dispatch resolve to the same message row either way. Replaying a key
+  whose row already terminated is `409 SCHEDULED_INVALID` with
+  `details.status`; the same key reused in a different conversation is
+  `400 VALIDATION_FAILED`, mirroring the send contract.
+- `body` is only populated while the row is PENDING; every terminal transition
+  scrubs it server-side. A SENT row's content lives in the message
+  `sentMessageId` points at. `failureCode` is set on FAILED rows (and on an
+  administrative CANCELED): `NOT_MEMBER`, `E2EE_REQUIRED`, `E2EE_NOT_ENABLED`,
+  `E2EE_MEDIA_UNSUPPORTED`, `VALIDATION_FAILED`, `SCHEDULED_LIMIT`,
+  `ACCOUNT_DELETED`, or `FAILED_RETRY_EXHAUSTED` (dead-lettered 24h after
+  `sendAt` when every retry was refused).
+- At most 50 PENDING rows per sender per conversation; the 51st create is
+  `409 SCHEDULED_LIMIT`. Scheduling into an E2EE-enabled conversation is
+  `409 E2EE_REQUIRED`, the same refusal the send path uses.
+- DELETE succeeds only while the row is PENDING and unclaimed (or its dispatch
+  claim lease already expired). A row mid-dispatch answers
+  `409 DISPATCHING`; a row already terminal also answers `409 DISPATCHING`
+  with `details.status`. A row that is not the caller's is `404 NOT_FOUND`.
+- The dispatcher claims due rows with `FOR UPDATE SKIP LOCKED` plus a lease,
+  sends on a small worker pool, and marks the outcome in a second transaction
+  — the claim scan never holds locks into a send. A retryable failure
+  (suspended sender, transient error) releases the claim for an exponential
+  backoff capped at 10 minutes; a row still undelivered at `sendAt + 24h` is
+  dead-lettered `FAILED_RETRY_EXHAUSTED`. Account deletion cancels pending
+  rows immediately (`failure_code = ACCOUNT_DELETED`); a sender who left the
+  conversation or was deleted before the row dispatched fails at send time
+  (`NOT_MEMBER`, `ACCOUNT_DELETED`).
+- Terminal transitions push a `SCHEDULED_MESSAGE_UPDATED` frame to the
+  author's `/user/queue/inbox` so all of the author's devices converge
+  (clients learn about FAILED sends without polling):
+
+```json
+{
+  "eventType": "SCHEDULED_MESSAGE_UPDATED",
+  "conversationId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "serverTs": "2026-11-23T09:00:00Z",
+  "payload": {
+    "scheduledId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "clientMessageId": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "status": "FAILED",
+    "failureCode": "NOT_MEMBER",
+    "sendAt": "2026-12-01T02:00:00Z",
+    "sentMessageId": null
+  }
+}
+```
+
 ## Group polls — `/api/v1/conversations/{id}/polls`
 Polls exist only in GROUP conversations. Any current member may create and
 vote; the poll creator or a group ADMIN may close or delete. A former member's
