@@ -1,6 +1,8 @@
 package com.nexachat.ws;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.auth.AccessTokenValidityCache;
+import com.nexachat.auth.JwtProperties;
 import com.nexachat.auth.RateLimitService;
 import com.nexachat.auth.JwtService;
 import com.nexachat.common.dto.JwtPrincipal;
@@ -235,6 +237,35 @@ class StompAuthChannelInterceptorTest {
         sendAccessor.setDestination("/app/conversations/" + conversationId + "/typing");
 
         assertThat(interceptor.preSend(message(sendAccessor), channel)).isNull();
+    }
+
+    @Test
+    void connectedSession_sendProbesAreServedFromTheSharedValidityCache() {
+        AccessTokenValidityCache cache = new AccessTokenValidityCache(
+                new JwtProperties("test-secret", 3600, 30), 60, java.time.Clock.systemUTC());
+        StompAuthChannelInterceptor cached = new StompAuthChannelInterceptor(
+                jwtService, userRepository, memberRepository, rateLimitService, messaging,
+                new ObjectMapper(), 30, 10, 60, 10, 120, 10, null, null, cache);
+        Instant issuedAt = Instant.now().minusSeconds(60);
+        StompUserPrincipal principal = new StompUserPrincipal(
+                userId, issuedAt, issuedAt.plusSeconds(3600));
+        when(userRepository.findAuthValidityById(userId))
+                .thenReturn(Optional.of(new UserAuthValidity(userId, null)));
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(true);
+
+        StompHeaderAccessor first = StompHeaderAccessor.create(StompCommand.SEND);
+        first.setUser(principal);
+        first.setDestination("/app/conversations/" + conversationId + "/typing");
+        assertThat(cached.preSend(message(first), channel)).isNotNull();
+
+        StompHeaderAccessor second = StompHeaderAccessor.create(StompCommand.SEND);
+        second.setUser(principal);
+        second.setDestination("/app/conversations/" + conversationId + "/typing");
+        assertThat(cached.preSend(message(second), channel)).isNotNull();
+
+        // The second probe came from the cache — one database read total.
+        verify(userRepository).findAuthValidityById(userId);
     }
 
     @Test

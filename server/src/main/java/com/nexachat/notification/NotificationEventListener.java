@@ -15,6 +15,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.event.TransactionPhase;
 
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -122,11 +123,20 @@ public class NotificationEventListener {
                 continue;
             }
             if (!presenceState.isOnline(memberId)) {
-                offlineRows.put(memberId, tokenRepository.findByUserId(memberId));
+                offlineRows.put(memberId, new ArrayList<>());
                 if (mentioned) {
                     mentionedRecipients.add(memberId);
                 }
             }
+        }
+        // One batched fetch instead of a token query per offline member.
+        if (!offlineRows.isEmpty()) {
+            tokenRepository.findByUserIdIn(offlineRows.keySet()).forEach(row -> {
+                List<UserDeviceToken> rows = offlineRows.get(row.getUser().getId());
+                if (rows != null) {
+                    rows.add(row);
+                }
+            });
         }
 
         DeviceTokenOwners.byCurrentOwner(offlineRows).forEach((recipientId, tokens) ->

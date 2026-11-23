@@ -86,6 +86,12 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
+        // Frames block on Postgres round-trips (auth probe, membership, rate
+        // limit), so the default CPU-sized pool — 1 thread under the Render
+        // Free ActiveProcessorCount=1 — serializes every SEND/SUBSCRIBE. A
+        // small IO-sized pool overlaps those waits; kept near the Hikari
+        // maximum so queued frames cannot starve the connection pool.
+        registration.taskExecutor().corePoolSize(4).maxPoolSize(8).queueCapacity(500);
         registration.interceptors(authChannelInterceptor);
     }
 
