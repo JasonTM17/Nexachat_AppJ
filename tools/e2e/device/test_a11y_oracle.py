@@ -877,5 +877,139 @@ class CliTest(unittest.TestCase):
         self.assertIn("talkback", joined)
 
 
+class ClippedAndFrameworkSkipsTest(unittest.TestCase):
+    """Real false positives from a 320x640 dump become informational entries.
+
+    The oracles must still drop them from ``findings`` while keeping them
+    auditable in the report's ``clipped_skipped`` / ``framework_skipped`` lists.
+    """
+
+    SCREEN = "[0,0][320,640]"
+
+    def _section(self, nodes: list[dict[str, str]], name: str) -> dict:
+        report = oracle.summarize_findings(nodes, layout_dir=None)
+        # The dump is still JSON-ready after adding the informational lists.
+        self.assertEqual(json.loads(json.dumps(report)), report)
+        return report["checks"][name]
+
+    def test_deleted_message_clipped_at_scrollable_top_is_skipped(self):
+        nodes = [
+            N(bounds=self.SCREEN),
+            N(scrollable="true", bounds="[0,88][320,600]"),  # message list
+            N(clickable="true", **{"content-desc": "This message was deleted, 20:46"},
+              bounds="[12,88][308,96]"),
+        ]
+        section = self._section(nodes, "small_touch_targets")
+        self.assertEqual(section["findings"], [])
+        skipped = section["clipped_skipped"]
+        self.assertEqual([f["content_desc"] for f in skipped],
+                         ["This message was deleted, 20:46"])
+        self.assertEqual(skipped[0]["clipped_axes"], ["height"])
+        self.assertEqual(skipped[0]["below_floor"], ["height"])
+        self.assertEqual(section["clipped_skipped_count"], 1)
+
+    def test_tab_clipped_at_screen_and_tab_strip_right_edge_is_skipped(self):
+        nodes = [
+            N(bounds=self.SCREEN),
+            N(scrollable="true", bounds="[0,0][320,200]"),  # tab strip, taller than its tabs
+            N(clickable="true", **{"content-desc": "Links"}, bounds="[304,88][320,136]"),
+        ]
+        section = self._section(nodes, "small_touch_targets")
+        self.assertEqual(section["findings"], [])
+        skipped = section["clipped_skipped"]
+        self.assertEqual([f["content_desc"] for f in skipped], ["Links"])
+        self.assertEqual(skipped[0]["clipped_axes"], ["width"])
+
+    def test_theme_row_clipped_at_scrollable_bottom_is_skipped(self):
+        # The real themeRow sits inside fragment_profile's NestedScrollView;
+        # a screen-edge coincidence alone no longer counts as clipping.
+        nodes = [
+            N(bounds=self.SCREEN),
+            N(scrollable="true", bounds="[0,88][320,640]"),
+            N(clickable="true", **{"resource-id": "com.nexachat.debug:id/themeRow"},
+              bounds="[16,595][304,640]"),
+        ]
+        section = self._section(nodes, "small_touch_targets")
+        self.assertEqual(section["findings"], [])
+        skipped = section["clipped_skipped"]
+        self.assertEqual([f["rid"] for f in skipped], ["themeRow"])
+        self.assertEqual(skipped[0]["clipped_axes"], ["height"])
+
+    def test_button_flush_with_screen_bottom_is_still_a_finding(self):
+        # Designed-flush is indistinguishable from clipped at the screen edge,
+        # so a bottom-bar button with no containing scrollable must not be
+        # silently skipped (Wukong F1).
+        nodes = [
+            N(bounds=self.SCREEN),
+            N(clickable="true", **{"content-desc": "Mute"}, bounds="[236,600][284,640]"),
+        ]
+        section = self._section(nodes, "small_touch_targets")
+        self.assertEqual(section["clipped_skipped"], [])
+        self.assertEqual(len(section["findings"]), 1)
+        self.assertEqual(section["findings"][0]["below_floor"], ["height"])
+
+    def test_small_node_fully_inside_scrollable_is_still_a_finding(self):
+        # Negative control: 30x30px at 160dpi (floor 48px), touching no edge.
+        nodes = [
+            N(bounds=self.SCREEN),
+            N(scrollable="true", bounds="[0,100][320,500]"),
+            N(clickable="true", bounds="[100,200][130,230]"),
+        ]
+        section = self._section(nodes, "small_touch_targets")
+        self.assertEqual(section["clipped_skipped"], [])
+        self.assertEqual(len(section["findings"]), 1)
+        self.assertEqual(section["findings"][0]["below_floor"], ["width", "height"])
+
+    def test_clipped_height_does_not_hide_an_unclipped_short_width(self):
+        nodes = [
+            N(bounds=self.SCREEN),
+            N(scrollable="true", bounds="[0,88][320,600]"),
+            N(clickable="true", bounds="[100,88][120,120]"),  # 20x32, top clipped
+        ]
+        section = self._section(nodes, "small_touch_targets")
+        self.assertEqual(section["clipped_skipped"], [])
+        findings = section["findings"]
+        self.assertEqual(len(findings), 1)
+        # The measured axes stay whole; the swallowed clip is auditable, not
+        # erased from the finding (Wukong F3).
+        self.assertEqual(findings[0]["below_floor"], ["width", "height"])
+        self.assertEqual(findings[0]["clipped_axes"], ["height"])
+
+    def test_framework_button_panel_with_labeled_children_is_skipped(self):
+        nodes = [
+            N(clickable="true", **{"resource-id": "android:id/buttonPanel"},
+              bounds="[0,500][320,600]"),
+            N(text="Cancel", clickable="true", bounds="[20,520][140,568]"),
+            N(**{"content-desc": "OK"}, clickable="true", bounds="[180,520][300,568]"),
+        ]
+        section = self._section(nodes, "unlabeled_interactive")
+        self.assertEqual(section["findings"], [])
+        skipped = section["framework_skipped"]
+        self.assertEqual([f["rid"] for f in skipped], ["buttonPanel"])
+        self.assertEqual(sorted(skipped[0]["descendant_labels"]), ["Cancel", "OK"])
+        self.assertEqual(section["framework_skipped_count"], 1)
+
+    def test_button_panel_without_a_labeled_child_remains_a_finding(self):
+        nodes = [
+            N(clickable="true", **{"resource-id": "android:id/buttonPanel"},
+              bounds="[0,500][320,600]"),
+        ]
+        section = self._section(nodes, "unlabeled_interactive")
+        self.assertEqual(section["framework_skipped"], [])
+        self.assertEqual([f["rid"] for f in section["findings"]], ["buttonPanel"])
+
+    def test_button_panel_label_on_noninteractive_child_remains_a_finding(self):
+        # A label from a non-interactive overlapping node must not suppress the
+        # finding — only labels on interactive children count (Wukong F6).
+        nodes = [
+            N(clickable="true", **{"resource-id": "android:id/buttonPanel"},
+              bounds="[0,500][320,600]"),
+            N(text="Dialog hint", bounds="[20,520][140,560]"),
+        ]
+        section = self._section(nodes, "unlabeled_interactive")
+        self.assertEqual(section["framework_skipped"], [])
+        self.assertEqual([f["rid"] for f in section["findings"]], ["buttonPanel"])
+
+
 if __name__ == "__main__":
     unittest.main()
