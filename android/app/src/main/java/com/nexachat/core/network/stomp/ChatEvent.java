@@ -18,6 +18,7 @@ public sealed interface ChatEvent
                 ChatEvent.ConversationUpdated,
                 ChatEvent.ReactionUpdated,
                 ChatEvent.PinUpdated,
+                ChatEvent.ScheduledMessageUpdated,
                 ChatEvent.SendRejected,
                 ChatEvent.Unknown {
 
@@ -286,6 +287,51 @@ public sealed interface ChatEvent
         @Nullable
         public Boolean getPinned() {
             return pinned;
+        }
+    }
+
+    /**
+     * {@code SCHEDULED_MESSAGE_UPDATED} on {@code /user/queue/inbox}: a scheduled
+     * row reached a terminal status. Carries the payload fields only; the open
+     * scheduled list refetches rather than trusting the push.
+     */
+    record ScheduledMessageUpdated(
+            @Nullable String conversationId,
+            @Nullable String scheduledId,
+            @Nullable String clientMessageId,
+            @Nullable String status,
+            @Nullable String failureCode,
+            @Nullable String sendAt,
+            @Nullable String sentMessageId) implements ChatEvent {
+
+        @Nullable
+        public String getScheduledId() {
+            return scheduledId;
+        }
+
+        @Nullable
+        public String getClientMessageId() {
+            return clientMessageId;
+        }
+
+        @Nullable
+        public String getStatus() {
+            return status;
+        }
+
+        @Nullable
+        public String getFailureCode() {
+            return failureCode;
+        }
+
+        @Nullable
+        public String getSendAt() {
+            return sendAt;
+        }
+
+        @Nullable
+        public String getSentMessageId() {
+            return sentMessageId;
         }
     }
 

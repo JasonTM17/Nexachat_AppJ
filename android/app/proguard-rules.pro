@@ -42,6 +42,8 @@
 # deletes response types and the fields Moshi binds by name.
 -keep class com.nexachat.feature.reminder.ReminderDto { *; }
 -keep class com.nexachat.feature.reminder.ReminderRequest { *; }
+-keep class com.nexachat.feature.scheduled.ScheduledMessageDto { *; }
+-keep class com.nexachat.feature.scheduled.ScheduledMessageRequest { *; }
 -keep class com.nexachat.feature.poll.PollDto { *; }
 -keep class com.nexachat.feature.poll.PollOptionDto { *; }
 -keep class com.nexachat.feature.poll.PollPageDto { *; }

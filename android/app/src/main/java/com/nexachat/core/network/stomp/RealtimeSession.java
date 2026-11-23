@@ -9,6 +9,7 @@ import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.network.dto.MessageDto;
 import com.nexachat.core.network.dto.PinUpdateDto;
 import com.nexachat.core.network.dto.ReactionUpdateDto;
+import com.nexachat.core.network.dto.ScheduledMessageUpdateDto;
 import com.nexachat.core.network.dto.ConversationUpdateDto;
 import com.nexachat.core.network.dto.SendMessageRequest;
 import com.nexachat.core.network.stomp.dto.MessageDeletedDto;
@@ -72,6 +73,7 @@ public final class RealtimeSession {
     public static final String EVENT_CONVERSATION_UPDATED = "CONVERSATION_UPDATED";
     public static final String EVENT_REACTION_UPDATED = "REACTION_UPDATED";
     public static final String EVENT_PIN_UPDATED = "PIN_UPDATED";
+    public static final String EVENT_SCHEDULED_MESSAGE_UPDATED = "SCHEDULED_MESSAGE_UPDATED";
 
     /** First parked re-arm delay; doubles per round up to {@link #PARKED_RETRY_MAX_MS}. */
     public static final long PARKED_RETRY_BASE_MS = 5_000L;
@@ -104,6 +106,7 @@ public final class RealtimeSession {
     private final JsonAdapter<MessageDeletedDto> messageDeletedAdapter;
     private final JsonAdapter<PresenceEventDto> presenceAdapter;
     private final JsonAdapter<ConversationUpdateDto> conversationUpdateAdapter;
+    private final JsonAdapter<ScheduledMessageUpdateDto> scheduledMessageUpdateAdapter;
 
     private final FlowableProcessor<EpochPublication<StompClient.State>> state =
             BehaviorProcessor.<EpochPublication<StompClient.State>>createDefault(
@@ -204,6 +207,7 @@ public final class RealtimeSession {
         messageDeletedAdapter = moshi.adapter(MessageDeletedDto.class);
         presenceAdapter = moshi.adapter(PresenceEventDto.class);
         conversationUpdateAdapter = moshi.adapter(ConversationUpdateDto.class);
+        scheduledMessageUpdateAdapter = moshi.adapter(ScheduledMessageUpdateDto.class);
 
         subscriptions.add(tokenStore.getHasValidRefresh()
                 .distinctUntilChanged()
@@ -856,6 +860,17 @@ public final class RealtimeSession {
                         conversationId,
                         update == null ? null : update.getMessageId(),
                         update == null ? null : update.getPinned());
+            }
+            case EVENT_SCHEDULED_MESSAGE_UPDATED: {
+                ScheduledMessageUpdateDto update = parse(scheduledMessageUpdateAdapter, payload);
+                return new ChatEvent.ScheduledMessageUpdated(
+                        conversationId,
+                        update == null ? null : update.getScheduledId(),
+                        update == null ? null : update.getClientMessageId(),
+                        update == null ? null : update.getStatus(),
+                        update == null ? null : update.getFailureCode(),
+                        update == null ? null : update.getSendAt(),
+                        update == null ? null : update.getSentMessageId());
             }
             default:
                 return new ChatEvent.Unknown(eventType, conversationId);
