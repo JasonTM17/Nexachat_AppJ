@@ -17,6 +17,7 @@ public final class AppSettingsViewModel extends ViewModel {
     private final SettingsRepository settingsRepository;
     private final MutableLiveData<ThemeMode> themeMode = new MutableLiveData<>(ThemeMode.SYSTEM);
     private final MutableLiveData<ChatColor> chatColor = new MutableLiveData<>(ChatColor.PLUM);
+    private final MutableLiveData<Boolean> amoledBlack = new MutableLiveData<>(Boolean.FALSE);
     private final CompositeDisposable disposables = new CompositeDisposable();
 
     @Inject
@@ -28,6 +29,9 @@ public final class AppSettingsViewModel extends ViewModel {
         disposables.add(
                 settingsRepository.getChatColor()
                         .subscribe(chatColor::postValue, ignored -> { }));
+        disposables.add(
+                settingsRepository.getAmoledBlack()
+                        .subscribe(amoledBlack::postValue, ignored -> { }));
     }
 
     public LiveData<ThemeMode> getThemeMode() {
@@ -44,6 +48,14 @@ public final class AppSettingsViewModel extends ViewModel {
 
     public void setChatColor(ChatColor color) {
         settingsRepository.setChatColor(color);
+    }
+
+    public LiveData<Boolean> getAmoledBlack() {
+        return amoledBlack;
+    }
+
+    public void setAmoledBlack(boolean enabled) {
+        settingsRepository.setAmoledBlack(enabled);
     }
 
     @Override

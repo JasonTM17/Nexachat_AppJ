@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Applied on top of Theme.NexaChat.Views while the effective theme is dark
+        and the Pure black preference is on. Only surface/background values are
+        overridden; text, outline and brand colors keep the regular dark palette.
+    -->
+    <style name="ThemeOverlay.NexaChat.AmoledBlack" parent="">
+        <item name="android:colorBackground">@color/amoled_black</item>
+        <item name="android:windowBackground">@color/amoled_black</item>
+        <item name="colorSurface">@color/amoled_black</item>
+        <item name="colorSurfaceDim">@color/amoled_black</item>
+        <item name="colorSurfaceContainerLowest">@color/amoled_black</item>
+        <item name="colorSurfaceContainerLow">@color/amoled_surface_container_low</item>
+        <item name="colorSurfaceContainer">@color/amoled_surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/amoled_surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/amoled_surface_container_highest</item>
+        <item name="colorSurfaceVariant">@color/amoled_surface_variant</item>
+    </style>
+</resources>

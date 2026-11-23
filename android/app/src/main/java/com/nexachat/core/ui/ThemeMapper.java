@@ -31,6 +31,15 @@ public final class ThemeMapper {
     }
 
     /**
+     * The pure-black overlay applies only while the effective theme is dark;
+     * a disabled preference or a light effective theme keeps the regular palette.
+     */
+    public static boolean shouldApplyAmoledBlack(
+            boolean amoledEnabled, ThemeMode themeMode, boolean isSystemInDarkTheme) {
+        return amoledEnabled && resolveIsDarkTheme(themeMode, isSystemInDarkTheme);
+    }
+
+    /**
      * Maps [ThemeMode] to its localized display label.
      */
     public static String resolveThemeLabel(

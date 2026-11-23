@@ -2,6 +2,6 @@
 <!-- Chat color picker tile: tinted to the swatch color at bind time. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="@color/colorSurfaceContainerHigh" />
+    <solid android:color="?attr/colorSurfaceContainerHigh" />
     <corners android:radius="@dimen/corner_full" />
 </shape>

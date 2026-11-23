@@ -2,6 +2,7 @@ package com.nexachat.data;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.ArgumentMatchers.any;
@@ -52,9 +53,40 @@ public final class SettingsRepositoryTest {
     }
 
     private void build(Map<String, String> store) {
+        build(store, new HashMap<>());
+    }
+
+    private void build(Map<String, String> store, Map<String, Boolean> bools) {
         when(tokenStore.getHasValidRefresh()).thenReturn(hasSession.hide());
         when(sessionEvents.getEvents()).thenReturn(sessionSignals);
-        repository = new SettingsRepository(fakeContext(store), userApi, tokenStore, sessionEvents);
+        repository = new SettingsRepository(
+                fakeContext(store, bools), userApi, tokenStore, sessionEvents);
+    }
+
+    @Test
+    public void amoledBlackDefaultsToOffAndPersistsSelection() {
+        Map<String, Boolean> bools = new HashMap<>();
+        build(new HashMap<>(), bools);
+        assertEquals(false, repository.getAmoledBlack().blockingFirst());
+        assertEquals(false, repository.isAmoledBlack());
+
+        repository.setAmoledBlack(true);
+
+        assertEquals(true, repository.getAmoledBlack().blockingFirst());
+        assertEquals(true, repository.isAmoledBlack());
+        assertEquals(true, bools.get("amoled_black"));
+
+        repository.setAmoledBlack(false);
+        assertEquals(false, bools.get("amoled_black"));
+        assertEquals(false, repository.isAmoledBlack());
+    }
+
+    @Test
+    public void amoledBlackIsRestoredFromLastStoredValue() {
+        build(new HashMap<>(), new HashMap<>(Map.of("amoled_black", true)));
+
+        assertEquals(true, repository.getAmoledBlack().blockingFirst());
+        assertEquals(true, repository.isAmoledBlack());
     }
 
     @Test
@@ -236,10 +268,14 @@ public final class SettingsRepositoryTest {
         assertEquals(true, repository.getShowSeen().blockingFirst());
     }
 
-    private Context fakeContext(Map<String, String> store) {
+    private Context fakeContext(Map<String, String> store, Map<String, Boolean> bools) {
         SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);
         when(editor.putString(anyString(), nullable(String.class))).thenAnswer(invocation -> {
             store.put(invocation.getArgument(0), invocation.getArgument(1));
+            return editor;
+        });
+        when(editor.putBoolean(anyString(), anyBoolean())).thenAnswer(invocation -> {
+            bools.put(invocation.getArgument(0), invocation.getArgument(1));
             return editor;
         });
         doNothing().when(editor).apply();
@@ -247,6 +283,10 @@ public final class SettingsRepositoryTest {
         SharedPreferences prefs = mock(SharedPreferences.class);
         when(prefs.getString(anyString(), nullable(String.class))).thenAnswer(invocation -> {
             String stored = store.get(invocation.getArgument(0));
+            return stored != null ? stored : invocation.getArgument(1);
+        });
+        when(prefs.getBoolean(anyString(), anyBoolean())).thenAnswer(invocation -> {
+            Boolean stored = bools.get(invocation.getArgument(0));
             return stored != null ? stored : invocation.getArgument(1);
         });
         when(prefs.edit()).thenReturn(editor);

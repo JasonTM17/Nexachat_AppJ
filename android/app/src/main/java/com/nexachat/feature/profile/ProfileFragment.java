@@ -76,6 +76,7 @@ public final class ProfileFragment extends Fragment {
     private boolean syncingAiConsent;
     /** True while a switch shows a stored value, so the change is not saved back as a user edit. */
     private boolean syncingPrivacy;
+    private boolean syncingAmoled;
     @Nullable private AlertDialog passwordDialog;
     @Nullable private TextView passwordDialogError;
     @Nullable private AlertDialog googleDialog;
@@ -168,6 +169,13 @@ public final class ProfileFragment extends Fragment {
         binding.themeChipSystem.setOnClickListener(onThemeChipClick);
         binding.themeChipLight.setOnClickListener(onThemeChipClick);
         binding.themeChipDark.setOnClickListener(onThemeChipClick);
+        binding.amoledBlackSwitch.setSaveEnabled(false);
+        binding.amoledBlackSwitch.setOnCheckedChangeListener((button, checked) -> {
+            if (!syncingAmoled) {
+                settingsViewModel.setAmoledBlack(checked);
+            }
+        });
+        binding.amoledBlackRow.setOnClickListener(v -> binding.amoledBlackSwitch.toggle());
         binding.chatColorRow.setTitle(getString(R.string.settings_chat_color));
         binding.chatColorRow.setLeadingIcon(R.drawable.ic_palette);
         binding.chatColorRow.setShowChevron(false);
@@ -262,6 +270,11 @@ public final class ProfileFragment extends Fragment {
         });
         settingsViewModel.getChatColor().observe(getViewLifecycleOwner(),
                 this::renderChatColorSelection);
+        settingsViewModel.getAmoledBlack().observe(getViewLifecycleOwner(), enabled -> {
+            syncingAmoled = true;
+            binding.amoledBlackSwitch.setChecked(Boolean.TRUE.equals(enabled));
+            syncingAmoled = false;
+        });
         if (state != null && state.getBoolean(STATE_GOOGLE_PASSWORD_DIALOG, false)) {
             // The Google password prompt is stateless (its secret never leaves
             // the field); the click path re-derives link vs unlink from the

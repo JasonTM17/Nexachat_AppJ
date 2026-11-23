@@ -50,12 +50,30 @@ public final class AppSettingsViewModelTest {
         verify(repository).setChatColor(ChatColor.ROSE);
     }
 
+    @Test
+    public void mirrorsAmoledBlackFromRepositoryAndPersistsSelection() {
+        SettingsRepository repository = mockSettingsRepository();
+        BehaviorProcessor<Boolean> amoled = BehaviorProcessor.createDefault(false);
+        when(repository.getAmoledBlack()).thenReturn(amoled);
+
+        AppSettingsViewModel viewModel = new AppSettingsViewModel(repository);
+        assertEquals(false, viewModel.getAmoledBlack().getValue());
+
+        amoled.onNext(true);
+        assertEquals(true, viewModel.getAmoledBlack().getValue());
+
+        viewModel.setAmoledBlack(true);
+        verify(repository).setAmoledBlack(true);
+    }
+
     private static SettingsRepository mockSettingsRepository() {
         SettingsRepository repository = mock(SettingsRepository.class);
         when(repository.getThemeMode())
                 .thenReturn(BehaviorProcessor.createDefault(ThemeMode.SYSTEM));
         when(repository.getChatColor())
                 .thenReturn(BehaviorProcessor.createDefault(ChatColor.PLUM));
+        when(repository.getAmoledBlack())
+                .thenReturn(BehaviorProcessor.createDefault(false));
         return repository;
     }
 }

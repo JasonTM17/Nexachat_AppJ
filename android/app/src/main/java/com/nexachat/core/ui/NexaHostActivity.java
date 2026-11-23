@@ -20,6 +20,8 @@ import com.nexachat.R;
 import com.nexachat.core.common.AppLocaleManager;
 import com.nexachat.core.network.SessionEvents;
 import com.nexachat.core.network.SessionEventsEntryPoint;
+import com.nexachat.core.network.SettingsRepositoryEntryPoint;
+import com.nexachat.data.SettingsRepository;
 import com.nexachat.data.ThemeMode;
 import com.nexachat.feature.profile.AppSettingsViewModel;
 import dagger.hilt.android.AndroidEntryPoint;
@@ -37,6 +39,8 @@ public class NexaHostActivity extends AppCompatActivity {
     private boolean pendingLogoutNavigation;
     private boolean pendingSessionExpired;
     @Nullable private ThemeMode currentThemeMode;
+    private boolean amoledBlackApplied;
+    @Nullable private ThemeMode amoledDecisionMode;
 
     @Override
     protected void attachBaseContext(Context newBase) {
@@ -46,6 +50,16 @@ public class NexaHostActivity extends AppCompatActivity {
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        SettingsRepository settingsRepository =
+                EntryPointAccessors.fromApplication(
+                                getApplicationContext(), SettingsRepositoryEntryPoint.class)
+                        .settingsRepository();
+        amoledDecisionMode = settingsRepository.getThemeMode().blockingFirst();
+        amoledBlackApplied = ThemeMapper.shouldApplyAmoledBlack(
+                settingsRepository.isAmoledBlack(), amoledDecisionMode, isConfigurationNight());
+        if (amoledBlackApplied) {
+            getTheme().applyStyle(R.style.ThemeOverlay_NexaChat_AmoledBlack, true);
+        }
         setContentView(R.layout.activity_nexa_host);
         updateSystemBarAppearance();
 
@@ -62,6 +76,7 @@ public class NexaHostActivity extends AppCompatActivity {
         AppSettingsViewModel settings =
                 new ViewModelProvider(this).get(AppSettingsViewModel.class);
         settings.getThemeMode().observe(this, this::applyThemeMode);
+        settings.getAmoledBlack().observe(this, this::onAmoledBlackChanged);
 
         SessionEvents sessionEvents =
                 EntryPointAccessors.fromApplication(
@@ -86,6 +101,26 @@ public class NexaHostActivity extends AppCompatActivity {
     protected void onDestroy() {
         disposables.clear();
         super.onDestroy();
+    }
+
+    /**
+     * The observer resolves against the same stored mode the pre-inflation
+     * decision used until the theme LiveData delivers its first value, so an
+     * unchanged preference can never trigger a recreate loop.
+     */
+    private void onAmoledBlackChanged(boolean enabled) {
+        ThemeMode mode = currentThemeMode != null ? currentThemeMode : amoledDecisionMode;
+        boolean effective =
+                ThemeMapper.shouldApplyAmoledBlack(enabled, mode, isConfigurationNight());
+        if (effective != amoledBlackApplied) {
+            amoledBlackApplied = effective;
+            recreate();
+        }
+    }
+
+    private boolean isConfigurationNight() {
+        int nightMode = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        return nightMode == Configuration.UI_MODE_NIGHT_YES;
     }
 
     private void applyThemeMode(@Nullable ThemeMode mode) {

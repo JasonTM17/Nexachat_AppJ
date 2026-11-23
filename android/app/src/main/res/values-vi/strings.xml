@@ -398,6 +398,8 @@
     <string name="theme_system">Hệ thống</string>
     <string name="theme_light">Sáng</string>
     <string name="theme_dark">Tối</string>
+    <string name="settings_amoled_black_title">Nền đen tuyệt đối</string>
+    <string name="settings_amoled_black_summary">Dùng màu đen tuyệt đối khi ở chế độ tối — dịu mắt và tiết kiệm pin trên màn hình OLED</string>
     <string name="settings_chat_color">Màu trò chuyện</string>
     <string name="chat_color_plum">Mận</string>
     <string name="chat_color_indigo">Chàm</string>

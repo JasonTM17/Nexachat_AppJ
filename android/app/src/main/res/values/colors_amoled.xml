@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Pure-black (AMOLED) surface ladder for the dark theme overlay. -->
+    <color name="amoled_black">#FF000000</color>
+    <color name="amoled_surface_container_low">#FF0E0D0F</color>
+    <color name="amoled_surface_container">#FF141215</color>
+    <color name="amoled_surface_container_high">#FF1E1B1F</color>
+    <color name="amoled_surface_container_highest">#FF29252A</color>
+    <color name="amoled_surface_variant">#FF231F24</color>
+</resources>

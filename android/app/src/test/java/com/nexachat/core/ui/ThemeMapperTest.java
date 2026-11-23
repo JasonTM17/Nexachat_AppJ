@@ -44,6 +44,34 @@ public class ThemeMapperTest {
     }
 
     @Test
+    public void amoledBlackAppliesOnlyWhenEnabledAndDark() {
+        // Disabled preference never applies, whatever the effective theme.
+        assertFalse(ThemeMapper.shouldApplyAmoledBlack(false, ThemeMode.DARK, true));
+        assertFalse(ThemeMapper.shouldApplyAmoledBlack(false, ThemeMode.DARK, false));
+        assertFalse(ThemeMapper.shouldApplyAmoledBlack(false, ThemeMode.LIGHT, true));
+        assertFalse(ThemeMapper.shouldApplyAmoledBlack(false, ThemeMode.LIGHT, false));
+        assertFalse(ThemeMapper.shouldApplyAmoledBlack(false, ThemeMode.SYSTEM, true));
+        assertFalse(ThemeMapper.shouldApplyAmoledBlack(false, ThemeMode.SYSTEM, false));
+        assertFalse(ThemeMapper.shouldApplyAmoledBlack(false, null, true));
+        assertFalse(ThemeMapper.shouldApplyAmoledBlack(false, null, false));
+    }
+
+    @Test
+    public void amoledBlackFollowsTheEffectiveDarkTheme() {
+        // Enabled + dark effective theme -> pure black.
+        assertTrue(ThemeMapper.shouldApplyAmoledBlack(true, ThemeMode.DARK, true));
+        assertTrue(ThemeMapper.shouldApplyAmoledBlack(true, ThemeMode.DARK, false));
+        assertTrue(ThemeMapper.shouldApplyAmoledBlack(true, ThemeMode.SYSTEM, true));
+        assertTrue(ThemeMapper.shouldApplyAmoledBlack(true, null, true));
+
+        // Enabled + light effective theme -> regular palette.
+        assertFalse(ThemeMapper.shouldApplyAmoledBlack(true, ThemeMode.LIGHT, true));
+        assertFalse(ThemeMapper.shouldApplyAmoledBlack(true, ThemeMode.LIGHT, false));
+        assertFalse(ThemeMapper.shouldApplyAmoledBlack(true, ThemeMode.SYSTEM, false));
+        assertFalse(ThemeMapper.shouldApplyAmoledBlack(true, null, false));
+    }
+
+    @Test
     public void resolveThemeLabelReturnsCorrectStrings() {
         String sys = "Theo hệ thống";
         String light = "Sáng";

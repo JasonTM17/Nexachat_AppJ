@@ -401,6 +401,8 @@
     <string name="theme_system">System</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
+    <string name="settings_amoled_black_title">Pure black dark theme</string>
+    <string name="settings_amoled_black_summary">Uses true black in dark mode — easier on OLED screens and battery</string>
     <string name="settings_chat_color">Chat color</string>
     <string name="chat_color_plum">Plum</string>
     <string name="chat_color_indigo">Indigo</string>

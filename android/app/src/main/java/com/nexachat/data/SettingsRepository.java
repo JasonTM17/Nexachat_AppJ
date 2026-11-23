@@ -37,6 +37,7 @@ public final class SettingsRepository implements AutoCloseable {
     private static final String PREFS = "nexachat_settings";
     private static final String KEY_THEME = "theme_mode";
     private static final String KEY_CHAT_COLOR = "chat_color";
+    private static final String KEY_AMOLED_BLACK = "amoled_black";
 
     private final UserApi userApi;
     private final SharedPreferences prefs;
@@ -44,6 +45,8 @@ public final class SettingsRepository implements AutoCloseable {
     private final Flowable<ThemeMode> themeMode;
     private final BehaviorProcessor<ChatColor> mutableChatColor;
     private final Flowable<ChatColor> chatColor;
+    private final BehaviorProcessor<Boolean> mutableAmoledBlack;
+    private final Flowable<Boolean> amoledBlack;
     private final BehaviorProcessor<Boolean> mutableShowPresence =
             BehaviorProcessor.createDefault(Boolean.TRUE);
     private final Flowable<Boolean> showPresence = mutableShowPresence.hide().distinctUntilChanged();
@@ -76,6 +79,9 @@ public final class SettingsRepository implements AutoCloseable {
         this.mutableChatColor = BehaviorProcessor.createDefault(
                 ChatColor.fromName(prefs.getString(KEY_CHAT_COLOR, null)));
         this.chatColor = mutableChatColor.hide().distinctUntilChanged();
+        this.mutableAmoledBlack = BehaviorProcessor.createDefault(
+                prefs.getBoolean(KEY_AMOLED_BLACK, false));
+        this.amoledBlack = mutableAmoledBlack.hide().distinctUntilChanged();
 
         Disposable sessionState = tokenStore.getHasValidRefresh()
                 .distinctUntilChanged()
@@ -112,6 +118,18 @@ public final class SettingsRepository implements AutoCloseable {
     @NonNull
     public Flowable<ChatColor> getChatColor() {
         return chatColor;
+    }
+
+    /** Pure-black dark theme; device-level like the theme mode. */
+    @NonNull
+    public Flowable<Boolean> getAmoledBlack() {
+        return amoledBlack;
+    }
+
+    /** Current value for synchronous reads before the first frame is inflated. */
+    public boolean isAmoledBlack() {
+        Boolean value = mutableAmoledBlack.getValue();
+        return value != null && value;
     }
 
     @NonNull
@@ -169,6 +187,11 @@ public final class SettingsRepository implements AutoCloseable {
     public void setChatColor(@NonNull ChatColor color) {
         prefs.edit().putString(KEY_CHAT_COLOR, color.name()).apply();
         mutableChatColor.onNext(color);
+    }
+
+    public void setAmoledBlack(boolean enabled) {
+        prefs.edit().putBoolean(KEY_AMOLED_BLACK, enabled).apply();
+        mutableAmoledBlack.onNext(enabled);
     }
 
     @NonNull
