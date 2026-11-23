@@ -1104,6 +1104,7 @@ lands as a normal `MESSAGE_CREATED`.
 | `GET /conversations/{conversationId}/scheduled-messages` | Bearer member | — | `200` `ScheduledMessageResponse[]`, `sendAt` ascending — the caller's PENDING + FAILED + SENT (last 24h) rows | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `CONVERSATION_NOT_FOUND` 404 |
 | `POST /conversations/{conversationId}/scheduled-messages` | Bearer member | `{clientMessageId, body, sendAt}` — body is the TEXT content contract (1–10,000 chars, no NUL); `sendAt` is clamped to `[now+60s, now+365d]` and the response echoes the clamped value | `201` created / `200` idempotent replay of a still-PENDING row — `ScheduledMessageResponse` | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `E2EE_REQUIRED` 409 · `SCHEDULED_LIMIT` 409 · `SCHEDULED_INVALID` 409 · `RATE_LIMITED` 429 (30/min per user) |
 | `DELETE /conversations/{conversationId}/scheduled-messages/{scheduledId}` | Bearer member, author of the row | — | `204` empty | `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_FOUND` 404 · `DISPATCHING` 409 (`details.status`) |
+| `PATCH /conversations/{conversationId}/scheduled-messages/{scheduledId}` | Bearer member, author of the row | `{body?, sendAt?}` — at least one required; same TEXT contract and `sendAt` clamping as create; a changed `sendAt` clears `next_attempt_at` | `200` `ScheduledMessageResponse` — the updated row | `VALIDATION_FAILED` 400 · `UNAUTHORIZED` 401 · `NOT_MEMBER` 403 · `NOT_FOUND` 404 · `E2EE_REQUIRED` 409 · `DISPATCHING` 409 (`details.status`) |
 
 `ScheduledMessageResponse`:
 
