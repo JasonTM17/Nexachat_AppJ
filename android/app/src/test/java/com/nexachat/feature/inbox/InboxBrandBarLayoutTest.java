@@ -6,23 +6,42 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
 import java.nio.file.Path;
 import javax.xml.parsers.DocumentBuilderFactory;
 
-/** Brand chrome stays on screen; the compose FAB must not cover the last row. */
+/** The inbox header collapses on scroll; the compose FAB must not cover the last row. */
 public final class InboxBrandBarLayoutTest {
     private static final String ANDROID = "http://schemas.android.com/apk/res/android";
     private static final String APP = "http://schemas.android.com/apk/res-auto";
 
     @Test
-    public void brandToolbarDoesNotScrollAway() throws Exception {
-        Element toolbar = requireId("fragment_inbox.xml", "toolbar");
-        assertEquals(
-                "the NexaChat title bar must stay pinned like WhatsApp/Telegram",
-                "",
-                toolbar.getAttributeNS(APP, "layout_scrollFlags"));
+    public void everyAppBarChildScrollsWithTheHeader() throws Exception {
+        // On short screens the toolbar + search pill + active-now + filter chips
+        // leave the list only a few rows tall. An AppBarLayout child only
+        // scrolls when every child above it also declares the scroll flag, so a
+        // missing flag on toolbar or the search pill disables the whole header.
+        Element appBar = requireId("fragment_inbox.xml", "appBar");
+        NodeList children = appBar.getChildNodes();
+        int scrollables = 0;
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child.getNodeType() != Node.ELEMENT_NODE) {
+                continue;
+            }
+            scrollables++;
+            String flags = ((Element) child).getAttributeNS(APP, "layout_scrollFlags");
+            assertTrue(
+                    "every direct AppBarLayout child must declare the scroll flag "
+                            + "or the collapsing header stays pinned: "
+                            + ((Element) child).getAttributeNS(ANDROID, "id"),
+                    flags != null && flags.contains("scroll"));
+        }
+        assertTrue("the inbox header must have scrollable children", scrollables > 0);
+        assertEquals("the app bar must lift when list content scrolls under it",
+                "true", appBar.getAttributeNS(APP, "liftOnScroll"));
         assertEquals("@string/app_name", requireId("fragment_inbox.xml", "inboxBrandTitle")
                 .getAttributeNS(ANDROID, "text"));
     }

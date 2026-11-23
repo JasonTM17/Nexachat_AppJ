@@ -49,6 +49,40 @@ public final class InboxScrollSubmissionContractTest {
                         && method.indexOf("atTop") < method.indexOf("adapter.submitList(rows"));
     }
 
+    @Test
+    public void topAnchoredSubmitExpandsTheCollapsedAppBar() throws Exception {
+        String source = readUtf8(locateJavaFile(
+                "com/nexachat/feature/inbox/InboxFragment.java"));
+        int methodStart = source.indexOf("private void submitRowsPreservingPosition(");
+        int methodEnd = source.indexOf("private void maybeLoadMore()", methodStart);
+        String method = source.substring(methodStart, methodEnd);
+
+        // The inbox header collapses on scroll. When a restored top row pulls
+        // the list back to position 0 the app bar must expand too, or the row
+        // returns while the filters stay hidden until the next scroll.
+        int scrollToTop = method.indexOf("if (scrollToTop)");
+        int expanded = method.indexOf("appBar.setExpanded(true");
+        assertTrue("the scroll-to-top path must expand the collapsing app bar "
+                        + "so a restored row and the header return together",
+                scrollToTop >= 0 && expanded > scrollToTop);
+    }
+
+    @Test
+    public void focusedHeaderControlExpandsTheCollapsedAppBar() throws Exception {
+        String source = readUtf8(locateJavaFile(
+                "com/nexachat/feature/inbox/InboxFragment.java"));
+        int methodStart = source.indexOf("private void expandAppBarForHeaderFocus(");
+        int methodEnd = source.indexOf("private void applyFilterChipRowLayout(", methodStart);
+        String method = source.substring(methodStart, methodEnd);
+
+        // While the header is collapsed a TalkBack or keyboard user can still
+        // land on a clipped filter chip; focus must re-expand the app bar or
+        // the focused control stays hidden under the conversation list.
+        assertTrue("focusing a header control must re-expand the app bar",
+                method.contains("addOnGlobalFocusChangeListener")
+                        && method.contains("appBar.setExpanded(true"));
+    }
+
     private static File locateJavaFile(String relativePath) {
         File[] candidates = {
                 new File("src/main/java/" + relativePath),

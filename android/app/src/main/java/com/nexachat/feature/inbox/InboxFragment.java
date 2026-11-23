@@ -152,6 +152,7 @@ public final class InboxFragment extends Fragment {
                 requireContext());
 
         applyFilterChipRowLayout();
+        expandAppBarForHeaderFocus();
         binding.inboxFilterChips.check(R.id.filterAllChip);
         updateFilterChipsUi(0);
         binding.inboxFilterChips.setOnCheckedStateChangeListener(
@@ -159,12 +160,14 @@ public final class InboxFragment extends Fragment {
                     if (checkedIds.isEmpty()) {
                         return;
                     }
+                    binding.appBar.setExpanded(true);
                     viewModel.selectFilter(filterForChip(checkedIds.get(0)));
                 });
         binding.labelFilterChips.setOnCheckedStateChangeListener((group, checkedIds) -> {
             if (checkedIds.isEmpty()) return;
             View checked = group.findViewById(checkedIds.get(0));
             if (checked == null) return;
+            binding.appBar.setExpanded(true);
             Object tag = checked.getTag();
             if (ALL_LABEL_FILTER.equals(tag)) labelViewModel.selectFilter(null);
             else if (tag instanceof String labelId) labelViewModel.selectFilter(labelId);
@@ -584,6 +587,7 @@ public final class InboxFragment extends Fragment {
                 if (layoutManager != null) {
                     layoutManager.scrollToPositionWithOffset(0, binding.conversationList.getPaddingTop());
                 }
+                binding.appBar.setExpanded(true, false);
             } else if (preservedId != null && layoutManager != null) {
                 List<ConversationSummary> current = adapter.getCurrentList();
                 for (int i = 0; i < current.size(); i++) {
@@ -670,6 +674,28 @@ public final class InboxFragment extends Fragment {
      * re-run on every width change because the first runnable can beat the first
      * layout pass and measure a zero viewport.
      */
+    /**
+     * Re-expands the collapsed header when a control inside it receives focus.
+     * TalkBack and keyboard users can land on a filter chip while the app bar
+     * is still hidden under the list; expanding on focus keeps the control
+     * visible instead of leaving a focused, clipped node in the tree.
+     */
+    private void expandAppBarForHeaderFocus() {
+        binding.getRoot().getViewTreeObserver().addOnGlobalFocusChangeListener(
+                (oldFocus, newFocus) -> {
+                    if (binding == null) {
+                        return;
+                    }
+                    for (View view = newFocus; view != null; ) {
+                        if (view == binding.appBar) {
+                            binding.appBar.setExpanded(true);
+                            return;
+                        }
+                        view = view.getParent() instanceof View parent ? parent : null;
+                    }
+                });
+    }
+
     private void applyFilterChipRowLayout() {
         if (binding == null || !InboxFilterChipLayoutRules.chipsWrapOntoMultipleRows(
                 getResources().getConfiguration().fontScale,

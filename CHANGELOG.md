@@ -40,6 +40,10 @@ Server + Android release. See
   `SYNC_V2_CHANGE_PAGE_MAX` 50 → 200; older clients are unaffected).
 
 ### Fixed
+- Android: the inbox header (toolbar, search pill, Active-now strip and
+  filter chips) now scrolls away with the conversation list and returns on
+  scroll up, so short screens show more than a few rows; it still expands
+  when a filter is picked or a conversation is restored to the top.
 - Server: a sign-in that lands in the same second as "sign out everywhere"
   or a refresh-reuse revocation no longer receives an access token that is
   already revoked; parsed access tokens are validated against the same clock
