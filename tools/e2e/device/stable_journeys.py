@@ -2918,9 +2918,12 @@ def _scroll_list_to_top(context: dict[str, Any], container_rid: str,
         box = getattr(container, "box", None) or (0, 0, 320, 640)
         cx = (box[0] + box[2]) // 2
         height = box[3] - box[1]
-        # Mirror of the downward sweep above: a down-fling must out-travel
-        # the collapsing app bar's expansion before it scrolls the list.
-        ui.swipe(cx, box[1] + int(height * 0.06), cx, box[3] - int(height * 0.06), 300)
+        # Mirror of the upward sweep: a down-fling must out-travel the
+        # collapsing app bar's expansion before it scrolls the list back to
+        # the top, so it continues past the container edge.
+        screen_bottom = max((node.box[3] for node in nodes if node.box), default=640)
+        ui.swipe(cx, box[1] + int(height * 0.06), cx,
+                 min(screen_bottom, box[3] + int(height * 2)), 300)
         time.sleep(0.5)
 
 
@@ -2948,11 +2951,15 @@ def _inbox_row_found_scrolled(context: dict[str, Any], title: str | tuple,
         cx = (box[0] + box[2]) // 2
         height = box[3] - box[1]
         # The collapsing inbox header consumes the start of an up-fling until
-        # it collapses; a short gesture snaps the bar back and never moves
-        # the list. Travel most of the container so the fling settles past
-        # the snap edge and the list actually pages down.
-        ui.swipe(cx, box[3] - int(height * 0.06), cx,
-                 box[1] + int(height * 0.06), 300)
+        # it collapses; a gesture shorter than the bar's snap edge leaves the
+        # bar expanded and the list unmoved. When the chips wrap, the bar can
+        # be taller than the whole list viewport, so the fling must continue
+        # well above the container — the gesture still scrolls the view under
+        # its start point. Keep the start above the gesture-nav home strip:
+        # starting the fling at the bottom edge backgrounds the app.
+        screen_bottom = max((node.box[3] for node in nodes if node.box), default=640)
+        ui.swipe(cx, min(box[3] - int(height * 0.12), screen_bottom - 48), cx,
+                 max(1, box[1] - int(height * 2)), 300)
         time.sleep(0.5)
     _scroll_list_to_top(context, "conversationList")
     return False

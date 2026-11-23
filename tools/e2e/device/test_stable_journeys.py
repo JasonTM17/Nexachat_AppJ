@@ -3939,30 +3939,36 @@ class InboxRowVisibilityTest(unittest.TestCase):
         # The collapsing inbox header consumes the start of an up-fling until
         # it snaps collapsed — a short in-container swipe snaps the bar back
         # and the list never pages down (labels-lifecycle: 'NexaChat Team'
-        # stayed below the fold for the whole 60s wait). The sweep must
-        # travel most of the container height.
+        # stayed below the fold for the whole 60s wait). With wrapped chips
+        # the bar can be taller than the whole list viewport, so the sweep
+        # must keep travelling well above the container edge.
         context = self._context(self._inbox())
         with mock.patch.object(journeys.time, "sleep"):
             self.assertFalse(journeys._inbox_row_found_scrolled(context, "Binh"))
-        height = 620 - 347  # container box in _inbox()
-        self.assertTrue(context["device"].swipes, "the sweep must swipe")
-        for x1, y1, x2, y2, *_ in context["device"].swipes:
-            self.assertGreaterEqual(
-                abs(y2 - y1), int(height * 0.75),
-                "inbox sweeps must out-travel the collapsing header snap edge")
+        container_top, container_bottom = 347, 620
+        ups = [s for s in context["device"].swipes if s[3] < s[1]]
+        self.assertTrue(ups, "the sweep must swipe up inside the list")
+        for x1, y1, x2, y2, *_ in ups:
+            self.assertLess(
+                y2, container_top,
+                "inbox sweeps must end above the container so the fling "
+                "collapses the whole app bar and still scrolls the list")
 
     def test_scroll_list_to_top_outtravels_the_appbar_snap_edge(self):
         # The down-fling has the symmetric problem: it expands the app bar
-        # before it scrolls the list back to the top.
+        # before it scrolls the list back to the top, so it must keep
+        # travelling past the container edge.
         context = self._context(self._inbox())
         with mock.patch.object(journeys.time, "sleep"):
             journeys._scroll_list_to_top(context, "conversationList")
-        height = 620 - 347
-        self.assertTrue(context["device"].swipes, "scroll-to-top must swipe")
-        for x1, y1, x2, y2, *_ in context["device"].swipes:
-            self.assertGreaterEqual(
-                abs(y2 - y1), int(height * 0.75),
-                "scroll-to-top sweeps must out-travel the app bar expansion")
+        container_bottom = 620
+        downs = [s for s in context["device"].swipes if s[3] > s[1]]
+        self.assertTrue(downs, "scroll-to-top must swipe down")
+        for x1, y1, x2, y2, *_ in downs:
+            self.assertGreater(
+                y2, container_bottom - 1,
+                "scroll-to-top sweeps must end below the container so the "
+                "fling expands the app bar and still returns the list to top")
 
     def test_sliver_row_is_rejected(self):
         # Only 6px of the row is inside the list — not enough to read or
