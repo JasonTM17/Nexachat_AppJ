@@ -73,6 +73,7 @@
     <string name="conversation_marked_read">Đã đánh dấu đã đọc</string>
     <string name="inbox_preview_draft">Nháp: %1$s</string>
     <string name="conversation_muted">Đã tắt thông báo</string>
+    <string name="conversation_muted_forever">Đã tắt thông báo cho đến khi bạn bật lại</string>
     <string name="conversation_unmuted">Đã bật thông báo</string>
     <string name="conversation_archived">Đã lưu trữ</string>
     <string name="conversation_archived_snackbar">Đã lưu trữ cuộc trò chuyện</string>

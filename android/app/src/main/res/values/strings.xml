@@ -73,6 +73,7 @@
     <string name="conversation_marked_read">Marked as read</string>
     <string name="inbox_preview_draft">Draft: %1$s</string>
     <string name="conversation_muted">Notifications muted</string>
+    <string name="conversation_muted_forever">Muted until you turn notifications back on</string>
     <string name="conversation_unmuted">Notifications on</string>
     <string name="conversation_archived">Archived</string>
     <string name="conversation_archived_snackbar">Conversation archived</string>
