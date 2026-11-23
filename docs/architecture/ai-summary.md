@@ -108,24 +108,9 @@ applies. The external input excludes messages authored by opted-out members;
 the built-in local extractive engine may still quote them because no text
 leaves the server. An external summary cache entry that cites an opted-out
 member's message (or lists that member as a participant) is deleted and
-regenerated instead of being replayed. The external cache and in-flight key
-also include a deterministic hash of the complete captured opt-out set, so
-changes by uncited senders invalidate replay and separate subsequent queries
-from a late old fill. The captured set is immutable and compared again before
-storage and external response selection. Every external cached replay checks
-the caller's current persisted consent and epoch, including waiters and
-concurrent cache winners. If every message in the window is
+regenerated instead of being replayed. If every message in the window is
 excluded, the LLM is not called and the local engine answers with
 `fallbackReason: NO_EXTERNAL_CONTEXT`.
-
-For external responses, the captured consent epoch and full exclusion set are
-carried to HTTP response selection. A transaction locks the requester row
-first and the conversation row second, verifies both snapshots, and serializes
-JSON before releasing those shared locks. A changed snapshot returns the
-existing `AI_CONSENT_REQUIRED` error instead of the obsolete external output.
-Consent is also rechecked after the service stores a newly inserted or refreshed
-external result. Network writes run after the transaction; local extractive
-responses retain their existing consent and opt-out behavior.
 
 ## Privacy
 
@@ -135,31 +120,6 @@ responses retain their existing consent and opt-out behavior.
 - Prompts and raw model output are not stored. Only the validated summary is cached for 24 hours; edits, deletes and opt-out changes change the cache key or invalidate the cached entry.
 
 Identical requests are served by one generation per node: callers that arrive while a key is cold wait on the same provider call and replay the winner's row, and a waiter whose leader fails or stalls re-enters the queue a bounded number of times before answering on its own. All of a waiter's re-entries share one end-to-end wait deadline (the summed tier timeouts), so a stalled leader never parks a caller beyond that single bound. A local row stored after a provider failure is replayed only for the circuit-breaker window (60 s) after it was written; a request after that window retries the external provider, and `refresh: true` always regenerates.
-
-## Android request lifecycle
-
-Both AI ViewModels check request generation and conversation identity inside
-the main-executor task that publishes a response. Cancel, dismiss,
-clear, scope change or a newer request invalidates queued work. A timezone
-fallback retry goes through that same check, and a request handle returned
-after supersession is canceled. Ask follow-up history is cleared when the
-conversation changes, and logout fences publication immediately.
-
-The Summary repository cache key includes language as well as conversation,
-scope, limit, day and timezone. Clearing the cache advances an epoch and fences
-pending fills, so consent changes cannot be followed by stale cache success.
-The singleton also observes session closing, logout, reauthentication and
-availability synchronously; closed sessions reject requests, and a newly
-available session starts with an empty cache even when consent is unchanged.
-The Summary ViewModel observes invalidation synchronously and checks the cache
-epoch again while publishing under the repository monitor. Queued success,
-saved summary IDs, timezone retries and an already visible result cannot
-survive invalidation. Clearing the ViewModel removes its subscription and
-fences callbacks already copied or queued.
-For each key, the latest-started network request owns fill eligibility: an
-older response cannot replace a newer refresh, even if the newer request
-fails. Pending registrations are cleaned on completion, cancellation and
-enqueue failure; the existing cache TTL and capacity remain bounded.
 
 ## Operator configuration
 

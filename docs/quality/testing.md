@@ -34,46 +34,6 @@ across runs. If both Maven processes use this checkout, also pass a different
 `-Dnexachat.test.build-directory=target/<run-name>` to each command so their
 compiled classes and reports stay separate.
 
-### AI query lifecycle and race regressions
-
-Use a dedicated disposable PostgreSQL database as described above. The AI
-tests pin provider configuration and use synthetic fake HTTP responses; they
-require no live AI key.
-
-```powershell
-mvn -o -B -f server/pom.xml verify `
-  '-Dtest=AskServiceTest,AskServiceStampedeTest,AskServiceFallbackTest,RagRetrievalServiceTest,RagBenchmarkEvaluationTest,RagOutputValidatorTest,RagPromptBuilderTest,RagOptOutTest,RagLlmAnswerServiceFallbackTest,SummaryServiceTest,SummaryCacheWinnerOptOutTest,SummaryCachePayloadTest,SummaryProviderSelectorTest,LlmSummaryProviderTest,LlmSummaryProviderFallbackTest,LlmSummaryOptOutTest,LlmOutputValidatorTest,CitationGuardTest' `
-  '-Dit.test=RagContextRaceIT,AskApiIT,RagCitationHashIT,AskEditUncitedCacheIT,AskRecallUncitedCacheIT,AskOptOutUncitedCacheIT,SummaryApiIT,SummaryScopeApiIT,SummaryOptOutIT,SummaryResponseBoundaryApiIT,ConversationAiOptOutIT,E2eeFlowIT#aiEndpointsRefuseEncryptedConversations' `
-  '-Dnexachat.test.build-directory=target/ai-query-check'
-
-android\gradlew.bat -p android :app:testDebugUnitTest `
-  --tests 'com.nexachat.feature.ask.*' `
-  --tests 'com.nexachat.summary.*' `
-  --tests 'com.nexachat.feature.summary.*'
-```
-
-Remove Maven's `-o` on the first run if dependencies are not cached.
-
-| Flow | Evidence |
-|------|----------|
-| Ask success, cache, validation, membership, consent and citations | `AskApiIT`, `AskServiceTest`, `RagCitationHashIT` |
-| No context, extractive answer, provider fallback | `AskServiceFallbackTest`, RAG retrieval and provider tests |
-| Duplicate questions, distinct histories/languages/admissions/context, stalled leader, interruption and recovery | `AskServiceStampedeTest` |
-| Uncited edit/recall/opt-out/expiry racing generation, revision rollback, expiry-bound cache | `RagContextRaceIT` plus completed-cache edit/recall/opt-out suites |
-| Ask source/consent changes after service return and expiry during JSON serialization | `AskApiIT` |
-| Summary success, refresh, cache, provider fallback, consent and concurrent leaders | `SummaryServiceTest`, `SummaryApiIT`, `SummaryCacheWinnerOptOutTest` |
-| Summary scopes, timezone, insufficient messages, member/opt-out rules | `SummaryScopeApiIT`, `ConversationAiOptOutIT` |
-| Summary external filtering, complete uncited exclusion identity, replay consent and response serialization | `SummaryOptOutIT`, `SummaryServiceTest`, `SummaryCacheWinnerOptOutTest`, `SummaryResponseBoundaryApiIT` |
-| External provider routing/fallback, output validation and citations | `SummaryProviderSelectorTest`, `LlmSummaryProviderTest`, `LlmSummaryProviderFallbackTest`, `LlmSummaryOptOutTest`, `LlmOutputValidatorTest`, `CitationGuardTest` |
-| Ask and Summary refuse encrypted conversations | `E2eeFlowIT#aiEndpointsRefuseEncryptedConversations` |
-| Android late callback, clear/cancel/logout, scope/conversation change, refresh ordering, session/cache epochs and queued invalidation | Ask and Summary ViewModel/repository JVM suites |
-| Offline retrieval quality and cost controls | `RagBenchmarkEvaluationTest` (192 lookup questions) |
-
-These checks cover HTTP/service/database and Android JVM boundaries. They do
-not establish live provider quality, deployed multi-node behavior or device UI
-behavior. GSD implementation evidence is recorded under
-`.planning/phases/01-ai-query-lifecycle/`.
-
 ### Public feed, streak and summary-scope tests
 
 Server suites for the three features live next to their packages. The `*Test`

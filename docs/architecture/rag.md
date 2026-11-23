@@ -128,47 +128,6 @@ cache are scoped by the same identity.
 
 ## Cost controls
 
-### Concurrent queries and source freshness
-
-On each application instance, identical in-flight asks share embedding,
-retrieval and answer-provider work. The key includes conversation, requester,
-normalized question and follow-up history, language, consent epoch, membership
-admission time, and the source context snapshot. Different visibility or
-context snapshots compute independently. Each caller still spends its own
-rate-limit token.
-
-Followers wait with an interruptible monotonic deadline. The default bound is
-120,000 ms; `NEXACHAT_RAG_ASK_SINGLE_FLIGHT_WAIT_MS` is clamped to 1..120,000 ms
-to stay below Android's 130-second AI read timeout. A timeout returns
-`NOT_FOUND` without starting another provider call and detaches only the
-observed stalled flight, allowing a later request to recover. An interrupted
-wait restores the interrupt flag and ends with the existing `INTERNAL_ERROR`.
-A failed or late leader cannot remove a newer flight.
-
-Flyway V46 adds a transactional conversation AI context revision. Relevant text
-insert/edit/recall/delete, opt-out changes and E2EE mode changes advance it;
-rolled-back and unchanged source updates do not invalidate a valid snapshot.
-The snapshot also records the earliest future expiry of eligible text, so
-uncited disappearing messages invalidate work even before retention cleanup.
-Exact and semantic cache rows must match the current revision, and their TTL
-cannot extend past that source expiry. Cache writes take the conversation row
-lock before the advisory cache lock and verify source/citations again before
-storing. Legacy unversioned ask cache rows are cleared by the migration.
-
-Before selecting an answer, each caller rechecks its snapshot. If the source
-changed while it computed or waited, the request returns `NOT_FOUND`; the user
-can ask again against the current context. HTTP response selection carries that
-same snapshot into JSON serialization: a transaction holds the requester's
-consent row and then the conversation row with shared locks, checks both
-snapshots, and serializes only an eligible answer. Expiry is checked again
-after serialization because passage of time cannot be locked. Socket writes
-run after the transaction finishes. The E2EE gate follows snapshot capture so
-activation during capture cannot authorize provider work.
-
-This coordination is per node;
-separate nodes can compute the same cold question, while PostgreSQL still
-enforces cache source freshness.
-
 | Control | Default |
 |---|---|
 | Exact question cache | 24 h TTL |
@@ -179,7 +138,6 @@ enforces cache source freshness.
 | Lazy indexing per request | 500 messages |
 | Background backfill | 200 messages/minute |
 | Ask rate limit | 20/minute, 200/day per user |
-| In-flight follower wait | 120,000 ms maximum |
 
 The background backfill always indexes with the local `lexical` provider, even
 when an external embedding provider is configured. It holds a PostgreSQL
@@ -230,7 +188,6 @@ same question cache as a primary call; a cache hit never calls either provider.
 | `nexachat.rag.index.backfill-rate-per-minute` | `NEXACHAT_RAG_BACKFILL_RATE_PER_MINUTE` | `200` |
 | `nexachat.rag.ask.rate-limit-per-minute` | `NEXACHAT_RAG_ASK_RATE_LIMIT_PER_MINUTE` | `20` |
 | `nexachat.rag.ask.rate-limit-per-day` | `NEXACHAT_RAG_ASK_RATE_LIMIT_PER_DAY` | `200` |
-| `nexachat.rag.ask.single-flight-wait-ms` | `NEXACHAT_RAG_ASK_SINGLE_FLIGHT_WAIT_MS` | `120000` (clamped to 1..120000) |
 | `nexachat.rag.ask.cache-ttl-hours` | `NEXACHAT_RAG_ASK_CACHE_TTL_HOURS` | `24` |
 | `nexachat.security.admin-phones` | `NEXACHAT_ADMIN_PHONES` | — (empty ⇒ stats endpoint denied to all) |
 | `nexachat.summary.llm-fallback.enabled` | `NEXACHAT_SUMMARY_LLM_FALLBACK_ENABLED` | `false` |
