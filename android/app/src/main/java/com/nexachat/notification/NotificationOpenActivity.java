@@ -1,5 +1,6 @@
 package com.nexachat.notification;
 
+import android.content.Intent;
 import android.os.Bundle;
 import androidx.activity.ComponentActivity;
 import androidx.annotation.Nullable;
@@ -37,9 +38,27 @@ public final class NotificationOpenActivity extends ComponentActivity {
                         : Single.just(false))
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(ignored -> {
+                .subscribe(opened -> {
+                    if (!Boolean.TRUE.equals(opened)
+                            && NotificationWorkRequest.TYPE_SHORTCUT.equals(request.getType())) {
+                        openMainOnStaleShortcut();
+                    }
                     finish();
-                }, ignored -> finish());
+                }, ignored -> {
+                    if (NotificationWorkRequest.TYPE_SHORTCUT.equals(request.getType())) {
+                        openMainOnStaleShortcut();
+                    }
+                    finish();
+                });
+    }
+
+    /**
+     * A stale launcher shortcut (logged out, rotated session, lost membership)
+     * still lands the user in the app; notification links stay silent.
+     */
+    private void openMainOnStaleShortcut() {
+        startActivity(new Intent(this, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP));
     }
 
     @Override

@@ -14,6 +14,7 @@ import com.nexachat.data.ComposerDraftRepository;
 import com.nexachat.data.ConversationRepository;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.data.TimeAndJwt;
+import com.nexachat.feature.shortcut.ConversationShortcuts;
 import com.squareup.moshi.Moshi;
 import dagger.hilt.android.lifecycle.HiltViewModel;
 import io.reactivex.rxjava3.core.Single;
@@ -38,6 +39,8 @@ public final class InboxViewModel extends ViewModel {
     private final SavedStateHandle savedStateHandle;
     private final ConversationRepository conversationRepository;
     @Nullable private final ComposerDraftRepository composerDraftRepository;
+    /** Null under the package-private test constructors. */
+    @Nullable private final ConversationShortcuts conversationShortcuts;
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final MutableLiveData<InboxUiState> mutableUiState =
             new MutableLiveData<>(new InboxUiState());
@@ -57,8 +60,10 @@ public final class InboxViewModel extends ViewModel {
             ConversationRepository conversationRepository,
             @Nullable TokenStore tokenStore,
             @Nullable Moshi moshi,
-            ComposerDraftRepository composerDraftRepository) {
-        this(savedStateHandle, conversationRepository, composerDraftRepository);
+            ComposerDraftRepository composerDraftRepository,
+            ConversationShortcuts conversationShortcuts) {
+        this(savedStateHandle, conversationRepository, composerDraftRepository,
+                conversationShortcuts);
         start(tokenStore, moshi);
     }
 
@@ -78,18 +83,20 @@ public final class InboxViewModel extends ViewModel {
     private InboxViewModel(
             SavedStateHandle savedStateHandle,
             ConversationRepository conversationRepository) {
-        this(savedStateHandle, conversationRepository, null);
+        this(savedStateHandle, conversationRepository, null, null);
     }
 
     private InboxViewModel(
             SavedStateHandle savedStateHandle,
             ConversationRepository conversationRepository,
-            @Nullable ComposerDraftRepository composerDraftRepository) {
+            @Nullable ComposerDraftRepository composerDraftRepository,
+            @Nullable ConversationShortcuts conversationShortcuts) {
         this.savedStateHandle =
                 Objects.requireNonNull(savedStateHandle, "savedStateHandle");
         this.conversationRepository =
                 Objects.requireNonNull(conversationRepository, "conversationRepository");
         this.composerDraftRepository = composerDraftRepository;
+        this.conversationShortcuts = conversationShortcuts;
         InboxFilter restoredFilter = InboxFilter.fromSavedValue(
                 savedStateHandle.get(KEY_SELECTED_FILTER));
         currentState = new InboxUiState().withSelectedFilter(restoredFilter);
@@ -327,16 +334,23 @@ public final class InboxViewModel extends ViewModel {
                     .defaultIfEmpty(Optional.empty())
                     .subscribeOn(Schedulers.io())
                     .subscribe(
-                            userId -> updateState(state -> state.withCurrentUserId(
-                                    userId.orElse(null))),
+                            userId -> {
+                                updateState(state -> state.withCurrentUserId(
+                                        userId.orElse(null)));
+                                publishShortcuts();
+                            },
                             error -> updateState(state -> state.withCurrentUserId(null))));
         }
 
         disposables.add(conversationRepository.inboxFlow()
                 .subscribeOn(Schedulers.io())
                 .subscribe(
-                        conversations -> updateState(state ->
-                                state.withConversations(conversations, state.isLoading() && refreshInFlight)),
+                        conversations -> {
+                            updateState(state ->
+                                    state.withConversations(conversations,
+                                            state.isLoading() && refreshInFlight));
+                            publishShortcuts();
+                        },
                         error -> updateState(state -> state.withError(
                                 new ApiError.Network(error.getMessage())))));
         disposables.add(conversationRepository.selfRemovals()
@@ -356,6 +370,22 @@ public final class InboxViewModel extends ViewModel {
     private synchronized void updateState(UnaryOperator<InboxUiState> reducer) {
         currentState = Objects.requireNonNull(reducer.apply(currentState), "state");
         mutableUiState.postValue(currentState);
+    }
+
+    /**
+     * inboxFlow() emits every conversation regardless of the selected filter
+     * (Archived is applied client-side), so publishing here cannot wipe the
+     * shortcuts when the user opens the Archived filter.
+     */
+    private void publishShortcuts() {
+        ConversationShortcuts shortcuts = conversationShortcuts;
+        String userId = currentState.getCurrentUserId();
+        // Session-end clearing belongs to AuthRepository; an unresolved user id
+        // at cold start must not wipe and republish the launcher set.
+        if (shortcuts == null || userId == null) {
+            return;
+        }
+        shortcuts.publish(userId, currentState.getConversations());
     }
 
     public LiveData<ApiError> getPinError() {

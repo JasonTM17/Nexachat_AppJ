@@ -30,7 +30,10 @@ public final class NotificationWorkScheduler {
 
     @VisibleForTesting
     static void enqueue(@NonNull WorkManager manager, @NonNull NotificationWorkRequest request) {
-        if (!request.isValid()) return;
+        if (!request.isValid()
+                || NotificationWorkRequest.TYPE_SHORTCUT.equals(request.getType())) {
+            return;
+        }
         OneTimeWorkRequest work = new OneTimeWorkRequest.Builder(MessageNotificationWorker.class)
                 .setInputData(request.toData())
                 .setConstraints(new Constraints.Builder()

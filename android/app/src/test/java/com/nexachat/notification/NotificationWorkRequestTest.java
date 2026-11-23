@@ -36,6 +36,42 @@ public final class NotificationWorkRequestTest {
     }
 
     @Test
+    public void shortcutIsBoundToAccountEpochAndConversation() {
+        NotificationWorkRequest request = NotificationWorkRequest.shortcut(
+                "account-a", 4L, "conversation-1");
+
+        assertTrue(request.isValid());
+        assertEquals(NotificationWorkRequest.TYPE_SHORTCUT, request.getType());
+        assertEquals("shortcut:account-a:4:conversation-1", request.uniqueWorkName());
+        NotificationWorkRequest restored =
+                NotificationWorkRequest.fromData(request.toData());
+        assertNotNull(restored);
+        assertEquals(request.uniqueWorkName(), restored.uniqueWorkName());
+        assertEquals(NotificationWorkRequest.TYPE_SHORTCUT, restored.getType());
+    }
+
+    @Test
+    public void shortcutWithoutAccountEpochOrConversationFailsClosed() {
+        assertNull(NotificationWorkRequest.fromData(new Data.Builder()
+                .putString("type", NotificationWorkRequest.TYPE_SHORTCUT)
+                .putString("recipientId", "account-a")
+                .putLong("sessionEpoch", -1L)
+                .putString("conversationId", "conversation-1")
+                .build()));
+        assertNull(NotificationWorkRequest.fromData(new Data.Builder()
+                .putString("type", NotificationWorkRequest.TYPE_SHORTCUT)
+                .putString("recipientId", "account-a")
+                .putLong("sessionEpoch", 4L)
+                .build()));
+        assertNull(NotificationWorkRequest.fromData(new Data.Builder()
+                .putString("type", "SHORTCUT_BOGUS")
+                .putString("recipientId", "account-a")
+                .putLong("sessionEpoch", 4L)
+                .putString("conversationId", "conversation-1")
+                .build()));
+    }
+
+    @Test
     public void legacyOrMalformedWorkInputFailsClosed() {
         assertNull(NotificationWorkRequest.fromData(new Data.Builder()
                 .putString("type", NotificationWorkRequest.TYPE_MESSAGE)

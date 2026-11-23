@@ -3,6 +3,7 @@ package com.nexachat.notification;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -61,6 +62,20 @@ public final class NotificationWorkExecutorTest {
         when(reminderNotifications.isEnabled()).thenReturn(true);
         when(reminderNotifications.show(any())).thenReturn(true);
         executor = newExecutor();
+    }
+
+    @Test
+    public void shortcutPayloadNeverTouchesTheNotificationPipeline() {
+        NotificationWorkRequest request =
+                NotificationWorkRequest.shortcut(ACCOUNT, EPOCH, CONVERSATION);
+
+        assertEquals(NotificationWorkExecutor.Outcome.SUCCESS,
+                executor.execute(request).blockingGet());
+
+        verify(admission, never()).isCurrent(any(), anyLong(), any());
+        verify(messageNotifications, never()).show(any());
+        verify(reminderNotifications, never()).show(any());
+        assertTrue(occurrenceLedger.seen.isEmpty());
     }
 
     @Test
