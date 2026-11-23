@@ -182,6 +182,42 @@ public final class RealtimeSessionEventDecodeTest {
     }
 
     @Test
+    public void scheduledMessageUpdatedDecodesTerminalPayload() {
+        RealtimeSession session = session(true, null);
+        TestSubscriber<ChatEvent> observer = session.getEvents().test();
+        frames.onNext(message("{\"eventType\":\"SCHEDULED_MESSAGE_UPDATED\","
+                + "\"conversationId\":\"c-1\",\"serverTs\":\"2026-12-01T02:00:01Z\","
+                + "\"payload\":{\"scheduledId\":\"s-1\",\"clientMessageId\":\"cm-1\","
+                + "\"status\":\"FAILED\",\"failureCode\":\"FAILED_RETRY_EXHAUSTED\","
+                + "\"sendAt\":\"2026-12-01T02:00:00Z\",\"sentMessageId\":null}}"));
+        ChatEvent.ScheduledMessageUpdated event =
+                (ChatEvent.ScheduledMessageUpdated) observer.awaitCount(1).values().get(0);
+        assertEquals("c-1", event.getConversationId());
+        assertEquals("s-1", event.getScheduledId());
+        assertEquals("cm-1", event.getClientMessageId());
+        assertEquals("FAILED", event.getStatus());
+        assertEquals("FAILED_RETRY_EXHAUSTED", event.getFailureCode());
+        assertEquals("2026-12-01T02:00:00Z", event.getSendAt());
+        assertEquals(null, event.getSentMessageId());
+        observer.assertNoErrors();
+    }
+
+    @Test
+    public void scheduledMessageUpdatedToleratesAMinimalPayload() {
+        RealtimeSession session = session(true, null);
+        TestSubscriber<ChatEvent> observer = session.getEvents().test();
+        frames.onNext(message("{\"eventType\":\"SCHEDULED_MESSAGE_UPDATED\","
+                + "\"conversationId\":\"c-1\",\"payload\":{\"scheduledId\":\"s-2\","
+                + "\"status\":\"SENT\",\"sentMessageId\":\"m-44\"}}"));
+        ChatEvent.ScheduledMessageUpdated event =
+                (ChatEvent.ScheduledMessageUpdated) observer.awaitCount(1).values().get(0);
+        assertEquals("s-2", event.getScheduledId());
+        assertEquals("SENT", event.getStatus());
+        assertEquals("m-44", event.getSentMessageId());
+        observer.assertNoErrors();
+    }
+
+    @Test
     public void errorQueueDecodesBothCodes() {
         RealtimeSession session = session(true, "errors-sub");
         TestSubscriber<ChatEvent> observer = session.getEvents().test();

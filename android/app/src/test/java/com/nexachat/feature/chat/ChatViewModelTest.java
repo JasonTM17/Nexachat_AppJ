@@ -389,6 +389,29 @@ public final class ChatViewModelTest {
     }
 
     @Test
+    public void clearComposerDraftEmptiesInputAndDeletesPersistedRow() {
+        ComposerDraftRepository drafts = Mockito.mock(ComposerDraftRepository.class);
+        when(drafts.load(anyString())).thenReturn(Maybe.empty());
+        when(drafts.save(anyString(), any())).thenReturn(Completable.complete());
+        when(drafts.clear(anyString())).thenReturn(Completable.complete());
+        ChatViewModel vm = new ChatViewModel(
+                new SavedStateHandle(Map.of("conversationId", CONVERSATION_ID)),
+                messageRepository, conversationRepository, attachmentRepository,
+                session, tokenStore, null, null, null, null, null, drafts);
+        viewModelStore.put("chat-" + (++viewModelCount), vm);
+
+        vm.onComposerDraftChange(MentionDraft.empty("scheduled soon"));
+        assertEquals("scheduled soon", vm.getUiState().getValue().getInput());
+
+        vm.clearComposerDraft();
+
+        assertEquals("", vm.getUiState().getValue().getInput());
+        assertTrue(vm.getMentionDraft().getMentions().isEmpty());
+        assertNull(vm.getUiState().getValue().getReplyTarget());
+        verify(drafts).clear(CONVERSATION_ID);
+    }
+
+    @Test
     public void sendClearIsSerializedAfterInFlightDebouncedSave() {
         ComposerDraftRepository drafts = Mockito.mock(ComposerDraftRepository.class);
         when(drafts.load(anyString())).thenReturn(Maybe.empty());
