@@ -201,7 +201,10 @@ public interface ScheduledMessageRepository extends JpaRepository<ScheduledMessa
      * in-flight dispatch never sends stale content. {@code body}/
      * {@code sendAt} are COALESCE'd so a null field keeps its stored value;
      * editing {@code send_at} also clears {@code next_attempt_at} so the new
-     * time governs the next wake-up.
+     * time governs the next wake-up. The claim columns are always released:
+     * an expired-lease edit otherwise leaves the stale {@code claim_token}
+     * valid for a stalled dispatcher and pins the wake-up scan on the old
+     * {@code claimed_at} instant.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
@@ -210,6 +213,7 @@ public interface ScheduledMessageRepository extends JpaRepository<ScheduledMessa
                 send_at = COALESCE(CAST(:sendAt AS timestamptz), send_at),
                 next_attempt_at = CASE WHEN :clearNextAttempt THEN NULL
                                        ELSE next_attempt_at END,
+                claimed_at = NULL, claim_token = NULL,
                 updated_at = now()
             WHERE id = :id AND sender_id = :senderId AND conversation_id = :conversationId
               AND status = 'PENDING'

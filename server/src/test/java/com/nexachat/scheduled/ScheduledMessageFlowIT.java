@@ -332,7 +332,9 @@ class ScheduledMessageFlowIT {
                 .andExpect(jsonPath("$.error.code").value("DISPATCHING"))
                 .andExpect(jsonPath("$.error.details.status").value("PENDING"));
 
-        // An expired lease releases the guard.
+        // An expired lease releases the guard — and the edit must release the
+        // stale claim itself, or a stalled dispatcher's token stays valid and
+        // the wake-up scan spins on the expired claimed_at instant.
         jdbcTemplate.update("""
                 UPDATE scheduled_messages
                 SET claimed_at = now() - interval '10 minutes'
@@ -340,6 +342,10 @@ class ScheduledMessageFlowIT {
                 """, id);
         patchJson(conversationId, id, bob, Map.of("body", "after"))
                 .andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM scheduled_messages"
+                        + " WHERE id = ? AND claimed_at IS NULL AND claim_token IS NULL",
+                Integer.class, id)).isEqualTo(1);
 
         // Another member cannot edit bob's row; the terminal row is a conflict.
         patchJson(conversationId, id, alice, Map.of("body", "alice"))
