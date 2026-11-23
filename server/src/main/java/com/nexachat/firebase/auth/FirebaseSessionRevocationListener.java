@@ -2,6 +2,7 @@ package com.nexachat.firebase.auth;
 
 import com.nexachat.auth.AccessTokensRevokedEvent;
 import com.nexachat.conversation.ConversationMemberRepository;
+import com.nexachat.firebase.FirebaseFailures;
 import com.nexachat.firebase.client.FirebaseRtdbClient;
 import com.nexachat.firebase.projection.FirebaseProjectionRetryQueue;
 import org.slf4j.Logger;
@@ -41,7 +42,7 @@ public final class FirebaseSessionRevocationListener {
         try {
             locks.withUserLock(userId, () -> revoke(userId));
         } catch (RuntimeException failure) {
-            log.warn("Firebase realtime session revocation failed ({})", failure.getClass().getSimpleName());
+            log.warn("Firebase realtime session revocation failed ({})", FirebaseFailures.describe(failure));
             boolean queued = retries.enqueue("session-revocation:" + userId,
                     () -> locks.withUserLock(userId, () -> revoke(userId)));
             if (!queued) {

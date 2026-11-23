@@ -2,6 +2,7 @@ package com.nexachat.firebase.projection;
 
 import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationRepository;
+import com.nexachat.firebase.FirebaseFailures;
 import com.nexachat.firebase.client.FirebaseRtdbClient;
 import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
@@ -47,7 +48,7 @@ public class FirebaseAuthorizationBackfillJob {
             metrics.write("control", () -> rtdb.applyAuthorizationProjection(Map.of("control/enabled", false)));
         } catch (RuntimeException failure) {
             log.warn("Firebase authorization admission could not be closed at startup ({})",
-                    failure.getClass().getSimpleName());
+                    FirebaseFailures.describe(failure));
         }
     }
 
@@ -58,7 +59,7 @@ public class FirebaseAuthorizationBackfillJob {
             backfill();
         } catch (RuntimeException failure) {
             log.warn("Firebase authorization backfill did not complete ({})",
-                    failure.getClass().getSimpleName());
+                    FirebaseFailures.describe(failure));
         }
     }
 

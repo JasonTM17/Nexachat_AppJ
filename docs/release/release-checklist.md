@@ -85,9 +85,10 @@ python tools/checks/check-release-r8-mapping.py
 - `versionCode = MAJOR * 1,000,000 + MINOR * 1,000 + PATCH`, capped at
   `2,100,000,000` (`tools/release/release-version.sh`). Confirm it is greater than the
   version code of the last published release.
-- If the Play Console requires an AAB, build it separately with the signing
-  credentials and run the same mapping check. The repository's `tools/release/sign-release.sh`
-  produces an APK, not an AAB (**owner** decides whether an AAB is required).
+- The tag-triggered release workflow builds a signed Play upload bundle next
+  to the APK (`nexachat-vX.Y.Z.aab` + `.sha256`), verifies its signer against
+  `site/.well-known/assetlinks.json` and attaches both to the GitHub Release.
+  The local `tools/release/sign-release.sh` still produces only the APK.
 
 ## 3. Roll out the database migration and server
 

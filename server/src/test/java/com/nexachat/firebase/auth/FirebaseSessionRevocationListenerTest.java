@@ -70,6 +70,27 @@ class FirebaseSessionRevocationListenerTest {
         assertThat(output.getOut()).doesNotContain("provider response secret");
     }
 
+    @Test
+    void doesNotEnqueueRetryWhenRealtimeAndAdminRevocationSucceed() {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        FirebaseProjectionRetryQueue retries = new FirebaseProjectionRetryQueue(
+                Clock.systemUTC(), new FirebaseProjectionMetrics(meterRegistry));
+        FirebaseBridgeLock locks = new FirebaseBridgeLock();
+        FirebaseRtdbClient rtdb = mock(FirebaseRtdbClient.class);
+        FirebaseAdminClient admin = mock(FirebaseAdminClient.class);
+        ConversationMemberRepository members = mock(ConversationMemberRepository.class);
+        when(members.findConversationIdsByUserId(USER_ID)).thenReturn(List.of(CONVERSATION_ID));
+        FirebaseSessionRevocationListener listener = new FirebaseSessionRevocationListener(
+                locks, rtdb, admin, members, retries);
+
+        listener.onAccessTokensRevoked(new AccessTokensRevokedEvent(USER_ID));
+
+        assertThat(meterRegistry.get("nexachat.firebase.projection.retry.backlog").gauge().value())
+                .isZero();
+        verify(rtdb, times(1)).revokeUser(USER_ID, List.of(CONVERSATION_ID));
+        verify(admin, times(1)).revokeRefreshTokens(USER_ID.toString());
+    }
+
     private static final class MutableClock extends Clock {
         private Instant current;
 

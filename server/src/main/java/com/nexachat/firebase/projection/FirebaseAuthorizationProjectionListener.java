@@ -1,6 +1,7 @@
 package com.nexachat.firebase.projection;
 
 import com.nexachat.conversation.ConversationMembershipChangedEvent;
+import com.nexachat.firebase.FirebaseFailures;
 import com.nexachat.firebase.client.FirebaseProviderException;
 import com.nexachat.user.UserAccountDeletedEvent;
 import com.nexachat.user.UserAccountCreatedEvent;
@@ -59,10 +60,10 @@ public class FirebaseAuthorizationProjectionListener {
             boolean queued = retries.enqueue(key, operation);
             if (queued) {
                 log.warn("Firebase authorization projection deferred ({})",
-                        failure.getClass().getSimpleName());
+                        FirebaseFailures.describe(failure));
             } else {
                 log.error("Firebase authorization projection retry was rejected ({})",
-                        failure.getClass().getSimpleName());
+                        FirebaseFailures.describe(failure));
             }
             if (denyMustSucceed) {
                 throw new FirebaseProviderException(queued
