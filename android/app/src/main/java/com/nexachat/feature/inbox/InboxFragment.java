@@ -12,6 +12,8 @@ import android.text.TextPaint;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.FocusFinder;
+import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -23,6 +25,7 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.ViewCompat;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
@@ -153,6 +156,7 @@ public final class InboxFragment extends Fragment {
 
         applyFilterChipRowLayout();
         expandAppBarForHeaderFocus();
+        expandAppBarForKeyboardTraversal();
         binding.inboxFilterChips.check(R.id.filterAllChip);
         updateFilterChipsUi(0);
         binding.inboxFilterChips.setOnCheckedStateChangeListener(
@@ -693,6 +697,99 @@ public final class InboxFragment extends Fragment {
                         }
                         view = view.getParent() instanceof View parent ? parent : null;
                     }
+                });
+    }
+
+    /**
+     * Restores a keyboard path through the header. Three separate blockers
+     * made header controls unreachable from {@code conversationList}:
+     *
+     * <p>1) Material's {@code AppBarLayout} is a keyboard navigation cluster
+     * with {@code touchscreenBlocksFocus}, so {@code requestFocus} on any
+     * descendant that is not {@code focusableInTouchMode} returns false —
+     * every header control (search pill, filter chips, toolbar buttons) was
+     * permanently unfocusable whether the bar was expanded or collapsed. The
+     * cluster grouping stays; only the touchscreen block is cleared.
+     *
+     * <p>2) On this platform build the directional focus search never
+     * resolves a downward target out of the toolbar, and user-specified
+     * {@code nextFocusDown}/{@code nextFocusForward}/{@code nextClusterForward}
+     * lookups fail the same way. The unhandled DOWN listener on the app bar
+     * therefore re-resolves the XML-wired {@code nextFocusDownId} manually
+     * (only when the framework dead-ends), and a shared key listener performs
+     * the wired {@code nextFocusForwardId} jump for TAB at each segment
+     * boundary (last toolbar button, search pill, last filter chip).
+     *
+     * <p>3) With the bar collapsed, header children are also pruned from the
+     * focus tree, so DPAD_UP from the top conversation row can have no
+     * target and surfaces here as an unhandled key. The listener only
+     * consumes that dead-end case: any real upward target (a row above, or
+     * the off-screen-but-laid-out header chips/pill via the root-wide
+     * finder) belongs to ordinary traversal — expand, then hand focus to
+     * the search pill.
+     */
+    private void expandAppBarForKeyboardTraversal() {
+        binding.appBar.setTouchscreenBlocksFocus(false);
+        ViewCompat.addOnUnhandledKeyEventListener(binding.appBar,
+                (view, event) -> {
+                    if (binding == null
+                            || event.getAction() != KeyEvent.ACTION_DOWN
+                            || event.getKeyCode() != KeyEvent.KEYCODE_DPAD_DOWN) {
+                        return false;
+                    }
+                    View focused = binding.getRoot().findFocus();
+                    if (focused == null
+                            || focused.getNextFocusDownId() == View.NO_ID) {
+                        return false;
+                    }
+                    View next = binding.getRoot().findViewById(
+                            focused.getNextFocusDownId());
+                    return next != null && next.requestFocus();
+                });
+        // The appBar cluster wraps TAB inside itself and never reaches the
+        // nextFocusForward resolution on this framework build, so the views
+        // that close a forward segment get an explicit key path instead.
+        View.OnKeyListener forwardTab = (v, keyCode, event) -> {
+            if (binding == null
+                    || event.getAction() != KeyEvent.ACTION_DOWN
+                    || keyCode != KeyEvent.KEYCODE_TAB
+                    || event.isShiftPressed()
+                    || v.getNextFocusForwardId() == View.NO_ID) {
+                return false;
+            }
+            View next = binding.getRoot().findViewById(v.getNextFocusForwardId());
+            return next != null && next.requestFocus();
+        };
+        binding.moreButton.setOnKeyListener(forwardTab);
+        binding.inboxSearchPill.setOnKeyListener(forwardTab);
+        binding.activeNowViewAll.setOnKeyListener(forwardTab);
+        binding.filterArchivedChip.setOnKeyListener(forwardTab);
+        ViewCompat.addOnUnhandledKeyEventListener(binding.conversationList,
+                (view, event) -> {
+                    if (binding == null
+                            || event.getAction() != KeyEvent.ACTION_DOWN
+                            || event.getKeyCode() != KeyEvent.KEYCODE_DPAD_UP) {
+                        return false;
+                    }
+                    View focused = binding.conversationList.getFocusedChild();
+                    if (focused == null) {
+                        return false;
+                    }
+                    View next = focused.focusSearch(View.FOCUS_UP);
+                    if (next == null) {
+                        next = FocusFinder.getInstance()
+                                .findNextFocus(binding.getRoot(), focused, View.FOCUS_UP);
+                    }
+                    if (next != null && next != focused) {
+                        return false;
+                    }
+                    binding.appBar.setExpanded(true);
+                    binding.inboxSearchPill.post(() -> {
+                        if (binding != null) {
+                            binding.inboxSearchPill.requestFocus();
+                        }
+                    });
+                    return true;
                 });
     }
 

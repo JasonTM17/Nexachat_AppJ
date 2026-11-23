@@ -11,6 +11,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="?attr/colorSurface"
+        android:nextClusterForward="@id/conversationList"
         app:elevation="0dp"
         app:liftOnScroll="true">
 
@@ -72,6 +73,7 @@
                     android:layout_height="@dimen/min_touch_target"
                     android:background="?attr/selectableItemBackground"
                     android:contentDescription="@string/contacts_title"
+                    android:nextFocusDown="@id/inboxSearchPill"
                     android:src="@drawable/ic_people"
                     app:tint="?attr/colorOnSurfaceVariant" />
 
@@ -81,7 +83,8 @@
                     android:layout_height="@dimen/min_touch_target"
                     android:clickable="true"
                     android:contentDescription="@string/profile_title"
-                    android:focusable="true" />
+                    android:focusable="true"
+                    android:nextFocusDown="@id/inboxSearchPill" />
 
                 <ImageButton
                     android:id="@+id/moreButton"
@@ -89,6 +92,8 @@
                     android:layout_height="@dimen/min_touch_target"
                     android:background="?attr/selectableItemBackground"
                     android:contentDescription="@string/inbox_more_options"
+                    android:nextFocusDown="@id/inboxSearchPill"
+                    android:nextFocusForward="@id/inboxSearchPill"
                     android:src="@drawable/ic_more_vert"
                     app:tint="?attr/colorOnSurfaceVariant" />
             </LinearLayout>
@@ -106,6 +111,8 @@
             android:clickable="true"
             android:contentDescription="@string/inbox_search_hint"
             android:focusable="true"
+            android:nextFocusDown="@id/filterAllChip"
+            android:nextFocusForward="@id/filterAllChip"
             app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
             app:cardCornerRadius="@dimen/corner_full"
             app:cardElevation="0dp"
@@ -169,6 +176,7 @@
                     android:id="@+id/activeNowViewAll"
                     android:layout_width="wrap_content"
                     android:layout_height="@dimen/min_touch_target"
+                    android:nextFocusForward="@id/filterAllChip"
                     android:layout_marginStart="@dimen/space_sm"
                     android:clickable="true"
                     android:focusable="true"
@@ -226,6 +234,7 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/filterAllChip"
+                        android:nextFocusDown="@id/conversationList"
                         style="@style/Widget.NexaChat.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
@@ -235,6 +244,7 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/filterUnreadChip"
+                        android:nextFocusDown="@id/conversationList"
                         style="@style/Widget.NexaChat.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
@@ -243,6 +253,7 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/filterGroupsChip"
+                        android:nextFocusDown="@id/conversationList"
                         style="@style/Widget.NexaChat.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
@@ -251,6 +262,8 @@
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/filterArchivedChip"
+                        android:nextFocusDown="@id/conversationList"
+                        android:nextFocusForward="@id/conversationList"
                         style="@style/Widget.NexaChat.Chip.Filter"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"

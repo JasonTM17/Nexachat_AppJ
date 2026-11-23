@@ -72,7 +72,7 @@ public final class InboxScrollSubmissionContractTest {
         String source = readUtf8(locateJavaFile(
                 "com/nexachat/feature/inbox/InboxFragment.java"));
         int methodStart = source.indexOf("private void expandAppBarForHeaderFocus(");
-        int methodEnd = source.indexOf("private void applyFilterChipRowLayout(", methodStart);
+        int methodEnd = source.indexOf("private void expandAppBarForKeyboardTraversal(", methodStart);
         String method = source.substring(methodStart, methodEnd);
 
         // While the header is collapsed a TalkBack or keyboard user can still
@@ -80,7 +80,100 @@ public final class InboxScrollSubmissionContractTest {
         // the focused control stays hidden under the conversation list.
         assertTrue("focusing a header control must re-expand the app bar",
                 method.contains("addOnGlobalFocusChangeListener")
-                        && method.contains("appBar.setExpanded(true"));
+                        && method.contains("appBar.setExpanded(true)"));
+    }
+
+    @Test
+    public void dpadUpPastTopRowExpandsTheCollapsedAppBar() throws Exception {
+        String source = readUtf8(locateJavaFile(
+                "com/nexachat/feature/inbox/InboxFragment.java"));
+        int methodStart = source.indexOf("private void expandAppBarForKeyboardTraversal(");
+        int methodEnd = source.indexOf("private void applyFilterChipRowLayout(", methodStart);
+        String method = source.substring(methodStart, methodEnd);
+
+        // A fully-collapsed header is pruned from the focus tree: DPAD_UP on
+        // the top row has no target and arrives as an unhandled key — expand
+        // and hand focus to the search pill so keyboard users always have a
+        // path into the header controls (verified on API-36 emulator).
+        assertTrue("DPAD_UP past the top row must re-expand the collapsed app bar",
+                method.contains("addOnUnhandledKeyEventListener")
+                        && method.contains("KEYCODE_DPAD_UP")
+                        && method.contains("appBar.setExpanded(true)")
+                        && method.contains("inboxSearchPill"));
+
+        // AppBarLayout is a keyboardNavigationCluster with
+        // touchscreenBlocksFocus: requestFocus on any header child that is not
+        // focusableInTouchMode returns false, so the search pill could never
+        // receive the transferred focus until the block was cleared.
+        assertTrue("the app bar's touchscreen focus block must be cleared "
+                        + "or no header control can ever take focus",
+                method.contains("setTouchscreenBlocksFocus(false)"));
+
+        // The listener must only consume the real dead end: while the bar is
+        // expanded, ordinary focus search already reaches the chips/pill, and
+        // mid-list rows still have a row above — stealing those presses froze
+        // all upward list navigation (device-verified regression).
+        assertTrue("DPAD_UP must not be consumed when ordinary focus search "
+                        + "has an upward target",
+                method.contains("focusSearch(View.FOCUS_UP)")
+                        && method.contains("findNextFocus")
+                        && method.contains("return false"));
+    }
+
+    @Test
+    public void headerFocusTraversalExitsDownwardAndForward() throws Exception {
+        String source = readUtf8(locateJavaFile(
+                "com/nexachat/feature/inbox/InboxFragment.java"));
+        String layout = readUtf8(locateResFile("layout/fragment_inbox.xml"));
+        int methodStart = source.indexOf(
+                "private void expandAppBarForKeyboardTraversal(");
+        int methodEnd = source.indexOf(
+                "private void applyFilterChipRowLayout(", methodStart);
+        String method = source.substring(methodStart, methodEnd);
+
+        // On the verified platform build the directional focus search never
+        // produces a downward target out of the toolbar and the framework's
+        // user-specified next-focus lookup fails the same way. The unhandled
+        // DOWN listener on the app bar re-resolves the wired nextFocusDownId
+        // manually — strictly as a dead-end fallback.
+        assertTrue("DPAD_DOWN dead-ends inside the app bar must resolve the "
+                        + "wired nextFocusDown target",
+                method.contains("KEYCODE_DPAD_DOWN")
+                        && method.contains("getNextFocusDownId")
+                        && method.contains("requestFocus"));
+
+        // The app bar cluster wraps TAB within itself; the views closing a
+        // forward segment need an explicit key path because the platform
+        // never fires nextFocusForward resolution for them.
+        assertTrue("TAB at a segment boundary must perform the wired "
+                        + "nextFocusForward jump",
+                method.contains("KEYCODE_TAB")
+                        && method.contains("getNextFocusForwardId")
+                        && method.contains("setOnKeyListener"));
+
+        // The declarative focus chain the handlers resolve: toolbar row ->
+        // search pill -> first filter chip -> conversation list.
+        assertTrue("toolbar controls must declare nextFocusDown to the pill",
+                layout.contains("inboxSearchPill")
+                        && layout.contains("nextFocusDown=\"@id/inboxSearchPill\"")
+                        && layout.contains("nextFocusDown=\"@id/filterAllChip\"")
+                        && layout.contains("nextFocusDown=\"@id/conversationList\"")
+                        && layout.contains("nextFocusForward=\"@id/inboxSearchPill\"")
+                        && layout.contains("nextFocusForward=\"@id/conversationList\""));
+    }
+
+    private static File locateResFile(String relativePath) {
+        File[] candidates = {
+                new File("src/main/res/" + relativePath),
+                new File("app/src/main/res/" + relativePath),
+                new File("android/app/src/main/res/" + relativePath)
+        };
+        for (File file : candidates) {
+            if (file.isFile()) {
+                return file;
+            }
+        }
+        throw new IllegalStateException("Missing " + relativePath);
     }
 
     private static File locateJavaFile(String relativePath) {
