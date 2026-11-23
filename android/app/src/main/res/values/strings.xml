@@ -841,6 +841,7 @@
     <string name="translate_glossary_term_hint">Term</string>
     <string name="translate_glossary_replacement_hint">Translate as (optional)</string>
     <string name="translate_glossary_remove">Remove term</string>
+    <string name="shortcut_disabled_signed_out">Sign in to NexaChat to open this chat</string>
     <!-- language names -->
     <string name="lang_vi">Vietnamese</string>
     <string name="lang_en">English</string>

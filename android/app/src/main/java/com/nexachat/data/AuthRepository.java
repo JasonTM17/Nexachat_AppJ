@@ -30,6 +30,7 @@ import com.nexachat.core.network.dto.LogoutRequest;
 import com.nexachat.core.network.dto.RegisterRequest;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.feature.auth.LoginNotice;
+import com.nexachat.feature.shortcut.ConversationShortcuts;
 import com.nexachat.notification.DeviceTokenRegistrationManager;
 import com.nexachat.notification.MessageNotifications;
 import com.nexachat.notification.ReminderNotifications;
@@ -242,7 +243,9 @@ public final class AuthRepository {
 
     /** Hilt also installs this at splash restore, including after a process restart. */
     @Inject
-    void observeSessionNotifications(MessageNotifications messages, ReminderNotifications reminders) {
+    void observeSessionNotifications(MessageNotifications messages,
+                                     ReminderNotifications reminders,
+                                     ConversationShortcuts shortcuts) {
         notificationObservers.add(Flowable.merge(
                         sessionEvents.getEvents(), sessionEvents.getLifecycleEvents())
                 .filter(event -> event instanceof SessionEvents.Event.SessionClosing
@@ -251,6 +254,7 @@ public final class AuthRepository {
                 .subscribe(event -> {
                     messages.dismissForSessionEnd();
                     reminders.dismissForSessionEnd();
+                    shortcuts.clear();
                 }));
     }
 

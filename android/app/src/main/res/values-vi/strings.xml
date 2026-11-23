@@ -833,6 +833,7 @@
     <string name="translate_glossary_term_hint">Thuật ngữ</string>
     <string name="translate_glossary_replacement_hint">Dịch là (tùy chọn)</string>
     <string name="translate_glossary_remove">Xóa thuật ngữ</string>
+    <string name="shortcut_disabled_signed_out">Đăng nhập NexaChat để mở cuộc trò chuyện này</string>
     <!-- language names -->
     <string name="lang_vi">Tiếng Việt</string>
     <string name="lang_en">Tiếng Anh</string>

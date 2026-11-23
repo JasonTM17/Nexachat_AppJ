@@ -12,6 +12,8 @@ public final class NotificationWorkRequest {
     public static final String TYPE_MESSAGE = "MESSAGE";
     public static final String TYPE_REMINDER = "REMINDER";
     public static final String TYPE_STREAK_REMINDER = "STREAK_REMINDER";
+    /** Launcher-shortcut intent payload only; never enqueued as work. */
+    public static final String TYPE_SHORTCUT = "SHORTCUT";
 
     private static final String KEY_TYPE = "type";
     private static final String KEY_RECIPIENT = "recipientId";
@@ -81,6 +83,15 @@ public final class NotificationWorkRequest {
                 conversationId, null, 0L, null, null);
     }
 
+    @NonNull
+    public static NotificationWorkRequest shortcut(
+            @NonNull String recipientId,
+            long sessionEpoch,
+            @NonNull String conversationId) {
+        return new NotificationWorkRequest(TYPE_SHORTCUT, recipientId, sessionEpoch,
+                conversationId, null, 0L, null, null);
+    }
+
     @Nullable
     public static NotificationWorkRequest fromData(@Nullable Data data) {
         if (data == null) return null;
@@ -123,7 +134,7 @@ public final class NotificationWorkRequest {
         if (TYPE_REMINDER.equals(type)) {
             return hasText(reminderId) && isOccurrenceKey(occurrence);
         }
-        return TYPE_STREAK_REMINDER.equals(type);
+        return TYPE_STREAK_REMINDER.equals(type) || TYPE_SHORTCUT.equals(type);
     }
 
     @NonNull
@@ -162,6 +173,9 @@ public final class NotificationWorkRequest {
         }
         if (TYPE_STREAK_REMINDER.equals(type)) {
             return "streak:" + recipientId + ":" + sessionEpoch + ":" + conversationId;
+        }
+        if (TYPE_SHORTCUT.equals(type)) {
+            return "shortcut:" + recipientId + ":" + sessionEpoch + ":" + conversationId;
         }
         return "rem:" + recipientId + ":" + sessionEpoch + ":" + reminderId + ":" + occurrence;
     }
