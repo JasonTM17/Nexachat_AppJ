@@ -239,6 +239,19 @@ If client abuse, leaked credentials, or an RTDB loop occurs:
   - Accumulated attachment bytes approaching 1 GB.
   - Monthly egress download bandwidth approaching 5 GB.
   - Attachment file leaks: Soft-deleted messages retain stored bytes unless cleaned up.
+  - **Project auto-pause**: Supabase pauses free-tier projects after roughly a
+    week of inactivity. While paused, every object read/write fails and the
+    API surfaces avatar/attachment upload as HTTP 500
+    `INTERNAL_ERROR "Failed to store file"` — indistinguishable from a code
+    regression from the client side.
+    - Detect: Supabase dashboard shows the project as **Paused**;
+      `bash tools/ops/prod-smoke.sh --write` fails at the avatar-upload step
+      while every read-only check stays green.
+    - Recover: Supabase Dashboard → project → **Restore project** (no code
+      change or redeploy needed), then re-run the write smoke.
+    - Prevent: any periodic authenticated request to the project (e.g. a
+      weekly keep-alive ping or monitoring call) counts as activity and keeps
+      the project from pausing.
 - **Operator Actions & Mitigation**:
   - Enable avatar sweep (`NEXACHAT_AVATAR_SWEEP_ENABLED=true`, `NEXACHAT_AVATAR_SWEEP_DRY_RUN=false`) to delete unreferenced avatar files older than 24 hours (`server/src/main/resources/application.yml:138-142`).
   - Enable attachment retention cleanup by setting `NEXACHAT_RETENTION_ENABLED=true`, `NEXACHAT_RETENTION_DRY_RUN=false`, and `NEXACHAT_RETENTION_ATTACHMENTS_ENABLED=true` (`server/src/main/resources/application.yml:153-156,189-191`). Both global and per-job flags must be active and dry-run disabled to remove unreferenced and soft-deleted attachment binaries (`RetentionJobRunner.java:66,71,84`).
