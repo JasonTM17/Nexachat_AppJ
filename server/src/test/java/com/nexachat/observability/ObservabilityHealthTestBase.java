@@ -20,6 +20,7 @@ import com.nexachat.message.RequestIdempotencyRepository;
 import com.nexachat.report.ReportRepository;
 import com.nexachat.notification.UserDeviceTokenRepository;
 import com.nexachat.reminder.ConversationReminderRepository;
+import com.nexachat.scheduled.ScheduledMessageRepository;
 import com.nexachat.poll.PollOptionRepository;
 import com.nexachat.poll.PollRepository;
 import com.nexachat.poll.PollVoteRepository;
@@ -88,6 +89,8 @@ abstract class ObservabilityHealthTestBase {
     protected UserDeviceTokenRepository userDeviceTokenRepository;
     @MockitoBean
     protected ConversationReminderRepository conversationReminderRepository;
+    @MockitoBean
+    protected ScheduledMessageRepository scheduledMessageRepository;
 
     @MockitoBean
     protected ArchiveRepository archiveRepository;

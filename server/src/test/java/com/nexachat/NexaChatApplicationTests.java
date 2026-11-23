@@ -21,6 +21,7 @@ import com.nexachat.message.ReactionEventRepository;
 import com.nexachat.message.RequestIdempotencyRepository;
 import com.nexachat.report.ReportRepository;
 import com.nexachat.reminder.ConversationReminderRepository;
+import com.nexachat.scheduled.ScheduledMessageRepository;
 import com.nexachat.poll.PollOptionRepository;
 import com.nexachat.poll.PollRepository;
 import com.nexachat.poll.PollVoteRepository;
@@ -93,6 +94,9 @@ class NexaChatApplicationTests {
 
     @MockitoBean
     private ConversationReminderRepository conversationReminderRepository;
+
+    @MockitoBean
+    private ScheduledMessageRepository scheduledMessageRepository;
 
     @MockitoBean
     private ArchiveRepository archiveRepository;

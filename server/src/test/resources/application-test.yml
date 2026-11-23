@@ -27,3 +27,6 @@ nexachat:
   reminders:
     # This profile has no database; the scheduler must not poll.
     enabled: false
+  scheduled:
+    # Same: no database, so the scheduled-message dispatcher must not poll.
+    enabled: false
