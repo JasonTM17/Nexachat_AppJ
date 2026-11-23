@@ -119,6 +119,8 @@ plans/
 /HANDOFF*.md
 /RUN_*.md
 /PLAN-*.md
+/WORKER*.md
+/BRIEF*.md
 
 # ---- Local tooling / profiling leftovers ----
 .vercel/
