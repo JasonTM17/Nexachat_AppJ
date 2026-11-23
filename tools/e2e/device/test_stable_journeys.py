@@ -7791,5 +7791,138 @@ class ForwardSheetScrollTest(unittest.TestCase):
         self.assertEqual(len(device.swipes), 8)
 
 
+class DeadlineDumpTest(unittest.TestCase):
+    """A bounded wait that expires drops forensic artifacts into row_dir."""
+
+    class FakeNode:
+        def __init__(self, text="", desc="", rid="", package="com.nexachat.debug"):
+            self.text = text
+            self.desc = desc
+            self.box = (0, 0, 320, 60)
+            self.clickable = False
+            self.attrs = {
+                "resource-id": f"{package}:id/{rid}" if rid else "",
+                "package": package,
+            }
+
+        def describe(self):
+            return f"node[{self.attrs['resource-id']}] text={self.text!r}"
+
+    class FakeDevice:
+        def __init__(self, nodes):
+            self._nodes = nodes
+            self.screenshots = []
+            self.swipes = []
+
+        def nodes(self):
+            return self._nodes
+
+        def swipe(self, *args, **kwargs):
+            self.swipes.append((args, kwargs))
+
+        def tap_node(self, node):
+            pass
+
+        def key(self, *args):
+            pass
+
+        def screenshot(self, path):
+            self.screenshots.append(path)
+            Path(path).write_bytes(b"png")
+
+    class FakePatch:
+        @staticmethod
+        def ui_nodes(device, timeout=8):
+            return device.nodes()
+
+    class FakeAdb:
+        def __init__(self):
+            self.calls = []
+
+        def command(self, *args, timeout=60, check=True):
+            self.calls.append(args)
+            return "logcat-slice-line"
+
+    def _context(self, row_dir, device, adb=None):
+        context = {
+            "device": device,
+            "helpers": (None, None, self.FakePatch()),
+            "row_dir": row_dir,
+            "ui_timeout": 0.01,
+        }
+        if adb is not None:
+            context["adb"] = adb
+        return context
+
+    def test_timeout_writes_tree_screenshot_and_logcat(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            device = self.FakeDevice([self.FakeNode(text="inbox")])
+            adb = self.FakeAdb()
+            context = self._context(Path(tmp), device, adb)
+            with mock.patch("time.sleep"):
+                with self.assertRaises(journeys.ProductFailure):
+                    journeys._wait_ui_node(
+                        context, lambda node: False, "the probe never matched")
+            dumps = list(Path(tmp).glob("deadline-*"))
+            self.assertTrue(any(p.suffix == ".png" for p in dumps))
+            tree = next(p for p in dumps if p.name.endswith("-ui-tree.txt"))
+            self.assertIn("inbox", tree.read_text(encoding="utf-8"))
+            logcat = next(p for p in dumps if p.name.endswith("-logcat.txt"))
+            self.assertIn("logcat-slice-line",
+                          logcat.read_text(encoding="utf-8"))
+            self.assertEqual(adb.calls[0][:2], ("logcat", "-d"))
+
+    def test_timeout_without_adb_still_dumps_tree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            device = self.FakeDevice([self.FakeNode(text="inbox")])
+            context = self._context(Path(tmp), device)
+            with mock.patch("time.sleep"):
+                with self.assertRaises(journeys.ProductFailure):
+                    journeys._wait_ui_node(
+                        context, lambda node: False, "probe")
+            dumps = list(Path(tmp).glob("deadline-*"))
+            self.assertTrue(any(p.name.endswith("-ui-tree.txt")
+                                for p in dumps))
+            self.assertFalse(any(p.name.endswith("-logcat.txt")
+                                 for p in dumps))
+
+    def test_conv_body_timeout_also_dumps(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            device = self.FakeDevice([self.FakeNode(text="inbox")])
+            adb = self.FakeAdb()
+            context = self._context(Path(tmp), device, adb)
+            with mock.patch("time.sleep"):
+                with self.assertRaises(journeys.ProductFailure):
+                    journeys._offline_wait_conv_body(
+                        context, "Binh", lambda node: False,
+                        "the tail edit was not rendered", timeout=0.01)
+            self.assertTrue(list(Path(tmp).glob("deadline-*")))
+
+    def test_conv_body_scroll_pingpongs_direction(self):
+        """Three swipes toward older rows, then three back toward newest."""
+        with tempfile.TemporaryDirectory() as tmp:
+            msglist = self.FakeNode(rid="messageList")
+            msglist.box = (0, 142, 320, 568)
+            device = self.FakeDevice([msglist])
+            context = self._context(Path(tmp), device, self.FakeAdb())
+            clock = [0.0]
+
+            def monotonic():
+                clock[0] += 3.0
+                return clock[0]
+
+            with mock.patch("time.sleep"), \
+                    mock.patch("time.monotonic", side_effect=monotonic):
+                with self.assertRaises(journeys.ProductFailure):
+                    journeys._offline_wait_conv_body(
+                        context, "Binh", lambda node: False,
+                        "target", timeout=90)
+            self.assertGreaterEqual(len(device.swipes), 4)
+            directions = [1 if args[3] > args[1] else -1
+                          for args, _ in device.swipes]
+            self.assertEqual(directions[:3], [1, 1, 1])   # toward older first
+            self.assertEqual(directions[3:6], [-1, -1, -1])  # then newest
+
+
 if __name__ == "__main__":
     unittest.main()
