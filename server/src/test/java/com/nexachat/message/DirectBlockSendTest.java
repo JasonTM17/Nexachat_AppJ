@@ -101,8 +101,7 @@ class DirectBlockSendTest {
         lenient().when(reactionRepository.findRowsByMessageIdIn(any())).thenReturn(List.of());
         lenient().when(messageRepository.findAdmittedReplyRefsByIdIn(any(), any()))
                 .thenReturn(List.of());
-        lenient().when(conversationRepository.findChangeVersion(any())).thenReturn(1L);
-        lenient().when(conversationRepository.incrementChangeVersion(any())).thenReturn(1);
+        lenient().when(conversationRepository.incrementAndGetChangeVersion(any())).thenReturn(1L);
         lenient().when(messageRepository.findE2eeByIdIn(any())).thenReturn(List.of());
     }
 

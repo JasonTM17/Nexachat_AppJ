@@ -78,8 +78,7 @@ class MessageServiceTest {
         lenient().when(messageRepository.findAdmittedReplyRefsByIdIn(any(), any())).thenReturn(List.of());
         lenient().when(conversationRepository.findByIdForUpdate(any()))
                 .thenReturn(Optional.of(mock(Conversation.class)));
-        lenient().when(conversationRepository.incrementChangeVersion(any())).thenReturn(1);
-        lenient().when(conversationRepository.findChangeVersion(any())).thenReturn(1L);
+        lenient().when(conversationRepository.incrementAndGetChangeVersion(any())).thenReturn(1L);
         lenient().when(storageService.resolveUrl(anyString())).thenAnswer(i -> "/api/v1/files/" + i.getArgument(0));
     }
 
@@ -127,7 +126,7 @@ class MessageServiceTest {
         verify(messageRepository).insertIgnoringDuplicateKey(
                 conversationId, senderId, clientMessageId, "TEXT", "hello", null, false);
         verify(conversationRepository).advanceLastMessage(conversationId, stored.id(), 42L);
-        verify(conversationRepository).incrementChangeVersion(conversationId);
+        verify(conversationRepository).incrementAndGetChangeVersion(conversationId);
         verify(memberRepository).advanceReadWatermark(conversationId, senderId, 42L);
 
         ArgumentCaptor<MessageCreatedEvent> event = ArgumentCaptor.forClass(MessageCreatedEvent.class);
@@ -206,7 +205,7 @@ class MessageServiceTest {
         assertThat(result.message().seq()).isEqualTo(stored.seq());
         // No state mutation on the dedup path…
         verify(conversationRepository, never()).advanceLastMessage(any(), any(), anyLong());
-        verify(conversationRepository, never()).incrementChangeVersion(any());
+        verify(conversationRepository, never()).incrementAndGetChangeVersion(any());
         // …but the retry signal is re-broadcast so the sender can reach SENT.
         ArgumentCaptor<MessageCreatedEvent> event = ArgumentCaptor.forClass(MessageCreatedEvent.class);
         verify(eventPublisher).publishEvent(event.capture());
@@ -229,7 +228,7 @@ class MessageServiceTest {
         // The transaction-scoped key lock lets this recheck observe the winner
         // before allocating a version or attempting another insert.
         verify(conversationRepository, never()).advanceLastMessage(any(), any(), anyLong());
-        verify(conversationRepository, never()).incrementChangeVersion(any());
+        verify(conversationRepository, never()).incrementAndGetChangeVersion(any());
         verify(messageRepository, never()).insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any(), anyBoolean());
         ArgumentCaptor<MessageCreatedEvent> event = ArgumentCaptor.forClass(MessageCreatedEvent.class);
         verify(eventPublisher).publishEvent(event.capture());
@@ -250,7 +249,7 @@ class MessageServiceTest {
                 () -> messageService.send(senderId, conversationId, request()));
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
-        verify(conversationRepository, never()).incrementChangeVersion(any());
+        verify(conversationRepository, never()).incrementAndGetChangeVersion(any());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
