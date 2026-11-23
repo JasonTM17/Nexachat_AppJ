@@ -80,13 +80,26 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
         if (userId == null || !memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)) {
             return null;
         }
-        if (!admittedToFrame(conversationId, userId, message.getPayload())) {
+        if (!(message.getPayload() instanceof byte[] bytes)) {
+            return isAuthenticatedOrInternalMessage(sessionId) ? message : null;
+        }
+        // One parse per delivered frame — admission, block and quote checks
+        // each used to re-read the same bytes.
+        final JsonNode root;
+        try {
+            root = FRAME_READER.readTree(bytes);
+        } catch (java.io.IOException e) {
+            // An unreadable frame was already admitted by creation time; drop
+            // it rather than risk releasing a quote the recipient may not read.
             return null;
         }
-        if (!visiblePastBlocks(userId, message.getPayload())) {
+        if (!admittedToFrame(conversationId, userId, root)) {
             return null;
         }
-        Message<?> released = withoutUnadmittedQuote(conversationId, userId, message);
+        if (!visiblePastBlocks(userId, root)) {
+            return null;
+        }
+        Message<?> released = withoutUnadmittedQuote(conversationId, userId, message, root);
         // The membership lookup can block while revocation unbinds and closes
         // the socket, so validate the session again before releasing the frame.
         return isAuthenticatedOrInternalMessage(sessionId) ? released : null;
@@ -96,12 +109,9 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
      * A message frame may quote an older message. The quote preview is removed for a recipient who
      * was not a member when the quoted message was sent, matching what history shows them.
      */
-    private Message<?> withoutUnadmittedQuote(UUID conversationId, UUID userId, Message<?> message) {
-        if (!(message.getPayload() instanceof byte[] bytes)) {
-            return message;
-        }
+    private Message<?> withoutUnadmittedQuote(UUID conversationId, UUID userId, Message<?> message,
+                                              JsonNode root) {
         try {
-            JsonNode root = FRAME_READER.readTree(bytes);
             String type = root.path("eventType").asText("");
             if (!"MESSAGE_CREATED".equals(type) && !"MESSAGE_UPDATED".equals(type)) {
                 return message;
@@ -120,8 +130,7 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
             return org.springframework.messaging.support.MessageBuilder
                     .createMessage(FRAME_READER.writeValueAsBytes(root), message.getHeaders());
         } catch (java.io.IOException | ClassCastException e) {
-            // An unreadable frame was already admitted by creation time; drop it rather than
-            // risk releasing a quote the recipient may not read.
+            // A frame that cannot be re-serialized safely loses its quote.
             return null;
         }
     }
@@ -143,16 +152,7 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
      *
      * Runs AFTER the membership gate so only members pay the probe cost.
      */
-    private boolean visiblePastBlocks(UUID recipientId, Object payload) {
-        if (!(payload instanceof byte[] bytes)) {
-            return true;
-        }
-        final JsonNode root;
-        try {
-            root = FRAME_READER.readTree(bytes);
-        } catch (java.io.IOException e) {
-            return true;   // unreadable frames defer to the admission gate
-        }
+    private boolean visiblePastBlocks(UUID recipientId, JsonNode root) {
         JsonNode payloadNode = root.path("payload");
         switch (root.path("eventType").asText("")) {
             case "USER_TYPING", "MESSAGE_READ", "MESSAGE_DELIVERED" -> {
@@ -209,18 +209,9 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
      * created, so a member admitted later never receives an edit, recall, pin or reaction naming
      * content from their absence.
      */
-    private boolean admittedToFrame(UUID conversationId, UUID userId, Object payload) {
-        if (!(payload instanceof byte[] bytes)) {
-            return true;
-        }
-        JsonNode created;
-        try {
-            JsonNode root = FRAME_READER.readTree(bytes);
-            created = messageCreatedAtNode(root);
-            if (created == null) {
-                return true;
-            }
-        } catch (java.io.IOException e) {
+    private boolean admittedToFrame(UUID conversationId, UUID userId, JsonNode root) {
+        JsonNode created = messageCreatedAtNode(root);
+        if (created == null) {
             return true;
         }
         Instant createdAt = parseInstant(created);
