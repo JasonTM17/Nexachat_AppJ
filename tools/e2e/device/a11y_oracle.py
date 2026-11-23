@@ -103,7 +103,15 @@ HEURISTIC_CAVEATS = (
     "unlabeled_interactive: a flat dump cannot observe TalkBack's merged descendant text; "
     "findings with non-empty descendant_labels may still be announced and need a TalkBack pass to confirm",
     "small_touch_targets: measures the dumped box in px; TouchDelegate or ViewConfiguration "
-    "minimum-touch-target expansion is invisible to a dump",
+    "minimum-touch-target expansion is invisible to a dump; an axis whose box edge coincides "
+    "with a containing scrollable's edge while the opposite edge is strictly inside is treated "
+    "as clipped (the short side may be scrolled/hidden), so that axis is ignored and the node "
+    "is listed in clipped_skipped, while any unclipped short axis is still a finding; the "
+    "screen edge is not a clipping signal since a designed-flush control is indistinguishable "
+    "from a clipped one, and the same designed-flush confound remains inside scrollables — "
+    "confirm suspicious entries with a scrolled re-dump; framework alert buttonPanel containers "
+    "whose interactive children carry the labels are listed in framework_skipped instead of "
+    "being findings",
     "missing_desc_images: API 36 dumps still include views the app marked "
     "importantForAccessibility='no' and carry no attribute identifying them, so the sweep "
     "cross-references the app's own layouts: findings on ids the layouts mark decorative are "
@@ -484,6 +492,43 @@ def _contained_labels(node: Any, nodes: list[Any]) -> list[str]:
     return labels
 
 
+# Framework AlertDialog button bar: its own text is empty by design and the
+# labels live on the child buttons. Exact match only -- app rids never qualify.
+FRAMEWORK_LABELLED_CONTAINER_RID = "android:id/buttonPanel"
+
+
+def _unlabeled_with_skipped(
+    nodes: list[Any]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Returns (findings, framework_skipped) so both stay auditable in the report."""
+    findings: list[dict[str, Any]] = []
+    framework_skipped: list[dict[str, Any]] = []
+    for node in nodes:
+        if not is_interactive(node):
+            continue
+        if node_text(node).strip() or node_desc(node).strip():
+            continue
+        labels = _contained_labels(node, nodes)
+        entry = _finding("unlabeled_interactive", node, descendant_labels=labels)
+        # A label borrowed from a merely-overlapping window must not suppress
+        # the finding: only labels on interactive contained nodes count.
+        interactive_labels = [
+            label
+            for other in nodes
+            if other is not node
+            and is_interactive(other)
+            and node_box(other) is not None
+            and box_contains(node_box(node), node_box(other))
+            for label in (node_text(other).strip(), node_desc(other).strip())
+            if label
+        ]
+        if node_rid(node) == FRAMEWORK_LABELLED_CONTAINER_RID and interactive_labels:
+            framework_skipped.append(entry)
+            continue
+        findings.append(entry)
+    return findings, framework_skipped
+
+
 def unlabeled_interactive(nodes: list[Any]) -> list[dict[str, Any]]:
     """Interactive nodes whose own text and content-desc are both empty.
 
@@ -492,32 +537,56 @@ def unlabeled_interactive(nodes: list[Any]) -> list[dict[str, Any]]:
     docs/quality/a11y-critical-screens.md), so an unlabeled interactive node
     is a defect candidate even when a child somewhere carries text. Each
     finding lists ``descendant_labels`` so a TalkBack pass can confirm which
-    ones the merge actually announces.
+    ones the merge actually announces. The one exception is the framework
+    ``android:id/buttonPanel`` container with labeled children: it is listed in
+    the report's ``framework_skipped`` list instead of being a finding.
     """
-    findings: list[dict[str, Any]] = []
-    for node in nodes:
-        if not is_interactive(node):
-            continue
-        if node_text(node).strip() or node_desc(node).strip():
-            continue
-        findings.append(
-            _finding("unlabeled_interactive", node,
-                     descendant_labels=_contained_labels(node, nodes))
-        )
-    return findings
+    return _unlabeled_with_skipped(nodes)[0]
 
 
-def small_touch_targets(nodes: list[Any], min_dp: float = DEFAULT_MIN_DP,
-                        density: float = DEFAULT_DENSITY_DPI) -> list[dict[str, Any]]:
-    """Interactive nodes whose dumped box is under ``min_dp`` in any dimension.
+def _clipped_axes(node: Any, nodes: list[Any]) -> list[str]:
+    """Axes whose box edge is cut off by a containing scrollable.
 
-    ``density`` is the DPI ``adb shell wm density`` reports (e.g. 420); the
-    floor in px is ``min_dp * density / 160``. Nodes without a measurable box
-    (missing or zero-area bounds) are skipped here and surface in
-    ``focus_order_issues`` instead.
+    Only scrollable containers qualify: an edge coinciding with the *screen*
+    edge is just as often a designed-flush control (bottom bar, corner FAB)
+    as a clipped one, and a flat dump cannot tell those apart. A scrollable
+    qualifies only when it fully encloses the node (``box_contains``). An edge
+    counts as clipped when it coincides with the scrollable's edge while the
+    opposite edge is strictly inside -- a box that exactly fills its scrollable
+    is fully visible, not clipped.
+
+    Residual confound: a control *designed* flush with a scrollable's edge
+    (e.g. an icon at a list's left edge) is still skipped on that axis; one
+    flat dump cannot separate the two cases (see HEURISTIC_CAVEATS).
     """
+    box = node_box(node)
+    if box is None:
+        return []
+    left, top, right, bottom = box
+    containers: list[tuple[int, int, int, int]] = []
+    for other in nodes:
+        if not node_flag(other, "scrollable"):
+            continue
+        other_box = node_box(other)
+        if other_box is not None and box_contains(other_box, box):
+            containers.append(other_box)
+    clipped: list[str] = []
+    if any((top == c[1] and bottom < c[3]) or (bottom == c[3] and top > c[1])
+           for c in containers):
+        clipped.append("height")
+    if any((left == c[0] and right < c[2]) or (right == c[2] and left > c[0])
+           for c in containers):
+        clipped.append("width")
+    return clipped
+
+
+def _small_touch_targets_with_skipped(
+    nodes: list[Any], min_dp: float, density: float
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Returns (findings, clipped_skipped) so both stay auditable in the report."""
     floor_px = px_from_dp(min_dp, density)
     findings: list[dict[str, Any]] = []
+    clipped_skipped: list[dict[str, Any]] = []
     for node in nodes:
         if not is_interactive(node):
             continue
@@ -531,13 +600,42 @@ def small_touch_targets(nodes: list[Any], min_dp: float = DEFAULT_MIN_DP,
                  if size < floor_px]
         if not below:
             continue
-        findings.append(
-            _finding("small_touch_target", node,
-                     width_px=width, height_px=height,
-                     min_dp=min_dp, density=density, floor_px=floor_px,
-                     below_floor=below)
+        finding = _finding(
+            "small_touch_target", node,
+            width_px=width, height_px=height,
+            min_dp=min_dp, density=density, floor_px=floor_px,
+            below_floor=list(below),
         )
-    return findings
+        clipped = _clipped_axes(node, nodes)
+        # Only short axes are candidates for a finding, so only those can be
+        # recorded as skipped (an incidental clipped edge above floor is noise).
+        skipped_axes = [axis for axis in below if axis in clipped]
+        unclipped = [axis for axis in below if axis not in clipped]
+        if not unclipped:
+            # Every short axis is clipped: informational only, never a finding.
+            clipped_skipped.append({**finding, "clipped_axes": skipped_axes})
+            continue
+        # A clipped axis is ignored for the verdict, but the measured axes are
+        # kept whole and the swallowed ones stay auditable on the finding.
+        if skipped_axes:
+            finding["clipped_axes"] = skipped_axes
+        findings.append(finding)
+    return findings, clipped_skipped
+
+
+def small_touch_targets(nodes: list[Any], min_dp: float = DEFAULT_MIN_DP,
+                        density: float = DEFAULT_DENSITY_DPI) -> list[dict[str, Any]]:
+    """Interactive nodes whose unclipped dumped box is under ``min_dp`` in any dimension.
+
+    ``density`` is the DPI ``adb shell wm density`` reports (e.g. 420); the
+    floor in px is ``min_dp * density / 160``. Nodes without a measurable box
+    (missing or zero-area bounds) are skipped here and surface in
+    ``focus_order_issues`` instead. An axis cut off at a containing scrollable's
+    or the screen's edge is ignored: a short side at a clip boundary is hidden
+    content, not a too-small target. Nodes with every short axis clipped are
+    reported in the report's ``clipped_skipped`` list, not here.
+    """
+    return _small_touch_targets_with_skipped(nodes, min_dp, density)[0]
 
 
 def missing_desc_images(nodes: list[Any], decorative_rids: Any = None) -> list[dict[str, Any]]:
@@ -668,7 +766,10 @@ def summarize_findings(nodes: list[Any], *, min_dp: float = DEFAULT_MIN_DP,
     ``missing_desc_images`` findings on those rids are suppressed and counted
     as ``suppressed_decorative`` so the suppression stays auditable.
     ``layout_dir=None`` disables suppression outright; a missing directory
-    only warns and leaves the dump-only findings in place.
+    only warns and leaves the dump-only findings in place. Skipped nodes are
+    exposed as informational ``clipped_skipped`` / ``framework_skipped`` lists
+    (with counts) inside their check sections; ``count``/``ok`` still describe
+    ``findings`` only.
     """
     resolved = _resolve_screen(nodes, screen)
     decorative = (
@@ -677,14 +778,22 @@ def summarize_findings(nodes: list[Any], *, min_dp: float = DEFAULT_MIN_DP,
     images_unsuppressed = missing_desc_images(nodes)
     images = (missing_desc_images(nodes, decorative_rids=decorative)
               if decorative else images_unsuppressed)
+    unlabeled_findings, framework_skipped = _unlabeled_with_skipped(nodes)
+    touch_findings, clipped_skipped = _small_touch_targets_with_skipped(
+        nodes, min_dp=min_dp, density=density
+    )
     checks: dict[str, dict[str, Any]] = {
         "unlabeled_interactive": {
-            "findings": unlabeled_interactive(nodes),
+            "findings": unlabeled_findings,
+            "framework_skipped": framework_skipped,
+            "framework_skipped_count": len(framework_skipped),
         },
         "small_touch_targets": {
             "min_dp": min_dp, "density": density,
             "floor_px": px_from_dp(min_dp, density),
-            "findings": small_touch_targets(nodes, min_dp=min_dp, density=density),
+            "findings": touch_findings,
+            "clipped_skipped": clipped_skipped,
+            "clipped_skipped_count": len(clipped_skipped),
         },
         "missing_desc_images": {
             "findings": images,
