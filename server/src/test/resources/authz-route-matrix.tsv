@@ -13,6 +13,7 @@ DELETE	/api/v1/conversations/{conversationId}/pins/{messageId}	DIRECT_MEMBER_OR_
 DELETE	/api/v1/conversations/{conversationId}/polls/{pollId}	POLL_CREATOR_OR_ADMIN	poll_creator_or_admin	rest-012
 DELETE	/api/v1/conversations/{conversationId}/polls/{pollId}/vote	CONVERSATION_MEMBER	conversation_member	rest-013
 DELETE	/api/v1/conversations/{conversationId}/reminders/{reminderId}	REMINDER_CREATOR_OR_ADMIN	reminder_creator_or_admin	rest-014
+DELETE	/api/v1/conversations/{conversationId}/scheduled-messages/{scheduledId}	CONVERSATION_MEMBER	conversation_member	rest-178
 DELETE	/api/v1/devices/token	AUTHENTICATED	authenticated_self	rest-015
 DELETE	/api/v1/labels/{labelId}	AUTHENTICATED	authenticated_self	rest-016
 DELETE	/api/v1/messages/{messageId}/reactions/{emoji}	MESSAGE_CONVERSATION_MEMBER	message_conversation_member	rest-017
@@ -37,6 +38,7 @@ GET	/api/v1/conversations/{conversationId}/polls	CONVERSATION_MEMBER	conversatio
 GET	/api/v1/conversations/{conversationId}/polls/changes	CONVERSATION_MEMBER	conversation_member	rest-033
 GET	/api/v1/conversations/{conversationId}/polls/{pollId}	CONVERSATION_MEMBER	conversation_member	rest-034
 GET	/api/v1/conversations/{conversationId}/reminders	CONVERSATION_MEMBER	conversation_member	rest-035
+GET	/api/v1/conversations/{conversationId}/scheduled-messages	CONVERSATION_MEMBER	conversation_member	rest-179
 GET	/api/v1/conversations/{id}/calls	CONVERSATION_MEMBER	conversation_member	rest-036
 GET	/api/v1/files/**	FILE_OWNER_OR_MEMBER	file_owner_or_member	rest-037
 GET	/api/v1/invite-links/{token}	AUTHENTICATED_INVITE	authenticated_invite	rest-038
@@ -82,6 +84,7 @@ POST	/api/v1/conversations/{conversationId}/polls	CONVERSATION_MEMBER	conversati
 POST	/api/v1/conversations/{conversationId}/polls/{pollId}/close	POLL_CREATOR_OR_ADMIN	poll_creator_or_admin	rest-074
 POST	/api/v1/conversations/{conversationId}/read	CONVERSATION_MEMBER	conversation_member	rest-075
 POST	/api/v1/conversations/{conversationId}/reminders	CONVERSATION_MEMBER	conversation_member	rest-076
+POST	/api/v1/conversations/{conversationId}/scheduled-messages	CONVERSATION_MEMBER	conversation_member	rest-180
 POST	/api/v1/conversations/{conversationId}/summary	CONVERSATION_MEMBER	conversation_member	rest-077
 POST	/api/v1/devices/token	AUTHENTICATED	authenticated_self	rest-078
 POST	/api/v1/invite-links/{token}/join	AUTHENTICATED_INVITE	authenticated_invite	rest-079

@@ -566,6 +566,10 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
             // conversation is not an existence oracle.
             boolean membershipFirst =
                     (route.method().equals("POST") && route.path().endsWith("/messages"))
+                            || (route.method().equals("POST")
+                                    && route.path().endsWith("/scheduled-messages"))
+                            || (route.method().equals("DELETE")
+                                    && route.path().contains("/scheduled-messages/"))
                             || ((route.method().equals("PATCH") || route.method().equals("DELETE"))
                                     && route.path().contains("/messages/{messageId}"))
                             || (route.method().equals("POST") && route.path().endsWith("/pins"))
@@ -623,7 +627,7 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
                 directPeer, requester, invitee, groupId, directId, callId,
                 groupMessageId, directMessageId, labelId, uploaded.id(), uploaded.url(),
                 inviteToken, requesterRequestId, groupMessageId, PATH_ID, PATH_ID, PATH_ID,
-                requesterRequestId);
+                requesterRequestId, PATH_ID);
     }
 
     private void removeMember(Registered owner, UUID conversationId, UUID userId) throws Exception {
@@ -726,6 +730,10 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
         if (route.path().contains("/{reminderId}")) {
             prepared = prepared.withReminder(createReminder(fixtures.groupId(), fixtures.member()));
         }
+        if (route.path().contains("/{scheduledId}")) {
+            prepared = prepared.withScheduledId(createScheduledMessage(
+                    fixtures.groupId(), fixtures.member()));
+        }
         if (route.policy().equals("AUTHENTICATED_INVITE") && route.method().equals("POST")) {
             String token = createInviteLink(fixtures.owner(), fixtures.groupId(), true);
             addMember(fixtures.owner(), fixtures.groupId(), fixtures.banned().userId());
@@ -763,6 +771,18 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
         var result = postJson("/api/v1/conversations/" + conversationId + "/reminders",
                         Map.of("title", "Authorization probe",
                                 "remindAt", Instant.now().plus(2, ChronoUnit.DAYS).toString()),
+                        creator.accessToken())
+                .andExpect(status().isCreated())
+                .andReturn();
+        return UUID.fromString(objectMapper.readTree(result.getResponse().getContentAsString())
+                .path("id").asText());
+    }
+
+    private UUID createScheduledMessage(UUID conversationId, Registered creator) throws Exception {
+        var result = postJson("/api/v1/conversations/" + conversationId + "/scheduled-messages",
+                        Map.of("clientMessageId", UUID.randomUUID().toString(),
+                                "body", "Authorization probe",
+                                "sendAt", Instant.now().plus(2, ChronoUnit.DAYS).toString()),
                         creator.accessToken())
                 .andExpect(status().isCreated())
                 .andReturn();
@@ -838,6 +858,7 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
             if (route.path().endsWith("/messages") && route.method().equals("POST")) return 201;
             if (route.path().endsWith("/polls") && route.method().equals("POST")) return 201;
             if (route.path().endsWith("/reminders") && route.method().equals("POST")) return 201;
+            if (route.path().endsWith("/scheduled-messages") && route.method().equals("POST")) return 201;
             if (route.method().equals("POST") && !route.path().endsWith("/ask")
                     && !route.path().endsWith("/summary")) return 204;
             if (route.path().endsWith("/ask")) return 200;
@@ -902,6 +923,7 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
                 .replace("{callId}", fixtures.callId().toString())
                 .replace("{pollId}", fixtures.pollId().toString())
                 .replace("{reminderId}", fixtures.reminderId().toString())
+                .replace("{scheduledId}", fixtures.scheduledId().toString())
                 .replace("{requestId}", fixtures.requestId().toString())
                 .replace("{token}", fixtures.inviteToken())
                 .replace("{emoji}", PROBE_REACTION_EMOJI);
@@ -958,6 +980,11 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
             return Map.of("title", "per-route authorization probe",
                     "remindAt", Instant.now().plus(2, ChronoUnit.DAYS).toString());
         }
+        if (route.method().equals("POST") && path.endsWith("/scheduled-messages")) {
+            return Map.of("clientMessageId", UUID.randomUUID().toString(),
+                    "body", "per-route authorization probe",
+                    "sendAt", Instant.now().plus(2, ChronoUnit.DAYS).toString());
+        }
         if (route.method().equals("PATCH") && path.contains("/reminders/")) {
             return Map.of("title", "updated authorization probe");
         }
@@ -996,42 +1023,49 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
                                 UUID baseMessageId, UUID directMessageId, UUID labelId,
                                 UUID attachmentId, String fileUrl, String inviteToken,
                                 UUID baseRequestId, UUID messageId, UUID pollId,
-                                UUID pollOptionId, UUID reminderId, UUID requestId) {
+                                UUID pollOptionId, UUID reminderId, UUID requestId,
+                                UUID scheduledId) {
         private RoleFixtures withMessageId(UUID value) {
             return new RoleFixtures(owner, member, otherMember, outsider, former, banned, directPeer,
                     requester, invitee, groupId, directId, callId, baseMessageId, directMessageId,
                     labelId, attachmentId, fileUrl, inviteToken, baseRequestId, value, pollId,
-                    pollOptionId, reminderId, requestId);
+                    pollOptionId, reminderId, requestId, scheduledId);
         }
         private RoleFixtures withPoll(PollFixture value) {
             return new RoleFixtures(owner, member, otherMember, outsider, former, banned, directPeer,
                     requester, invitee, groupId, directId, callId, baseMessageId, directMessageId,
                     labelId, attachmentId, fileUrl, inviteToken, baseRequestId, messageId, value.id(),
-                    value.optionId(), reminderId, requestId);
+                    value.optionId(), reminderId, requestId, scheduledId);
         }
         private RoleFixtures withReminder(UUID value) {
             return new RoleFixtures(owner, member, otherMember, outsider, former, banned, directPeer,
                     requester, invitee, groupId, directId, callId, baseMessageId, directMessageId,
                     labelId, attachmentId, fileUrl, inviteToken, baseRequestId, messageId, pollId,
-                    pollOptionId, value, requestId);
+                    pollOptionId, value, requestId, scheduledId);
         }
         private RoleFixtures withInviteToken(String value) {
             return new RoleFixtures(owner, member, otherMember, outsider, former, banned, directPeer,
                     requester, invitee, groupId, directId, callId, baseMessageId, directMessageId,
                     labelId, attachmentId, fileUrl, value, baseRequestId, messageId, pollId,
-                    pollOptionId, reminderId, requestId);
+                    pollOptionId, reminderId, requestId, scheduledId);
         }
         private RoleFixtures withRequestId(UUID value) {
             return new RoleFixtures(owner, member, otherMember, outsider, former, banned, directPeer,
                     requester, invitee, groupId, directId, callId, baseMessageId, directMessageId,
                     labelId, attachmentId, fileUrl, inviteToken, baseRequestId, messageId, pollId,
-                    pollOptionId, reminderId, value);
+                    pollOptionId, reminderId, value, scheduledId);
+        }
+        private RoleFixtures withScheduledId(UUID value) {
+            return new RoleFixtures(owner, member, otherMember, outsider, former, banned, directPeer,
+                    requester, invitee, groupId, directId, callId, baseMessageId, directMessageId,
+                    labelId, attachmentId, fileUrl, inviteToken, baseRequestId, messageId, pollId,
+                    pollOptionId, reminderId, requestId, value);
         }
         private RoleFixtures withGroupId(UUID value) {
             return new RoleFixtures(owner, member, otherMember, outsider, former, banned, directPeer,
                     requester, invitee, value, directId, callId, baseMessageId, directMessageId,
                     labelId, attachmentId, fileUrl, inviteToken, baseRequestId, messageId, pollId,
-                    pollOptionId, reminderId, requestId);
+                    pollOptionId, reminderId, requestId, scheduledId);
         }
     }
 
