@@ -6,6 +6,7 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.scheduled.dto.CreateScheduledMessageRequest;
 import com.nexachat.scheduled.dto.ScheduledMessageResponse;
+import com.nexachat.scheduled.dto.UpdateScheduledMessageRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -95,6 +96,27 @@ class ScheduledMessageControllerTest {
                 .isInstanceOfSatisfying(ApiException.class,
                         exception -> assertThat(exception.getCode())
                                 .isEqualTo(ApiErrorCode.UNAUTHORIZED));
+        assertThatThrownBy(() -> controller.update(null, conversationId,
+                UUID.randomUUID(), new UpdateScheduledMessageRequest("x", null)))
+                .isInstanceOfSatisfying(ApiException.class,
+                        exception -> assertThat(exception.getCode())
+                                .isEqualTo(ApiErrorCode.UNAUTHORIZED));
+    }
+
+    @Test
+    void updateReturnsTheStoredRow() {
+        UUID scheduledId = UUID.randomUUID();
+        UpdateScheduledMessageRequest request =
+                new UpdateScheduledMessageRequest("Đã sửa", Instant.now().plusSeconds(7200));
+        ScheduledMessageResponse scheduled = response();
+        when(scheduledMessageService.update(userId, conversationId, scheduledId, request))
+                .thenReturn(scheduled);
+
+        ScheduledMessageResponse result = controller.update(
+                new JwtPrincipal(userId), conversationId, scheduledId, request);
+
+        assertThat(result).isEqualTo(scheduled);
+        verify(scheduledMessageService).update(userId, conversationId, scheduledId, request);
     }
 
     @Test

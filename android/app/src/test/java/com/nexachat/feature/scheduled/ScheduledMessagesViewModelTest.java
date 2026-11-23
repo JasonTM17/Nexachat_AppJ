@@ -251,6 +251,73 @@ public final class ScheduledMessagesViewModelTest {
         assertNotEquals(firstId, repository.creates.get(1).clientMessageId);
     }
 
+    @Test
+    public void editValidatesLikeScheduleAndReplacesTheEchoedRow() {
+        FakeRepository repository = new FakeRepository();
+        repository.nextList = List.of(message("s-1", "old", SOON,
+                ScheduledMessageStatus.PENDING));
+        ScheduledMessagesViewModel viewModel = createViewModel(repository);
+        viewModel.load();
+
+        viewModel.edit("s-1", "  ", SOON);
+        assertEquals(ScheduledMessageEditorError.BODY_REQUIRED,
+                viewModel.getUiState().getValue().getEditorError());
+        assertTrue(repository.updates.isEmpty());
+
+        viewModel.edit("s-1", "  new body  ", NOW.plusSeconds(30));
+        assertEquals(ScheduledMessageEditorError.TIME_TOO_SOON,
+                viewModel.getUiState().getValue().getEditorError());
+        assertTrue(repository.updates.isEmpty());
+
+        viewModel.edit("s-1", "  new body  ", SOON.plusSeconds(300));
+        assertEquals(1, repository.updates.size());
+        PendingUpdate pending = repository.updates.get(0);
+        assertEquals("s-1", pending.scheduledId);
+        assertEquals("new body", pending.draft.normalized().getBody());
+        assertTrue(viewModel.getUiState().getValue().isScheduling());
+
+        pending.succeed(message("s-1", "new body", SOON.plusSeconds(300),
+                ScheduledMessageStatus.PENDING));
+        ScheduledMessageUiState state = viewModel.getUiState().getValue();
+        assertFalse(state.isScheduling());
+        assertEquals(1L, state.getSavedSequence());
+        assertTrue(state.isLastSaveWasEdit());
+        assertEquals("new body", state.getMessages().get(0).getBody());
+        assertEquals(SOON.plusSeconds(300), state.getMessages().get(0).getSendAt());
+        assertNull(state.getEditorError());
+    }
+
+    @Test
+    public void editDispatchingSurfacesTheErrorAndRefreshes() {
+        FakeRepository repository = new FakeRepository();
+        repository.nextList = List.of(message("s-1", "going", SOON,
+                ScheduledMessageStatus.PENDING));
+        ScheduledMessagesViewModel viewModel = createViewModel(repository);
+        viewModel.load();
+        assertEquals(1, repository.loads);
+
+        viewModel.edit("s-1", "new body", SOON);
+        repository.updates.get(0).fail(ScheduledMessageRepository.Failure.DISPATCHING);
+
+        assertEquals(ScheduledMessageEditorError.DISPATCHING,
+                viewModel.getUiState().getValue().getEditorError());
+        assertFalse(viewModel.getUiState().getValue().isScheduling());
+        assertEquals(2, repository.loads);
+    }
+
+    @Test
+    public void createSuccessIsNotMarkedAsAnEdit() {
+        FakeRepository repository = new FakeRepository();
+        ScheduledMessagesViewModel viewModel = createViewModel(repository);
+        viewModel.load();
+
+        viewModel.schedule("Họp", SOON);
+        repository.creates.get(0).succeed(message("s-1", "Họp", SOON,
+                ScheduledMessageStatus.PENDING));
+
+        assertFalse(viewModel.getUiState().getValue().isLastSaveWasEdit());
+    }
+
     private ScheduledMessagesViewModel createViewModel(FakeRepository repository) {
         SavedStateHandle savedState = new SavedStateHandle(
                 Map.of(ScheduledMessagesViewModel.ARG_CONVERSATION_ID, CONVERSATION_ID));
@@ -285,6 +352,7 @@ public final class ScheduledMessagesViewModelTest {
         private Failure loadFailure;
         private int loads;
         private final List<PendingCreate> creates = new ArrayList<>();
+        private final List<PendingUpdate> updates = new ArrayList<>();
         private final List<PendingDelete> deletes = new ArrayList<>();
 
         @Override
@@ -310,12 +378,48 @@ public final class ScheduledMessagesViewModelTest {
         }
 
         @Override
+        public Cancellable update(
+                String conversationId,
+                String scheduledId,
+                ScheduledMessageDraft draft,
+                ItemCallback callback) {
+            PendingUpdate pending = new PendingUpdate(scheduledId, draft, callback);
+            updates.add(pending);
+            return pending;
+        }
+
+        @Override
         public Cancellable delete(
                 String conversationId, String scheduledId, DeleteCallback callback) {
             PendingDelete pending = new PendingDelete(callback);
             deletes.add(pending);
             return pending;
         }
+    }
+
+    private static final class PendingUpdate implements ScheduledMessageRepository.Cancellable {
+        private final String scheduledId;
+        private final ScheduledMessageDraft draft;
+        private final ScheduledMessageRepository.ItemCallback callback;
+
+        PendingUpdate(
+                String scheduledId, ScheduledMessageDraft draft,
+                ScheduledMessageRepository.ItemCallback callback) {
+            this.scheduledId = scheduledId;
+            this.draft = draft;
+            this.callback = callback;
+        }
+
+        void succeed(ScheduledMessage message) {
+            callback.onSuccess(message);
+        }
+
+        void fail(ScheduledMessageRepository.Failure failure) {
+            callback.onFailure(failure);
+        }
+
+        @Override
+        public void cancel() { }
     }
 
     private static final class PendingCreate implements ScheduledMessageRepository.Cancellable {

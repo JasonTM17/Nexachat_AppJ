@@ -6,6 +6,7 @@ import com.nexachat.conversation.Conversation;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.scheduled.dto.CreateScheduledMessageRequest;
+import com.nexachat.scheduled.dto.UpdateScheduledMessageRequest;
 import com.nexachat.user.User;
 import com.nexachat.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +21,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -305,6 +307,141 @@ class ScheduledMessageServiceTest {
         assertThatThrownBy(() -> service.cancel(userId, conversationId, scheduledId))
                 .isInstanceOfSatisfying(ApiException.class,
                         e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.NOT_FOUND));
+    }
+
+    // ---------------------------------------------------------------- update
+
+    @Test
+    void updateOfAnUnclaimedPendingRowEchoesTheStoredValues() {
+        UUID scheduledId = UUID.randomUUID();
+        when(scheduledMessageRepository.updateIfEditable(
+                eq(scheduledId), eq(userId), eq(conversationId), anyLong(),
+                any(), any(), anyBoolean()))
+                .thenReturn(1);
+        ScheduledMessage stored = row(conversation, userId, scheduledId,
+                Instant.now().plusSeconds(7200));
+        when(scheduledMessageRepository.findById(scheduledId))
+                .thenReturn(Optional.of(stored));
+
+        var response = service.update(userId, conversationId, scheduledId,
+                new UpdateScheduledMessageRequest("new body",
+                        Instant.now().plusSeconds(7200)));
+
+        assertThat(response.id()).isEqualTo(scheduledId);
+        verify(scheduledMessageRepository).updateIfEditable(
+                eq(scheduledId), eq(userId), eq(conversationId), eq(60L),
+                eq("new body"), any(), eq(true));
+        verify(eventPublisher).publishEvent(any(ScheduledMessageChangedEvent.class));
+    }
+
+    @Test
+    void updateWithoutBodyOrSendAtIsRejected() {
+        assertThatThrownBy(() -> service.update(userId, conversationId,
+                UUID.randomUUID(), new UpdateScheduledMessageRequest(null, null)))
+                .isInstanceOfSatisfying(ApiException.class,
+                        e -> assertThat(e.getCode())
+                                .isEqualTo(ApiErrorCode.VALIDATION_FAILED));
+        verify(scheduledMessageRepository, never())
+                .updateIfEditable(any(), any(), any(), anyLong(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void updateValidatesBodyTheSameWayAsCreate() {
+        UUID scheduledId = UUID.randomUUID();
+        assertThatThrownBy(() -> service.update(userId, conversationId, scheduledId,
+                new UpdateScheduledMessageRequest("   ", null)))
+                .isInstanceOfSatisfying(ApiException.class,
+                        e -> assertThat(e.getCode())
+                                .isEqualTo(ApiErrorCode.VALIDATION_FAILED));
+        verify(scheduledMessageRepository, never())
+                .updateIfEditable(any(), any(), any(), anyLong(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void updateOfAClaimedRowIsDispatching() {
+        UUID scheduledId = UUID.randomUUID();
+        when(scheduledMessageRepository.updateIfEditable(
+                eq(scheduledId), eq(userId), eq(conversationId), anyLong(),
+                any(), any(), anyBoolean()))
+                .thenReturn(0);
+        ScheduledMessage stored = row(conversation, userId, scheduledId,
+                Instant.now().plusSeconds(3600));
+        when(scheduledMessageRepository.findById(scheduledId))
+                .thenReturn(Optional.of(stored));
+
+        assertThatThrownBy(() -> service.update(userId, conversationId, scheduledId,
+                new UpdateScheduledMessageRequest(null,
+                        Instant.now().plusSeconds(7200))))
+                .isInstanceOfSatisfying(ApiException.class, exception -> {
+                    assertThat(exception.getCode()).isEqualTo(ApiErrorCode.DISPATCHING);
+                    assertThat(exception.getDetails()).containsEntry("status", "PENDING");
+                });
+    }
+
+    @Test
+    void updateOfATerminalRowIsDispatchingWithItsStatus() {
+        UUID scheduledId = UUID.randomUUID();
+        when(scheduledMessageRepository.updateIfEditable(
+                eq(scheduledId), eq(userId), eq(conversationId), anyLong(),
+                any(), any(), anyBoolean()))
+                .thenReturn(0);
+        ScheduledMessage stored = row(conversation, userId, scheduledId,
+                Instant.now().plusSeconds(3600));
+        stored.markSent(UUID.randomUUID(), Instant.now());
+        when(scheduledMessageRepository.findById(scheduledId))
+                .thenReturn(Optional.of(stored));
+
+        assertThatThrownBy(() -> service.update(userId, conversationId, scheduledId,
+                new UpdateScheduledMessageRequest("new body", null)))
+                .isInstanceOfSatisfying(ApiException.class, exception -> {
+                    assertThat(exception.getCode()).isEqualTo(ApiErrorCode.DISPATCHING);
+                    assertThat(exception.getDetails()).containsEntry("status", "SENT");
+                });
+    }
+
+    @Test
+    void updateOfSomeoneElsesRowIsNotFound() {
+        UUID scheduledId = UUID.randomUUID();
+        when(scheduledMessageRepository.updateIfEditable(
+                eq(scheduledId), eq(userId), eq(conversationId), anyLong(),
+                any(), any(), anyBoolean()))
+                .thenReturn(0);
+        ScheduledMessage stored = row(conversation, UUID.randomUUID(), scheduledId,
+                Instant.now().plusSeconds(3600));
+        when(scheduledMessageRepository.findById(scheduledId))
+                .thenReturn(Optional.of(stored));
+
+        assertThatThrownBy(() -> service.update(userId, conversationId, scheduledId,
+                new UpdateScheduledMessageRequest("new body", null)))
+                .isInstanceOfSatisfying(ApiException.class,
+                        e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.NOT_FOUND));
+    }
+
+    @Test
+    void updateIsRefusedForE2eeConversations() {
+        when(conversation.isE2eeEnabled()).thenReturn(true);
+
+        assertThatThrownBy(() -> service.update(userId, conversationId,
+                UUID.randomUUID(),
+                new UpdateScheduledMessageRequest("new body", null)))
+                .isInstanceOfSatisfying(ApiException.class,
+                        e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.E2EE_REQUIRED));
+        verify(scheduledMessageRepository, never())
+                .updateIfEditable(any(), any(), any(), anyLong(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void nonMemberCannotUpdate() {
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(false);
+
+        assertThatThrownBy(() -> service.update(userId, conversationId,
+                UUID.randomUUID(),
+                new UpdateScheduledMessageRequest("new body", null)))
+                .isInstanceOfSatisfying(ApiException.class,
+                        e -> assertThat(e.getCode()).isEqualTo(ApiErrorCode.NOT_MEMBER));
+        verify(scheduledMessageRepository, never())
+                .updateIfEditable(any(), any(), any(), anyLong(), any(), any(), anyBoolean());
     }
 
     // ---------------------------------------------------------------- helpers

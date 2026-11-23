@@ -138,6 +138,60 @@ public final class RetrofitScheduledMessageRepository implements ScheduledMessag
     }
 
     @Override
+    public Cancellable update(
+            @NonNull String conversationId,
+            @NonNull String scheduledId,
+            @NonNull ScheduledMessageDraft draft,
+            @NonNull ItemCallback callback) {
+        Objects.requireNonNull(draft, "draft");
+        ScheduledMessageDraft normalized = draft.normalized();
+        final Call<ScheduledMessageDto> call;
+        try {
+            call = api.update(conversationId, scheduledId,
+                    new ScheduledMessageUpdateRequest(
+                            normalized.getBody(),
+                            ScheduledMessageTime.toUtcIso(normalized.getSendAt())));
+        } catch (RuntimeException failure) {
+            callback.onFailure(Failure.UNKNOWN);
+            return () -> { };
+        }
+        AtomicBoolean cancelled = new AtomicBoolean();
+        call.enqueue(new Callback<ScheduledMessageDto>() {
+            @Override
+            public void onResponse(
+                    @NonNull Call<ScheduledMessageDto> ignored,
+                    @NonNull Response<ScheduledMessageDto> response) {
+                if (cancelled.get()) {
+                    return;
+                }
+                ScheduledMessage message = response.body() == null
+                        ? null : response.body().toDomain();
+                if (!response.isSuccessful() || message == null) {
+                    callback.onFailure(response.isSuccessful()
+                            ? Failure.UNKNOWN
+                            : mapFailure(response.code(), response.errorBody()));
+                } else {
+                    callback.onSuccess(message);
+                }
+            }
+
+            @Override
+            public void onFailure(
+                    @NonNull Call<ScheduledMessageDto> ignored, @NonNull Throwable failure) {
+                if (!cancelled.get()) {
+                    callback.onFailure(failure instanceof IOException
+                            ? Failure.OFFLINE : Failure.UNKNOWN);
+                }
+            }
+        });
+        return () -> {
+            if (cancelled.compareAndSet(false, true)) {
+                call.cancel();
+            }
+        };
+    }
+
+    @Override
     public Cancellable delete(
             @NonNull String conversationId,
             @NonNull String scheduledId,

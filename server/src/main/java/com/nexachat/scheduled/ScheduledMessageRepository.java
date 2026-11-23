@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -193,6 +194,36 @@ public interface ScheduledMessageRepository extends JpaRepository<ScheduledMessa
                            @Param("senderId") UUID senderId,
                            @Param("conversationId") UUID conversationId,
                            @Param("leaseSeconds") long leaseSeconds);
+
+    /**
+     * The edit guard, same shape as the cancel guard: a PENDING row may be
+     * edited only while it is unclaimed or its claim already expired, so an
+     * in-flight dispatch never sends stale content. {@code body}/
+     * {@code sendAt} are COALESCE'd so a null field keeps its stored value;
+     * editing {@code send_at} also clears {@code next_attempt_at} so the new
+     * time governs the next wake-up.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            UPDATE scheduled_messages
+            SET body = COALESCE(:body, body),
+                send_at = COALESCE(CAST(:sendAt AS timestamptz), send_at),
+                next_attempt_at = CASE WHEN :clearNextAttempt THEN NULL
+                                       ELSE next_attempt_at END,
+                updated_at = now()
+            WHERE id = :id AND sender_id = :senderId AND conversation_id = :conversationId
+              AND status = 'PENDING'
+              AND (claimed_at IS NULL
+                   OR claimed_at < now()
+                      - CAST(:leaseSeconds AS double precision) * interval '1 second')
+            """, nativeQuery = true)
+    int updateIfEditable(@Param("id") UUID id,
+                         @Param("senderId") UUID senderId,
+                         @Param("conversationId") UUID conversationId,
+                         @Param("leaseSeconds") long leaseSeconds,
+                         @Param("body") String body,
+                         @Param("sendAt") OffsetDateTime sendAt,
+                         @Param("clearNextAttempt") boolean clearNextAttempt);
 
     /**
      * Milliseconds until the earliest wake-up, calculated against PostgreSQL's

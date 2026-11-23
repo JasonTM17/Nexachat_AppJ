@@ -291,6 +291,68 @@ class ScheduledMessageFlowIT {
     }
 
     @Test
+    void editUpdatesBodyAndSendAtAndEchoesTheRow() throws Exception {
+        UUID conversationId = createGroup(alice, "Edit", bob);
+        UUID id = createScheduled(bob, conversationId, "before",
+                        Instant.now().plus(2, ChronoUnit.HOURS))
+                .andExpect(status().isCreated())
+                .returnId();
+        Instant moved = Instant.now().plus(5, ChronoUnit.HOURS)
+                .truncatedTo(ChronoUnit.MICROS);
+
+        JsonNode echo = patchJson(conversationId, id, bob,
+                        Map.of("body", "after", "sendAt", moved.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id.toString()))
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andReturnJson();
+        assertThat(echo.get("body").asText()).isEqualTo("after");
+        assertThat(Instant.parse(echo.get("sendAt").asText())).isEqualTo(moved);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT body FROM scheduled_messages WHERE id = ?",
+                String.class, id)).isEqualTo("after");
+    }
+
+    @Test
+    void editHonorsTheClaimGuardAndOwnership() throws Exception {
+        UUID conversationId = createGroup(alice, "Edit guard", bob);
+        UUID id = createScheduled(bob, conversationId, "claimed",
+                        Instant.now().plus(2, ChronoUnit.HOURS))
+                .andExpect(status().isCreated())
+                .returnId();
+
+        // A live claim blocks the edit exactly like it blocks the cancel.
+        jdbcTemplate.update("""
+                UPDATE scheduled_messages
+                SET claimed_at = now(), claim_token = ?
+                WHERE id = ?
+                """, UUID.randomUUID(), id);
+        patchJson(conversationId, id, bob, Map.of("body", "hijack"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("DISPATCHING"))
+                .andExpect(jsonPath("$.error.details.status").value("PENDING"));
+
+        // An expired lease releases the guard.
+        jdbcTemplate.update("""
+                UPDATE scheduled_messages
+                SET claimed_at = now() - interval '10 minutes'
+                WHERE id = ?
+                """, id);
+        patchJson(conversationId, id, bob, Map.of("body", "after"))
+                .andExpect(status().isOk());
+
+        // Another member cannot edit bob's row; the terminal row is a conflict.
+        patchJson(conversationId, id, alice, Map.of("body", "alice"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("NOT_FOUND"));
+        deleteJson(conversationId, id, bob).andExpect(status().isNoContent());
+        patchJson(conversationId, id, bob, Map.of("body", "again"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("DISPATCHING"))
+                .andExpect(jsonPath("$.error.details.status").value("CANCELED"));
+    }
+
+    @Test
     void aClaimedRowIsNotCancelableUntilTheLeaseExpires() throws Exception {
         UUID conversationId = createGroup(alice, "Dispatching", bob);
         UUID id = createScheduled(bob, conversationId, "claimed",
@@ -505,6 +567,16 @@ class ScheduledMessageFlowIT {
             throws Exception {
         return mockMvc.perform(delete(path(conversationId) + "/" + scheduledId)
                 .header("Authorization", "Bearer " + actor.accessToken()));
+    }
+
+    private ScheduledResult patchJson(UUID conversationId, UUID scheduledId, TestUser actor,
+                                      Object payload) throws Exception {
+        return new ScheduledResult(mockMvc.perform(
+                org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .patch(path(conversationId) + "/" + scheduledId)
+                        .header("Authorization", "Bearer " + actor.accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload))));
     }
 
     private static String path(UUID conversationId) {

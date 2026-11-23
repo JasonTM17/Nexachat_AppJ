@@ -70,6 +70,26 @@
                 android:textAppearance="?attr/textAppearanceBodyMedium"
                 android:textColor="?attr/colorOnSurface" />
 
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/scheduleSendBodyEditLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:hint="@string/scheduled_editor_message"
+                android:visibility="gone">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/scheduleSendBodyEdit"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="start|top"
+                    android:imeOptions="flagNoExtractUi"
+                    android:inputType="textCapSentences|textMultiLine"
+                    android:maxLength="10000"
+                    android:maxLines="5"
+                    android:minLines="1" />
+            </com.google.android.material.textfield.TextInputLayout>
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/scheduleSendDate"
                 style="@style/Widget.NexaChat.Button.Outlined"

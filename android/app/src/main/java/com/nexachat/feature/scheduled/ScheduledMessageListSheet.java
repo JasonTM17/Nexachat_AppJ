@@ -24,6 +24,8 @@ import java.util.Objects;
  */
 public final class ScheduledMessageListSheet extends NexaBottomSheetFragment {
 
+    private static final String EDIT_SHEET_TAG = "scheduled_edit_sheet";
+
     private SheetScheduledMessagesBinding binding;
     private ScheduledMessagesViewModel viewModel;
     private ScheduledMessageAdapter adapter;
@@ -136,8 +138,13 @@ public final class ScheduledMessageListSheet extends NexaBottomSheetFragment {
             return;
         }
         PopupMenu menu = new PopupMenu(requireContext(), anchor);
-        menu.getMenu().add(0, 1, 0, R.string.scheduled_action_cancel);
+        menu.getMenu().add(0, 2, 0, R.string.scheduled_action_edit);
+        menu.getMenu().add(0, 1, 1, R.string.scheduled_action_cancel);
         menu.setOnMenuItemClickListener(item -> {
+            if (item.getItemId() == 2) {
+                openEditor(message);
+                return true;
+            }
             if (item.getItemId() == 1) {
                 confirmCancel(message);
                 return true;
@@ -145,6 +152,19 @@ public final class ScheduledMessageListSheet extends NexaBottomSheetFragment {
             return false;
         });
         menu.show();
+    }
+
+    /**
+     * Opens the shared schedule sheet in edit mode over this list; the list stays
+     * attached to the same view model and re-renders when the edit lands.
+     */
+    private void openEditor(@NonNull ScheduledMessage message) {
+        if (getParentFragmentManager().isStateSaved()
+                || getParentFragmentManager().findFragmentByTag(EDIT_SHEET_TAG) != null) {
+            return;
+        }
+        ScheduleSendSheet.newEditInstance(message)
+                .show(getParentFragmentManager(), EDIT_SHEET_TAG);
     }
 
     private void confirmCancel(@NonNull ScheduledMessage message) {

@@ -517,6 +517,7 @@
 
     <string name="scheduled_menu_title">Tin nhắn đã lên lịch</string>
     <string name="scheduled_editor_title">Lên lịch gửi</string>
+    <string name="scheduled_editor_title_edit">Sửa tin nhắn đã lên lịch</string>
     <string name="scheduled_editor_message">Tin nhắn</string>
     <string name="scheduled_editor_save">Lên lịch</string>
     <string name="scheduled_date_picker">Chọn ngày gửi</string>
@@ -541,8 +542,10 @@
     <string name="scheduled_error_time_too_soon">Chọn thời điểm cách hiện tại ít nhất một phút</string>
     <string name="scheduled_options">Tùy chọn tin nhắn đã lên lịch</string>
     <string name="scheduled_action_cancel">Hủy tin nhắn</string>
+    <string name="scheduled_action_edit">Sửa tin nhắn</string>
     <string name="scheduled_cancel_confirm">Hủy tin nhắn đã lên lịch này?</string>
     <string name="scheduled_snackbar">Đã lên lịch gửi lúc %1$s</string>
+    <string name="scheduled_snackbar_updated">Đã cập nhật tin nhắn lên lịch lúc %1$s</string>
     <string name="scheduled_status_pending">Đang chờ</string>
     <string name="scheduled_status_sent">Đã gửi</string>
     <string name="scheduled_status_canceled">Đã hủy</string>

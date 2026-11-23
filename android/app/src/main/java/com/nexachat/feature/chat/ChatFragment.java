@@ -2193,13 +2193,15 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         }
         String currentDraft = composerMentionDraft == null
                 ? "" : composerMentionDraft.getContent().trim();
-        if (currentDraft.equals(message.getBody())) {
+        if (!scheduled.isLastSaveWasEdit() && currentDraft.equals(message.getBody())) {
             composerMentionDraft = MentionDraft.empty("");
             viewModel.clearComposerDraft();
             updateComposerButtons(false);
         }
         anchoredSnackbar(binding.getRoot(),
-                getString(R.string.scheduled_snackbar,
+                getString(scheduled.isLastSaveWasEdit()
+                                ? R.string.scheduled_snackbar_updated
+                                : R.string.scheduled_snackbar,
                         ScheduledMessageText.dateTime(requireContext(), message.getSendAt())),
                 Snackbar.LENGTH_LONG).show();
     }

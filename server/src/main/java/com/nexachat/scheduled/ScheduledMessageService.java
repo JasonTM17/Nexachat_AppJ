@@ -7,6 +7,7 @@ import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
 import com.nexachat.scheduled.dto.CreateScheduledMessageRequest;
 import com.nexachat.scheduled.dto.ScheduledMessageResponse;
+import com.nexachat.scheduled.dto.UpdateScheduledMessageRequest;
 import com.nexachat.user.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
@@ -215,6 +217,66 @@ public class ScheduledMessageService {
         throw ApiException.of(ApiErrorCode.DISPATCHING,
                 "Scheduled message is already " + row.getStatus().name().toLowerCase()
                         + " and cannot be canceled",
+                Map.of("status", row.getStatus().name()));
+    }
+
+    /**
+     * Edits one of the caller's PENDING rows under the same claim-lease
+     * guard as {@link #cancel}: a claimed-or-terminal row answers 409
+     * {@code DISPATCHING} echoing its status, a row that is not the
+     * caller's answers 404. Either field may be patched independently;
+     * {@code body} reuse the create validation, {@code sendAt} the create
+     * clamping, and a changed {@code sendAt} clears {@code next_attempt_at}
+     * so the new time governs the wake-up.
+     *
+     * @throws ApiException {@code NOT_MEMBER}, {@code NOT_FOUND},
+     *                      {@code VALIDATION_FAILED}, {@code DISPATCHING}
+     */
+    @Transactional
+    public ScheduledMessageResponse update(UUID userId, UUID conversationId,
+                                           UUID scheduledId,
+                                           UpdateScheduledMessageRequest request) {
+        if (request == null || (request.body() == null && request.sendAt() == null)) {
+            throw ApiException.of(ApiErrorCode.VALIDATION_FAILED,
+                    "body or sendAt is required");
+        }
+        String body = request.body() == null ? null : normalizeBody(request.body());
+        Instant sendAt = request.sendAt() == null ? null : clampSendAt(request.sendAt());
+        // The same E2EE refusal as create: a conversation that flipped to
+        // E2EE after the row was scheduled may not keep mutating it — the
+        // dispatcher will fail the leftover row with FAILED_E2EE instead.
+        Conversation conversation = conversationRepository.findByIdForUpdate(conversationId)
+                .orElseThrow(() -> ApiException.of(
+                        ApiErrorCode.NOT_MEMBER, "Not a member of this conversation"));
+        requireMember(conversationId, userId);
+        if (conversation.isE2eeEnabled()) {
+            throw ApiException.of(ApiErrorCode.E2EE_REQUIRED,
+                    "Scheduled messages cannot be sent into end-to-end encrypted conversations");
+        }
+        int updated = scheduledMessageRepository.updateIfEditable(
+                scheduledId, userId, conversationId, claimLeaseSeconds, body,
+                sendAt == null ? null : sendAt.atOffset(ZoneOffset.UTC),
+                sendAt != null);
+        ScheduledMessage row = scheduledMessageRepository.findById(scheduledId)
+                .filter(m -> conversationId.equals(m.getConversation().getId())
+                        && userId.equals(m.getSender().getId()))
+                .orElse(null);
+        if (updated == 1) {
+            log.info("Scheduled message {} edited in conversation {}", scheduledId, conversationId);
+            if (row == null) {
+                row = scheduledMessageRepository.findById(scheduledId)
+                        .orElseThrow(() -> ApiException.of(ApiErrorCode.INTERNAL_ERROR,
+                                "Scheduled message update/read-back inconsistency"));
+            }
+            publishChanged(row);
+            return toResponse(row);
+        }
+        if (row == null) {
+            throw ApiException.of(ApiErrorCode.NOT_FOUND, "Scheduled message not found");
+        }
+        throw ApiException.of(ApiErrorCode.DISPATCHING,
+                "Scheduled message is already " + row.getStatus().name().toLowerCase()
+                        + " and cannot be edited",
                 Map.of("status", row.getStatus().name()));
     }
 

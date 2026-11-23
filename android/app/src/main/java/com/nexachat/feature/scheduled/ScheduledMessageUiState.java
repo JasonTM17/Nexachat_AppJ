@@ -18,9 +18,11 @@ public final class ScheduledMessageUiState {
     private final long savedSequence;
     /** The row echoed by the last successful schedule; carries the clamped sendAt. */
     @Nullable private final ScheduledMessage scheduledMessage;
+    /** True when {@link #savedSequence} last advanced because of an edit, not a create. */
+    private final boolean lastSaveWasEdit;
 
     public ScheduledMessageUiState() {
-        this(false, false, Collections.emptyList(), null, null, false, null, 0L, null);
+        this(false, false, Collections.emptyList(), null, null, false, null, 0L, null, false);
     }
 
     public ScheduledMessageUiState(
@@ -32,7 +34,8 @@ public final class ScheduledMessageUiState {
             boolean scheduling,
             @Nullable ScheduledMessageEditorError editorError,
             long savedSequence,
-            @Nullable ScheduledMessage scheduledMessage) {
+            @Nullable ScheduledMessage scheduledMessage,
+            boolean lastSaveWasEdit) {
         this.loading = loading;
         this.loaded = loaded;
         this.messages = List.copyOf(messages);
@@ -42,6 +45,7 @@ public final class ScheduledMessageUiState {
         this.editorError = editorError;
         this.savedSequence = savedSequence;
         this.scheduledMessage = scheduledMessage;
+        this.lastSaveWasEdit = lastSaveWasEdit;
     }
 
     public boolean isLoading() { return loading; }
@@ -53,6 +57,7 @@ public final class ScheduledMessageUiState {
     @Nullable public ScheduledMessageEditorError getEditorError() { return editorError; }
     public long getSavedSequence() { return savedSequence; }
     @Nullable public ScheduledMessage getScheduledMessage() { return scheduledMessage; }
+    public boolean isLastSaveWasEdit() { return lastSaveWasEdit; }
 
     public boolean isEmpty() {
         return loaded && !loading && loadError == null && messages.isEmpty();

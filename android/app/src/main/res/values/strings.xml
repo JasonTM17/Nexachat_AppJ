@@ -521,6 +521,7 @@
 
     <string name="scheduled_menu_title">Scheduled messages</string>
     <string name="scheduled_editor_title">Schedule send</string>
+    <string name="scheduled_editor_title_edit">Edit scheduled message</string>
     <string name="scheduled_editor_message">Message</string>
     <string name="scheduled_editor_save">Schedule</string>
     <string name="scheduled_date_picker">Select send date</string>
@@ -545,6 +546,8 @@
     <string name="scheduled_error_time_too_soon">Choose a time at least a minute from now</string>
     <string name="scheduled_options">Scheduled message options</string>
     <string name="scheduled_action_cancel">Cancel message</string>
+    <string name="scheduled_action_edit">Edit message</string>
+    <string name="scheduled_snackbar_updated">Scheduled message updated for %1$s</string>
     <string name="scheduled_cancel_confirm">Cancel this scheduled message?</string>
     <string name="scheduled_snackbar">Message scheduled for %1$s</string>
     <string name="scheduled_status_pending">Pending</string>

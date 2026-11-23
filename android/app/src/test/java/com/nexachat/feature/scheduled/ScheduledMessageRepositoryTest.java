@@ -175,6 +175,43 @@ public final class ScheduledMessageRepositoryTest {
         assertEquals(ScheduledMessageRepository.Failure.OFFLINE, failure.get());
     }
 
+    @Test
+    public void updateSendsNormalizedBodyAndUtcIsoSendAt() {
+        FakeApi api = FakeApi.forItem(Response.success(dto(
+                "s-1", "PENDING", "2026-12-01T02:00:00Z", "Đã sửa")));
+        AtomicReference<ScheduledMessage> received = new AtomicReference<>();
+        new RetrofitScheduledMessageRepository(api).update("conversation-1", "s-1",
+                new ScheduledMessageDraft("  Đã sửa  ",
+                        Instant.parse("2026-12-01T02:00:00.999Z")),
+                itemCallback(received));
+
+        assertEquals("s-1", api.scheduledId);
+        assertEquals("conversation-1", api.conversationId);
+        assertEquals("Đã sửa", api.updateRequest.getBody());
+        assertEquals("2026-12-01T02:00:00Z", api.updateRequest.getSendAt());
+        assertEquals("s-1", received.get().getId());
+    }
+
+    @Test
+    public void updateMapsDispatchingAndNotFound() {
+        FakeApi dispatching = FakeApi.forItem(Response.error(409, ResponseBody.create(
+                MediaType.parse("application/json"),
+                "{\"error\":{\"code\":\"DISPATCHING\",\"details\":{\"status\":\"SENT\"}}}")));
+        AtomicReference<ScheduledMessageRepository.Failure> failure = new AtomicReference<>();
+        new RetrofitScheduledMessageRepository(dispatching).update("conversation-1", "s-1",
+                new ScheduledMessageDraft("x", Instant.parse("2026-12-01T02:00:00Z")),
+                new ScheduledMessageRepository.ItemCallback() {
+                    @Override
+                    public void onSuccess(ScheduledMessage message) { }
+
+                    @Override
+                    public void onFailure(ScheduledMessageRepository.Failure value) {
+                        failure.set(value);
+                    }
+                });
+        assertEquals(ScheduledMessageRepository.Failure.DISPATCHING, failure.get());
+    }
+
     private static ScheduledMessageRepository.ItemCallback itemCallback(
             AtomicReference<ScheduledMessage> received) {
         return new ScheduledMessageRepository.ItemCallback() {
@@ -210,6 +247,7 @@ public final class ScheduledMessageRepositoryTest {
         private final IOException failure;
         private String conversationId;
         private ScheduledMessageRequest request;
+        private ScheduledMessageUpdateRequest updateRequest;
         private String scheduledId;
 
         private FakeApi(
@@ -250,6 +288,16 @@ public final class ScheduledMessageRepositoryTest {
                 String conversationId, ScheduledMessageRequest request) {
             this.conversationId = conversationId;
             this.request = request;
+            return new FakeCall<>(itemResponse, failure);
+        }
+
+        @Override
+        public Call<ScheduledMessageDto> update(
+                String conversationId, String scheduledId,
+                ScheduledMessageUpdateRequest request) {
+            this.conversationId = conversationId;
+            this.scheduledId = scheduledId;
+            this.updateRequest = request;
             return new FakeCall<>(itemResponse, failure);
         }
 

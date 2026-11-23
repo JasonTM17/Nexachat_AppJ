@@ -14,6 +14,12 @@ public interface ScheduledMessageRepository {
             @NonNull String clientMessageId,
             @NonNull ItemCallback callback);
 
+    Cancellable update(
+            @NonNull String conversationId,
+            @NonNull String scheduledId,
+            @NonNull ScheduledMessageDraft draft,
+            @NonNull ItemCallback callback);
+
     Cancellable delete(
             @NonNull String conversationId,
             @NonNull String scheduledId,

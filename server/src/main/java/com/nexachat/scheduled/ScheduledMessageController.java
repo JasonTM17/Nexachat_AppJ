@@ -6,6 +6,7 @@ import com.nexachat.common.error.ApiErrorCode;
 import com.nexachat.common.error.ApiException;
 import com.nexachat.scheduled.dto.CreateScheduledMessageRequest;
 import com.nexachat.scheduled.dto.ScheduledMessageResponse;
+import com.nexachat.scheduled.dto.UpdateScheduledMessageRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -13,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -33,6 +35,9 @@ import java.util.UUID;
  *       reached a terminal state.</li>
  *   <li>{@code GET /} → 200 the caller's PENDING + FAILED + recent SENT rows,
  *       oldest first.</li>
+ *   <li>{@code PATCH /{scheduledId}} → 200 the stored row; 409
+ *       {@code DISPATCHING} while a claim is in flight or the row already
+ *       terminated; 404 when the row is not the caller's.</li>
  *   <li>{@code DELETE /{scheduledId}} → 204 canceled; 409 {@code DISPATCHING}
  *       while a claim is in flight or the row already terminated; 404 when
  *       the row is not the caller's.</li>
@@ -86,6 +91,16 @@ public class ScheduledMessageController {
                 scheduledMessageService.create(userId, conversationId, request);
         HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
         return ResponseEntity.status(status).body(result.scheduledMessage());
+    }
+
+    @PatchMapping("/{scheduledId}")
+    public ScheduledMessageResponse update(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @PathVariable UUID conversationId,
+            @PathVariable UUID scheduledId,
+            @Valid @RequestBody UpdateScheduledMessageRequest request) {
+        return scheduledMessageService.update(
+                requireUserId(principal), conversationId, scheduledId, request);
     }
 
     @DeleteMapping("/{scheduledId}")

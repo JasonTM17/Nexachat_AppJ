@@ -21,18 +21,23 @@ import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 
 /**
- * Date/time sheet for scheduling the current composer draft. The draft body is a
- * frozen snapshot passed as an argument; the shared conversation-scoped
+ * Date/time sheet for scheduling the current composer draft or editing a
+ * still-PENDING scheduled row. In create mode the draft body is a frozen
+ * snapshot passed as an argument; in edit mode the body becomes editable and
+ * the existing send time seeds the picker. The shared conversation-scoped
  * {@link ScheduledMessagesViewModel} owns validation and the request.
  */
 public final class ScheduleSendSheet extends NexaBottomSheetFragment {
 
     private static final String ARG_BODY = "body";
+    private static final String ARG_EDIT_ID = "editId";
+    private static final String ARG_EDIT_SEND_AT = "editSendAt";
     private static final String STATE_SEND_AT = "schedule.sendAt";
 
     private SheetScheduleSendBinding binding;
     private ScheduledMessagesViewModel viewModel;
     private String draftBody = "";
+    @Nullable private String editId;
     private Instant selected;
     private long initialSavedSequence;
 
@@ -41,6 +46,17 @@ public final class ScheduleSendSheet extends NexaBottomSheetFragment {
         ScheduleSendSheet sheet = new ScheduleSendSheet();
         Bundle args = new Bundle();
         args.putString(ARG_BODY, body);
+        sheet.setArguments(args);
+        return sheet;
+    }
+
+    @NonNull
+    public static ScheduleSendSheet newEditInstance(@NonNull ScheduledMessage message) {
+        ScheduleSendSheet sheet = new ScheduleSendSheet();
+        Bundle args = new Bundle();
+        args.putString(ARG_BODY, message.getBody());
+        args.putString(ARG_EDIT_ID, message.getId());
+        args.putLong(ARG_EDIT_SEND_AT, message.getSendAt().toEpochMilli());
         sheet.setArguments(args);
         return sheet;
     }
@@ -63,14 +79,25 @@ public final class ScheduleSendSheet extends NexaBottomSheetFragment {
         viewModel.openScheduler();
         Bundle args = getArguments() == null ? Bundle.EMPTY : getArguments();
         draftBody = args.getString(ARG_BODY, "");
-        selected = Instant.now().plus(Duration.ofMinutes(5)).truncatedTo(ChronoUnit.MINUTES);
+        editId = args.getString(ARG_EDIT_ID, null);
+        selected = editId == null
+                ? Instant.now().plus(Duration.ofMinutes(5)).truncatedTo(ChronoUnit.MINUTES)
+                : Instant.ofEpochMilli(args.getLong(ARG_EDIT_SEND_AT));
         if (savedInstanceState != null) {
             selected = Instant.ofEpochMilli(
                     savedInstanceState.getLong(STATE_SEND_AT, selected.toEpochMilli()));
         }
         initialSavedSequence = viewModel.getUiState().getValue() == null
                 ? 0L : viewModel.getUiState().getValue().getSavedSequence();
-        binding.scheduleSendBody.setText(draftBody);
+        if (editId == null) {
+            binding.scheduleSendBody.setText(draftBody);
+        } else {
+            binding.scheduleSendBody.setVisibility(View.GONE);
+            binding.scheduleSendBodyEditLayout.setVisibility(View.VISIBLE);
+            binding.scheduleSendBodyEdit.setText(draftBody);
+            binding.scheduleSendTitle.setText(R.string.scheduled_editor_title_edit);
+            binding.scheduleSendSubmit.setText(R.string.action_save);
+        }
         binding.scheduleSendClose.setOnClickListener(ignored -> dismiss());
         binding.scheduleSendCancel.setOnClickListener(ignored -> dismiss());
         binding.scheduleSendDate.setOnClickListener(ignored -> pickDate());
@@ -107,6 +134,9 @@ public final class ScheduleSendSheet extends NexaBottomSheetFragment {
         binding.scheduleSendSubmit.setEnabled(!state.isScheduling());
         binding.scheduleSendDate.setEnabled(!state.isScheduling());
         binding.scheduleSendTime.setEnabled(!state.isScheduling());
+        if (editId != null) {
+            binding.scheduleSendBodyEdit.setEnabled(!state.isScheduling());
+        }
         ScheduledMessageEditorError error = state.getEditorError();
         if (error == null) {
             binding.scheduleSendError.setVisibility(View.GONE);
@@ -166,6 +196,11 @@ public final class ScheduleSendSheet extends NexaBottomSheetFragment {
         if (binding == null || viewModel == null) {
             return;
         }
-        viewModel.schedule(draftBody, selected);
+        if (editId == null) {
+            viewModel.schedule(draftBody, selected);
+        } else {
+            CharSequence edited = binding.scheduleSendBodyEdit.getText();
+            viewModel.edit(editId, edited == null ? "" : edited.toString(), selected);
+        }
     }
 }

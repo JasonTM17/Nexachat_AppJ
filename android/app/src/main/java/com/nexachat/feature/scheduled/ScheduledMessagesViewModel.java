@@ -48,6 +48,7 @@ public final class ScheduledMessagesViewModel extends ViewModel {
     @Nullable private ScheduledMessageEditorError editorError;
     private long savedSequence;
     @Nullable private ScheduledMessage scheduledMessage;
+    private boolean lastSaveWasEdit;
     @Nullable private ScheduledMessageRepository.Cancellable activeLoad;
     @Nullable private CancellableTracker activeMutation;
     @Nullable private String pendingCreateId;
@@ -160,12 +161,67 @@ public final class ScheduledMessagesViewModel extends ViewModel {
                 new ScheduledMessageRepository.ItemCallback() {
                     @Override
                     public void onSuccess(@NonNull ScheduledMessage message) {
-                        onScheduled(message);
+                        onScheduled(message, false);
                     }
 
                     @Override
                     public void onFailure(@NonNull ScheduledMessageRepository.Failure failure) {
                         onScheduleFailed(failure);
+                    }
+                });
+    }
+
+    /**
+     * Validates and edits a still-PENDING row in place. Unlike {@link #schedule}
+     * there is no idempotency handle: a PATCH replay targets the same row and is
+     * naturally idempotent, and a claimed/terminal answer re-syncs the list.
+     */
+    public void edit(
+            @NonNull String scheduledId,
+            @Nullable String body,
+            @Nullable Instant sendAt) {
+        if (scheduling) {
+            return;
+        }
+        String trimmed = body == null ? "" : body.trim();
+        if (trimmed.isEmpty()) {
+            failEditor(ScheduledMessageEditorError.BODY_REQUIRED);
+            return;
+        }
+        if (trimmed.length() > MAX_BODY_LENGTH) {
+            failEditor(ScheduledMessageEditorError.BODY_TOO_LONG);
+            return;
+        }
+        if (sendAt == null) {
+            failEditor(ScheduledMessageEditorError.TIME_REQUIRED);
+            return;
+        }
+        if (!ScheduledMessageTime.isWithinLeadTime(sendAt, clock)) {
+            failEditor(ScheduledMessageEditorError.TIME_TOO_SOON);
+            return;
+        }
+
+        ScheduledMessageDraft draft = new ScheduledMessageDraft(trimmed, sendAt);
+        scheduling = true;
+        editorError = null;
+        scheduledMessage = null;
+        publish();
+        activeMutation = new CancellableTracker();
+        activeMutation.cancellable = repository.update(
+                conversationId, scheduledId, draft,
+                new ScheduledMessageRepository.ItemCallback() {
+                    @Override
+                    public void onSuccess(@NonNull ScheduledMessage message) {
+                        onScheduled(message, true);
+                    }
+
+                    @Override
+                    public void onFailure(@NonNull ScheduledMessageRepository.Failure failure) {
+                        onScheduleFailed(failure);
+                        if (failure == ScheduledMessageRepository.Failure.DISPATCHING
+                                || failure == ScheduledMessageRepository.Failure.NOT_FOUND) {
+                            refresh();
+                        }
                     }
                 });
     }
@@ -205,7 +261,7 @@ public final class ScheduledMessagesViewModel extends ViewModel {
                 });
     }
 
-    private void onScheduled(ScheduledMessage message) {
+    private void onScheduled(ScheduledMessage message, boolean wasEdit) {
         scheduling = false;
         pendingCreateId = null;
         pendingCreateDraft = null;
@@ -215,6 +271,7 @@ public final class ScheduledMessagesViewModel extends ViewModel {
         loadError = null;
         savedSequence++;
         scheduledMessage = message;
+        lastSaveWasEdit = wasEdit;
         activeMutation = null;
         publish();
     }
@@ -330,7 +387,7 @@ public final class ScheduledMessagesViewModel extends ViewModel {
         uiState.setValue(new ScheduledMessageUiState(
                 loading, loaded, Collections.unmodifiableList(new ArrayList<>(messages)),
                 loadError, refreshError, scheduling, editorError, savedSequence,
-                scheduledMessage));
+                scheduledMessage, lastSaveWasEdit));
     }
 
     @Override

@@ -107,6 +107,25 @@ public final class ScheduledMessageApiContractTest {
     }
 
     @Test
+    public void updateIssuesPatchOnTheRowAndParsesTheEcho() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(200).setBody(ROW_JSON));
+
+        Response<ScheduledMessageDto> response = api.update("c-1", "s-1",
+                new ScheduledMessageUpdateRequest("Đã sửa", "2026-12-01T02:00:00Z"))
+                .execute();
+
+        assertEquals(200, response.code());
+        RecordedRequest request = server.takeRequest();
+        assertEquals("PATCH", request.getMethod());
+        assertEquals("/api/v1/conversations/c-1/scheduled-messages/s-1", request.getPath());
+        String body = request.getBody().readUtf8();
+        assertTrue(body.contains("\"body\":\"Đã sửa\""));
+        assertTrue(body.contains("\"sendAt\":\"2026-12-01T02:00:00Z\""));
+        assertTrue(!body.contains("clientMessageId"));
+        assertEquals("s-1", response.body().getId());
+    }
+
+    @Test
     public void deleteIssuesDeleteOnTheRowAndAccepts204() throws Exception {
         server.enqueue(new MockResponse().setResponseCode(204));
 

@@ -6,6 +6,7 @@ import retrofit2.Call;
 import retrofit2.http.Body;
 import retrofit2.http.DELETE;
 import retrofit2.http.GET;
+import retrofit2.http.PATCH;
 import retrofit2.http.POST;
 import retrofit2.http.Path;
 
@@ -19,6 +20,12 @@ public interface ScheduledMessageApi {
     Call<ScheduledMessageDto> create(
             @Path("id") String conversationId,
             @NonNull @Body ScheduledMessageRequest request);
+
+    @PATCH("api/v1/conversations/{id}/scheduled-messages/{scheduledId}")
+    Call<ScheduledMessageDto> update(
+            @Path("id") String conversationId,
+            @Path("scheduledId") String scheduledId,
+            @NonNull @Body ScheduledMessageUpdateRequest request);
 
     @DELETE("api/v1/conversations/{id}/scheduled-messages/{scheduledId}")
     Call<Void> delete(
