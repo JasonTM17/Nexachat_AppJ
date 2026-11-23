@@ -3886,12 +3886,13 @@ class InboxRowVisibilityTest(unittest.TestCase):
     class Device:
         def __init__(self, nodes):
             self._nodes = nodes
+            self.swipes = []
 
         def nodes(self):
             return list(self._nodes)
 
         def swipe(self, *args, **kwargs):
-            return None
+            self.swipes.append(args)
 
     class Patch:
         @staticmethod
@@ -3933,6 +3934,35 @@ class InboxRowVisibilityTest(unittest.TestCase):
         self.assertIsNone(journeys._inbox_conversation_row(context, "Binh"))
         self.assertIsNotNone(
             journeys._inbox_conversation_row_visible(context, "Binh"))
+
+    def test_inbox_sweep_outtravels_the_appbar_snap_edge(self):
+        # The collapsing inbox header consumes the start of an up-fling until
+        # it snaps collapsed — a short in-container swipe snaps the bar back
+        # and the list never pages down (labels-lifecycle: 'NexaChat Team'
+        # stayed below the fold for the whole 60s wait). The sweep must
+        # travel most of the container height.
+        context = self._context(self._inbox())
+        with mock.patch.object(journeys.time, "sleep"):
+            self.assertFalse(journeys._inbox_row_found_scrolled(context, "Binh"))
+        height = 620 - 347  # container box in _inbox()
+        self.assertTrue(context["device"].swipes, "the sweep must swipe")
+        for x1, y1, x2, y2, *_ in context["device"].swipes:
+            self.assertGreaterEqual(
+                abs(y2 - y1), int(height * 0.75),
+                "inbox sweeps must out-travel the collapsing header snap edge")
+
+    def test_scroll_list_to_top_outtravels_the_appbar_snap_edge(self):
+        # The down-fling has the symmetric problem: it expands the app bar
+        # before it scrolls the list back to the top.
+        context = self._context(self._inbox())
+        with mock.patch.object(journeys.time, "sleep"):
+            journeys._scroll_list_to_top(context, "conversationList")
+        height = 620 - 347
+        self.assertTrue(context["device"].swipes, "scroll-to-top must swipe")
+        for x1, y1, x2, y2, *_ in context["device"].swipes:
+            self.assertGreaterEqual(
+                abs(y2 - y1), int(height * 0.75),
+                "scroll-to-top sweeps must out-travel the app bar expansion")
 
     def test_sliver_row_is_rejected(self):
         # Only 6px of the row is inside the list — not enough to read or

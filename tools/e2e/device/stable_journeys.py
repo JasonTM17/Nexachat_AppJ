@@ -2918,7 +2918,9 @@ def _scroll_list_to_top(context: dict[str, Any], container_rid: str,
         box = getattr(container, "box", None) or (0, 0, 320, 640)
         cx = (box[0] + box[2]) // 2
         height = box[3] - box[1]
-        ui.swipe(cx, box[1] + int(height * 0.30), cx, box[3] - int(height * 0.12), 300)
+        # Mirror of the downward sweep above: a down-fling must out-travel
+        # the collapsing app bar's expansion before it scrolls the list.
+        ui.swipe(cx, box[1] + int(height * 0.06), cx, box[3] - int(height * 0.06), 300)
         time.sleep(0.5)
 
 
@@ -2945,8 +2947,12 @@ def _inbox_row_found_scrolled(context: dict[str, Any], title: str | tuple,
         box = getattr(container, "box", None) or (0, 0, 320, 640)
         cx = (box[0] + box[2]) // 2
         height = box[3] - box[1]
-        ui.swipe(cx, box[3] - int(height * 0.12), cx,
-                 box[1] + int(height * 0.30), 300)
+        # The collapsing inbox header consumes the start of an up-fling until
+        # it collapses; a short gesture snaps the bar back and never moves
+        # the list. Travel most of the container so the fling settles past
+        # the snap edge and the list actually pages down.
+        ui.swipe(cx, box[3] - int(height * 0.06), cx,
+                 box[1] + int(height * 0.06), 300)
         time.sleep(0.5)
     _scroll_list_to_top(context, "conversationList")
     return False
