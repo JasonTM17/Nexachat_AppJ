@@ -83,6 +83,12 @@ import com.nexachat.feature.inbox.ConversationPreferenceMenu;
 import com.nexachat.feature.profile.AppSettingsViewModel;
 import com.nexachat.feature.label.LabelDialogFragment;
 import com.nexachat.feature.safety.ReportSheetFragment;
+import com.nexachat.feature.scheduled.ScheduleSendSheet;
+import com.nexachat.feature.scheduled.ScheduledMessage;
+import com.nexachat.feature.scheduled.ScheduledMessageListSheet;
+import com.nexachat.feature.scheduled.ScheduledMessageText;
+import com.nexachat.feature.scheduled.ScheduledMessageUiState;
+import com.nexachat.feature.scheduled.ScheduledMessagesViewModel;
 import com.nexachat.feature.streak.StreakMilestoneSheet;
 import com.nexachat.feature.streak.StreakViewModel;
 import com.nexachat.notification.ForegroundConversationTracker;
@@ -143,6 +149,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     private static final int MENU_STARRED = 16;
     private static final int MENU_DISAPPEARING = 17;
     private static final int MENU_VIDEO_CALL = 18;
+    private static final int MENU_SCHEDULED = 19;
+    private static final String SCHEDULE_SHEET_TAG = "schedule_send_sheet";
+    private static final String SCHEDULED_LIST_TAG = "scheduled_list_sheet";
     private final CompositeDisposable subscriptions = new CompositeDisposable();
     private FragmentChatBinding binding;
     private ChatViewModel viewModel;
@@ -153,6 +162,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     @Nullable private String lastActivitySignature;
     @Nullable private Runnable streakRefresh;
     private AppSettingsViewModel settingsViewModel;
+    private ScheduledMessagesViewModel scheduledViewModel;
+    private long lastScheduledSequence;
     private MessageListAdapter adapter;
     private ChatViewModel.UiState state = new ChatViewModel.UiState();
     private boolean serverStarting;
@@ -280,11 +291,16 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         // Activity scope: shares the Profile screen's settings instance so a new
         // swatch propagates here the moment the user returns.
         settingsViewModel = new ViewModelProvider(requireActivity()).get(AppSettingsViewModel.class);
+        // Fragment scope: the schedule sheet and the scheduled list sheet are
+        // child fragments and share this store through requireParentFragment().
+        scheduledViewModel = new ViewModelProvider(this).get(ScheduledMessagesViewModel.class);
         configureList();
         configureMentionPicker();
         configureToolbar();
         configureComposer();
         composerMentionDraft = viewModel.getMentionDraft();
+        scheduledViewModel.getUiState().observe(
+                getViewLifecycleOwner(), this::renderScheduledResult);
         observeViewModel();
         observeStreak();
         if (getChildFragmentManager().findFragmentByTag("summary_sheet")
@@ -457,6 +473,16 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                         getString(R.string.cd_sending));
                 viewModel.send();
             }
+        });
+        // Long-press schedules the current draft instead of sending it now.
+        binding.composerBar.sendButton.setOnLongClickListener(v -> {
+            if (!binding.composerBar.sendButton.isEnabled() || viewModel.isEditing()) {
+                // Consumed: an edit session has no scheduled-send path, and
+                // returning false here would fire a plain send on release.
+                return true;
+            }
+            openScheduleSend();
+            return true;
         });
         binding.composerBar.messageInput.setOnEditorActionListener((text, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEND) { binding.composerBar.sendButton.performClick(); return true; }
@@ -2039,6 +2065,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         actions.add(MENU_SHARED_MEDIA);
         labels.add(getString(R.string.starred_messages_title));
         actions.add(MENU_STARRED);
+        if (!flags.e2ee) {
+            labels.add(getString(R.string.scheduled_menu_title));
+            actions.add(MENU_SCHEDULED);
+        }
         if (flags.group) {
             labels.add(getString(R.string.group_board_title));
             actions.add(MENU_GROUP_BOARD);
@@ -2099,7 +2129,75 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             openPeerReport();
         } else if (action == MENU_VIDEO_CALL) {
             startVideoCall();
+        } else if (action == MENU_SCHEDULED) {
+            openScheduledMessages();
         }
+    }
+
+    /**
+     * Long-press entry point: schedules the current composer draft. E2EE chats
+     * get a localized refusal instead of the sheet because the server rejects
+     * scheduled sends there ({@code 409 E2EE_REQUIRED}).
+     */
+    private void openScheduleSend() {
+        if (binding == null || viewModel == null) {
+            return;
+        }
+        if (state != null && state.isE2eeEnabled()) {
+            Snackbar.make(binding.getRoot(), R.string.scheduled_error_e2ee,
+                    Snackbar.LENGTH_LONG).show();
+            return;
+        }
+        String draft = composerMentionDraft == null
+                ? "" : composerMentionDraft.getContent();
+        if (draft.isBlank()) {
+            Snackbar.make(binding.getRoot(), R.string.scheduled_error_body_required,
+                    Snackbar.LENGTH_LONG).show();
+            return;
+        }
+        if (getChildFragmentManager().isStateSaved()
+                || getChildFragmentManager().findFragmentByTag(SCHEDULE_SHEET_TAG) != null) {
+            return;
+        }
+        ScheduleSendSheet.newInstance(draft)
+                .show(getChildFragmentManager(), SCHEDULE_SHEET_TAG);
+    }
+
+    /** Overflow entry point: the caller's scheduled rows for this conversation. */
+    private void openScheduledMessages() {
+        if (getChildFragmentManager().isStateSaved()
+                || getChildFragmentManager().findFragmentByTag(SCHEDULED_LIST_TAG) != null) {
+            return;
+        }
+        ScheduledMessageListSheet.newInstance()
+                .show(getChildFragmentManager(), SCHEDULED_LIST_TAG);
+    }
+
+    /**
+     * A scheduled row was created: confirm with the server-echoed send time and
+     * clear the composer exactly like a sent message would — unless the user
+     * already typed a different draft while the create call was in flight.
+     */
+    private void renderScheduledResult(@NonNull ScheduledMessageUiState scheduled) {
+        if (scheduled.getSavedSequence() <= lastScheduledSequence) {
+            return;
+        }
+        lastScheduledSequence = scheduled.getSavedSequence();
+        ScheduledMessage message = scheduled.getScheduledMessage();
+        if (message == null || binding == null || viewModel == null) {
+            return;
+        }
+        String currentDraft = composerMentionDraft == null
+                ? "" : composerMentionDraft.getContent().trim();
+        if (currentDraft.equals(message.getBody())) {
+            composerMentionDraft = MentionDraft.empty("");
+            viewModel.clearComposerDraft();
+            updateComposerButtons(false);
+        }
+        Snackbar.make(binding.getRoot(),
+                getString(R.string.scheduled_snackbar,
+                        ScheduledMessageText.dateTime(requireContext(), message.getSendAt())),
+                Snackbar.LENGTH_LONG).show();
     }
 
     /**

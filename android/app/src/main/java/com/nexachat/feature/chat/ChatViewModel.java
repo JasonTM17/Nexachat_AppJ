@@ -1435,6 +1435,19 @@ public final class ChatViewModel extends ViewModel {
     }
 
     /**
+     * Clears the composer box, mention state, and the persisted draft when the
+     * draft was consumed outside {@link #send()} (scheduled send). Mirrors the
+     * post-send clearing exactly.
+     */
+    public void clearComposerDraft() {
+        clearOwnTypingSignal();
+        savedState().set(KEY_INPUT, "");
+        clearMentionDraft();
+        clearPersistedComposerDraft();
+        updateUiState(current -> current.withInput("").withReplyTarget(null));
+    }
+
+    /**
      * Shares a parsed location/contact payload as an ordinary TEXT message —
      * same keyset refusal, outbox, sync and E2EE path as {@link #send()}.
      * The composer draft is untouched; the pending reply target is consumed.
