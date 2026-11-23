@@ -7731,5 +7731,65 @@ class MediaUploadSliceExecutorTest(unittest.TestCase):
         self.assertIn("BLOCKED_CAPABILITY:", journeys.render_list((row,)))
 
 
+class ForwardSheetScrollTest(unittest.TestCase):
+    """The forward picker is a scrollable sheet; the target row may be off-screen."""
+
+    class FakeNode:
+        def __init__(self, desc="", rid="", box=None):
+            self.text = ""
+            self.desc = desc
+            self.box = box or (0, 0, 320, 60)
+            self.attrs = {"resource-id": f"com.nexachat.debug:id/{rid}" if rid else ""}
+
+    class FakeDevice:
+        def __init__(self, pages):
+            self._pages = list(pages)
+            self.swipes = []
+
+        def nodes(self):
+            if len(self._pages) > 1:
+                return self._pages.pop(0)
+            return self._pages[0]
+
+        def swipe(self, *args):
+            self.swipes.append(args)
+
+    class FakePatch:
+        @staticmethod
+        def ui_nodes(device, timeout=8):
+            return device.nodes()
+
+        @staticmethod
+        def node_by_id(nodes, suffix):
+            return next((node for node in nodes
+                         if node.attrs.get("resource-id", "").endswith("/" + suffix)),
+                        None)
+
+    def _context(self, device):
+        return {"device": device, "helpers": (None, None, self.FakePatch())}
+
+    def _list_node(self):
+        return self.FakeNode(rid="forwardList", box=(0, 100, 320, 600))
+
+    def test_target_found_after_scrolling(self):
+        target = self.FakeNode(desc="NexaChat Team")
+        device = self.FakeDevice([
+            [self._list_node()],
+            [self._list_node()],
+            [self._list_node(), target],
+        ])
+        with mock.patch("time.sleep"):
+            found = journeys._wait_forward_target(self._context(device), "NexaChat Team")
+        self.assertIs(found, target)
+        self.assertTrue(device.swipes)  # scrolled at least once
+
+    def test_missing_target_fails_after_scroll_attempts(self):
+        device = self.FakeDevice([[self._list_node()]])
+        with mock.patch("time.sleep"):
+            with self.assertRaises(journeys.ProductFailure):
+                journeys._wait_forward_target(self._context(device), "NexaChat Team")
+        self.assertEqual(len(device.swipes), 8)
+
+
 if __name__ == "__main__":
     unittest.main()
