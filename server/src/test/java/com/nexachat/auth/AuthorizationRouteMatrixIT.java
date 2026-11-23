@@ -568,7 +568,7 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
                     (route.method().equals("POST") && route.path().endsWith("/messages"))
                             || (route.method().equals("POST")
                                     && route.path().endsWith("/scheduled-messages"))
-                            || (route.method().equals("DELETE")
+                            || ((route.method().equals("DELETE") || route.method().equals("PATCH"))
                                     && route.path().contains("/scheduled-messages/"))
                             || ((route.method().equals("PATCH") || route.method().equals("DELETE"))
                                     && route.path().contains("/messages/{messageId}"))
@@ -984,6 +984,9 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
             return Map.of("clientMessageId", UUID.randomUUID().toString(),
                     "body", "per-route authorization probe",
                     "sendAt", Instant.now().plus(2, ChronoUnit.DAYS).toString());
+        }
+        if (route.method().equals("PATCH") && path.contains("/scheduled-messages/")) {
+            return Map.of("body", "updated authorization probe");
         }
         if (route.method().equals("PATCH") && path.contains("/reminders/")) {
             return Map.of("title", "updated authorization probe");

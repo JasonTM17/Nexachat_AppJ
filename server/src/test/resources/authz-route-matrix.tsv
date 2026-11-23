@@ -179,3 +179,4 @@ POST	/api/v1/admin/feed/comments/{commentId}/hide	ADMIN_STAFF	admin_staff	rest-1
 POST	/api/v1/admin/feed/comments/{commentId}/unhide	ADMIN_STAFF	admin_staff	rest-175
 POST	/api/v1/admin/feed/reports/{reportId}/resolve	ADMIN_STAFF	admin_staff	rest-176
 PUT	/api/v1/conversations/{conversationId}/unread	CONVERSATION_MEMBER	conversation_member	rest-177
+PATCH	/api/v1/conversations/{conversationId}/scheduled-messages/{scheduledId}	CONVERSATION_MEMBER	conversation_member	rest-181
