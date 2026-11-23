@@ -103,11 +103,15 @@ HEURISTIC_CAVEATS = (
     "unlabeled_interactive: a flat dump cannot observe TalkBack's merged descendant text; "
     "findings with non-empty descendant_labels may still be announced and need a TalkBack pass to confirm",
     "small_touch_targets: measures the dumped box in px; TouchDelegate or ViewConfiguration "
-    "minimum-touch-target expansion is invisible to a dump; an axis whose box edge sits at a "
-    "containing scrollable's or the screen's edge is treated as clipped (the short side may be "
-    "scrolled/hidden), so that axis is skipped and the node is listed in clipped_skipped, while "
-    "any unclipped short axis is still a finding; framework alert buttonPanel containers whose "
-    "children carry the labels are listed in framework_skipped instead of being findings",
+    "minimum-touch-target expansion is invisible to a dump; an axis whose box edge coincides "
+    "with a containing scrollable's edge while the opposite edge is strictly inside is treated "
+    "as clipped (the short side may be scrolled/hidden), so that axis is ignored and the node "
+    "is listed in clipped_skipped, while any unclipped short axis is still a finding; the "
+    "screen edge is not a clipping signal since a designed-flush control is indistinguishable "
+    "from a clipped one, and the same designed-flush confound remains inside scrollables — "
+    "confirm suspicious entries with a scrolled re-dump; framework alert buttonPanel containers "
+    "whose interactive children carry the labels are listed in framework_skipped instead of "
+    "being findings",
     "missing_desc_images: API 36 dumps still include views the app marked "
     "importantForAccessibility='no' and carry no attribute identifying them, so the sweep "
     "cross-references the app's own layouts: findings on ids the layouts mark decorative are "
@@ -506,7 +510,19 @@ def _unlabeled_with_skipped(
             continue
         labels = _contained_labels(node, nodes)
         entry = _finding("unlabeled_interactive", node, descendant_labels=labels)
-        if node_rid(node) == FRAMEWORK_LABELLED_CONTAINER_RID and labels:
+        # A label borrowed from a merely-overlapping window must not suppress
+        # the finding: only labels on interactive contained nodes count.
+        interactive_labels = [
+            label
+            for other in nodes
+            if other is not node
+            and is_interactive(other)
+            and node_box(other) is not None
+            and box_contains(node_box(node), node_box(other))
+            for label in (node_text(other).strip(), node_desc(other).strip())
+            if label
+        ]
+        if node_rid(node) == FRAMEWORK_LABELLED_CONTAINER_RID and interactive_labels:
             framework_skipped.append(entry)
             continue
         findings.append(entry)
@@ -528,30 +544,20 @@ def unlabeled_interactive(nodes: list[Any]) -> list[dict[str, Any]]:
     return _unlabeled_with_skipped(nodes)[0]
 
 
-def _screen_box(nodes: list[Any]) -> tuple[int, int, int, int] | None:
-    """The dump's screen frame: the root node bounds (normally also the largest box).
+def _clipped_axes(node: Any, nodes: list[Any]) -> list[str]:
+    """Axes whose box edge is cut off by a containing scrollable.
 
-    A synthetic node list without a usable first node falls back to the
-    largest positive-area box in the dump, which is the same frame in practice.
-    """
-    if not nodes:
-        return None
-    root = node_box(nodes[0])
-    if root is not None and all(size > 0 for size in box_size(root)):
-        return root
-    boxes = [box for node in nodes if (box := node_box(node)) is not None
-             and all(size > 0 for size in box_size(box))]
-    return max(boxes, key=lambda box: box_size(box)[0] * box_size(box)[1]) if boxes else None
-
-
-def _clipped_axes(node: Any, nodes: list[Any],
-                  screen_box: tuple[int, int, int, int] | None) -> list[str]:
-    """Axes whose box edge is cut off by a containing scrollable or the screen.
-
-    A container qualifies only when it fully encloses the node (``box_contains``).
-    An edge counts as clipped when it coincides with the container's edge while
-    the opposite edge is strictly inside -- a box that exactly fills a container
+    Only scrollable containers qualify: an edge coinciding with the *screen*
+    edge is just as often a designed-flush control (bottom bar, corner FAB)
+    as a clipped one, and a flat dump cannot tell those apart. A scrollable
+    qualifies only when it fully encloses the node (``box_contains``). An edge
+    counts as clipped when it coincides with the scrollable's edge while the
+    opposite edge is strictly inside -- a box that exactly fills its scrollable
     is fully visible, not clipped.
+
+    Residual confound: a control *designed* flush with a scrollable's edge
+    (e.g. an icon at a list's left edge) is still skipped on that axis; one
+    flat dump cannot separate the two cases (see HEURISTIC_CAVEATS).
     """
     box = node_box(node)
     if box is None:
@@ -564,8 +570,6 @@ def _clipped_axes(node: Any, nodes: list[Any],
         other_box = node_box(other)
         if other_box is not None and box_contains(other_box, box):
             containers.append(other_box)
-    if screen_box is not None and box_contains(screen_box, box):
-        containers.append(screen_box)
     clipped: list[str] = []
     if any((top == c[1] and bottom < c[3]) or (bottom == c[3] and top > c[1])
            for c in containers):
@@ -581,7 +585,6 @@ def _small_touch_targets_with_skipped(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Returns (findings, clipped_skipped) so both stay auditable in the report."""
     floor_px = px_from_dp(min_dp, density)
-    screen_box = _screen_box(nodes)
     findings: list[dict[str, Any]] = []
     clipped_skipped: list[dict[str, Any]] = []
     for node in nodes:
@@ -603,7 +606,7 @@ def _small_touch_targets_with_skipped(
             min_dp=min_dp, density=density, floor_px=floor_px,
             below_floor=list(below),
         )
-        clipped = _clipped_axes(node, nodes, screen_box)
+        clipped = _clipped_axes(node, nodes)
         # Only short axes are candidates for a finding, so only those can be
         # recorded as skipped (an incidental clipped edge above floor is noise).
         skipped_axes = [axis for axis in below if axis in clipped]
@@ -612,8 +615,10 @@ def _small_touch_targets_with_skipped(
             # Every short axis is clipped: informational only, never a finding.
             clipped_skipped.append({**finding, "clipped_axes": skipped_axes})
             continue
-        # A clipped axis is ignored, but an unclipped short axis still counts.
-        finding["below_floor"] = unclipped
+        # A clipped axis is ignored for the verdict, but the measured axes are
+        # kept whole and the swallowed ones stay auditable on the finding.
+        if skipped_axes:
+            finding["clipped_axes"] = skipped_axes
         findings.append(finding)
     return findings, clipped_skipped
 

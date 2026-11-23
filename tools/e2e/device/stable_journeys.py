@@ -9099,8 +9099,11 @@ def _a11y_sweep_cell(context: dict[str, Any], oracle: Any, density: float,
         "status": "PASS" if report["ok"] else "FINDINGS",
         "node_count": report["node_count"],
         "interactive_count": report["interactive_count"],
-        "checks": {check: {"ok": entry["ok"], "count": entry["count"]}
-                   for check, entry in report["checks"].items()},
+        "checks": {check: {
+                       "ok": entry["ok"], "count": entry["count"],
+                       "clipped_skipped_count": entry.get("clipped_skipped_count", 0),
+                       "framework_skipped_count": entry.get("framework_skipped_count", 0),
+                   } for check, entry in report["checks"].items()},
     })
     if not report["ok"]:
         # Keep the evidence bounded: the first findings per check carry the
