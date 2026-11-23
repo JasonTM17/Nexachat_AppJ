@@ -1705,6 +1705,37 @@ def _tap_sheet_action(context: dict[str, Any], labels: tuple[str, ...]) -> None:
     raise ProductFailure(f"action {labels!r} was not offered by the message action sheet")
 
 
+def _forward_sheet_scroll(context: dict[str, Any]) -> None:
+    """Scroll the forward picker's conversation list down by one viewport."""
+    patch = context["helpers"][2]
+    nodes = _ui_nodes(context)
+    list_node = patch.node_by_id(nodes, "forwardList")
+    if list_node is not None and getattr(list_node, "box", None):
+        left, top, right, bottom = list_node.box
+        cx = (left + right) // 2
+        context["device"].swipe(cx, bottom - 24, cx, top + 32, 300)
+        return
+    root = nodes[0] if nodes else None
+    box = getattr(root, "box", None) or (0, 0, 320, 640)
+    width, height = box[2], box[3]
+    context["device"].swipe(width // 2, int(height * 0.78), width // 2, int(height * 0.55), 300)
+
+
+def _wait_forward_target(context: dict[str, Any], desc: str) -> Any:
+    """Wait for a forward-target row, scrolling the picker list until it appears."""
+    for _ in range(8):
+        target = next(
+            (node for node in _ui_nodes(context)
+             if (node.desc or "").strip() == desc),
+            None,
+        )
+        if target is not None:
+            return target
+        _forward_sheet_scroll(context)
+        time.sleep(0.4)
+    raise ProductFailure("the seeded group was not offered as a forward target")
+
+
 def _history_items(recorder: RecordingClient, token: str,
                    conversation_id: str) -> list[dict[str, Any]]:
     response = recorder.get(
@@ -1988,11 +2019,7 @@ def run_chat_interactions(row: JourneyRow, context: dict[str, Any]) -> dict[str,
             lambda node: _rid_ends(node, "forwardDialogRoot"),
             "the forward picker did not open",
         )
-        target = _wait_ui_node(
-            context,
-            lambda node: (node.desc or "").strip() == _CHAT_FORWARD_TARGET_TITLE,
-            "the seeded group was not offered as a forward target",
-        )
+        target = _wait_forward_target(context, _CHAT_FORWARD_TARGET_TITLE)
         ui.tap_node(target)
         send = _wait_ui_node(
             context,

@@ -16,6 +16,8 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     timeout-minutes: 2
+    permissions:
+      issues: write
     steps:
       - name: Ping liveness
         run: |
@@ -23,3 +25,15 @@ jobs:
             https://nexachat-api-rl1v.onrender.com/actuator/health/liveness || echo "000")
           echo "liveness=$code"
           test "$code" = "200"
+      - name: Alert on cold prod
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Dedup: don't open a new issue every 10 min while prod stays down.
+          open=$(gh issue list --state open --search "prod liveness failing (keep-warm) in:title" --limit 1 --json number -q 'length')
+          if [ "$open" = "0" ]; then
+            gh issue create \
+              --title "prod liveness failing (keep-warm)" \
+              --body "Ping returned non-200 in ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Render Free may be cold, crashed, or Render may be down."
+          fi
