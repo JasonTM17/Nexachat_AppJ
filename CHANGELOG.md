@@ -6,6 +6,33 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.18] - 2026-11-23
+
+Server + Android release. See
+[docs/release-notes/v1.2.18.md](docs/release-notes/v1.2.18.md).
+
+### Added
+- Server + Android: scheduled messages — long-press Send to schedule a
+  text draft for later (60 s minimum lead, up to 365 days); the chat menu's
+  "Scheduled messages" sheet lists pending and failed sends and cancels
+  pending rows. Server dispatches through the ordinary send path with a
+  claim/lease queue, per-sender throttle, 50-pending cap per conversation
+  and clear failure codes; scheduling is refused in E2EE chats.
+- Android: the inbox header collapses as the conversation list scrolls on
+  short screens and re-expands on a downward scroll, filter selection, or
+  a header control regaining focus.
+- CI: each GitHub release now attaches a signed `app-release.aab` plus
+  checksum for the Play upload alongside the APK.
+
+### Fixed
+- Server: session revocation no longer retries forever for users without a
+  Firebase Auth record (`user-not-found` is now terminal, ending a ~48/hour
+  production warning loop).
+- E2E a11y oracle: controls flush with a screen or scrollable edge are no
+  longer misreported as clipped small touch targets; only a containing
+  scrollable marks an axis clipped, preserved axes stay reported, and
+  skipped findings remain auditable in journey evidence.
+
 ## [1.2.17] - 2026-11-23
 
 Server + Android release. See
