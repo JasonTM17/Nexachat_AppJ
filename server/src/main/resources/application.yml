@@ -180,6 +180,10 @@ nexachat:
     messages:
       edit-delete-per-minute: 30
       search-per-minute: 60
+      # Dispatch-side throttle for scheduled sends: the HTTP message rate
+      # limit never sees a scheduled dispatch, so a burst of due rows from one
+      # account is smoothed per sender instead of spamming MessageService.
+      scheduled-send-per-minute: ${NEXACHAT_RATE_LIMIT_SCHEDULED_SEND_PER_MINUTE:60}
     stomp:
       messages-per-window: 30
       window-seconds: 10

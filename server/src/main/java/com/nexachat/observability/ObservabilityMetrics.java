@@ -43,6 +43,8 @@ public class ObservabilityMetrics {
     public static final String STORAGE_OPERATION_BYTES = "nexachat.storage.operation.bytes";
     public static final String STORAGE_STREAM_DURATION = "nexachat.storage.stream.duration";
     public static final String STORAGE_STREAM_BYTES = "nexachat.storage.stream.bytes";
+    public static final String SCHEDULED_DISPATCHES = "nexachat.scheduled.dispatches";
+    public static final String SCHEDULED_SEND_LATENCY = "nexachat.scheduled.send_latency";
 
     /** Every tag key this class is allowed to emit. */
     public static final Set<String> ALLOWED_TAG_KEYS = Set.of(
@@ -157,6 +159,23 @@ public class ObservabilityMetrics {
                 .description("Bytes consumed from a storage stream")
                 .tags("operation", UNRECORDED, "provider", UNRECORDED, "outcome", UNRECORDED)
                 .register(registry);
+        registerScheduledMeters();
+    }
+
+    /**
+     * Eager registration of the scheduled-message meters, kept as a method so
+     * the constructor's eager-registration block stays scannable. Invoked at
+     * the end of {@link #ObservabilityMetrics(MeterRegistry)}.
+     */
+    private void registerScheduledMeters() {
+        Counter.builder(SCHEDULED_DISPATCHES)
+                .description("Scheduled-message dispatch outcomes (SENT, FAILED, retry releases)")
+                .tags("outcome", UNRECORDED)
+                .register(registry);
+        Timer.builder(SCHEDULED_SEND_LATENCY)
+                .description("Delay between a scheduled message's send_at and its successful dispatch")
+                .publishPercentileHistogram()
+                .register(registry);
     }
 
     public void recordMessageSent(String type, boolean created) {
@@ -251,6 +270,21 @@ public class ObservabilityMetrics {
         registry.summary(STORAGE_OPERATION_BYTES, "operation", operationTag,
                 "provider", providerTag, "outcome", outcome)
                 .record(Math.max(0L, bytes));
+    }
+
+    /**
+     * Records one scheduled-message dispatch decision. {@code outcome} is one
+     * of {@code SENT}, {@code FAILED}, {@code RETRY} (claim released for a
+     * backoff retry) or {@code CLAIM_LOST}.
+     */
+    public void recordScheduledDispatch(String outcome) {
+        registry.counter(SCHEDULED_DISPATCHES, "outcome", safe(outcome, "UNKNOWN")).increment();
+    }
+
+    /** send_at -> actual-send latency of a successfully dispatched scheduled message. */
+    public void recordScheduledSendLatency(long durationMillis) {
+        registry.timer(SCHEDULED_SEND_LATENCY)
+                .record(Math.max(0L, durationMillis), TimeUnit.MILLISECONDS);
     }
 
     /** Records stream consumption, kept separate from the open operation. */
