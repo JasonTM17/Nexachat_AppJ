@@ -6,6 +6,24 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.19] - 2026-11-23
+
+Server + Android release. See
+[docs/release-notes/v1.2.19.md](docs/release-notes/v1.2.19.md).
+
+### Added
+- Server + Android: edit a pending scheduled message's text or send time
+  (`PATCH /api/v1/conversations/{id}/scheduled-messages/{scheduledId}`),
+  author-scoped and guarded by the same claim lease as cancel; an
+  expired-lease edit also releases the stale claim.
+- Android: launcher shortcuts for up to 4 top conversations (pinned first),
+  re-validated on open and cleared on session end.
+- Android: optional pure-black (AMOLED) dark theme.
+
+### Fixed
+- Android: keyboard/D-pad/TalkBack traversal reaches every inbox header
+  control, including from a collapsed header.
+
 ## [1.2.18] - 2026-11-23
 
 Server + Android release. See

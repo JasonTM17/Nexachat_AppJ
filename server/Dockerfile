@@ -3,11 +3,30 @@ FROM maven:3.10.0-eclipse-temurin-21-noble@sha256:c146cec15b48eabce469674b6677d8
 WORKDIR /build
 
 # Resolve dependencies before copying source so ordinary code edits reuse this layer.
-COPY pom.xml ./
-RUN mvn -B -DskipTests dependency:go-offline
+# Maven Central rate-limits shared CI egress (HTTP 429); retry transient failures
+# with backoff on both passes. The aether.transport.http.retryHandler.* keys are
+# the resolver-2.x names for this image's Maven 3.10 line; the maven.wagon.* keys
+# only take effect if the wagon transport is ever selected.
+# docker-settings.xml mirrors `central` to Google's GCS replica: the mirror
+# serves byte-identical artifacts from a different egress host, which evades
+# Maven Central's per-IP 429 rate limit on shared builder egress entirely.
+COPY pom.xml docker-settings.xml ./
+RUN mvn -B -s docker-settings.xml -DskipTests \
+      -Daether.transport.http.retryHandler.count=5 \
+      -Daether.transport.http.retryHandler.interval=5000 \
+      -Daether.transport.http.retryHandler.serviceUnavailable=429,503 \
+      -Dmaven.wagon.http.retryHandler.count=5 \
+      -Dmaven.wagon.httpconnectionManager.ttlSeconds=25 \
+      dependency:go-offline
 
 COPY src ./src
-RUN mvn -B -DskipTests package
+RUN mvn -B -s docker-settings.xml -DskipTests \
+      -Daether.transport.http.retryHandler.count=5 \
+      -Daether.transport.http.retryHandler.interval=5000 \
+      -Daether.transport.http.retryHandler.serviceUnavailable=429,503 \
+      -Dmaven.wagon.http.retryHandler.count=5 \
+      -Dmaven.wagon.httpconnectionManager.ttlSeconds=25 \
+      package
 RUN set -eu; \
     set -- target/*.jar; \
     test -f "$1"; \
