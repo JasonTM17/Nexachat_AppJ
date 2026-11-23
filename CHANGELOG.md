@@ -6,6 +6,16 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.20] - 2026-11-23
+
+Android-only patch release. See
+[docs/release-notes/v1.2.20.md](docs/release-notes/v1.2.20.md).
+
+### Fixed
+- Android: inbox clears stale conversation rows inside the same identity
+  change, so a partial wipe can no longer publish the previous account's
+  conversations under the new session's launcher shortcuts.
+
 ## [1.2.19] - 2026-11-23
 
 Server + Android release. See

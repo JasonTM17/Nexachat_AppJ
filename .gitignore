@@ -1,6 +1,8 @@
 # ---- Build outputs ----
 build/
 **/build/
+dist/
+out/
 target/
 *.class
 *.jar
@@ -10,14 +12,21 @@ target/
 *.dex
 *.o
 *.so
+*.tsbuildinfo
+*.stackdump
 
 # ---- Dependencies ----
 node_modules/
+.npm/
 .gradle/
 .cxx/
 .kotlin/
 __pycache__/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
 *.py[cod]
 # gradle-wrapper.jar must be committed despite the *.jar rule above —
 # it is required for reproducible wrapper bootstrap on fresh checkouts.
@@ -29,30 +38,59 @@ __pycache__/
 *.p12
 *.pkcs12
 *.bks
+*.pfx
+*.pem
+*.key
+*.p8
 keystore.properties
+signing.properties
 .env
 .env.*
 !.env.example
 google-services.json
 secrets.properties
+*-firebase-adminsdk-*.json
+service-account*.json
+serviceAccount*.json
 **/local.properties
 
-# ---- IDE ----
+# ---- IDE / editor ----
 .idea/
 *.iml
 .vscode/
+.vs/
+.fleet/
+.history/
 *.swp
+*.swo
+*.swn
 
 # ---- OS ----
 .DS_Store
 Thumbs.db
+ehthumbs.db
+$RECYCLE.BIN/
+*.tmp
+nul
 
 # ---- Runtime / data ----
 # Root-anchored: a bare `data/` would also ignore source packages like
 # android/app/src/main/java/com/nexachat/data/ (repository implementations).
 /data/
+/run/
+/e2e-evidence/
+/vibe-runs/
+/backups/
+/secrets/
 logs/
 *.log
+nohup.out
+*.pid
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
 server/uploads/
 demo/backups/
 
@@ -70,16 +108,47 @@ demo/backups/
 .codex/
 .devin/
 plans/
+# Ephemeral agent run artifacts dropped at repo root (root-anchored so
+# docs/ and nested sources keep their own .md files).
+/WORKER_BRIEF.md
+/WORKER_*.md
+/BRIEF*.md
+/REPORT.md
+/REPORT_*.md
+/SESSION*.md
+/HANDOFF*.md
+/RUN_*.md
+/PLAN-*.md
 
 # ---- Local tooling / profiling leftovers ----
 .vercel/
+.wrangler/
 server/data/
-signing.properties
 captures/
 tools/fcm-live-check/.out/
 *.hprof
 .tmp_*
 desktop.ini
+
+# ---- Test / coverage artifacts ----
+coverage/
+htmlcov/
+.coverage
+*.lcov
+.nyc_output/
+test-results/
+playwright-report/
+.eslintcache
+
+# ---- VCS / merge / release-plugin leftovers ----
+*.orig
+*.rej
+*.bak
+release.properties
+pom.xml.releaseBackup
+pom.xml.tag
+pom.xml.next
+pom.xml.versionsBackup
 
 # ---- Local-only capture evidence ----
 docs/evidence/
