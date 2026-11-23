@@ -12,6 +12,7 @@ import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.data.AuthRepository;
 import com.nexachat.call.service.CallNotifications;
+import com.nexachat.feature.shortcut.ConversationShortcuts;
 import javax.inject.Inject;
 import org.junit.Before;
 import org.junit.Test;
@@ -21,6 +22,7 @@ public final class SessionNotificationCleanupTest {
     private SessionEvents events;
     private int messageId;
     private int reminderId;
+    private ConversationShortcuts shortcuts;
 
     @Before public void setUp() throws Exception {
         Context context = mock(Context.class);
@@ -44,12 +46,13 @@ public final class SessionNotificationCleanupTest {
                 events, mock(TokenRefresher.class), mock(DeviceTokenRegistrationManager.class));
         MessageNotifications messages = new MessageNotifications(context);
         ReminderNotifications reminders = new ReminderNotifications(context);
+        shortcuts = mock(ConversationShortcuts.class);
         // Exercise the same method-injection boundary as Hilt, including the baseline
         // where no notification lifecycle observer was registered at all.
         for (var method : AuthRepository.class.getDeclaredMethods()) {
             if (method.isAnnotationPresent(Inject.class)) {
                 method.setAccessible(true);
-                method.invoke(repository, messages, reminders);
+                method.invoke(repository, messages, reminders, shortcuts);
             }
         }
     }
@@ -57,6 +60,7 @@ public final class SessionNotificationCleanupTest {
     @Test public void logoutDismissesMessageAndReminderIdsButPreservesCalls() {
         events.emitLoggedOut();
         assertOnlySessionAlertsCancelled();
+        verify(shortcuts).clear();
     }
 
     @Test public void sessionClosingDismissesAlertsBeforeRemoteLogoutFinishes() {
@@ -73,6 +77,7 @@ public final class SessionNotificationCleanupTest {
         events.emitSessionAvailable();
         events.emitSessionRefreshed();
         verifyNoInteractions(manager);
+        verify(shortcuts, never()).clear();
     }
 
     @Test public void unavailableNotificationAccessDoesNotBreakSessionEvents() {
