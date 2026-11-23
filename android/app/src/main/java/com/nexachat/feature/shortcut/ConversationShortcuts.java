@@ -14,12 +14,13 @@ import com.nexachat.notification.NotificationOpenActivity;
 import com.nexachat.notification.NotificationWorkRequest;
 import dagger.hilt.android.qualifiers.ApplicationContext;
 import io.reactivex.rxjava3.core.Completable;
-import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.Executors;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
@@ -37,7 +38,15 @@ public final class ConversationShortcuts {
 
     private final Context context;
     private final TokenRefresher tokenRefresher;
-    private final CompositeDisposable disposables = new CompositeDisposable();
+    /**
+     * One serial lane for publish and clear: a publish queued before a logout
+     * must never land after the clear and resurrect the old account's rows.
+     */
+    private final Scheduler lane = Schedulers.from(Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "conversation-shortcuts");
+        thread.setDaemon(true);
+        return thread;
+    }));
     @Nullable private String lastSignature;
 
     @Inject
@@ -79,9 +88,12 @@ public final class ConversationShortcuts {
             @Nullable String recipientId,
             @NonNull List<ConversationSummary> conversations) {
         List<ConversationSummary> snapshot = List.copyOf(conversations);
-        disposables.add(Completable.fromAction(() -> {
+        Completable.fromAction(() -> {
             long epoch = tokenRefresher.sessionEpoch();
-            if (recipientId == null || recipientId.isBlank() || epoch <= 0L) {
+            // A closed session keeps a positive (bumped) epoch, so admission
+            // must be checked explicitly, not just the epoch sign.
+            if (recipientId == null || recipientId.isBlank() || epoch <= 0L
+                    || !tokenRefresher.isSessionCurrent(epoch)) {
                 clearInternal();
                 return;
             }
@@ -129,9 +141,7 @@ public final class ConversationShortcuts {
                 }
             } catch (IllegalArgumentException | IllegalStateException ignored) {
             }
-        }).subscribeOn(Schedulers.io()).subscribe(
-                () -> { },
-                ignored -> { }));
+        }).subscribeOn(lane).subscribe(() -> { }, ignored -> { });
     }
 
     /**
@@ -139,9 +149,9 @@ public final class ConversationShortcuts {
      * Called on every session-ending event (logout, session close, reauth).
      */
     public void clear() {
-        disposables.add(Completable.fromAction(this::clearInternal)
-                .subscribeOn(Schedulers.io())
-                .subscribe(() -> { }, ignored -> { }));
+        Completable.fromAction(this::clearInternal)
+                .subscribeOn(lane)
+                .subscribe(() -> { }, ignored -> { });
     }
 
     private void clearInternal() {

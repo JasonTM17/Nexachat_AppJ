@@ -379,10 +379,13 @@ public final class InboxViewModel extends ViewModel {
      */
     private void publishShortcuts() {
         ConversationShortcuts shortcuts = conversationShortcuts;
-        if (shortcuts == null) {
+        String userId = currentState.getCurrentUserId();
+        // Session-end clearing belongs to AuthRepository; an unresolved user id
+        // at cold start must not wipe and republish the launcher set.
+        if (shortcuts == null || userId == null) {
             return;
         }
-        shortcuts.publish(currentState.getCurrentUserId(), currentState.getConversations());
+        shortcuts.publish(userId, currentState.getConversations());
     }
 
     public LiveData<ApiError> getPinError() {
