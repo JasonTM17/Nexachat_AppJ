@@ -638,6 +638,10 @@ class MembershipGuardMatrixIT extends SecurityITBase {
         ops.put("rest-178", new Op("rest-178", "DELETE",
                 "/api/v1/conversations/{conversationId}/scheduled-messages/{scheduledId}",
                 null, null, null, NOT_MEMBER, NOT_MEMBER, NOT_MEMBER, null, null));
+        ops.put("rest-181", new Op("rest-181", "PATCH",
+                "/api/v1/conversations/{conversationId}/scheduled-messages/{scheduledId}",
+                Map.of("body", "membership probe"),
+                null, null, NOT_MEMBER, NOT_MEMBER, NOT_MEMBER, null, null));
         // The streak read resolves membership first, so an unknown conversation
         // and a non-member conversation are the same answer.
         ops.put("rest-159", new Op("rest-159", "GET",
