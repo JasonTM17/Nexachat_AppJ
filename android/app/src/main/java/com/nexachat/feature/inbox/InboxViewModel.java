@@ -238,7 +238,7 @@ public final class InboxViewModel extends ViewModel {
     public void muteConversationForever(@NonNull String conversationId) {
         runPreference(
                 conversationRepository.muteConversationForever(conversationId),
-                R.string.conversation_muted,
+                R.string.conversation_muted_forever,
                 () -> unmuteConversation(conversationId));
     }
 
