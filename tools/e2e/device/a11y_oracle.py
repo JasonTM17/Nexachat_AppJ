@@ -426,24 +426,30 @@ def restore_font_scale(serial: str, saved: str | None) -> tuple[str, ...]:
 
 def set_locale_hint(serial: str, locale: str) -> tuple[str, ...]:
     """Writes ``system_locales`` at the settings level. A hint, not an apply:
-    a bare settings write is not guaranteed to broadcast, so the supported
-    path is ``set_locale`` (``cmd locale set``) and restores go through it."""
+    a bare settings write does not reconfigure apps on API 33+, so the
+    supported path is ``set_locale`` (``cmd locale set-device-locale``) and
+    restores go through it."""
     return (adb_shell(serial, "settings", "put", "system", "system_locales", _validate_locale(locale)),)
 
 
 def set_locale(serial: str, locale: str) -> tuple[str, ...]:
-    """The supported locale switch (``cmd locale set``, like the sweep variant)."""
-    return (adb_shell(serial, "cmd", "locale", "set", _validate_locale(locale)),)
+    """The supported locale switch: ``cmd locale set-device-locale``. API 33+
+    moved the effective locale to LocaleManagerService — ``cmd locale set``
+    does not exist and ``system_locales`` does not reconfigure apps."""
+    return (adb_shell(serial, "cmd", "locale", "set-device-locale",
+                      _validate_locale(locale)),)
 
 
 def get_locale(serial: str) -> tuple[str, ...]:
-    """Snapshot query matching ``patch_window.settings_snapshot``'s key."""
-    return (adb_shell(serial, "settings", "get", "system", "system_locales"),)
+    """The effective device locale (``persist.sys.locale``), matching the key
+    ``stable_journeys.snapshot_settings`` stores as ``device_locale``."""
+    return (adb_shell(serial, "getprop", "persist.sys.locale"),)
 
 
 def restore_locale(serial: str, saved: str | None) -> tuple[str, ...]:
-    """Restores a snapshotted locale via ``cmd locale set``; unset/``null`` is a
-    no-op (the guard ``patch_window.restore_device_settings`` uses)."""
+    """Restores a snapshotted ``persist.sys.locale`` via
+    ``cmd locale set-device-locale``; unset/``null`` is a no-op (the guard
+    ``patch_window.restore_device_settings`` uses)."""
     if saved in (None, "", "null"):
         return ()
     return set_locale(serial, saved)

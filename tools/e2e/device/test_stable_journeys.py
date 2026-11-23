@@ -7246,7 +7246,7 @@ class AccessibilitySweepExecutorTest(unittest.TestCase):
         # Display settings were restored exactly once with the snapshot.
         self.assertEqual(restores, [{
             "font_scale": "1.0", "system_locales": "en-US",
-            "night_mode": "Night mode: no",
+            "night_mode": "Night mode: no", "device_locale": "",
         }])
         # TalkBack and reduced-motion state were restored too (a null services
         # snapshot clears the list, an unreadable flag falls back to disabled).
@@ -7270,7 +7270,7 @@ class AccessibilitySweepExecutorTest(unittest.TestCase):
             self._run(context)
         self.assertEqual(restores, [{
             "font_scale": "1.0", "system_locales": "en-US",
-            "night_mode": "Night mode: no",
+            "night_mode": "Night mode: no", "device_locale": "",
         }])
 
     def test_sweep_blocks_when_density_is_unreadable(self):

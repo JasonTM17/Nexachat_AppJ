@@ -189,13 +189,13 @@ class CommandBuilderTest(unittest.TestCase):
             (f"adb -s {self.SERIAL} shell settings put system system_locales vi-VN",))
         self.assertEqual(
             oracle.set_locale(self.SERIAL, "vi-VN"),
-            (f"adb -s {self.SERIAL} shell cmd locale set vi-VN",))
+            (f"adb -s {self.SERIAL} shell cmd locale set-device-locale vi-VN",))
         self.assertEqual(
             oracle.get_locale(self.SERIAL),
-            (f"adb -s {self.SERIAL} shell settings get system system_locales",))
+            (f"adb -s {self.SERIAL} shell getprop persist.sys.locale",))
         self.assertEqual(
             oracle.restore_locale(self.SERIAL, "en-US"),
-            (f"adb -s {self.SERIAL} shell cmd locale set en-US",))
+            (f"adb -s {self.SERIAL} shell cmd locale set-device-locale en-US",))
 
     def test_locale_validation(self):
         for bad in ("", "en US", "en-US;rm-rf", None, 7):
@@ -873,7 +873,7 @@ class CliTest(unittest.TestCase):
         self.assertIn("accessibility_enabled", joined)
         self.assertIn("font_scale", joined)
         self.assertIn("system_locales", joined)
-        self.assertIn("cmd locale set vi-VN", joined)
+        self.assertIn("cmd locale set-device-locale vi-VN", joined)
         self.assertIn("talkback", joined)
 
 
