@@ -73,8 +73,7 @@ class SystemMessageTest {
         lenient().when(messageRepository.findAdmittedReplyRefsByIdIn(any(), any())).thenReturn(List.of());
         lenient().when(conversationRepository.findByIdForUpdate(any()))
                 .thenReturn(Optional.of(mock(Conversation.class)));
-        lenient().when(conversationRepository.incrementChangeVersion(any())).thenReturn(1);
-        lenient().when(conversationRepository.findChangeVersion(any())).thenReturn(1L);
+        lenient().when(conversationRepository.incrementAndGetChangeVersion(any())).thenReturn(1L);
     }
 
     @Test
@@ -105,7 +104,7 @@ class SystemMessageTest {
         assertThat(type.getValue()).isEqualTo("SYSTEM");
 
         verify(conversationRepository).advanceLastMessage(conversationId, stored.id(), 77L);
-        verify(conversationRepository).incrementChangeVersion(conversationId);
+        verify(conversationRepository).incrementAndGetChangeVersion(conversationId);
         verify(memberRepository).advanceReadWatermark(conversationId, actorId, 77L);
 
         ArgumentCaptor<MessageCreatedEvent> event = ArgumentCaptor.forClass(MessageCreatedEvent.class);
@@ -158,7 +157,7 @@ class SystemMessageTest {
 
         assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NOT_MEMBER);
         assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
-        verify(conversationRepository, never()).incrementChangeVersion(any());
+        verify(conversationRepository, never()).incrementAndGetChangeVersion(any());
         verify(messageRepository, never()).insertIgnoringDuplicateKey(
                 any(), any(), any(), any(), any(), any(), anyBoolean());
     }

@@ -2,6 +2,7 @@ package com.nexachat.ws;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.auth.AccessTokenValidityCache;
 import com.nexachat.auth.RateLimitService;
 import com.nexachat.auth.JwtService;
 import com.nexachat.common.dto.JwtPrincipal;
@@ -33,6 +34,7 @@ import org.springframework.web.socket.messaging.SubProtocolWebSocketHandler;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -113,6 +115,7 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
     private final RateLimitService rateLimitService;
     private final StompSessionRegistry sessionRegistry;
     private final StompRevocationFence revocationFence;
+    private final AccessTokenValidityCache validityCache;
     private final ThreadLocal<RevocationActor> currentActor = new ThreadLocal<>();
     private final ThreadLocal<Deque<ExecutionFrame>> executionFrames =
             ThreadLocal.withInitial(ArrayDeque::new);
@@ -146,7 +149,27 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
                                        long ackWindowSeconds) {
         this(jwtService, userRepository, memberRepository, rateLimitService, messaging, objectMapper,
                 messagesPerWindow, messageWindowSeconds, typingPerWindow, typingWindowSeconds,
-                acksPerWindow, ackWindowSeconds, null, null);
+                acksPerWindow, ackWindowSeconds, null, null, null);
+    }
+
+    public StompAuthChannelInterceptor(JwtService jwtService,
+                                       UserRepository userRepository,
+                                       ConversationMemberRepository memberRepository,
+                                       RateLimitService rateLimitService,
+                                       @Lazy
+                                       SimpMessagingTemplate messaging,
+                                       ObjectMapper objectMapper,
+                                       long messagesPerWindow,
+                                       long messageWindowSeconds,
+                                       long typingPerWindow,
+                                       long typingWindowSeconds,
+                                       long acksPerWindow,
+                                       long ackWindowSeconds,
+                                       StompSessionRegistry sessionRegistry,
+                                       StompRevocationFence revocationFence) {
+        this(jwtService, userRepository, memberRepository, rateLimitService, messaging, objectMapper,
+                messagesPerWindow, messageWindowSeconds, typingPerWindow, typingWindowSeconds,
+                acksPerWindow, ackWindowSeconds, sessionRegistry, revocationFence, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -170,7 +193,8 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
                                        @Value("${nexachat.rate-limit.stomp.ack-window-seconds:10}")
                                        long ackWindowSeconds,
                                        StompSessionRegistry sessionRegistry,
-                                       StompRevocationFence revocationFence) {
+                                       StompRevocationFence revocationFence,
+                                       AccessTokenValidityCache validityCache) {
         this.jwtService = jwtService;
         this.userRepository = userRepository;
         this.memberRepository = memberRepository;
@@ -178,6 +202,7 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
         this.sessionRegistry = sessionRegistry;
         this.messaging = messaging;
         this.objectMapper = objectMapper;
+        this.validityCache = validityCache;
         this.messagesPerWindow = messagesPerWindow;
         this.messageWindowSeconds = messageWindowSeconds;
         this.typingPerWindow = typingPerWindow;
@@ -204,7 +229,7 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
                                        StompSessionRegistry sessionRegistry) {
         this(jwtService, userRepository, memberRepository, rateLimitService, messaging, objectMapper,
                 messagesPerWindow, messageWindowSeconds, typingPerWindow, typingWindowSeconds,
-                acksPerWindow, ackWindowSeconds, sessionRegistry, null);
+                acksPerWindow, ackWindowSeconds, sessionRegistry, null, null);
     }
 
     public StompAuthChannelInterceptor(JwtService jwtService,
@@ -609,7 +634,34 @@ public class StompAuthChannelInterceptor implements ExecutorChannelInterceptor {
         if (principal.expiresAt() == null || !Instant.now().isBefore(principal.expiresAt())) {
             return false;
         }
-        return !isAccessTokenRevoked(principal.userId(), principal.issuedAt());
+        if (validityCache == null) {
+            return !isAccessTokenRevoked(principal.userId(), principal.issuedAt());
+        }
+        // Per-frame probe: the REST hot-path cache serves this so SEND/SUBSCRIBE
+        // bursts do not pay a Neon round-trip each. The revocation fence in
+        // beforeHandle stays authoritative, so a stale "valid" answer here
+        // still cannot get a frame past the fence.
+        AccessTokenValidityCache.Validity validity = loadValidity(principal.userId());
+        if (!validity.present() || validity.suspended()) {
+            return false;
+        }
+        Instant cutoff = validity.tokensValidAfter();
+        return cutoff == null || principal.issuedAt().isAfter(cutoff);
+    }
+
+    /** Mirrors {@code JwtAuthFilter.loadValidity}: cache first, DB fill on miss. */
+    private AccessTokenValidityCache.Validity loadValidity(UUID userId) {
+        Optional<AccessTokenValidityCache.Validity> cached = validityCache.get(userId);
+        if (cached.isPresent()) {
+            return cached.get();
+        }
+        long generation = validityCache.generation();
+        AccessTokenValidityCache.Validity loaded = userRepository.findAuthValidityById(userId)
+                .map(found -> new AccessTokenValidityCache.Validity(true, found.tokensValidAfter(),
+                        found.role() == null ? null : found.role().name(), found.suspended()))
+                .orElseGet(AccessTokenValidityCache.Validity::missing);
+        validityCache.putIfGeneration(userId, loaded, generation);
+        return loaded;
     }
 
     @Nullable

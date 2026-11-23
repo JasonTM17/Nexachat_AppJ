@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -62,6 +63,19 @@ class NotificationEventListenerTest {
                 mock(com.nexachat.user.UserBlockRepository.class),
                 presenceState, callRegistry, userRepository,
                 tokenRepository, Clock.fixed(Instant.parse("2026-11-11T12:00:00Z"), ZoneOffset.UTC));
+        // The listener batches token reads through findByUserIdIn; route the
+        // batch call through the per-user stubs each test sets up.
+        lenient().when(tokenRepository.findByUserIdIn(any())).thenAnswer(inv -> {
+            java.util.Collection<UUID> ids = inv.getArgument(0);
+            List<UserDeviceToken> rows = new java.util.ArrayList<>();
+            for (UUID id : ids) {
+                List<UserDeviceToken> found = tokenRepository.findByUserId(id);
+                if (found != null) {
+                    rows.addAll(found);
+                }
+            }
+            return rows;
+        });
     }
 
     @Test
@@ -92,6 +106,7 @@ class NotificationEventListenerTest {
                 .thenReturn(List.of());
         when(presenceState.isOnline(recipientId)).thenReturn(false);
         User owner = mock(User.class);
+        when(owner.getId()).thenReturn(recipientId);
         UserDeviceToken token = UserDeviceToken.create(
                 owner, "subject-token", UserDeviceToken.Platform.ANDROID, "Phone");
         when(tokenRepository.findByUserId(recipientId)).thenReturn(List.of(token));
@@ -109,6 +124,7 @@ class NotificationEventListenerTest {
                 .thenReturn(List.of());
         when(presenceState.isOnline(recipientId)).thenReturn(false);
         User owner = mock(User.class);
+        when(owner.getId()).thenReturn(recipientId);
         UserDeviceToken token = UserDeviceToken.create(
                 owner, "recipient-token", UserDeviceToken.Platform.ANDROID, "Phone");
         when(tokenRepository.findByUserId(recipientId)).thenReturn(List.of(token));
@@ -125,8 +141,8 @@ class NotificationEventListenerTest {
                 .thenReturn(List.of());
         when(presenceState.isOnline(recipientId)).thenReturn(false);
         when(presenceState.isOnline(secondRecipientId)).thenReturn(false);
-        UserDeviceToken older = sharedRow(Instant.parse("2026-11-10T08:00:00Z"));
-        UserDeviceToken newer = sharedRow(Instant.parse("2026-11-11T08:00:00Z"));
+        UserDeviceToken older = sharedRow(Instant.parse("2026-11-10T08:00:00Z"), recipientId);
+        UserDeviceToken newer = sharedRow(Instant.parse("2026-11-11T08:00:00Z"), secondRecipientId);
         when(tokenRepository.findByUserId(recipientId)).thenReturn(List.of(older));
         when(tokenRepository.findByUserId(secondRecipientId)).thenReturn(List.of(newer));
 
@@ -151,10 +167,13 @@ class NotificationEventListenerTest {
         verify(memberRepository).findAdmittedUserIds(conversationId, message.createdAt());
     }
 
-    private static UserDeviceToken sharedRow(Instant updatedAt) {
+    private static UserDeviceToken sharedRow(Instant updatedAt, UUID ownerId) {
         UserDeviceToken row = mock(UserDeviceToken.class);
         when(row.getToken()).thenReturn("shared-device-token");
         when(row.getUpdatedAt()).thenReturn(updatedAt);
+        User owner = mock(User.class);
+        when(owner.getId()).thenReturn(ownerId);
+        when(row.getUser()).thenReturn(owner);
         return row;
     }
 

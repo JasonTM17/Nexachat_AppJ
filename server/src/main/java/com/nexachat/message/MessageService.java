@@ -1311,11 +1311,12 @@ public class MessageService {
 
     /** Caller must already hold the conversation row lock through transaction completion. */
     private long allocateChangeVersion(UUID conversationId) {
-        if (conversationRepository.incrementChangeVersion(conversationId) != 1) {
+        Long next = conversationRepository.incrementAndGetChangeVersion(conversationId);
+        if (next == null) {
             throw ApiException.of(ApiErrorCode.INTERNAL_ERROR,
                     "Message change version allocation failed");
         }
-        return conversationRepository.findChangeVersion(conversationId);
+        return next;
     }
 
     private void requireMember(UUID conversationId, UUID userId) {

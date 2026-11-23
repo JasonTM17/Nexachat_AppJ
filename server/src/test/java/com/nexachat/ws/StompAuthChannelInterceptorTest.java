@@ -1,6 +1,8 @@
 package com.nexachat.ws;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nexachat.auth.AccessTokenValidityCache;
+import com.nexachat.auth.JwtProperties;
 import com.nexachat.auth.RateLimitService;
 import com.nexachat.auth.JwtService;
 import com.nexachat.common.dto.JwtPrincipal;
@@ -16,6 +18,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessageHandler;
 import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
@@ -235,6 +238,65 @@ class StompAuthChannelInterceptorTest {
         sendAccessor.setDestination("/app/conversations/" + conversationId + "/typing");
 
         assertThat(interceptor.preSend(message(sendAccessor), channel)).isNull();
+    }
+
+    @Test
+    void connectedSession_sendProbesAreServedFromTheSharedValidityCache() {
+        AccessTokenValidityCache cache = new AccessTokenValidityCache(
+                new JwtProperties("test-secret", 3600, 30), 60, java.time.Clock.systemUTC());
+        StompAuthChannelInterceptor cached = new StompAuthChannelInterceptor(
+                jwtService, userRepository, memberRepository, rateLimitService, messaging,
+                new ObjectMapper(), 30, 10, 60, 10, 120, 10, null, null, cache);
+        Instant issuedAt = Instant.now().minusSeconds(60);
+        StompUserPrincipal principal = new StompUserPrincipal(
+                userId, issuedAt, issuedAt.plusSeconds(3600));
+        when(userRepository.findAuthValidityById(userId))
+                .thenReturn(Optional.of(new UserAuthValidity(userId, null)));
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(true);
+
+        StompHeaderAccessor first = StompHeaderAccessor.create(StompCommand.SEND);
+        first.setUser(principal);
+        first.setDestination("/app/conversations/" + conversationId + "/typing");
+        assertThat(cached.preSend(message(first), channel)).isNotNull();
+
+        StompHeaderAccessor second = StompHeaderAccessor.create(StompCommand.SEND);
+        second.setUser(principal);
+        second.setDestination("/app/conversations/" + conversationId + "/typing");
+        assertThat(cached.preSend(message(second), channel)).isNotNull();
+
+        // The second probe came from the cache — one database read total.
+        verify(userRepository).findAuthValidityById(userId);
+    }
+
+    @Test
+    void cachedSessionProbeStillDiesAtTheAuthoritativeFence() {
+        AccessTokenValidityCache cache = new AccessTokenValidityCache(
+                new JwtProperties("test-secret", 3600, 30), 60, java.time.Clock.systemUTC());
+        // Stale "valid" answer (no cutoff) while the DB now reports a
+        // revocation cutoff newer than the token's issue time.
+        cache.put(userId, new AccessTokenValidityCache.Validity(true, null));
+        Instant issuedAt = Instant.now().minusSeconds(60);
+        Instant cutoff = Instant.now().minusSeconds(1);
+        when(userRepository.findAuthValidityById(userId))
+                .thenReturn(Optional.of(new UserAuthValidity(userId, cutoff)));
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, userId))
+                .thenReturn(true);
+        StompAuthChannelInterceptor cached = new StompAuthChannelInterceptor(
+                jwtService, userRepository, memberRepository, rateLimitService, messaging,
+                new ObjectMapper(), 30, 10, 60, 10, 120, 10, null,
+                new StompRevocationFence(userRepository), cache);
+        StompUserPrincipal principal = new StompUserPrincipal(
+                userId, issuedAt, issuedAt.plusSeconds(3600));
+        StompHeaderAccessor send = StompHeaderAccessor.create(StompCommand.SEND);
+        send.setUser(principal);
+        send.setDestination("/app/conversations/" + conversationId + "/typing");
+
+        // The stale cached probe admits the frame past preSend...
+        Message<?> framed = cached.preSend(message(send), channel);
+        assertThat(framed).isNotNull();
+        // ...but the per-frame revocation fence still drops it before any handler.
+        assertThat(cached.beforeHandle(framed, channel, mock(MessageHandler.class))).isNull();
     }
 
     @Test

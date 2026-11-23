@@ -1586,6 +1586,51 @@ def _dismiss_anr_dialog(context: dict[str, Any], nodes: list[Any]) -> bool:
     return True
 
 
+def _deadline_dump(context: dict[str, Any], label: str) -> None:
+    """Best-effort forensic capture when a bounded wait expires.
+
+    A ProductFailure that carries only its message leaves the verdict
+    "rendered late vs never applied" undecidable — the offline-sync
+    investigation (run-51) burned six consecutive attempts on INDETERMINATE
+    outcomes because nothing showed the screen at the deadline. Dropping the
+    a11y tree, a screenshot, and an unfiltered logcat slice next to the row's
+    other evidence turns the next timeout into a diagnosis instead of a
+    rerun. Every capture is individually guarded: a dump error must never
+    mask the real failure.
+    """
+    row_dir = context.get("row_dir")
+    if row_dir is None:
+        return
+    try:
+        row_dir = Path(row_dir)
+        row_dir.mkdir(parents=True, exist_ok=True)
+        safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(label)).strip("-")[:48] \
+            or "wait"
+        stem = f"deadline-{safe}-{int(time.time())}"
+        try:
+            nodes = _ui_nodes(context)
+            (row_dir / f"{stem}-ui-tree.txt").write_text(
+                sanitize_text("\n".join(node.describe() for node in nodes)) +
+                "\n", encoding="utf-8")
+        except Exception:
+            pass
+        try:
+            context["device"].screenshot(str(row_dir / f"{stem}.png"))
+        except Exception:
+            pass
+        try:
+            adb = context.get("adb")
+            if adb is not None:
+                text = adb.command("logcat", "-d", "-v", "brief", "-t", "400",
+                                   timeout=15)
+                (row_dir / f"{stem}-logcat.txt").write_text(
+                    sanitize_text(str(text)) + "\n", encoding="utf-8")
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 def _wait_ui_node(context: dict[str, Any], predicate: Callable[[Any], bool],
                   what: str, timeout: float | None = None) -> Any:
     deadline = time.monotonic() + float(timeout or _ui_timeout(context))
@@ -1598,6 +1643,7 @@ def _wait_ui_node(context: dict[str, Any], predicate: Callable[[Any], bool],
         if match is not None:
             return match
         if time.monotonic() >= deadline:
+            _deadline_dump(context, what)
             raise ProductFailure(what)
         time.sleep(0.4)
 
@@ -1613,6 +1659,7 @@ def _wait_ui_absent(context: dict[str, Any], predicate: Callable[[Any], bool],
         if not any(predicate(node) for node in nodes):
             return
         if time.monotonic() >= deadline:
+            _deadline_dump(context, what)
             raise ProductFailure(what)
         time.sleep(0.4)
 
@@ -1623,6 +1670,7 @@ def _wait_sheet_closed(context: dict[str, Any], timeout: float = 12) -> None:
         if not any(_rid_ends(node, "messageActionsTitle") for node in _ui_nodes(context)):
             return
         time.sleep(0.4)
+    _deadline_dump(context, "the message action sheet did not dismiss")
     raise ProductFailure("the message action sheet did not dismiss")
 
 
@@ -1661,6 +1709,7 @@ def _open_action_sheet(context: dict[str, Any], content: str) -> None:
     while True:
         bubble = _message_bubble(context, content)
         if bubble is None:
+            _deadline_dump(context, f"message bubble {content!r} was not on screen")
             raise ProductFailure(f"message bubble {content!r} was not on screen")
         ui.long_press(bubble)
         sheet_deadline = time.monotonic() + 6
@@ -1669,6 +1718,7 @@ def _open_action_sheet(context: dict[str, Any], content: str) -> None:
                 return
             time.sleep(0.4)
         if time.monotonic() >= deadline:
+            _deadline_dump(context, "the message action sheet did not open after long-press")
             raise ProductFailure("the message action sheet did not open after long-press")
 
 
@@ -1702,6 +1752,7 @@ def _tap_sheet_action(context: dict[str, Any], labels: tuple[str, ...]) -> None:
             return
         _sheet_scroll(context)
         time.sleep(0.4)
+    _deadline_dump(context, "action not offered by the message action sheet")
     raise ProductFailure(f"action {labels!r} was not offered by the message action sheet")
 
 
@@ -1733,6 +1784,7 @@ def _wait_forward_target(context: dict[str, Any], desc: str) -> Any:
             return target
         _forward_sheet_scroll(context)
         time.sleep(0.4)
+    _deadline_dump(context, "the seeded group was not offered as a forward target")
     raise ProductFailure("the seeded group was not offered as a forward target")
 
 
@@ -6023,6 +6075,12 @@ _OFFLINE_FULL_BATCH_BYTES = 3000
 _OFFLINE_SIGN_OUT_LABELS = ("Sign out", "Đăng xuất")
 _OFFLINE_RETRY_LABELS = ("Retry", "Thử lại")
 _OFFLINE_SYNC_POLL_S = 180.0
+# The tail-edit assertion kept dying to the silent-pop/re-tap race inside its
+# 60s budget on the bloated e2e dataset, with no artifact separating "still
+# settling" from "never applied" (run-51 advisory probe). Widening the window
+# distinguishes a budget race from a reconcile gap — a passing run is
+# unaffected because the wait returns on the first match.
+_OFFLINE_TAIL_EDIT_WAIT_S = 300.0
 _OFFLINE_ROW_SWEEP_LIMIT = 56  # ~1-viewport page-downs per inbox row scan cycle
 
 
@@ -6468,6 +6526,7 @@ def _offline_wait_inbox_row(context: dict[str, Any], title: str | tuple,
     sweeps = 0
     while True:
         if time.monotonic() >= deadline:
+            _deadline_dump(context, what)
             raise ProductFailure(what)
         nodes = _ui_nodes(context)
         if _dismiss_occluder(context, nodes):
@@ -6545,6 +6604,7 @@ def _offline_open_direct(context: dict[str, Any],
                 time.sleep(1.0)
                 continue
         time.sleep(0.6)
+    _deadline_dump(context, "the An-Binh conversation did not open")
     raise ProductFailure("the An-Binh conversation did not open")
 
 
@@ -6602,13 +6662,19 @@ def _offline_wait_conv_body(context: dict[str, Any],
     A reopened conversation can also settle at a scroll position where the
     reconciled tail rows sit below the rendered window (run-21: three
     deterministic "reconciled tail edit was not rendered" failures with the
-    edits confirmed applied host-side). While the chat stays open, an
-    occasional upward swipe inside messageList walks the viewport toward the
-    newest rows so a present-but-off-screen match is found instead of timing
-    out. A genuinely absent message still fails on the deadline."""
+    edits confirmed applied host-side), or with the target row mostly
+    clipped above the viewport's top edge — uiautomator drops clipped
+    children, so the deadline dump showed the tail-edit row rendered as a
+    23px sliver (desc + Edited marker) while its messageBody TextView never
+    entered the tree (run-51). The periodic swipe therefore ping-pongs: three
+    swipes toward older rows (revealing content clipped above the top edge),
+    three back toward the newest rows, alternating. A genuinely absent
+    message still fails on the deadline."""
     ui = context["device"]
     deadline = time.monotonic() + timeout
     next_scroll = time.monotonic() + 8.0
+    scroll_count = 0
+    grace_used = False
     while True:
         nodes = _ui_nodes(context)
         if _dismiss_occluder(context, nodes):
@@ -6620,6 +6686,20 @@ def _offline_wait_conv_body(context: dict[str, Any],
         if hit is not None:
             return hit
         if time.monotonic() >= deadline:
+            # One last shot before the dump: if the chat popped to the inbox
+            # at the deadline, re-tap the row once and grant a short grace —
+            # the normal loop (scroll ping-pong, occluders) then runs a few
+            # more seconds and the dump captures the best possible screen
+            # instead of whichever transient state the clock hit.
+            if not grace_used and any(
+                    _rid_ends(node, "conversationList") for node in nodes):
+                row = _inbox_conversation_row(context, reopen_title)
+                if row is not None:
+                    grace_used = True
+                    ui.tap_node(row)
+                    deadline = time.monotonic() + 10.0
+                    continue
+            _deadline_dump(context, what)
             raise ProductFailure(what)
         if any(_rid_ends(node, "conversationList") for node in nodes):
             row = _inbox_conversation_row(context, reopen_title)
@@ -6645,9 +6725,19 @@ def _offline_wait_conv_body(context: dict[str, Any],
                     cx = bounds[0] + (bounds[2] - bounds[0]) // 2
                     top = bounds[1]
                     bottom = bounds[3]
-                    ui.swipe(cx, top + int((bottom - top) * 0.7),
-                             cx, top + int((bottom - top) * 0.3),
-                             duration_ms=350)
+                    span = bottom - top
+                    # Down-swipe pulls older rows into the top edge; up-swipe
+                    # walks toward the newest rows. Three each, alternating —
+                    # the target can sit on either side of the open viewport.
+                    if (scroll_count // 3) % 2 == 0:
+                        ui.swipe(cx, top + int(span * 0.3),
+                                 cx, top + int(span * 0.7),
+                                 duration_ms=350)
+                    else:
+                        ui.swipe(cx, top + int(span * 0.7),
+                                 cx, top + int(span * 0.3),
+                                 duration_ms=350)
+                    scroll_count += 1
                 next_scroll = time.monotonic() + 4.0
                 continue
         time.sleep(0.7)
@@ -6667,6 +6757,8 @@ def _offline_open_action_sheet(context: dict[str, Any], reopen_title: str,
         bubble = _message_bubble(context, content)
         if bubble is None:
             if time.monotonic() >= deadline:
+                _deadline_dump(
+                    context, f"message bubble {content!r} was not on screen")
                 raise ProductFailure(
                     f"message bubble {content!r} was not on screen")
             nodes = _ui_nodes(context)
@@ -6686,6 +6778,8 @@ def _offline_open_action_sheet(context: dict[str, Any], reopen_title: str,
                 return
             time.sleep(0.4)
         if time.monotonic() >= deadline:
+            _deadline_dump(
+                context, "the message action sheet did not open after long-press")
             raise ProductFailure(
                 "the message action sheet did not open after long-press")
 
@@ -7633,15 +7727,30 @@ def run_offline_sync(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]
             "the post-restart peer text did not render in the direct chat",
             timeout=60)
         last_edit = edited_to[edit_src[-1]]
-        # After the 95-message recall burst the DM row's newest activity is a
+        # After the 30-message recall burst the DM row's newest activity is a
         # tombstone, so its inbox title/preview can render "This message was
         # deleted" instead of the peer name or the probe text — neither of
         # the earlier aliases then matches the row (exact-match lookup) even
         # though it is visible at the top of the list.
-        _offline_wait_conv_body(
-            context, ("Binh", probe_text, last_edit) + _CHAT_TOMBSTONE_MARKERS,
-            lambda node: node.text.strip() == last_edit,
-            "the reconciled tail edit was not rendered", timeout=60)
+        try:
+            _offline_wait_conv_body(
+                context,
+                ("Binh", probe_text, last_edit) + _CHAT_TOMBSTONE_MARKERS,
+                lambda node: node.text.strip() == last_edit,
+                "the reconciled tail edit was not rendered",
+                timeout=_OFFLINE_TAIL_EDIT_WAIT_S)
+        except ProductFailure as failure:
+            # Cheapest discriminator (Kongming): the REST history oracle at the
+            # row's end never runs on this failure path, so fold server truth
+            # into the error — "HAS" separates a UI-scroll miss from a
+            # reconcile gap without opening the deadline dump first.
+            applied = any(item.get("content") == last_edit
+                          for item in _offline_history(
+                              recorder, _tb, conversation_id))
+            raise ProductFailure(
+                f"{failure} (server history "
+                f"{'HAS' if applied else 'does NOT have'} "
+                "the edited content)") from failure
         _wait_ui_node(
             context,
             lambda node: node.text.strip() in _CHAT_EDITED_MARKERS,

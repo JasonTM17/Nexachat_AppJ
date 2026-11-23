@@ -44,15 +44,13 @@ public interface ConversationRepository extends JpaRepository<Conversation, UUID
     @Query("SELECT c FROM Conversation c WHERE c.id = :id")
     Optional<Conversation> findByIdForUpdate(@Param("id") UUID id);
 
-    /** Increment the high-water revision; callers hold {@code findByIdForUpdate} until commit. */
-    @Modifying(flushAutomatically = true)
-    @Query(value = "UPDATE conversations SET change_version = change_version + 1 WHERE id = :id",
+    /**
+     * Increment the high-water revision and return it in one round-trip;
+     * callers hold {@code findByIdForUpdate} until commit.
+     */
+    @Query(value = "UPDATE conversations SET change_version = change_version + 1 WHERE id = :id RETURNING change_version",
             nativeQuery = true)
-    int incrementChangeVersion(@Param("id") UUID id);
-
-    /** Read the value produced by {@link #incrementChangeVersion}; bypasses the managed entity snapshot. */
-    @Query(value = "SELECT change_version FROM conversations WHERE id = :id", nativeQuery = true)
-    long findChangeVersion(@Param("id") UUID id);
+    Long incrementAndGetChangeVersion(@Param("id") UUID id);
 
     /**
      * Denormalized inbox pointers (plan §9.3.5), advanced inside the send

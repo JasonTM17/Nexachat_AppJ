@@ -23,6 +23,12 @@ public class StompOutboundSecurityConfig implements WebSocketMessageBrokerConfig
 
     @Override
     public void configureClientOutboundChannel(ChannelRegistration registration) {
+        // Per-recipient delivery frames run blocking membership/privacy
+        // probes; the default pool (2xCPU = 2 threads on Render Free)
+        // serializes fan-out. A small pool overlaps the Neon waits; the
+        // bounded queue keeps overload backpressured rather than queued
+        // unboundedly.
+        registration.taskExecutor().corePoolSize(4).maxPoolSize(8).queueCapacity(1000);
         registration.interceptors(revocationGuard, membershipInterceptor, seenPrivacyInterceptor);
     }
 }

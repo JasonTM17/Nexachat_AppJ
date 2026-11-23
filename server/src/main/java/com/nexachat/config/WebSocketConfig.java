@@ -86,6 +86,12 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
+        // Frames block on Postgres round-trips (auth probe, membership), so
+        // the default pool — 2xCPU, i.e. 2 threads under the Render Free
+        // ActiveProcessorCount=1 — serializes concurrent SEND/SUBSCRIBE work.
+        // A small IO-sized pool overlaps those waits; a bounded queue keeps
+        // backpressure real instead of queueing unboundedly.
+        registration.taskExecutor().corePoolSize(4).maxPoolSize(8).queueCapacity(500);
         registration.interceptors(authChannelInterceptor);
     }
 

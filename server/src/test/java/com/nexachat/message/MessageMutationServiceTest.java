@@ -75,8 +75,7 @@ class MessageMutationServiceTest {
         lenient().when(messageRepository.findByIdForUpdate(messageId)).thenReturn(Optional.of(message));
         lenient().when(conversationRepository.findByIdForUpdate(any()))
                 .thenReturn(Optional.of(conversation));
-        lenient().when(conversationRepository.incrementChangeVersion(any())).thenReturn(1);
-        lenient().when(conversationRepository.findChangeVersion(any())).thenReturn(1L);
+        lenient().when(conversationRepository.incrementAndGetChangeVersion(any())).thenReturn(1L);
         lenient().when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conversation));
         lenient().when(messageRepository.findRowById(messageId)).thenAnswer(ignored -> Optional.of(row(message)));
         lenient().when(attachmentRepository.findByMessage_IdIn(any())).thenReturn(List.of());
@@ -93,7 +92,7 @@ class MessageMutationServiceTest {
         assertThat(response.editedAt()).isNotNull();
         assertThat(message.getContent()).isEqualTo("after");
         assertThat(message.getChangeVersion()).isEqualTo(1L);
-        verify(conversationRepository).incrementChangeVersion(conversationId);
+        verify(conversationRepository).incrementAndGetChangeVersion(conversationId);
         verify(eventPublisher).publishEvent(any(MessageUpdatedEvent.class));
         verify(eventPublisher, never()).publishEvent(any(MessageDeletedEvent.class));
     }
@@ -170,7 +169,7 @@ class MessageMutationServiceTest {
         assertThat(response.content()).isEqualTo("same");
         assertThat(response.editedAt()).isEqualTo(editedAt);
         assertThat(message.getChangeVersion()).isZero();
-        verify(conversationRepository, never()).incrementChangeVersion(any());
+        verify(conversationRepository, never()).incrementAndGetChangeVersion(any());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
@@ -183,7 +182,7 @@ class MessageMutationServiceTest {
         assertThat(deletedAt).isNotNull();
         assertThat(message.getContent()).isNull();
         assertThat(message.getChangeVersion()).isEqualTo(1L);
-        verify(conversationRepository, times(1)).incrementChangeVersion(conversationId);
+        verify(conversationRepository, times(1)).incrementAndGetChangeVersion(conversationId);
         verify(reactionRepository).deleteByMessageId(messageId);
         ArgumentCaptor<MessageDeletedEvent> deleted = ArgumentCaptor.forClass(MessageDeletedEvent.class);
         verify(eventPublisher, times(1)).publishEvent(deleted.capture());
@@ -224,7 +223,7 @@ class MessageMutationServiceTest {
                 () -> service.delete(otherUserId, conversationId, messageId));
 
         assertThat(error.getCode()).isEqualTo(ApiErrorCode.NOT_MESSAGE_AUTHOR);
-        verify(conversationRepository, never()).incrementChangeVersion(any());
+        verify(conversationRepository, never()).incrementAndGetChangeVersion(any());
         verify(eventPublisher, never()).publishEvent(any());
     }
 

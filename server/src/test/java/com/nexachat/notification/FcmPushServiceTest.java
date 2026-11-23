@@ -30,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -67,6 +68,19 @@ class FcmPushServiceTest {
                 mock(com.nexachat.user.UserBlockRepository.class),
                 presenceState, callRegistry, userRepository,
                 tokenRepository, Clock.systemUTC());
+        // The listener batches token reads through findByUserIdIn; route the
+        // batch call through the per-user stubs each test sets up.
+        lenient().when(tokenRepository.findByUserIdIn(any())).thenAnswer(inv -> {
+            java.util.Collection<UUID> ids = inv.getArgument(0);
+            List<UserDeviceToken> rows = new java.util.ArrayList<>();
+            for (UUID id : ids) {
+                List<UserDeviceToken> found = tokenRepository.findByUserId(id);
+                if (found != null) {
+                    rows.addAll(found);
+                }
+            }
+            return rows;
+        });
     }
 
     @Test
@@ -318,6 +332,7 @@ class FcmPushServiceTest {
         when(presenceState.isOnline(offlineMember)).thenReturn(false);
 
         User user = mock(User.class);
+        when(user.getId()).thenReturn(offlineMember);
         UserDeviceToken token = UserDeviceToken.create(user, "offline-token", UserDeviceToken.Platform.ANDROID, "Phone");
         when(tokenRepository.findByUserId(offlineMember)).thenReturn(List.of(token));
 
@@ -387,11 +402,14 @@ class FcmPushServiceTest {
         when(presenceState.isOnline(memberA)).thenReturn(false);
         when(presenceState.isOnline(memberB)).thenReturn(false);
 
-        User user = mock(User.class);
+        User userA = mock(User.class);
+        when(userA.getId()).thenReturn(memberA);
+        User userB = mock(User.class);
+        when(userB.getId()).thenReturn(memberB);
         UserDeviceToken tokenA = UserDeviceToken.create(
-                user, "shared-device-token", UserDeviceToken.Platform.ANDROID, "Phone");
+                userA, "shared-device-token", UserDeviceToken.Platform.ANDROID, "Phone");
         UserDeviceToken tokenB = UserDeviceToken.create(
-                user, "shared-device-token", UserDeviceToken.Platform.ANDROID, "Phone");
+                userB, "shared-device-token", UserDeviceToken.Platform.ANDROID, "Phone");
         when(tokenRepository.findByUserId(memberA)).thenReturn(List.of(tokenA));
         when(tokenRepository.findByUserId(memberB)).thenReturn(List.of(tokenB));
 
@@ -444,6 +462,7 @@ class FcmPushServiceTest {
         when(presenceState.isOnline(unmutedMember)).thenReturn(false);
 
         User user = mock(User.class);
+        when(user.getId()).thenReturn(unmutedMember);
         UserDeviceToken token = UserDeviceToken.create(
                 user, "unmuted-member-token", UserDeviceToken.Platform.ANDROID, "Phone");
         when(tokenRepository.findByUserId(unmutedMember)).thenReturn(List.of(token));
@@ -488,6 +507,7 @@ class FcmPushServiceTest {
         when(presenceState.isOnline(unmutedMember)).thenReturn(false);
 
         User user = mock(User.class);
+        when(user.getId()).thenReturn(unmutedMember);
         UserDeviceToken token = UserDeviceToken.create(
                 user, "system-unmuted-token", UserDeviceToken.Platform.ANDROID, "Phone");
         when(tokenRepository.findByUserId(unmutedMember)).thenReturn(List.of(token));
@@ -512,6 +532,7 @@ class FcmPushServiceTest {
         when(presenceState.isOnline(mutedMember)).thenReturn(false);
 
         User user = mock(User.class);
+        when(user.getId()).thenReturn(mutedMember);
         UserDeviceToken token = UserDeviceToken.create(
                 user, "system-subject-token", UserDeviceToken.Platform.ANDROID, "Phone");
         when(tokenRepository.findByUserId(mutedMember)).thenReturn(List.of(token));
@@ -536,6 +557,7 @@ class FcmPushServiceTest {
         when(presenceState.isOnline(removedMember)).thenReturn(false);
 
         User user = mock(User.class);
+        when(user.getId()).thenReturn(removedMember);
         UserDeviceToken token = UserDeviceToken.create(
                 user, "removed-subject-token", UserDeviceToken.Platform.ANDROID, "Phone");
         when(tokenRepository.findByUserId(removedMember)).thenReturn(List.of(token));
@@ -561,6 +583,7 @@ class FcmPushServiceTest {
         when(presenceState.isOnline(subjectMember)).thenReturn(false);
 
         User user = mock(User.class);
+        when(user.getId()).thenReturn(subjectMember);
         UserDeviceToken token = UserDeviceToken.create(
                 user, "other-subject-token", UserDeviceToken.Platform.ANDROID, "Phone");
         when(tokenRepository.findByUserId(subjectMember)).thenReturn(List.of(token));
@@ -585,6 +608,7 @@ class FcmPushServiceTest {
         when(presenceState.isOnline(mutedMember)).thenReturn(false);
 
         User user = mock(User.class);
+        when(user.getId()).thenReturn(mutedMember);
         UserDeviceToken token = UserDeviceToken.create(
                 user, "system-mention-token", UserDeviceToken.Platform.ANDROID, "Phone");
         when(tokenRepository.findByUserId(mutedMember)).thenReturn(List.of(token));
@@ -610,6 +634,7 @@ class FcmPushServiceTest {
         when(presenceState.isOnline(mutedMember)).thenReturn(false);
 
         User user = mock(User.class);
+        when(user.getId()).thenReturn(mutedMember);
         UserDeviceToken token = UserDeviceToken.create(
                 user, "system-mention-all-token", UserDeviceToken.Platform.ANDROID, "Phone");
         when(tokenRepository.findByUserId(mutedMember)).thenReturn(List.of(token));
@@ -640,6 +665,7 @@ class FcmPushServiceTest {
         when(presenceState.isOnline(member)).thenReturn(false);
 
         User user = mock(User.class);
+        when(user.getId()).thenReturn(member);
         UserDeviceToken token = UserDeviceToken.create(
                 user, "expired-mute-token", UserDeviceToken.Platform.ANDROID, "Phone");
         when(tokenRepository.findByUserId(member)).thenReturn(List.of(token));
