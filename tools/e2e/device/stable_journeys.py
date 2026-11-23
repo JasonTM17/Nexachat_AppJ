@@ -10000,6 +10000,9 @@ def execute_rows(rows: Iterable[JourneyRow], context: dict[str, Any],
 def snapshot_settings(adb: Adb, patch: Any) -> dict[str, str]:
     values = patch.settings_snapshot()
     values["night_mode"] = adb.command("shell", "cmd", "uimode", "night", timeout=20)
+    # The effective device locale lives on persist.sys.locale — system_locales
+    # alone does not describe what apps render on API 33+.
+    values["device_locale"] = adb.command("shell", "getprop", "persist.sys.locale", timeout=20)
     return values
 
 
@@ -10019,6 +10022,13 @@ def restore_settings(adb: Adb, patch: Any, before: dict[str, str]) -> dict[str, 
     except Exception as error:
         failures.append(f"network/font/locale restore: {type(error).__name__}")
     try:
+        saved_device_locale = before.get("device_locale")
+        if saved_device_locale not in (None, "", "null"):
+            adb.command("shell", "cmd", "locale", "set-device-locale",
+                        saved_device_locale, timeout=20)
+    except Exception as error:
+        failures.append(f"device-locale restore: {type(error).__name__}")
+    try:
         adb.command("shell", "cmd", "uimode", "night", _night_mode_value(before["night_mode"]), timeout=20)
     except Exception as error:
         failures.append(f"night-mode restore: {type(error).__name__}")
@@ -10036,10 +10046,14 @@ def set_accessibility_variant(adb: Adb, variant: dict[str, str]) -> None:
         raise HarnessError("unexpected accessibility locale")
     adb.command("shell", "settings", "put", "system", "font_scale", variant["font_scale"])
     adb.command("shell", "cmd", "uimode", "night", variant["night"])
-    # `cmd locale set` does not exist on this emulator's locale service
-    # (API 36 exposes only `help`); the system_locales setting is the
-    # working per-device locale switch here.
+    # API 33+ moved the effective locale to LocaleManagerService: a bare
+    # system_locales write persists but does not reconfigure apps (post-
+    # v1.2.18 sweep: every vi-VN cell captured English UI while
+    # persist.sys.locale stayed en-US). `cmd locale set-device-locale` is the
+    # switch that actually reaches the app; the settings write stays so the
+    # snapshot key keeps reporting what the sweep asked for.
     adb.command("shell", "settings", "put", "system", "system_locales", variant["locale"])
+    adb.command("shell", "cmd", "locale", "set-device-locale", variant["locale"])
 
 
 def preflight(base_url: str, apk: Path, adb: Adb, recorder: RecordingClient,
@@ -10177,7 +10191,7 @@ def run_campaign(rows: Iterable[JourneyRow], *, base_url: str, serial: str,
             after = restore_settings(adb, patch, before)
             summary["settings_after_restore"] = after
             keys = ("wifi_on", "mobile_data", "airplane_mode_on", "font_scale",
-                    "system_locales", "navigation_mode")
+                    "system_locales", "device_locale", "navigation_mode")
             summary["settings_restored"] = all(after.get(key) == before.get(key) for key in keys)
             summary["night_mode_restored"] = _night_mode_value(after.get("night_mode", "")) == _night_mode_value(before["night_mode"])
 
