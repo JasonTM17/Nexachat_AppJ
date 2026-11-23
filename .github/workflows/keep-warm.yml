@@ -1,0 +1,25 @@
+# Keeps the Render Free instance warm so users never pay the ~15-minute idle
+# spin-down / cold-start tax documented in application-render.yml.
+# Pings liveness (cheap, no DB) every 10 minutes — well under Render's
+# 15-minute idle window. Failures are reported but never block other work.
+name: prod-keep-warm
+
+on:
+  schedule:
+    # Render Free idles out after ~15 min without traffic.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping liveness
+        run: |
+          code=$(curl -fsS -o /dev/null -w '%{http_code}' --max-time 20 \
+            https://nexachat-api-rl1v.onrender.com/actuator/health/liveness || echo "000")
+          echo "liveness=$code"
+          test "$code" = "200"
