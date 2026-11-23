@@ -84,7 +84,7 @@ public final class ChatSurfacePolishContractTest {
             assertNotNull(drawable + " needs a solid fill", solid);
             assertNotNull(drawable + " needs corners", corners);
             assertEquals(drawable + " must use the high container fill",
-                    "@color/colorSurfaceContainerHigh", solid.getAttributeNS(ANDROID, "color"));
+                    "?attr/colorSurfaceContainerHigh", solid.getAttributeNS(ANDROID, "color"));
             assertEquals(drawable + " must be a full pill",
                     "@dimen/corner_full", corners.getAttributeNS(ANDROID, "radius"));
         }
@@ -97,7 +97,7 @@ public final class ChatSurfacePolishContractTest {
         boolean softDivider = false;
         for (int i = 0; i < solids.getLength(); i++) {
             Element solid = (Element) solids.item(i);
-            if ("@color/colorSurfaceContainerHighest".equals(solid.getAttributeNS(ANDROID, "color"))) {
+            if ("?attr/colorSurfaceContainerHighest".equals(solid.getAttributeNS(ANDROID, "color"))) {
                 softDivider = true;
             }
             assertFalse("composer separator must not be a hard outline",

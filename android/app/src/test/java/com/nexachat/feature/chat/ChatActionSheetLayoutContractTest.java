@@ -37,7 +37,7 @@ public final class ChatActionSheetLayoutContractTest {
         assertNotNull(corners);
         assertNotNull(solid);
         assertEquals("@dimen/corner_full", corners.getAttributeNS(ANDROID, "radius"));
-        assertEquals("@color/colorSurfaceContainerHigh", solid.getAttributeNS(ANDROID, "color"));
+        assertEquals("?attr/colorSurfaceContainerHigh", solid.getAttributeNS(ANDROID, "color"));
     }
 
     @Test

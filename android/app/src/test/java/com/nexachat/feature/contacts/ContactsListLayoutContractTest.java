@@ -134,7 +134,7 @@ public final class ContactsListLayoutContractTest {
         Element solid = firstByTag(doc, "solid");
         Element corners = firstByTag(doc, "corners");
         assertNotNull("band drawable must fill with a tonal surface", solid);
-        assertEquals("@color/colorSurfaceContainerLowest",
+        assertEquals("?attr/colorSurfaceContainerLowest",
                 solid.getAttributeNS(ANDROID, "color"));
         assertNotNull("band drawable must round its corners", corners);
         assertEquals("@dimen/corner_xl", corners.getAttributeNS(ANDROID, "radius"));
@@ -158,7 +158,7 @@ public final class ContactsListLayoutContractTest {
         for (String name : new String[] {
                 "bg_grouped_list_band_top", "bg_grouped_list_band_bottom", "bg_grouped_list_band_mid"}) {
             Element solid = firstByTag(parse("drawable/" + name + ".xml"), "solid");
-            assertEquals("@color/colorSurfaceContainerLowest", solid.getAttributeNS(ANDROID, "color"));
+            assertEquals("?attr/colorSurfaceContainerLowest", solid.getAttributeNS(ANDROID, "color"));
         }
     }
 
@@ -172,7 +172,7 @@ public final class ContactsListLayoutContractTest {
         assertEquals("?attr/colorPrimary", attr(letter, "textColor"));
         Element badge = parse("drawable/bg_letter_badge.xml").getDocumentElement();
         assertEquals("oval", badge.getAttributeNS(ANDROID, "shape"));
-        assertEquals("@color/colorSurfaceContainer",
+        assertEquals("?attr/colorSurfaceContainer",
                 firstByTag(badge.getOwnerDocument(), "solid").getAttributeNS(ANDROID, "color"));
     }
 

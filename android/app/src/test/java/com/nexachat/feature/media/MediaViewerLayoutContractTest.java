@@ -38,7 +38,7 @@ public final class MediaViewerLayoutContractTest {
     public void loadingAndErrorHostsUseReadableSurfacesBelowToolbar() throws Exception {
         for (String id : new String[] {"mediaLoadingHost", "mediaErrorHost"}) {
             Element host = view("layout/fragment_media_viewer.xml", id);
-            assertEquals("@color/colorSurface", host.getAttributeNS(ANDROID, "background"));
+            assertEquals("?attr/colorSurface", host.getAttributeNS(ANDROID, "background"));
             assertEquals("?attr/actionBarSize",
                     host.getAttributeNS(ANDROID, "layout_marginTop"));
         }
