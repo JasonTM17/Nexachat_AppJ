@@ -63,7 +63,7 @@ public class SummaryResponseWriter {
     private byte[] serializeAuthorized(UUID userId, SummaryExecution execution) {
         SummaryConsentRepository.ConsentSnapshot current = consentRepository.lockForResponse(userId);
         UUID conversationId = execution.response().conversationId();
-        // V46's opt-out trigger updates this parent row, so an opt-out cannot commit
+        // The AI context opt-out trigger updates this parent row, so an opt-out cannot commit
         // between the exclusion read and JSON serialization while this SHARE lock is held.
         var conversations = jdbcTemplate.queryForList(
                 "SELECT id FROM conversations WHERE id = ? FOR SHARE", UUID.class, conversationId);
