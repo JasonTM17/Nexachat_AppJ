@@ -7,8 +7,11 @@ WORKDIR /build
 # with backoff on both passes. The aether.transport.http.retryHandler.* keys are
 # the resolver-2.x names for this image's Maven 3.10 line; the maven.wagon.* keys
 # only take effect if the wagon transport is ever selected.
-COPY pom.xml ./
-RUN mvn -B -DskipTests \
+# docker-settings.xml mirrors `central` to Google's GCS replica: the mirror
+# serves byte-identical artifacts from a different egress host, which evades
+# Maven Central's per-IP 429 rate limit on shared builder egress entirely.
+COPY pom.xml docker-settings.xml ./
+RUN mvn -B -s docker-settings.xml -DskipTests \
       -Daether.transport.http.retryHandler.count=5 \
       -Daether.transport.http.retryHandler.interval=5000 \
       -Daether.transport.http.retryHandler.serviceUnavailable=429,503 \
@@ -17,7 +20,7 @@ RUN mvn -B -DskipTests \
       dependency:go-offline
 
 COPY src ./src
-RUN mvn -B -DskipTests \
+RUN mvn -B -s docker-settings.xml -DskipTests \
       -Daether.transport.http.retryHandler.count=5 \
       -Daether.transport.http.retryHandler.interval=5000 \
       -Daether.transport.http.retryHandler.serviceUnavailable=429,503 \

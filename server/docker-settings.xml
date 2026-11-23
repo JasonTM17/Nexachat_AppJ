@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Build-stage-only Maven settings for the Docker image build.
+
+  Render builders share egress IPs with other tenants; Maven Central returns
+  HTTP 429 for the long dependency download and retries alone were not enough.
+  Route `central` through Google's read-only Maven Central mirror on GCS
+  (https://cloud.google.com/storage/docs/maven-central-mirror), which serves
+  byte-identical artifacts from a different egress host. Every other
+  repository in the pom still resolves directly.
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+  <mirrors>
+    <mirror>
+      <id>google-maven-central</id>
+      <name>Google Cloud Storage mirror of Maven Central</name>
+      <url>https://maven-central.storage-download.googleapis.com/maven2/</url>
+      <mirrorOf>central</mirrorOf>
+    </mirror>
+  </mirrors>
+</settings>
