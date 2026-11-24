@@ -7,6 +7,14 @@ import com.nexachat.call.CallRegistry;
 import com.nexachat.call.CallService;
 import com.nexachat.call.CallSignal;
 import com.nexachat.common.error.ApiErrorCode;
+import com.nexachat.conversation.ConversationMemberRepository;
+import com.nexachat.firebase.auth.FirebaseAdminClient;
+import com.nexachat.firebase.auth.FirebaseBridgeLock;
+import com.nexachat.firebase.auth.FirebaseRealtimeAuthService;
+import com.nexachat.firebase.auth.FirebaseRealtimeController;
+import com.nexachat.firebase.client.FirebaseRtdbClient;
+import com.nexachat.firebase.config.FirebaseDatabaseUrl;
+import com.nexachat.user.UserRepository;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;
@@ -21,6 +29,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.aop.support.AopUtils;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.util.ReflectionUtils;
 import org.springframework.web.bind.annotation.RestController;
@@ -33,6 +43,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -53,6 +64,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * probes for the server's authorization matrix. Every catalog row is bound to
  * an exact request and expected outcome through its unique probe ID.
  */
+@Import(AuthorizationRouteMatrixIT.MatrixFirebaseBridgeConfiguration.class)
 class AuthorizationRouteMatrixIT extends SecurityITBase {
 
     private static final UUID PATH_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
@@ -1177,7 +1189,11 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
                 .replaceAll("\\{[^}]+}", PATH_ID.toString());
         HttpMethod method = route.method().equals("ANY") ? HttpMethod.GET : HttpMethod.valueOf(route.method());
         MockHttpServletRequestBuilder request = MockMvcRequestBuilders.request(method, path);
-        if (Set.of("POST", "PUT", "PATCH").contains(method.name())) {
+        // The Firebase token probe must reach the bridge handler: a "{}" body
+        // cannot bind to the controller's optional Void body and would stop at
+        // a 400 before exercising issue().
+        if (Set.of("POST", "PUT", "PATCH").contains(method.name())
+                && !path.equals("/api/v1/realtime/firebase-token")) {
             request.contentType(MediaType.APPLICATION_JSON).content("{}");
         }
         return request;
@@ -1292,5 +1308,75 @@ class AuthorizationRouteMatrixIT extends SecurityITBase {
     }
 
     private record TestEvidence(String className, String methodName) {
+    }
+    /**
+     * Registers the opt-in Firebase bridge controller with faked provider
+     * clients so the route matrix can catalog and probe its routes without a
+     * Google service account or a reachable RTDB. Mirrors the fakes used by
+     * {@code FirebaseLeaseRevocationRaceIT}.
+     */
+    static class MatrixFirebaseBridgeConfiguration {
+
+        @Bean
+        FirebaseBridgeLock matrixFirebaseBridgeLock() {
+            return new FirebaseBridgeLock();
+        }
+
+        @Bean
+        FirebaseRealtimeAuthService matrixFirebaseRealtimeAuthService(UserRepository users,
+                                                                      ConversationMemberRepository members,
+                                                                      FirebaseBridgeLock matrixFirebaseBridgeLock) {
+            return new FirebaseRealtimeAuthService(users, members, new MatrixFakeFirebaseAdminClient(),
+                    new MatrixFakeFirebaseRtdbClient(), matrixFirebaseBridgeLock,
+                    FirebaseDatabaseUrl.parse("https://matrix-test.firebaseio.com"), Clock.systemUTC());
+        }
+
+        @Bean
+        FirebaseRealtimeController matrixFirebaseRealtimeController(
+                FirebaseRealtimeAuthService matrixFirebaseRealtimeAuthService) {
+            return new FirebaseRealtimeController(matrixFirebaseRealtimeAuthService);
+        }
+    }
+
+    static final class MatrixFakeFirebaseAdminClient implements FirebaseAdminClient {
+
+        @Override
+        public String createCustomToken(String uid, Map<String, Object> additionalClaims) {
+            return "matrix-fake-custom-token";
+        }
+
+        @Override
+        public void revokeRefreshTokens(String uid) {
+            // The faked auth provider records no token material.
+        }
+    }
+
+    static final class MatrixFakeFirebaseRtdbClient implements FirebaseRtdbClient {
+
+        @Override
+        public boolean isAdministrativelyDisabled() {
+            return false;
+        }
+
+        @Override
+        public Long readSessionLease(UUID userId, UUID bridgeId) {
+            return null;
+        }
+
+        @Override
+        public void writeSessionLease(UUID userId, UUID bridgeId, long leaseUntilMillis,
+                                      Map<UUID, Long> conversationLeaseUntilMillis) {
+            // No-op: the matrix only needs the handler to reach a working provider.
+        }
+
+        @Override
+        public void deleteBridge(UUID userId, UUID bridgeId) {
+            // No-op: revoking an unknown bridge stays idempotent like the real client.
+        }
+
+        @Override
+        public void revokeUser(UUID userId, List<UUID> conversationIds) {
+            // No-op.
+        }
     }
 }
