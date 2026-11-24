@@ -261,12 +261,25 @@ here. Resend uses HTTPS and is the configured provider.
   builds the image, caps the container at 0.1 CPU / 512 MB, starts a throw-away
   Postgres, records time to liveness/readiness, RSS and the native-memory
   summary, then uploads eight 20 MB files).
-- **Supported keep-alive setup:** An uptime monitor pings
-  `https://api.nexachat.io.vn/actuator/health/liveness` every 5 minutes. It keeps
-  Render awake. Render's 750 free hours cover one always-on service
-  (~720–744 h/month). The liveness check (`server/src/main/resources/application.yml:55-56`)
-  never touches the database (database connectivity is checked under
-  `/actuator/health/readiness`, `application.yml:57-58`), so Neon still suspends.
+- **Supported keep-alive setup:** the `prod-keep-warm` GitHub workflow
+  (`.github/workflows/keep-warm.yml`) pings
+  `https://nexachat-api-rl1v.onrender.com/actuator/health/liveness` **every 10
+  minutes** (`cron: "*/10 * * * *"`, `workflow_dispatch` for a manual ping,
+  `--max-time 20`, `200` required), which sits inside Render's 15-minute idle
+  window with five minutes of margin. It keeps Render awake and it targets the
+  `onrender.com` hostname directly, so a custom-domain or DNS fault cannot turn
+  the ping into a false green. A failed ping opens one GitHub issue titled
+  `prod liveness failing (keep-warm)` and reuses it while it stays open, so a
+  long outage does not file a new issue every 10 minutes. Render's 750 free
+  hours cover one always-on service (~720–744 h/month). The liveness check
+  (`server/src/main/resources/application.yml:73-74`) never touches the
+  database (database connectivity is checked under
+  `/actuator/health/readiness`, `application.yml:75-76`), so Neon still
+  suspends. Earlier revisions of this file said "every 5 minutes" — that was
+  wrong; the cron has been `*/10`. If a second monitor is added in the Render
+  dashboard or elsewhere, keep it inside the same 15-minute window; GitHub can
+  also start a scheduled run late under load, so read the interval as ≈10
+  minutes, not to the second.
 - **Neon free budget and sleep profile:** Neon Free provides 100 CU-hours per project
   per month (~400 h at 0.25 CU), so the Neon compute must suspend after 5 minutes
   without queries; an always-on database would exhaust the monthly allowance in about
@@ -276,12 +289,12 @@ here. Resend uses HTTPS and is the configured provider.
     (`application-render.yml:30`), so idle database connections are closed after 1
     minute rather than held open;
   - 30-minute background job intervals for RAG backfill (`nexachat.rag.index.backfill-interval-ms: 1800000`,
-    `application-render.yml:45`) and refresh-replay token cleanup (`nexachat.auth.refresh-replay.cleanup-interval-ms: 1800000`,
-    `application-render.yml:48`), ensuring scheduled tasks do not wake Neon every minute.
+    `application-render.yml:51`) and refresh-replay token cleanup (`nexachat.auth.refresh-replay.cleanup-interval-ms: 1800000`,
+    `application-render.yml:54`), ensuring scheduled tasks do not wake Neon every minute.
 - **Reminder scheduler and Neon idle:** `ReminderScheduler` arms an in-memory
   timer for the next due moment (`server/src/main/java/com/nexachat/reminder/ReminderScheduler.java:166-205`)
   and re-arms after commit (`onScheduleChanged`, lines 144–149), with a 30-minute idle fallback
-  configured on Render (`nexachat.reminders.max-idle-ms: 1800000` at `server/src/main/resources/application-render.yml:40-42`).
+  configured on Render (`nexachat.reminders.max-idle-ms: 1800000` at `server/src/main/resources/application-render.yml:46-48`).
   Reminders wake the database only when one is due or on the 30-minute safety idle tick,
   allowing Neon to suspend its compute during periods without user activity.
 - The Android client times out at 10 s connect / 15 s read
@@ -306,6 +319,168 @@ here. Resend uses HTTPS and is the configured provider.
   during a sleep is delivered on the next wake-up, not at its exact time.
 - One instance only. The scheduled jobs already use Postgres advisory locks, so
   scaling later does not double-run them.
+
+### Slow-tail taxonomy
+
+Three different waits get called "cold start" here. They have different causes,
+different fixes, and only the first two are deliberate:
+
+| Symptom | Cause | Deliberate? |
+|---|---|---|
+| First request after ≥ 15 idle minutes takes tens of seconds; the Render dashboard shows a container start | Render Free idle shutdown (`render.yaml:5-6`) | Yes — countered by the keep-warm cron above, which is why the service stays awake 24/7 |
+| Container warm but the first request is still slow, and `/actuator/health/readiness` is slow while `/actuator/health/liveness` is instant | Neon suspends compute after 5 idle minutes and Hikari holds no idle connection (`minimum-idle: 0`, `application-render.yml:27-30`) | Yes — the price of staying inside 100 CU-hours/month |
+| Container and database warm, requests still slower than a laptop | 0.1 CPU, Tomcat `threads.max: 20`, Hikari pool 5, SerialGC and C1-only JIT | No — a configuration ceiling, quantified by the measurements below |
+
+The distinction matters when reading a report: a "cold instance" figure that
+came from a keep-warm deployment is the second row, not the first, and it is an
+order of magnitude smaller than a real spin-up. Never average the two.
+
+### What the render profile pins
+
+`SPRING_PROFILES_ACTIVE: prod,render,json-logs` (`render.yaml:38-39`) is the
+only thing that loads `application-render.yml`; Compose and test runs never see
+it. Every knob below is deliberate and documented at its source:
+
+| Knob | Value | Why | Source |
+|---|---|---|---|
+| Tomcat request threads | max 20, min-spare 2 | "0.1 CPU cannot use Tomcat's default 200 request threads; a small pool keeps the 512 MB box from spending memory on idle stacks" | `application-render.yml:10-16` |
+| Tomcat accept queue / connections | `accept-count: 50`, `max-connections: 200` | queue instead of refusing while all 20 threads are busy | `application-render.yml:17-18` |
+| Hikari pool size | max 5 | Neon 0.25 CU allows 105 application connections; one instance needs far fewer | `application-render.yml:23-26` |
+| Hikari idle policy | `minimum-idle: 0`, `idle-timeout: 60000` | "Hold no idle connection, so Neon Free can suspend its compute (after 5 idle minutes) while an uptime monitor keeps this service awake" | `application-render.yml:27-30` |
+| Hikari timeouts | connect 20 s, validate 3 s, max lifetime 20 min, leak warn 60 s | bounds a slow Neon wake instead of blocking a request thread forever | `application-render.yml:31-34` |
+| Heap | `-XX:MaxRAMPercentage=60.0` of 512 MB | leaves room for metaspace, code cache, thread stacks and direct buffers inside the cgroup (`render.yaml:40-45`) | `render.yaml:48` |
+| GC and JIT | `-XX:+UseSerialGC`, `-XX:TieredStopAtLevel=1` (C1 only) | "avoid competing GC/JIT threads on 0.1 CPU" (`render.yaml:42-43`) | `render.yaml:49,53` |
+| Thread stacks | `-Xss512k` | 20 Tomcat threads plus the STOMP executor have to fit in the same 512 MB | `render.yaml:50` |
+| Processors the JVM sees | `-XX:ActiveProcessorCount=1` | sizes every JVM default pool (ForkJoin, GC, schedulers) to one CPU, matching the real quota | `render.yaml:52` |
+| Metaspace | `-XX:MaxMetaspaceSize=128m` | caps the non-heap half of the fit; overflow exits via `-XX:+ExitOnOutOfMemoryError` | `render.yaml:51,54` |
+| Boot archive | `-XX:SharedArchiveFile=/app/application.jsa` (AppCDS, built into the image) | cuts boot time (§7 above); `-Xshare` stays on `auto`, so a missing archive only warns | `render.yaml:44-45,55` |
+| Background jobs | 30-minute cadence (`reminders.max-idle-ms`, `rag.index.backfill-interval-ms`, `refresh-replay.cleanup-interval-ms`, `disappearing.purge-interval-ms` = 1800000) | "so they do not keep the Neon compute awake" | `application-render.yml:46-57` |
+| Upload concurrency | `nexachat.uploads.max-concurrent: 2` | each in-flight upload buffers up to 25 MB on a ~380 MB post-boot heap | `application-render.yml:58-61` |
+
+The STOMP inbound executor is chosen in code, not by this profile: core 4 /
+max 8 / queue 500, because frames block on Postgres round-trips and the
+framework default would be `2 × ActiveProcessorCount` — two threads
+(`WebSocketConfig.java:88-94`). Any concurrency figure for this box has to
+account for 20 Tomcat threads, 4–8 STOMP threads, the Hikari 5, and one
+`stomp-heartbeat-` scheduler thread.
+
+### Measurement schema
+
+There is no runtime dataset for this profile yet. The three scenarios below are
+the standard, and each result table is filled only from a run that recorded its
+command, its app SHA and its evidence directory. Rules for all three: one
+variable per run, UTC timestamps, record `{scenario, run_at_utc, samples,
+min/p50/p95/max ms, app_sha, region, keep-warm state, Neon-suspended y/n}`,
+and keep raw output outside the repository. Server-side percentiles can be
+cross-checked with the PromQL in
+[docs/operations/free-tier-observability.md](free-tier-observability.md).
+
+**A — full spin-down cold start.** The service is asleep; measure container
+provisioning plus Spring boot end to end.
+
+1. Pause the keep-warm workflow for the window (Actions → `prod-keep-warm` →
+   **Disable workflow**) or measure on a separate Free service, then re-enable
+   it. Never leave it disabled.
+2. Leave the service with no traffic for at least 15 minutes.
+3. Time the first successful liveness response, then the first authenticated
+   request:
+
+   ```sh
+   BASE=https://nexachat-api-rl1v.onrender.com
+   start=$(date +%s%3N)
+   while :; do
+     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$BASE/actuator/health/liveness")
+     [ "$code" = "200" ] && break
+     sleep 2
+   done
+   echo "liveness 200 after $(( $(date +%s%3N) - start )) ms"
+   curl -s -o /dev/null -w 'login %{http_code} in %{time_total}s\n' \
+     -H 'Content-Type: application/json' \
+     -d '{"phone":"+84900000000","password":"<probe-password>"}' \
+     "$BASE/api/v1/auth/login"
+   ```
+
+4. Correlate with the Render deploy log line `Started NexaChatApplication in …
+   s`, which separates JVM/Spring time from container provisioning.
+
+| Run (UTC) | liveness 200 (s) | first login (s) | Spring `Started` (s) | Notes / evidence dir |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+*Not measured yet — fill in when runtime numbers exist.*
+
+**B — Neon wake only.** This is the state users actually meet: container kept
+warm by the cron, only the database asleep. This is the scenario the Android client
+notices as "slow first message after a quiet period".
+
+1. Leave `prod-keep-warm` enabled so the container stays warm.
+2. Stop all database traffic for at least 5 minutes. Do not poll
+   `/actuator/health/readiness` during the window — its `db` indicator
+   (`application.yml:75-76`) would itself wake Neon and reset the timer.
+3. Time the first database-touching request, then a real send:
+
+   ```sh
+   curl -s -o /dev/null -w 'readiness %{http_code} in %{time_total}s\n' "$BASE/actuator/health/readiness"
+   curl -s -o /dev/null -w 'login %{http_code} in %{time_total}s\n' \
+     -H 'Content-Type: application/json' \
+     -d '{"phone":"+84900000000","password":"<probe-password>"}' \
+     "$BASE/api/v1/auth/login"
+   ```
+
+4. Repeat until the wake path is stable, and record whether the second request
+   in the same burst is already fast — that separates "Neon wake" from "first
+   query plan".
+
+| Run (UTC) | first readiness (s) | first login (s) | second login (s) | Notes / evidence dir |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+*Not measured yet — fill in when runtime numbers exist.*
+
+**C — warm baseline.** The floor for any comparison: hot container, hot
+database, no sleep in between.
+
+1. Wake both (one login, then 30 s idle so pools settle).
+2. Run 100 sequential logins and 100 sends on one connection; take p50/p95 per
+   operation, not per run.
+3. Only numbers from this scenario may be quoted as "normal latency".
+
+| Run (UTC) | Operation | Samples | p50 (ms) | p95 (ms) | max (ms) | App SHA |
+|---|---|---|---|---|---|---|
+| — | login | — | — | — | — | — |
+| — | send | — | — | — | — | — |
+
+*Not measured yet — fill in when runtime numbers exist.*
+
+### Numbers on record
+
+Only two classes of number exist today: measurements already written into §7
+above (label **measured**) and reports copied from GH#319 (label
+**issue-reported**, not reproduced in CI).
+
+| Number | Value | Source | Label |
+|---|---|---|---|
+| Container start → healthy check, first live Singapore deploy | 123 s (Spring `Started` 106.6 s) | §7 above | measured |
+| Local cgroup-capped readiness | 168 s / 130 s with AppCDS; 330 s / 216 s on a busier host | §7 above | measured |
+| RSS after boot | 348–358 MiB with AppCDS, 397–400 MiB without | §7 above | measured |
+| First message register on a keep-warm instance | 12–18 s | GH#319 report, 2026-11-23, 3-client realtime test | issue-reported |
+| SEND on a keep-warm instance | up to 22 s | same | issue-reported |
+| Warm SEND | median ≈1.3 s, ≈1.2 s fan-out delivery | same | issue-reported |
+| Scenario A / B / C | — | tables above | not measured yet |
+
+The issue-reported "cold instance" rows are scenario B, not A: the container
+was being kept warm and only Neon had suspended. They must not be compared
+with the 123 s spin-up figure, and any of them may change once a scenario B run
+is recorded.
+
+On this box, p95 follows the number of Neon round-trips a request makes more
+than it follows CPU: a request that finds a suspended pool pays the wake, and
+the same request against a warm pool returns in milliseconds. That is why
+`minimum-idle: 0` and the 30-minute job cadence are documented as intentional
+rather than tuned away, and why thread-pool sizing — including the
+virtual-thread evaluation in
+[docs/operations/virtual-threads-evaluation.md](virtual-threads-evaluation.md)
+— is a separate decision from the free-tier budget.
 
 ## 8. Client IP behind Render's proxy
 
