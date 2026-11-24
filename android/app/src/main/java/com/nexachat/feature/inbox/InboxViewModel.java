@@ -1,6 +1,7 @@
 package com.nexachat.feature.inbox;
 
 import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 import androidx.annotation.NonNull;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
@@ -17,6 +18,7 @@ import com.nexachat.data.TimeAndJwt;
 import com.nexachat.feature.shortcut.ConversationShortcuts;
 import com.squareup.moshi.Moshi;
 import dagger.hilt.android.lifecycle.HiltViewModel;
+import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
@@ -64,6 +66,8 @@ public final class InboxViewModel extends ViewModel {
             ConversationShortcuts conversationShortcuts) {
         this(savedStateHandle, conversationRepository, composerDraftRepository,
                 conversationShortcuts);
+        this.startTokenStore = tokenStore;
+        this.startMoshi = moshi;
         start(tokenStore, moshi);
     }
 
@@ -326,25 +330,89 @@ public final class InboxViewModel extends ViewModel {
                 && ConversationRepository.ERROR_INBOX_PAGE_STALE.equals(unknown.getCode());
     }
 
+    /**
+     * Rows may only be dropped for a genuine account change with both ids
+     * known, or - on a cold start where the previous id is unknown - when the
+     * persisted inbox-owner claim says the on-disk rows belong to someone
+     * else. A same-user cold restart must keep whatever the Room cache
+     * already emitted (#337): the token read can resolve after that cached
+     * emission, and wiping there erased the inbox until the next successful
+     * REST refresh, which never comes while offline.
+     */
+    @VisibleForTesting
+    static boolean mustDropRowsForIdentity(@Nullable String previousUserId,
+                                            @Nullable String nextUserId,
+                                            @Nullable String persistedInboxOwnerId) {
+        if (nextUserId == null) {
+            return false;
+        }
+        if (previousUserId != null) {
+            return !previousUserId.equals(nextUserId);
+        }
+        // Cold start (previous id unknown): only a persisted claim for a
+        // different user proves the cached rows are stale; a matching claim
+        // (or a never-claimed empty cache) keeps them.
+        return persistedInboxOwnerId != null
+                && !persistedInboxOwnerId.equals(nextUserId);
+    }
+
+    /** Session sources from the last start(); kept only for the test seam. */
+    @Nullable private TokenStore startTokenStore;
+    @Nullable private Moshi startMoshi;
+
+    /**
+     * Re-runs the session-resolution subscription for the account-switch test
+     * path: disposables are cleared first so no previous subscription leaks,
+     * and the same token-store/moshi pair the constructor seeded is reused -
+     * the test retargets the mocked readTokens() before calling this.
+     */
+    @VisibleForTesting
+    void startUnderTest() {
+        disposables.clear();
+        start(startTokenStore, startMoshi);
+    }
+
     private void start(@Nullable TokenStore tokenStore, @Nullable Moshi moshi) {
         if (tokenStore != null && moshi != null) {
             disposables.add(tokenStore.readTokens()
                     .map(tokens -> Optional.ofNullable(
                             TimeAndJwt.userIdFromJwt(tokens.getAccessToken(), moshi)))
                     .defaultIfEmpty(Optional.empty())
+                    .flatMap(userId -> {
+                        if (userId.isEmpty()) {
+                            return Single.just(
+                                    new IdentityResolution(null, null));
+                        }
+                        String next = userId.get();
+                        return tokenStore.readInboxOwnerUserId()
+                                .map(owner -> new IdentityResolution(next, owner))
+                                .onErrorComplete()
+                                .switchIfEmpty(Single.just(
+                                        new IdentityResolution(next, null)));
+                    })
                     .subscribeOn(Schedulers.io())
                     .subscribe(
-                            userId -> {
+                            identity -> {
                                 updateState(state -> {
-                                    String next = userId.orElse(null);
-                                    // Account switch: drop the previous user's rows in the
-                                    // same update, so publishShortcuts can never pair them
-                                    // with the new id. Same-id refreshes leave the list alone.
-                                    if (!java.util.Objects.equals(next, state.getCurrentUserId())) {
-                                        state = state.withConversations(java.util.List.of(), true);
+                                    String next = identity.resolvedUserId;
+                                    // Account switch: drop the previous user's rows in
+                                    // the same update, so publishShortcuts can never
+                                    // pair them with the new id (#337 keeps the cached
+                                    // rows when the persisted owner claim matches).
+                                    if (mustDropRowsForIdentity(state.getCurrentUserId(),
+                                            next, identity.persistedInboxOwnerId)) {
+                                        state = state.withConversations(
+                                                java.util.List.of(), true);
                                     }
                                     return state.withCurrentUserId(next);
                                 });
+                                if (identity.resolvedUserId != null) {
+                                    disposables.add(tokenStore
+                                            .writeInboxOwnerUserId(identity.resolvedUserId)
+                                            .subscribeOn(Schedulers.io())
+                                            .onErrorComplete()
+                                            .subscribe());
+                                }
                                 publishShortcuts();
                             },
                             error -> updateState(state -> state.withCurrentUserId(null))));
@@ -490,6 +558,22 @@ final class InboxGroupRemovalEvent implements InboxEvent {
 
     @Nullable String getGroupTitle() {
         return groupTitle;
+    }
+}
+
+/**
+ * Read-side identity data for one token-resolution pass: the id decoded from
+ * the access token plus the persisted inbox-owner claim it must be compared
+ * against when the previous in-process id is unknown (cold start).
+ */
+final class IdentityResolution {
+    @Nullable final String resolvedUserId;
+    @Nullable final String persistedInboxOwnerId;
+
+    IdentityResolution(@Nullable String resolvedUserId,
+                       @Nullable String persistedInboxOwnerId) {
+        this.resolvedUserId = resolvedUserId;
+        this.persistedInboxOwnerId = persistedInboxOwnerId;
     }
 }
 
