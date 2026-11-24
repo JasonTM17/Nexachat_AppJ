@@ -62,6 +62,13 @@ public final class TokenStore {
             PreferencesKeys.stringKey("pending_refresh_key");
     private static final Preferences.Key<String> PENDING_PREDECESSOR =
             PreferencesKeys.stringKey("pending_refresh_predecessor");
+    /**
+     * Plain-text user id that most recently claimed the on-disk inbox cache.
+     * Not a credential, so unlike the session previews it stays unencrypted,
+     * matching the sync-cursor precedent.
+     */
+    private static final Preferences.Key<String> INBOX_OWNER_USER_ID =
+            PreferencesKeys.stringKey("inbox_owner_user_id");
     private static final String LIFECYCLE_ACTIVE = "active";
     private static final String LIFECYCLE_CLOSING = "closing";
     private static final String LIFECYCLE_CLOSED = "closed";
@@ -390,6 +397,35 @@ public final class TokenStore {
     public Maybe<Tokens> readTokens() {
         return dataStore.data().firstElement().flatMap(preferences ->
                 Maybe.fromCallable(() -> toTokens(preferences)));
+    }
+
+    /**
+     * Emits the user id that most recently claimed the on-disk inbox cache, or
+     * empty when no claim exists yet. The inbox consults this during a cold
+     * start to tell a same-user restart (#337) from rows left behind by a
+     * prior account.
+     */
+    @NonNull
+    public Maybe<String> readInboxOwnerUserId() {
+        return dataStore.data().firstElement()
+                .flatMap(preferences -> Maybe.fromCallable(() ->
+                        preferences.get(INBOX_OWNER_USER_ID)));
+    }
+
+    /** Records which account owns the on-disk inbox cache; {@code null} clears it. */
+    @NonNull
+    public Completable writeInboxOwnerUserId(@Nullable String userId) {
+        return dataStore.updateDataAsync(preferences ->
+                        Single.fromCallable(() -> {
+                            MutablePreferences updated = preferences.toMutablePreferences();
+                            if (userId == null) {
+                                updated.remove(INBOX_OWNER_USER_ID);
+                            } else {
+                                updated.set(INBOX_OWNER_USER_ID, userId);
+                            }
+                            return (Preferences) updated;
+                        }))
+                .ignoreElement();
     }
 
     /** Persists the FCM registration token encrypted with the session token cipher. */

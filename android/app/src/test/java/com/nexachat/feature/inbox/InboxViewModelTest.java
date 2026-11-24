@@ -66,6 +66,95 @@ public final class InboxViewModelTest {
         RxJavaPlugins.reset();
     }
 
+    // --- #337: cold restart must not wipe the Room-cached inbox rows -------
+
+    @Test
+    public void frozenIdentityDecisionKeepsRowsOnColdStart() {
+        // In-process account switch with both ids known always drops.
+        assertTrue(InboxViewModel.mustDropRowsForIdentity("u-1", "u-2", "u-1"));
+        // Same-id refresh keeps the list.
+        assertFalse(InboxViewModel.mustDropRowsForIdentity("u-1", "u-1", null));
+        // Cold start with a matching persisted owner claim keeps the on-disk
+        // rows (#337): the token read resolves after the cached emission.
+        assertFalse(InboxViewModel.mustDropRowsForIdentity(null, "u-1", "u-1"));
+        assertFalse(InboxViewModel.mustDropRowsForIdentity(null, "u-1", null));
+        // Cold start with a different persisted claim drops the stale rows.
+        assertTrue(InboxViewModel.mustDropRowsForIdentity(null, "u-2", "u-1"));
+        // An unresolved identity must never wipe.
+        assertFalse(InboxViewModel.mustDropRowsForIdentity(null, null, "u-1"));
+    }
+
+    @Test
+    public void identityResolutionKeepsCachedRowsWhenRoomEmitsFirst() {
+        com.squareup.moshi.Moshi moshi = new com.squareup.moshi.Moshi.Builder().build();
+        com.nexachat.core.storage.TokenStore tokenStore =
+                mock(com.nexachat.core.storage.TokenStore.class);
+        when(tokenStore.readTokens()).thenReturn(io.reactivex.rxjava3.core.Maybe
+                .just(accessTokenFor("u-1")));
+        // The previous session claimed the on-disk cache for the same user.
+        when(tokenStore.readInboxOwnerUserId()).thenReturn(io.reactivex.rxjava3.core.Maybe
+                .just("u-1"));
+        when(tokenStore.writeInboxOwnerUserId("u-1"))
+                .thenReturn(io.reactivex.rxjava3.core.Completable.complete());
+
+        // The room cache emits the stored row BEFORE the token read resolves,
+        // exactly like the device-verified #337 trace (emission then wipe).
+        inboxFlow.onNext(List.of(conversation("c-1", 2)));
+
+        InboxViewModel coldViewModel = new InboxViewModel(
+                savedStateHandle, repository, tokenStore, moshi, null, null);
+
+        InboxUiState state = coldViewModel.getUiState().getValue();
+        assertEquals("u-1", state.getCurrentUserId());
+        assertEquals("the cached row must survive the identity resolution (issue #337)",
+                1, state.getConversations().size());
+        assertFalse(state.isLoading());
+        verify(tokenStore).writeInboxOwnerUserId("u-1");
+    }
+
+    @Test
+    public void accountSwitchStillDropsThePreviousUsersRows() {
+        String firstUser = "u-1";
+        com.squareup.moshi.Moshi moshi = new com.squareup.moshi.Moshi.Builder().build();
+        io.reactivex.rxjava3.subjects.MaybeSubject<com.nexachat.core.storage.Tokens> tokens =
+                io.reactivex.rxjava3.subjects.MaybeSubject.create();
+        com.nexachat.core.storage.TokenStore tokenStore =
+                mock(com.nexachat.core.storage.TokenStore.class);
+        when(tokenStore.readTokens()).thenReturn(tokens);
+        when(tokenStore.readInboxOwnerUserId()).thenReturn(
+                io.reactivex.rxjava3.core.Maybe.just(firstUser));
+        when(tokenStore.writeInboxOwnerUserId(any()))
+                .thenReturn(io.reactivex.rxjava3.core.Completable.complete());
+
+        InboxViewModel viewModel = new InboxViewModel(
+                savedStateHandle, repository, tokenStore, moshi, null, null);
+        tokens.onSuccess(accessTokenFor(firstUser));
+        inboxFlow.onNext(List.of(conversation("c-1", 2)));
+        assertEquals(1, viewModel.getUiState().getValue().getConversations().size());
+
+        // A genuine in-process switch to another user id must drop the rows.
+        io.reactivex.rxjava3.subjects.MaybeSubject<com.nexachat.core.storage.Tokens> switchTokens =
+                io.reactivex.rxjava3.subjects.MaybeSubject.create();
+        when(tokenStore.readTokens()).thenReturn(switchTokens);
+        viewModel.startUnderTest();
+        switchTokens.onSuccess(accessTokenFor("u-2"));
+
+        InboxUiState state = viewModel.getUiState().getValue();
+        assertEquals("u-2", state.getCurrentUserId());
+        assertEquals("a real account switch must still drop the previous user rows",
+                0, state.getConversations().size());
+        verify(tokenStore).writeInboxOwnerUserId("u-2");
+    }
+
+    private static com.nexachat.core.storage.Tokens accessTokenFor(String userId) {
+        String payload = "{\"sub\":\"" + userId + "\"}";
+        String accessToken = "e30." + java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                + ".sig";
+        return new com.nexachat.core.storage.Tokens(accessToken,
+                System.currentTimeMillis() + 60_000L, "refresh");
+    }
+
     @Test
     public void roomStreamMapsConversationsAndClearsLoading() {
         inboxFlow.onNext(List.of(conversation("c-1", 2)));
@@ -447,6 +536,12 @@ public final class InboxViewModelTest {
         io.reactivex.rxjava3.subjects.MaybeSubject<com.nexachat.core.storage.Tokens> tokens =
                 io.reactivex.rxjava3.subjects.MaybeSubject.create();
         when(tokenStore.readTokens()).thenReturn(tokens);
+        // The stale rows still on disk were claimed by the prior account, so
+        // the incoming identity must not adopt them.
+        when(tokenStore.readInboxOwnerUserId()).thenReturn(
+                io.reactivex.rxjava3.core.Maybe.just("user-a"));
+        when(tokenStore.writeInboxOwnerUserId(any()))
+                .thenReturn(io.reactivex.rxjava3.core.Completable.complete());
 
         viewModel = new InboxViewModel(savedStateHandle, repository,
                 tokenStore, moshi, null, shortcuts);
