@@ -112,6 +112,8 @@ class MessageServiceTest {
         when(messageRepository.insertIgnoringDuplicateKey(any(), any(), any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(1);
         stubNewSendWithReadBack(stored);
+        lenient().when(memberRepository.findAdmittedUserIds(eq(conversationId), any()))
+                .thenReturn(List.of(senderId, UUID.randomUUID()));
 
         MessageService.SendResult result = messageService.send(senderId, conversationId, request());
 
@@ -134,6 +136,11 @@ class MessageServiceTest {
         assertThat(event.getValue().conversationId()).isEqualTo(conversationId);
         assertThat(event.getValue().message().seq()).isEqualTo(42);
         assertThat(event.getValue().replay()).isFalse();
+        // GH#313 fan-out snapshot: the event carries the member list admitted
+        // at the stored row's creation time and the peer-suppression probe
+        // result, both computed in-transaction under the conversation lock.
+        assertThat(event.getValue().admittedUserIds()).hasSize(2).contains(senderId);
+        assertThat(event.getValue().peerSuppressedSenderId()).isNull();
     }
 
     @Test
@@ -148,6 +155,30 @@ class MessageServiceTest {
         assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
         verify(messageRepository, never()).insertIgnoringDuplicateKey(
                 any(), any(), any(), any(), any(), any(), anyBoolean());
+    }
+
+    /**
+     * Canary for the duplicate-looking {@code requireMember} pair in
+     * {@link MessageService#send}: the pre-lock check passes, then the member
+     * is revoked before the conversation lock is granted — only the under-lock
+     * recheck can observe that and refuse the send. This test fails if anyone
+     * removes the second requireMember call (the insert then runs for a
+     * revoked sender and nothing throws).
+     */
+    @Test
+    void send_membershipRevokedBetweenPreCheckAndLock_underLockRecheckThrowsNotMember() {
+        when(memberRepository.existsByConversation_IdAndUser_Id(conversationId, senderId))
+                .thenReturn(true)    // pre-lock fast-fail check passes
+                .thenReturn(false);  // under-lock recheck sees the revocation
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> messageService.send(senderId, conversationId, request()));
+
+        assertThat(ex.getCode()).isEqualTo(ApiErrorCode.NOT_MEMBER);
+        assertThat(ex.getHttpStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
+        verify(messageRepository, never()).insertIgnoringDuplicateKey(
+                any(), any(), any(), any(), any(), any(), anyBoolean());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test

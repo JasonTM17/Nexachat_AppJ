@@ -113,6 +113,11 @@ class SystemMessageTest {
         assertThat(event.getValue().message().type()).isEqualTo("SYSTEM");
         assertThat(event.getValue().subjectUserId()).isNull();
         assertThat(event.getValue().replay()).isFalse();
+        // GH#313: SYSTEM lines are published inside the caller's locked
+        // transaction, so they also carry the fan-out snapshot (a SYSTEM row
+        // is never peer-suppressed).
+        assertThat(event.getValue().admittedUserIds()).isNotNull();
+        assertThat(event.getValue().peerSuppressedSenderId()).isNull();
     }
 
     @Test
@@ -135,6 +140,7 @@ class SystemMessageTest {
         verify(eventPublisher).publishEvent(event.capture());
         assertThat(event.getValue().subjectUserId()).isEqualTo(subjectId);
         assertThat(event.getValue().replay()).isFalse();
+        assertThat(event.getValue().admittedUserIds()).isNotNull();
     }
 
     @Test
