@@ -51,6 +51,14 @@ public class AlertRuleController {
                             @Size(max = 500) String reason) {
     }
 
+    /**
+     * Optional DELETE justification. The front-end rule console requires a
+     * reason on every delete; {@code required = false} keeps body-less
+     * deletes (curl, older clients) working exactly as before.
+     */
+    public record RuleDeleteRequest(@Size(max = 500) String reason) {
+    }
+
     public record TestRequest(@NotBlank String patternType,
                               @Size(max = 200) String pattern,
                               @Size(max = 4000) String sampleText) {
@@ -84,9 +92,12 @@ public class AlertRuleController {
 
     @DeleteMapping("/{ruleId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@PathVariable UUID ruleId, HttpServletRequest request) {
+    public void delete(@PathVariable UUID ruleId,
+                       @Valid @RequestBody(required = false) RuleDeleteRequest body,
+                       HttpServletRequest request) {
         JwtPrincipal actor = AdminGuard.requireStaff();
-        service.delete(ruleId, actor.userId(), AdminGuard.role(), clientIp(request));
+        service.delete(ruleId, body == null ? null : body.reason(),
+                actor.userId(), AdminGuard.role(), clientIp(request));
     }
 
     /** Live pattern preview for the rule editor; staff-scoped, no writes. */

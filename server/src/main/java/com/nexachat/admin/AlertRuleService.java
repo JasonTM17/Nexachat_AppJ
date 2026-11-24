@@ -90,20 +90,24 @@ public class AlertRuleService {
     }
 
     @Transactional
-    public void delete(UUID ruleId, UUID actorId, User.Role actorRole, String ip) {
+    public void delete(UUID ruleId, String reason, UUID actorId, User.Role actorRole, String ip) {
         requireAdmin(actorRole);
         AlertRuleRow existing = requireRule(ruleId);
         if (existing.builtIn()) {
             // Contract: DELETE on a built-in disables it instead of refusing.
             repository.setEnabled(ruleId, false);
+            // The delete dialog's optional justification lands on the audit
+            // row instead of the fixed null — same contract as the PATCH
+            // reason above: body-less deletes (curl, old clients) keep
+            // auditing exactly as before.
             auditService.record(actorId, actorRole, "RULE_UPDATE", "alert_rule", ruleId.toString(),
-                    null, Map.of("enabled", false, "severity", existing.severity(),
+                    reason, Map.of("enabled", false, "severity", existing.severity(),
                             "name", existing.name()), ip);
             return;
         }
         repository.delete(ruleId);
         auditService.record(actorId, actorRole, "RULE_DELETE", "alert_rule", ruleId.toString(),
-                null, Map.of("name", existing.name()), ip);
+                reason, Map.of("name", existing.name()), ip);
     }
 
     /**
