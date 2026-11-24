@@ -191,7 +191,7 @@ export function Drawer({
 
 export function ConfirmDialog({
   title,
-  requireReason,
+  requireReason = false,
   onConfirm,
   onCancel,
   confirmDanger,
@@ -248,7 +248,7 @@ export function ConfirmDialog({
       >
         <h3>{title}</h3>
         {children}
-        {requireReason !== false && (
+        {requireReason && (
           <div className="field">
             <label htmlFor="confirm-reason">{t('common.reason')} *</label>
             <textarea

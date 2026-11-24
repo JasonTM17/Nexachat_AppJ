@@ -6,6 +6,10 @@ import { Chip, Empty, ErrorBlock, Loading, Pager, fmtTime, truncateJson } from '
 
 const PAGE_SIZE = 25;
 const SEARCH_DEBOUNCE_MS = 300;
+// The server binds this filter as a UUID; anything else is a 400 that would
+// wipe the table. The input stays free-form (a user types the id gradually),
+// but only a complete UUID is sent.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default function AuditPage() {
   const { t } = useI18n();
@@ -19,10 +23,12 @@ export default function AuditPage() {
   const actionInput = useDebouncedValue(action, SEARCH_DEBOUNCE_MS);
   const targetInput = useDebouncedValue(target, SEARCH_DEBOUNCE_MS);
   const latest = useLatestRequest();
+  const actorApplied = UUID_RE.test(actorInput.trim());
 
   const params = useMemo(() => {
     const q = new URLSearchParams();
-    if (actorInput.trim()) q.set('actorId', actorInput.trim());
+    const actorId = actorInput.trim();
+    if (UUID_RE.test(actorId)) q.set('actorId', actorId);
     if (actionInput.trim()) q.set('action', actionInput.trim());
     if (targetInput.trim()) q.set('targetId', targetInput.trim());
     q.set('page', String(page));
@@ -53,12 +59,16 @@ export default function AuditPage() {
             className="input mono"
             placeholder={t('audit.filter.actor')}
             aria-label={t('audit.filter.actor')}
+            aria-describedby="audit-actor-hint"
             value={actor}
             onChange={(e) => {
               setActor(e.target.value);
               setPage(0);
             }}
           />
+          <span className="muted" id="audit-actor-hint" style={{ fontSize: 11 }}>
+            {t('audit.filter.actorHint')}
+          </span>
         </label>
         <label className="filter-field">
           <span>{t('audit.filter.action')}</span>
@@ -94,7 +104,7 @@ export default function AuditPage() {
         <Loading />
       ) : data.items.length === 0 ? (
         <Empty
-          hint={actor || action || target ? t('common.empty.filtered') : undefined}
+          hint={actorApplied || action || target ? t('common.empty.filtered') : undefined}
           onClearFilters={
             actor || action || target
               ? () => {

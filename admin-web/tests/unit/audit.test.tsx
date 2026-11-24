@@ -87,17 +87,32 @@ describe('AuditPage', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Loading…');
   });
 
-  it('debounces the actor filter into the query', async () => {
+  it('does not send an incomplete actor id to the server', async () => {
     const user = userEvent.setup();
     apiMock.mockResolvedValue(page([entry()]));
     renderPage();
     await screen.findByText('u-admin');
+    const initialCalls = apiMock.mock.calls.length;
 
     await user.type(screen.getByLabelText('Actor ID'), 'u-9');
+    // the filter only reaches the query once it is a whole UUID
+    await waitFor(() => expect(apiMock.mock.calls.length).toBe(initialCalls));
+    expect(apiMock).not.toHaveBeenLastCalledWith(expect.stringContaining('actorId'));
+    expect(screen.getByText('Enter the full 36-character UUID')).toBeInTheDocument();
+  });
+
+  it('debounces a complete actor UUID into the query', async () => {
+    const user = userEvent.setup();
+    const actorId = '9f8e7d6c-5b4a-4321-8fed-0123456789ab';
+    apiMock.mockResolvedValue(page([entry()]));
+    renderPage();
+    await screen.findByText('u-admin');
+
+    await user.type(screen.getByLabelText('Actor ID'), actorId);
     await waitFor(
       () =>
         expect(apiMock).toHaveBeenLastCalledWith(
-          '/api/v1/admin/audit?actorId=u-9&page=0&size=25',
+          `/api/v1/admin/audit?actorId=${actorId}&page=0&size=25`,
         ),
       { timeout: 2000 },
     );

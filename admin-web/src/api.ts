@@ -24,6 +24,15 @@ export class ApiException extends Error implements ApiError {
 const ACCESS_KEY = 'admin.accessToken';
 const REFRESH_KEY = 'admin.refreshToken';
 
+// One refresh replay key survives a page reload: it is reserved before the
+// refresh request is dispatched and removed once that refresh succeeds (or the
+// session expires), so a retried refresh is recognised as the same attempt.
+const IDEMPOTENCY_KEY = 'admin.idempotencyKey';
+// The server rejects requests that hang forever behind a dead proxy; the
+// request layer turns the abort into a retryable ApiException instead.
+const REQUEST_TIMEOUT_MS = 15_000;
+const HEALTH_TIMEOUT_MS = 10_000;
+
 export const tokenStore = {
   get access() {
     return sessionStorage.getItem(ACCESS_KEY);
@@ -40,6 +49,40 @@ export const tokenStore = {
     sessionStorage.removeItem(REFRESH_KEY);
   },
 };
+
+// FNV-1a over the refresh token: enough to bind a reserved replay key to the
+// exact refresh it was minted for without storing a second copy of the token.
+function refreshHash(token: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < token.length; i += 1) {
+    hash ^= token.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function idempotencyKeyFor(refresh: string): string {
+  const stored = sessionStorage.getItem(IDEMPOTENCY_KEY);
+  if (stored) {
+    try {
+      const saved = JSON.parse(stored) as { key?: string; refreshHash?: string };
+      if (saved.key && saved.refreshHash === refreshHash(refresh)) return saved.key;
+    } catch {
+      // A corrupt entry is replaced by a fresh reservation below.
+    }
+  }
+  // randomUUID exists only in secure contexts; the fallback keeps a plain-HTTP
+  // LAN deployment usable (the key is opaque, not required to be a UUID).
+  const key =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+  sessionStorage.setItem(
+    IDEMPOTENCY_KEY,
+    JSON.stringify({ key, refreshHash: refreshHash(refresh) }),
+  );
+  return key;
+}
 
 async function parseError(res: Response): Promise<ApiException> {
   try {
@@ -61,18 +104,26 @@ const SESSION_EXPIRED_KEY = 'admin.sessionExpired';
 
 function expireSession() {
   tokenStore.clear();
+  sessionStorage.removeItem(IDEMPOTENCY_KEY);
   sessionStorage.setItem(SESSION_EXPIRED_KEY, '1');
   window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
 }
 
 async function tryRefresh(): Promise<boolean> {
-  if (!tokenStore.refresh) return false;
+  const refresh = tokenStore.refresh;
+  if (!refresh) return false;
+  // Reserve before dispatch: a reload mid-flight reuses this key instead of
+  // letting the server treat the retried refresh as a new attempt.
+  const idempotencyKey = idempotencyKeyFor(refresh);
   refreshing ??= (async () => {
     try {
       const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: tokenStore.refresh }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify({ refreshToken: refresh }),
       });
       if (!res.ok) {
         expireSession();
@@ -80,6 +131,8 @@ async function tryRefresh(): Promise<boolean> {
       }
       const body = await res.json();
       tokenStore.set(body.accessToken, body.refreshToken);
+      // The attempt is answered; a later 401 mints its own key.
+      sessionStorage.removeItem(IDEMPOTENCY_KEY);
       return true;
     } catch {
       expireSession();
@@ -91,11 +144,19 @@ async function tryRefresh(): Promise<boolean> {
   return refreshing;
 }
 
+function timeoutFor(path: string): number {
+  return path.startsWith('/api/v1/admin/overview') || path.startsWith('/api/v1/admin/system/health')
+    ? HEALTH_TIMEOUT_MS
+    : REQUEST_TIMEOUT_MS;
+}
+
 export async function api<T>(
   path: string,
   options: { method?: string; body?: unknown; auth?: boolean } = {},
 ): Promise<T> {
   const { method = 'GET', body, auth = true } = options;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutFor(path));
   const request = () =>
     fetch(`${API_BASE}${path}`, {
       method,
@@ -104,15 +165,27 @@ export async function api<T>(
         ...(auth && tokenStore.access ? { Authorization: `Bearer ${tokenStore.access}` } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
     });
-  let res = await request();
-  if (res.status === 401 && auth && (await tryRefresh())) {
-    res = await request();
+  try {
+    let res = await request();
+    if (res.status === 401 && auth && (await tryRefresh())) {
+      res = await request();
+    }
+    if (!res.ok) throw await parseError(res);
+    if (res.status === 204) return undefined as T;
+    const text = await res.text();
+    return (text ? JSON.parse(text) : undefined) as T;
+  } catch (err) {
+    // A hung request is retryable, not a session failure: surface it like any
+    // other API error so ErrorBlock offers the usual Retry.
+    if (controller.signal.aborted) {
+      throw new ApiException(0, 'TIMEOUT', 'The request timed out');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  if (!res.ok) throw await parseError(res);
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export async function login(identifier: string, password: string) {

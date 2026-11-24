@@ -137,12 +137,15 @@ export default function RulesPage() {
     }
   };
 
-  const remove = async () => {
+  const remove = async (reason: string) => {
     if (!confirmDelete || deleteBusy) return;
     setDeleteBusy(true);
     setActionError(false);
     try {
-      await api(`/api/v1/admin/rules/${confirmDelete.id}`, { method: 'DELETE' });
+      await api(`/api/v1/admin/rules/${confirmDelete.id}`, {
+        method: 'DELETE',
+        body: { reason: reason || undefined },
+      });
       setConfirmDelete(null);
       load();
     } catch {
@@ -420,10 +423,10 @@ export default function RulesPage() {
       {confirmDelete && (
         <ConfirmDialog
           title={`${t('common.delete')} ${confirmDelete.name}`}
-          requireReason={false}
+          requireReason
           confirmDanger
           busy={deleteBusy}
-          onConfirm={() => void remove()}
+          onConfirm={(reason) => void remove(reason)}
           onCancel={() => setConfirmDelete(null)}
         />
       )}
@@ -431,7 +434,7 @@ export default function RulesPage() {
       {pendingPatch && (
         <ConfirmDialog
           title={pendingPatch.title}
-          requireReason={false}
+          requireReason
           busy={patchBusy}
           onConfirm={(reason) => void applyPatch(reason)}
           onCancel={() => setPendingPatch(null)}

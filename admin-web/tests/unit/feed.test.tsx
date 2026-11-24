@@ -321,10 +321,11 @@ describe('FeedPage', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong');
 
-    // The banner's own retry reloads the list: once that succeeds the banner
-    // must not linger over data that is no longer failing.
-    apiMock.mockResolvedValueOnce(page([report()]));
-    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    // The next successful list load means the banner no longer describes the
+    // view on screen, so it must not linger over fresh data.
+    apiMock.mockResolvedValue(page([report({ status: 'DISMISSED', authorName: 'Lan' })]));
+    await user.selectOptions(screen.getByLabelText('Status'), 'DISMISSED');
+    expect(await screen.findByText('Lan')).toBeInTheDocument();
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
@@ -473,7 +474,7 @@ describe('FeedPage', () => {
     expect(await screen.findByText('Mai')).toBeInTheDocument();
   });
 
-  it('renders a single error surface even when the list and an action fail', async () => {
+  it('keeps the queue visible with an inline banner when an action fails', async () => {
     const user = userEvent.setup();
     apiMock.mockResolvedValueOnce(page([report()]));
     renderPage();
@@ -483,11 +484,16 @@ describe('FeedPage', () => {
     await user.click(screen.getByRole('button', { name: 'Mark reviewed' }));
     const reviewDialog = screen.getByRole('alertdialog', { name: 'Mark reviewed' });
     await user.click(within(reviewDialog).getByRole('button', { name: 'Confirm' }));
-    expect(await screen.findAllByRole('alert')).toHaveLength(1);
 
-    // the retry reload fails too — the two failures collapse into one block
+    // the action failure gets a banner, not a full-screen block
+    expect(await screen.findAllByRole('alert')).toHaveLength(1);
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.getByText('Mai')).toBeInTheDocument();
+
+    // a list failure still owns the view: the block replaces the queue and
+    // the action banner makes way so only one error surface shows.
     apiMock.mockRejectedValueOnce(new ApiException(500, 'X', 'boom'));
-    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await user.selectOptions(screen.getByLabelText('Status'), 'DISMISSED');
     await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(1));
     expect(screen.queryByText('Mai')).toBeNull();
   });

@@ -66,7 +66,6 @@ export default function FeedPage() {
     // the failed-action banner no longer describes the view on screen.
     setActionFailed(false);
     setFailed(false);
-    setActionFailed(false);
     // A new list can reuse report ids from a previous view; drop stale
     // per-report expansion so a row never renders open by accident.
     setExpanded(new Set());
@@ -152,7 +151,16 @@ export default function FeedPage() {
         </label>
       </div>
 
-      {(actionFailed || failed) && <ErrorBlock onRetry={load} />}
+      {/* An action failure must not hide the queue underneath it: the banner
+          names the failed mutation while the rows stay actionable. A list
+          failure keeps the full ErrorBlock (there is nothing to show). */}
+      {actionFailed && !failed && (
+        <div className="form-error" role="alert">
+          {t('common.error')}
+        </div>
+      )}
+
+      {failed && <ErrorBlock onRetry={load} />}
 
       {failed ? null : !data ? (
         <Loading />

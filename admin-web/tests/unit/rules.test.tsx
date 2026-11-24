@@ -96,13 +96,14 @@ describe('RulesPage', () => {
     });
 
     apiMock.mockResolvedValueOnce(undefined);
+    await user.type(within(dialog).getByLabelText(/Reason/), 'disable noisy rule');
     await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
     await waitFor(() =>
       expect(apiMock).toHaveBeenCalledWith(
         '/api/v1/admin/rules/r1',
         expect.objectContaining({
           method: 'PATCH',
-          body: expect.objectContaining({ enabled: false }),
+          body: expect.objectContaining({ enabled: false, reason: 'disable noisy rule' }),
         }),
       ),
     );
@@ -123,15 +124,34 @@ describe('RulesPage', () => {
     });
 
     apiMock.mockResolvedValueOnce(undefined);
+    await user.type(within(dialog).getByLabelText(/Reason/), 'raise severity');
     await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
     await waitFor(() =>
       expect(apiMock).toHaveBeenCalledWith(
         '/api/v1/admin/rules/r1',
         expect.objectContaining({
           method: 'PATCH',
-          body: expect.objectContaining({ severity: 'CRITICAL' }),
+          body: expect.objectContaining({ severity: 'CRITICAL', reason: 'raise severity' }),
         }),
       ),
+    );
+  });
+
+  it('requires a reason before patching a rule', async () => {
+    const user = userEvent.setup();
+    stubRoutes();
+    renderPage();
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Enabled phish-en' }));
+    const dialog = await screen.findByRole('alertdialog', {
+      name: 'phish-en — Enabled: off',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+
+    expect(within(dialog).getByText('A reason is required')).toBeInTheDocument();
+    expect(apiMock).not.toHaveBeenCalledWith(
+      '/api/v1/admin/rules/r1',
+      expect.anything(),
     );
   });
 
@@ -179,9 +199,13 @@ describe('RulesPage', () => {
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     const dialog = screen.getByRole('alertdialog', { name: 'Delete phish-en' });
     apiMock.mockResolvedValueOnce(undefined);
+    await user.type(within(dialog).getByLabelText(/Reason/), 'obsolete rule');
     await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
     await waitFor(() =>
-      expect(apiMock).toHaveBeenCalledWith('/api/v1/admin/rules/r1', { method: 'DELETE' }),
+      expect(apiMock).toHaveBeenCalledWith('/api/v1/admin/rules/r1', {
+        method: 'DELETE',
+        body: { reason: 'obsolete rule' },
+      }),
     );
   });
 
@@ -220,6 +244,8 @@ describe('RulesPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     let resolveDelete!: () => void;
+    const dialog = screen.getByRole('alertdialog', { name: 'Delete phish-en' });
+    await user.type(within(dialog).getByLabelText(/Reason/), 'obsolete rule');
     apiMock.mockImplementationOnce(() => new Promise<void>((res) => { resolveDelete = res; }));
     const confirm = within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Confirm' });
     await user.dblClick(confirm);
