@@ -138,11 +138,22 @@ public class SummaryCacheRepository {
             return new SavedSummary(inserted.get(), true);
         }
 
-        SummaryCacheEntry winner = queryValid(
+        // The race's winner may have expired in the milliseconds between the
+        // guarded upsert and this lookup, leaving no row left to reuse. The
+        // cache key is now absent, so installing this request's fresh
+        // generation (the same row replace() writes) must not 500 the caller;
+        // the row is this request's own, so it reports as inserted.
+        Optional<SummaryCacheEntry> visibleWinner = queryValid(
                 conversationId, window.fromSeq(), window.toSeq(), contentHash,
-                provider, requestedLanguage, clock.instant())
-                .orElseThrow(() -> new IllegalStateException("Concurrent summary cache write was not visible"));
-        return new SavedSummary(winner, false);
+                provider, requestedLanguage, clock.instant());
+        if (visibleWinner.isPresent()) {
+            return new SavedSummary(visibleWinner.get(), false);
+        }
+        SummaryCacheEntry installed = write(
+                REPLACE_SQL, conversationId, window, contentHash, provider,
+                requestedLanguage, generation)
+                .orElseThrow(() -> new IllegalStateException("Summary cache refresh did not return a row"));
+        return new SavedSummary(installed, true);
     }
 
     @Transactional

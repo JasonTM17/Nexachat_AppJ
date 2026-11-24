@@ -321,6 +321,39 @@ class StompConversationMembershipOutboundInterceptorTest {
         assertThat(interceptor.preSend(withQuote, channel)).isSameAs(withQuote);
     }
 
+    @Test
+    void quoteStripFailureReleasesTheOriginalFrameInsteadOfDroppingIt() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        Message<byte[]> frame = replyFrame(conversationId, "2026-01-01T10:00:00Z", "2026-01-01T09:00:00Z");
+        // The strip's cast assumes the payload node is an ObjectNode: a node
+        // that passes the replyTo checks but is not an ObjectNode detonates
+        // the strip after the frame already passed admission, block and
+        // membership checks — the released frame must survive the failure.
+        com.fasterxml.jackson.databind.node.ObjectNode quoted =
+                new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+        quoted.put("id", "quoted-id");
+        quoted.put("createdAt", "2026-01-01T09:00:00Z");
+        com.fasterxml.jackson.databind.JsonNode payload =
+                mock(com.fasterxml.jackson.databind.JsonNode.class);
+        when(payload.path("replyTo")).thenReturn(quoted);
+        com.fasterxml.jackson.databind.JsonNode root =
+                mock(com.fasterxml.jackson.databind.JsonNode.class);
+        when(root.path("eventType"))
+                .thenReturn(com.fasterxml.jackson.databind.node.TextNode.valueOf("MESSAGE_CREATED"));
+        when(root.path("payload")).thenReturn(payload);
+
+        java.lang.reflect.Method strip = StompConversationMembershipOutboundInterceptor.class
+                .getDeclaredMethod("withoutUnadmittedQuote",
+                        UUID.class, UUID.class, Message.class, com.fasterxml.jackson.databind.JsonNode.class);
+        strip.setAccessible(true);
+        Message<?> released = (Message<?>) strip.invoke(interceptor, conversationId, userId, frame, root);
+
+        assertThat(released)
+                .as("a frame that already passed admission must not vanish on a strip failure")
+                .isSameAs(frame);
+    }
+
     // ------------------------------------------------------------- V38 blocks
 
     @Test

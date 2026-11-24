@@ -147,27 +147,28 @@ public class NotificationEventListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onCallRinging(CallRingingEvent event) {
+        // W2A-01: a call always rings on every device — presence never gates
+        // it (a socket can look online while half-open), so the invite is
+        // sent unconditionally; the client self-drops a duplicate.
         callRegistry.find(event.callId()).ifPresent(session -> {
             UUID calleeId = session.calleeId();
-            if (!presenceState.isOnline(calleeId)) {
-                String callerName = userRepository.findById(session.callerId())
-                        .map(User::getDisplayName)
-                        .orElse("Unknown Caller");
+            String callerName = userRepository.findById(session.callerId())
+                    .map(User::getDisplayName)
+                    .orElse("Unknown Caller");
 
-                long timestamp = session.startedAt() != null
-                        ? session.startedAt().toEpochMilli()
-                        : System.currentTimeMillis();
+            long timestamp = session.startedAt() != null
+                    ? session.startedAt().toEpochMilli()
+                    : System.currentTimeMillis();
 
-                fcmPushService.sendCallInviteNotification(
-                        calleeId,
-                        session.callId(),
-                        session.conversationId(),
-                        session.callerId(),
-                        callerName,
-                        session.mediaType().name(),
-                        timestamp
-                );
-            }
+            fcmPushService.sendCallInviteNotification(
+                    calleeId,
+                    session.callId(),
+                    session.conversationId(),
+                    session.callerId(),
+                    callerName,
+                    session.mediaType().name(),
+                    timestamp
+            );
         });
     }
 }

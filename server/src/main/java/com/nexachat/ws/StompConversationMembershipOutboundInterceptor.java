@@ -130,8 +130,11 @@ public class StompConversationMembershipOutboundInterceptor implements ChannelIn
             return org.springframework.messaging.support.MessageBuilder
                     .createMessage(FRAME_READER.writeValueAsBytes(root), message.getHeaders());
         } catch (java.io.IOException | ClassCastException e) {
-            // A frame that cannot be re-serialized safely loses its quote.
-            return null;
+            // The frame already passed admission, block and membership checks;
+            // a re-serialization failure must not drop it entirely. Release it
+            // unchanged — the unstripped quote stays, which is the accepted
+            // trade-off versus deleting a delivered frame.
+            return message;
         }
     }
 

@@ -357,7 +357,9 @@ class FcmPushServiceTest {
 
         CallSession session = CallSession.ringing(callId, conversationId, callerId, calleeId, Instant.now());
         when(callRegistry.find(callId)).thenReturn(Optional.of(session));
-        when(presenceState.isOnline(calleeId)).thenReturn(false);
+        // W2A-01: presence no longer gates the ring; this offline stub is
+        // documentation only, so it must not fail the strict-stub check.
+        lenient().when(presenceState.isOnline(calleeId)).thenReturn(false);
 
         User caller = mock(User.class);
         when(caller.getDisplayName()).thenReturn("John Caller");
@@ -684,7 +686,10 @@ class FcmPushServiceTest {
 
         CallSession session = CallSession.ringing(callId, conversationId, callerId, calleeId, Instant.now());
         when(callRegistry.find(callId)).thenReturn(Optional.of(session));
-        when(presenceState.isOnline(calleeId)).thenReturn(false);
+        // W2A-01: even a callee the registry reports online must be invited,
+        // so the never-gate test keeps the online answer and tolerates the
+        // stub going unused now that the listener never consults presence.
+        lenient().when(presenceState.isOnline(calleeId)).thenReturn(true);
 
         User caller = mock(User.class);
         when(caller.getDisplayName()).thenReturn("John Caller");

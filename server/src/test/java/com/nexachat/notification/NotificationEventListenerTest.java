@@ -1,6 +1,9 @@
 package com.nexachat.notification;
 
+import com.nexachat.call.CallMediaType;
 import com.nexachat.call.CallRegistry;
+import com.nexachat.call.CallRingingEvent;
+import com.nexachat.call.CallSession;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.message.Message;
 import com.nexachat.message.MessageCreatedEvent;
@@ -19,6 +22,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -54,6 +58,7 @@ class NotificationEventListenerTest {
     private final UUID senderId = UUID.randomUUID();
     private final UUID recipientId = UUID.randomUUID();
     private final UUID conversationId = UUID.randomUUID();
+    private final UUID callerId = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
@@ -165,6 +170,47 @@ class NotificationEventListenerTest {
         listener.onMessageCreated(new MessageCreatedEvent(conversationId, message));
 
         verify(memberRepository).findAdmittedUserIds(conversationId, message.createdAt());
+    }
+
+    // ------------------------------------------------------------- calls
+
+    @Test
+    void callRingingAlwaysSendsTheInviteWithoutConsultingPresence() {
+        UUID calleeId = UUID.randomUUID();
+        UUID callId = UUID.randomUUID();
+        stubRingingCall(callId, calleeId);
+
+        listener.onCallRinging(new CallRingingEvent(callId));
+
+        verify(fcmPushService).sendCallInviteNotification(eq(calleeId), eq(callId), eq(conversationId),
+                eq(callerId), eq("Caller"), eq("AUDIO"),
+                eq(Instant.parse("2026-11-11T11:30:00Z").toEpochMilli()));
+        verifyNoInteractions(presenceState);
+    }
+
+    @Test
+    void callRingingSendsTheInviteWhileTheCalleeIsOnlineToo() {
+        UUID calleeId = UUID.randomUUID();
+        UUID callId = UUID.randomUUID();
+        stubRingingCall(callId, calleeId);
+        // The listener must push even when the registry reports the callee
+        // online: a socket may be half-open, so presence never gates a ring.
+        lenient().when(presenceState.isOnline(calleeId)).thenReturn(true);
+
+        listener.onCallRinging(new CallRingingEvent(callId));
+
+        verify(fcmPushService).sendCallInviteNotification(eq(calleeId), eq(callId), eq(conversationId),
+                eq(callerId), eq("Caller"), eq("AUDIO"),
+                eq(Instant.parse("2026-11-11T11:30:00Z").toEpochMilli()));
+    }
+
+    private void stubRingingCall(UUID callId, UUID calleeId) {
+        CallSession ringing = CallSession.ringing(callId, conversationId, callerId, calleeId,
+                CallMediaType.AUDIO, Instant.parse("2026-11-11T11:30:00Z"));
+        when(callRegistry.find(callId)).thenReturn(Optional.of(ringing));
+        User caller = mock(User.class);
+        when(caller.getDisplayName()).thenReturn("Caller");
+        when(userRepository.findById(callerId)).thenReturn(Optional.of(caller));
     }
 
     private static UserDeviceToken sharedRow(Instant updatedAt, UUID ownerId) {
