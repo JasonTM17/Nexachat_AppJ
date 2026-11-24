@@ -18,6 +18,7 @@ DELETE	/api/v1/devices/token	AUTHENTICATED	authenticated_self	rest-015
 DELETE	/api/v1/labels/{labelId}	AUTHENTICATED	authenticated_self	rest-016
 DELETE	/api/v1/messages/{messageId}/reactions/{emoji}	MESSAGE_CONVERSATION_MEMBER	message_conversation_member	rest-017
 DELETE	/api/v1/messages/{id}/star	AUTHENTICATED	authenticated_self	rest-143
+DELETE	/api/v1/realtime/firebase-session/{bridgeId}	AUTHENTICATED	authenticated_self	rest-182
 DELETE	/api/v1/users/device-token	AUTHENTICATED	authenticated_self	rest-018
 DELETE	/api/v1/users/me	AUTHENTICATED	authenticated_self	rest-092
 DELETE	/api/v1/users/{id}/block	AUTHENTICATED	authenticated_self	rest-144
@@ -117,6 +118,8 @@ PUT	/api/v1/users/me/email	AUTHENTICATED	authenticated_self	rest-105
 POST	/api/v1/users/me/deletion-code	AUTHENTICATED	authenticated_self	rest-106
 POST	/api/v1/reports	AUTHENTICATED	authenticated_self	rest-150
 POST	/api/v1/users/{id}/block	AUTHENTICATED	authenticated_self	rest-151
+POST	/api/v1/realtime/firebase-lease	AUTHENTICATED	authenticated_self	rest-183
+POST	/api/v1/realtime/firebase-token	AUTHENTICATED	authenticated_self	rest-184
 GET	/api/v1/conversations/{conversationId}/e2ee	CONVERSATION_MEMBER	conversation_member	rest-107
 PUT	/api/v1/conversations/{conversationId}/e2ee	CONVERSATION_MEMBER	conversation_member	rest-108
 PUT	/api/v1/e2ee/devices/{deviceId}	AUTHENTICATED	authenticated_self	rest-109
