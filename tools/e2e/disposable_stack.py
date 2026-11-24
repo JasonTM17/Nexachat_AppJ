@@ -21,7 +21,9 @@ Safety rules:
 - Never adopts or drops the shared development database 'nexachat'.
 - dropdb drops only the database recorded in the run dir's state file.
 - Refuses any target host that is not local (e.g. localhost, 127.0.0.1, ::1).
-- stop() terminates only the PID recorded in its own PID file.
+- stop() terminates only the process tree rooted at the PID recorded in its
+  own PID file (never by name; the tree sweep is what actually releases the
+  run port on Windows, where the recorded PID can be a shim around java).
 
 Usage:
     python tools/e2e/disposable_stack.py provision <run_dir> [--db-name N] [--port P]
@@ -603,15 +605,36 @@ def _is_raw_pid_alive(pid: int) -> bool:
     return True
 
 
+def _windows_taskkill_argv(pid: int, *, force: bool) -> List[str]:
+    """/T: the recorded PID may be a shell shim whose java child would
+    otherwise survive stop(), keep the run port open, and block every later
+    provision on that port."""
+    argv = ["taskkill", "/PID", str(pid), "/T"]
+    if force:
+        argv.append("/F")
+    return argv
+
+
 def _terminate_raw_pid(pid: int, grace_seconds: float) -> None:
-    """Terminates exactly this PID (never a name or the whole tree)."""
+    """Terminates the recorded PID together with the tree it spawned."""
     if os.name == "nt":
         subprocess.run(
-            ["taskkill", "/PID", str(pid), "/F"],
+            _windows_taskkill_argv(pid, force=False),
             capture_output=True,
             timeout=30,
             check=False,
         )
+        deadline = time.monotonic() + max(0.0, grace_seconds)
+        while _is_raw_pid_alive(pid):
+            if time.monotonic() >= deadline:
+                subprocess.run(
+                    _windows_taskkill_argv(pid, force=True),
+                    capture_output=True,
+                    timeout=30,
+                    check=False,
+                )
+                return
+            time.sleep(0.2)
         return
     try:
         os.kill(pid, signal.SIGTERM)
@@ -666,6 +689,15 @@ class SubprocessController:
             except subprocess.TimeoutExpired:
                 handle.kill()
                 handle.wait(timeout=5.0)
+            if os.name == "nt":
+                # The recorded PID may have been a shell shim; sweep any child
+                # (e.g. java) it spawned so the run port is actually released.
+                subprocess.run(
+                    _windows_taskkill_argv(pid, force=True),
+                    capture_output=True,
+                    timeout=30,
+                    check=False,
+                )
             return
         _terminate_raw_pid(int(pid), max(0.0, grace_seconds))
 

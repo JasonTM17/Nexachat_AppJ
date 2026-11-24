@@ -225,6 +225,73 @@ def provision_stack(run_dir, **stack_kwargs):
     return stack, state
 
 
+class TestWindowsTreeTermination(unittest.TestCase):
+    """stop() must sweep the recorded PID's process tree on Windows."""
+
+    def test_taskkill_argv_includes_tree_and_late_force(self):
+        # /T: a recorded PID may be a shell shim; without the tree flag its
+        # java child would survive and keep the run port in TIME_WAIT limbo.
+        self.assertEqual(
+            disposable_stack._windows_taskkill_argv(4242, force=False),
+            ["taskkill", "/PID", "4242", "/T"],
+        )
+        self.assertEqual(
+            disposable_stack._windows_taskkill_argv(4242, force=True),
+            ["taskkill", "/PID", "4242", "/T", "/F"],
+        )
+
+    def test_terminate_raw_pid_escalates_to_force_after_grace(self):
+        recorded = []
+
+        def fake_run(argv, capture_output=True, timeout=30, check=False):
+            recorded.append(list(argv))
+            return None
+
+        # The recorded PID stays alive through the graceful treeful taskkill
+        # and only disappears after the forced sweep: _terminate_raw_pid must
+        # escalate to /T /F instead of leaving the child tree running.
+        # grace_seconds=0.0 makes the escalation fire on the first poll.
+        with patch.object(
+            disposable_stack.subprocess, "run", side_effect=fake_run
+        ), patch.object(
+            disposable_stack,
+            "_is_raw_pid_alive",
+            side_effect=[True, True, True, False],
+        ), patch.object(disposable_stack.time, "sleep"):
+            with patch.object(disposable_stack.os, "name", "nt"):
+                disposable_stack._terminate_raw_pid(9090, grace_seconds=0.0)
+        self.assertEqual(
+            recorded,
+            [
+                ["taskkill", "/PID", "9090", "/T"],
+                ["taskkill", "/PID", "9090", "/T", "/F"],
+            ],
+        )
+
+    def test_terminate_raw_pid_first_call_is_treeful_not_forced(self):
+        recorded = []
+
+        def fake_run(argv, capture_output=True, timeout=30, check=False):
+            recorded.append(list(argv))
+            return None
+
+        # The graceful sweep succeeds on the first treeful taskkill, so no
+        # forced second call is made: recorded must be exactly one /T, no /F.
+        with patch.object(
+            disposable_stack.subprocess, "run", side_effect=fake_run
+        ), patch.object(
+            disposable_stack,
+            "_is_raw_pid_alive",
+            side_effect=[False],
+        ):
+            with patch.object(disposable_stack.os, "name", "nt"):
+                disposable_stack._terminate_raw_pid(777, grace_seconds=5.0)
+        self.assertEqual(
+            recorded,
+            [["taskkill", "/PID", "777", "/T"]],
+        )
+
+
 class TestValidation(unittest.TestCase):
     def test_local_host_detection(self):
         self.assertTrue(is_local_host("localhost"))
