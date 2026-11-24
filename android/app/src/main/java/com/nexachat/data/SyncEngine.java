@@ -764,11 +764,15 @@ public final class SyncEngine {
                             }
                         }
 
-                        // 2. Ingest edited messages
+                        // 2. Ingest edited messages. An edit cannot resurrect a
+                        // tombstone and must respect the same row-replacement
+                        // rules as the live STOMP path (MessageStateApplier).
                         if (!delta.getEditedMessages().isEmpty()) {
                             for (MessageDto dto : delta.getEditedMessages()) {
                                 MessageEntity entity = toEntity(dto, conversationId);
                                 if (entity != null) {
+                                    MessageEntity existing = messageDao.byIdInTransaction(entity.getId());
+                                    if (!MessageStateApplier.accepts(existing, entity)) continue;
                                     messageDao.updateInTransaction(entity);
                                     conversationDao.updateLastMessageContentInTransaction(
                                             conversationId, entity.getSeq(),
@@ -782,14 +786,13 @@ public final class SyncEngine {
                             for (String deletedId : delta.getDeletedMessageIds()) {
                                 MessageEntity existing = messageDao.byIdInTransaction(deletedId);
                                 if (existing != null && existing.getDeletedAtEpochMs() == null) {
-                                    MessageEntity tombstone = new MessageEntity(
-                                            existing.getId(), existing.getConversationId(), existing.getSeq(),
-                                            existing.getSenderId(), existing.getSenderDisplayName(), existing.getType(),
-                                            "", existing.getClientMessageId(), existing.getReplyToId(),
-                                            existing.getReplyToSenderName(), existing.getReplyToSnippet(),
-                                            existing.getCreatedAt(), null, existing.getEditedAtEpochMs(),
-                                            System.currentTimeMillis()
-                                    );
+                                    // asDeleted + withSyncVersion (the MessageStateApplier.delete
+                                    // pattern) keeps the stored changeVersion/generation; the
+                                    // constructor form zeroed them, letting any later versioned
+                                    // apply replace the tombstone.
+                                    MessageEntity tombstone = existing.asDeleted(System.currentTimeMillis())
+                                            .withSyncVersion(existing.getChangeVersion(),
+                                                    existing.getGeneration());
                                     messageDao.updateInTransaction(tombstone);
                                     reactionDao.deleteForMessageInTransaction(deletedId);
                                     messageDao.clearReplySnippetsInTransaction(deletedId);

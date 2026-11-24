@@ -1421,26 +1421,31 @@ public final class MessageRepository {
      * still replaces that count. The sequence is clamped into
      * {@code [1, lastMessageSeq]} so a stale caller can never make the server
      * reject the receipt, and a value that does not advance the acknowledged
-     * watermark sends nothing.
+     * watermark sends nothing. The watermark itself only moves after the
+     * server accepts the receipt: a failed POST leaves it where it was so the
+     * next caller event retries the same or a newer sequence, while
+     * {@link #adoptInboxReadSeq} keeps seeding server-confirmed values
+     * immediately. Duplicates from concurrent calls are safe because the
+     * server's markRead is monotonic.
      */
     public Completable sendRead(String conversationId, long upToSeq) {
         return operationTracker.track(readCeilingSeq(conversationId).flatMapCompletable(lastSeq -> {
             long clamped = Math.min(upToSeq, lastSeq);
             if (clamped <= 0L) return Completable.complete();
-            AtomicReference<Boolean> shouldSend = new AtomicReference<>(false);
-            lastMarkedRead.compute(conversationId, (key, last) -> {
-                long previous = last == null ? 0L : last;
-                if (clamped > previous) {
-                    shouldSend.set(true);
-                    return clamped;
-                }
-                return previous;
-            });
-            if (!shouldSend.get()) return Completable.complete();
+            // Non-mutating peek: only suppress an acknowledged duplicate. The
+            // advance happens below, after the REST receipt succeeds.
+            long previous = lastMarkedRead.getOrDefault(conversationId, 0L);
+            if (clamped <= previous) return Completable.complete();
             session.sendReadAck(conversationId, clamped);
             return call(messageApi.markRead(conversationId, new ReadRequest(clamped)))
-                    .flatMapCompletable(result -> result instanceof Result.Success<?>
-                            ? applyLocalUnread(conversationId, clamped) : Completable.complete())
+                    .flatMapCompletable(result -> {
+                        if (!(result instanceof Result.Success<?>)) return Completable.complete();
+                        lastMarkedRead.compute(conversationId, (key, last) -> {
+                            long before = last == null ? 0L : last;
+                            return clamped > before ? clamped : before;
+                        });
+                        return applyLocalUnread(conversationId, clamped);
+                    })
                     .subscribeOn(Schedulers.io());
         }));
     }

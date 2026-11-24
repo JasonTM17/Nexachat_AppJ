@@ -17,7 +17,9 @@ import java.util.Objects;
  * display name for list rendering. Ordering is by server-assigned {@code seq},
  * never by client clock.
  */
-@Entity(tableName = "messages", indices = {@Index(value = {"conversationId", "seq"})})
+@Entity(tableName = "messages", indices = {
+        @Index(value = {"conversationId", "seq"}),
+        @Index(value = {"replyToId"})})
 public final class MessageEntity {
     @PrimaryKey @NonNull private final String id;
     @NonNull private final String conversationId;

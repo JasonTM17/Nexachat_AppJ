@@ -171,7 +171,7 @@ public final class FakeOfflineOutboxDao implements OfflineOutboxDao {
     @Override public Completable markSent(String id, long now) {
         return Completable.fromAction(() -> {
             OfflineOutboxEntity row = rowById(id);
-            if (row != null) {
+            if (row != null && "IN_PROGRESS".equals(row.getState())) {
                 rows.set(rows.indexOf(row), row.withStateAndAttempt("SENT", row.getRetryCount(), now));
             }
         });
@@ -187,7 +187,7 @@ public final class FakeOfflineOutboxDao implements OfflineOutboxDao {
     @Override public Completable markFailed(String id, long now) {
         return Completable.fromAction(() -> {
             OfflineOutboxEntity row = rowById(id);
-            if (row != null) {
+            if (row != null && "IN_PROGRESS".equals(row.getState())) {
                 rows.set(rows.indexOf(row), row.withStateAndAttempt("FAILED", row.getRetryCount(), now));
             }
         });

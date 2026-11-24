@@ -2014,6 +2014,41 @@ public class MessageRepositoryTest {
         verify(messageApi, org.mockito.Mockito.never()).markRead(anyString(), any());
     }
 
+    @Test public void sendReadFailureDoesNotAdvanceTheLocalWatermark() {
+        // C1-01 regression: the acknowledged watermark must only move after the
+        // server accepts the receipt, otherwise the retry the next caller event
+        // should trigger is silently swallowed as a duplicate.
+        await(conversationDao.upsert(conversation(5, "hi")));
+        when(messageApi.markRead(eqConversation(), any()))
+                .thenReturn(responseCall(Response.error(500, body(""))));
+        await(repository.sendRead(CONVERSATION_ID, 5L));
+        assertEquals(0L, repository.peekLocalReadSeq(CONVERSATION_ID));
+        verify(messageApi, times(1)).markRead(eqConversation(), any());
+    }
+
+    @Test public void sendReadRetriesTheSameSequenceAfterAFailedReceipt() {
+        // C1-01 regression: a failed POST must leave the watermark untouched so
+        // the next caller event sends the same acknowledged sequence again.
+        await(conversationDao.upsert(conversation(5, "hi")));
+        when(messageApi.markRead(eqConversation(), any())).thenReturn(
+                responseCall(Response.error(500, body(""))),
+                responseCall(Response.success(204, null)));
+        await(repository.sendRead(CONVERSATION_ID, 5L));
+        await(repository.sendRead(CONVERSATION_ID, 5L));
+        verify(messageApi, times(2)).markRead(eqConversation(),
+                org.mockito.ArgumentMatchers.argThat(request -> request.getUpToSeq() == 5L));
+        assertEquals(5L, repository.peekLocalReadSeq(CONVERSATION_ID));
+    }
+
+    @Test public void sendReadSuccessAdvancesTheLocalWatermarkOnce() {
+        await(conversationDao.upsert(conversation(5, "hi")));
+        await(repository.sendRead(CONVERSATION_ID, 5L));
+        assertEquals(5L, repository.peekLocalReadSeq(CONVERSATION_ID));
+        await(repository.sendRead(CONVERSATION_ID, 5L));
+        verify(messageApi, times(1)).markRead(eqConversation(),
+                org.mockito.ArgumentMatchers.argThat(request -> request.getUpToSeq() == 5L));
+    }
+
     @Test public void sendReadKeepsUnreadForAMessageNewerThanTheReceipt() {
         await(conversationDao.upsert(conversationCopy(conversation(11, "newer"), "newer", 0L, 1, false)));
         await(messageDao.upsert(stored("m-11", 11L)));

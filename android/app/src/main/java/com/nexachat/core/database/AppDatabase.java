@@ -29,7 +29,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
             StarredMessageEntity.class,
             ComposerDraftEntity.class
         },
-        version = 22,
+        version = 23,
         exportSchema = true)
 public abstract class AppDatabase extends RoomDatabase {
     public abstract MessageDao messageDao();
@@ -356,6 +356,14 @@ public abstract class AppDatabase extends RoomDatabase {
         }
     };
 
+    /** Indexes reply targets so reply-thread lookups stop scanning the message table. */
+    public static final Migration MIGRATION_22_23 = new Migration(22, 23) {
+        @Override public void migrate(SupportSQLiteDatabase db) {
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_messages_replyToId` "
+                    + "ON `messages` (`replyToId`)");
+        }
+    };
+
     /**
      * The complete migration chain in order — the single source of truth so
      * production ({@code DatabaseModule}) and instrumented tests can never drift
@@ -368,7 +376,7 @@ public abstract class AppDatabase extends RoomDatabase {
             MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
             MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17,
             MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
-            MIGRATION_21_22,
+            MIGRATION_21_22, MIGRATION_22_23,
     };
 
     /** Cache deletion must invalidate even a numerically plausible cursor, including partial loss. */

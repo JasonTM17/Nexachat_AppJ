@@ -185,6 +185,54 @@ public final class OutboxSyncWorkerTest {
     }
 
     @Test
+    public void drainContinuesTheQueueWhenOneItemFailsRetryably() {
+        // C1-02 regression: a retryable failure of the head item must release
+        // that one lease and keep draining, not abort the pass and cut the
+        // queue's tail.
+        OfflineOutboxEntity failing = new OfflineOutboxEntity(
+                "item-1", "idemp-1", "REACTION_ADD", "{}", "PENDING", 0, 1000L, 0L);
+        OfflineOutboxEntity healthy = new OfflineOutboxEntity(
+                "item-2", "idemp-2", "PIN_ADD", "{}", "PENDING", 0, 1001L, 0L);
+        OfflineOutboxDao offlineOutboxDao = emptyDao();
+        when(offlineOutboxDao.getClaimableItems(anyLong())).thenReturn(
+                Single.just(List.of(failing, healthy)), Single.just(List.of()));
+        when(offlineOutboxDao.claimLease(eq("item-1"), anyLong(), anyLong()))
+                .thenReturn(Single.just(1));
+        when(offlineOutboxDao.claimLease(eq("item-2"), anyLong(), anyLong()))
+                .thenReturn(Single.just(1));
+        when(offlineOutboxDao.findById(eq("item-1"))).thenReturn(Maybe.just(failing));
+        when(offlineOutboxDao.findById(eq("item-2"))).thenReturn(Maybe.just(healthy));
+        when(offlineOutboxDao.releaseLease(eq("item-1"), org.mockito.ArgumentMatchers.anyInt(),
+                anyString())).thenReturn(Completable.complete());
+        when(offlineOutboxDao.markSent(eq("item-2"), anyLong())).thenReturn(Completable.complete());
+        when(messageRepository.flushOutboxForWorker()).thenReturn(Completable.complete());
+        try {
+            when(messageRepository.payloadWithAttemptCount(eq(failing),
+                    org.mockito.ArgumentMatchers.anyInt())).thenReturn("{}");
+        } catch (IOException failure) {
+            throw new AssertionError(failure);
+        }
+        when(messageRepository.dispatchOfflineAction(failing))
+                .thenReturn(Single.just(new ApiResult.NetworkError<>(new IOException("offline"))));
+        when(messageRepository.dispatchOfflineAction(healthy))
+                .thenReturn(Single.just(new ApiResult.Success<>(null)));
+
+        OutboxSyncWorker worker = new OutboxSyncWorker(
+                context, workerParameters, messageRepository, offlineOutboxDao);
+        TestObserver<Void> observer = worker.drainOfflineOutbox().test();
+
+        observer.awaitCount(1);
+        // The failing head item keeps its released lease for a later worker run,
+        // so the drain ends by asking WorkManager for the backoff retry.
+        observer.assertNotComplete();
+        observer.assertError(RuntimeException.class);
+
+        verify(messageRepository).dispatchOfflineAction(healthy);
+        verify(offlineOutboxDao).markSent(eq("item-2"), anyLong());
+        verify(offlineOutboxDao, never()).markSent(eq("item-1"), anyLong());
+    }
+
+    @Test
     public void drainOfflineOutboxRequiresDispatcher() {
         OfflineOutboxDao offlineOutboxDao = emptyDao();
         OutboxSyncWorker worker = new OutboxSyncWorker(
@@ -262,7 +310,7 @@ public final class OutboxSyncWorkerTest {
 
         private Completable markSent(String id, long now) {
             OfflineOutboxEntity item = items.get(id);
-            if (item != null) {
+            if (item != null && "IN_PROGRESS".equals(item.getState())) {
                 items.put(id, item.withStateAndAttempt("SENT", item.getRetryCount(), now));
             }
             return Completable.complete();

@@ -433,6 +433,21 @@ public final class RoomMigrationTest {
         }
     }
 
+    @Test
+    public void v22ToV23MigrationAddsTheReplyTargetIndex() throws Exception {
+        helper.createDatabase(EXPORTED_DB, 22).close();
+
+        SupportSQLiteDatabase db = helper.runMigrationsAndValidate(
+                EXPORTED_DB, 23, true, AppDatabase.MIGRATION_22_23);
+        try {
+            assertEquals("reply target index exists", 1L,
+                    singleLong(db, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' "
+                            + "AND name = 'index_messages_replyToId'"));
+        } finally {
+            db.close();
+        }
+    }
+
     private void assertV7ShapeAndPreservedRows(SupportSQLiteDatabase db) {
         try (Cursor cursor =
                 db.query(

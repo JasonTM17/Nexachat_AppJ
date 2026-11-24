@@ -478,6 +478,65 @@ public final class SyncEngineTest {
     }
 
     @Test
+    public void legacyTombstoneKeepsTheStoredSyncVersionFields() {
+        // C1-05 regression: zeroing changeVersion/generation on the tombstone
+        // would let any later versioned apply replace a deleted row.
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("c1", 10L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+
+        SyncResponse.ConversationDeltaDto delta = new SyncResponse.ConversationDeltaDto(
+                "c1", List.of(), List.of(), List.of("m-del"), List.of(), 10L, false);
+        SyncResponse response = new SyncResponse(List.of(delta), "2026-11-08T10:00:00Z");
+        Call<SyncResponse> serverCall = responseCall(response);
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(serverCall);
+
+        MessageEntity existing = new MessageEntity(
+                "m-del", "c1", 5L, "user-1", "Alice", "TEXT", "Secret", "client-1",
+                null, null, null, 1700000000L, null, null, null, "[]", false, 7L, 3L);
+        when(messageDao.byIdInTransaction("m-del")).thenReturn(existing);
+        when(conversationDao.byIdSync("c1")).thenReturn(null);
+
+        syncEngine.sync().blockingAwait();
+
+        ArgumentCaptor<MessageEntity> tombstoneCaptor = ArgumentCaptor.forClass(MessageEntity.class);
+        verify(messageDao).updateInTransaction(tombstoneCaptor.capture());
+        MessageEntity tombstone = tombstoneCaptor.getValue();
+        assertTrue(tombstone.getDeletedAtEpochMs() != null);
+        assertEquals("tombstone must keep the stored changeVersion",
+                7L, tombstone.getChangeVersion());
+        assertEquals("tombstone must keep the stored generation",
+                3L, tombstone.getGeneration());
+    }
+
+    @Test
+    public void legacyEditDoesNotReviveATombstonedRow() {
+        // C1-05 regression: a stale edit delta that races a deletion must never
+        // write live content back over a tombstone.
+        when(messageDao.getAllMaxSeqs()).thenReturn(
+                Single.just(List.of(new ConversationWatermark("c1", 10L))));
+        when(conversationDao.getAllWatermarks()).thenReturn(Single.just(Collections.emptyList()));
+
+        SyncResponse.ConversationDeltaDto delta = new SyncResponse.ConversationDeltaDto(
+                "c1", List.of(), List.of(message("m-del", 5L, "c1", "edited late")),
+                List.of(), List.of(), 10L, false);
+        SyncResponse response = new SyncResponse(List.of(delta), "2026-11-08T10:00:00Z");
+        Call<SyncResponse> serverCall = responseCall(response);
+        when(messageApi.syncDeltas(any(SyncRequest.class))).thenReturn(serverCall);
+
+        MessageEntity tombstoned = new MessageEntity(
+                "m-del", "c1", 5L, "user-1", "Alice", "TEXT", "", "client-1",
+                null, null, null, 1700000000L, null, 123L, 456L, "[]", false, 0L, 0L);
+        when(messageDao.byIdInTransaction("m-del")).thenReturn(tombstoned);
+
+        syncEngine.sync().blockingAwait();
+
+        verify(messageDao, never()).updateInTransaction(any(MessageEntity.class));
+        verify(conversationDao, never()).updateLastMessageContentInTransaction(
+                anyString(), anyLong(), any());
+    }
+
+    @Test
     public void syncPersistsAndReloadsServerTimeAcrossEngineInstances() {
         List<ConversationWatermark> watermarks = List.of(new ConversationWatermark("c1", 10L));
         when(messageDao.getAllMaxSeqs()).thenReturn(Single.just(watermarks));

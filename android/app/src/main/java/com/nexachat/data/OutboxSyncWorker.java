@@ -24,7 +24,10 @@ import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
 
@@ -138,15 +141,50 @@ public final class OutboxSyncWorker extends RxWorker {
     }
 
     private Completable drainClaimableItems(long staleThreshold) {
+        return drainClaimableItems(staleThreshold, new HashSet<>());
+    }
+
+    /**
+     * Drains the queue in FIFO order, one claim-and-dispatch per item. A
+     * retryable failure only releases that one item's lease; the pass keeps
+     * going so a head item cannot cut the queue's tail (audit C1-02). The
+     * released item is excluded from the rest of this worker run via
+     * {@code deferredRetryIds}, and the drain then ends with a retry signal so
+     * WorkManager schedules the backoff re-run that will attempt it again.
+     * Genuine drain-level failures (DB/DAO) still error the stream unchanged.
+     */
+    private Completable drainClaimableItems(long staleThreshold, Set<String> deferredRetryIds) {
         return offlineOutboxDao.getClaimableItems(staleThreshold)
                 .flatMapCompletable(items -> {
-                    if (items.isEmpty()) return Completable.complete();
-                    return Flowable.fromIterable(items)
-                            .concatMapSingle(item -> processOfflineItem(item, staleThreshold))
+                    List<OfflineOutboxEntity> claimable = new ArrayList<>(items.size());
+                    for (OfflineOutboxEntity item : items) {
+                        if (!deferredRetryIds.contains(item.getId())) claimable.add(item);
+                    }
+                    if (claimable.isEmpty()) {
+                        // Nothing left to claim in this run; deferred retries
+                        // hand the rest to WorkManager's backoff.
+                        return deferredRetryIds.isEmpty()
+                                ? Completable.complete()
+                                : Completable.error(new RetryDrainException());
+                    }
+                    return Flowable.fromIterable(claimable)
+                            .concatMapSingle(item -> processOfflineItem(item, staleThreshold)
+                                    .onErrorResumeNext(error -> {
+                                        if (!(error instanceof RetryDrainException)) {
+                                            return Single.error(error);
+                                        }
+                                        // Per-item containment: the lease was already
+                                        // released; this item retries on the next
+                                        // worker run instead of aborting the drain.
+                                        deferredRetryIds.add(item.getId());
+                                        return Single.just(false);
+                                    }))
                             .any(Boolean.TRUE::equals)
                             .flatMapCompletable(claimedAny -> claimedAny
-                                    ? drainClaimableItems(staleThreshold)
-                                    : Completable.complete());
+                                    ? drainClaimableItems(staleThreshold, deferredRetryIds)
+                                    : deferredRetryIds.isEmpty()
+                                            ? Completable.complete()
+                                            : Completable.error(new RetryDrainException()));
                 });
     }
 

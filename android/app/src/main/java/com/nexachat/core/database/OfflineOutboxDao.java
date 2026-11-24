@@ -65,14 +65,22 @@ public interface OfflineOutboxDao {
             + "AND state IN ('PENDING', 'SENDING', 'IN_PROGRESS')")
     int updatePayloadBlocking(String id, String payloadJson);
 
-    @Query("UPDATE offline_outbox SET state = 'SENT', lastAttemptEpochMs = :now WHERE id = :id")
+    /**
+     * Terminal success only from the worker that holds the lease: the row must
+     * still be {@code IN_PROGRESS} so a reclaimed (stolen) lease can never be
+     * finalized by the worker that lost it.
+     */
+    @Query("UPDATE offline_outbox SET state = 'SENT', lastAttemptEpochMs = :now "
+            + "WHERE id = :id AND state = 'IN_PROGRESS'")
     Completable markSent(String id, long now);
 
     @Query("UPDATE offline_outbox SET state = 'SENT', lastAttemptEpochMs = :now "
             + "WHERE id = :id AND state = 'IN_PROGRESS'")
     int markSentBlocking(String id, long now);
 
-    @Query("UPDATE offline_outbox SET state = 'FAILED', lastAttemptEpochMs = :now WHERE id = :id")
+    /** Lease-guarded like {@link #markFailedBlocking}. */
+    @Query("UPDATE offline_outbox SET state = 'FAILED', lastAttemptEpochMs = :now "
+            + "WHERE id = :id AND state = 'IN_PROGRESS'")
     Completable markFailed(String id, long now);
 
     @Query("UPDATE offline_outbox SET state = 'FAILED', lastAttemptEpochMs = :now "

@@ -353,19 +353,21 @@ public final class OfflineOutboxTest {
         assertEquals(row.getIdempotencyKey(), actionApi.dispatched.get(0).getIdempotencyKey());
     }
 
-    @Test public void dispatchNetworkErrorReleasesLeaseAndStopsDrain() {
+    @Test public void dispatchNetworkErrorReleasesLeaseAndContinuesTheQueue() {
         await(repository.toggleReaction(MESSAGE_ID, CONVERSATION_ID, "👍"));
         await(repository.toggleReaction(MESSAGE_ID, CONVERSATION_ID, "❤️"));
         actionApi.results.add(new ApiResult.NetworkError<>(new IOException("offline")));
+        actionApi.results.add(new ApiResult.Success<>(null));
 
         awaitError(worker().drainOfflineOutbox(), RuntimeException.class);
 
-        assertEquals("only the first item should be attempted", 1, actionApi.dispatched.size());
+        // The retryable head failure releases only its own lease; the tail
+        // items of the same drain still dispatch (C1-02 containment).
+        assertEquals(2, actionApi.dispatched.size());
         List<OfflineOutboxEntity> rows = dao.rows();
         assertEquals(OutboxState.PENDING, rows.get(0).getState());
         assertEquals(1, rows.get(0).getRetryCount());
-        assertEquals(OutboxState.PENDING, rows.get(1).getState());
-        assertEquals(0, rows.get(1).getRetryCount());
+        assertEquals(OutboxState.SENT, rows.get(1).getState());
     }
 
     @Test public void dispatchPermanent4xxMarksFailedAndRollsBack() {
@@ -458,7 +460,9 @@ public final class OfflineOutboxTest {
         await(repository.toggleReaction(MESSAGE_ID, CONVERSATION_ID, "❤️"));
         actionApi.results.add(new ApiResult.NetworkError<>(new IOException("offline")));
         awaitError(worker().drainOfflineOutbox(), RuntimeException.class);
-        assertEquals(1, actionApi.dispatched.size());
+        // Both items were attempted in the same drain: the head failure
+        // released its lease (retry deferred) while the tail still dispatched.
+        assertEquals(2, actionApi.dispatched.size());
 
         RecordingActionApi freshApi = new RecordingActionApi();
         freshApi.results.add(new ApiResult.Success<>(null));
