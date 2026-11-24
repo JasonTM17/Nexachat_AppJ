@@ -18,7 +18,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** C5-03: the rule editor's optional PATCH reason lands on the audit row. */
+/** C5-03: the rule editor's optional PATCH and DELETE reasons land on the audit row. */
 @ExtendWith(MockitoExtension.class)
 class AlertRuleServiceTest {
 
@@ -64,6 +64,48 @@ class AlertRuleServiceTest {
         verify(auditService).record(eq(actorId), eq(User.Role.ADMIN), eq("RULE_UPDATE"),
                 eq("alert_rule"), eq(ruleId.toString()), isNull(),
                 eq(Map.of("enabled", false, "severity", "MEDIUM")), eq("203.0.113.7"));
+    }
+
+    @Test
+    void deletedReasonIsAuditedWithTheRuleDelete() {
+        AlertRuleRow rule = customRule();
+        when(repository.findById(ruleId)).thenReturn(Optional.of(rule));
+
+        service.delete(ruleId, "duplicate of rule X", actorId, User.Role.ADMIN, "203.0.113.7");
+
+        verify(repository).delete(ruleId);
+        verify(auditService).record(eq(actorId), eq(User.Role.ADMIN), eq("RULE_DELETE"),
+                eq("alert_rule"), eq(ruleId.toString()), eq("duplicate of rule X"),
+                eq(Map.of("name", "Payments keyword")), eq("203.0.113.7"));
+    }
+
+    @Test
+    void deletedRuleWithoutAReasonAuditsANullReason() {
+        AlertRuleRow rule = customRule();
+        when(repository.findById(ruleId)).thenReturn(Optional.of(rule));
+
+        service.delete(ruleId, null, actorId, User.Role.ADMIN, "203.0.113.7");
+
+        verify(repository).delete(ruleId);
+        verify(auditService).record(eq(actorId), eq(User.Role.ADMIN), eq("RULE_DELETE"),
+                eq("alert_rule"), eq(ruleId.toString()), isNull(),
+                eq(Map.of("name", "Payments keyword")), eq("203.0.113.7"));
+    }
+
+    @Test
+    void builtinDeleteReasonIsAuditedWithTheDisable() {
+        AlertRuleRow builtIn = new AlertRuleRow(ruleId, "Built-in scanner", "BUILT_IN", "MEDIUM",
+                "REGEX", "pattern", "any", true, true, null, null, Instant.EPOCH, Instant.EPOCH);
+        when(repository.findById(ruleId)).thenReturn(Optional.of(builtIn));
+
+        service.delete(ruleId, "rule was superseded by the new scanner", actorId,
+                User.Role.ADMIN, "203.0.113.7");
+
+        verify(repository).setEnabled(ruleId, false);
+        verify(auditService).record(eq(actorId), eq(User.Role.ADMIN), eq("RULE_UPDATE"),
+                eq("alert_rule"), eq(ruleId.toString()), eq("rule was superseded by the new scanner"),
+                eq(Map.of("enabled", false, "severity", "MEDIUM", "name", "Built-in scanner")),
+                eq("203.0.113.7"));
     }
 
     private AlertRuleRow customRule() {
