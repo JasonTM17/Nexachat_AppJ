@@ -69,13 +69,23 @@ public class MessageBroadcastListener {
                 : messageRepository.findPeerSuppressedSenderId(replyTo.id());
         EventEnvelope withoutQuote = replyTo == null ? envelope : EventEnvelope.of(
                 WsEventType.MESSAGE_CREATED, event.conversationId(), event.message().withoutReplyPreview());
+        // Fan-out snapshot (GH#313): when the publisher froze the member
+        // snapshot inside the sending transaction, both durable facts it
+        // wrapped — the admitted list and the peer-suppression verdict — are
+        // trusted as-is and the two post-commit re-reads below are skipped;
+        // replays and legacy events carry no snapshot and re-read as before.
+        boolean fanOutPrecomputed = event.admittedUserIds() != null;
         // V38: inbox pushes go per-user around the topic gate, so the durable
         // suppression flag is checked again here — a hidden row updates only
         // its sender's inbox (their other devices still converge).
-        java.util.Optional<UUID> suppressedSenderId =
-                messageRepository.findPeerSuppressedSenderId(event.message().id());
-        for (UUID memberId : memberRepository.findAdmittedUserIds(
-                event.conversationId(), event.message().createdAt())) {
+        java.util.Optional<UUID> suppressedSenderId = fanOutPrecomputed
+                ? java.util.Optional.ofNullable(event.peerSuppressedSenderId())
+                : messageRepository.findPeerSuppressedSenderId(event.message().id());
+        java.util.List<UUID> admittedUserIds = fanOutPrecomputed
+                ? event.admittedUserIds()
+                : memberRepository.findAdmittedUserIds(
+                        event.conversationId(), event.message().createdAt());
+        for (UUID memberId : admittedUserIds) {
             if (suppressedSenderId.isPresent() && !suppressedSenderId.get().equals(memberId)) {
                 continue;
             }

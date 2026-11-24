@@ -81,19 +81,31 @@ public class NotificationEventListener {
         if (event.replay()) {
             return;
         }
+        // Fan-out snapshot (GH#313): a publisher that froze the member
+        // snapshot and suppression verdict inside the sending transaction is
+        // trusted — the gating below runs on the same values the post-commit
+        // re-reads would produce; replays and legacy events re-read instead.
+        boolean fanOutPrecomputed = event.admittedUserIds() != null;
         // V38: a peer-suppressed send is never delivered — the only member it
         // could notify is its own sender, whom the loop below always skips.
-        if (messageRepository.findPeerSuppressedSenderId(event.message().id()).isPresent()) {
+        boolean peerSuppressed = fanOutPrecomputed
+                ? event.peerSuppressedSenderId() != null
+                : messageRepository.findPeerSuppressedSenderId(event.message().id()).isPresent();
+        if (peerSuppressed) {
             return;
         }
         UUID conversationId = event.conversationId();
         UUID senderId = event.message().senderId();
         UUID subjectUserId = event.subjectUserId();
-        List<UUID> memberIds = memberRepository.findAdmittedUserIds(
-                conversationId, event.message().createdAt());
-        // A removed subject is already gone from the member list at fan-out
-        // time; keep them as a candidate so the removal notice still reaches
-        // their devices.
+        List<UUID> memberIds = fanOutPrecomputed
+                ? event.admittedUserIds()
+                : memberRepository.findAdmittedUserIds(
+                        conversationId, event.message().createdAt());
+        // A removed subject may already be gone from the member list at
+        // fan-out time (they are necessarily gone for the post-commit
+        // re-read, and still present in an in-transaction snapshot — both are
+        // the "admitted at createdAt" view); keep them as a candidate either
+        // way so the removal notice always reaches their devices.
         Set<UUID> recipientIds = new LinkedHashSet<>(memberIds);
         if (subjectUserId != null) {
             recipientIds.add(subjectUserId);
