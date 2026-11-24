@@ -7927,7 +7927,7 @@ def run_offline_sync(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]
 
 
 SEED_PHONES = frozenset({
-    "+84900000001", "+84900000002", "+84900000003",
+    "+84900000001", "+84900000002", "+84900000003", "+84900000004",
     "+84900000101", "+84900000102",
 })
 DISPOSABLE_PASSWORD = "password123"
