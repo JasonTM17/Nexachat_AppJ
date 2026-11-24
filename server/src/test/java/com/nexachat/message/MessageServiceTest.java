@@ -38,6 +38,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -179,6 +180,11 @@ class MessageServiceTest {
         verify(messageRepository, never()).insertIgnoringDuplicateKey(
                 any(), any(), any(), any(), any(), any(), anyBoolean());
         verify(eventPublisher, never()).publishEvent(any());
+        // Pin both membership probes so an upstream refactor that drops (or
+        // doubles) a requireMember call changes this count and defangs the
+        // canary loudly instead of silently.
+        verify(memberRepository, times(2)).existsByConversation_IdAndUser_Id(
+                conversationId, senderId);
     }
 
     @Test
