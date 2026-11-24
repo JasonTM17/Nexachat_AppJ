@@ -75,7 +75,7 @@ Firebase và nhà cung cấp AI tùy chọn, mặc định đều tắt.
 flowchart LR
     subgraph Client["android/ — Java 21, XML Views + ViewBinding, Hilt"]
         UI["Fragments + ViewModels"] --> REPO["Repositories<br/>(Room = nguồn render)"]
-        REPO --> ROOM[("Room v21<br/>SSOT · outbox · sync cursors")]
+        REPO --> ROOM[("Room v23<br/>SSOT · outbox · sync cursors")]
         REPO --> RETRO["Retrofit / OkHttp"]
         REPO --> ST["STOMP client"]
     end
@@ -90,7 +90,7 @@ flowchart LR
         SVC --> BRK
     end
 
-    DB[("PostgreSQL 16<br/>Flyway V1–V20, V22, V24–V43")]
+    DB[("PostgreSQL 16<br/>Flyway V1–V20, V22, V24–V47")]
     STORE["Lưu trữ tệp<br/>volume nội bộ hoặc tương thích S3"]
     FCM[["Firebase (tùy chọn)<br/>FCM push · cầu RTDB tạm thời"]]
     LLM[["Nhà cung cấp AI (tùy chọn)<br/>tương thích OpenAI hoặc model nội bộ"]]
@@ -123,7 +123,7 @@ Các phiên bản dưới đây được đọc từ `server/pom.xml`,
 | Framework | Spring Boot 3.5.16 (Web, WebSocket, Security, Data JPA, Actuator) | Material 3 1.12.0, AppCompat, Navigation, Fragments, ViewBinding |
 | Xác thực & mã hóa | jjwt 0.12.6 (HS256), BCrypt cost 12, Google OIDC qua JWKS công khai, OTP HMAC-SHA256 | Kho token AES-GCM qua AndroidKeyStore, Tink 1.24.0 (E2EE), Credential Manager 1.6.0 |
 | Realtime | STOMP qua WebSocket (SimpleBroker); cầu Firebase RTDB tùy chọn | WebSocket OkHttp 4.12.0 + STOMP; stream-webrtc 1.3.10 cho cuộc gọi |
-| Lưu trữ | PostgreSQL 16, Flyway 11.13.3 (`V1–V20`, `V22`, `V24–V43`; V21/V23 dự phòng) | Room 2.6.1 (schema v21), RxDataStore 1.1.1 |
+| Lưu trữ | PostgreSQL 16, Flyway 11.13.3 (`V1–V20`, `V22`, `V24–V47`; V21/V23 dự phòng) | Room 2.6.1 (schema v23), RxDataStore 1.1.1 |
 | Media/tệp | Kiểm tra magic bytes, giới hạn 25 MB, stream theo Range | Glide 4.16.0, Media3 1.5.1, nén phía client + BlurHash |
 | Khác | libphonenumber 8.13.45, giới hạn tần suất bucket4j 8.10.1 | Hilt 2.52, Retrofit 2.11.0 + Moshi 1.15.1, RxJava 3.1.9, WorkManager 2.9.1 |
 | Build & kiểm thử | Maven 3.9+ (không có wrapper), JUnit + failsafe `*IT`, Testcontainers 1.21.4 | Gradle wrapper 8.14.3, AGP 8.9.3, JUnit 4 + Mockito 5.14.2 |
@@ -229,7 +229,7 @@ server/    Spring Boot modular monolith (REST /api/v1 + STOMP /ws)
   src/main/java/com/nexachat/{auth,user,contact,conversation,message,attachment,
     retention,presence,call,summary,notification,rag,reminder,poll,label,invite,
     archive,observability,ops,recovery,google,mail,firebase,e2ee,ws,common,config}/
-  src/main/resources/db/migration/   Flyway V1–V20, V22, V24–V43 (V21/V23 dự phòng)
+  src/main/resources/db/migration/   Flyway V1–V20, V22, V24–V47 (V21/V23 dự phòng)
 android/   ứng dụng Java 21 (XML Views, Fragments, ViewBinding, RxJava 3)
   app/src/main/java/com/nexachat/
     core/      auth · common · crypto · database (Room) · media · network · realtime · storage · ui

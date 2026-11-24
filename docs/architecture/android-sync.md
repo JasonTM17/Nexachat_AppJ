@@ -1,6 +1,6 @@
 # Android sync checkpoints
 
-The Android database is Room schema v21; the sync-v2 checkpoint columns and
+The Android database is Room schema v23; the sync-v2 checkpoint columns and
 triggers described here landed in the 13→14 migration. Room stores message
 `changeVersion`/`generation` and one active cursor per
 account/conversation. The cursor primary key includes generation; a unique

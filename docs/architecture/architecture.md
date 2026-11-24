@@ -1,9 +1,9 @@
 # NexaChat Architecture
 
 > Current implementation view: Android app (Java 21 LTS, XML Views + Fragments +
-> ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v21) → REST
+> ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v23) → REST
 > `/api/v1` + STOMP over WebSocket → Spring Boot 3.5.16 modular monolith → PostgreSQL 16
-> (Flyway V1–V20 + V22 + V24–V44; V21/V23 reserved) + local or S3-compatible file storage. Conversation RAG is available through the
+> (Flyway V1–V20 + V22 + V24–V47; V21/V23 reserved) + local or S3-compatible file storage. Conversation RAG is available through the
 > server API (`POST /api/v1/conversations/{id}/ask`) and Android Ask screen
 > ([docs/architecture/rag.md](rag.md)).
 > Call signaling shares STOMP (`server/call`,
@@ -66,7 +66,7 @@ flowchart LR
         PRESENCE["PresenceSessionRegistry<br/>(in-memory, per node)"]
     end
 
-    PG[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V44 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin · sync cursors · google_signup · e2ee")]
+    PG[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V47 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin · sync cursors · google_signup · e2ee")]
     STORAGE["File storage<br/>(StorageService: local or S3-compatible)"]
     FCM[["FCM (HTTP v1 OAuth2, GoogleHttpFcmGateway)"]]
 
@@ -215,11 +215,12 @@ sequenceDiagram
   not hide the peers from that user. Last-disconnect offline notification is
   coalesced for five seconds.
 
-## 5. V12–V44 feature modules & realtime extensions
+## 5. V12–V47 feature modules & realtime extensions
 
-V36–V44 (admin console, message translation, blocks/reports/stars,
+V36–V47 (admin console, message translation, blocks/reports/stars,
 disappearing messages, call media type, signup email OTP, chat streaks, public
-feed, streak run floors) are itemized in the migration table of
+feed, streak run floors, applied-migration repair, scheduled messages, RAG
+context revision) are itemized in the migration table of
 [docs/architecture/api-contract.md](api-contract.md#migration-history) and in the
 per-feature docs (admin-console.md, ai-translation.md, streaks.md,
 public-feed.md, calls.md).

@@ -115,7 +115,9 @@ Android client can consume the API but no dedicated screen is merged into
 | V42 | `V42__chat_streaks.sql` | `conversation_streaks` (one row per DIRECT pair) and `user_streaks` (app check-in streak) with weekly grace day and reminder bookkeeping. |
 | V43 | `V43__public_feed.sql` | `public_posts`, `public_comments`, `public_post_reactions`, `public_images`; extends `reports.target_type` with `POST`/`COMMENT`. |
 | V44 | `V44__streak_contiguous_run_floors.sql` | Per-side contiguous-run floor columns (`low_cont`/`high_cont`, `open_cont`/`sent_cont`) on the streak tables so late-arriving records can still complete a streak day. |
+| V45 | `V45__repair_applied_migration_drift.sql` | Forward repair of in-place edits to already-applied V36 (widen `admin_audit_log.target_id`, `alert_rules` name/description) and V28 (google nonce owner/binding columns); idempotent, and the V27→V28 rename is a manual `flyway repair` case documented in deploy-render.md. |
 | V46 | `V46__scheduled_messages.sql` | `scheduled_messages` author queue (PENDING/SENT/CANCELED/FAILED, claim lease, retry backoff) with the `(sender_id, client_message_id)` idempotency key. |
+| V47 | `V47__rag_context_revision.sql` | `conversations.ai_context_version` plus `rag_ask_cache.context_version`, with a message-change trigger and expiry index so derived RAG answers are replayable only against the exact source context. |
 
 ## Operational notes
 

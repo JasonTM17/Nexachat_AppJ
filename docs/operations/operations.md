@@ -35,6 +35,7 @@ Boolean feature flags and `*.enabled` settings (for example `FCM_ENABLED`,
 | `MANAGEMENT_EXPOSURE` | No (actuator endpoints to expose) | `health` | `health,metrics,prometheus` |
 | `MANAGEMENT_DISK_THRESHOLD` | No (local disk warning threshold; does not measure an S3 bucket) | `1GB` | `1GB` |
 | `NEXACHAT_CORS_ALLOWED_ORIGINS` | No (comma-separated browser origins; empty admits no web caller) | Empty | `https://web.nexachat.com` |
+| `NEXACHAT_ADMIN_ALLOWED_ORIGINS` | No (comma-separated browser origins of the admin console for `/api/v1/admin/**` and admin login/refresh; empty blocks every cross-origin admin caller) | Empty | `https://nexachat.io.vn` |
 | `NEXACHAT_MAIL_PROVIDER` | No (required only to enable recovery-email delivery; `smtp`, `resend`, or empty to disable) | Empty | `smtp` |
 | `MAIL_SMTP_HOST` | No (when SMTP is selected) | `smtp.gmail.com` | `smtp.gmail.com` |
 | `MAIL_SMTP_PORT` | No (when SMTP is selected; STARTTLS required) | `587` | `587` |
@@ -1067,7 +1068,7 @@ when verified email is the sign-in anchor,
 `e2ee_enabled` flag and message encryption columns, and
 `V35__backfill_unversioned_messages.sql` repairs rows left without a
 `change_version` by pre-V32 writes such as an old `demo/seed.sql`.
-Ensure every migration file V1–V20, `V22`, and `V24`–`V44` is present in the
+Ensure every migration file V1–V20, `V22`, and `V24`–`V47` is present in the
 source tree before rebuilding the dev app container; the image packages the
 server migration resources used by Flyway at startup.
 

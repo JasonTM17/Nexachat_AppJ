@@ -75,7 +75,7 @@ optional Firebase and AI-provider integrations, both off by default.
 flowchart LR
     subgraph Client["android/ — Java 21, XML Views + ViewBinding, Hilt"]
         UI["Fragments + ViewModels"] --> REPO["Repositories<br/>(Room = render source)"]
-        REPO --> ROOM[("Room v21<br/>SSOT · outbox · sync cursors")]
+        REPO --> ROOM[("Room v23<br/>SSOT · outbox · sync cursors")]
         REPO --> RETRO["Retrofit / OkHttp"]
         REPO --> ST["STOMP client"]
     end
@@ -90,7 +90,7 @@ flowchart LR
         SVC --> BRK
     end
 
-    DB[("PostgreSQL 16<br/>Flyway V1–V20, V22, V24–V43")]
+    DB[("PostgreSQL 16<br/>Flyway V1–V20, V22, V24–V47")]
     STORE["File storage<br/>local volume or S3-compatible"]
     FCM[["Firebase (opt-in)<br/>FCM push · RTDB ephemeral bridge"]]
     LLM[["AI provider (opt-in)<br/>OpenAI-compatible or local model"]]
@@ -122,7 +122,7 @@ Versions below are read from `server/pom.xml`, `android/gradle/libs.versions.tom
 | Framework | Spring Boot 3.5.16 (Web, WebSocket, Security, Data JPA, Actuator) | Material 3 1.12.0, AppCompat, Navigation, Fragments, ViewBinding |
 | Auth & crypto | jjwt 0.12.6 (HS256), BCrypt cost 12, Google OIDC via public JWKS, HMAC-SHA256 OTPs | AndroidKeyStore AES-GCM token store, Tink 1.24.0 (E2EE), Credential Manager 1.6.0 |
 | Realtime | STOMP over WebSocket (SimpleBroker); optional Firebase RTDB bridge | OkHttp 4.12.0 WebSocket + STOMP; stream-webrtc 1.3.10 for calls |
-| Persistence | PostgreSQL 16, Flyway 11.13.3 (`V1–V20`, `V22`, `V24–V43`; V21/V23 reserved) | Room 2.6.1 (schema v21), RxDataStore 1.1.1 |
+| Persistence | PostgreSQL 16, Flyway 11.13.3 (`V1–V20`, `V22`, `V24–V47`; V21/V23 reserved) | Room 2.6.1 (schema v23), RxDataStore 1.1.1 |
 | Media/files | Magic-byte sniffing, 25 MB cap, Range streaming | Glide 4.16.0, Media3 1.5.1, client compression + BlurHash |
 | Other | libphonenumber 8.13.45, bucket4j 8.10.1 rate limits | Hilt 2.52, Retrofit 2.11.0 + Moshi 1.15.1, RxJava 3.1.9, WorkManager 2.9.1 |
 | Build & test | Maven 3.9+ (no wrapper), JUnit + failsafe `*IT`, Testcontainers 1.21.4 | Gradle 8.14.3 wrapper, AGP 8.9.3, JUnit 4 + Mockito 5.14.2 |
@@ -229,7 +229,7 @@ server/    Spring Boot modular monolith (REST /api/v1 + STOMP /ws)
   src/main/java/com/nexachat/{auth,user,contact,conversation,message,attachment,
     retention,presence,call,summary,notification,rag,reminder,poll,label,invite,
     archive,observability,ops,recovery,google,mail,firebase,e2ee,ws,admin,common,config}/
-  src/main/resources/db/migration/   Flyway V1–V20, V22, V24–V43 (V21/V23 reserved)
+  src/main/resources/db/migration/   Flyway V1–V20, V22, V24–V47 (V21/V23 reserved)
 android/   Java 21 app (XML Views, Fragments, ViewBinding, RxJava 3)
   app/src/main/java/com/nexachat/
     core/      auth · common · crypto · database (Room) · media · network · realtime · storage · ui

@@ -183,7 +183,7 @@ rows follow the table):
 Blocked rows and their missing drivers: `media` (reusable picker/media
 fixture and byte-hash oracle, in progress), `calls-signaling` (a maintained
 call UI driver), `room-13-14-upgrade` and `v111-rc-upgrade` (the RC build —
-the Android database is Room schema v21 now, so the verified v1.1.0/v1.1.1
+the Android database is Room schema v23 now, so the verified v1.1.0/v1.1.1
 fixtures are not an upgrade pair), and `auth-session-lifecycle`, whose REST
 token lifecycle and barrier-tunnel paused-frame check run while its
 register-UI and password-change-UI scenarios lack drivers (REST slice in
