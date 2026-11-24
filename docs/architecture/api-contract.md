@@ -1612,7 +1612,7 @@ messages and AI-opted-out conversations are never scanned or shown.
 | `GET /api/v1/admin/rules` | staff | — | `200` rule list | 401/403 |
 | `POST /api/v1/admin/rules` | ADMIN | `{name, category, severity, patternType, pattern, locale?, description?, enabled?}` | `201` rule | 401/403 · `VALIDATION_FAILED` 400 |
 | `PATCH /api/v1/admin/rules/{ruleId}` | ADMIN | partial update; built-in rules accept only `severity` and `enabled` | `200` rule | 401/403 · 404 |
-| `DELETE /api/v1/admin/rules/{ruleId}` | ADMIN | — | `204`; built-ins disable instead | 401/403 · 404 |
+| `DELETE /api/v1/admin/rules/{ruleId}` | ADMIN | optional `{"reason"}` (≤500 chars, JSON; kept with no body or `"reason": null`). The reason is audited into both the `RULE_DELETE` record and the implicit `RULE_UPDATE` record of a built-in toggle | `204`; built-ins disable instead | 401/403 · 404 · `VALIDATION_FAILED` 400 (over-long reason) · malformed JSON 400 · body present with non-JSON content type `UNSUPPORTED_MEDIA_TYPE` 415 |
 | `POST /api/v1/admin/rules/test` | staff | `{patternType, pattern, sampleText}` | `200` `{matched, matches[]}` | 401/403 · 400 |
 | `GET /api/v1/admin/audit` | staff | `?actor=&action=&target=&from=&to=&page=` | `200` audit page | 401/403 |
 | `GET /api/v1/admin/feed/reports` | staff | `?status=&page=&size=` | `200` page of `AdminFeedReportResponse` | 401/403 |
