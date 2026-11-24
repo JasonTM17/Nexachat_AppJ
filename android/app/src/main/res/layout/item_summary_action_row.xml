@@ -41,6 +41,7 @@
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/summaryActionCitations"
+            android:contentDescription="@string/cd_clickable_list"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"

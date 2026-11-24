@@ -46,6 +46,7 @@
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/scheduledList"
+            android:contentDescription="@string/cd_clickable_list_of_messages"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:clipToPadding="false"
