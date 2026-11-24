@@ -1753,7 +1753,7 @@ above apply unchanged:
 - Read receipt: `SEND /app/conversations/{id}/read` (or `/app/chat.read.ack`) — broadcast as `MESSAGE_READ` only when the reader shares seen; hidden recipients do not receive peers' receipts (see the settings section)
 - The chat-level receipt aliases carry `conversationId` in their payload. The server verifies current membership in that conversation before dispatch; a missing or malformed ID continues to payload conversion/validation and cannot advance a watermark.
 - Call signaling: `SEND /app/calls/{id}/signal` (details in [`docs/architecture/calls.md`](calls.md))
-- Events: `SUBSCRIBE /topic/conversations.{id}` and `/user/queue/inbox`
+- Events: `SUBSCRIBE /topic/conversations.{id}` and `/user/queue/inbox`; a client subscribed to both receives every `MESSAGE_CREATED` twice and deduplicates by message id (see the dual-subscription dedupe contract in that file's §4 Destinations)
 - Errors: `SUBSCRIBE /user/queue/errors` → `{code, clientMessageId?}`; a rate-limited message frame returns `{"code":"RATE_LIMITED","clientMessageId":"<uuid>"}`, while a rate-limited typing frame omits `clientMessageId`.
 
 Message SEND is limited to 30 per 10 seconds per authenticated user by default (`nexachat.rate-limit.stomp.messages-per-window`, `nexachat.rate-limit.stomp.window-seconds`). Typing SEND is separately limited to 60 per 10 seconds (`nexachat.rate-limit.stomp.typing-per-window`, `nexachat.rate-limit.stomp.typing-window-seconds`). Excess frames are dropped and return `RATE_LIMITED` on `/user/queue/errors` without closing the session.
