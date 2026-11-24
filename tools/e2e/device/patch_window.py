@@ -379,8 +379,18 @@ def fill_login_field(ui: Device, field_id: str, value: str) -> None:
     node = node_by_id(ui_nodes(ui, timeout=15), field_id)
     check(node is not None, f"login field {field_id} is not visible")
     ui.tap_node(node)
-    focused = node_by_id(ui_nodes(ui, timeout=15), field_id)
-    check(focused is not None and focused.attrs.get("focused") == "true",
+    # The first tap after the form draws can miss input focus while the IME
+    # settles: poll the node until focused="true" (~5s) rather than trusting
+    # one re-dump that merely proves the node exists.
+    focused = None
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        focused = node_by_id(ui_nodes(ui, timeout=15), field_id)
+        if focused is not None and focused.attrs.get("focused") == "true":
+            break
+        focused = None
+        time.sleep(0.3)
+    check(focused is not None,
           f"login field {field_id} did not receive input focus")
     if focused.text:
         ui.move_end()

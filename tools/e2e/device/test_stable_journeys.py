@@ -7924,5 +7924,82 @@ class DeadlineDumpTest(unittest.TestCase):
             self.assertEqual(directions[3:6], [-1, -1, -1])  # then newest
 
 
+class FillLoginFieldFocusPollTest(unittest.TestCase):
+    """fill_login_field must wait for focused="true", not just the node."""
+
+    class FakeNode:
+        def __init__(self, suffix: str, focused: bool = False, text: str = ""):
+            self.attrs = {
+                "resource-id": "com.nexachat.debug:id/" + suffix,
+                "focused": "true" if focused else "false",
+                "text": text,
+            }
+            self.desc = ""
+            self.clickable = True
+            self.box = (0, 0, 100, 40)
+
+        @property
+        def text(self):
+            return self.attrs["text"]
+
+    class FakeUi:
+        """Device stand-in: nth dump onward reports the field as focused."""
+
+        def __init__(self, focus_after: int | None, text: str = ""):
+            self.dumps = 0
+            self.focus_after = focus_after
+            self.text = text
+            self.tapped = []
+            self.typed = []
+            self.moved_end = 0
+            self.deleted = []
+
+        def nodes(self):
+            self.dumps += 1
+            focused = (self.focus_after is not None
+                       and self.dumps >= self.focus_after)
+            return [FillLoginFieldFocusPollTest.FakeNode(
+                "phoneInput", focused=focused, text=self.text)]
+
+        def tap_node(self, node):
+            self.tapped.append(node)
+
+        def move_end(self):
+            self.moved_end += 1
+
+        def delete_chars(self, count):
+            self.deleted.append(count)
+
+        def type_text(self, value):
+            self.typed.append(value)
+
+    def test_focus_arriving_late_still_types(self):
+        ui = self.FakeUi(focus_after=3)
+        with mock.patch("time.sleep"):
+            patch_window.fill_login_field(ui, "phoneInput", "+8499")
+        self.assertEqual(ui.dumps, 3)
+        self.assertEqual(len(ui.tapped), 1)
+        self.assertEqual(ui.typed, ["+8499"])
+
+    def test_focus_never_arriving_fails_instead_of_typing(self):
+        ui = self.FakeUi(focus_after=None)
+        clock = [1000.0]
+        with mock.patch("time.monotonic", side_effect=lambda: clock[0]), \
+                mock.patch("time.sleep", side_effect=lambda s: clock.__setitem__(0, clock[0] + s)):
+            with self.assertRaisesRegex(
+                    patch_window.E2EFailure, "did not receive input focus"):
+                patch_window.fill_login_field(ui, "phoneInput", "+8499")
+        self.assertGreater(ui.dumps, 1)
+        self.assertEqual(ui.typed, [])
+
+    def test_prefilled_text_is_cleared_before_typing(self):
+        ui = self.FakeUi(focus_after=1, text="+84000")
+        with mock.patch("time.sleep"):
+            patch_window.fill_login_field(ui, "phoneInput", "+8499")
+        self.assertEqual(ui.moved_end, 1)
+        self.assertEqual(ui.deleted, [len("+84000")])
+        self.assertEqual(ui.typed, ["+8499"])
+
+
 if __name__ == "__main__":
     unittest.main()
