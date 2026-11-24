@@ -20,7 +20,8 @@ from dataclasses import dataclass, field
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # Execution and reporting order, matching the journey plan.
-JOURNEYS = ["feed_moderation", "ai_privacy", "groups_privacy", "admin_streak"]
+JOURNEYS = ["feed_moderation", "ai_privacy", "groups_privacy", "admin_streak",
+            "realtime_fanout"]
 
 RESULT_PREFIXES = {"PASS ": "pass", "FAIL ": "fail", "NOT_RUN ": "not_run"}
 
