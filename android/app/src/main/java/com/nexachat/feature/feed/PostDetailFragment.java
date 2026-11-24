@@ -34,6 +34,7 @@ public final class PostDetailFragment extends Fragment implements ReportSheetFra
     private PostAdapter postAdapter;
     private CommentAdapter commentAdapter;
     private CommentsEmptyAdapter commentsEmptyAdapter;
+    private boolean commentsErrorShown;
 
     public PostDetailFragment() {
         super(R.layout.fragment_post_detail);
@@ -100,12 +101,38 @@ public final class PostDetailFragment extends Fragment implements ReportSheetFra
         binding.detailLoading.setVisibility(
                 state.isLoading() && post == null ? View.VISIBLE : View.GONE);
         binding.detailError.setVisibility(state.isError() && post == null ? View.VISIBLE : View.GONE);
-        commentsEmptyAdapter.setShown(post != null
-                && !state.isLoading()
-                && state.getComments().isEmpty());
+        commentsEmptyAdapter.setShown(emptyCommentsCtaVisible(state));
         binding.detailList.setVisibility(post == null ? View.GONE : View.VISIBLE);
         binding.detailComposer.setVisibility(post == null ? View.GONE : View.VISIBLE);
         binding.detailSend.setEnabled(!state.isSending());
+        renderCommentsFeedback(state, post);
+    }
+
+    /**
+     * The composer CTA only counts as visible once the comment list is known: the
+     * post on screen, nothing still loading, and no failed comment page.
+     */
+    private boolean emptyCommentsCtaVisible(@NonNull PostDetailViewModel.UiState state) {
+        return state.getPost() != null
+                && !state.isLoading()
+                && !state.isLoadingMore()
+                && !state.isCommentsError()
+                && state.getComments().isEmpty();
+    }
+
+    /** One retry banner per failed comment page, shown only under a loaded post. */
+    private void renderCommentsFeedback(
+            @NonNull PostDetailViewModel.UiState state, @Nullable FeedRepository.Post post) {
+        if (state.isCommentsError() && post != null) {
+            if (!commentsErrorShown) {
+                commentsErrorShown = true;
+                Snackbar.make(binding.getRoot(), R.string.feed_error, Snackbar.LENGTH_LONG)
+                        .setAction(R.string.action_retry, ignored -> viewModel.retryComments())
+                        .show();
+            }
+            return;
+        }
+        commentsErrorShown = false;
     }
 
     private void sendComment() {

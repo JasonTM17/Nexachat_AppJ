@@ -39,6 +39,7 @@ public final class PostDetailViewModel extends ViewModel {
         private final boolean loadingMore;
         private final boolean sending;
         @Nullable private final String nextCursor;
+        private final boolean commentsError;
 
         UiState(
                 @Nullable FeedRepository.Post post,
@@ -47,7 +48,8 @@ public final class PostDetailViewModel extends ViewModel {
                 boolean error,
                 boolean loadingMore,
                 boolean sending,
-                @Nullable String nextCursor) {
+                @Nullable String nextCursor,
+                boolean commentsError) {
             this.post = post;
             this.comments = comments;
             this.loading = loading;
@@ -55,6 +57,7 @@ public final class PostDetailViewModel extends ViewModel {
             this.loadingMore = loadingMore;
             this.sending = sending;
             this.nextCursor = nextCursor;
+            this.commentsError = commentsError;
         }
 
         @Nullable public FeedRepository.Post getPost() { return post; }
@@ -72,22 +75,26 @@ public final class PostDetailViewModel extends ViewModel {
 
         public boolean hasMoreComments() { return nextCursor != null; }
 
+        /** A comment page failed after the post is on screen. */
+        public boolean isCommentsError() { return commentsError; }
+
         @Nullable String getNextCursor() { return nextCursor; }
 
         UiState withPost(@Nullable FeedRepository.Post next) {
-            return new UiState(next, comments, loading, error, loadingMore, sending, nextCursor);
+            return new UiState(next, comments, loading, error, loadingMore, sending,
+                    nextCursor, commentsError);
         }
 
         UiState withComments(
                 List<FeedRepository.Comment> next, @Nullable String cursor, boolean busy) {
-            return new UiState(post, next, loading, error, false, busy, cursor);
+            return new UiState(post, next, loading, error, false, busy, cursor, false);
         }
     }
 
     private final FeedRepository repository;
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final MutableLiveData<UiState> uiState = new MutableLiveData<>(
-            new UiState(null, List.of(), true, false, false, false, null));
+            new UiState(null, List.of(), true, false, false, false, null, false));
     private final MutableLiveData<Outcome> outcome = new MutableLiveData<>();
     private String postId = "";
     private String clientCommentId = UUID.randomUUID().toString();
@@ -107,7 +114,7 @@ public final class PostDetailViewModel extends ViewModel {
     public void load(@NonNull String id) {
         if (!id.equals(postId)) {
             postId = id;
-            uiState.setValue(new UiState(null, List.of(), true, false, false, false, null));
+            uiState.setValue(new UiState(null, List.of(), true, false, false, false, null, false));
         }
         disposables.add(repository.getPost(postId)
                 .subscribeOn(Schedulers.io())
@@ -118,25 +125,37 @@ public final class PostDetailViewModel extends ViewModel {
                             post,
                             state == null ? List.of() : state.comments,
                             false, false, false, false,
-                            state == null ? null : state.nextCursor));
+                            state == null ? null : state.nextCursor,
+                            false));
                     loadComments(null);
                 }, error -> {
                     UiState state = uiState.getValue();
                     uiState.setValue(new UiState(
                             state == null ? null : state.post,
                             state == null ? List.of() : state.comments,
-                            false, true, false, false, null));
+                            false, true, false, false, null, false));
                 }));
     }
 
     public void loadMoreComments() {
         UiState state = uiState.getValue();
-        if (state == null || state.loadingMore || state.nextCursor == null) {
+        if (state == null || state.loadingMore || state.getNextCursor() == null) {
             return;
         }
         uiState.setValue(new UiState(state.post, state.comments, state.loading, state.error,
-                true, state.sending, state.nextCursor));
+                true, state.sending, state.nextCursor, false));
         loadComments(state.nextCursor);
+    }
+
+    /** Retries the first comment page after it failed; keeps the loaded post. */
+    public void retryComments() {
+        UiState state = uiState.getValue();
+        if (state == null || state.loading || state.loadingMore || state.getPost() == null) {
+            return;
+        }
+        uiState.setValue(new UiState(state.post, state.comments, false, false, true, false,
+                null, false));
+        loadComments(null);
     }
 
     public void sendComment(@Nullable String raw) {
@@ -149,7 +168,7 @@ public final class PostDetailViewModel extends ViewModel {
             return;
         }
         uiState.setValue(new UiState(state.post, state.comments, state.loading, state.error,
-                state.loadingMore, true, state.nextCursor));
+                state.loadingMore, true, state.nextCursor, state.commentsError));
         disposables.add(repository.addComment(postId, body, clientCommentId)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
@@ -166,7 +185,8 @@ public final class PostDetailViewModel extends ViewModel {
                             post == null ? null : withCommentCount(post, post.commentCount() + 1),
                             List.copyOf(next),
                             false, false, false, false,
-                            current == null ? null : current.nextCursor));
+                            current == null ? null : current.nextCursor,
+                            current != null && current.commentsError));
                     outcome.setValue(Outcome.COMMENT_SENT);
                 }, error -> {
                     UiState current = uiState.getValue();
@@ -174,7 +194,8 @@ public final class PostDetailViewModel extends ViewModel {
                             current == null ? null : current.post,
                             current == null ? List.of() : current.comments,
                             false, false, false, false,
-                            current == null ? null : current.nextCursor));
+                            current == null ? null : current.nextCursor,
+                            current != null && current.commentsError));
                     outcome.setValue(FeedRules.isRateLimited(error)
                             ? Outcome.COMMENT_RATE_LIMITED
                             : Outcome.COMMENT_FAILED);
@@ -196,7 +217,8 @@ public final class PostDetailViewModel extends ViewModel {
         uiState.setValue(new UiState(
                 post == null ? null : withCommentCount(post, Math.max(0, post.commentCount() - 1)),
                 List.copyOf(remaining),
-                state.loading, state.error, state.loadingMore, state.sending, state.nextCursor));
+                state.loading, state.error, state.loadingMore, state.sending, state.nextCursor,
+                state.commentsError));
         disposables.add(repository.deleteComment(commentId)
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
@@ -274,15 +296,21 @@ public final class PostDetailViewModel extends ViewModel {
                             state == null ? null : state.post,
                             List.copyOf(merged),
                             false, false, false, false,
-                            page.nextCursor()));
+                            page.nextCursor(),
+                            false));
                 }, error -> {
                     UiState state = uiState.getValue();
+                    // The post survived, so its error view must not swallow the comment
+                    // failure: flag it separately or the empty CTA lies about a loaded list.
+                    boolean postOnScreen = state != null && state.post != null;
                     uiState.setValue(new UiState(
                             state == null ? null : state.post,
                             state == null ? List.of() : state.comments,
-                            false, cursor == null && (state == null || state.post == null),
+                            false,
+                            !postOnScreen && cursor == null,
                             false, false,
-                            state == null ? null : state.nextCursor));
+                            state == null ? null : state.nextCursor,
+                            postOnScreen));
                 }));
     }
 

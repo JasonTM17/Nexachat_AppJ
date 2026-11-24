@@ -872,8 +872,73 @@ public final class CallManagerTest {
         assertEquals(0, countSignals(CallSignal.Type.END));
     }
 
+    @Test
+    public void declineWhileTransportIsDownIsDeliveredOnceSignalingReconnects() {
+        signaling.connected = false;
+        TestObserver<CallSession> admission = admitPush(
+                "call-cold", nowMs + 20_000L, () -> true);
+        scheduler.runCurrent();
+        admission.assertValueCount(1);
+        assertEquals(CallState.PENDING_INCOMING, session().getState());
+
+        manager.reject("call-cold");
+        scheduler.runCurrent();
+
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(CallEndReason.REJECTED, session().getEndReason());
+        assertEquals(1, countSignals(CallSignal.Type.REJECT));
+        assertTrue(signaling.delivered.isEmpty());
+
+        signaling.connect();
+        scheduler.runCurrent();
+
+        assertEquals(1, countDelivered(CallSignal.Type.REJECT));
+        assertEquals("call-cold", signaling.delivered.get(0).getCallId());
+
+        signaling.connect();
+        scheduler.runCurrent();
+
+        assertEquals(1, countDelivered(CallSignal.Type.REJECT));
+    }
+
+    @Test
+    public void parkedTerminalSignalIsDroppedOnceItsDeliveryWindowCloses() {
+        signaling.connected = false;
+        TestObserver<CallSession> admission = admitPush(
+                "call-expired", nowMs + 30_000L, () -> true);
+        scheduler.runCurrent();
+        admission.assertValueCount(1);
+
+        manager.reject("call-expired");
+        scheduler.runCurrent();
+        assertEquals(CallState.ENDED, session().getState());
+        assertEquals(CallEndReason.REJECTED, session().getEndReason());
+
+        nowMs += 10_001L;
+        signaling.connect();
+        scheduler.runCurrent();
+
+        assertTrue(signaling.delivered.isEmpty());
+    }
+
+    @Test
+    public void anUndeliveredTerminalSignalOnlyRaisesAnErrorForFailedCalls() {
+        // COMPLETED/CANCELLED/REJECTED are user-chosen ends: a missing signal is
+        // logged, never shown to the user as a network-error dialog.
+        assertFalse(CallManager.shouldNotifyTerminalError(CallEndReason.COMPLETED));
+        assertFalse(CallManager.shouldNotifyTerminalError(CallEndReason.CANCELLED));
+        assertFalse(CallManager.shouldNotifyTerminalError(CallEndReason.REJECTED));
+        assertFalse(CallManager.shouldNotifyTerminalError(CallEndReason.MISSED));
+        assertFalse(CallManager.shouldNotifyTerminalError(CallEndReason.BUSY));
+        assertTrue(CallManager.shouldNotifyTerminalError(CallEndReason.FAILED));
+    }
+
     private long countSignals(CallSignal.Type type) {
         return signaling.sent.stream().filter(signal -> signal.getType() == type).count();
+    }
+
+    private long countDelivered(CallSignal.Type type) {
+        return signaling.delivered.stream().filter(signal -> signal.getType() == type).count();
     }
 
     private void startOutgoing() {
@@ -1044,6 +1109,8 @@ public final class CallManagerTest {
 
     private static final class FakeSignaling implements CallSignalingClient {
         final List<CallSignal> sent = new ArrayList<>();
+        /** Unlike {@link #sent}, only frames the transport actually accepted. */
+        final List<CallSignal> delivered = new ArrayList<>();
         Listener listener;
         boolean connected = true;
         boolean throwOnSend;
@@ -1060,6 +1127,7 @@ public final class CallManagerTest {
         public boolean send(String conversationId, CallSignal signal) {
             if (throwOnSend) throw new RuntimeException("transport down");
             sent.add(signal);
+            if (connected) delivered.add(signal);
             return connected;
         }
 
@@ -1075,6 +1143,11 @@ public final class CallManagerTest {
         void disconnect() {
             connected = false;
             listener.onDisconnected();
+        }
+
+        void connect() {
+            connected = true;
+            listener.onConnected();
         }
 
         CallSignal lastSignal() {

@@ -254,12 +254,11 @@ public final class GroupDetailFragment extends Fragment {
 
     private void onMuteClicked() {
         GroupDetailUiState state = viewModel.getUiState().getValue();
-        if (state != null && mutedNow(state)) {
-            viewModel.unmuteConversation();
-            return;
-        }
+        // Route every tap through the dialog with the live flag: presets when
+        // unmuted, the dialog's Unmute item when muted — the hardcoded false used
+        // to make that branch dead code from this entry too.
         ConversationPreferenceMenu.showMutePresets(
-                requireContext(), false, preferenceListener());
+                requireContext(), state != null && mutedNow(state), preferenceListener());
     }
 
     private ConversationPreferenceMenu.Listener preferenceListener() {

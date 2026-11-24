@@ -37,6 +37,12 @@ public final class CallManager implements AutoCloseable {
     private static final long PUSH_INVITE_GRACE_MS = TimeUnit.SECONDS.toMillis(15);
     private static final long PUSH_REPLAY_WINDOW_MS = TimeUnit.SECONDS.toMillis(60);
     private static final int MAX_TERMINAL_CALL_IDS = 256;
+    /**
+     * How long a terminal signal stays parked when the transport cannot take it. Past the
+     * window the signal is dropped: the caller-side ring timeout already ends the call
+     * server-side, so a late REJECT/CANCEL/END only replays a decision the server made.
+     */
+    private static final long TERMINAL_SIGNAL_DELIVERY_WINDOW_MS = TimeUnit.SECONDS.toMillis(10);
 
     public interface CallListener {
         void onCallChanged(CallSession session);
@@ -999,7 +1005,8 @@ public final class CallManager implements AutoCloseable {
                 && state != CallState.RECONNECTING_NETWORK) return;
         CallSignal signal = new CallSignal(type, callId, sdp, candidate);
         if (state == CallState.RECONNECTING_NETWORK) {
-            pendingOutboundSignals.add(new QueuedOutboundSignal(currentSession.getConversationId(), signal));
+            pendingOutboundSignals.add(new QueuedOutboundSignal(
+                    currentSession.getConversationId(), signal, Long.MAX_VALUE));
             return;
         }
         if (!signaling.send(currentSession.getConversationId(), signal)) {
@@ -1037,10 +1044,36 @@ public final class CallManager implements AutoCloseable {
             List<CallSignal> queuedRemote = new ArrayList<>(pendingRemoteSignals);
             pendingRemoteSignals.clear();
             for (CallSignal pending : queuedRemote) deliverRemoteSignal(pending);
-            List<QueuedOutboundSignal> queued = new ArrayList<>(pendingOutboundSignals);
-            pendingOutboundSignals.clear();
-            for (QueuedOutboundSignal item : queued) {
-                signaling.send(item.conversationId, item.signal);
+        }
+        // Also outside RECONNECTING_NETWORK: a cold-start decline parks its terminal
+        // signal before the transport is up and expects it on this callback.
+        flushPendingOutboundSignals();
+    }
+
+    /**
+     * Relays queued outbound signals once the transport is open again. Terminal
+     * signals parked by {@link #sendSafely} expire with their delivery window; roaming
+     * media frames ({@code Long.MAX_VALUE}) never do.
+     */
+    private void flushPendingOutboundSignals() {
+        if (pendingOutboundSignals.isEmpty()) return;
+        long now = clock.getAsLong();
+        List<QueuedOutboundSignal> queued = new ArrayList<>(pendingOutboundSignals);
+        pendingOutboundSignals.clear();
+        for (QueuedOutboundSignal item : queued) {
+            if (item.expiresAtMs <= now) {
+                LOGGER.warning("terminal-signal=" + item.signal.getType()
+                        + " delivery-window-closed callId=" + idPrefix(item.signal.getCallId()));
+                continue;
+            }
+            boolean delivered;
+            try {
+                delivered = signaling.send(item.conversationId, item.signal);
+            } catch (RuntimeException exception) {
+                delivered = false;
+            }
+            if (!delivered) {
+                pendingOutboundSignals.add(item);
             }
         }
     }
@@ -1049,7 +1082,11 @@ public final class CallManager implements AutoCloseable {
         return signaling.send(conversationId, CallSignal.control(type, callId));
     }
 
-    /** Best-effort terminal signal: a throwing transport must not hold the terminal state open. */
+    /** Best-effort terminal signal. A dropping transport must not lose the decision:
+     *  while it cannot send now, the control frame is parked for one short delivery
+     *  window ({@link #TERMINAL_SIGNAL_DELIVERY_WINDOW_MS}) and flushed once the
+     *  signaling transport reconnects. A throwing transport must not hold the
+     *  terminal state open either. */
     private boolean sendSafely(String conversationId, CallSignal.Type type, String callId) {
         boolean sent;
         try {
@@ -1057,11 +1094,16 @@ public final class CallManager implements AutoCloseable {
         } catch (RuntimeException exception) {
             sent = false;
         }
-        if (!sent) {
-            // Signal type and call-id prefix only; never peer ids, names or tokens.
-            LOGGER.warning("terminal-signal=" + type + " not-delivered callId=" + idPrefix(callId));
+        if (sent) {
+            return true;
         }
-        return sent;
+        pendingOutboundSignals.add(new QueuedOutboundSignal(
+                conversationId,
+                CallSignal.control(type, callId),
+                safeDeadline(clock.getAsLong(), TERMINAL_SIGNAL_DELIVERY_WINDOW_MS)));
+        // Signal type and call-id prefix only; never peer ids, names or tokens.
+        LOGGER.warning("terminal-signal=" + type + " parked-for-reconnect callId=" + idPrefix(callId));
+        return false;
     }
 
     private static String idPrefix(String callId) {
@@ -1100,21 +1142,34 @@ public final class CallManager implements AutoCloseable {
         }
         CallSession old = currentSession;
         rememberTerminalCall(old.getCallId(), clock.getAsLong());
-        boolean sent = signalType == null
-                || sendSafely(old.getConversationId(), signalType, old.getCallId());
+        // Drop this call's reconnect backlog before parking its terminal signal below,
+        // or the wipe would undo the park the very next line.
         cancelRingTimeout();
         cancelReconnectGraceTimer();
         mediaStartPending = false;
         pendingRemoteSignals.clear();
         pendingOutboundSignals.clear();
+        boolean sent = signalType == null
+                || sendSafely(old.getConversationId(), signalType, old.getCallId());
         stopMedia();
         ringDeadlineMs = 0L;
         transition(CallState.ENDED, reason, old.getAnsweredAtMs());
         if (error != null) {
             notifyError(error);
-        } else if (!sent) {
+        } else if (!sent && shouldNotifyTerminalError(reason)) {
             notifyError(new CallError(CallError.Code.NETWORK));
         }
+    }
+
+    /**
+     * Terminal-error policy: an error object always reaches the UI. An undelivered
+     * terminal signal is raised as a network error only when the call failed on its
+     * own; a user-chosen COMPLETED/CANCELLED/REJECTED end and a benign MISSED/BUSY
+     * must not raise a fake network-error dialog — the server's own ring timeout
+     * covers the silently missed REJECT/CANCEL.
+     */
+    static boolean shouldNotifyTerminalError(CallEndReason reason) {
+        return reason == CallEndReason.FAILED;
     }
 
     private void transition(CallState state, CallEndReason reason, Long answeredAtMs) {
@@ -1364,13 +1419,17 @@ public final class CallManager implements AutoCloseable {
         }
     }
 
+    /** One outbound frame parked until the signaling transport can take it again. */
     private static final class QueuedOutboundSignal {
         final String conversationId;
         final CallSignal signal;
+        /** System time after which a parked terminal frame is dropped, not replayed. */
+        final long expiresAtMs;
 
-        QueuedOutboundSignal(String conversationId, CallSignal signal) {
+        QueuedOutboundSignal(String conversationId, CallSignal signal, long expiresAtMs) {
             this.conversationId = conversationId;
             this.signal = signal;
+            this.expiresAtMs = expiresAtMs;
         }
     }
 }

@@ -2103,12 +2103,11 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         } else if (action == MENU_DISAPPEARING) {
             showDisappearingPicker();
         } else if (action == MENU_MUTE) {
-            if (flags.muted) {
-                viewModel.unmuteConversation();
-            } else {
-                ConversationPreferenceMenu.showMutePresets(
-                        requireContext(), false, preferenceListener());
-            }
+            // The dialog decides both ways from the live flag: presets when unmuted,
+            // the one-tap Unmute item when muted. The old hardcoded false kept the
+            // dialog's muted branch unreachable from this entry.
+            ConversationPreferenceMenu.showMutePresets(
+                    requireContext(), flags.muted, preferenceListener());
         } else if (action == MENU_ARCHIVE) {
             viewModel.setConversationArchived(!flags.archived);
         } else if (action == MENU_PIN) {

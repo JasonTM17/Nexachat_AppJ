@@ -32,6 +32,7 @@ public final class PublicFeedFragment extends Fragment implements ReportSheetFra
     private FragmentPublicFeedBinding binding;
     private FeedViewModel viewModel;
     private PostAdapter adapter;
+    private boolean loadMoreErrorShown;
     @Inject FeedNoticeStore noticeStore;
 
     public PublicFeedFragment() {
@@ -103,7 +104,22 @@ public final class PublicFeedFragment extends Fragment implements ReportSheetFra
         binding.feedEmpty.setVisibility(
                 !state.isLoading() && !state.isError() && empty ? View.VISIBLE : View.GONE);
         binding.feedError.setVisibility(state.isError() ? View.VISIBLE : View.GONE);
-        binding.feedRefresh.setRefreshing(state.isRefreshing());
+        // The existing swipe indicator is the screen's progress view: it also tracks
+        // a background page load, not only the pull-to-refresh gesture.
+        binding.feedRefresh.setRefreshing(state.isRefreshing() || state.isLoadingMore());
+        renderLoadMoreFeedback(state);
+    }
+
+    /** One retry banner per failed page: auto-loading already stopped in the model. */
+    private void renderLoadMoreFeedback(@NonNull FeedViewModel.UiState state) {
+        if (state.isLoadMoreError()) {
+            if (!loadMoreErrorShown) {
+                loadMoreErrorShown = true;
+                snackbar(R.string.feed_error, R.string.action_retry, viewModel::retryLoadMore);
+            }
+            return;
+        }
+        loadMoreErrorShown = false;
     }
 
     private void showNoticeOnce() {
@@ -161,6 +177,16 @@ public final class PublicFeedFragment extends Fragment implements ReportSheetFra
         }
         Snackbar.make(binding.getRoot(), message, Snackbar.LENGTH_SHORT)
                 .setAnchorView(binding.feedCompose)
+                .show();
+    }
+
+    private void snackbar(int message, int actionLabel, @NonNull Runnable action) {
+        if (binding == null) {
+            return;
+        }
+        Snackbar.make(binding.getRoot(), message, Snackbar.LENGTH_LONG)
+                .setAnchorView(binding.feedCompose)
+                .setAction(actionLabel, ignored -> action.run())
                 .show();
     }
 

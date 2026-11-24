@@ -26,6 +26,7 @@ public final class FeedViewModel extends ViewModel {
         private final boolean loading;
         private final boolean refreshing;
         private final boolean loadingMore;
+        private final boolean loadMoreError;
         private final boolean error;
         @Nullable private final String nextCursor;
 
@@ -34,12 +35,14 @@ public final class FeedViewModel extends ViewModel {
                 boolean loading,
                 boolean refreshing,
                 boolean loadingMore,
+                boolean loadMoreError,
                 boolean error,
                 @Nullable String nextCursor) {
             this.items = items;
             this.loading = loading;
             this.refreshing = refreshing;
             this.loadingMore = loadingMore;
+            this.loadMoreError = loadMoreError;
             this.error = error;
             this.nextCursor = nextCursor;
         }
@@ -56,6 +59,9 @@ public final class FeedViewModel extends ViewModel {
         /** The first page failed; the list is empty. */
         public boolean isError() { return error; }
 
+        /** The last page-load failed; auto-loading stops until an explicit retry. */
+        public boolean isLoadMoreError() { return loadMoreError; }
+
         public boolean hasMore() { return nextCursor != null; }
 
         @Nullable String getNextCursor() { return nextCursor; }
@@ -63,7 +69,7 @@ public final class FeedViewModel extends ViewModel {
         boolean isBusy() { return loading || refreshing || loadingMore; }
 
         UiState withItems(List<FeedRepository.Post> next, @Nullable String cursor) {
-            return new UiState(next, false, false, false, false, cursor);
+            return new UiState(next, false, false, false, false, false, cursor);
         }
     }
 
@@ -71,7 +77,7 @@ public final class FeedViewModel extends ViewModel {
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final Set<String> reactionsInFlight = new HashSet<>();
     private final MutableLiveData<UiState> uiState =
-            new MutableLiveData<>(new UiState(List.of(), true, false, false, false, null));
+            new MutableLiveData<>(new UiState(List.of(), true, false, false, false, false, null));
 
     @Inject
     public FeedViewModel(@NonNull FeedRepository repository) {
@@ -90,7 +96,7 @@ public final class FeedViewModel extends ViewModel {
             return;
         }
         uiState.setValue(new UiState(
-                state.items, false, true, false, false, state.nextCursor));
+                state.items, false, true, false, false, false, state.nextCursor));
         loadFirstPage(true);
     }
 
@@ -100,18 +106,34 @@ public final class FeedViewModel extends ViewModel {
         if (state == null || state.isBusy()) {
             return;
         }
-        uiState.setValue(new UiState(List.of(), true, false, false, false, null));
+        uiState.setValue(new UiState(List.of(), true, false, false, false, false, null));
         loadFirstPage(false);
     }
 
     public void loadMore() {
         UiState state = uiState.getValue();
-        if (state == null || state.isBusy() || state.nextCursor == null) {
+        if (state == null || state.isBusy() || state.getNextCursor() == null) {
+            return;
+        }
+        // A failed page stays failed until the user explicitly retries: silent
+        // auto-redispatch on every scroll event used to loop the failing request.
+        if (state.isLoadMoreError()) {
             return;
         }
         uiState.setValue(new UiState(
-                state.items, false, false, true, false, state.nextCursor));
+                state.items, false, false, true, false, false, state.nextCursor));
         loadPage(state.nextCursor);
+    }
+
+    /** Retry after the last page-load failed; asks for the same cursor again. */
+    public void retryLoadMore() {
+        UiState state = uiState.getValue();
+        if (state == null || state.isBusy() || state.getNextCursor() == null) {
+            return;
+        }
+        uiState.setValue(new UiState(
+                state.items, false, false, true, false, false, state.nextCursor));
+        loadPage(state.getNextCursor());
     }
 
     /** Removes one of the caller's own posts, restoring it when the server refuses. */
@@ -171,12 +193,12 @@ public final class FeedViewModel extends ViewModel {
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(page -> uiState.setValue(new UiState(
-                                page.items(), false, false, false, false, page.nextCursor())),
+                                page.items(), false, false, false, false, false, page.nextCursor())),
                         error -> {
                             UiState state = uiState.getValue();
                             uiState.setValue(new UiState(
                                     keepRows && state != null ? state.items : List.of(),
-                                    false, false, false, !keepRows,
+                                    false, false, false, false, !keepRows,
                                     keepRows && state != null ? state.nextCursor : null));
                         }));
     }
@@ -193,12 +215,14 @@ public final class FeedViewModel extends ViewModel {
                     }
                     merged.addAll(page.items());
                     uiState.setValue(new UiState(
-                            List.copyOf(merged), false, false, false, false, page.nextCursor()));
+                            List.copyOf(merged), false, false, false, false, false, page.nextCursor()));
                 }, error -> {
                     UiState state = uiState.getValue();
+                    // Keep the rows and the cursor so an explicit retry can resume the
+                    // same page, but surface the failure instead of swallowing it.
                     uiState.setValue(new UiState(
                             state == null ? List.of() : state.items,
-                            false, false, false, false,
+                            false, false, false, true, false,
                             state == null ? null : state.nextCursor));
                 }));
     }

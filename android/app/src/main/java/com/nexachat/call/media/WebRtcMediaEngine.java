@@ -51,6 +51,8 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
     private static final int VIDEO_CAPTURE_WIDTH = 640;
     private static final int VIDEO_CAPTURE_HEIGHT = 480;
     private static final int VIDEO_CAPTURE_FPS = 24;
+    /** Playout volume while another app only asked the call to duck. */
+    private static final double DUCKED_REMOTE_VOLUME = 0.2;
     private static final Object FACTORY_LOCK = new Object();
     private static PeerConnectionFactory sharedFactory;
     @SuppressWarnings("unused")
@@ -69,6 +71,7 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
     private volatile boolean muted;
     private volatile boolean speakerOn;
     private volatile boolean cameraOn;
+    private volatile boolean focusMuted;
     private volatile Listener listener;
     private PeerConnection peerConnection;
     private AudioSource localAudioSource;
@@ -80,6 +83,7 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
     private VideoSource localVideoSource;
     private VideoTrack localVideoTrack;
     private VideoTrack remoteVideoTrack;
+    private AudioTrack remoteAudioTrack;
     private long activeGeneration;
     private long failedGeneration = -1L;
     private boolean remoteDescriptionSet;
@@ -121,11 +125,12 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
             failedGeneration = -1L;
             connectedReported = false;
             remoteDescriptionSet = false;
+            focusMuted = false;
             pendingRemoteIce.clear();
             lastIceState = PeerConnection.IceConnectionState.NEW;
             try {
                 PeerConnectionFactory factory = getFactory();
-                enterCommunicationMode();
+                enterCommunicationMode(callGeneration);
                 PeerConnection.RTCConfiguration configuration = new PeerConnection.RTCConfiguration(
                         toRtcIceServers(iceConfig));
                 configuration.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
@@ -141,7 +146,7 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
                         "googAutoGainControl", "true"));
                 localAudioSource = factory.createAudioSource(audioConstraints);
                 localAudioTrack = factory.createAudioTrack(AUDIO_TRACK_ID, localAudioSource);
-                localAudioTrack.setEnabled(!muted);
+                applyMicEnabled();
                 peerConnection.addTrack(localAudioTrack, Collections.singletonList(AUDIO_STREAM_ID));
                 if (activeMediaType == CallMediaType.VIDEO) {
                     setupLocalVideo(factory, callGeneration);
@@ -239,7 +244,7 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
         long callGeneration = generation.get();
         mediaExecutor.execute(() -> {
             if (isCurrent(callGeneration) && localAudioTrack != null) {
-                localAudioTrack.setEnabled(!muted);
+                applyMicEnabled();
             }
         });
     }
@@ -560,7 +565,7 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
     }
 
     @SuppressWarnings("deprecation")
-    private void enterCommunicationMode() {
+    private void enterCommunicationMode(long callGeneration) {
         if (audioManager == null || audioModeCaptured) return;
         previousAudioMode = audioManager.getMode();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -570,21 +575,79 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
         }
         audioModeCaptured = true;
         audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+        // A call lasts minutes, so the request is a plain GAIN — GAIN_TRANSIENT would
+        // let the system hand the audio back the moment another app plays a sound.
+        // Both branches share one listener that mutes, ducks, or restores; a focus
+        // change never fails the call.
+        AudioManager.OnAudioFocusChangeListener focusListener =
+                change -> handleAudioFocusChange(callGeneration, change);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+            audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                     .setAudioAttributes(new AudioAttributes.Builder()
                             .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
                             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                             .build())
-                    .setOnAudioFocusChangeListener(change -> { })
+                    .setOnAudioFocusChangeListener(focusListener)
                     .build();
             audioFocusHeld = audioManager.requestAudioFocus(audioFocusRequest)
                     == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
         } else {
-            legacyAudioFocusListener = change -> { };
+            legacyAudioFocusListener = focusListener;
             audioFocusHeld = audioManager.requestAudioFocus(legacyAudioFocusListener,
-                    AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                    AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN)
                     == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        }
+    }
+
+    /**
+     * Focus callbacks arrive off the media thread; apply them on {@code mediaExecutor}
+     * with a generation guard like every other engine state change. Delivered after
+     * the session ended, they are ignored rather than failing the engine.
+     */
+    private void handleAudioFocusChange(long callGeneration, int focusChange) {
+        try {
+            mediaExecutor.execute(() -> {
+                if (!isActive(callGeneration)) return;
+                applyAudioFocusAction(CallAudioFocusPolicy.onFocusChange(focusChange));
+            });
+        } catch (RuntimeException ignored) {
+            // Executor is shutting down with the application process.
+        }
+    }
+
+    /** Runs on mediaExecutor. */
+    private void applyAudioFocusAction(CallAudioFocusPolicy.FocusAction action) {
+        switch (action) {
+            case MUTE_MIC:
+                focusMuted = true;
+                applyMicEnabled();
+                break;
+            case RESTORE_AUDIO:
+                focusMuted = false;
+                applyMicEnabled();
+                setRemoteDuckVolume(1.0);
+                break;
+            case DUCK:
+                setRemoteDuckVolume(DUCKED_REMOTE_VOLUME);
+                break;
+            case NONE:
+                break;
+        }
+    }
+
+    /** Runs on mediaExecutor: the mic stays off while either the user or a focus loss muted it. */
+    private void applyMicEnabled() {
+        if (localAudioTrack != null) localAudioTrack.setEnabled(!muted && !focusMuted);
+    }
+
+    /** Runs on mediaExecutor: ducking only lowers the received audio, never the mic. */
+    private void setRemoteDuckVolume(double volume) {
+        AudioTrack remote = remoteAudioTrack;
+        if (remote == null) return;
+        try {
+            remote.setVolume(volume);
+        } catch (RuntimeException ignored) {
+            // Ducking is best effort; the call continues at the previous volume.
         }
     }
 
@@ -672,6 +735,7 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
             localVideoTrack = null;
         }
         remoteVideoTrack = null;
+        remoteAudioTrack = null;
         if (videoCapturer != null) {
             try {
                 videoCapturer.stopCapture();
@@ -814,6 +878,14 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
             MediaStreamTrack track = transceiver.getReceiver().track();
             if (track instanceof AudioTrack) {
                 track.setEnabled(true);
+                try {
+                    mediaExecutor.execute(() -> {
+                        if (!isActive(callGeneration)) return;
+                        remoteAudioTrack = (AudioTrack) track;
+                    });
+                } catch (RuntimeException ignored) {
+                    // Executor is shutting down with the application process.
+                }
             } else if (track instanceof VideoTrack) {
                 track.setEnabled(true);
                 try {

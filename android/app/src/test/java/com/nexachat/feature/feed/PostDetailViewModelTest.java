@@ -278,6 +278,70 @@ public final class PostDetailViewModelTest {
         assertTrue(repository.setReactionCalls.isEmpty());
     }
 
+    @Test public void aFailedCommentsPageAfterThePostStillLoadedRaisesCommentsError() {
+        viewModel.load("post-1");
+        repository.getPostCalls.get(0).onSuccess(post("post-1", 0));
+        repository.listCommentsCalls.get(0).onError(new IllegalStateException("offline"));
+
+        assertTrue(state().isCommentsError());
+        assertFalse(state().isError());
+        assertFalse(emptyCommentsCtaVisible());
+    }
+
+    @Test public void anEmptyCommentsSectionShowsItsCtaOnceActuallyLoaded() {
+        viewModel.load("post-1");
+        repository.getPostCalls.get(0).onSuccess(post("post-1", 0));
+        repository.listCommentsCalls.get(0).onSuccess(
+                new FeedRepository.CommentPage(List.of(), null));
+
+        assertFalse(state().isCommentsError());
+        assertTrue(emptyCommentsCtaVisible());
+    }
+
+    @Test public void aFailedLoadMoreCommentsPageAlsoRaisesCommentsError() {
+        loadPostWithComments("cursor-1");
+
+        viewModel.loadMoreComments();
+        repository.listCommentsCalls.get(1).onError(new IllegalStateException("offline"));
+
+        assertTrue(state().isCommentsError());
+        assertEquals(List.of("comment-1"), commentIds(state().getComments()));
+    }
+
+    @Test public void retryCommentsReloadsTheFirstPageAndClearsTheFlag() {
+        viewModel.load("post-1");
+        repository.getPostCalls.get(0).onSuccess(post("post-1", 0));
+        repository.listCommentsCalls.get(0).onError(new IllegalStateException("offline"));
+
+        viewModel.retryComments();
+
+        assertEquals(2, repository.listCommentsCalls.size());
+        assertNull(repository.listCommentsCursors.get(1));
+        assertTrue(state().isLoadingMore());
+        assertFalse(state().isCommentsError());
+
+        repository.listCommentsCalls.get(1).onSuccess(
+                new FeedRepository.CommentPage(List.of(comment("comment-1")), null));
+
+        assertFalse(state().isCommentsError());
+        assertEquals(List.of("comment-1"), commentIds(state().getComments()));
+        assertFalse(emptyCommentsCtaVisible());
+    }
+
+    /**
+     * Mirrors the fragment's CTA condition so the test can pin when the empty-state
+     * row may actually appear: the post loaded, no comment fetch in flight, and no
+     * failed comment page.
+     */
+    private boolean emptyCommentsCtaVisible() {
+        PostDetailViewModel.UiState state = state();
+        return state.getPost() != null
+                && !state.isLoading()
+                && !state.isLoadingMore()
+                && !state.isCommentsError()
+                && state.getComments().isEmpty();
+    }
+
     private void loadPostWithComments(String cursor) {
         viewModel.load("post-1");
         repository.getPostCalls.get(0).onSuccess(post("post-1", 1));

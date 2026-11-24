@@ -142,6 +142,57 @@ public final class FeedViewModelTest {
         assertFalse(state().isLoadingMore());
     }
 
+    @Test public void aFailedLoadMoreDoesNotAutoLoadAgain() {
+        repository.listPostsCalls.get(0).onSuccess(
+                new FeedRepository.PostPage(List.of(post("post-1")), "cursor-1"));
+
+        viewModel.loadMore();
+        repository.listPostsCalls.get(1).onError(new IllegalStateException("offline"));
+
+        // What the auto-load scroll listener still fires while the footer sits failed:
+        // the failed page must not silently redispatch until the user retries.
+        viewModel.loadMore();
+        viewModel.loadMore();
+
+        assertEquals(2, repository.listPostsCalls.size());
+    }
+
+    @Test public void aFailedLoadMoreRaisesTheLoadMoreErrorFlag() {
+        repository.listPostsCalls.get(0).onSuccess(
+                new FeedRepository.PostPage(List.of(post("post-1")), "cursor-1"));
+
+        viewModel.loadMore();
+        repository.listPostsCalls.get(1).onError(new IllegalStateException("offline"));
+
+        assertTrue(state().isLoadMoreError());
+        assertEquals(List.of("post-1"), ids(state().getItems()));
+        assertTrue(state().hasMore());
+        assertFalse(state().isLoadingMore());
+        assertFalse(state().isError());
+    }
+
+    @Test public void retryLoadMoreClearsTheFlagAndReloadsTheSameCursor() {
+        repository.listPostsCalls.get(0).onSuccess(
+                new FeedRepository.PostPage(List.of(post("post-1")), "cursor-1"));
+
+        viewModel.loadMore();
+        repository.listPostsCalls.get(1).onError(new IllegalStateException("offline"));
+
+        viewModel.retryLoadMore();
+
+        assertEquals(3, repository.listPostsCalls.size());
+        assertEquals("cursor-1", repository.listPostsCursors.get(2));
+        assertTrue(state().isLoadingMore());
+        assertFalse(state().isLoadMoreError());
+
+        repository.listPostsCalls.get(2).onSuccess(
+                new FeedRepository.PostPage(List.of(post("post-2")), null));
+
+        assertEquals(List.of("post-1", "post-2"), ids(state().getItems()));
+        assertFalse(state().isLoadMoreError());
+        assertFalse(state().hasMore());
+    }
+
     @Test public void deleteRemovesTheRowAtOnce() {
         repository.listPostsCalls.get(0).onSuccess(new FeedRepository.PostPage(
                 List.of(post("post-1"), post("post-2")), null));
