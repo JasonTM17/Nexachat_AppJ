@@ -3,19 +3,30 @@
 
 Every account a harness registers is upserted into a JSON manifest at
 ``%TEMP%/nexachat-e2e-accounts.json`` (``/tmp`` on POSIX; mode 0600 where the
-platform allows it). An entry carries the phone, the password needed to
-re-login for deletion, the backend ``base_url`` it was registered on, and the
-registering source — never an access or refresh token. Password drift between
-runs is tracked with ``rotate_password`` so the manifest keeps the *final*
-credential.
+platform allows it — on Windows the real protection is the user-profile ACL on
+%TEMP%). An entry carries the phone, the password needed to re-login for
+deletion (plus a short ``password_history`` so a rotation that happened to be
+lost mid-run can still authenticate), the backend ``base_url`` it was
+registered on, and the registering source — never an access or refresh token.
 
-``cleanup()`` replays the manifest for one backend: for each entry it logs
-in fresh (never a cached token), then issues ``DELETE /api/v1/users/me`` —
-the same self-tombstone the product's account-deletion flow performs. The
-operation is opt-in and best-effort per account: a 404 means the account is
-already gone, a 401 means the stored password drifted, and neither fails the
-run. The PROTECTED refuse-list is a hard guard: those phones are never sent
-a DELETE, even when a manifest entry names them.
+``cleanup()`` replays the manifest for one backend: for each entry it logs in
+fresh (never a cached token), then issues ``DELETE /api/v1/users/me`` — the
+same self-tombstone the product's account-deletion flow performs. The
+operation is opt-in and best-effort per account, and never alters the journey
+verdict. Real backends answer login with an anti-enumeration uniform
+``401 INVALID_CREDENTIALS`` for both a drifted password and a self-deleted
+account, so a ``401`` tries the password history first, then counts as a
+failed login: after ``3`` failed-login cleanups the entry is stale and is
+pruned by seed-recording instead of living forever as a zombie. ``404`` at
+login stays supported as an explicit already-gone signal. The PROTECTED
+refuse-list is a hard guard compared on digit-normalized phones (see
+``demo/seed.sql`` and the device harness fixture ranges): those phones are
+never sent a DELETE, even when a manifest entry names them.
+
+Cleanup re-reads the manifest before writing, so prunes and counter updates
+never clobber accounts a concurrent harness process recorded while cleanup was
+running. A cleanup that matches zero entries for the requested backend prints
+a warning (a manifest exists, but for other backends) instead of exit-silently.
 
 Usage:
     python tools/e2e/e2e_accounts.py list [--accounts-file FILE]
@@ -28,6 +39,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -44,14 +56,27 @@ DELETE_PATH = "/api/v1/users/me"
 LOGIN_PACE_SECONDS = 1.0
 LOGIN_RETRY_MAX_SECONDS = 120
 
+# Server login is anti-enumeration: a deleted account and a wrong password
+# both answer 401, so a 401 cannot tell "dead" from "drifted". After this
+# many cleanup passes that could not authenticate the entry, the account is
+# stale (deleted or unreachable) and gets pruned from the manifest.
+FAILED_LOGIN_PRUNE_THRESHOLD = 3
+
 # Refuse-list: the demo seed users and the dedicated fixture accounts/ranges
 # a later run expects to find alive. Checked before every DELETE, even when
-# an entry sits in the manifest.
+# an entry sits in the manifest. Keep in sync with demo/seed.sql (test-
+# asserted) and SEED_PHONES in device/stable_journeys.py.
 PROTECTED_PHONES = frozenset({
-    "+84900000001", "+84900000002", "+84900000003",  # An / Binh / Chi (demo seed)
-    "+84900000101", "+84900000102",                  # stomp_e2e dedicated pair
+    "+84900000001", "+84900000002", "+84900000003", "+84900000004",  # An / Binh / Chi / Dung (demo seed)
+    "+84900000101", "+84900000102",                                  # stomp_e2e dedicated pair
 })
 PROTECTED_PREFIXES = ("+849000005", "+849000003")    # journey + summary fixture ranges
+
+
+def _digits(phone: str) -> str:
+    """Phone reduced to its trailing digits for refuse-list comparison."""
+    digits = re.sub(r"\D", "", str(phone or ""))
+    return digits[-12:] if len(digits) > 12 else digits
 
 
 def manifest_path() -> str:
@@ -62,7 +87,16 @@ def manifest_path() -> str:
 
 
 def is_protected(phone: str) -> bool:
-    return phone in PROTECTED_PHONES or phone.startswith(PROTECTED_PREFIXES)
+    digits = _digits(phone)
+    if not digits:
+        return False
+    for protected in PROTECTED_PHONES:
+        if _digits(protected) == digits:
+            return True
+    for prefix in PROTECTED_PREFIXES:
+        if str(phone or "").startswith(prefix) or digits.startswith(_digits(prefix)):
+            return True
+    return False
 
 
 def load_manifest(path: str | None = None) -> dict:
@@ -100,6 +134,8 @@ def record(phone: str, password: str, *, source: str = "", backend: str = "",
     entry = {
         "phone": phone,
         "password": password,
+        "password_history": [],
+        "failed_logins": 0,
         "userId": user_id,
         "displayName": display_name,
         "source": source,
@@ -109,6 +145,9 @@ def record(phone: str, password: str, *, source: str = "", backend: str = "",
     accounts = manifest["accounts"]
     for existing in accounts:
         if existing.get("phone") == phone and existing.get("base_url") == entry["base_url"]:
+            # Preserve bookkeeping fields from the previous record.
+            entry["password_history"] = list(existing.get("password_history") or [])
+            entry["failed_logins"] = int(existing.get("failed_logins") or 0)
             existing.update(entry)
             break
     else:
@@ -119,7 +158,14 @@ def record(phone: str, password: str, *, source: str = "", backend: str = "",
 
 def rotate_password(phone: str, new_password: str, *, backend: str = "",
                     path: str | None = None) -> bool:
-    """Store the final password after the harness rotates it mid-run."""
+    """Store the final password after the harness rotates it mid-run.
+
+    The previous password moves to a short in-entry history (most recent
+    last, capped at 3) so a cleanup whose login hits 401 with the new
+    password - e.g. the rotation completed server-side but the harness
+    crashed before recording it - can still authenticate with an older
+    credential instead of drifting into zombie-hood.
+    """
     target = path or manifest_path()
     manifest = load_manifest(target)
     backend = backend.rstrip("/")
@@ -129,11 +175,40 @@ def rotate_password(phone: str, new_password: str, *, backend: str = "",
             continue
         if backend and entry.get("base_url") != backend:
             continue
+        current = str(entry.get("password") or "")
+        if current and current != new_password:
+            history = list(entry.get("password_history") or [])
+            if current not in history:
+                history.append(current)
+            entry["password_history"] = history[-3:]
         entry["password"] = new_password
+        entry["failed_logins"] = 0
         changed = True
     if changed:
         _write_manifest(manifest, target)
     return changed
+
+
+def _merge_cleanup_result(target: str, latest: dict, pruned: list[dict],
+                           updates: dict) -> dict:
+    """Apply prunes/counter updates to the *current* manifest on disk.
+
+    ``pruned`` are (phone, base_url) keys to drop; ``updates`` maps the same
+    key to entry fields to persist (failed_logins / password recovered from
+    history). Entries added by a concurrent process while cleanup ran are
+    preserved verbatim, and pruned entries stay pruned.
+    """
+    pruned_keys = {(e.get("phone"), e.get("base_url")) for e in pruned}
+    accounts = []
+    for entry in latest.get("accounts", []):
+        key = (entry.get("phone"), entry.get("base_url"))
+        if key in pruned_keys:
+            continue
+        if key in updates:
+            entry.update(updates[key])
+        accounts.append(entry)
+    latest["accounts"] = accounts
+    return latest
 
 
 def _retry_after_seconds(response) -> int:
@@ -151,7 +226,9 @@ def cleanup(backend: str, log=print, *, path: str | None = None, client=None,
 
     Per-account verdicts: ``TOMBSTONED`` (204, entry pruned), ``ALREADY_GONE``
     (404 at login or delete, pruned), ``SKIPPED`` (protected phone, or 401
-    password drift after one re-login — the entry is kept, never fatal),
+    after trying the password history — the entry is kept with its failed-
+    login counter bumped), ``STALE_PRUNED`` (401 on this pass AND the failed-
+    login counter reached the threshold - the entry is dead and pruned),
     ``FAILED`` (any other status or a transport exception). Returns the
     counts dict for ``summary.account_cleanup``; callers must not let the
     result alter the campaign verdict.
@@ -164,9 +241,13 @@ def cleanup(backend: str, log=print, *, path: str | None = None, client=None,
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import e2e_common
         client = e2e_common.Client(backend, timeout=30)
-    counts = {"deleted": 0, "already_gone": 0, "skipped": 0, "failed": 0}
+    counts = {"deleted": 0, "already_gone": 0, "skipped": 0,
+              "stale_pruned": 0, "failed": 0}
     details: list[dict] = []
     last_login = [0.0]
+    matched = 0
+    pruned: list[dict] = []
+    updates: dict = {}
 
     def login(phone: str, password: str):
         gap = pace_seconds - (time.monotonic() - last_login[0])
@@ -187,26 +268,50 @@ def cleanup(backend: str, log=print, *, path: str | None = None, client=None,
                 response = login(phone, password)
         return response
 
-    kept: list[dict] = []
     for entry in manifest["accounts"]:
         if entry.get("base_url") not in (backend, "", None):
-            kept.append(entry)
             continue
+        matched += 1
         phone = str(entry.get("phone") or "")
         password = str(entry.get("password") or "")
+        history = list(entry.get("password_history") or [])
+        key = (entry.get("phone"), entry.get("base_url"))
         verdict: str
         prune = False
         if is_protected(phone):
-            verdict = "REFUSED"
+            verdict = "REFUSED"  # kept in the manifest: the guard is not a janitor
+            prune = False
         elif dry_run:
             verdict = "PENDING"
         else:
             try:
                 response = relogin(phone, password)
+                if response.status == 401 and history and history[-1] != password:
+                    # Rotation lost mid-run: try the remembered credentials.
+                    for candidate in reversed(history):
+                        if candidate == password:
+                            continue
+                        response = relogin(phone, candidate)
+                        if response.status == 200:
+                            password = candidate
+                            updates[key] = {"password": candidate,
+                                            "failed_logins": 0}
+                            emit(f"[cleanup] {phone}: restored password from history")
+                            break
+                        if response.status != 401:
+                            break
                 if response.status == 404:
                     verdict, prune = "ALREADY_GONE", True
                 elif response.status == 401:
-                    verdict = "SKIPPED"  # manifest password drifted; entry kept
+                    # Anti-enumeration: 401 covers both drifted password and
+                    # a self-deleted account. Count the miss; past the
+                    # threshold the entry is stale and gets pruned.
+                    misses = int(entry.get("failed_logins") or 0) + 1
+                    if misses >= FAILED_LOGIN_PRUNE_THRESHOLD:
+                        verdict, prune = "STALE_PRUNED", True
+                    else:
+                        verdict = f"SKIPPED 401 (miss {misses})"
+                        updates[key] = {"failed_logins": misses}
                 elif response.status != 200:
                     verdict = f"FAILED login HTTP {response.status}"
                 else:
@@ -239,22 +344,33 @@ def cleanup(backend: str, log=print, *, path: str | None = None, client=None,
                             break
             except Exception as error:  # noqa: BLE001 - per-account best effort
                 verdict = f"FAILED {type(error).__name__}"
+        if prune:
+            pruned.append(entry)
         if verdict == "TOMBSTONED":
             counts["deleted"] += 1
         elif verdict == "ALREADY_GONE":
             counts["already_gone"] += 1
+        elif verdict == "STALE_PRUNED":
+            counts["stale_pruned"] += 1
         elif verdict.startswith("FAILED"):
             counts["failed"] += 1
         elif verdict != "PENDING":
             counts["skipped"] += 1
-        if not prune:
-            kept.append(entry)
         emit(f"[cleanup] {phone or '?'}: {verdict}")
-        details.append({"phone": phone, "verdict": verdict})
-    manifest["accounts"] = kept
-    _write_manifest(manifest, target)
+        details.append({"phone": phone, "verdict": verdict.split(" ")[0],
+                        "misses": int(entry.get("failed_logins") or 0)})
+    # Re-read: entries recorded by a concurrent process while cleanup ran
+    # must survive; only the prunes/counter updates we decided on apply.
+    merged = _merge_cleanup_result(target, load_manifest(target), pruned, updates)
+    _write_manifest(merged, target)
+    warning = None
+    total = len(load_manifest(target)["accounts"])
+    if matched == 0 and total > 0:
+        warning = (f"cleanup matched no manifest entries for {backend}; "
+                   f"{total} entries (other backends) were left untouched")
+        emit(f"[warn] {warning}")
     return {"backend": backend, "manifest": target, "counts": counts,
-            "accounts": details}
+            "matched": matched, "warning": warning, "accounts": details}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -272,7 +388,7 @@ def main(argv: list[str] | None = None) -> int:
     path = args.accounts_file or manifest_path()
     if args.command == "list":
         for entry in load_manifest(path)["accounts"]:
-            masked = {**entry, "password": "***"}
+            masked = {**entry, "password": "***", "password_history": ["***"] * len(entry.get("password_history") or [])}
             print(json.dumps(masked, ensure_ascii=False))
         return 0
     if args.command == "record":
@@ -289,6 +405,8 @@ def main(argv: list[str] | None = None) -> int:
     result = cleanup(args.base_url, path=path if args.accounts_file else None,
                      dry_run=args.dry_run)
     print(json.dumps(result["counts"]))
+    if result["warning"]:
+        print(f"warning: {result['warning']}", file=sys.stderr)
     return 0 if not result["counts"]["failed"] else 1
 
 
