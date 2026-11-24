@@ -77,6 +77,7 @@
 
     <HorizontalScrollView
         android:id="@+id/chatToolbarActions"
+        android:contentDescription="@string/cd_chat_toolbar_actions"
         android:layout_width="wrap_content"
         android:layout_height="0dp"
         android:background="?attr/colorSurface"
@@ -169,6 +170,7 @@
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/messageList"
+        android:contentDescription="@string/cd_message_list"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:clipToPadding="false"
@@ -181,6 +183,7 @@
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/mentionPicker"
+        android:contentDescription="@string/cd_clickable_list"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:background="?attr/colorSurface"

@@ -53,6 +53,7 @@
 
     <androidx.core.widget.NestedScrollView
         android:id="@+id/pollCreateBody"
+        android:contentDescription="@string/cd_clickable_scrollable_content"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:fillViewport="true"

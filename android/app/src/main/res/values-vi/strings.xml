@@ -829,4 +829,25 @@
     <string name="lang_ar">Tiếng Ả Rập</string>
     <string name="lang_pt">Tiếng Bồ Đào Nha</string>
     <string name="lang_hi">Tiếng Hindi</string>
+    <!-- scrollable container content descriptions -->
+    <string name="cd_conversation_list">Danh sách hội thoại</string>
+    <string name="cd_message_list">Danh sách tin nhắn</string>
+    <string name="cd_chat_toolbar_actions">Thao tác trò chuyện</string>
+    <string name="cd_archive_tabs">Các mục lưu trữ</string>
+    <string name="cd_clickable_tabs">Các thẻ</string>
+    <string name="cd_archive_filter_chips">Bộ lọc lưu trữ</string>
+    <string name="cd_archive_list">Danh sách lưu trữ</string>
+    <string name="cd_active_now_contacts">Danh bạ đang hoạt động</string>
+    <string name="cd_inbox_filters">Bộ lọc hộp thư</string>
+    <string name="cd_pull_to_refresh">Kéo để làm mới</string>
+    <string name="cd_clickable_list">Danh sách</string>
+    <string name="cd_clickable_scrollable_content">Nội dung cuộn được</string>
+    <string name="cd_clickable_scrollable_attachments">Tệp đính kèm</string>
+    <string name="cd_clickable_list_of_terms">Thuật ngữ bảng chú giải</string>
+    <string name="cd_clickable_list_of_people">Danh sách người</string>
+    <string name="cd_clickable_list_of_posts">Danh sách bài viết</string>
+    <string name="cd_clickable_list_of_messages">Danh sách tin nhắn</string>
+    <string name="cd_clickable_list_of_members">Danh sách thành viên</string>
+    <string name="cd_clickable_list_of_requests">Yêu cầu tham gia</string>
+    <string name="cd_clickable_list_of_poll_options">Phương án bình chọn</string>
 </resources>

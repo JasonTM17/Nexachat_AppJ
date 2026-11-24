@@ -189,6 +189,7 @@
 
             <HorizontalScrollView
                 android:id="@+id/activeNowScroll"
+                android:contentDescription="@string/cd_active_now_contacts"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:clipToPadding="false"
@@ -208,6 +209,7 @@
 
         <HorizontalScrollView
             android:id="@+id/inboxFilterScroll"
+            android:contentDescription="@string/cd_inbox_filters"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:clipToPadding="false"
@@ -333,11 +335,13 @@
 
             <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
                 android:id="@+id/swipeRefresh"
+                android:contentDescription="@string/cd_pull_to_refresh"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent">
 
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/conversationList"
+                    android:contentDescription="@string/cd_conversation_list"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:clipToPadding="true"

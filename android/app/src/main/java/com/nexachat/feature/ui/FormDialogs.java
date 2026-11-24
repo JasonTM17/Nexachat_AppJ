@@ -36,6 +36,8 @@ public final class FormDialogs {
     @NonNull
     public static View scrollableBody(@NonNull View form) {
         ScrollView scroll = new ScrollView(form.getContext());
+        scroll.setContentDescription(form.getContext().getString(
+                com.nexachat.R.string.cd_clickable_scrollable_content));
         scroll.addView(form, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         return scroll;

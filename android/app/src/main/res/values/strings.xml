@@ -837,4 +837,25 @@
     <string name="lang_ar">Arabic</string>
     <string name="lang_pt">Portuguese</string>
     <string name="lang_hi">Hindi</string>
+    <!-- scrollable container content descriptions -->
+    <string name="cd_conversation_list">Conversations</string>
+    <string name="cd_message_list">Message list</string>
+    <string name="cd_chat_toolbar_actions">Chat actions</string>
+    <string name="cd_archive_tabs">Archive sections</string>
+    <string name="cd_clickable_tabs">Tabs</string>
+    <string name="cd_archive_filter_chips">Archive filters</string>
+    <string name="cd_archive_list">Archive list</string>
+    <string name="cd_active_now_contacts">Active now contacts</string>
+    <string name="cd_inbox_filters">Inbox filters</string>
+    <string name="cd_pull_to_refresh">Pull to refresh</string>
+    <string name="cd_clickable_list">List</string>
+    <string name="cd_clickable_scrollable_content">Scrollable content</string>
+    <string name="cd_clickable_scrollable_attachments">Attachments</string>
+    <string name="cd_clickable_list_of_terms">Glossary terms</string>
+    <string name="cd_clickable_list_of_people">People</string>
+    <string name="cd_clickable_list_of_posts">Posts</string>
+    <string name="cd_clickable_list_of_messages">Messages</string>
+    <string name="cd_clickable_list_of_members">Members</string>
+    <string name="cd_clickable_list_of_requests">Join requests</string>
+    <string name="cd_clickable_list_of_poll_options">Poll options</string>
 </resources>

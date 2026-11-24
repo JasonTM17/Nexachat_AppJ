@@ -22,6 +22,7 @@
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/starredList"
+        android:contentDescription="@string/cd_clickable_list_of_messages"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:clipToPadding="false"

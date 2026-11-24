@@ -216,6 +216,7 @@
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/requestList"
+                android:contentDescription="@string/cd_clickable_list_of_requests"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_sm"
