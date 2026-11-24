@@ -45,6 +45,10 @@ class NotificationEventListenerTest {
     @Mock
     private ConversationMemberRepository memberRepository;
     @Mock
+    private com.nexachat.message.MessageRepository messageRepository;
+    @Mock
+    private com.nexachat.user.UserBlockRepository blockRepository;
+    @Mock
     private PresenceSessionState presenceState;
     @Mock
     private CallRegistry callRegistry;
@@ -63,9 +67,7 @@ class NotificationEventListenerTest {
     @BeforeEach
     void setUp() {
         listener = new NotificationEventListener(
-                fcmPushService, memberRepository,
-                mock(com.nexachat.message.MessageRepository.class),
-                mock(com.nexachat.user.UserBlockRepository.class),
+                fcmPushService, memberRepository, messageRepository, blockRepository,
                 presenceState, callRegistry, userRepository,
                 tokenRepository, Clock.fixed(Instant.parse("2026-11-11T12:00:00Z"), ZoneOffset.UTC));
         // The listener batches token reads through findByUserIdIn; route the
@@ -170,6 +172,44 @@ class NotificationEventListenerTest {
         listener.onMessageCreated(new MessageCreatedEvent(conversationId, message));
 
         verify(memberRepository).findAdmittedUserIds(conversationId, message.createdAt());
+    }
+
+    /**
+     * Fan-out snapshot contract (GH#313): when the event carries the
+     * publisher-computed member list, the listener must NOT re-read the
+     * database — neither the admitted-members snapshot nor the
+     * peer-suppression probe.
+     */
+    @Test
+    void createdSendWithFanOutSnapshotSkipsThePostCommitQueries() {
+        MessageResponse message = message(Message.Type.TEXT, 12L);
+        when(memberRepository.findMutedMemberIds(eq(conversationId), any(Instant.class)))
+                .thenReturn(List.of());
+        when(presenceState.isOnline(recipientId)).thenReturn(false);
+        User owner = mock(User.class);
+        when(owner.getId()).thenReturn(recipientId);
+        UserDeviceToken token = UserDeviceToken.create(
+                owner, "recipient-token", UserDeviceToken.Platform.ANDROID, "Phone");
+        when(tokenRepository.findByUserId(recipientId)).thenReturn(List.of(token));
+
+        listener.onMessageCreated(new MessageCreatedEvent(conversationId, message, null, false,
+                List.of(senderId, recipientId), null));
+
+        assertSinglePush(message, false);
+        verify(memberRepository, never()).findAdmittedUserIds(any(), any());
+        verify(messageRepository, never()).findPeerSuppressedSenderId(any());
+    }
+
+    /** The snapshot carries the suppressed sender id: no push is dispatched at all. */
+    @Test
+    void snapshotPeerSuppressedSendSkipsPushWithoutRequerying() {
+        MessageResponse message = message(Message.Type.TEXT, 13L);
+
+        listener.onMessageCreated(new MessageCreatedEvent(conversationId, message, null, false,
+                List.of(senderId, recipientId), senderId));
+
+        verifyNoInteractions(fcmPushService, memberRepository, presenceState, tokenRepository);
+        verify(messageRepository, never()).findPeerSuppressedSenderId(any());
     }
 
     // ------------------------------------------------------------- calls

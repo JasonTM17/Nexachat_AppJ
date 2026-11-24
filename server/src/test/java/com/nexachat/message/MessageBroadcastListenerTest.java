@@ -22,6 +22,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
@@ -159,6 +160,77 @@ class MessageBroadcastListenerTest {
         ArgumentCaptor<EventEnvelope> toB = ArgumentCaptor.forClass(EventEnvelope.class);
         verify(messaging).convertAndSendToUser(eq(memberB.toString()), eq("/queue/inbox"), toB.capture());
         assertThat(((MessageResponse) toB.getValue().payload()).replyTo()).isNull();
+    }
+
+    /**
+     * Fan-out snapshot contract (GH#313): when the event carries the
+     * publisher-computed member list, the listener must NOT re-read the
+     * database — neither the admitted-members snapshot nor the
+     * peer-suppression probe.
+     */
+    @Test
+    void messageCreated_withFanOutSnapshot_skipsThePostCommitQueries() {
+        MessageResponse message = new MessageResponse(
+                UUID.randomUUID(), conversationId, 11L, memberA, "A", "TEXT",
+                "hi", UUID.randomUUID(), null, null, List.of(), List.of(),
+                Instant.now(), null, null, List.of(), false);
+
+        listener.onMessageCreated(new MessageCreatedEvent(conversationId, message, null, false,
+                List.of(memberA, memberB), null));
+
+        verify(messaging).convertAndSend(
+                eq("/topic/conversations." + conversationId), any(EventEnvelope.class));
+        verify(messaging).convertAndSendToUser(
+                eq(memberA.toString()), eq("/queue/inbox"), any(EventEnvelope.class));
+        verify(messaging).convertAndSendToUser(
+                eq(memberB.toString()), eq("/queue/inbox"), any(EventEnvelope.class));
+        verify(memberRepository, never()).findAdmittedUserIds(any(), any());
+        verify(messageRepository, never()).findPeerSuppressedSenderId(any());
+    }
+
+    /** The snapshot carries the suppressed sender id: only that sender's inbox is pushed. */
+    @Test
+    void messageCreated_withSnapshotPeerSuppressedSender_reachesOnlyTheSenderInbox() {
+        MessageResponse message = new MessageResponse(
+                UUID.randomUUID(), conversationId, 12L, memberA, "A", "TEXT",
+                "hi", UUID.randomUUID(), null, null, List.of(), List.of(),
+                Instant.now(), null, null, List.of(), false);
+
+        listener.onMessageCreated(new MessageCreatedEvent(conversationId, message, null, false,
+                List.of(memberA, memberB), memberA));
+
+        verify(messaging).convertAndSendToUser(
+                eq(memberA.toString()), eq("/queue/inbox"), any(EventEnvelope.class));
+        verify(messaging, never()).convertAndSendToUser(
+                eq(memberB.toString()), eq("/queue/inbox"), any(EventEnvelope.class));
+        verify(memberRepository, never()).findAdmittedUserIds(any(), any());
+        verify(messageRepository, never()).findPeerSuppressedSenderId(any());
+    }
+
+    /**
+     * Fallback contract: an event WITHOUT the snapshot (replay or a legacy
+     * publisher) keeps broadcasting correctly through the post-commit
+     * queries.
+     */
+    @Test
+    void messageCreated_withoutFanOutSnapshot_fallsBackToThePostCommitQueries() {
+        Instant createdAt = Instant.parse("2026-01-01T00:00:00Z");
+        MessageResponse message = new MessageResponse(
+                UUID.randomUUID(), conversationId, 13L, memberA, "A", "TEXT",
+                "hi", UUID.randomUUID(), null, null, List.of(), List.of(),
+                createdAt, null, null, List.of(), false);
+        when(memberRepository.findAdmittedUserIds(conversationId, createdAt))
+                .thenReturn(List.of(memberA, memberB));
+
+        listener.onMessageCreated(new MessageCreatedEvent(conversationId, message, null, false,
+                null, null));
+
+        verify(memberRepository).findAdmittedUserIds(conversationId, createdAt);
+        verify(messageRepository).findPeerSuppressedSenderId(message.id());
+        verify(messaging).convertAndSendToUser(
+                eq(memberA.toString()), eq("/queue/inbox"), any(EventEnvelope.class));
+        verify(messaging).convertAndSendToUser(
+                eq(memberB.toString()), eq("/queue/inbox"), any(EventEnvelope.class));
     }
 
     @Test
