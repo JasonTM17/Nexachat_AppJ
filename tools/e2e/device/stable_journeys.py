@@ -8540,6 +8540,7 @@ def _register_disposable(client: Any, phone: str, name: str) -> dict[str, Any]:
     user = data.get("user") or {}
     if not data.get("accessToken") or user.get("phone") != phone:
         raise EnvironmentFailure("disposable registration did not return the requested account")
+    _manifest_record(client, phone, DISPOSABLE_PASSWORD, name, user.get("id"))
     return data
 
 
@@ -8596,12 +8597,41 @@ def _complete_password_reset(context: dict[str, Any], mail: Any, phone: str, ema
     _expect_status(stale, {400}, "previous reset code after resend")
     fresh = _confirm_reset(client, phone, resent_code, REPLACEMENT_PASSWORD + "-2")
     _expect_status(fresh, {204}, "resent reset code")
+    _manifest_rotate(client, phone, REPLACEMENT_PASSWORD + "-2")
 
 
 def _import_disposable_stack():
     if str(E2E_DIR) not in sys.path:
         sys.path.insert(0, str(E2E_DIR))
     return importlib.import_module("disposable_stack")
+
+
+def _import_e2e_accounts():
+    if str(E2E_DIR) not in sys.path:
+        sys.path.insert(0, str(E2E_DIR))
+    return importlib.import_module("e2e_accounts")
+
+
+def _manifest_record(client: Any, phone: str, password: str, name: str,
+                     user_id: Any = None) -> None:
+    """Best-effort manifest write for a harness-registered disposable (GH#322)."""
+    try:
+        _import_e2e_accounts().record(
+            phone, password, source=f"stable_journeys:{name}",
+            backend=str(getattr(client, "base_url", "") or ""),
+            user_id=user_id, display_name=name)
+    except Exception:  # noqa: BLE001 - bookkeeping must never break a row
+        pass
+
+
+def _manifest_rotate(client: Any, phone: str, new_password: str) -> None:
+    """Track the final password after a journey rotates it mid-run (GH#322)."""
+    try:
+        _import_e2e_accounts().rotate_password(
+            phone, new_password,
+            backend=str(getattr(client, "base_url", "") or ""))
+    except Exception:  # noqa: BLE001 - bookkeeping must never break a row
+        pass
 
 
 # Rows that provision their own backend through apply_server_env when --dstack
@@ -9604,6 +9634,7 @@ def _auth_rest_lifecycle(context: dict[str, Any], client: Any,
                "204; old password 401, new password 200")
     accounts[0]["password"] = _AUTH_NEW_PASSWORD
     accounts[0]["token"] = session["accessToken"]
+    _manifest_rotate(client, phone, _AUTH_NEW_PASSWORD)
 
 
 def _auth_paused_frame(context: dict[str, Any], client: Any, base_url: str,
@@ -10133,6 +10164,29 @@ def execute_rows(rows: Iterable[JourneyRow], context: dict[str, Any],
     return results
 
 
+def _cleanup_manifest_accounts(context: dict[str, Any]) -> dict[str, Any]:
+    """Run the GH#322 manifest cleanup through the campaign REST client.
+
+    Opt-in only (--cleanup / NEXACHAT_E2E_CLEANUP=1). Any failure here is
+    reported inside the result, never raised: the campaign verdict was
+    already computed from the rows.
+    """
+    try:
+        e2e_accounts = _import_e2e_accounts()
+    except Exception as error:  # noqa: BLE001
+        return {"status": "unavailable", "reason": type(error).__name__}
+    client = context.get("client")
+    base_url = str(context.get("base_url") or "").rstrip("/")
+    if client is None or not base_url:
+        return {"status": "skipped", "reason": "no REST client or base_url in context"}
+    try:
+        return e2e_accounts.cleanup(
+            base_url, lambda message: print(f"[cleanup] {message}"),
+            client=client)
+    except Exception as error:  # noqa: BLE001 - cleanup must never fail a run
+        return {"status": "error", "reason": type(error).__name__}
+
+
 def snapshot_settings(adb: Adb, patch: Any) -> dict[str, str]:
     values = patch.settings_snapshot()
     values["night_mode"] = adb.command("shell", "cmd", "uimode", "night", timeout=20)
@@ -10230,7 +10284,7 @@ def with_settings_restored(action: Callable[[], Any], restore: Callable[[], Any]
 
 def run_campaign(rows: Iterable[JourneyRow], *, base_url: str, serial: str,
                  apk: Path, evidence_dir: Path, reset_app_data: bool = False,
-                 dstack: bool = False,
+                 dstack: bool = False, cleanup: bool = False,
                  adb_adapter: Adb | None = None,
                  runner: Callable[[JourneyRow, dict[str, Any]], dict[str, Any]] | None = None) -> dict[str, Any]:
     selected = tuple(rows)
@@ -10322,6 +10376,11 @@ def run_campaign(rows: Iterable[JourneyRow], *, base_url: str, serial: str,
                 summary["status"] = "PASS"
             else:
                 summary["status"] = "NOT_RUN"
+            if cleanup:
+                # Opt-in GH#322 sweep: tombstone manifest accounts that the
+                # harness registered on this backend. Per-account best effort;
+                # the counts are evidence only and never move the verdict.
+                summary["account_cleanup"] = _cleanup_manifest_accounts(context)
 
         def restore_selected() -> None:
             after = restore_settings(adb, patch, before)
@@ -10396,6 +10455,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dstack", action="store_true",
                         help="let mail/OTP rows provision a disposable backend via "
                              "tools/e2e/disposable_stack.py instead of staying blocked")
+    parser.add_argument("--cleanup", action="store_true",
+                        help="after the rows run, tombstone every e2e account the "
+                             "manifest recorded on this backend "
+                             "(NEXACHAT_E2E_CLEANUP=1); never changes the verdict")
     return parser
 
 
@@ -10418,10 +10481,12 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if not args.evidence_dir:
             raise HarnessError("--evidence-dir is required for a real run")
+        cleanup = (args.cleanup
+                   or os.environ.get("NEXACHAT_E2E_CLEANUP") not in (None, "", "0"))
         summary = run_campaign(
             selected, base_url=args.base_url, serial=args.serial, apk=Path(args.apk),
             evidence_dir=Path(args.evidence_dir), reset_app_data=args.reset_app_data,
-            dstack=args.dstack,
+            dstack=args.dstack, cleanup=cleanup,
         )
         print(render_summary(summary))
         return 0 if summary["status"] == "PASS" else 1

@@ -211,6 +211,24 @@ def _store_session(phone: str, token: str, user_id: str) -> None:
     _write_cache(cache)
 
 
+def _record_registered_account(client: Client, phone: str, display_name: str,
+                               user_id) -> None:
+    """Note a freshly registered account in the e2e manifest (GH#322).
+
+    Bookkeeping must never break a journey: import or write failures are
+    swallowed. Only the register branch records — the 409->login reuse path
+    did not create the account this run.
+    """
+    try:
+        import e2e_accounts
+        e2e_accounts.record(
+            phone, PASSWORD, source="ensure_user",
+            backend=getattr(client, "base_url", ""), user_id=user_id,
+            display_name=display_name)
+    except Exception:  # noqa: BLE001 - bookkeeping is best-effort
+        pass
+
+
 def ensure_user(client: Client, phone: str, display_name: str) -> dict:
     """Registers the fixture account, or logs in when it already exists.
 
@@ -229,6 +247,8 @@ def ensure_user(client: Client, phone: str, display_name: str) -> dict:
         if response.status in (200, 201):
             data = response.json()
             _store_session(phone, data["accessToken"], data["user"]["id"])
+            _record_registered_account(
+                client, phone, display_name, data["user"]["id"])
             return data
         if response.status == 429 and attempt < 3:
             # Register is 10 requests / 5 min per IP: back-to-back suites on a

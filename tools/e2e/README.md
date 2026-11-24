@@ -283,6 +283,49 @@ python tools/e2e/reminder_clock.py occurrence <reminder-id>
 - `occurrence`: derives the 32-hex occurrence identifier carried by push payloads (`SHA-256(reminderId + '|' + remindAt.toEpochMilli())[:16].hex()`) matching `FcmReminderPushSender.occurrenceKey`.
 - Safety: refuses any database whose name does not contain `nexachat`, refuses non-local targets, and validates all IDs as UUIDs.
 
+## E2E account manifest and opt-in cleanup (GH#322)
+
+Every account a harness registers through `e2e_common.ensure_user` or the
+stable-journeys disposable-register path is upserted into a JSON manifest at
+`%TEMP%/nexachat-e2e-accounts.json` (`/tmp` on POSIX; written mode 0600 where
+the platform allows it). An entry carries `{phone, password, userId,
+displayName, source, base_url, addedAt}` — the credentials needed to log in
+for deletion later, never an access or refresh token. Harnesses that rotate
+the password mid-run (password-reset, password-change journeys) call
+`e2e_accounts.rotate_password` so the manifest keeps the final credential.
+The demo seed accounts, the `stomp_e2e.py` pair (`+84900000101/102`) and the
+`+849000005xx`/`+849000003xx` fixture ranges are a hard refuse-list: they are
+never recorded and never sent a DELETE even if an entry names them.
+
+`e2e_accounts.py cleanup` replays the manifest for one backend: for each
+entry it logs in fresh (never a cached token), then issues
+`DELETE /api/v1/users/me {password}` — the same self-tombstone the product's
+account-deletion flow performs. Logins are paced (≥1 s apart) under the
+10-requests/5-min login bucket, honouring one `retryAfterSeconds` wait.
+Per-account verdicts: `TOMBSTONED` (deleted, entry pruned), `ALREADY_GONE`
+(404, entry pruned — re-runs converge to an empty manifest), `SKIPPED`
+(refuse-list or 401 password drift, entry kept), `FAILED` (transport or
+other HTTP error, entry kept). Cleanup is opt-in and best-effort: it never
+changes a journey or campaign verdict, and its counts land under
+`summary.account_cleanup` when driven by the harness flag
+(`stable_journeys.py --cleanup`, also `NEXACHAT_E2E_CLEANUP=1`).
+
+```bash
+python tools/e2e/e2e_accounts.py list                    # masked credentials
+python tools/e2e/e2e_accounts.py cleanup --base-url http://localhost:8080 --dry-run
+python tools/e2e/e2e_accounts.py cleanup --base-url http://localhost:8080
+python -m unittest tools/e2e/test_e2e_accounts.py        # offline
+```
+
+Tombstone semantics and limits: `DELETE /users/me` marks the account
+(`deletedAt` set → the phone returns 404 on login and the row is free to
+register again), rotates the password, and removes the contact identity —
+but messages the account sent remain visible to peers and groups it created
+keep their other members. Only manifest-recorded accounts are swept: throwaway
+accounts created before this manifest existed, or by flows that bypass the
+record hooks, still linger; run cleanup against a disposable local database
+as before.
+
 ## Stable journeys
 
 `device/stable_journeys.py` coordinates the phase 08 matrix using the existing
