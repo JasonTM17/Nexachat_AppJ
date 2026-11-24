@@ -134,6 +134,15 @@ class SystemMessageTest {
         when(messageRepository.findRowBySenderAndClientMessageId(eq(actorId), any()))
                 .thenReturn(Optional.of(stored));
 
+        // Freeze the deliberate fan-out divergence: the SYSTEM removal row is
+        // posted BEFORE the member row is deleted, so the in-transaction
+        // snapshot still contains the member being removed - their inbox
+        // queue keeps receiving the removal line (an old post-commit re-read
+        // could never send it because the row was already gone).
+        var stillAdmitted = List.of(actorId, subjectId, UUID.randomUUID());
+        when(memberRepository.findAdmittedUserIds(eq(conversationId), any()))
+                .thenReturn(stillAdmitted);
+
         messageService.postSystemMessage(actorId, conversationId, "Admin removed Bob", subjectId);
 
         ArgumentCaptor<MessageCreatedEvent> event = ArgumentCaptor.forClass(MessageCreatedEvent.class);
@@ -141,6 +150,7 @@ class SystemMessageTest {
         assertThat(event.getValue().subjectUserId()).isEqualTo(subjectId);
         assertThat(event.getValue().replay()).isFalse();
         assertThat(event.getValue().admittedUserIds()).isNotNull();
+        assertThat(event.getValue().admittedUserIds()).contains(subjectId);
     }
 
     @Test
