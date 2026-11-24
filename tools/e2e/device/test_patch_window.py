@@ -131,7 +131,14 @@ class LoginFieldFocusTest(unittest.TestCase):
     def test_does_not_type_if_tap_leaves_focus_elsewhere(self) -> None:
         ui = Mock()
         field = self.password_field(False)
-        with patch("patch_window.ui_nodes", side_effect=[[field], [field]]):
+        # The focus check polls the ui snapshot until the 5s deadline, so feed
+        # it an always-unfocused node set and a clock that walks past the
+        # deadline instead of a two-element side_effect that StopIterations the
+        # poll loop after one round.
+        clock = iter([0.0, 1.0, 2.0, 6.0])
+        with patch("patch_window.ui_nodes", return_value=[field]), \
+             patch("patch_window.time.monotonic", side_effect=lambda: next(clock)), \
+             patch("patch_window.time.sleep"):
             with self.assertRaisesRegex(E2EFailure, "did not receive input focus"):
                 fill_login_field(ui, "passwordInput", "fixture")
         ui.tap_node.assert_called_once_with(field)
