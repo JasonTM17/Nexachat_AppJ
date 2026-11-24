@@ -14,6 +14,7 @@ import com.nexachat.user.UserBlockRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
@@ -158,7 +159,13 @@ class DirectBlockSendTest {
         verify(conversationRepository, never()).advanceLastMessage(any(), any(), anyLong());
         // The sender's own unread stays 0; their preview may lag one message.
         verify(memberRepository).advanceReadWatermark(conversationId, senderId, 42L);
-        verify(eventPublisher).publishEvent(any(MessageCreatedEvent.class));
+        ArgumentCaptor<MessageCreatedEvent> event = ArgumentCaptor.forClass(MessageCreatedEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        // GH#313 fan-out snapshot: the peer-suppressed send carries the
+        // suppress verdict on the event so listeners need not re-probe.
+        assertThat(event.getValue().peerSuppressedSenderId()).isEqualTo(senderId);
+        assertThat(event.getValue().admittedUserIds()).isNotNull();
+        assertThat(event.getValue().replay()).isFalse();
     }
 
     @Test
@@ -181,6 +188,12 @@ class DirectBlockSendTest {
         verify(messageRepository).insertIgnoringDuplicateKey(
                 conversationId, senderId, clientMessageId, "TEXT", "hello", null, false);
         verify(conversationRepository).advanceLastMessage(conversationId, stored.id(), 42L);
+        ArgumentCaptor<MessageCreatedEvent> event = ArgumentCaptor.forClass(MessageCreatedEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        // GH#313: an unsuppressed send carries the snapshot with a null probe
+        // result — listeners treat it as "not peer-suppressed" without a query.
+        assertThat(event.getValue().peerSuppressedSenderId()).isNull();
+        assertThat(event.getValue().admittedUserIds()).isNotNull();
     }
 
     @Test
@@ -200,5 +213,11 @@ class DirectBlockSendTest {
         assertThat(result.created()).isFalse();
         verify(messageRepository, never()).insertIgnoringDuplicateKey(
                 any(), any(), any(), any(), any(), any(), anyBoolean());
+        ArgumentCaptor<MessageCreatedEvent> event = ArgumentCaptor.forClass(MessageCreatedEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        // GH#313: replays carry no fan-out snapshot — the listeners keep their
+        // post-commit queries for the rare retry path.
+        assertThat(event.getValue().admittedUserIds()).isNull();
+        assertThat(event.getValue().replay()).isTrue();
     }
 }

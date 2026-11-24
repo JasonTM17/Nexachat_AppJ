@@ -333,6 +333,17 @@ public class MessageService {
         }
         messageRepository.lockIdempotencyKey(senderId, request.clientMessageId());
         Conversation conversation = lockConversationForWrite(conversationId);
+        // TOCTOU recheck: the requireMember above ran before any lock, so a
+        // concurrent kick/leave (GroupService.removeMember/leave both take this
+        // same conversation FOR UPDATE before deleting the member row) can
+        // commit membership revocation between that pre-check and this point.
+        // Only this call, made while the conversation write lock is held, is
+        // the authoritative membership boundary for the insert below — every
+        // group membership mutation serializes on this row, so nothing can
+        // revoke membership again until this transaction releases the lock.
+        // The pre-lock check stays as a pure fast-fail: it keeps non-members
+        // off the user/idempotency/conversation locks and preserves the
+        // NOT_MEMBER-before-CONVERSATION_NOT_FOUND error contract.
         requireMember(conversationId, senderId);
         var retryAfterConversationLock = messageRepository.findRowBySenderAndClientMessageId(
                 senderId, request.clientMessageId());
@@ -420,8 +431,24 @@ public class MessageService {
         // Broadcast on dedup too: the re-sent frame is how a retrying sender
         // gets its SENT signal; receivers deduplicate by message id. The replay
         // flag keeps push fan-out to the one dispatch the stored row already had.
+        //
+        // Fan-out snapshot (attached only to rows this transaction created):
+        // the listeners used to re-read the admitted-member list and the
+        // peer-suppression flag after commit. The conversation lock is held
+        // from lockConversationForWrite to commit and every group membership
+        // mutation serializes on the same row, so the in-transaction member
+        // snapshot equals the post-commit re-read (a member added later has
+        // joinedAt > createdAt and the same predicate would exclude them);
+        // peerSuppressed below is the write-once flag this transaction just
+        // stored on the row. On a lost insert race (`!created`) the surviving
+        // row was written by the winner — its flag and its admitted list are
+        // not this transaction's to claim, so no snapshot travels and the
+        // listeners keep their post-commit queries.
+        List<UUID> admittedUserIds = created
+                ? memberRepository.findAdmittedUserIds(conversationId, row.createdAt()) : null;
         eventPublisher.publishEvent(new MessageCreatedEvent(
-                conversationId, broadcast, null, !created));
+                conversationId, broadcast, null, !created, admittedUserIds,
+                created && peerSuppressed ? senderId : null));
         return new SendResult(scopeReplyPreviewToViewer(broadcast, row.senderId()), created);
     }
 
@@ -509,6 +536,9 @@ public class MessageService {
                     "clientMessageId already used in a different conversation");
         }
         MessageResponse broadcast = toBroadcastResponse(row);
+        // No fan-out snapshot on replays: the stored row's suppression flag
+        // and admission snapshot belong to the transaction that created it,
+        // so the listeners keep their post-commit queries for this path.
         eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, broadcast, null, true));
         return new SendResult(scopeReplyPreviewToViewer(broadcast, row.senderId()), false);
     }
@@ -804,7 +834,15 @@ public class MessageService {
         log.info("System message {} (seq={}) stored in {} by {}", row.id(), row.seq(), conversationId, actingUserId);
 
         MessageResponse broadcast = toBroadcastResponse(row);
-        eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, broadcast, subjectUserId));
+        // Fan-out snapshot: group membership mutations (including the caller
+        // that will remove the subject of this very line) serialize on this
+        // conversation row, so the in-transaction admitted list is the
+        // "admitted at createdAt" view every listener would re-read after
+        // commit — the removed member is deliberately in it, matching the
+        // topic frame they can still receive. A SYSTEM row is never
+        // peer-suppressed: the insert above stores the flag as false.
+        eventPublisher.publishEvent(new MessageCreatedEvent(conversationId, broadcast, subjectUserId,
+                false, memberRepository.findAdmittedUserIds(conversationId, row.createdAt()), null));
         return scopeReplyPreviewToViewer(broadcast, actingUserId);
     }
 
