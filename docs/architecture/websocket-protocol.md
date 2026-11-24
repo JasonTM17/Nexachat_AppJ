@@ -131,6 +131,102 @@ Notes:
   by default on each transport) also apply to `mentionAll` sends; there is no
   separate allowance.
 
+### Dual-subscription fan-out and dedupe
+
+`/topic/conversations.{id}` and `/user/queue/inbox` overlap on purpose: the
+topic serves whoever has the conversation open, and the inbox queue keeps
+badges and the conversation list current for members who are not looking at the
+room (`MessageBroadcastListener.java:47-59`: members "that are not subscribed to
+the conversation topic still get `/user/queue/inbox` so their unread badge
+updates"). A client subscribed to both destinations therefore receives two
+frames for the events below — this is the contract, not a defect.
+
+| eventType | `/topic/conversations.{id}` | `/user/queue/inbox` |
+|---|---|---|
+| `MESSAGE_CREATED` | yes, one frame | yes, one frame per member admitted at the message's `createdAt` (`MessageBroadcastListener.java:77-82`) |
+| `CONVERSATION_UPDATED` | yes | yes, to every current member plus `extraAudienceUserIds()`, so a removed member's inbox still drops the room (`ConversationBroadcastListener.java:22-26,52-54`) |
+| `MESSAGE_UPDATED`, `MESSAGE_DELETED`, `MESSAGE_READ`, `MESSAGE_DELIVERED` | yes | no (`MessageBroadcastListener.java:97-127`) |
+| `REACTION_UPDATED`, `PIN_UPDATED` | yes | no — topic-only by design, because neither changes an unread badge (`InteractionBroadcastListener.java:20-22`) |
+| `USER_TYPING` | yes | no (`WsMessageController.java:83`) |
+| `USER_ONLINE`, `USER_OFFLINE` | no | no — `/user/queue/presence` only |
+| errors, call signaling | no | no — `/user/queue/errors`, `/user/queue/calls` |
+
+**The frame carries no message identity.** The envelope is
+`{eventType, conversationId, serverTs, payload}` (`EventEnvelope.java:16-23`),
+and `EventEnvelope.of` stamps `serverTs` with a fresh `Instant.now()` per call.
+The two copies of one message always agree on `payload` and may differ on
+`serverTs`; a recipient outside the quoted message's admission window also gets
+an inbox `payload` stripped of the `replyTo` preview while the topic copy keeps
+it (§5 Member admission scope). Nothing in the STOMP frame — headers included —
+identifies the message except `payload`.
+
+**Dedupe rule.** Two copies MUST collapse into one row. Key on `payload.id` (the
+message id) and write through an idempotent upsert, which is what the Android
+client does: "Realtime events are written through and deduplicated by message id
+and `clientMessageId`, so an event is never rendered independently of Room"
+(`MessageRepository.java:88-91`). The sender's `SENDING` → `SENT` flip is keyed
+on `clientMessageId` (§6 Idempotency) and is equally idempotent under the second
+copy. Do not dedupe on `serverTs`, on frame arrival order, or by remembering
+recent frame instances in memory — a reconnect and the resync that follows it
+re-deliver the same events with new timestamps.
+
+```text
+                MESSAGE_CREATED (AFTER_COMMIT, row already committed)
+                                   │
+                                   ▼
+                        MessageBroadcastListener
+                          │                    │
+     convertAndSend ──────┘                    └────── convertAndSendToUser
+     (one frame)                                      (one frame per admitted member)
+          │                                                       │
+          ▼                                                       ▼
+ /topic/conversations.{c}                              /user/queue/inbox
+          │                                                       │
+ outbound membership + admission + privacy check                  │
+          │                                                       │
+          └──────────────► member device, subscribed to both ◄────┘
+                                   │
+                     same payload.id, serverTs may differ
+                                   ▼
+                    upsert by message id → one row, one render
+```
+
+**Edge cases.**
+
+- **Socket lost between the two SUBSCRIBE frames.** The two subscriptions are
+  independent; a client that completed the topic SUBSCRIBE and lost the socket
+  before the inbox SUBSCRIBE receives the topic copy only, and the reverse also
+  happens. Either state is correct — the second destination is an extra surface,
+  never the delivery guarantee. The topic half additionally requires membership
+  when it is subscribed (`StompAuthChannelInterceptor.java:84-86,503`) and is
+  re-checked on every delivery, because the simple broker shares a topic
+  subscription across sessions and cannot filter recipients when membership
+  changes (`StompConversationMembershipOutboundInterceptor.java:24-28`); the
+  inbox half is an allowlisted own queue (`StompAuthChannelInterceptor.java:100-101`)
+  and keeps arriving to a member who was removed from the conversation.
+- **Reconnect.** Both destinations must be re-subscribed after CONNECT; the
+  broker keeps no subscription state across a socket
+  (`resubscribeWanted()`, `RealtimeSession.java:677-683`). The gap — including
+  a half that was never subscribed — is closed by `afterSeq` resync or
+  `POST /api/v1/sync`, not by the surviving destination.
+- **Out-of-order delivery.** The two copies can arrive in either order relative
+  to each other and interleaved with other events; since they carry the same
+  `payload.id` and `payload.seq` the arrival order does not matter. Render by
+  `seq` (§6 Ordering), never by arrival time.
+- **More than two frames per message.** A retried SEND re-broadcasts
+  `MESSAGE_CREATED` for the deduplicated row (§6 Idempotency), so one logical
+  message can produce three or more frames across both destinations. Same rule:
+  upsert by `payload.id`.
+- **Admission asymmetry.** The inbox push goes only to members admitted at the
+  message's `createdAt`, and topic deliveries pass the same creation-time filter
+  (§5 Member admission scope), so a member admitted later receives neither copy
+  of a historical message from this fan-out — history comes from REST.
+
+REST resync (`POST /api/v1/sync`,
+`GET /api/v1/conversations/{id}/messages?afterSeq=`) is documented in
+[`docs/architecture/api-contract.md`](api-contract.md); this file stays the
+frame contract.
+
 ## 5. Event envelope
 
 Conversation and presence events use the following envelope (call signaling
@@ -218,6 +314,14 @@ The sender flips its optimistic Room row from `SENDING` to `SENT` by matching
 
 **Ordering.** Render and diff by monotonic `seq` (BIGSERIAL), never by arrival
 time or `serverTs`; a delayed lower-`seq` event still inserts in position.
+
+**Duplicate deliveries are by design.** A client subscribed to both
+`/topic/conversations.{id}` and its own `/user/queue/inbox` receives every
+`MESSAGE_CREATED` and `CONVERSATION_UPDATED` twice, over two independent
+fan-out paths. The copies agree on `payload` (`id`, `seq`, `clientMessageId`)
+and may disagree on `serverTs`; deduplicate on `payload.id` in the write path
+and key the sender ack on `clientMessageId`. Neither the envelope nor the frame
+headers carry a frame id to compare (§4 Dual-subscription fan-out and dedupe).
 
 **Two-tick receipts and read watermarks.** Reception is acknowledged via
 `/app/conversations/{id}/delivered` (or `/app/chat.delivery.ack`; REST fallback

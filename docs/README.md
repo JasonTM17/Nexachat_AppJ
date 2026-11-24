@@ -11,7 +11,7 @@ quick start remain in [README.md](../README.md).
 | [architecture/api-contract.md](architecture/api-contract.md) | REST `/api/v1` route inventory, feature matrix, and migration history. |
 | [architecture/streaks.md](architecture/streaks.md) | Chat streaks: data model, day boundary and grace rules, reminder push. |
 | [architecture/public-feed.md](architecture/public-feed.md) | Public feed: plaintext posts/comments/reactions, visibility predicate, moderation lifecycle. |
-| [architecture/websocket-protocol.md](architecture/websocket-protocol.md) | STOMP destinations, envelopes, delivery guarantees, and rate limits. |
+| [architecture/websocket-protocol.md](architecture/websocket-protocol.md) | STOMP destinations, topic/inbox dual fan-out and dedupe, envelopes, delivery guarantees, and rate limits. |
 | [architecture/android-sync.md](architecture/android-sync.md) | Android sync v2 checkpoints (Room schema v23), negotiation, and the legacy fallback boundary. |
 | [architecture/calls.md](architecture/calls.md) | WebRTC call signaling, STOMP events, and Android call UI. |
 | [architecture/e2ee.md](architecture/e2ee.md) | Optional E2EE for direct chats: on-device keys, ciphertext-only storage, and v1 limits. |
@@ -32,9 +32,10 @@ quick start remain in [README.md](../README.md).
 |---|---|
 | [operations/operations.md](operations/operations.md) | Docker Compose, environment variables, Mailpit, OAuth, and R8 checks. |
 | [operations/production-runbook.md](operations/production-runbook.md) | Render/Neon/Supabase/Vercel production topology and incident playbooks. |
-| [operations/deploy-render.md](operations/deploy-render.md) | First deploy on Render Free + Neon + object storage. |
+| [operations/deploy-render.md](operations/deploy-render.md) | First deploy on Render Free + Neon + object storage, and the free-tier performance profile. |
 | [operations/backup-recovery.md](operations/backup-recovery.md) | Local PostgreSQL and attachment backup/restore (`tools/backup/`). |
 | [operations/free-tier-observability.md](operations/free-tier-observability.md) | Capacity meters, PromQL, and free-tier monitoring checks. |
+| [operations/virtual-threads-evaluation.md](operations/virtual-threads-evaluation.md) | Virtual-thread evaluation for the Render profile: pinning inventory, local benchmark protocol, decision criteria. |
 | [operations/domain-and-app-links.md](operations/domain-and-app-links.md) | DNS, Vercel site, App Links, and signing fingerprints. |
 | [operations/google-signin-setup.md](operations/google-signin-setup.md) | Google Cloud OAuth clients and Android client IDs. |
 | [demo/seed.sql](../demo/seed.sql) | Re-runnable demo accounts and sample conversations. |
