@@ -499,7 +499,16 @@ def main(argv=None) -> int:
     def dupe_replay() -> str:
         victim = state["sent"][0]
         sender = state["users"][victim["sender"]]
-        before = len(state["deliveries"])
+        # _all_deliveries concatenates per-client lists (A then B then C), so
+        # a flat [before:] slice over the concatenated list is NOT "frames
+        # that arrived after `before`" - it is the tail of the last client's
+        # list. A client whose recv thread is a few frames behind makes that
+        # tail contain stale pre-replay frames, and the count silently loses
+        # the other clients (three live runs all failed at exactly 1/3).
+        # Per-connection before/after slices plus a replay-time floor on the
+        # frame arrival clocks are the honest witness.
+        before_by_conn = [len(conn.deliveries) for conn in state["conns"]]
+        replay_sent_at = time.monotonic()
         replay = client.post(
             f"/api/v1/conversations/{state['conversation_id']}/messages",
             token=sender["token"],
@@ -518,7 +527,6 @@ def main(argv=None) -> int:
         # deduplicated wrongly: history stays one row and the unique
         # delivery matrix does not grow.
         time.sleep(4.0)
-        deliveries = _all_deliveries(state)
         rows = [
             item for item in
             history(client, state["users"][0]["token"],
@@ -528,27 +536,37 @@ def main(argv=None) -> int:
         check(len(rows) == 1,
               f"duplicate clientMessageId stored {len(rows)} rows")
         for sub in SUBSCRIPTION_IDS:
-            replays = [
-                d for d in deliveries[before:]
-                if d["subscription"] == sub
-                and d["message_id"] == victim["row"]["id"]
-            ]
-            check(
-                len(replays) == len(state["conns"]),
-                f"{sub}: duplicate re-broadcast reached "
-                f"{len(replays)}/{len(state['conns'])} clients",
-            )
+            for conn, before in zip(state["conns"], before_by_conn):
+                replays = [
+                    d for d in conn.deliveries[before:]
+                    if d["subscription"] == sub
+                    and d["message_id"] == victim["row"]["id"]
+                    and d["arrived"] >= replay_sent_at
+                ]
+                check(
+                    len(replays) == 1,
+                    f"{sub}: {conn.label} saw {len(replays)} re-broadcast "
+                    f"frames for the replayed id (expected exactly 1)",
+                )
         # The re-broadcast frames carry the stored payload.id, so the unique
-        # (client, message_id) matrix must not grow: dedupe holds.
-        unique_after = len(unique_deliveries(deliveries))
+        # (client, message_id) matrix must not grow: dedupe holds. Compare
+        # the frozen snapshot against the per-connection tails that satisfy
+        # the replay-time floor, so late pre-replay frames cannot fake
+        # growth.
+        replay_frames = [
+            d for conn, before in zip(state["conns"], before_by_conn)
+            for d in conn.deliveries[before:]
+            if d["arrived"] >= replay_sent_at
+        ]
         unique_before = len(unique_deliveries(state["deliveries"]))
+        unique_after = len(unique_deliveries(state["deliveries"] + replay_frames))
         check(
             unique_after == unique_before,
             f"unique delivery count grew from {unique_before} to {unique_after}",
         )
-        state["deliveries"] = deliveries
-        return ("1 history row; re-broadcast of the stored id to all clients "
-                "on both surfaces; dedupe by payload.id holds")
+        state["deliveries"] = state["deliveries"] + replay_frames
+        return ("1 history row; re-broadcast of the stored id to every "
+                "client on both surfaces; dedupe by payload.id holds")
 
     try:
         established = (
