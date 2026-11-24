@@ -7,6 +7,8 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -94,7 +96,8 @@ public class AlertRuleController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable UUID ruleId,
                        @Valid @RequestBody(required = false) RuleDeleteRequest body,
-                       HttpServletRequest request) {
+                       HttpServletRequest request) throws HttpMediaTypeNotSupportedException {
+        requireJsonWhenBodyPresent(request);
         JwtPrincipal actor = AdminGuard.requireStaff();
         service.delete(ruleId, body == null ? null : body.reason(),
                 actor.userId(), AdminGuard.role(), clientIp(request));
@@ -109,5 +112,24 @@ public class AlertRuleController {
 
     private String clientIp(HttpServletRequest request) {
         return clientIpResolver.rateLimitClientIp(request);
+    }
+
+    /**
+     * The DELETE body is optional, so Spring does not reject a body sent with a
+     * non-JSON content type on its own (an unreadable optional body resolves to
+     * {@code null}). A client that shipped a reason with the wrong content type
+     * would get a silent {@code reason=null} delete, so fail fast with the same
+     * {@link HttpMediaTypeNotSupportedException} the shared advice maps to 415.
+     */
+    private static void requireJsonWhenBodyPresent(HttpServletRequest request)
+            throws HttpMediaTypeNotSupportedException {
+        if (request.getContentLengthLong() > 0) {
+            String contentType = request.getContentType();
+            boolean json = contentType != null
+                    && MediaType.parseMediaType(contentType).isCompatibleWith(MediaType.APPLICATION_JSON);
+            if (!json) {
+                throw new HttpMediaTypeNotSupportedException(contentType, List.of(MediaType.APPLICATION_JSON));
+            }
+        }
     }
 }
