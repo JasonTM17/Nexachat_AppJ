@@ -11,9 +11,11 @@ phone range, drives the real REST/STOMP API, prints `PASS ` / `FAIL ` /
 | `ai_privacy_e2e.py` | AI privacy: RAG ask, consent opt-out, translate | `+849000006xx` |
 | `groups_privacy_e2e.py` | Groups privacy: rejoin visibility, disappearing messages, blocks, E2EE devices | `+849000007xx` |
 | `admin_streak_e2e.py` | Admin console surfaces and chat streaks | `+849000008xx`, admin `+84900000890` |
+| `realtime_fanout_e2e.py` | Multi-client realtime fan-out: 3 STOMP clients x topic + inbox, negotiated heart-beats | `+849000009xx` |
 
 ## Backend requirements
 
+- `realtime_fanout_e2e.py` needs `websocket-client` (`pip install websocket-client`).
 - `NEXACHAT_ADMIN_PHONES` must include both admin phones
   (`+84900000590,+84900000890`).
 - `NEXACHAT_E2EE_V1_ACTIVATION_ENABLED=true` (E2EE device journey).
