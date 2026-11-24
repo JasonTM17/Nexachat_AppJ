@@ -104,15 +104,71 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - name: Reject AI attribution trailers in branch commits
-        if: github.event_name == 'pull_request'
+      - name: Enforce commit authorship and reject co-author or attribution trailers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_ASSOC: ${{ github.event.pull_request.author_association }}
+          REPO: ${{ github.repository }}
         run: |
-          # Squash-merge bodies are assembled from branch commit messages, so
-          # trailers in the range land on main regardless of repo settings.
-          if git log "origin/${{ github.base_ref }}..HEAD" --format='%B%nauthor:%an <%ae>%ncommitter:%cn <%ce>%n---' \
-            | grep -Ein 'co-authored-by|generated[ -]with|generated-by|devin-ai-integration|vibe@mistral\.ai|noreply.*\[bot\]'; then
-            echo "::error::Branch commits carry AI/agent attribution trailers or bot identities; rewrite them before merge."
+          # Squash-merge bodies are assembled from branch commit messages AND
+          # GitHub injects Co-authored-by when commit authors differ from the
+          # PR opener, so enforce both trailers and author consistency.
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            if [ -n "$PR_HEAD_SHA" ] && git cat-file -e "${PR_HEAD_SHA}^{commit}" 2>/dev/null; then
+              RANGE="origin/${BASE_REF}..${PR_HEAD_SHA}"
+            else
+              RANGE="origin/${BASE_REF}..HEAD"
+            fi
+          else
+            if [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] \
+              && git merge-base --is-ancestor "$BEFORE_SHA" HEAD 2>/dev/null; then
+              RANGE="${BEFORE_SHA}..HEAD"
+            elif git rev-parse --verify -q HEAD~1 >/dev/null 2>&1; then
+              RANGE="HEAD~1..HEAD"
+            else
+              RANGE="HEAD"
+            fi
+          fi
+
+          if git log "$RANGE" --format='%B%nauthor:%an <%ae>%ncommitter:%cn <%ce>%n---' \
+            | grep -Ein 'co-authored-by|generated[ -]with|generated[ -]by|made[ -]with|devin-ai-integration|vibe@mistral\.ai|noreply.*\[bot\]'; then
+            echo "::error::Commits carry Co-authored-by/attribution trailers or bot identities; rewrite them before merge."
             exit 1
+          fi
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            case "$PR_ASSOC" in
+              OWNER|MEMBER|COLLABORATOR) ;;
+              *)
+                echo "::error::PR author '${PR_AUTHOR}' has association '${PR_ASSOC}' (expected OWNER/MEMBER/COLLABORATOR)."
+                exit 1
+                ;;
+            esac
+
+            distinct_authors=$(git log "$RANGE" --format='%ae' | tr '[:upper:]' '[:lower:]' | sort -u | wc -l)
+            if [ "$distinct_authors" -gt 1 ]; then
+              echo "::error::PR commits contain multiple author emails; rewrite authorship to a single owner before merge."
+              exit 1
+            fi
+
+            for sha in $(git rev-list "$RANGE"); do
+              ae=$(git log -1 --format='%ae' "$sha" | tr '[:upper:]' '[:lower:]')
+              ce=$(git log -1 --format='%ce' "$sha" | tr '[:upper:]' '[:lower:]')
+              if [ "$ce" != "noreply@github.com" ] && [ "$ae" != "$ce" ]; then
+                echo "::error::Commit $sha has mismatched author ($ae) vs committer ($ce) (e.g. cherry-pick without --reset-author), which causes GitHub squash-merge to inject Co-authored-by."
+                exit 1
+              fi
+              login=$(gh api "repos/${REPO}/commits/${sha}" --jq '.author.login // empty' 2>/dev/null || true)
+              if [ -n "$login" ] && [ "$login" != "$PR_AUTHOR" ]; then
+                echo "::error::Commit $sha resolves to GitHub user '$login' instead of PR author '$PR_AUTHOR', which causes GitHub squash-merge to inject Co-authored-by."
+                exit 1
+              fi
+            done
           fi
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
