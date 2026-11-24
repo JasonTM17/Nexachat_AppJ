@@ -60,7 +60,7 @@ public class AlertRuleService {
 
     @Transactional
     public AlertRuleRow update(UUID ruleId, String name, String severity, String pattern,
-                               String description, Boolean enabled,
+                               String description, Boolean enabled, String reason,
                                UUID actorId, User.Role actorRole, String ip) {
         requireAdmin(actorRole);
         AlertRuleRow existing = requireRule(ruleId);
@@ -81,8 +81,11 @@ public class AlertRuleService {
         boolean newEnabled = enabled == null ? existing.enabled() : enabled;
         repository.update(ruleId, newName, newSeverity, newPattern, description == null
                 ? existing.description() : description, newEnabled);
+        // C5-03: the rule editor's optional justification lands on the audit
+        // row instead of the fixed null: old clients that send no reason keep
+        // auditing exactly as before.
         auditService.record(actorId, actorRole, "RULE_UPDATE", "alert_rule", ruleId.toString(),
-                null, Map.of("enabled", newEnabled, "severity", newSeverity), ip);
+                reason, Map.of("enabled", newEnabled, "severity", newSeverity), ip);
         return repository.findById(ruleId).orElseThrow();
     }
 

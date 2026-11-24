@@ -1,6 +1,7 @@
 package com.nexachat.admin;
 
 import com.nexachat.call.CallRegistry;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -8,6 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.File;
 import java.lang.management.ManagementFactory;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Map;
 
@@ -23,12 +25,15 @@ public class AdminSystemController {
     private final JdbcTemplate jdbcTemplate;
     private final CallRegistry callRegistry;
     private final AlertScanQueue scanQueue;
+    private final Path storageRoot;
 
     public AdminSystemController(JdbcTemplate jdbcTemplate, CallRegistry callRegistry,
-                                 AlertScanQueue scanQueue) {
+                                 AlertScanQueue scanQueue,
+                                 @Value("${nexachat.storage.root:./data/uploads}") String storageRoot) {
         this.jdbcTemplate = jdbcTemplate;
         this.callRegistry = callRegistry;
         this.scanQueue = scanQueue;
+        this.storageRoot = Path.of(storageRoot);
     }
 
     public record ServiceStatus(String name, String status, String detail) {
@@ -77,7 +82,10 @@ public class AdminSystemController {
 
     private ServiceStatus storageStatus() {
         try {
-            File root = new File(System.getProperty("user.dir"));
+            // C5-07: the uploads volume is what fills up, so usable space is
+            // measured on the configured storage root — not the process's
+            // working directory, which is unrelated to where uploads land.
+            File root = storageRoot.toFile();
             long usable = root.getUsableSpace();
             return new ServiceStatus("storage", usable > 0 ? "UP" : "DOWN",
                     "usable=" + (usable / (1024 * 1024)) + "MiB");

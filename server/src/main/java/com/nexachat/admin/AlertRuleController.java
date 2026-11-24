@@ -47,7 +47,8 @@ public class AlertRuleController {
                             String severity,
                             @Size(max = 200) String pattern,
                             @Size(max = 500) String description,
-                            Boolean enabled) {
+                            Boolean enabled,
+                            @Size(max = 500) String reason) {
     }
 
     public record TestRequest(@NotBlank String patternType,
@@ -77,7 +78,7 @@ public class AlertRuleController {
                                HttpServletRequest request) {
         JwtPrincipal actor = AdminGuard.requireStaff();
         return service.update(ruleId, body.name(), body.severity(), body.pattern(),
-                body.description(), body.enabled(),
+                body.description(), body.enabled(), body.reason(),
                 actor.userId(), AdminGuard.role(), clientIp(request));
     }
 
