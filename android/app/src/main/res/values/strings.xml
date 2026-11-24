@@ -13,7 +13,6 @@
     <string name="cd_signup_code">Sign-up verification code</string>
     <string name="error_login_identifier_required">Enter your email or phone number</string>
     <string name="error_login_identifier_invalid">Enter a valid email or international phone number</string>
-    <string name="auth_phone_label">Phone number</string>
     <string name="auth_phone_placeholder" translatable="false">+84 901 234 567</string>
     <string name="auth_password_label">Password</string>
     <string name="auth_display_name_label">Display name</string>
@@ -29,7 +28,6 @@
     <string name="auth_tagline">Private messages, calls, and groups</string>
 
     <!-- Auth field validation -->
-    <string name="error_phone_required">Enter your phone number</string>
     <string name="error_phone_invalid">Enter a valid international phone number</string>
     <string name="error_password_short">Password must be at least 8 characters</string>
     <string name="error_display_name_required">Enter your display name</string>
@@ -131,7 +129,6 @@
     <string name="search_no_results">No users found</string>
     <string name="search_no_results_hint">Try a different phone number or name.</string>
     <string name="search_press_to_find">Enter a phone or name, then tap search.</string>
-    <string name="add_by_phone_title">Add by phone</string>
     <string name="contact_added">Added to contacts</string>
     <string name="contact_alias_label">Alias</string>
     <string name="action_search">Search</string>
@@ -228,13 +225,11 @@
     <string name="message_not_sent">Not sent</string>
 
     <string name="chat_typing">typing…</string>
-    <string name="msg_seen">Seen</string>
     <string name="chat_offline">Disconnected</string>
     <string name="cd_send">Send</string>
     <string name="cd_sending">Sending</string>
     <string name="cd_group_info">Group info</string>
     <string name="cd_attach">Attach</string>
-    <string name="cd_remove_attachment">Remove attachment</string>
     <string name="cd_open_attachment">Open attachment</string>
     <string name="cd_play_video">Play video</string>
     <string name="cd_sent">Sent</string>
@@ -245,7 +240,6 @@
     <!-- Message interactions -->
     <string name="action_reply">Reply</string>
     <string name="action_reply_desc">Quote this message in the conversation</string>
-    <string name="dialog_reaction_picker_title">React</string>
     <string name="a11y_reaction_chip_by_me">%1$s, %2$d, yours</string>
     <string name="action_pin">Pin</string>
     <string name="action_pin_desc">Keep it at the top of this conversation</string>
@@ -262,7 +256,6 @@
     <string name="reply_unavailable">Message unavailable</string>
     <string name="cd_cancel_reply">Cancel reply</string>
     <string name="cd_reply_quote">Reply to %1$s: %2$s</string>
-    <string name="action_jump_to_message">Go to message</string>
     <string name="error_pin_limit">You can pin at most 3 messages</string>
     <string name="error_conversation_pin_limit">You can pin at most 5 conversations</string>
     <string name="cd_pinned_conversation">Pinned conversation</string>
@@ -300,7 +293,6 @@
     <string name="group_members_label">Members</string>
     <string name="group_add_member_empty">All your contacts are already in this group</string>
     <string name="group_role_admin">Admin</string>
-    <string name="group_member_self">%1$s (you)</string>
     <string name="group_remove_member_confirm">Remove %1$s from this group?</string>
     <string name="cd_remove_member_named">Remove %1$s from the group</string>
     <string name="group_leave_confirm">Leave this group?</string>
@@ -336,21 +328,15 @@
     <string name="action_delete_for_me_desc">Delete it only for you</string>
     <string name="action_admin_delete">Remove message</string>
     <string name="action_admin_delete_desc">Remove it for all members</string>
-    <string name="action_more_options">More options</string>
     <string name="attachment_picker_title">Add attachment</string>
-    <string name="attachment_pick_image">Photo</string>
-    <string name="attachment_pick_file">File</string>
     <string name="forwarded_snackbar">Forwarded</string>
     <string name="action_view">View</string>
 
     <!-- Message Edit -->
-    <string name="edit_message_title">Edit message</string>
     <string name="cd_cancel_edit">Cancel edit</string>
     <string name="message_edited">Edited</string>
 
     <!-- Message Delete -->
-    <string name="dialog_delete_message_title">Delete message?</string>
-    <string name="dialog_delete_message_body">Delete this message for everyone?</string>
     <string name="dialog_recall_message_title">Recall message?</string>
     <string name="dialog_recall_message_body">Remove this message for everyone?</string>
     <string name="dialog_delete_for_me_title">Delete for me?</string>
@@ -365,7 +351,6 @@
     <string name="search_in_chat_no_results">No messages found</string>
     <string name="search_in_chat_empty_hint">Try a different name or phrase.</string>
     <string name="search_in_chat_error">Could not search messages</string>
-    <string name="search_in_chat_too_short">Type at least 2 characters</string>
     <string name="cd_search_in_chat">Search in chat</string>
     <string name="cd_clear_search">Clear search</string>
     <string name="cd_close_search">Close search</string>
@@ -376,14 +361,9 @@
     <string name="forward_title">Forward message</string>
     <string name="forward_search_placeholder">Search conversations…</string>
     <string name="forward_send">Send</string>
-    <string name="forward_no_matches">No conversations match</string>
-
     <!-- Presence -->
     <string name="presence_active_now">Active now</string>
     <string name="presence_offline">Offline</string>
-    <string name="presence_minutes_ago">Active %1$d min ago</string>
-    <string name="presence_hours_ago">Active %1$d hr ago</string>
-    <string name="presence_yesterday">Active yesterday</string>
     <string name="cd_online_status">Online</string>
 
     <!-- Settings: Appearance & Privacy -->
@@ -758,7 +738,6 @@
     <string name="recovery_email_verified_status">Verified: %1$s</string>
     <string name="recovery_email_none_status">No recovery email</string>
     <string name="recovery_email_load_failed">Could not load recovery email status</string>
-    <string name="cd_recovery_email_row">Recovery email settings</string>
     <string name="cd_recovery_email_input">Recovery email address</string>
     <string name="cd_recovery_email_otp">Recovery email verification code</string>
     <string name="action_delete_account">Delete account</string>
@@ -775,8 +754,6 @@
     <string name="error_wrong_password">Current password is incorrect</string>
     <!-- Sign in with Google (hidden when the build has no web client ID) -->
     <string name="action_continue_with_google">Continue with Google</string>
-    <string name="settings_google_account">Google account</string>
-    <string name="settings_google_linked">Linked</string>
     <string name="settings_google_not_linked">Not linked</string>
     <string name="action_link_google">Link Google</string>
     <string name="action_unlink_google">Unlink Google</string>

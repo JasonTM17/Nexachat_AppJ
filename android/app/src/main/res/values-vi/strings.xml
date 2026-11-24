@@ -13,7 +13,6 @@
     <string name="cd_signup_code">Mã xác minh đăng ký</string>
     <string name="error_login_identifier_required">Nhập email hoặc số điện thoại</string>
     <string name="error_login_identifier_invalid">Nhập email hoặc số điện thoại quốc tế hợp lệ</string>
-    <string name="auth_phone_label">Số điện thoại</string>
     <string name="auth_phone_placeholder" translatable="false">+84 901 234 567</string>
     <string name="auth_password_label">Mật khẩu</string>
     <string name="auth_display_name_label">Tên hiển thị</string>
@@ -29,7 +28,6 @@
     <string name="auth_tagline">Tin nhắn, gọi điện và nhóm — riêng tư</string>
 
     <!-- Auth field validation -->
-    <string name="error_phone_required">Nhập số điện thoại</string>
     <string name="error_phone_invalid">Nhập số điện thoại quốc tế hợp lệ</string>
     <string name="error_password_short">Mật khẩu tối thiểu 8 ký tự</string>
     <string name="error_display_name_required">Nhập tên hiển thị</string>
@@ -131,7 +129,6 @@
     <string name="search_no_results">Không tìm thấy người dùng</string>
     <string name="search_no_results_hint">Thử số điện thoại hoặc tên khác.</string>
     <string name="search_press_to_find">Nhập SĐT hoặc tên, rồi nhấn tìm kiếm.</string>
-    <string name="add_by_phone_title">Thêm theo SĐT</string>
     <string name="contact_added">Đã thêm vào danh bạ</string>
     <string name="contact_alias_label">Biệt danh</string>
     <string name="action_search">Tìm người</string>
@@ -226,13 +223,11 @@
     <string name="message_not_sent">Chưa gửi</string>
 
     <string name="chat_typing">đang nhập…</string>
-    <string name="msg_seen">Đã xem</string>
     <string name="chat_offline">Mất kết nối</string>
     <string name="cd_send">Gửi</string>
     <string name="cd_sending">Đang gửi</string>
     <string name="cd_group_info">Thông tin nhóm</string>
     <string name="cd_attach">Đính kèm</string>
-    <string name="cd_remove_attachment">Xóa tệp đính kèm</string>
     <string name="cd_open_attachment">Mở tệp đính kèm</string>
     <string name="cd_play_video">Phát video</string>
     <string name="cd_sent">Đã gửi</string>
@@ -243,7 +238,6 @@
     <!-- Message interactions -->
     <string name="action_reply">Trả lời</string>
     <string name="action_reply_desc">Trích dẫn tin nhắn này trong cuộc trò chuyện</string>
-    <string name="dialog_reaction_picker_title">Thả cảm xúc</string>
     <string name="a11y_reaction_chip_by_me">%1$s, %2$d, của bạn</string>
     <string name="action_pin">Ghim</string>
     <string name="action_pin_desc">Ghim lên đầu cuộc trò chuyện</string>
@@ -259,7 +253,6 @@
     <string name="reply_unavailable">Tin nhắn không khả dụng</string>
     <string name="cd_cancel_reply">Hủy trả lời</string>
     <string name="cd_reply_quote">Trả lời %1$s: %2$s</string>
-    <string name="action_jump_to_message">Đi tới tin nhắn</string>
     <string name="error_pin_limit">Chỉ ghim được tối đa 3 tin nhắn</string>
     <string name="error_conversation_pin_limit">Chỉ ghim được tối đa 5 cuộc trò chuyện</string>
     <string name="cd_pinned_conversation">Đã ghim cuộc trò chuyện</string>
@@ -297,7 +290,6 @@
     <string name="group_members_label">Thành viên</string>
     <string name="group_add_member_empty">Tất cả liên hệ của bạn đã có trong nhóm này</string>
     <string name="group_role_admin">Quản trị viên</string>
-    <string name="group_member_self">%1$s (bạn)</string>
     <string name="group_remove_member_confirm">Xóa %1$s khỏi nhóm này?</string>
     <string name="cd_remove_member_named">Xóa %1$s khỏi nhóm</string>
     <string name="group_leave_confirm">Rời khỏi nhóm này?</string>
@@ -333,21 +325,15 @@
     <string name="action_delete_for_me_desc">Chỉ xóa tin nhắn với bạn</string>
     <string name="action_admin_delete">Gỡ tin nhắn</string>
     <string name="action_admin_delete_desc">Gỡ tin nhắn với tất cả thành viên</string>
-    <string name="action_more_options">Tùy chọn khác</string>
     <string name="attachment_picker_title">Đính kèm</string>
-    <string name="attachment_pick_image">Ảnh</string>
-    <string name="attachment_pick_file">Tệp</string>
     <string name="forwarded_snackbar">Đã chuyển tiếp</string>
     <string name="action_view">Xem</string>
 
     <!-- Message Edit -->
-    <string name="edit_message_title">Chỉnh sửa tin nhắn</string>
     <string name="cd_cancel_edit">Hủy chỉnh sửa</string>
     <string name="message_edited">Đã chỉnh sửa</string>
 
     <!-- Message Delete -->
-    <string name="dialog_delete_message_title">Xóa tin nhắn?</string>
-    <string name="dialog_delete_message_body">Xóa tin nhắn này với mọi người?</string>
     <string name="dialog_recall_message_title">Thu hồi tin nhắn?</string>
     <string name="dialog_recall_message_body">Thu hồi tin nhắn này với mọi người?</string>
     <string name="dialog_delete_for_me_title">Xóa ở phía tôi?</string>
@@ -362,7 +348,6 @@
     <string name="search_in_chat_no_results">Không tìm thấy tin nhắn</string>
     <string name="search_in_chat_empty_hint">Thử tên hoặc cụm từ khác.</string>
     <string name="search_in_chat_error">Không tìm kiếm được. Hãy thử lại.</string>
-    <string name="search_in_chat_too_short">Nhập ít nhất 2 ký tự</string>
     <string name="cd_search_in_chat">Tìm trong trò chuyện</string>
     <string name="cd_clear_search">Xóa tìm kiếm</string>
     <string name="cd_close_search">Đóng tìm kiếm</string>
@@ -373,14 +358,9 @@
     <string name="forward_title">Chuyển tiếp tin nhắn</string>
     <string name="forward_search_placeholder">Tìm cuộc trò chuyện…</string>
     <string name="forward_send">Gửi</string>
-    <string name="forward_no_matches">Không tìm thấy cuộc trò chuyện</string>
-
     <!-- Presence -->
     <string name="presence_active_now">Đang hoạt động</string>
     <string name="presence_offline">Không hoạt động</string>
-    <string name="presence_minutes_ago">Hoạt động %1$d phút trước</string>
-    <string name="presence_hours_ago">Hoạt động %1$d giờ trước</string>
-    <string name="presence_yesterday">Hoạt động hôm qua</string>
     <string name="cd_online_status">Đang hoạt động</string>
 
     <!-- Settings: Appearance & Privacy -->
@@ -750,7 +730,6 @@
     <string name="recovery_email_verified_status">Đã xác minh: %1$s</string>
     <string name="recovery_email_none_status">Chưa có email khôi phục</string>
     <string name="recovery_email_load_failed">Không tải được trạng thái email khôi phục</string>
-    <string name="cd_recovery_email_row">Cài đặt email khôi phục</string>
     <string name="cd_recovery_email_input">Địa chỉ email khôi phục</string>
     <string name="cd_recovery_email_otp">Mã xác minh email khôi phục</string>
     <string name="action_delete_account">Xóa tài khoản</string>
@@ -767,8 +746,6 @@
     <string name="error_wrong_password">Mật khẩu hiện tại không đúng</string>
     <!-- Sign in with Google (hidden when the build has no web client ID) -->
     <string name="action_continue_with_google">Tiếp tục với Google</string>
-    <string name="settings_google_account">Tài khoản Google</string>
-    <string name="settings_google_linked">Đã liên kết</string>
     <string name="settings_google_not_linked">Chưa liên kết</string>
     <string name="action_link_google">Liên kết Google</string>
     <string name="action_unlink_google">Gỡ liên kết Google</string>

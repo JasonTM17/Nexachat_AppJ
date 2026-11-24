@@ -22,7 +22,6 @@
     <string name="call_accept">Trả lời</string>
     <string name="call_decline">Từ chối</string>
     <string name="call_via_phone">Gọi qua điện thoại</string>
-    <string name="call_phone_unavailable">Liên hệ này chưa có số điện thoại.</string>
     <string name="call_no_dialer_app">Không có ứng dụng gọi điện nào để thực hiện cuộc gọi.</string>
     <string name="call_mic_rationale">Cần quyền micrô để gọi thoại.</string>
     <string name="call_mic_permission_needed">Hãy cấp quyền micrô để gọi thoại.</string>
