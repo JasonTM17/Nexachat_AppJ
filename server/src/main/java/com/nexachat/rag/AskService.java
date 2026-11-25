@@ -263,7 +263,7 @@ public class AskService {
         }
 
         boolean lookupLike = isLookupLike(question);
-        boolean requiresAnswerEvidence = lookupLike && !isBroadAggregationQuestion(question);
+        boolean requiresAnswerEvidence = !isBroadAggregationQuestion(question);
         RetrievalResult retrieval = retrievalService.retrieve(
                 conversationId, userId, question, language, consented, admittedFrom, requiresAnswerEvidence);
         if (retrieval.isEmpty()

@@ -74,11 +74,19 @@ class RagBenchmarkEvaluationTest {
     private static final String[] EN_NEGATIVE_LOOKUP = {
             "What is the satellite launch deadline?",
             "Where is the cryptocurrency treasury report?",
-            "When is the underwater robotics demonstration?"};
+            "When is the underwater robotics demonstration?",
+            "Find the satellite launch deadline.",
+            "Tell me where the cryptocurrency treasury report is.",
+            "I need you to find the exact underwater robotics demonstration schedule that was mentioned "
+                    + "in this conversation because I need it for the deployment."};
     private static final String[] VI_NEGATIVE_LOOKUP = {
             "Hạn chót phóng vệ tinh là khi nào?",
             "Kho lưu trữ tiền điện tử ở đâu?",
-            "Buổi trình diễn robot dưới nước diễn ra khi nào?"};
+            "Buổi trình diễn robot dưới nước diễn ra khi nào?",
+            "Tìm hạn chót phóng vệ tinh.",
+            "Cho tôi biết kho lưu trữ tiền điện tử ở đâu.",
+            "Tôi cần bạn tìm chính xác lịch trình diễn robot dưới nước đã được nhắc đến "
+                    + "trong cuộc trò chuyện này vì tôi cần cho việc triển khai."};
 
     @Test
     void benchmarkMeetsRetrievalAndCostTargets() {
