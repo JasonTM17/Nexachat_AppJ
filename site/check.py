@@ -1539,6 +1539,23 @@ def test_download_page():
         failures.append(f"{DOWNLOAD_PAGE} missing changelog link to {OFFICIAL_RELEASES_URL}")
     if f'href="{OFFICIAL_DIRECT_CHECKSUM_URL}"' not in html:
         failures.append(f"{DOWNLOAD_PAGE} missing direct checksum link to {OFFICIAL_DIRECT_CHECKSUM_URL}")
+
+    release_workflow_path = os.path.join(REPO_DIR, ".github", "workflows", "android-release.yml")
+    if not os.path.isfile(release_workflow_path):
+        failures.append("Missing .github/workflows/android-release.yml for stable APK asset validation")
+    else:
+        with open(release_workflow_path, "r", encoding="utf-8") as f:
+            release_workflow = f.read()
+        for needle, description in (
+            ("stable_asset_name='nexachat-latest.apk'", "stable APK asset name"),
+            ('cp "$apk" "$asset_dir/$stable_asset_name"', "stable APK asset copy"),
+            ('sha256sum "$stable_asset_name" > "$stable_asset_name.sha256"', "stable checksum generation"),
+            ('stable_apk="$asset_dir/nexachat-latest.apk"', "stable upload path"),
+            ('"$stable_apk" "$stable_checksum"', "stable asset upload"),
+        ):
+            if needle not in release_workflow:
+                failures.append(f"android-release.yml missing {description}")
+
     download_text = re.sub(r"<[^>]*>", " ", html)
     download_text = re.sub(r"\s+", " ", download_text).casefold()
     for needle, description in (
