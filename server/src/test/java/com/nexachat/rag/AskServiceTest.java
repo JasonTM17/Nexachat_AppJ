@@ -107,7 +107,7 @@ class AskServiceTest {
                 .isInstanceOf(ApiException.class)
                 .satisfies(throwable -> assertThat(((ApiException) throwable).getCode())
                         .isEqualTo(ApiErrorCode.E2EE_AI_UNAVAILABLE));
-        verify(provider, never()).embedQuestion(any(), anyBoolean(), any());
+        verify(provider, never()).embedQuestion(any(), any(), anyBoolean());
         verify(questionCache, never()).findExact(any(), any(), any());
         verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
     }
@@ -234,7 +234,7 @@ class AskServiceTest {
     @Test
     void askCacheKeyUsesTheEmbeddingModelIdentity() {
         RagEmbeddingService embeddingService = mock(RagEmbeddingService.class);
-        when(embeddingService.embedQuestion(any(), anyBoolean(), any()))
+        when(embeddingService.embedQuestion(any(), any(), anyBoolean()))
                 .thenReturn(new RagEmbeddingService.EmbeddingOutcome(
                         new float[256], "openai-compatible:gemini-embedding-001"));
         setConsent(true);

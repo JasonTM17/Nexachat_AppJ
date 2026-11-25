@@ -26,6 +26,7 @@ import retrofit2.http.Query;
 public interface MessageApi {
 
     public static final int DEFAULT_PAGE_SIZE = 30;
+    public static final int MAX_PAGE_SIZE = 100;
     public static final int DEFAULT_SEARCH_LIMIT = 20;
 
     @GET("api/v1/conversations")

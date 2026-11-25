@@ -52,6 +52,9 @@ public final class TokenStore {
     private static final Preferences.Key<Set<String>> SYNC_CURSOR_USER_IDS =
             PreferencesKeys.stringSetKey("sync_server_time_user_ids");
     private static final String SYNC_CURSOR_PREFIX = "sync_server_time_";
+    private static final Preferences.Key<Set<String>> JUMP_FLOOR_CONVERSATION_IDS =
+            PreferencesKeys.stringSetKey("history_jump_floor_conversation_ids");
+    private static final String JUMP_FLOOR_PREFIX = "history_jump_floor_";
     private static final Preferences.Key<Long> SESSION_EPOCH =
             PreferencesKeys.longKey("session_epoch");
     private static final Preferences.Key<String> SESSION_LIFECYCLE =
@@ -392,6 +395,70 @@ public final class TokenStore {
                 .distinctUntilChanged();
     }
 
+    /**
+     * Records the contiguous tail floor sequence before an anchored out-of-window
+     * citation jump stores older rows; never overwrites an existing floor so a
+     * second jump keeps the earliest tail boundary until conversation reopen.
+     */
+    @NonNull
+    public Completable recordHistoryJumpFloorIfAbsent(@NonNull String conversationId, long floorSeq) {
+        Objects.requireNonNull(conversationId, "conversationId");
+        if (conversationId.isBlank() || floorSeq <= 0L) {
+            return Completable.complete();
+        }
+        Preferences.Key<Long> key = jumpFloorKey(conversationId);
+        return dataStore.updateDataAsync(preferences -> Single.fromCallable(() -> {
+                    MutablePreferences updated = preferences.toMutablePreferences();
+                    if (updated.get(key) != null) {
+                        return preferences;
+                    }
+                    updated.set(key, floorSeq);
+                    Set<String> ids = updated.get(JUMP_FLOOR_CONVERSATION_IDS);
+                    Set<String> next = new HashSet<>(ids == null ? Collections.emptySet() : ids);
+                    next.add(conversationId);
+                    updated.set(JUMP_FLOOR_CONVERSATION_IDS, next);
+                    return (Preferences) updated;
+                }))
+                .ignoreElement();
+    }
+
+    /** Returns and clears any recorded jump island floor for {@code conversationId}, or {@code 0}. */
+    @NonNull
+    public Single<Long> consumeHistoryJumpFloor(@NonNull String conversationId) {
+        Objects.requireNonNull(conversationId, "conversationId");
+        if (conversationId.isBlank()) {
+            return Single.just(0L);
+        }
+        Preferences.Key<Long> key = jumpFloorKey(conversationId);
+        final long[] consumed = new long[] {0L};
+        return dataStore.updateDataAsync(preferences -> Single.fromCallable(() -> {
+                    Long existing = preferences.get(key);
+                    if (existing == null || existing <= 0L) {
+                        consumed[0] = 0L;
+                        return preferences;
+                    }
+                    consumed[0] = existing;
+                    MutablePreferences updated = preferences.toMutablePreferences();
+                    updated.remove(key);
+                    Set<String> ids = updated.get(JUMP_FLOOR_CONVERSATION_IDS);
+                    if (ids != null) {
+                        Set<String> next = new HashSet<>(ids);
+                        next.remove(conversationId);
+                        if (next.isEmpty()) {
+                            updated.remove(JUMP_FLOOR_CONVERSATION_IDS);
+                        } else {
+                            updated.set(JUMP_FLOOR_CONVERSATION_IDS, next);
+                        }
+                    }
+                    return (Preferences) updated;
+                }))
+                .map(ignored -> consumed[0]);
+    }
+
+    private static Preferences.Key<Long> jumpFloorKey(String conversationId) {
+        return PreferencesKeys.longKey(JUMP_FLOOR_PREFIX + conversationId);
+    }
+
     /** Empty when tokens are absent or either encrypted token cannot decrypt. */
     @NonNull
     public Maybe<Tokens> readTokens() {
@@ -572,6 +639,13 @@ public final class TokenStore {
                                                 }
                                             }
                                             updated.remove(SYNC_CURSOR_USER_IDS);
+                                            Set<String> jumpFloorIds = updated.get(JUMP_FLOOR_CONVERSATION_IDS);
+                                            if (jumpFloorIds != null) {
+                                                for (String cid : jumpFloorIds) {
+                                                    updated.remove(jumpFloorKey(cid));
+                                                }
+                                            }
+                                            updated.remove(JUMP_FLOOR_CONVERSATION_IDS);
                                             clearPendingRefresh(updated);
                                             Long epoch = updated.get(SESSION_EPOCH);
                                             if (epoch != null) {
