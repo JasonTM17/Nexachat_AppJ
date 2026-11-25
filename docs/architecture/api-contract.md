@@ -118,6 +118,7 @@ Android client can consume the API but no dedicated screen is merged into
 | V45 | `V45__repair_applied_migration_drift.sql` | Forward repair of in-place edits to already-applied V36 (widen `admin_audit_log.target_id`, `alert_rules` name/description) and V28 (google nonce owner/binding columns); idempotent, and the V27→V28 rename is a manual `flyway repair` case documented in deploy-render.md. |
 | V46 | `V46__scheduled_messages.sql` | `scheduled_messages` author queue (PENDING/SENT/CANCELED/FAILED, claim lease, retry backoff) with the `(sender_id, client_message_id)` idempotency key. |
 | V47 | `V47__rag_context_revision.sql` | `conversations.ai_context_version` plus `rag_ask_cache.context_version`, with a message-change trigger and expiry index so derived RAG answers are replayable only against the exact source context. |
+| V48 | `V48__message_embeddings_model_key.sql` | Widens `message_embeddings` to primary key `(message_id, model)` so local and external embedding identities can coexist for the same source message instead of overwriting each other. |
 
 ## Operational notes
 
