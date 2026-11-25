@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -85,9 +86,10 @@ class RagBenchmarkEvaluationTest {
         RagRetrievalService retrieval = RagTestSupport.retrieval(corpus.index(), new RagProperties());
 
         RetrievalMetrics retrievalMetrics = evaluateRetrieval(corpus, retrieval);
-        AskService askService = newAskService(corpus);
+        AtomicInteger llmInvocations = new AtomicInteger();
+        AskService askService = newAskService(corpus, llmInvocations);
         RouterMetrics routerMetrics = evaluateRouter(corpus, askService);
-        NegativeMetrics negativeMetrics = evaluateNegativeQuestions(corpus, askService);
+        NegativeMetrics negativeMetrics = evaluateNegativeQuestions(corpus, askService, llmInvocations);
 
         System.out.printf(
                 "rag-eval: conversations=%d messages=%d lookupQuestions=%d "
@@ -166,7 +168,7 @@ class RagBenchmarkEvaluationTest {
                 totalCitations == 0 ? 1.0 : (double) validCitations / totalCitations);
     }
 
-    private AskService newAskService(SyntheticCorpus corpus) {
+    private AskService newAskService(SyntheticCorpus corpus, AtomicInteger llmInvocations) {
         InMemoryRagMessageIndex index = corpus.index();
         RagProperties properties = new RagProperties();
         RagStats stats = new RagStats();
@@ -190,6 +192,7 @@ class RagBenchmarkEvaluationTest {
         when(questionCache.contextSnapshot(any())).thenReturn(new RagQuestionCache.ContextSnapshot(1, null));
         when(questionCache.contextUnchanged(any(), any())).thenReturn(true);
         when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+            llmInvocations.incrementAndGet();
             List<RagContextItem> context = invocation.getArgument(4);
             if (context.isEmpty()) {
                 return null;
@@ -243,24 +246,23 @@ class RagBenchmarkEvaluationTest {
                 allCited.isEmpty() ? 1.0 : (double) citedValid.size() / allCited.size());
     }
 
-    private NegativeMetrics evaluateNegativeQuestions(SyntheticCorpus corpus, AskService service) {
+    private NegativeMetrics evaluateNegativeQuestions(SyntheticCorpus corpus, AskService service,
+            AtomicInteger llmInvocations) {
         UUID userId = UUID.randomUUID();
         int notFound = 0;
-        int llmCalls = 0;
         int citationCount = 0;
+        int llmCallsBefore = llmInvocations.get();
         for (BenchmarkQuestion question : corpus.negativeQuestions()) {
             AskResponse response = service.ask(question.conversationId(), userId,
                     new AskRequest(question.question(), question.language()));
             if (response.mode() == AskMode.NOT_FOUND) {
                 notFound++;
             }
-            if (response.mode() == AskMode.LLM) {
-                llmCalls++;
-            }
             citationCount += response.citations().size();
         }
         int total = corpus.negativeQuestions().size();
-        return new NegativeMetrics((double) notFound / total, llmCalls, citationCount);
+        return new NegativeMetrics((double) notFound / total,
+                llmInvocations.get() - llmCallsBefore, citationCount);
     }
 
     private record NegativeMetrics(double notFoundRatio, int llmCalls, int citationCount) {

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -44,12 +45,14 @@ class RagBaselineGuardTest {
         RagBenchmarkEvaluationTest benchmark = new RagBenchmarkEvaluationTest();
         Object retrievalMetrics = invoke(benchmark, "evaluateRetrieval",
                 new Class<?>[] {corpusType, RagRetrievalService.class}, corpus, retrieval);
+        AtomicInteger llmInvocations = new AtomicInteger();
         Object askService = invoke(benchmark, "newAskService",
-                new Class<?>[] {corpusType}, corpus);
+                new Class<?>[] {corpusType, AtomicInteger.class}, corpus, llmInvocations);
         Object routerMetrics = invoke(benchmark, "evaluateRouter",
                 new Class<?>[] {corpusType, AskService.class}, corpus, askService);
         Object negativeMetrics = invoke(benchmark, "evaluateNegativeQuestions",
-                new Class<?>[] {corpusType, AskService.class}, corpus, askService);
+                new Class<?>[] {corpusType, AskService.class, AtomicInteger.class},
+                corpus, askService, llmInvocations);
 
         double recallAt3 = metric(retrievalMetrics, "recallAt3");
         double recallAt5 = metric(retrievalMetrics, "recallAt5");
