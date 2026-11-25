@@ -107,7 +107,7 @@ class AskServiceTest {
                 .isInstanceOf(ApiException.class)
                 .satisfies(throwable -> assertThat(((ApiException) throwable).getCode())
                         .isEqualTo(ApiErrorCode.E2EE_AI_UNAVAILABLE));
-        verify(provider, never()).embedQuestion(any(), anyBoolean());
+        verify(provider, never()).embedQuestion(any(), anyBoolean(), any());
         verify(questionCache, never()).findExact(any(), any(), any());
         verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
     }
@@ -170,6 +170,23 @@ class AskServiceTest {
     }
 
     @Test
+    void evidencedImperativeStillUsesTheLlm() {
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "The database password for the staging service is correct-horse-battery.");
+        setConsent(true);
+        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new RagLlmAnswer("The staging database password is correct-horse-battery.",
+                        List.of(fact.id())));
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("Find the database password for the staging service.", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.LLM);
+        assertThat(response.answer()).contains("correct-horse-battery");
+        verify(llmAnswerService).answer(eq(userId), eq(conversationId), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void lookupQuestionIsAnsweredExtractiveWithoutAnLlmCall() {
         RagMessage fact = addMessage(conversationId, senderId, 1,
                 "The server migration is scheduled for March 14 at 02:00.");
@@ -217,7 +234,7 @@ class AskServiceTest {
     @Test
     void askCacheKeyUsesTheEmbeddingModelIdentity() {
         RagEmbeddingService embeddingService = mock(RagEmbeddingService.class);
-        when(embeddingService.embedQuestion(any(), anyBoolean()))
+        when(embeddingService.embedQuestion(any(), anyBoolean(), any()))
                 .thenReturn(new RagEmbeddingService.EmbeddingOutcome(
                         new float[256], "openai-compatible:gemini-embedding-001"));
         setConsent(true);
