@@ -447,7 +447,7 @@
         <item quantity="other">Thử lại sau %d giây.</item>
     </plurals>
     <string name="ask_question_counter">Câu hỏi: %1$d/500</string>
-    <string name="ask_from_message">Từ tin nhắn</string>
+    <string name="ask_from_message">Trích từ trò chuyện</string>
     <string name="ask_citations_label">Nguồn</string>
     <string name="ask_citation_accessibility">Mở tin nhắn: %1$s</string>
     <string name="ask_context_omitted">Một số tin nhắn trong trò chuyện này đã không được đưa vào.</string>

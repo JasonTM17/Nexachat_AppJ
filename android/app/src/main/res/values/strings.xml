@@ -451,7 +451,7 @@
         <item quantity="other">Try again in %d seconds.</item>
     </plurals>
     <string name="ask_question_counter">Question: %1$d/500</string>
-    <string name="ask_from_message">From a message</string>
+    <string name="ask_from_message">Quoted from chat</string>
     <string name="ask_citations_label">Sources</string>
     <string name="ask_citation_accessibility">Open message: %1$s</string>
     <string name="ask_context_omitted">Some messages in this chat were not included.</string>
