@@ -102,8 +102,10 @@
             android:layout_height="0dp"
             android:layout_weight="1.5" />
 
-        <!-- Square action controls on one row (60dp mute/speaker/camera/switch, 72dp red end) -->
+        <!-- Circular action controls on one row (60dp mute/speaker/camera/switch, 72dp red end);
+             auto-hides in video calls like WhatsApp/Meet when the screen is untouched -->
         <LinearLayout
+            android:id="@+id/call_controls_row"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="24dp"
