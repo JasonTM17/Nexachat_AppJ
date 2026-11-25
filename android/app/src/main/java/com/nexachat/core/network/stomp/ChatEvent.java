@@ -338,11 +338,12 @@ public sealed interface ChatEvent
     /** A {@code /user/queue/errors} response to a rejected SEND. */
     record SendRejected(
             @Nullable String code,
-            @Nullable String clientMessageId) implements ChatEvent {
+            @Nullable String clientMessageId,
+            @Nullable String callId,
+            @Nullable String conversationId) implements ChatEvent {
 
-        @Override
-        public String conversationId() {
-            return null;
+        public SendRejected(@Nullable String code, @Nullable String clientMessageId) {
+            this(code, clientMessageId, null, null);
         }
 
         /** Java bean accessor retained for the call-signaling client. */
@@ -355,6 +356,18 @@ public sealed interface ChatEvent
         @Nullable
         public String getClientMessageId() {
             return clientMessageId;
+        }
+
+        /** Java bean accessor retained for the call-signaling client. */
+        @Nullable
+        public String getCallId() {
+            return callId;
+        }
+
+        /** Java bean accessor retained for the call-signaling client. */
+        @Nullable
+        public String getConversationId() {
+            return conversationId;
         }
     }
 

@@ -330,6 +330,23 @@ export interface SystemHealth {
   services: { name: string; status: string; detail: string }[];
 }
 
+/** Count-only RAG snapshot mirrored by /api/v1/admin/rag/stats. */
+export interface RagStatsSnapshot {
+  requests: number;
+  cacheHits: number;
+  notFound: number;
+  extractive: number;
+  llmCalls: number;
+  llmFallbackCalls: number;
+  llmFailures: number;
+  llmBulkheadRejections: number;
+  inputChars: number;
+  meanInputChars: number;
+  embeddingCalls: number;
+  embeddingFailures: number;
+  indexedMessages: number;
+}
+
 export interface MeResponse {
   userId: string;
   role: string;

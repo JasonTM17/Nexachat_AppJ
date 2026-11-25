@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   api,
   feedReportsPath,
@@ -10,7 +10,7 @@ import {
   type Page,
 } from '../api';
 import { useI18n, type StringKey } from '../i18n';
-import { useLatestRequest } from '../lib/async';
+import { useLatestRequest, useVisiblePolling } from '../lib/async';
 import {
   Chip,
   ConfirmDialog,
@@ -18,10 +18,15 @@ import {
   ErrorBlock,
   Loading,
   Pager,
+  RefreshControl,
+  Toast,
   fmtTime,
+  useApiErrorMessage,
+  useToast,
 } from '../components/ui';
 
 const PAGE_SIZE = 25;
+const POLL_MS = 60_000;
 const MAX_REASON = 500;
 const STATUSES: FeedReportStatus[] = ['OPEN', 'REVIEWED', 'DISMISSED'];
 
@@ -49,10 +54,15 @@ export default function FeedPage() {
   const [page, setPage] = useState(0);
   const [data, setData] = useState<Page<FeedReport> | null>(null);
   const [failed, setFailed] = useState(false);
-  const [actionFailed, setActionFailed] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
+  const [actionError, setActionError] = useState<unknown>(null);
+  const [stale, setStale] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [hiding, setHiding] = useState<FeedReport | null>(null);
+  const [unhiding, setUnhiding] = useState<FeedReport | null>(null);
   // Dismiss / mark-reviewed are irreversible one-click status changes, so
   // they go through the same confirm pattern as the reason-guarded hide.
   const [resolving, setResolving] = useState<{
@@ -60,39 +70,58 @@ export default function FeedPage() {
     next: 'REVIEWED' | 'DISMISSED';
   } | null>(null);
   const latest = useLatestRequest();
+  const formatError = useApiErrorMessage();
+  const toast = useToast();
+  const hasData = useRef(false);
 
   const load = useCallback(() => {
     // A reload (retry, filter or page change, or a post-action refresh) means
     // the failed-action banner no longer describes the view on screen.
-    setActionFailed(false);
+    setActionError(null);
     setFailed(false);
+    setRefreshing(true);
     // A new list can reuse report ids from a previous view; drop stale
     // per-report expansion so a row never renders open by accident.
     setExpanded(new Set());
-    latest(api<Page<FeedReport>>(feedReportsPath(status, page, PAGE_SIZE)), (res) => {
+    latest(api<Page<FeedReport>>(feedReportsPath(status, page, PAGE_SIZE)), (res, err) => {
+      setRefreshing(false);
       if (res) {
+        hasData.current = true;
         setData(res);
+        setUpdatedAt(new Date());
+        setLoadError(null);
+        setStale(false);
         // A mutation (resolve/hide) can shrink the list so the requested page
         // no longer exists; clamp and let the effect refetch once so the
         // pager never reads "page > total".
         const totalPages = Math.max(1, Math.ceil(res.total / PAGE_SIZE));
         if (page > totalPages - 1) setPage(totalPages - 1);
-      } else setFailed(true);
+      } else {
+        setLoadError(err);
+        if (hasData.current) setStale(true);
+        else setFailed(true);
+      }
     });
   }, [status, page, latest]);
 
   useEffect(() => {
     load();
   }, [load]);
+  useVisiblePolling(load, POLL_MS);
 
-  const run = async (report: FeedReport, call: () => Promise<unknown>) => {
+  const run = async (
+    report: FeedReport,
+    call: () => Promise<unknown>,
+    success: string,
+  ) => {
     setBusy(report.id);
-    setActionFailed(false);
+    setActionError(null);
     try {
       await call();
+      toast.show(success);
       load();
-    } catch {
-      setActionFailed(true);
+    } catch (err) {
+      setActionError(err);
     } finally {
       setBusy(null);
     }
@@ -105,17 +134,25 @@ export default function FeedPage() {
         method: 'POST',
         body: { reason },
       }),
+    t('feed.success.hidden'),
     );
   };
 
-  const unhide = (report: FeedReport) =>
+  const unhide = (report: FeedReport, reason: string) => {
+    setUnhiding(null);
     void run(report, () =>
-      api(feedTargetPath(report.targetType, report.targetId, 'unhide'), { method: 'POST' }),
+      api(
+        feedTargetPath(report.targetType, report.targetId, 'unhide'),
+        reason ? { method: 'POST', body: { reason } } : { method: 'POST' },
+      ),
+    t('feed.success.unhidden'),
     );
+  };
 
   const resolve = (report: FeedReport, next: 'REVIEWED' | 'DISMISSED') =>
     void run(report, () =>
       api(feedResolvePath(report.id), { method: 'POST', body: { status: next } }),
+    t('feed.success.resolved'),
     );
 
   const toggle = (id: string) => {
@@ -129,6 +166,12 @@ export default function FeedPage() {
 
   return (
     <>
+      <RefreshControl
+        updatedAt={updatedAt}
+        onRefresh={load}
+        refreshing={refreshing}
+        stale={stale}
+      />
       <div className="filters">
         <label className="filter-field">
           <span>{t('feed.status')}</span>
@@ -154,19 +197,20 @@ export default function FeedPage() {
       {/* An action failure must not hide the queue underneath it: the banner
           names the failed mutation while the rows stay actionable. A list
           failure keeps the full ErrorBlock (there is nothing to show). */}
-      {actionFailed && !failed && (
+      {actionError !== null && !failed && (
         <div className="form-error" role="alert">
-          {t('common.error')}
+          {formatError(actionError)}
         </div>
       )}
 
-      {failed && <ErrorBlock onRetry={load} />}
+      {failed && <ErrorBlock onRetry={load} error={loadError} />}
 
       {failed ? null : !data ? (
         <Loading />
       ) : data.items.length === 0 ? (
         <Empty
-          hint={status !== 'OPEN' ? t('common.empty.filtered') : undefined}
+          title={status === 'OPEN' ? t('feed.empty.open.title') : undefined}
+          hint={status !== 'OPEN' ? t('common.empty.filtered') : t('feed.empty.open.hint')}
           onClearFilters={
             status !== 'OPEN'
               ? () => {
@@ -267,7 +311,7 @@ export default function FeedPage() {
                             <button
                               className="btn sm"
                               disabled={busy === r.id}
-                              onClick={() => unhide(r)}
+                              onClick={() => setUnhiding(r)}
                             >
                               {t('feed.action.unhide')}
                             </button>
@@ -313,6 +357,17 @@ export default function FeedPage() {
         />
       )}
 
+      {unhiding && (
+        <ConfirmDialog
+          title={t('feed.action.unhide')}
+          allowReason
+          maxReasonLength={MAX_REASON}
+          busy={busy === unhiding.id}
+          onConfirm={(reason) => unhide(unhiding, reason)}
+          onCancel={() => setUnhiding(null)}
+        />
+      )}
+
       {resolving && (
         <ConfirmDialog
           title={t(
@@ -329,6 +384,7 @@ export default function FeedPage() {
           onCancel={() => setResolving(null)}
         />
       )}
+      <Toast message={toast.message} />
     </>
   );
 }

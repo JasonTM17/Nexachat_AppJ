@@ -122,7 +122,7 @@ describe('UsersPage', () => {
   it('shows the empty state', async () => {
     stubRoutes({ list: page([]) });
     renderPage();
-    expect(await screen.findByText('Nothing here')).toBeInTheDocument();
+    expect(await screen.findByText('No users found')).toBeInTheDocument();
   });
 
   it('shows an action error inside the open drawer and refetches the detail', async () => {
@@ -143,7 +143,7 @@ describe('UsersPage', () => {
 
     // The failure renders inside the drawer (the page-top alert sits behind
     // the scrim); the confirm dialog closed but the drawer stayed open.
-    expect(await within(drawer).findByRole('alert')).toHaveTextContent('Something went wrong');
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent('Server error 500. Try again.');
     expect(screen.queryByRole('alertdialog')).toBeNull();
     // The detail is refetched after the failed action instead of going stale.
     await waitFor(() => expect(detailCalls()).toBeGreaterThan(1));
@@ -268,7 +268,7 @@ describe('UsersPage', () => {
 
     const row = (await screen.findByText('Mai')).closest('tr') as HTMLElement;
     await userEvt.click(row);
-    expect(await within(row).findByRole('alert')).toHaveTextContent('Something went wrong');
+    expect(await within(row).findByRole('alert')).toHaveTextContent('Server error 500. Try again.');
     // the drawer never opens and no banner duplicates the row-level error
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getAllByRole('alert')).toHaveLength(1);

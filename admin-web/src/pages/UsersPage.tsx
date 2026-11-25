@@ -16,7 +16,10 @@ import {
   ErrorBlock,
   Loading,
   Pager,
+  Toast,
   fmtTime,
+  useApiErrorMessage,
+  useToast,
 } from '../components/ui';
 
 const PAGE_SIZE = 25;
@@ -48,12 +51,16 @@ export default function UsersPage() {
   const [busy, setBusy] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
   const [deleted, setDeleted] = useState<UserSummary[] | null>(null);
-  const [actionError, setActionError] = useState(false);
+  const [actionError, setActionError] = useState<unknown>(null);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [detailBusy, setDetailBusy] = useState<string | null>(null);
   const [detailFailed, setDetailFailed] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<unknown>(null);
   const searchInput = useDebouncedValue(search, 300);
   const latest = useLatestRequest();
   const latestDetail = useLatestRequest();
+  const formatError = useApiErrorMessage();
+  const toast = useToast();
 
   const params = useMemo(() => {
     const q = new URLSearchParams();
@@ -67,11 +74,13 @@ export default function UsersPage() {
 
   const load = useCallback(() => {
     setFailed(false);
-    latest(api<Page<UserSummary>>(`/api/v1/admin/users?${params}`), (res) => {
+    latest(api<Page<UserSummary>>(`/api/v1/admin/users?${params}`), (res, err) => {
       if (!res) {
+        setLoadError(err);
         setFailed(true);
         return;
       }
+      setLoadError(null);
       setData(res);
       // Acting on the last row of a page (e.g. suspending the only match of
       // a filtered status) can leave it empty past the end of the list; step
@@ -91,20 +100,23 @@ export default function UsersPage() {
   // where the click would read as dead. `latestDetail` drops responses for
   // anything but the newest click.
   const openDetail = (id: string) => {
-    setActionError(false);
+    setActionError(null);
     setDetailFailed(null);
     setDetailBusy(id);
-    latestDetail(api<UserDetail>(`/api/v1/admin/users/${id}`), (res) => {
+    latestDetail(api<UserDetail>(`/api/v1/admin/users/${id}`), (res, err) => {
       setDetailBusy(null);
       if (res) setSelected(res);
-      else setDetailFailed(id);
+      else {
+        setDetailError(err);
+        setDetailFailed(id);
+      }
     });
   };
 
   const runAction = async (reason: string) => {
     if (!selected || !action) return;
     setBusy(true);
-    setActionError(false);
+    setActionError(null);
     const id = selected.user.id;
     try {
       switch (action.kind) {
@@ -140,15 +152,16 @@ export default function UsersPage() {
           break;
       }
       setAction(null);
+      toast.show(t('users.success.action'));
       openDetail(id);
       load();
-    } catch {
+    } catch (err) {
       // The page-top alert renders behind the open drawer scrim, so the
       // failure is shown inside the drawer instead (see below). Refetch the
       // detail as well: the server may have applied part of the action
       // before failing, and the drawer must not stay stale.
       openDetail(id);
-      setActionError(true);
+      setActionError(err);
       setAction(null);
     } finally {
       setBusy(false);
@@ -165,7 +178,7 @@ export default function UsersPage() {
         setDeleted(rows);
         setShowDeleted(true);
       })
-      .catch(() => setActionError(true));
+      .catch((err) => setActionError(err));
   };
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
@@ -227,9 +240,9 @@ export default function UsersPage() {
 
       {/* With the drawer open, its scrim covers the page, so the page-top
           alert is only for failures that happen without a drawer. */}
-      {actionError && !selected && (
+      {actionError !== null && !selected && (
         <div className="form-error" role="alert">
-          {t('common.error')}
+          {formatError(actionError)}
         </div>
       )}
 
@@ -264,12 +277,13 @@ export default function UsersPage() {
           </div>
         )
       ) : failed ? (
-        <ErrorBlock onRetry={load} />
+        <ErrorBlock onRetry={load} error={loadError} />
       ) : !data ? (
         <Loading />
       ) : data.items.length === 0 ? (
         <Empty
-          hint={search || status || role ? t('common.empty.filtered') : undefined}
+          title={!(search || status || role) ? t('users.empty.title') : undefined}
+          hint={search || status || role ? t('common.empty.filtered') : t('users.empty.hint')}
           onClearFilters={
             search || status || role
               ? () => {
@@ -319,7 +333,7 @@ export default function UsersPage() {
                       )}
                       {detailFailed === u.id && (
                         <div className="form-error" role="alert">
-                          {t('common.error')}
+                          {formatError(detailError)}
                         </div>
                       )}
                     </td>
@@ -360,9 +374,9 @@ export default function UsersPage() {
             setSelected(null);
           }}
         >
-          {actionError && (
+          {actionError !== null && (
             <div className="form-error" role="alert">
-              {t('common.error')}
+              {formatError(actionError)}
             </div>
           )}
           <div className="action-row">
@@ -463,6 +477,7 @@ export default function UsersPage() {
         </Drawer>
       )}
 
+      <Toast message={toast.message} />
       {action && (
         <ConfirmDialog
           title={

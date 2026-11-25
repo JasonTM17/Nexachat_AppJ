@@ -45,7 +45,10 @@ class AskResponseContextOmittedContractTest {
                 .map(RecordComponent::getName)
                 .collect(Collectors.toSet());
         assertThat(names).containsExactlyInAnyOrder(
-                "answer", "citations", "mode", "contextOmitted", "usage");
+                "answer", "citations", "mode", "contextOmitted", "usage",
+                "notFoundReason", "degradationReason", "retryable", "retryAfterSeconds",
+                "provenance", "evidenceOmitted", "retrievalAffected",
+                "sensitiveContentRedacted", "extraction");
         for (RecordComponent component : components) {
             assertThat(component.getType()).isNotEqualTo(UUID.class);
         }
@@ -54,8 +57,13 @@ class AskResponseContextOmittedContractTest {
         Set<String> fields = new java.util.HashSet<>();
         json.fieldNames().forEachRemaining(fields::add);
         assertThat(fields).containsExactlyInAnyOrder(
-                "answer", "citations", "mode", "contextOmitted", "usage");
+                "answer", "citations", "mode", "contextOmitted", "usage",
+                "notFoundReason", "degradationReason", "retryable", "retryAfterSeconds",
+                "provenance", "evidenceOmitted", "retrievalAffected",
+                "sensitiveContentRedacted", "extraction");
         assertThat(json.get("contextOmitted").isBoolean()).isTrue();
         assertThat(json.get("contextOmitted").asBoolean()).isTrue();
+        assertThat(json.get("notFoundReason").asText()).isEqualTo("NO_EVIDENCE");
+        assertThat(json.get("provenance").get("llmAttempted").asBoolean()).isFalse();
     }
 }

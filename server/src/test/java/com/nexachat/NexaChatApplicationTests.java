@@ -6,6 +6,7 @@ import com.nexachat.auth.JwtProperties;
 import com.nexachat.auth.google.UserIdentityRepository;
 import com.nexachat.auth.JwtService;
 import com.nexachat.auth.RefreshTokenRepository;
+import com.nexachat.call.CallRecordRepository;
 import com.nexachat.contact.ContactRepository;
 import com.nexachat.conversation.ConversationMemberRepository;
 import com.nexachat.conversation.ConversationRepository;
@@ -55,6 +56,9 @@ class NexaChatApplicationTests {
 
     @MockitoBean
     private UserIdentityRepository userIdentityRepository;
+
+    @MockitoBean
+    private CallRecordRepository callRecordRepository;
 
     @MockitoBean
     private ContactRepository contactRepository;

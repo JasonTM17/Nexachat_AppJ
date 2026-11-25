@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import java.util.UUID;
 
 /** Separate ask bucket: 20 requests/minute and 200/day per user by default. */
@@ -35,12 +36,24 @@ public class AskRateLimiter {
                 .atStartOfDay(ZoneOffset.UTC)
                 .toInstant();
         if (!repository.tryConsume(userId, "DAY", dayStart, properties.getAsk().getRateLimitPerDay())) {
-            throw ApiException.of(ApiErrorCode.RATE_LIMITED, "Ask request limit exceeded");
+            long retryAfter = Math.max(1, dayStart.plus(1, ChronoUnit.DAYS).getEpochSecond() - now.getEpochSecond());
+            throw rateLimited("DAY", properties.getAsk().getRateLimitPerDay(), retryAfter);
         }
 
         Instant minuteStart = now.truncatedTo(ChronoUnit.MINUTES);
         if (!repository.tryConsume(userId, "MINUTE", minuteStart, properties.getAsk().getRateLimitPerMinute())) {
-            throw ApiException.of(ApiErrorCode.RATE_LIMITED, "Ask request limit exceeded");
+            long retryAfter = Math.max(1, minuteStart.plus(1, ChronoUnit.MINUTES).getEpochSecond() - now.getEpochSecond());
+            throw rateLimited("MINUTE", properties.getAsk().getRateLimitPerMinute(), retryAfter);
         }
+    }
+
+    private ApiException rateLimited(String window, int limit, long retryAfterSeconds) {
+        return ApiException.of(
+                ApiErrorCode.RATE_LIMITED,
+                "Ask request limit exceeded",
+                Map.of(
+                        "retryAfterSeconds", retryAfterSeconds,
+                        "window", window,
+                        "limit", Math.max(1, limit)));
     }
 }

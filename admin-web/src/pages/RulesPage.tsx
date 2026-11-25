@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type AlertRule } from '../api';
-import { useI18n } from '../i18n';
+import { ALERT_CATEGORY_KEYS, useI18n, type StringKey } from '../i18n';
 import { useLatestRequest } from '../lib/async';
-import { Chip, ConfirmDialog, Empty, ErrorBlock, Loading } from '../components/ui';
+import { Chip, ConfirmDialog, Empty, ErrorBlock, Loading, Toast, useApiErrorMessage, useToast } from '../components/ui';
 import { useSession } from '../auth';
 
 const SEVERITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
@@ -18,6 +18,14 @@ const CATEGORIES = [
 ];
 const TYPES = ['KEYWORD', 'REGEX', 'CARD'];
 
+function categoryLabel(
+  category: string,
+  t: (key: StringKey, vars?: Record<string, string | number>) => string,
+): string {
+  const key = ALERT_CATEGORY_KEYS[category];
+  return key ? t(key) : category;
+}
+
 interface TestHit {
   offset: number;
   length: number;
@@ -31,7 +39,8 @@ export default function RulesPage() {
   const [failed, setFailed] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<AlertRule | null>(null);
-  const [actionError, setActionError] = useState(false);
+  const [actionError, setActionError] = useState<unknown>(null);
+  const [confirmCreate, setConfirmCreate] = useState(false);
 
   const [form, setForm] = useState({
     name: '',
@@ -42,7 +51,7 @@ export default function RulesPage() {
     locale: 'any',
     description: '',
   });
-  const [formError, setFormError] = useState('');
+  const [formError, setFormError] = useState<unknown>(null);
   const [createBusy, setCreateBusy] = useState(false);
 
   const [testType, setTestType] = useState('KEYWORD');
@@ -54,6 +63,8 @@ export default function RulesPage() {
   const [testError, setTestError] = useState(false);
   const [testBusy, setTestBusy] = useState(false);
   const latest = useLatestRequest();
+  const formatError = useApiErrorMessage();
+  const toast = useToast();
   const [pendingPatch, setPendingPatch] = useState<{
     rule: AlertRule;
     body: { enabled?: boolean; severity?: string };
@@ -78,16 +89,17 @@ export default function RulesPage() {
   const applyPatch = async (reason: string) => {
     if (!pendingPatch) return;
     setPatchBusy(true);
-    setActionError(false);
+    setActionError(null);
     try {
       await api(`/api/v1/admin/rules/${pendingPatch.rule.id}`, {
         method: 'PATCH',
         body: { ...pendingPatch.body, reason: reason || undefined },
       });
       setPendingPatch(null);
+      toast.show(t('rules.success.updated'));
       load();
-    } catch {
-      setActionError(true);
+    } catch (err) {
+      setActionError(err);
       setPendingPatch(null);
     } finally {
       setPatchBusy(false);
@@ -110,10 +122,10 @@ export default function RulesPage() {
     });
   };
 
-  const create = async () => {
+  const create = async (reason: string) => {
     if (createBusy) return;
     setCreateBusy(true);
-    setFormError('');
+    setFormError(null);
     try {
       await api('/api/v1/admin/rules', {
         method: 'POST',
@@ -125,13 +137,19 @@ export default function RulesPage() {
           pattern: form.patternType === 'CARD' ? undefined : form.pattern,
           locale: form.locale || undefined,
           description: form.description || undefined,
+          reason,
         },
       });
       setShowNew(false);
+      setConfirmCreate(false);
       setForm({ ...form, name: '', pattern: '', description: '' });
+      toast.show(t('rules.success.created'));
       load();
-    } catch {
-      setFormError(t('common.error'));
+    } catch (err) {
+      // Close the confirmation so the typed failure is visible in the form
+      // instead of hidden underneath the modal scrim.
+      setConfirmCreate(false);
+      setFormError(err);
     } finally {
       setCreateBusy(false);
     }
@@ -140,16 +158,17 @@ export default function RulesPage() {
   const remove = async (reason: string) => {
     if (!confirmDelete || deleteBusy) return;
     setDeleteBusy(true);
-    setActionError(false);
+    setActionError(null);
     try {
       await api(`/api/v1/admin/rules/${confirmDelete.id}`, {
         method: 'DELETE',
         body: { reason: reason || undefined },
       });
       setConfirmDelete(null);
+      toast.show(t('rules.success.deleted'));
       load();
-    } catch {
-      setActionError(true);
+    } catch (err) {
+      setActionError(err);
       setConfirmDelete(null);
     } finally {
       setDeleteBusy(false);
@@ -190,15 +209,15 @@ export default function RulesPage() {
         </div>
       )}
 
-      {actionError && (
+      {actionError !== null && (
         <div className="form-error" role="alert">
-          {t('common.error')}
+          {formatError(actionError)}
         </div>
       )}
 
       {showNew && (
         <div className="card" style={{ marginBottom: 16 }}>
-          {formError && <div className="form-error" role="alert">{formError}</div>}
+          {formError !== null && <div className="form-error" role="alert">{formatError(formError)}</div>}
           <div className="filters">
             <div className="field" style={{ minWidth: 200 }}>
               <label htmlFor="rule-name">{t('rules.field.name')}</label>
@@ -218,7 +237,7 @@ export default function RulesPage() {
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
               >
                 {CATEGORIES.map((c) => (
-                  <option key={c}>{c}</option>
+                  <option key={c} value={c}>{categoryLabel(c, t)}</option>
                 ))}
               </select>
             </div>
@@ -270,7 +289,7 @@ export default function RulesPage() {
             </button>
             <button
               className="btn primary"
-              onClick={() => void create()}
+              onClick={() => setConfirmCreate(true)}
               disabled={
                 createBusy ||
                 !form.name.trim() ||
@@ -284,9 +303,9 @@ export default function RulesPage() {
       )}
 
       {rules.length === 0 ? (
-        <Empty />
+        <Empty title={t('rules.empty.title')} hint={t('rules.empty.hint')} />
       ) : (
-        <div className="table-wrap" style={{ marginBottom: 20 }}>
+        <div className="table-wrap responsive-cards" style={{ marginBottom: 20 }}>
           <table>
             <thead>
               <tr>
@@ -302,12 +321,12 @@ export default function RulesPage() {
             <tbody>
               {rules.map((r) => (
                 <tr className="plain" key={r.id}>
-                  <td>
+                  <td data-label={t('rules.col.name')}>
                     <div>{r.name}</div>
                     {r.builtIn && <Chip tone="low">{t('rules.builtIn')}</Chip>}
                   </td>
-                  <td className="col-lo">{r.category}</td>
-                  <td className="col-lo">
+                  <td data-label={t('rules.col.category')} className="col-lo">{categoryLabel(r.category, t)}</td>
+                  <td data-label={t('rules.col.severity')} className="col-lo">
                     {isAdmin ? (
                       <select
                         className="select"
@@ -324,11 +343,11 @@ export default function RulesPage() {
                       <Chip tone={r.severity.toLowerCase()}>{r.severity}</Chip>
                     )}
                   </td>
-                  <td className="col-lo">{r.patternType}</td>
-                  <td className="mono truncate col-lo" title={r.pattern ?? undefined}>
+                  <td data-label={t('rules.col.type')} className="col-lo">{r.patternType}</td>
+                  <td data-label={t('rules.col.pattern')} className="mono truncate col-lo" title={r.pattern ?? undefined}>
                     {r.pattern ?? '—'}
                   </td>
-                  <td>
+                  <td data-label={t('rules.col.enabled')}>
                     <label className="check-hit">
                       <input
                         type="checkbox"
@@ -341,7 +360,7 @@ export default function RulesPage() {
                     </label>
                   </td>
                   {isAdmin && (
-                    <td className="col-actions">
+                    <td data-label={t('common.actions')} className="col-actions">
                       {!r.builtIn && (
                         <button className="btn danger sm" onClick={() => setConfirmDelete(r)}>
                           {t('common.delete')}
@@ -431,6 +450,16 @@ export default function RulesPage() {
         />
       )}
 
+      {confirmCreate && (
+        <ConfirmDialog
+          title={t('rules.new')}
+          requireReason
+          busy={createBusy}
+          onConfirm={(reason) => void create(reason)}
+          onCancel={() => setConfirmCreate(false)}
+        />
+      )}
+
       {pendingPatch && (
         <ConfirmDialog
           title={pendingPatch.title}
@@ -440,6 +469,7 @@ export default function RulesPage() {
           onCancel={() => setPendingPatch(null)}
         />
       )}
+      <Toast message={toast.message} />
     </>
   );
 }

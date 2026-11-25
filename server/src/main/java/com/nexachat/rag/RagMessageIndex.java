@@ -52,6 +52,21 @@ public interface RagMessageIndex {
     }
 
     /**
+     * Eligible messages in the bounded sequence neighborhood around {@code centerSeq},
+     * oldest first. Used when ranked lexical evidence lies outside the recent window.
+     * Implementations must apply the same deletion, expiry, encryption and opt-out
+     * eligibility rules as retrieval and must honor {@code admittedFrom}.
+     */
+    List<RagMessage> messagesAroundSeq(
+            UUID conversationId, long centerSeq, int radius, Instant admittedFrom);
+
+    /** Whether an opted-out author has eligible admitted messages matching any lexical term. */
+    boolean hasOptedOutLexicalCandidates(UUID conversationId, List<String> terms, Instant admittedFrom);
+
+    /** Whether an opted-out author has any eligible admitted text message in the conversation. */
+    boolean hasOptedOutMessages(UUID conversationId, Instant admittedFrom);
+
+    /**
      * Whether the conversation holds any message created before {@code instant}. A member who
      * joined after such a message must not be served answers computed for earlier members.
      */

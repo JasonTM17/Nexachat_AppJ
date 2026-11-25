@@ -133,14 +133,14 @@ public final class StompCallSignalingClient implements CallSignalingClient {
     }
 
     private void onRealtimeEvent(ChatEvent event) {
-        if (!(event instanceof ChatEvent.SendRejected)) return;
-        String code = ((ChatEvent.SendRejected) event).getCode();
-        if (code == null) return;
+        if (!(event instanceof ChatEvent.SendRejected rejected)) return;
+        String code = rejected.getCode();
+        if (code == null || rejected.getCallId() == null) return;
         deliver(new CallEvent(
                 CallEvent.Type.CALL_ERROR,
                 "CALL_ERROR",
-                null,
-                null,
+                rejected.getCallId(),
+                rejected.getConversationId(),
                 null,
                 null,
                 null,

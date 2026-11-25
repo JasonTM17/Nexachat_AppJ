@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#733f68">
   <title>NexaChat — Xóa tài khoản</title>
   <meta name="description" content="Cách xóa tài khoản NexaChat trong ứng dụng và dữ liệu được xóa hoặc giữ lại.">
   <link rel="canonical" href="https://nexachat.io.vn/delete-account.html">
@@ -11,10 +12,11 @@
   <meta property="og:url" content="https://nexachat.io.vn/delete-account.html">
   <meta property="og:title" content="NexaChat — Delete account">
   <meta property="og:description" content="How to delete a NexaChat account and what is deleted or retained.">
-  <meta property="og:image" content="https://nexachat.io.vn/og-image.svg">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:image" content="https://nexachat.io.vn/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="NexaChat account deletion">
-  <meta name="twitter:image" content="https://nexachat.io.vn/og-image.svg">
+  <meta name="twitter:image" content="https://nexachat.io.vn/og-image.png">
+  <link rel="icon" href="/favicon-32x32.png" sizes="32x32" type="image/png">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <meta name="nexachat-api-base" content="https://api.nexachat.io.vn">
   <link rel="stylesheet" href="/style.css">
@@ -69,7 +71,49 @@
           <li>Đăng ký lại bằng cùng số điện thoại tạo tài khoản mới, không liên quan đến tài khoản đã xóa.</li>
         </ul>
         <h2>Mất thiết bị hoặc không đăng nhập được</h2>
-        <p>Khi nhà vận hành bật đăng nhập bằng Google và cho phép tạo tài khoản mới, Google có thể tạo tài khoản NexaChat. Biểu mẫu xóa trên web (khi được bật) chỉ dành cho tài khoản có số điện thoại và email khôi phục đã xác minh; tài khoản Google không có số điện thoại cần được xóa trong ứng dụng. Nếu còn thiết bị khác, đăng nhập và làm theo các bước trên.</p>
+        <p>Biểu mẫu xóa trên web (khi được bật) chỉ dành cho tài khoản có số điện thoại và email khôi phục đã xác minh; tài khoản Google không có số điện thoại cần được xóa trong ứng dụng. Nếu còn thiết bị khác, đăng nhập và làm theo các bước trên. Nếu không còn cách nào đăng nhập, hãy <a href="https://github.com/JasonTM17/Nexachat_AppJ/issues">mở issue GitHub</a> để liên hệ người bảo trì.</p>
+        <section id="web-deletion-section-vi" class="deletion-web" aria-labelledby="web-deletion-heading-vi">
+          <h2 id="web-deletion-heading-vi" class="deletion-web__title">Xóa trên web (mất thiết bị)</h2>
+          <div id="web-deletion-unavailable-vi">
+            <p>Xóa trên web chưa khả dụng. Làm theo các bước trong ứng dụng ở trên hoặc <a href="https://github.com/JasonTM17/Nexachat_AppJ/issues">mở issue GitHub</a> để liên hệ người bảo trì nếu bạn không đăng nhập được.</p>
+          </div>
+          <div id="web-deletion-form-wrap-vi" hidden>
+            <p class="deletion-web__hint">Với tài khoản có số điện thoại và email khôi phục đã xác minh, nhập số điện thoại đã đăng ký. Mã OTP được gửi tới email đó. Dùng định dạng quốc tế, ví dụ +84901234567.</p>
+            <form id="web-deletion-form-vi" class="deletion-form" action="#" method="post" novalidate>
+              <div class="form-field">
+                <label class="form-label" for="deletion-phone-vi">Số điện thoại</label>
+                <input class="form-input" type="tel" id="deletion-phone-vi" name="phone" autocomplete="tel" inputmode="tel" enterkeyhint="send" required aria-describedby="deletion-phone-error-vi">
+                <p class="form-error" id="deletion-phone-error-vi" role="alert" hidden>Nhập số điện thoại.</p>
+              </div>
+              <div class="form-actions">
+                <button type="button" class="btn" id="btn-send-code-vi">Gửi mã</button>
+              </div>
+              <p class="form-error" id="web-deletion-send-error-vi" role="alert" tabindex="-1" hidden>Không gửi được mã. Thử lại sau.</p>
+              <p class="deletion-web__neutral" id="request-feedback-vi" hidden aria-live="polite">Nếu số này có email khôi phục đã xác minh, chúng tôi đã gửi mã.</p>
+              <div id="post-send-fields-vi" hidden>
+                <div class="form-field">
+                  <label class="form-label" for="deletion-code-vi">Mã 6 chữ số</label>
+                  <input class="form-input" type="text" id="deletion-code-vi" name="code" inputmode="numeric" pattern="\d{6}" maxlength="6" enterkeyhint="go" autocomplete="one-time-code" aria-describedby="deletion-code-error-vi">
+                  <p class="form-error" id="deletion-code-error-vi" role="alert" hidden>Mã không hợp lệ hoặc đã hết hạn.</p>
+                </div>
+                <div class="form-field form-field--checkbox">
+                  <label class="form-label form-label--checkbox" for="deletion-confirm-vi">
+                    <input type="checkbox" id="deletion-confirm-vi" name="confirm" required aria-required="true">
+                    <span>Tôi hiểu việc xóa là vĩnh viễn và không thể hoàn tác.</span>
+                  </label>
+                </div>
+                <div class="form-actions">
+                  <button type="button" class="btn btn-danger" id="btn-delete-account-vi" disabled>Xóa tài khoản</button>
+                </div>
+              </div>
+              <p class="form-error" id="web-deletion-rate-error-vi" role="alert" tabindex="-1" hidden>Quá nhiều lần thử. Đợi một phút rồi thử lại.</p>
+              <p class="form-error form-error--global" id="web-deletion-form-error-vi" role="alert" tabindex="-1" hidden>Không thực hiện được. Kiểm tra mã hoặc thử lại sau.</p>
+            </form>
+            <div id="web-deletion-success-vi" hidden aria-live="polite" tabindex="-1">
+              <p class="lead">Tài khoản đã được xóa.</p>
+            </div>
+          </div>
+        </section>
       </section>
       <section id="lang-en" class="prose language-section" lang="en" aria-labelledby="delete-title-en">
         <h1 id="delete-title-en" class="brand">Delete account</h1>
@@ -111,76 +155,69 @@
           <li>Registering again with the same phone number creates a new, unrelated account.</li>
         </ul>
         <h2>Lost device or cannot sign in</h2>
-        <p>When the operator enables both Google sign-in and account creation, Google can create a NexaChat account. The web deletion form is only for accounts with a phone number and verified recovery email; a Google-created account without a phone number must be deleted in the app. If you have another device, sign in and follow the steps above.</p>
-      </section>
-      <section id="web-deletion-section" class="deletion-web" aria-labelledby="web-deletion-heading-vi web-deletion-heading-en">
-        <h2 id="web-deletion-heading-vi" class="deletion-web__title" lang="vi">Xóa trên web (mất thiết bị)</h2>
-        <h2 id="web-deletion-heading-en" class="deletion-web__title" lang="en">Web deletion (lost device)</h2>
-        <div id="web-deletion-unavailable">
-          <p lang="vi">Xóa trên web chưa khả dụng. Làm theo các bước trong ứng dụng ở trên hoặc liên hệ nhà vận hành nếu bạn không đăng nhập được.</p>
-          <p lang="en">Web deletion is not available yet. Follow the in-app steps above or contact the operator if you cannot sign in.</p>
-        </div>
-        <div id="web-deletion-form-wrap" hidden>
-          <p class="deletion-web__hint" lang="vi">Với tài khoản có số điện thoại và email khôi phục đã xác minh, nhập số điện thoại đã đăng ký. Mã OTP được gửi tới email đó. Dùng định dạng quốc tế, ví dụ +84901234567.</p>
-          <p class="deletion-web__hint" lang="en">For an account with a phone number and verified recovery email, enter the registered phone number. A one-time code is sent to that email. Use international format, e.g. +84901234567.</p>
-          <form id="web-deletion-form" class="deletion-form" action="#" method="post" novalidate>
-            <div class="form-field">
-              <label class="form-label" for="deletion-phone" lang="vi">Số điện thoại</label>
-              <label class="form-label" for="deletion-phone" lang="en">Phone number</label>
-              <input class="form-input" type="tel" id="deletion-phone" name="phone" autocomplete="tel" inputmode="tel" enterkeyhint="send" required aria-describedby="deletion-phone-error">
-              <p class="form-error" id="deletion-phone-error" role="alert" hidden>
-                <span lang="vi">Nhập số điện thoại.</span>
-                <span lang="en">Enter your phone number.</span>
-              </p>
-            </div>
-            <div class="form-actions">
-              <button type="button" class="btn" id="btn-send-code" aria-label="Gửi mã, Send code">Gửi mã · Send code</button>
-            </div>
-            <p class="form-error" id="web-deletion-send-error" role="alert" tabindex="-1" hidden>
-              <span lang="vi">Không gửi được mã. Thử lại sau.</span>
-              <span lang="en">Could not send a code. Try again later.</span>
-            </p>
-            <p class="deletion-web__neutral" id="request-feedback" hidden aria-live="polite">
-              <span lang="vi">Nếu số này có email khôi phục đã xác minh, chúng tôi đã gửi mã.</span>
-              <span lang="en">If this number has a verified recovery email, we sent a code.</span>
-            </p>
-            <div id="post-send-fields" hidden>
+        <p>The web deletion form is only for accounts with a phone number and verified recovery email; a Google-created account without a phone number must be deleted in the app. If you have another device, sign in and follow the steps above. If you have no way to sign in, <a href="https://github.com/JasonTM17/Nexachat_AppJ/issues">open a GitHub issue</a> to contact the maintainer.</p>
+        <section id="web-deletion-section" class="deletion-web" aria-labelledby="web-deletion-heading-en">
+          <h2 id="web-deletion-heading-en" class="deletion-web__title">Web deletion (lost device)</h2>
+          <div id="web-deletion-unavailable">
+            <p>Web deletion is not available yet. Follow the in-app steps above or <a href="https://github.com/JasonTM17/Nexachat_AppJ/issues">open a GitHub issue</a> to contact the maintainer if you cannot sign in.</p>
+          </div>
+          <div id="web-deletion-form-wrap" hidden>
+            <p class="deletion-web__hint">For an account with a phone number and verified recovery email, enter the registered phone number. A one-time code is sent to that email. Use international format, e.g. +84901234567.</p>
+            <form id="web-deletion-form" class="deletion-form" action="#" method="post" novalidate>
               <div class="form-field">
-                <label class="form-label" for="deletion-code" lang="vi">Mã 6 chữ số</label>
-                <label class="form-label" for="deletion-code" lang="en">6-digit code</label>
-                <input class="form-input" type="text" id="deletion-code" name="code" inputmode="numeric" pattern="\d{6}" maxlength="6" enterkeyhint="go" autocomplete="one-time-code" aria-describedby="deletion-code-error">
-                <p class="form-error" id="deletion-code-error" role="alert" hidden>
-                  <span lang="vi">Mã không hợp lệ hoặc đã hết hạn.</span>
-                  <span lang="en">Invalid or expired code.</span>
+                <label class="form-label" for="deletion-phone">Phone number</label>
+                <input class="form-input" type="tel" id="deletion-phone" name="phone" autocomplete="tel" inputmode="tel" enterkeyhint="send" required aria-describedby="deletion-phone-error">
+                <p class="form-error" id="deletion-phone-error" role="alert" hidden>
+                  <span lang="vi">Nhập số điện thoại.</span>
+                  <span lang="en">Enter your phone number.</span>
                 </p>
               </div>
-              <div class="form-field form-field--checkbox">
-                <label class="form-label form-label--checkbox" for="deletion-confirm">
-                  <input type="checkbox" id="deletion-confirm" name="confirm" required aria-required="true">
-                  <span lang="vi">Tôi hiểu việc xóa là vĩnh viễn và không thể hoàn tác.</span>
-                  <span lang="en">I understand deletion is permanent and cannot be undone.</span>
-                </label>
-              </div>
               <div class="form-actions">
-                <button type="button" class="btn btn-danger" id="btn-delete-account" disabled aria-label="Xóa tài khoản, Delete account">Xóa tài khoản · Delete account</button>
+                <button type="button" class="btn" id="btn-send-code">Send code</button>
               </div>
+              <p class="form-error" id="web-deletion-send-error" role="alert" tabindex="-1" hidden>
+                <span lang="vi">Không gửi được mã. Thử lại sau.</span>
+                <span lang="en">Could not send a code. Try again later.</span>
+              </p>
+              <p class="deletion-web__neutral" id="request-feedback" hidden aria-live="polite">
+                <span lang="vi">Nếu số này có email khôi phục đã xác minh, chúng tôi đã gửi mã.</span>
+                <span lang="en">If this number has a verified recovery email, we sent a code.</span>
+              </p>
+              <div id="post-send-fields" hidden>
+                <div class="form-field">
+                  <label class="form-label" for="deletion-code">6-digit code</label>
+                  <input class="form-input" type="text" id="deletion-code" name="code" inputmode="numeric" pattern="\d{6}" maxlength="6" enterkeyhint="go" autocomplete="one-time-code" aria-describedby="deletion-code-error">
+                  <p class="form-error" id="deletion-code-error" role="alert" hidden>
+                    <span lang="vi">Mã không hợp lệ hoặc đã hết hạn.</span>
+                    <span lang="en">Invalid or expired code.</span>
+                  </p>
+                </div>
+                <div class="form-field form-field--checkbox">
+                  <label class="form-label form-label--checkbox" for="deletion-confirm">
+                    <input type="checkbox" id="deletion-confirm" name="confirm" required aria-required="true">
+                    <span>I understand deletion is permanent and cannot be undone.</span>
+                  </label>
+                </div>
+                <div class="form-actions">
+                  <button type="button" class="btn btn-danger" id="btn-delete-account" disabled>Delete account</button>
+                </div>
+              </div>
+              <p class="form-error" id="web-deletion-rate-error" role="alert" tabindex="-1" hidden>
+                <span lang="vi">Quá nhiều lần thử. Đợi một phút rồi thử lại.</span>
+                <span lang="en">Too many attempts. Wait a minute and try again.</span>
+              </p>
+              <p class="form-error form-error--global" id="web-deletion-form-error" role="alert" tabindex="-1" hidden>
+                <span lang="vi">Không thực hiện được. Kiểm tra mã hoặc thử lại sau.</span>
+                <span lang="en">Could not complete deletion. Check the code or try again later.</span>
+              </p>
+            </form>
+            <div id="web-deletion-success" hidden aria-live="polite" tabindex="-1">
+              <p class="lead">Your account has been deleted.</p>
             </div>
-            <p class="form-error" id="web-deletion-rate-error" role="alert" tabindex="-1" hidden>
-              <span lang="vi">Quá nhiều lần thử. Đợi một phút rồi thử lại.</span>
-              <span lang="en">Too many attempts. Wait a minute and try again.</span>
-            </p>
-            <p class="form-error form-error--global" id="web-deletion-form-error" role="alert" tabindex="-1" hidden>
-              <span lang="vi">Không thực hiện được. Kiểm tra mã hoặc thử lại sau.</span>
-              <span lang="en">Could not complete deletion. Check the code or try again later.</span>
-            </p>
-          </form>
-          <div id="web-deletion-success" hidden aria-live="polite" tabindex="-1">
-            <p class="lead" lang="vi">Tài khoản đã được xóa.</p>
-            <p class="lead" lang="en">Your account has been deleted.</p>
           </div>
-        </div>
+        </section>
       </section>
-      <p class="page-actions"><a class="btn btn-secondary" href="/privacy.html#lang-vi" aria-label="Quyền riêng tư, Privacy">Quyền riêng tư · Privacy</a></p>
+      <p class="page-actions"><a class="btn btn-secondary" href="/privacy.html#lang-vi" lang="vi">Quyền riêng tư</a><a class="btn btn-secondary" href="/privacy.html#lang-en" lang="en">Privacy</a></p>
     </div>
   </main>
   <footer class="site-footer">
@@ -193,6 +230,8 @@
       <a href="/terms.html#lang-en" lang="en">Terms</a>
       <a href="/delete-account.html#lang-vi" aria-current="page" lang="vi">Xóa tài khoản</a>
       <a href="/delete-account.html#lang-en" aria-current="page" lang="en">Delete account</a>
+      <a href="https://github.com/JasonTM17/Nexachat_AppJ/issues" lang="vi">Hỗ trợ</a>
+      <a href="https://github.com/JasonTM17/Nexachat_AppJ/issues" lang="en">Support</a>
     </nav>
   </footer>
 </body>

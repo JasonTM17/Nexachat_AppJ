@@ -76,6 +76,21 @@ public class CallRecord {
         }
     }
 
+    /**
+     * Closes a row orphaned by a server restart (the in-memory registry loses
+     * every live session, so nothing terminal will ever arrive for it). The
+     * terminal-fields constraint demands a duration: answered rows keep the
+     * best-effort talk time up to the sweep, unanswered rows get zero.
+     */
+    public void closeOrphaned(Instant sweepEndedAt) {
+        state = CallState.ENDED;
+        endReason = CallEndReason.FAILED;
+        endedAt = sweepEndedAt;
+        durationSeconds = answeredAt != null
+                ? Math.max(0L, java.time.Duration.between(answeredAt, sweepEndedAt).getSeconds())
+                : 0L;
+    }
+
     public UUID getCallId() {
         return callId;
     }

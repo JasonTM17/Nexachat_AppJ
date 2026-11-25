@@ -750,7 +750,9 @@ public final class RealtimeSession {
             publishEvent(attemptEpoch, attemptId,
                     new ChatEvent.SendRejected(
                             error == null ? null : error.getCode(),
-                            error == null ? null : error.getClientMessageId()));
+                            error == null ? null : error.getClientMessageId(),
+                            error == null ? null : error.getCallId(),
+                            error == null ? null : error.getConversationId()));
             return;
         }
 

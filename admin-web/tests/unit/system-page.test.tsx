@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import SystemPage from '../../src/pages/SystemPage';
 import { I18nProvider } from '../../src/i18n';
-import { ApiException, type SystemHealth } from '../../src/api';
+import { ApiException, type RagStatsSnapshot, type SystemHealth } from '../../src/api';
 
 vi.mock('../../src/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api')>();
@@ -26,6 +26,34 @@ const health = (over: Partial<SystemHealth> = {}): SystemHealth => ({
   ...over,
 });
 
+const ragStats = (over: Partial<RagStatsSnapshot> = {}): RagStatsSnapshot => ({
+  requests: 10,
+  cacheHits: 4,
+  notFound: 2,
+  extractive: 3,
+  llmCalls: 5,
+  llmFallbackCalls: 1,
+  llmFailures: 1,
+  llmBulkheadRejections: 2,
+  inputChars: 500,
+  meanInputChars: 100,
+  embeddingCalls: 7,
+  embeddingFailures: 0,
+  indexedMessages: 42,
+  ...over,
+});
+
+const HEALTH_PATH = '/api/v1/admin/system/health';
+const RAG_PATH = '/api/v1/admin/rag/stats';
+const healthCalls = () =>
+  apiMock.mock.calls.filter(([path]) => path === HEALTH_PATH).length;
+
+const mockSuccess = (h: SystemHealth = health()) => {
+  apiMock.mockImplementation((path: string) =>
+    Promise.resolve(path === RAG_PATH ? ragStats() : h),
+  );
+};
+
 const renderPage = () =>
   render(
     <I18nProvider>
@@ -40,7 +68,7 @@ beforeEach(() => {
 
 describe('SystemPage', () => {
   it('renders the status card, uptime and service list', async () => {
-    apiMock.mockResolvedValue(health());
+    mockSuccess();
     const { container } = renderPage();
 
     expect(await screen.findByText('Services')).toBeInTheDocument();
@@ -62,20 +90,26 @@ describe('SystemPage', () => {
   });
 
   it('renders a DOWN overall status with the localized label', async () => {
-    apiMock.mockResolvedValue(health({ status: 'OUTAGE' }));
+    mockSuccess(health({ status: 'OUTAGE' }));
     renderPage();
     expect(await screen.findByText('DOWN')).toBeInTheDocument();
   });
 
   it('shows an error block and retries', async () => {
     const user = userEvent.setup();
-    apiMock.mockRejectedValueOnce(new ApiException(500, 'X', 'boom'));
+    apiMock.mockImplementation((path: string) =>
+      path === RAG_PATH
+        ? Promise.resolve(ragStats())
+        : Promise.reject(new ApiException(500, 'X', 'boom')),
+    );
     renderPage();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong');
-    apiMock.mockResolvedValueOnce(health());
+    expect(await screen.findByRole('alert')).toHaveTextContent('Server error 500. Try again.');
+    apiMock.mockImplementation((path: string) =>
+      Promise.resolve(path === RAG_PATH ? ragStats() : health()),
+    );
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Services')).toBeInTheDocument();
-    expect(apiMock).toHaveBeenCalledTimes(2);
+    expect(healthCalls()).toBe(2);
   });
 });
 
@@ -99,57 +133,57 @@ describe('SystemPage live refresh', () => {
   });
 
   it('polls every 30 seconds while visible and backs off after failures', async () => {
-    apiMock.mockResolvedValue(health());
+    mockSuccess();
     renderPage();
     await act(async () => {});
-    expect(apiMock).toHaveBeenCalledTimes(1);
+    expect(healthCalls()).toBe(1);
 
     await act(async () => {
       vi.advanceTimersByTime(30_000);
     });
-    expect(apiMock).toHaveBeenCalledTimes(2);
+    expect(healthCalls()).toBe(2);
 
     apiMock.mockRejectedValue(new ApiException(500, 'X', 'boom'));
     await act(async () => {
       vi.advanceTimersByTime(30_000);
     });
-    expect(apiMock).toHaveBeenCalledTimes(3);
+    expect(healthCalls()).toBe(3);
     // one consecutive failure → the next poll waits 60s
     await act(async () => {
       vi.advanceTimersByTime(30_000);
     });
-    expect(apiMock).toHaveBeenCalledTimes(3);
+    expect(healthCalls()).toBe(3);
     await act(async () => {
       vi.advanceTimersByTime(30_000);
     });
-    expect(apiMock).toHaveBeenCalledTimes(4);
+    expect(healthCalls()).toBe(4);
     // two consecutive failures → the next poll waits 120s
     await act(async () => {
       vi.advanceTimersByTime(60_000);
     });
-    expect(apiMock).toHaveBeenCalledTimes(4);
+    expect(healthCalls()).toBe(4);
     await act(async () => {
       vi.advanceTimersByTime(60_000);
     });
-    expect(apiMock).toHaveBeenCalledTimes(5);
+    expect(healthCalls()).toBe(5);
   });
 
   it('pauses polling while the tab is hidden and refreshes on return', async () => {
-    apiMock.mockResolvedValue(health());
+    mockSuccess();
     renderPage();
     await act(async () => {});
-    expect(apiMock).toHaveBeenCalledTimes(1);
+    expect(healthCalls()).toBe(1);
 
     setVisibility('hidden');
     await act(async () => {
       vi.advanceTimersByTime(300_000);
     });
-    expect(apiMock).toHaveBeenCalledTimes(1);
+    expect(healthCalls()).toBe(1);
 
     setVisibility('visible');
     await act(async () => {
       fireEvent(document, new Event('visibilitychange'));
     });
-    expect(apiMock).toHaveBeenCalledTimes(2);
+    expect(healthCalls()).toBe(2);
   });
 });

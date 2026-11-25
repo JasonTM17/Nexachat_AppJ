@@ -24,6 +24,19 @@ import java.util.UUID;
 @Profile("!test")
 public class RagRetrievalService {
 
+    /** Query-only scaffolding terms. They form the question but are not evidence about an entity. */
+    private static final Set<String> EN_QUERY_SCAFFOLD_TERMS = Set.of(
+            "about", "tell", "find", "explain", "need", "detail", "details", "remind",
+            "give", "show", "please", "exact", "exactly", "how", "much", "many",
+            "decide", "decided", "describe", "want", "know");
+    private static final Set<String> VI_QUERY_SCAFFOLD_TERMS = Set.of(
+            "gi", "nao", "biet", "giup", "xin", "can", "muon");
+    private static final List<List<String>> VI_QUERY_SCAFFOLD_PHRASES = List.of(
+            List.of("giai", "thich"), List.of("tim", "kiem"), List.of("tim", "hieu"),
+            List.of("tim", "cach"), List.of("bao", "nhieu"), List.of("chi", "tiet"),
+            List.of("vui", "long"), List.of("the", "nao"), List.of("khi", "nao"),
+            List.of("goi", "y"));
+
     private final RagMessageIndex index;
     private final RagEmbeddingService embeddings;
     private final RagProperties properties;
@@ -54,11 +67,10 @@ public class RagRetrievalService {
     }
 
     /**
-     * When {@code requireAnswerEvidence} is true, rank evidence alone is not
-     * enough: at least one candidate must share sufficient question-term
-     * coverage, or the raw vector evidence must clear the configured
-     * answerability threshold. This keeps reciprocal-rank positions useful for ordering without
-     * allowing the recent-message window to manufacture answerability.
+     * When {@code requireAnswerEvidence} is true, rank or vector evidence alone is not
+     * enough: the essential question terms must co-occur in one candidate. Bounded fuzzy
+     * matching protects typo/diacritic variants, while vector similarity can support a
+     * fuzzy candidate but cannot manufacture answerability by itself.
      */
     public RetrievalResult retrieve(
             UUID conversationId, String question, SummaryLanguage language, boolean consented,
@@ -70,16 +82,27 @@ public class RagRetrievalService {
     public RetrievalResult retrieve(
             UUID conversationId, UUID userId, String question, SummaryLanguage language, boolean consented,
             java.time.Instant admittedFrom, boolean requireAnswerEvidence) {
+        return retrieve(conversationId, userId, question, language, consented,
+                admittedFrom, requireAnswerEvidence, null);
+    }
+
+    /** Deadline-aware variant used by the synchronous ask path. */
+    public RetrievalResult retrieve(
+            UUID conversationId, UUID userId, String question, SummaryLanguage language, boolean consented,
+            java.time.Instant admittedFrom, boolean requireAnswerEvidence, AskDeadline deadline) {
+        check(deadline);
         RagProperties.Retrieval config = properties.getRetrieval();
         List<RagMessage> recent = index.recentMessages(
                 conversationId, config.getMaxCandidateMessages(), admittedFrom);
-        if (recent.isEmpty()) {
-            return RetrievalResult.empty();
-        }
-
         List<String> terms = RagQuestionTerms.extract(question, language, config.getLexicalTermLimit());
         List<RagMessage> lexicalCandidates = index.lexicalCandidates(
                 conversationId, terms, config.getLexicalCandidateLimit(), admittedFrom);
+        boolean optedOutEvidenceOverlap = requireAnswerEvidence
+                ? index.hasOptedOutLexicalCandidates(conversationId, terms, admittedFrom)
+                : index.hasOptedOutMessages(conversationId, admittedFrom);
+        if (recent.isEmpty()) {
+            return empty(optedOutEvidenceOverlap);
+        }
 
         Map<UUID, RagMessage> vectorCandidateMap = new LinkedHashMap<>();
         int recentWindow = Math.min(config.getVectorCandidateLimit(), recent.size());
@@ -92,11 +115,16 @@ public class RagRetrievalService {
         }
         List<RagMessage> vectorCandidates = List.copyOf(vectorCandidateMap.values());
 
+        check(deadline);
+        int inlineEmbeddingBudget = Math.min(
+                properties.getIndex().getLazyLimit(),
+                properties.getAsk().getMaxInlineEmbeddingComputations());
         RagEmbeddingService.RetrievalEmbeddings embedded = embeddings.embedForRetrieval(
-                userId, question, vectorCandidates, properties.getIndex().getLazyLimit(), consented);
+                userId, question, vectorCandidates, inlineEmbeddingBudget, consented, deadline);
+        check(deadline);
         if (requireAnswerEvidence && !hasAnswerEvidence(
                 question, language, lexicalCandidates, vectorCandidates, embedded, config)) {
-            return RetrievalResult.empty();
+            return empty(optedOutEvidenceOverlap);
         }
 
         List<ScoredMessage> lexicalRanked = RagScorer.lexicalRank(lexicalCandidates, question, language);
@@ -104,7 +132,7 @@ public class RagRetrievalService {
                 vectorCandidates, embedded.vectors(), embedded.questionVector());
         List<ScoredMessage> fused = RagScorer.fuse(lexicalRanked, vectorRanked, config.getRrfK());
         if (fused.isEmpty()) {
-            return RetrievalResult.empty();
+            return empty(optedOutEvidenceOverlap);
         }
 
         Map<String, RagMessage> messagesById = new LinkedHashMap<>();
@@ -122,18 +150,34 @@ public class RagRetrievalService {
                 .filter(scored -> scored.message() != null)
                 .toList();
         if (ranked.isEmpty()) {
-            return RetrievalResult.empty();
+            return empty(optedOutEvidenceOverlap);
         }
 
+        check(deadline);
         RagContextBuilder.ContextResult contextResult = RagContextBuilder.build(
                 ranked, recent, index, config, admittedFrom);
+        check(deadline);
         return new RetrievalResult(
                 ranked,
                 ranked.get(0).message(),
                 contextResult.context(),
                 ranked.get(0).score(),
                 contextResult.inputChars(),
-                contextResult.messages());
+                contextResult.messages(),
+                optedOutEvidenceOverlap);
+    }
+
+    private static RetrievalResult empty(boolean optedOutEvidenceOverlap) {
+        if (!optedOutEvidenceOverlap) {
+            return RetrievalResult.empty();
+        }
+        return new RetrievalResult(List.of(), null, List.of(), 0.0, 0, Map.of(), true);
+    }
+
+    private static void check(AskDeadline deadline) {
+        if (deadline != null) {
+            deadline.check();
+        }
     }
 
     private boolean hasAnswerEvidence(
@@ -143,36 +187,15 @@ public class RagRetrievalService {
             List<RagMessage> vectorCandidates,
             RagEmbeddingService.RetrievalEmbeddings embedded,
             RagProperties.Retrieval config) {
-        if (bestLexicalCoverage(question, language, lexicalCandidates, config)
-                >= config.getLexicalAnswerMinCoverage()) {
-            return true;
-        }
-        if (embedded == null || embedded.questionVector() == null) {
+        List<String> questionTerms = essentialQuestionTerms(question, language, config);
+        if (questionTerms.isEmpty()) {
             return false;
         }
-        double best = 0.0;
-        for (RagMessage candidate : vectorCandidates) {
-            float[] vector = embedded.vectors() == null ? null : embedded.vectors().get(candidate.id());
-            if (vector == null) {
-                continue;
-            }
-            best = Math.max(best, VectorCodec.cosine(embedded.questionVector(), vector));
-        }
-        return best >= config.getVectorAnswerThreshold();
-    }
-
-    private double bestLexicalCoverage(
-            String question,
-            SummaryLanguage language,
-            List<RagMessage> lexicalCandidates,
-            RagProperties.Retrieval config) {
-        Set<String> questionTerms = new HashSet<>(RagQuestionTerms.extract(
-                question, language, config.getLexicalTermLimit()));
-        if (questionTerms.isEmpty()) {
-            return 0.0;
-        }
-        double best = 0.0;
+        Set<UUID> lexicalCandidateIds = new HashSet<>();
         for (RagMessage candidate : lexicalCandidates) {
+            lexicalCandidateIds.add(candidate.id());
+        }
+        for (RagMessage candidate : vectorCandidates) {
             Set<String> messageTerms = new HashSet<>(RagQuestionTerms.contentTerms(candidate.content(), language));
             int matched = 0;
             for (String term : questionTerms) {
@@ -180,9 +203,57 @@ public class RagRetrievalService {
                     matched++;
                 }
             }
-            best = Math.max(best, (double) matched / questionTerms.size());
+            double coverage = (double) matched / questionTerms.size();
+            if (coverage + 0.0000001 < config.getLexicalAnswerMinCoverage()) {
+                continue;
+            }
+            if (lexicalCandidateIds.contains(candidate.id())
+                    || vectorCosine(candidate, embedded) >= config.getVectorAnswerThreshold()) {
+                return true;
+            }
         }
-        return best;
+        return false;
+    }
+
+    private static List<String> essentialQuestionTerms(
+            String question, SummaryLanguage language, RagProperties.Retrieval config) {
+        String normalized = " " + RagQuestionNormalizer.normalize(question) + " ";
+        Set<String> scaffoldPhraseTokens = new HashSet<>();
+        if (language == SummaryLanguage.VI) {
+            for (List<String> phrase : VI_QUERY_SCAFFOLD_PHRASES) {
+                if (normalized.contains(" " + String.join(" ", phrase) + " ")) {
+                    scaffoldPhraseTokens.addAll(phrase);
+                }
+            }
+        }
+        List<String> extracted = RagQuestionTerms.extract(question, language, config.getLexicalTermLimit());
+        List<String> essential = new java.util.ArrayList<>();
+        for (int index = 0; index < extracted.size(); index++) {
+            String term = extracted.get(index);
+            if (language != SummaryLanguage.VI && EN_QUERY_SCAFFOLD_TERMS.contains(term)
+                    || scaffoldPhraseTokens.contains(term)) {
+                continue;
+            }
+            if (language == SummaryLanguage.VI && VI_QUERY_SCAFFOLD_TERMS.contains(term)) {
+                continue;
+            }
+            if (language == SummaryLanguage.VI && index == 0 && "tim".equals(term)) {
+                continue;
+            }
+            if (!essential.contains(term)) {
+                essential.add(term);
+            }
+        }
+        return essential;
+    }
+
+    private static double vectorCosine(
+            RagMessage candidate, RagEmbeddingService.RetrievalEmbeddings embedded) {
+        if (embedded == null || embedded.questionVector() == null || embedded.vectors() == null) {
+            return 0.0;
+        }
+        float[] vector = embedded.vectors().get(candidate.id());
+        return vector == null ? 0.0 : VectorCodec.cosine(embedded.questionVector(), vector);
     }
 
     private static boolean containsMatchingTerm(Set<String> messageTerms, String questionTerm) {
@@ -193,13 +264,46 @@ public class RagRetrievalService {
             return false;
         }
         for (String messageTerm : messageTerms) {
-            if (messageTerm.length() >= 5
-                    && Math.abs(messageTerm.length() - questionTerm.length()) <= 3
+            if (messageTerm.length() < 5) {
+                continue;
+            }
+            if (Math.abs(messageTerm.length() - questionTerm.length()) <= 3
                     && (messageTerm.startsWith(questionTerm) || questionTerm.startsWith(messageTerm))) {
+                return true;
+            }
+            int maximumDistance = questionTerm.length() >= 8 ? 2 : 1;
+            if (Math.abs(messageTerm.length() - questionTerm.length()) <= maximumDistance
+                    && editDistanceAtMost(questionTerm, messageTerm, maximumDistance)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static boolean editDistanceAtMost(String first, String second, int maximumDistance) {
+        int[] previous = new int[second.length() + 1];
+        int[] current = new int[second.length() + 1];
+        for (int column = 0; column <= second.length(); column++) {
+            previous[column] = column;
+        }
+        for (int row = 1; row <= first.length(); row++) {
+            current[0] = row;
+            int rowMinimum = current[0];
+            for (int column = 1; column <= second.length(); column++) {
+                int substitution = previous[column - 1]
+                        + (first.charAt(row - 1) == second.charAt(column - 1) ? 0 : 1);
+                current[column] = Math.min(substitution,
+                        Math.min(previous[column] + 1, current[column - 1] + 1));
+                rowMinimum = Math.min(rowMinimum, current[column]);
+            }
+            if (rowMinimum > maximumDistance) {
+                return false;
+            }
+            int[] swap = previous;
+            previous = current;
+            current = swap;
+        }
+        return previous[second.length()] <= maximumDistance;
     }
 
     /**

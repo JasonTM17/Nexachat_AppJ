@@ -56,7 +56,9 @@ public class AskResponseWriter {
                 }
                 AskResponse responseBody = allowed
                         ? execution.response()
-                        : suppressed(execution);
+                        : suppressed(execution, consentUnchanged
+                            ? AskReason.CONTEXT_CHANGED
+                            : AskReason.CONSENT_REQUIRED);
                 try {
                     byte[] bytes = objectMapper.writeValueAsBytes(responseBody);
                     // Row locks order mutations, but passage of time cannot be locked.
@@ -64,7 +66,8 @@ public class AskResponseWriter {
                     if (allowed && execution.conversationId() != null
                             && !questionCache.contextUnchanged(execution.conversationId(), execution.contextSnapshot())) {
                         stats.recordNotFound();
-                        return objectMapper.writeValueAsBytes(suppressed(execution));
+                        return objectMapper.writeValueAsBytes(
+                                suppressed(execution, AskReason.CONTEXT_CHANGED));
                     }
                     return bytes;
                 } catch (IOException exception) {
@@ -83,9 +86,19 @@ public class AskResponseWriter {
         response.flushBuffer();
     }
 
-    private AskResponse suppressed(AskExecution execution) {
+    private AskResponse suppressed(AskExecution execution, AskReason reason) {
         boolean omitted = execution.conversationId() == null ? execution.response().contextOmitted()
                 : aiOptOuts.hasOptedOutMessages(execution.conversationId());
-        return AskResponse.notFound(omitted);
+        boolean contextChanged = reason == AskReason.CONTEXT_CHANGED;
+        boolean llmAttempted = execution.response() != null
+                && execution.response().provenance() != null
+                && execution.response().provenance().llmAttempted();
+        return AskResponse.notFound(
+                omitted,
+                reason,
+                contextChanged,
+                contextChanged ? 1 : null,
+                false,
+                llmAttempted);
     }
 }

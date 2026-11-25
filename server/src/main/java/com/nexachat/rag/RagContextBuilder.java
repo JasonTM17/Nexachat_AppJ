@@ -1,10 +1,12 @@
 package com.nexachat.rag;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -14,7 +16,8 @@ import java.util.UUID;
 /**
  * Turns the ranked messages into a budgeted prompt context: neighbour
  * expansion, reply-parent recovery, short same-sender merging and a hard
- * character budget.
+ * character budget. Ranked evidence outside the recent window is recovered
+ * through a bounded sequence neighborhood instead of being silently dropped.
  */
 public final class RagContextBuilder {
 
@@ -38,34 +41,61 @@ public final class RagContextBuilder {
             List<RagMessage> recentMessages,
             RagMessageIndex index,
             RagProperties.Retrieval config,
-            java.time.Instant admittedFrom) {
+            Instant admittedFrom) {
         if (ranked == null || ranked.isEmpty()) {
             return new ContextResult(List.of(), 0, Map.of());
         }
         Map<UUID, RagMessage> byId = new HashMap<>();
         Map<UUID, Integer> position = new HashMap<>();
-        for (int positionIndex = 0; positionIndex < recentMessages.size(); positionIndex++) {
-            RagMessage message = recentMessages.get(positionIndex);
+        List<RagMessage> recent = recentMessages == null ? List.of() : recentMessages;
+        for (int positionIndex = 0; positionIndex < recent.size(); positionIndex++) {
+            RagMessage message = recent.get(positionIndex);
             byId.put(message.id(), message);
             position.put(message.id(), positionIndex);
         }
 
-        Set<UUID> contextIds = new java.util.LinkedHashSet<>();
+        Set<UUID> contextIds = new LinkedHashSet<>();
+        Set<UUID> rankedIds = new LinkedHashSet<>();
+        int radius = Math.max(0, config.getNeighborRadius());
         for (ScoredMessage scored : ranked) {
             RagMessage message = scored.message();
-            Integer messagePosition = position.get(message.id());
-            if (messagePosition == null) {
+            if (message == null || message.id() == null) {
                 continue;
             }
-            int from = Math.max(0, messagePosition - config.getNeighborRadius());
-            int to = Math.min(recentMessages.size() - 1, messagePosition + config.getNeighborRadius());
-            for (int index2 = from; index2 <= to; index2++) {
-                contextIds.add(recentMessages.get(index2).id());
+            rankedIds.add(message.id());
+            Integer messagePosition = position.get(message.id());
+            if (messagePosition != null) {
+                int from = Math.max(0, messagePosition - radius);
+                int to = Math.min(recent.size() - 1, messagePosition + radius);
+                for (int neighbor = from; neighbor <= to; neighbor++) {
+                    contextIds.add(recent.get(neighbor).id());
+                }
+            } else {
+                List<RagMessage> neighborhood = index == null
+                        ? List.of()
+                        : index.messagesAroundSeq(message.conversationId(), message.seq(), radius, admittedFrom);
+                for (RagMessage neighbor : neighborhood) {
+                    byId.putIfAbsent(neighbor.id(), neighbor);
+                    contextIds.add(neighbor.id());
+                }
+                if (!contextIds.contains(message.id()) && admitted(message, admittedFrom)) {
+                    // The ranked row was itself eligible when retrieval selected it. Keep it as
+                    // a first-class unit even when a test double or a very sparse sequence
+                    // neighborhood cannot supply surrounding rows.
+                    byId.putIfAbsent(message.id(), message);
+                    contextIds.add(message.id());
+                }
             }
-            if (message.replyToId() != null && !byId.containsKey(message.replyToId())) {
-                RagMessage parent = index.findMessage(message.conversationId(), message.replyToId());
-                if (parent != null
-                        && (admittedFrom == null || !parent.createdAt().isBefore(admittedFrom))) {
+
+            // Reply-parent recovery must test membership in the selected context, not in
+            // the pre-populated recent-window map. Otherwise parents inside the window but
+            // outside the neighbor radius can never be recovered.
+            if (message.replyToId() != null && !contextIds.contains(message.replyToId())) {
+                RagMessage parent = byId.get(message.replyToId());
+                if (parent == null && index != null) {
+                    parent = index.findMessage(message.conversationId(), message.replyToId());
+                }
+                if (parent != null && admitted(parent, admittedFrom)) {
                     byId.put(parent.id(), parent);
                     contextIds.add(parent.id());
                 }
@@ -84,43 +114,83 @@ public final class RagContextBuilder {
         int budget = Math.max(1, config.getMaxContextChars());
         int used = 0;
         int itemIndex = 0;
+        Set<UUID> serializedIds = new LinkedHashSet<>();
         for (List<RagMessage> group : groups) {
-            String text = group.stream()
-                    .map(RagMessage::content)
-                    .filter(content -> content != null && !content.isEmpty())
-                    .reduce((left, right) -> left + " " + right)
-                    .orElse("");
-            if (text.isEmpty()) {
-                continue;
-            }
-            int textChars = codePoints(text);
-            if (used + textChars > budget) {
-                int remaining = budget - used;
-                if (remaining <= 0) {
-                    break;
-                }
-                text = truncateByCodePoints(text, remaining);
-                if (text.isEmpty()) {
-                    break;
-                }
-                textChars = codePoints(text);
+            SerializedGroup serialized = serializeGroup(group, budget - used);
+            if (serialized.messageIds().isEmpty()) {
+                break;
             }
             itemIndex++;
             String senderLabel = senderLabels.computeIfAbsent(
                     group.get(0).senderId(),
                     ignored -> "U" + (senderLabels.size() + 1));
-            List<UUID> messageIds = group.stream().map(RagMessage::id).toList();
-            items.add(new RagContextItem(itemIndex, messageIds, group.get(0).seq(), senderLabel, text));
-            used += textChars;
-            if (used >= budget) {
+            List<UUID> primaryIds = serialized.messageIds().stream()
+                    .filter(rankedIds::contains)
+                    .toList();
+            items.add(new RagContextItem(
+                    itemIndex, serialized.messageIds(), group.get(0).seq(), senderLabel,
+                    serialized.text(), primaryIds));
+            serializedIds.addAll(serialized.messageIds());
+            used += serialized.codePoints();
+            if (used >= budget || serialized.truncated()) {
                 break;
             }
         }
         Map<UUID, RagMessage> contextMessages = new HashMap<>();
         for (RagMessage message : ordered) {
-            contextMessages.put(message.id(), message);
+            if (serializedIds.contains(message.id())) {
+                contextMessages.put(message.id(), message);
+            }
         }
         return new ContextResult(List.copyOf(items), used, Map.copyOf(contextMessages));
+    }
+
+    private static boolean admitted(RagMessage message, Instant admittedFrom) {
+        return admittedFrom == null
+                || message.createdAt() == null
+                || !message.createdAt().isBefore(admittedFrom);
+    }
+
+    /**
+     * Serializes one merged group inside the remaining budget. A message id is
+     * included only when at least part of that message's own content is present;
+     * merely being covered by the pre-truncation group is not citable evidence.
+     */
+    private static SerializedGroup serializeGroup(List<RagMessage> group, int remainingBudget) {
+        if (remainingBudget <= 0) {
+            return new SerializedGroup("", List.of(), 0, true);
+        }
+        StringBuilder text = new StringBuilder();
+        List<UUID> serializedIds = new ArrayList<>();
+        int used = 0;
+        boolean truncated = false;
+        for (RagMessage message : group) {
+            String content = message.content() == null ? "" : message.content().trim();
+            int contentCodePoints = codePoints(content);
+            if (contentCodePoints == 0) {
+                continue;
+            }
+            int separator = used > 0 ? 1 : 0;
+            if (used + separator >= remainingBudget) {
+                truncated = true;
+                break;
+            }
+            if (separator == 1) {
+                text.append(' ');
+            }
+            int available = remainingBudget - used - separator;
+            int take = Math.min(contentCodePoints, available);
+            text.append(firstCodePoints(content, take));
+            if (take > 0) {
+                serializedIds.add(message.id());
+            }
+            used += separator + take;
+            if (take < contentCodePoints) {
+                truncated = true;
+                break;
+            }
+        }
+        return new SerializedGroup(text.toString(), List.copyOf(serializedIds), used, truncated);
     }
 
     private static List<List<RagMessage>> groupConsecutive(List<RagMessage> ordered) {
@@ -162,14 +232,17 @@ public final class RagContextBuilder {
         return text == null ? 0 : text.codePointCount(0, text.length());
     }
 
-    private static String truncateByCodePoints(String text, int maxCodePoints) {
-        if (maxCodePoints <= 0) {
+    private static String firstCodePoints(String text, int maxCodePoints) {
+        if (maxCodePoints <= 0 || text == null) {
             return "";
         }
         if (codePoints(text) <= maxCodePoints) {
             return text;
         }
         return text.substring(0, text.offsetByCodePoints(0, maxCodePoints));
+    }
+
+    private record SerializedGroup(String text, List<UUID> messageIds, int codePoints, boolean truncated) {
     }
 
     public record ContextResult(

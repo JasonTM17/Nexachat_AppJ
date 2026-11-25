@@ -327,6 +327,7 @@
     <string name="action_admin_delete_desc">Gỡ tin nhắn với tất cả thành viên</string>
     <string name="attachment_picker_title">Đính kèm</string>
     <string name="forwarded_snackbar">Đã chuyển tiếp</string>
+    <string name="chat_opening_message">Đang mở tin nhắn…</string>
     <string name="action_view">Xem</string>
 
     <!-- Message Edit -->
@@ -439,13 +440,14 @@
     <string name="ask_chat_unavailable">Cuộc trò chuyện không còn khả dụng.</string>
     <string name="ask_invalid_question">Nhập câu hỏi từ 1 đến 500 ký tự.</string>
     <string name="ask_consent_title">Bật AI để trả lời?</string>
+    <string name="ask_consent_message">Nội dung tin nhắn sẽ được ẩn danh hóa và lược bỏ thông tin nhạy cảm trước khi gửi đến dịch vụ AI bên ngoài. Bạn có muốn bật trả lời bằng AI không?</string>
     <string name="ask_consent_required">Hãy bật quyền dùng AI để trả lời câu hỏi.</string>
     <string name="ask_rate_limited">Bạn hỏi quá nhanh. Hãy thử lại sau.</string>
     <plurals name="ask_rate_limited_retry">
         <item quantity="other">Thử lại sau %d giây.</item>
     </plurals>
     <string name="ask_question_counter">Câu hỏi: %1$d/500</string>
-    <string name="ask_from_message">Từ tin nhắn</string>
+    <string name="ask_from_message">Trích từ trò chuyện</string>
     <string name="ask_citations_label">Nguồn</string>
     <string name="ask_citation_accessibility">Mở tin nhắn: %1$s</string>
     <string name="ask_context_omitted">Một số tin nhắn trong trò chuyện này đã không được đưa vào.</string>

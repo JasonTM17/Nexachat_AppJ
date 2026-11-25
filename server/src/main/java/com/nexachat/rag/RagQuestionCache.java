@@ -186,7 +186,8 @@ public class RagQuestionCache {
         String payload;
         try {
             payload = objectMapper.writeValueAsString(new CachedAskPayload(
-                    ask.answer(), ask.citations(), ask.mode()));
+                    ask.answer(), ask.citations(), ask.mode(), ask.provenance(),
+                    ask.sensitiveContentRedacted(), ask.extraction()));
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("ask cache payload is invalid", exception);
         }
@@ -284,7 +285,10 @@ public class RagQuestionCache {
                 rs.getString("cited_content_hash"),
                 SummaryLanguage.valueOf(rs.getString("language")),
                 rs.getLong("context_version"),
-                null);
+                null,
+                payload.provenance(),
+                payload.sensitiveContentRedacted() != null && payload.sensitiveContentRedacted(),
+                payload.extraction());
     }
 
     public record CachedAsk(
@@ -295,7 +299,17 @@ public class RagQuestionCache {
             String citedHash,
             SummaryLanguage language,
             long expectedContentVersion,
-            Instant expectedContextExpiry) {
+            Instant expectedContextExpiry,
+            AskProvenance provenance,
+            boolean sensitiveContentRedacted,
+            AskExtraction extraction) {
+
+        public CachedAsk(String answer, List<RagCitation> citations, String mode, List<UUID> citedIds,
+                         String citedHash, SummaryLanguage language, long expectedContentVersion,
+                         Instant expectedContextExpiry) {
+            this(answer, citations, mode, citedIds, citedHash, language, expectedContentVersion,
+                    expectedContextExpiry, null, false, null);
+        }
 
         public CachedAsk(String answer, List<RagCitation> citations, String mode, List<UUID> citedIds,
                          String citedHash, SummaryLanguage language, long expectedContentVersion) {
@@ -324,6 +338,12 @@ public class RagQuestionCache {
     public record ContextSnapshot(long revision, Instant expiresAt) {
     }
 
-    public record CachedAskPayload(String answer, List<RagCitation> citations, String mode) {
+    public record CachedAskPayload(
+            String answer,
+            List<RagCitation> citations,
+            String mode,
+            AskProvenance provenance,
+            Boolean sensitiveContentRedacted,
+            AskExtraction extraction) {
     }
 }

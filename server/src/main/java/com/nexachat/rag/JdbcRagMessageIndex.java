@@ -45,6 +45,22 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
               )
             """;
 
+    private static final String OPTED_OUT_MESSAGE_WHERE = """
+            FROM messages m
+            WHERE m.conversation_id = ?
+              AND m.type = 'TEXT'
+              AND m.deleted_at IS NULL
+              AND (m.expires_at IS NULL OR m.expires_at > now())
+              AND m.content IS NOT NULL
+              AND btrim(m.content) <> ''
+              AND m.encryption IS NULL
+              AND EXISTS (
+                  SELECT 1 FROM conversation_ai_opt_outs o
+                  WHERE o.conversation_id = m.conversation_id
+                    AND o.user_id = m.sender_id
+              )
+            """;
+
     private static final RowMapper<RagMessage> MESSAGE_MAPPER = (rs, rowNum) -> {
         Timestamp editedAt = rs.getTimestamp("edited_at");
         return new RagMessage(
@@ -105,6 +121,64 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
         sql.append(") ORDER BY m.seq DESC LIMIT ?");
         parameters.add(Math.max(1, limit));
         return List.copyOf(jdbcTemplate.query(sql.toString(), MESSAGE_MAPPER, parameters.toArray()));
+    }
+
+    @Override
+    public List<RagMessage> messagesAroundSeq(
+            UUID conversationId, long centerSeq, int radius, Instant admittedFrom) {
+        int boundedRadius = Math.clamp(radius, 0, 20);
+        StringBuilder sql = new StringBuilder("SELECT " + MESSAGE_COLUMNS + MESSAGE_WHERE)
+                .append(" AND m.seq BETWEEN ? AND ?");
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(conversationId);
+        parameters.add(Math.max(0, centerSeq - boundedRadius));
+        parameters.add(centerSeq + boundedRadius);
+        if (admittedFrom != null) {
+            sql.append(" AND m.created_at >= ?");
+            parameters.add(OffsetDateTime.ofInstant(admittedFrom, ZoneOffset.UTC));
+        }
+        sql.append(" ORDER BY m.seq ASC LIMIT ?");
+        parameters.add(boundedRadius * 2 + 1);
+        return List.copyOf(jdbcTemplate.query(sql.toString(), MESSAGE_MAPPER, parameters.toArray()));
+    }
+
+    @Override
+    public boolean hasOptedOutLexicalCandidates(UUID conversationId, List<String> terms, Instant admittedFrom) {
+        if (terms == null || terms.isEmpty()) {
+            return false;
+        }
+        StringBuilder sql = new StringBuilder("SELECT EXISTS (SELECT 1 " + OPTED_OUT_MESSAGE_WHERE);
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(conversationId);
+        if (admittedFrom != null) {
+            sql.append(" AND m.created_at >= ?");
+            parameters.add(OffsetDateTime.ofInstant(admittedFrom, ZoneOffset.UTC));
+        }
+        sql.append(" AND (");
+        for (int index = 0; index < terms.size(); index++) {
+            if (index > 0) {
+                sql.append(" OR ");
+            }
+            sql.append("public.f_unaccent(m.content) ILIKE '%' || public.f_unaccent(?) || '%' ESCAPE chr(92)");
+            parameters.add(escapeLike(terms.get(index)));
+        }
+        sql.append("))");
+        Boolean exists = jdbcTemplate.queryForObject(sql.toString(), Boolean.class, parameters.toArray());
+        return Boolean.TRUE.equals(exists);
+    }
+
+    @Override
+    public boolean hasOptedOutMessages(UUID conversationId, Instant admittedFrom) {
+        StringBuilder sql = new StringBuilder("SELECT EXISTS (SELECT 1 " + OPTED_OUT_MESSAGE_WHERE);
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(conversationId);
+        if (admittedFrom != null) {
+            sql.append(" AND m.created_at >= ?");
+            parameters.add(OffsetDateTime.ofInstant(admittedFrom, ZoneOffset.UTC));
+        }
+        sql.append(")");
+        Boolean exists = jdbcTemplate.queryForObject(sql.toString(), Boolean.class, parameters.toArray());
+        return Boolean.TRUE.equals(exists);
     }
 
     @Override

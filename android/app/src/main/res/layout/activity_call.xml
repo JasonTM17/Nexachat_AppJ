@@ -102,8 +102,10 @@
             android:layout_height="0dp"
             android:layout_weight="1.5" />
 
-        <!-- Square action controls on one row (60dp mute/speaker/camera/switch, 72dp red end) -->
+        <!-- Circular action controls on one row (60dp mute/speaker/camera/switch, 72dp red end);
+             auto-hides in video calls like WhatsApp/Meet when the screen is untouched -->
         <LinearLayout
+            android:id="@+id/call_controls_row"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="24dp"
@@ -135,16 +137,6 @@
                     app:iconPadding="0dp"
                     app:iconSize="28dp"
                     app:iconTint="@color/call_icon_on_control" />
-
-                <TextView
-                    android:id="@+id/call_mute_label"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:importantForAccessibility="no"
-                    android:text="@string/call_mute"
-                    android:textAppearance="?attr/textAppearanceLabelMedium"
-                    android:textColor="@color/call_text_muted" />
             </LinearLayout>
 
             <!-- Speaker Column -->
@@ -172,16 +164,6 @@
                     app:iconPadding="0dp"
                     app:iconSize="28dp"
                     app:iconTint="@color/call_icon_on_control" />
-
-                <TextView
-                    android:id="@+id/call_speaker_label"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:importantForAccessibility="no"
-                    android:text="@string/call_speaker"
-                    android:textAppearance="?attr/textAppearanceLabelMedium"
-                    android:textColor="@color/call_text_muted" />
             </LinearLayout>
 
             <!-- Camera Column (video calls only) -->
@@ -211,17 +193,6 @@
                     app:iconPadding="0dp"
                     app:iconSize="28dp"
                     app:iconTint="@color/call_icon_on_control" />
-
-                <TextView
-                    android:id="@+id/call_camera_label"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:importantForAccessibility="no"
-                    android:text="@string/call_camera_off"
-                    android:textAppearance="?attr/textAppearanceLabelMedium"
-                    android:textColor="@color/call_text_muted"
-                    android:visibility="gone" />
             </LinearLayout>
 
             <!-- Camera Switch Column (video calls only) -->
@@ -251,16 +222,6 @@
                     app:iconPadding="0dp"
                     app:iconSize="28dp"
                     app:iconTint="@color/call_icon_on_control" />
-                <TextView
-                    android:id="@+id/call_camera_switch_label"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:importantForAccessibility="no"
-                    android:text="@string/call_switch_camera_short"
-                    android:textAppearance="?attr/textAppearanceLabelMedium"
-                    android:textColor="@color/call_text_muted"
-                    android:visibility="gone" />
             </LinearLayout>
 
             <!-- End call Column: wraps the 72dp button so five video-call columns still fit a 360dp screen -->
@@ -287,16 +248,6 @@
                     app:iconPadding="0dp"
                     app:iconSize="32dp"
                     app:iconTint="@color/call_icon_on_control" />
-
-                <TextView
-                    android:id="@+id/call_hang_up_label"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:importantForAccessibility="no"
-                    android:text="@string/call_hang_up"
-                    android:textAppearance="?attr/textAppearanceLabelMedium"
-                    android:textColor="@color/call_action_decline_text" />
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>

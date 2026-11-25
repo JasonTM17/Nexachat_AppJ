@@ -188,6 +188,8 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
                         if (remoteDescription.type == SessionDescription.Type.OFFER) {
                             stopIncomingVideoForVoiceAnswer();
                             createDescription(callGeneration, false);
+                        } else if (remoteDescription.type == SessionDescription.Type.ANSWER) {
+                            stopCaptureIfPeerDeclinedVideo(callGeneration);
                         }
                     });
                 }
@@ -219,6 +221,44 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
         } catch (RuntimeException ignored) {
             // Keep the audio call; the extra video stream is only wasted bandwidth.
         }
+    }
+
+    /**
+     * Caller side of an answer-as-voice call: the answer carries the video section
+     * as inactive, which leaves the negotiated transceiver direction INACTIVE. Without
+     * reacting to that the caller would keep the capturer and preview running for the
+     * whole call even though the peer never receives a single frame. Stop capturing
+     * and surface the camera-unavailable event so the session drops the camera state.
+     * Runs on mediaExecutor; inspection failures never fail the call.
+     */
+    private void stopCaptureIfPeerDeclinedVideo(long callGeneration) {
+        if (activeMediaType != CallMediaType.VIDEO || !cameraOn) return;
+        if (peerDeclinedVideo()) {
+            stopCapture();
+            markCameraUnavailable(callGeneration);
+        }
+    }
+
+    /**
+     * True when the applied remote description negotiated the video m-line
+     * INACTIVE — the peer answered voice-only and no frame will ever be
+     * received for the rest of this call. Inspection is best-effort: any
+     * failure fails open to the pre-fix behavior rather than risking the call.
+     */
+    private boolean peerDeclinedVideo() {
+        if (peerConnection == null) return false;
+        try {
+            for (RtpTransceiver transceiver : peerConnection.getTransceivers()) {
+                if (transceiver.getMediaType() != MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO) {
+                    continue;
+                }
+                return transceiver.getCurrentDirection()
+                        == RtpTransceiver.RtpTransceiverDirection.INACTIVE;
+            }
+        } catch (RuntimeException ignored) {
+            // Direction inspection is best-effort; keep the call regardless.
+        }
+        return false;
     }
 
     @Override
@@ -264,6 +304,16 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
         long callGeneration = generation.get();
         mediaExecutor.execute(() -> {
             if (!isActive(callGeneration)) return;
+            if (enabled && (videoCapturer == null || peerDeclinedVideo())) {
+                // No capturer exists (no camera device, permission or HAL loss),
+                // or the peer answered voice-only and the video m-line is dead
+                // for the rest of this call: nothing can ever reach the peer —
+                // keep the engine honest instead of letting the session claim
+                // "camera on". markCameraUnavailable resets cameraOn and
+                // re-fires the event for the UI.
+                markCameraUnavailable(callGeneration);
+                return;
+            }
             if (localVideoTrack != null) localVideoTrack.setEnabled(enabled);
             if (videoCapturer == null) return;
             if (enabled) {

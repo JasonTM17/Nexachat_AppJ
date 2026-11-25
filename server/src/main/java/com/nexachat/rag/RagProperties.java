@@ -136,7 +136,7 @@ public class RagProperties {
         private int rrfK = 60;
         private double notFoundThreshold = 0.18;
         private double extractiveThreshold = 0.62;
-        private double lexicalAnswerMinCoverage = 0.60;
+        private double lexicalAnswerMinCoverage = 1.0;
         private double vectorAnswerThreshold = 0.60;
         private double semanticCacheThreshold = 0.92;
         private int maxSnippetChars = 280;
@@ -349,7 +349,11 @@ public class RagProperties {
         private int rateLimitPerMinute = 20;
         private int rateLimitPerDay = 200;
         private int cacheTtlHours = 24;
-        private long singleFlightWaitMs = 120_000L;
+        private long singleFlightWaitMs = 100_000L;
+        /** End-to-end server budget for one ask, deliberately below Android's 130-second read timeout. */
+        private long deadlineMs = 110_000L;
+        /** Maximum missing message vectors computed synchronously for one retrieval. */
+        private int maxInlineEmbeddingComputations = 500;
 
         public long getSingleFlightWaitMs() {
             return singleFlightWaitMs;
@@ -357,7 +361,23 @@ public class RagProperties {
 
         public void setSingleFlightWaitMs(long singleFlightWaitMs) {
             // Leave headroom under Android's 130-second AI read timeout.
-            this.singleFlightWaitMs = Math.clamp(singleFlightWaitMs, 1L, 120_000L);
+            this.singleFlightWaitMs = Math.clamp(singleFlightWaitMs, 1L, 110_000L);
+        }
+
+        public long getDeadlineMs() {
+            return deadlineMs;
+        }
+
+        public void setDeadlineMs(long deadlineMs) {
+            this.deadlineMs = Math.clamp(deadlineMs, 1L, 120_000L);
+        }
+
+        public int getMaxInlineEmbeddingComputations() {
+            return maxInlineEmbeddingComputations;
+        }
+
+        public void setMaxInlineEmbeddingComputations(int maxInlineEmbeddingComputations) {
+            this.maxInlineEmbeddingComputations = Math.clamp(maxInlineEmbeddingComputations, 0, 500);
         }
 
         public int getRateLimitPerMinute() {

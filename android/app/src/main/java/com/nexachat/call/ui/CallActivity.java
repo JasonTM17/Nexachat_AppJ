@@ -84,16 +84,17 @@ public class CallActivity extends ComponentActivity {
     private Button hangUpButton;
     private View pulseRing;
     private android.animation.AnimatorSet pulseAnimator;
-    private TextView muteLabel;
-    private TextView speakerLabel;
-    private TextView hangUpLabel;
     private View avatarWrap;
     private org.webrtc.SurfaceViewRenderer remoteVideoView;
     private org.webrtc.SurfaceViewRenderer localVideoView;
     private View localPreviewCard;
     private Button cameraButton;
     private Button switchCameraButton;
-    private TextView cameraLabel;
+    private View controlsRow;
+    private boolean controlsHidden;
+    private boolean autoHideScheduled;
+    private static final long CONTROLS_HIDE_DELAY_MS = 5_000L;
+    private static final long CONTROLS_FADE_MS = 250L;
     private boolean renderersInitialized;
     private boolean localVideoBound;
     private boolean remoteVideoBound;
@@ -308,6 +309,7 @@ public class CallActivity extends ComponentActivity {
         }
         mainHandler.removeCallbacks(timerTick);
         mainHandler.removeCallbacks(finishEndedScreen);
+        cancelAutoHide();
         if (pulseAnimator != null) {
             pulseAnimator.cancel();
             pulseAnimator = null;
@@ -361,16 +363,13 @@ public class CallActivity extends ComponentActivity {
         speakerButton = findViewById(R.id.call_speaker);
         hangUpButton = findViewById(R.id.call_hang_up);
         pulseRing = findViewById(R.id.call_pulse_ring);
-        muteLabel = findViewById(R.id.call_mute_label);
-        speakerLabel = findViewById(R.id.call_speaker_label);
-        hangUpLabel = findViewById(R.id.call_hang_up_label);
         avatarWrap = findViewById(R.id.call_avatar_wrap);
         remoteVideoView = findViewById(R.id.call_remote_video);
         localVideoView = findViewById(R.id.call_local_video);
         localPreviewCard = findViewById(R.id.call_local_preview);
         cameraButton = findViewById(R.id.call_camera);
         switchCameraButton = findViewById(R.id.call_camera_switch);
-        cameraLabel = findViewById(R.id.call_camera_label);
+        controlsRow = findViewById(R.id.call_controls_row);
     }
 
     private void startFirebaseCallStatusDisplay() {
@@ -407,6 +406,84 @@ public class CallActivity extends ComponentActivity {
             switchCameraButton.setOnClickListener(view -> callManager.switchCamera());
         }
         hangUpButton.setOnClickListener(view -> callManager.hangUp());
+    }
+
+    /**
+     * WhatsApp/Meet-style immersive mode: in a live video call the control row
+     * fades out after a few seconds without touches so it stops covering the
+     * video; any tap brings it back. Touch-driven only — render passes must not
+     * reset the countdown, or frequent state refreshes would pin it forever.
+     */
+    private final Runnable autoHideTick = () -> {
+        autoHideScheduled = false;
+        if (currentSession != null && CallAutoHidePolicy.shouldAutoHide(
+                currentSession.getMediaType(), currentSession.getState())) {
+            controlsHidden = true;
+            setControlsRowVisible(false, true);
+        }
+    };
+
+    private void scheduleAutoHide() {
+        if (autoHideScheduled) return;
+        autoHideScheduled = true;
+        mainHandler.removeCallbacks(autoHideTick);
+        mainHandler.postDelayed(autoHideTick, CONTROLS_HIDE_DELAY_MS);
+    }
+
+    private void cancelAutoHide() {
+        autoHideScheduled = false;
+        mainHandler.removeCallbacks(autoHideTick);
+    }
+
+    private void setControlsRowVisible(boolean show, boolean animate) {
+        if (controlsRow == null) return;
+        controlsRow.animate().cancel();
+        // Pure visibility toggle on purpose: alpha animations run on the render
+        // thread and their end-state can desync from the view property on some
+        // devices, leaving the row invisible despite alpha=1. Visibility is a
+        // plain layout property and cannot desync. INVISIBLE (not GONE) keeps
+        // the layout stable so nothing jumps when the bar fades out.
+        controlsRow.setAlpha(show ? 1f : 0f);
+        controlsRow.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
+    }
+
+    /** Reconciles the auto-hide overlay with the latest session state. */
+    private void syncAutoHide(CallSession session) {
+        boolean eligible = session != null && CallAutoHidePolicy.shouldAutoHide(
+                session.getMediaType(), session.getState());
+        if (!eligible) {
+            cancelAutoHide();
+            if (controlsHidden || (controlsRow != null
+                    && (controlsRow.getVisibility() != View.VISIBLE || controlsRow.getAlpha() < 1f))) {
+                controlsHidden = false;
+                setControlsRowVisible(true, false);
+            }
+            return;
+        }
+        if (!controlsHidden) scheduleAutoHide();
+    }
+
+    @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+        if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+            handleUserPresence();
+        }
+        return super.dispatchTouchEvent(event);
+    }
+
+    private void handleUserPresence() {
+        if (currentSession == null || !CallAutoHidePolicy.shouldAutoHide(
+                currentSession.getMediaType(), currentSession.getState())) {
+            return;
+        }
+        if (controlsHidden) {
+            // The revealing tap must not reach the buttons: while hidden they are
+            // INVISIBLE, so this touch lands on the background and the next tap
+            // hits the actual control — exactly how the big apps sequence it.
+            controlsHidden = false;
+            setControlsRowVisible(true, true);
+        }
+        cancelAutoHide();
+        scheduleAutoHide();
     }
 
     private void renderCurrent() {
@@ -463,20 +540,6 @@ public class CallActivity extends ComponentActivity {
         setControlVisible(muteButton, model.isShowMute());
         setControlVisible(speakerButton, model.isShowSpeaker());
         setControlVisible(hangUpButton, model.isShowHangUp());
-        if (muteLabel != null) {
-            muteLabel.setVisibility(model.isShowMute() ? View.VISIBLE : View.GONE);
-            muteLabel.setText(session.isMuted() ? R.string.call_unmute : R.string.call_mute);
-        }
-        if (speakerLabel != null) {
-            speakerLabel.setVisibility(model.isShowSpeaker() ? View.VISIBLE : View.GONE);
-            speakerLabel.setText(session.isSpeakerOn() ? R.string.call_earpiece : R.string.call_speaker);
-        }
-        if (hangUpLabel != null) {
-            hangUpLabel.setVisibility(model.isShowHangUp() ? View.VISIBLE : View.GONE);
-            if (model.getHangUpLabelRes() != 0) {
-                hangUpLabel.setText(model.getHangUpLabelRes());
-            }
-        }
         if (muteButton instanceof com.google.android.material.button.MaterialButton) {
             ((com.google.android.material.button.MaterialButton) muteButton)
                     .setIconResource(session.isMuted() ? R.drawable.ic_mic_off : R.drawable.ic_mic);
@@ -519,15 +582,8 @@ public class CallActivity extends ComponentActivity {
         }
         if (switchCameraButton != null) {
             setControlVisible(switchCameraButton, showCameraControls);
-            View switchLabel = findViewById(R.id.call_camera_switch_label);
-            if (switchLabel != null) {
-                switchLabel.setVisibility(showCameraControls ? View.VISIBLE : View.GONE);
-            }
         }
-        if (cameraLabel != null) {
-            cameraLabel.setVisibility(showCameraControls ? View.VISIBLE : View.GONE);
-            cameraLabel.setText(session.isCameraOn() ? R.string.call_camera_off : R.string.call_camera_on);
-        }
+        syncAutoHide(session);
     }
 
     /** Shows or hides a control together with its column (button and label). */
@@ -938,7 +994,8 @@ public class CallActivity extends ComponentActivity {
         }
         CallState state = currentSession.getState();
         if (state == CallState.OUTGOING_RINGING || state == CallState.INCOMING_RINGING) return;
-        if (state == CallState.CONNECTING || state == CallState.ACTIVE) {
+        if (state == CallState.CONNECTING || state == CallState.ACTIVE
+                || state == CallState.RECONNECTING_NETWORK) {
             moveTaskToBack(true);
             return;
         }
