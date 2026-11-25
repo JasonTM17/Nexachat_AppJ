@@ -35,4 +35,6 @@ public interface CallRecordRepository extends JpaRepository<CallRecord, UUID> {
             @Param("cursorStartedAt") Instant cursorStartedAt,
             @Param("cursorCallId") UUID cursorCallId,
             Pageable pageable);
+
+    List<CallRecord> findByStateIn(List<CallState> states);
 }

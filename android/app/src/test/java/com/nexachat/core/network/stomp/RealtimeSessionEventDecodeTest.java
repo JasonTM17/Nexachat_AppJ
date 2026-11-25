@@ -237,6 +237,20 @@ public final class RealtimeSessionEventDecodeTest {
     }
 
     @Test
+    public void errorQueuePreservesCallAttribution() {
+        RealtimeSession session = session(true, "errors-sub");
+        TestSubscriber<ChatEvent> observer = session.getEvents().test();
+        frames.onNext(new StompFrame(StompCommand.MESSAGE,
+                java.util.Collections.singletonMap("subscription", "errors-sub"),
+                "{\"code\":\"NOT_MEMBER\",\"callId\":\"call-9\",\"conversationId\":\"conv-3\"}"));
+        observer.awaitCount(1);
+        ChatEvent.SendRejected event = (ChatEvent.SendRejected) observer.values().get(0);
+        assertEquals("NOT_MEMBER", event.getCode());
+        assertEquals("call-9", event.getCallId());
+        assertEquals("conv-3", event.getConversationId());
+    }
+
+    @Test
     public void unknownTypesAndMalformedFramesDoNotKillStream() {
         RealtimeSession session = session(true, null);
         TestSubscriber<ChatEvent> observer = session.getEvents().test();
