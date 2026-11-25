@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { ApiException } from '../api';
 import { useI18n } from '../i18n';
 import { timeLocale } from '../lib/locale';
 
@@ -8,9 +9,11 @@ export function Loading() {
 }
 
 export function Empty({
+  title,
   hint,
   onClearFilters,
 }: {
+  title?: string;
   hint?: string;
   onClearFilters?: () => void;
 }) {
@@ -18,7 +21,7 @@ export function Empty({
   return (
     <div className="empty">
       <div className="state-icon" aria-hidden="true">◌</div>
-      <p className="state-title">{t('common.empty')}</p>
+      <p className="state-title">{title ?? t('common.empty')}</p>
       <p className="state-hint">{hint ?? t('common.empty.hint')}</p>
       {onClearFilters && (
         <button className="btn ghost" onClick={onClearFilters}>
@@ -29,19 +32,48 @@ export function Empty({
   );
 }
 
+// Concise, status/code-aware copy for API failures. Server detail text is
+// deliberately not echoed verbatim: it can be technical, localized differently,
+// or too long for an inline moderation banner.
+export function useApiErrorMessage() {
+  const { t } = useI18n();
+  return useCallback(
+    (error: unknown) => {
+      if (!(error instanceof ApiException)) return t('common.error.network');
+      if (error.code === 'TIMEOUT') return t('common.error.timeout');
+      const detail = error.code && error.code !== 'UNKNOWN' ? ` (${error.code})` : '';
+      if (error.status === 0) return t('common.error.network');
+      if (error.status === 400) return t('common.error.badRequest', { detail });
+      if (error.status === 401) return t('common.error.unauthorized');
+      if (error.status === 403) return t('common.error.forbidden');
+      if (error.status === 404) return t('common.error.notFound');
+      if (error.status === 409) return t('common.error.conflict');
+      if (error.status === 429) return t('common.error.rateLimited');
+      if (error.status >= 500) return t('common.error.server', { status: error.status });
+      return t('common.error.status', { status: error.status, detail });
+    },
+    [t],
+  );
+}
+
 export function ErrorBlock({
   onRetry,
   hint,
+  error,
 }: {
   onRetry?: () => void;
   hint?: string;
+  error?: unknown;
 }) {
   const { t } = useI18n();
+  const formatError = useApiErrorMessage();
   return (
     <div className="error-block" role="alert">
       <div className="state-icon" aria-hidden="true">!</div>
       <p className="state-title">{t('common.error')}</p>
-      <p className="state-hint">{hint ?? t('common.error.hint')}</p>
+      <p className="state-hint">
+        {error ? formatError(error) : (hint ?? t('common.error.hint'))}
+      </p>
       {onRetry && (
         <button className="btn ghost" onClick={onRetry}>
           {t('common.retry')}
@@ -73,11 +105,23 @@ export function Chip({
   );
 }
 
-// Layers register here on mount so the document-level Escape handler can close
-// only the topmost one (e.g. a ConfirmDialog over a Drawer must not dismiss both).
+// Layers register here on mount so both Escape and the Tab focus trap are
+// owned by only the topmost layer (e.g. a ConfirmDialog over a Drawer must not
+// dismiss the Drawer or pull focus back into it).
 const modalStack: { close: () => void }[] = [];
 
-function useEscapeToClose(open: boolean, close: () => void) {
+const FOCUSABLE =
+  'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])';
+
+function isVisible(element: HTMLElement): boolean {
+  return element.offsetParent !== null || element.getClientRects().length > 0;
+}
+
+function useModalLayer(
+  open: boolean,
+  close: () => void,
+  ref: RefObject<HTMLElement | null>,
+) {
   // Callers pass inline closures, so `close` changes identity every render — keep
   // it in a ref and register once per open-cycle, or a re-render would re-push
   // the layer on top of a dialog stacked above it.
@@ -85,43 +129,33 @@ function useEscapeToClose(open: boolean, close: () => void) {
   closeRef.current = close;
   useEffect(() => {
     if (!open) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const layerElement = ref.current;
     const layer = { close: () => closeRef.current() };
     modalStack.push(layer);
+    const isTop = () => modalStack[modalStack.length - 1] === layer;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      const top = modalStack[modalStack.length - 1];
-      if (top !== layer) return;
-      e.stopPropagation();
-      // Do NOT pop before close(): if close() is a guarded no-op (e.g. busy
-      // dialog), the layer must stay on top or the next Escape reaches the
-      // layer underneath while this one is still rendered. The unmount
-      // cleanup below removes the layer once close() actually fires.
-      layer.close();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      const i = modalStack.indexOf(layer);
-      if (i !== -1) modalStack.splice(i, 1);
-    };
-  }, [open]);
-}
-
-const FOCUSABLE =
-  'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])';
-
-// Keep Tab cycling inside the layer and hand focus back to whatever opened it.
-function useModalFocus(ref: RefObject<HTMLElement | null>) {
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const previous = document.activeElement as HTMLElement | null;
-    const onKey = (e: KeyboardEvent) => {
+      if (!isTop()) return;
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        // Do NOT pop before close(): if close() is a guarded no-op (e.g. busy
+        // dialog), the layer must stay on top or the next Escape reaches the
+        // layer underneath while this one is still rendered. The unmount
+        // cleanup below removes the layer once close() actually fires.
+        layer.close();
+        return;
+      }
       if (e.key !== 'Tab') return;
-      const items = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-        (n) => n.offsetParent !== null,
-      );
-      if (items.length === 0) return;
+      const el = ref.current;
+      if (!el) return;
+      const items = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(isVisible);
+      if (items.length === 0) {
+        // A busy dialog can have every control disabled. Even then Tab must
+        // not fall through to the underlying drawer/page.
+        e.preventDefault();
+        el.focus();
+        return;
+      }
       const first = items[0];
       const last = items[items.length - 1];
       if (!el.contains(document.activeElement)) {
@@ -138,9 +172,13 @@ function useModalFocus(ref: RefObject<HTMLElement | null>) {
     document.addEventListener('keydown', onKey, true);
     return () => {
       document.removeEventListener('keydown', onKey, true);
-      previous?.focus?.();
+      const i = modalStack.indexOf(layer);
+      if (i !== -1) modalStack.splice(i, 1);
+      // Hand focus back to the opener only when focus is still inside the
+      // closing layer; otherwise a programmatic focus move elsewhere wins.
+      if (layerElement?.contains(document.activeElement)) previous?.focus?.();
     };
-  }, [ref]);
+  }, [open, ref]);
 }
 
 export function Drawer({
@@ -156,8 +194,7 @@ export function Drawer({
 }) {
   const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
-  useEscapeToClose(true, onClose);
-  useModalFocus(ref);
+  useModalLayer(true, onClose, ref);
   useEffect(() => {
     ref.current?.focus();
   }, []);
@@ -192,6 +229,7 @@ export function Drawer({
 export function ConfirmDialog({
   title,
   requireReason = false,
+  allowReason = false,
   onConfirm,
   onCancel,
   confirmDanger,
@@ -201,6 +239,9 @@ export function ConfirmDialog({
 }: {
   title: string;
   requireReason?: boolean;
+  // Renders the reason textarea without making it mandatory (for reversible
+  // actions whose audit reason is useful but optional).
+  allowReason?: boolean;
   maxReasonLength?: number;
   onConfirm: (reason: string) => void;
   onCancel: () => void;
@@ -225,16 +266,19 @@ export function ConfirmDialog({
     onConfirm(reason);
   };
   useEffect(() => {
-    // With a required reason the textarea takes focus; without one there is
-    // no field at all, so land focus on the dialog container (mirroring the
+    // With a reason textarea the field takes focus; without one there is no
+    // field at all, so land focus on the dialog container (mirroring the
     // Drawer) — otherwise focus never enters the dialog.
     if (reasonRef.current) reasonRef.current.focus();
     else dialogRef.current?.focus();
   }, []);
-  useModalFocus(dialogRef);
-  useEscapeToClose(true, () => {
-    if (!busyRef.current) onCancel();
-  });
+  useModalLayer(
+    true,
+    () => {
+      if (!busyRef.current) onCancel();
+    },
+    dialogRef,
+  );
   return (
     <div className="dialog-backdrop">
       <div
@@ -248,9 +292,11 @@ export function ConfirmDialog({
       >
         <h3>{title}</h3>
         {children}
-        {requireReason && (
+        {(requireReason || allowReason) && (
           <div className="field">
-            <label htmlFor="confirm-reason">{t('common.reason')} *</label>
+            <label htmlFor="confirm-reason">
+              {t('common.reason')}{requireReason ? ' *' : ''}
+            </label>
             <textarea
               id="confirm-reason"
               className="textarea"
@@ -258,7 +304,7 @@ export function ConfirmDialog({
               ref={reasonRef}
               maxLength={maxReasonLength}
               autoFocus
-              required
+              required={requireReason}
               disabled={busy}
               aria-invalid={reasonError || undefined}
               aria-describedby={reasonError ? 'confirm-reason-error' : undefined}
@@ -284,6 +330,65 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Small reusable mutation acknowledgement: visible, transient, and polite for
+// screen readers without taking focus away from the operator's current task.
+export function useToast(durationMs = 4_000) {
+  const [message, setMessage] = useState<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const show = useCallback(
+    (next: string) => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      setMessage(next);
+      timerRef.current = setTimeout(() => setMessage(null), durationMs);
+    },
+    [durationMs],
+  );
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    [],
+  );
+  return { message, show };
+}
+
+export function Toast({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <div className="toast" role="status">
+      {message}
+    </div>
+  );
+}
+
+// Standard live-queue header used by polling pages: an explicit refresh
+// affordance, last-success clock, and a stale marker that never discards the
+// last good data underneath it.
+export function RefreshControl({
+  updatedAt,
+  onRefresh,
+  refreshing = false,
+  stale = false,
+}: {
+  updatedAt: Date | null;
+  onRefresh: () => void;
+  refreshing?: boolean;
+  stale?: boolean;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="page-head">
+      <div className="page-head-meta">
+        {updatedAt && <span>{t('common.updatedAt', { time: fmtClock(updatedAt) })}</span>}
+        {stale && <span role="alert"><Chip tone="high">{t('common.stale')}</Chip></span>}
+      </div>
+      <button className="btn ghost sm" onClick={onRefresh} disabled={refreshing}>
+        {t('common.refresh')}
+      </button>
     </div>
   );
 }
@@ -331,11 +436,16 @@ export function fmtTime(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return String(iso);
+  // Moderation actions are audited across year and timezone boundaries; the
+  // short old stamp ("Nov 17, 08:00") was ambiguous in both dimensions.
   return d.toLocaleString(timeLocale(), {
+    year: 'numeric',
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
   });
 }
 

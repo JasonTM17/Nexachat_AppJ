@@ -1666,6 +1666,7 @@ messages and AI-opted-out conversations are never scanned or shown.
 | `GET /api/v1/admin/me` | staff | — | `200` `{userId, role, displayName}` | 401/403 |
 | `GET /api/v1/admin/overview` | staff | `?days=` | `200` KPIs + daily series | 401/403 |
 | `GET /api/v1/admin/system/health` | staff | — | `200` service status map | 401/403 |
+| `GET /api/v1/admin/rag/stats` | staff | — | `200` RAG counter snapshot (requests, cache, LLM, embeddings, `llmBulkheadRejections`) | 401/403 |
 | `GET /api/v1/admin/users` | staff | `?search=&role=&status=&createdFrom=&createdTo=&page=&size=` | `200` page of user summaries | 401/403 |
 | `GET /api/v1/admin/users/deleted` | staff | `?limit=` | `200` list of deleted accounts | 401/403 |
 | `GET /api/v1/admin/users/{userId}` | staff | — | `200` user detail + counters | 401/403 · `USER_NOT_FOUND` 404 |

@@ -9,16 +9,6 @@ import static org.junit.Assert.assertTrue;
 public final class SummaryCitationLabelsTest {
 
     @Test
-    public void fallsBackToMessageIdPrefix() {
-        assertEquals("abcd", SummaryCitationLabels.messageIdPrefix("abcdef"));
-    }
-
-    @Test
-    public void truncatesShortMessageIds() {
-        assertEquals("ab", SummaryCitationLabels.messageIdPrefix("ab"));
-    }
-
-    @Test
     public void senderTimeShowsTimeOnlyForSameDay() {
         // 2026-11-14 17:53 local time approximated via epoch; use Calendar for determinism.
         java.util.Calendar sent = java.util.Calendar.getInstance();

@@ -150,6 +150,8 @@ public final class ChatViewModel extends ViewModel {
     @Nullable private ExecutorService voiceStartExecutor;
     private boolean voiceRetainedForConfigChange;
     private final ChatSingleLiveEvent<String> jumpTargets = new ChatSingleLiveEvent<>();
+    private final MutableLiveData<Boolean> jumpInFlight = new MutableLiveData<>(false);
+    private final AtomicLong jumpInFlightCount = new AtomicLong();
     private final CompositeDisposable disposables = new CompositeDisposable();
     private final SerialDisposable searchDisposable = new SerialDisposable();
     private final SerialDisposable initialHistoryDisposable = new SerialDisposable();
@@ -521,6 +523,11 @@ public final class ChatViewModel extends ViewModel {
 
     public ChatSingleLiveEvent<String> getJumpTargets() {
         return jumpTargets;
+    }
+
+    /** True while a jump target outside the loaded window is still being paged in. */
+    public LiveData<Boolean> getJumpInFlight() {
+        return jumpInFlight;
     }
 
     private void observeRepositoryState() {
@@ -1504,6 +1511,8 @@ public final class ChatViewModel extends ViewModel {
      * Loads history around {@code messageId} before emitting the scroll target.
      * When {@code targetSeq} is provided (e.g. from Ask citations), history loading
      * pages contiguously or jumps around {@code targetSeq} beyond {@link MessageRepository#MAX_JUMP_PAGES}.
+     * Targets outside the loaded window can take noticeable time to page in, so
+     * {@link #getJumpInFlight()} reports them while they load.
      */
     public void jumpToMessage(String messageId, @Nullable Long targetSeq) {
         Single<MessageJump> loader = targetSeq != null && targetSeq > 0L
@@ -1511,9 +1520,19 @@ public final class ChatViewModel extends ViewModel {
                         conversationId, messageId, targetSeq, MessageRepository.MAX_JUMP_PAGES)
                 : messageRepository.loadUntilLoaded(
                         conversationId, messageId, MessageRepository.MAX_JUMP_PAGES);
+        boolean pagesExpected = !isMessageInWindow(messageId);
+        if (pagesExpected) {
+            jumpInFlightCount.incrementAndGet();
+            jumpInFlight.setValue(true);
+        }
         disposables.add(loader
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
+                .doFinally(() -> {
+                    if (pagesExpected && jumpInFlightCount.decrementAndGet() <= 0) {
+                        jumpInFlight.setValue(false);
+                    }
+                })
                 .subscribe(jump -> {
                     if (jump == MessageJump.Found.INSTANCE) {
                         jumpTargets.emit(messageId);
@@ -1523,6 +1542,18 @@ public final class ChatViewModel extends ViewModel {
                         updateUiState(state -> state.withError(failed.getError()));
                     }
                 }, this::surfaceStreamFailure));
+    }
+
+    private boolean isMessageInWindow(String messageId) {
+        if (messageId == null) {
+            return true;
+        }
+        for (ChatMessage message : currentUiState().getMessages()) {
+            if (messageId.equals(message.getId())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Server edit affordance: own, delivered, live TEXT messages only. Encrypted

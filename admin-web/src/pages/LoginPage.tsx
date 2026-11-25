@@ -47,67 +47,94 @@ export default function LoginPage() {
 
   return (
     <div className="login-page">
-      <div className="card login-card">
-        <div className="login-head">
-          <h1>{t('app.name')}</h1>
-          <select
-            className="select"
-            aria-label={t('lang.label')}
-            value={lang}
-            onChange={(e) => setLang(e.target.value as 'en' | 'vi')}
+      <div className="login-stage">
+        <div className="login-brand">
+          {/* Brand mark: same squircle-N geometry as the product favicon.
+              Decorative — the adjacent wordmark already names the product. */}
+          <svg
+            className="login-mark"
+            viewBox="0 0 32 32"
+            aria-hidden="true"
+            focusable="false"
           >
-            <option value="en">EN</option>
-            <option value="vi">VI</option>
-          </select>
+            <rect width="32" height="32" rx="8" fill="#733F68" />
+            <g transform="translate(6.08 6.08) scale(0.184)">
+              <path
+                fill="#FFFCFF"
+                d="M24 20H36L64 60V20H80V84H66L40 47V72L24 84Z"
+              />
+            </g>
+          </svg>
+          <span className="login-wordmark">{t('app.name')}</span>
         </div>
-        <div className="sub">{t('login.title')}</div>
-        <form onSubmit={submit} aria-busy={busy}>
-          {sessionExpired && (
-            <div className="form-error" role="status">
-              {t('login.notice.sessionExpired')}
-            </div>
-          )}
-          {error && (
-            <div className="form-error" role="alert">
-              {error}
-            </div>
-          )}
-          <div className="field">
-            <label htmlFor="identifier">{t('login.phone')}</label>
-            <input
-              id="identifier"
-              className="input"
-              type="text"
-              autoComplete="username"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              required
-              autoFocus
-              disabled={busy}
-            />
+        <div className="card login-card">
+          <div className="login-card-head">
+            <h1>{t('login.welcome')}</h1>
+            <select
+              className="select"
+              aria-label={t('lang.label')}
+              value={lang}
+              onChange={(e) => setLang(e.target.value as 'en' | 'vi')}
+            >
+              <option value="en">EN</option>
+              <option value="vi">VI</option>
+            </select>
           </div>
-          <div className="field">
-            <label htmlFor="password">{t('login.password')}</label>
-            <input
-              id="password"
-              className="input"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
+          <p className="login-sub">{t('login.subtitle')}</p>
+          <form onSubmit={submit} aria-busy={busy}>
+            {sessionExpired && (
+              <div className="form-notice" role="status">
+                {t('login.notice.sessionExpired')}
+              </div>
+            )}
+            {error && (
+              <div className="form-error" role="alert">
+                {error}
+              </div>
+            )}
+            <div className="field">
+              <label htmlFor="identifier">{t('login.phone')}</label>
+              <input
+                id="identifier"
+                className="input"
+                type="text"
+                autoComplete="username"
+                enterKeyHint="next"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                required
+                // autofocus is deliberate and pre-existing: this is a
+                // single-purpose sign-in screen and the identifier is the
+                // first field of the only task — keyboard and AT users land
+                // exactly where the workflow starts, with a visible ring.
+                autoFocus
+                disabled={busy}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="password">{t('login.password')}</label>
+              <input
+                id="password"
+                className="input"
+                type="password"
+                autoComplete="current-password"
+                enterKeyHint="go"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                disabled={busy}
+              />
+            </div>
+            <button
+              className="btn primary login-submit"
+              type="submit"
               disabled={busy}
-            />
-          </div>
-          <button
-            className="btn primary"
-            type="submit"
-            disabled={busy}
-            style={{ width: '100%' }}
-          >
-            {busy ? t('common.loading') : t('login.submit')}
-          </button>
-        </form>
+            >
+              {busy ? t('common.loading') : t('login.submit')}
+            </button>
+          </form>
+        </div>
+        <p className="login-foot">{t('login.foot')}</p>
       </div>
     </div>
   );

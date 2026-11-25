@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -128,6 +129,53 @@ class LlmSummaryOptOutTest {
                 .isInstanceOf(SummaryProviderException.class)
                 .extracting("fallbackReason").isEqualTo(SummaryFallbackReason.NO_CONSENT);
         assertThat(server.requestCount()).isZero();
+    }
+
+    @Test
+    void revokedConsentBeforeTheNextModelSendsNoFurtherRequest() throws Exception {
+        startServer();
+        FakeOpenAiServer fallback = new FakeOpenAiServer();
+        FakeOpenAiServer local = new FakeOpenAiServer();
+        try {
+            server.handle((exchange, body, authorization) ->
+                    FakeOpenAiServer.respond(exchange, 500, "primary down"));
+            fallback.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
+                    FakeOpenAiServer.jsonResponse("{\"overview\":\"unused\"}")));
+            local.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
+                    FakeOpenAiServer.jsonResponse("{\"overview\":\"unused\"}")));
+            UUID caller = UUID.randomUUID();
+            setPrincipal(caller);
+            AtomicInteger checks = new AtomicInteger();
+            SummaryConsentRepository consent = mock(SummaryConsentRepository.class);
+            when(consent.isConsented(caller)).thenAnswer(invocation -> checks.getAndIncrement() < 4);
+            LlmProperties properties = properties();
+            properties.setLocalEnabled(true);
+            properties.setLocalModel("qwen2.5:3b");
+            properties.setLocalBaseUrl(local.baseUrl());
+            LlmFallbackProperties fallbackProperties = new LlmFallbackProperties();
+            fallbackProperties.setEnabled(true);
+            fallbackProperties.setApiKey("test-key");
+            fallbackProperties.setModel("fallback-model");
+            fallbackProperties.setBaseUrl(fallback.baseUrl());
+            client = new LlmClient(properties, fallbackProperties, new ObjectMapper());
+            SummaryWindow window = new SummaryWindow(UUID.randomUUID(), 0, 0, List.of(
+                    message(1, caller, "The team agreed on the plan."),
+                    message(2, caller, "The release notes are ready."),
+                    message(3, caller, "The demo is scheduled."),
+                    message(4, caller, "The review is complete."),
+                    message(5, caller, "The next step is the rollout.")));
+            LlmSummaryProvider provider = provider(properties, optOuts(caller, Set.of()), consent);
+
+            assertThatThrownBy(() -> provider.summarize(window, SummaryLanguage.EN))
+                    .isInstanceOf(SummaryProviderException.class)
+                    .extracting("fallbackReason").isEqualTo(SummaryFallbackReason.NO_CONSENT);
+            assertThat(server.requestCount()).isPositive();
+            assertThat(fallback.requestCount()).isZero();
+            assertThat(local.requestCount()).isZero();
+        } finally {
+            fallback.close();
+            local.close();
+        }
     }
 
     private LlmSummaryProvider provider(

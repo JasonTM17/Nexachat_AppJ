@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   api,
   type AlertDetail,
@@ -6,9 +6,9 @@ import {
   type Page,
   type RevealedMessage,
 } from '../api';
-import { useI18n, type StringKey } from '../i18n';
+import { ALERT_CATEGORY_KEYS, useI18n, type StringKey } from '../i18n';
 import { useSession } from '../auth';
-import { useLatestRequest } from '../lib/async';
+import { useLatestRequest, useVisiblePolling } from '../lib/async';
 import {
   Chip,
   ConfirmDialog,
@@ -17,10 +17,15 @@ import {
   ErrorBlock,
   Loading,
   Pager,
+  RefreshControl,
+  Toast,
   fmtTime,
+  useApiErrorMessage,
+  useToast,
 } from '../components/ui';
 
 const PAGE_SIZE = 25;
+const POLL_MS = 60_000;
 const SEVERITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 const CATEGORIES = [
   'SELF_HARM',
@@ -53,6 +58,14 @@ function statusKey(status: string): StringKey {
   }
 }
 
+function categoryLabel(
+  category: string,
+  t: (key: StringKey, vars?: Record<string, string | number>) => string,
+): string {
+  const key = ALERT_CATEGORY_KEYS[category];
+  return key ? t(key) : category;
+}
+
 export default function AlertsPage() {
   const { t } = useI18n();
   const { me } = useSession();
@@ -67,12 +80,20 @@ export default function AlertsPage() {
   const [pending, setPending] = useState<Pending | null>(null);
   const [revealed, setRevealed] = useState<RevealedMessage[] | null>(null);
   const [noteText, setNoteText] = useState('');
-  const [actionError, setActionError] = useState(false);
+  const [actionError, setActionError] = useState<unknown>(null);
+  const [loadError, setLoadError] = useState<unknown>(null);
+  const [detailError, setDetailError] = useState<unknown>(null);
+  const [stale, setStale] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [noteBusy, setNoteBusy] = useState(false);
   const [assignBusy, setAssignBusy] = useState(false);
   const [detailBusy, setDetailBusy] = useState<string | null>(null);
   const [detailFailed, setDetailFailed] = useState<string | null>(null);
+  const formatError = useApiErrorMessage();
+  const toast = useToast();
+  const hasData = useRef(false);
 
   const params = useMemo(() => {
     const q = new URLSearchParams();
@@ -89,17 +110,30 @@ export default function AlertsPage() {
 
   const load = useCallback(() => {
     setFailed(false);
-    latest(api<Page<AlertSummary>>(`/api/v1/admin/alerts?${params}`), (res) => {
+    setRefreshing(true);
+    latest(api<Page<AlertSummary>>(`/api/v1/admin/alerts?${params}`), (res, err) => {
+      setRefreshing(false);
       if (res) {
+        hasData.current = true;
         setData(res);
-        setChecked(new Set());
+        // Polling must not silently throw away a moderator's in-progress bulk
+        // selection; prune only rows that really left the current result set.
+        setChecked((previous) => {
+          const visible = new Set(res.items.map((item) => item.id));
+          return new Set([...previous].filter((id) => visible.has(id)));
+        });
+        setUpdatedAt(new Date());
+        setLoadError(null);
+        setStale(false);
         // A mutation (e.g. bulk-dismiss) can shrink the list so the requested
         // page no longer exists; clamp and let the params effect refetch once
         // so the pager never reads "page > total".
         const totalPages = Math.max(1, Math.ceil(res.total / PAGE_SIZE));
         if (page > totalPages - 1) setPage(totalPages - 1);
       } else {
-        setFailed(true);
+        setLoadError(err);
+        if (hasData.current) setStale(true);
+        else setFailed(true);
       }
     });
   }, [params, latest, page]);
@@ -107,9 +141,10 @@ export default function AlertsPage() {
   useEffect(() => {
     // A new query means a failed action's banner no longer describes the
     // view; it stays only for the post-action reload of the same view.
-    setActionError(false);
+    setActionError(null);
     load();
   }, [load]);
+  useVisiblePolling(load, POLL_MS);
 
   // Fetching the detail is guarded per row: the clicked row shows progress and,
   // if the request fails, an inline error right where the click happened —
@@ -117,20 +152,24 @@ export default function AlertsPage() {
   // click. `latestDetail` drops responses for anything but the newest click.
   const openDetail = (id: string) => {
     setRevealed(null);
-    setActionError(false);
+    setActionError(null);
     setDetailFailed(null);
+    setDetailError(null);
     setDetailBusy(id);
-    latestDetail(api<AlertDetail>(`/api/v1/admin/alerts/${id}`), (res) => {
+    latestDetail(api<AlertDetail>(`/api/v1/admin/alerts/${id}`), (res, err) => {
       setDetailBusy(null);
       if (res) setDetail(res);
-      else setDetailFailed(id);
+      else {
+        setDetailError(err);
+        setDetailFailed(id);
+      }
     });
   };
 
   const confirm = async (reason: string) => {
     if (!pending) return;
     setBusy(true);
-    setActionError(false);
+    setActionError(null);
     let revealedMessages: RevealedMessage[] | null = null;
     try {
       if (pending.kind === 'status' && detail) {
@@ -160,15 +199,16 @@ export default function AlertsPage() {
       // openDetail clears `revealed` to hide stale context from the previous
       // alert; re-apply the fresh reveal afterwards so it survives.
       if (revealedMessages) setRevealed(revealedMessages);
+      toast.show(t('alerts.success.action'));
       load();
-    } catch {
+    } catch (err) {
       // The page-top alert renders behind the open drawer scrim, so the
       // failure is shown inside the drawer instead (see below). Refetch the
       // detail too: the server may have applied part of the action before
       // failing, and the drawer must not stay stale. openDetail() clears
       // actionError synchronously, so the error is re-set after it.
       if (detail) openDetail(detail.alert.id);
-      setActionError(true);
+      setActionError(err);
       setPending(null);
       load();
     } finally {
@@ -179,29 +219,33 @@ export default function AlertsPage() {
   const assignMe = () => {
     if (!detail || !me || assignBusy) return;
     setAssignBusy(true);
-    setActionError(false);
+    setActionError(null);
     api(`/api/v1/admin/alerts/${detail.alert.id}`, {
       method: 'PATCH',
       body: { assigneeId: me.userId },
     })
-      .then(() => openDetail(detail.alert.id))
-      .catch(() => setActionError(true))
+      .then(() => {
+        toast.show(t('alerts.success.action'));
+        openDetail(detail.alert.id);
+      })
+      .catch((err) => setActionError(err))
       .finally(() => setAssignBusy(false));
   };
 
   const addNote = () => {
     if (!detail || !noteText.trim() || noteBusy) return;
     setNoteBusy(true);
-    setActionError(false);
+    setActionError(null);
     api(`/api/v1/admin/alerts/${detail.alert.id}/notes`, {
       method: 'POST',
       body: { body: noteText.trim() },
     })
       .then(() => {
         setNoteText('');
+        toast.show(t('alerts.success.note'));
         openDetail(detail.alert.id);
       })
-      .catch(() => setActionError(true))
+      .catch((err) => setActionError(err))
       .finally(() => setNoteBusy(false));
   };
 
@@ -228,6 +272,12 @@ export default function AlertsPage() {
 
   return (
     <>
+      <RefreshControl
+        updatedAt={updatedAt}
+        onRefresh={load}
+        refreshing={refreshing}
+        stale={stale}
+      />
       <div className="filters">
         <label className="filter-field">
           <span>{t('alerts.col.status')}</span>
@@ -276,7 +326,7 @@ export default function AlertsPage() {
           >
             <option value="">{t('common.all')}</option>
             {CATEGORIES.map((c) => (
-              <option key={c} value={c}>{c}</option>
+              <option key={c} value={c}>{categoryLabel(c, t)}</option>
             ))}
           </select>
         </label>
@@ -289,19 +339,24 @@ export default function AlertsPage() {
 
       {/* With the drawer open, its scrim covers the page, so the page-top
           alert is only for failures that happen without a drawer. */}
-      {actionError && !detail && (
+      {actionError !== null && !detail && (
         <div className="form-error" role="alert">
-          {t('common.error')}
+          {formatError(actionError)}
         </div>
       )}
 
       {failed ? (
-        <ErrorBlock onRetry={load} />
+        <ErrorBlock onRetry={load} error={loadError} />
       ) : !data ? (
         <Loading />
       ) : data.items.length === 0 ? (
         <Empty
-          hint={status !== 'OPEN' || severity || category ? t('common.empty.filtered') : undefined}
+          title={status === 'OPEN' && !severity && !category ? t('alerts.empty.open.title') : undefined}
+          hint={
+            status !== 'OPEN' || severity || category
+              ? t('common.empty.filtered')
+              : t('alerts.empty.open.hint')
+          }
           onClearFilters={
             status !== 'OPEN' || severity || category
               ? () => {
@@ -364,11 +419,11 @@ export default function AlertsPage() {
                       )}
                       {detailFailed === a.id && (
                         <div className="form-error" role="alert">
-                          {t('common.error')}
+                          {formatError(detailError)}
                         </div>
                       )}
                     </td>
-                    <td className="col-lo">{a.category}</td>
+                    <td className="col-lo">{categoryLabel(a.category, t)}</td>
                     <td
                       className="truncate"
                       title={a.snippetTombstoned ? undefined : (a.snippet ?? undefined)}
@@ -399,7 +454,7 @@ export default function AlertsPage() {
 
       {detail && (
         <Drawer
-          title={`${detail.alert.category} · ${detail.alert.severity}`}
+          title={`${categoryLabel(detail.alert.category, t)} · ${detail.alert.severity}`}
           sub={detail.alert.id}
           onClose={() => {
             // Cancel any in-flight detail fetch so a late response cannot
@@ -411,9 +466,9 @@ export default function AlertsPage() {
             setDetail(null);
           }}
         >
-          {actionError && (
+          {actionError !== null && (
             <div className="form-error" role="alert">
-              {t('common.error')}
+              {formatError(actionError)}
             </div>
           )}
           <div className="action-row">
@@ -558,6 +613,7 @@ export default function AlertsPage() {
           )}
         </ConfirmDialog>
       )}
+      <Toast message={toast.message} />
     </>
   );
 }

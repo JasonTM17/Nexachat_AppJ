@@ -108,14 +108,14 @@ describe('FeedPage', () => {
   it('shows the empty state', async () => {
     apiMock.mockResolvedValue(page([]));
     renderPage();
-    expect(await screen.findByText('Nothing here')).toBeInTheDocument();
+    expect(await screen.findByText('No open reports')).toBeInTheDocument();
   });
 
   it('shows an error block and retries', async () => {
     const user = userEvent.setup();
     apiMock.mockRejectedValueOnce(new ApiException(500, 'X', 'boom'));
     renderPage();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Server error 500. Try again.');
     apiMock.mockResolvedValueOnce(page([report()]));
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Mai')).toBeInTheDocument();
@@ -178,11 +178,13 @@ describe('FeedPage', () => {
     );
   });
 
-  it('unhides a hidden target without a dialog', async () => {
+  it('confirms before unhiding a hidden target', async () => {
     const user = userEvent.setup();
     apiMock.mockResolvedValue(page([report({ targetHidden: true })]));
     renderPage();
     await user.click(await screen.findByRole('button', { name: 'Unhide' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Unhide' });
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
     await waitFor(() =>
       expect(apiMock).toHaveBeenCalledWith('/api/v1/admin/feed/posts/p1/unhide', {
         method: 'POST',
@@ -254,7 +256,7 @@ describe('FeedPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Mark reviewed' }));
     const dialog = screen.getByRole('alertdialog', { name: 'Mark reviewed' });
     await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong');
+    expect(await screen.findByRole('alert')).toHaveTextContent('The item is no longer available. Refresh and try again.');
   });
 
   it('clamps the pager back when hiding the last report of a page', async () => {
@@ -319,7 +321,7 @@ describe('FeedPage', () => {
     await user.click(screen.getByRole('button', { name: 'Mark reviewed' }));
     const dialog = screen.getByRole('alertdialog', { name: 'Mark reviewed' });
     await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Server error 500. Try again.');
 
     // The next successful list load means the banner no longer describes the
     // view on screen, so it must not linger over fresh data.
@@ -490,11 +492,11 @@ describe('FeedPage', () => {
     expect(screen.getByRole('table')).toBeInTheDocument();
     expect(screen.getByText('Mai')).toBeInTheDocument();
 
-    // a list failure still owns the view: the block replaces the queue and
-    // the action banner makes way so only one error surface shows.
+    // a list failure preserves the loaded queue and exposes one stale-data
+    // alert instead of blanking the moderation view.
     apiMock.mockRejectedValueOnce(new ApiException(500, 'X', 'boom'));
     await user.selectOptions(screen.getByLabelText('Status'), 'DISMISSED');
     await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(1));
-    expect(screen.queryByText('Mai')).toBeNull();
+    expect(screen.getByText('Mai')).toBeInTheDocument();
   });
 });
