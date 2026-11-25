@@ -118,11 +118,29 @@
     });
   }
 
-  function init() {
-    var apiBase = readApiBase();
-    var unavailable = document.getElementById('web-deletion-unavailable');
-    var formWrap = document.getElementById('web-deletion-form-wrap');
-    var form = document.getElementById('web-deletion-form');
+  function deletionIds(suffix) {
+    return {
+      unavailable: 'web-deletion-unavailable' + suffix,
+      formWrap: 'web-deletion-form-wrap' + suffix,
+      form: 'web-deletion-form' + suffix,
+      phone: 'deletion-phone' + suffix,
+      code: 'deletion-code' + suffix,
+      confirm: 'deletion-confirm' + suffix,
+      btnSend: 'btn-send-code' + suffix,
+      btnDelete: 'btn-delete-account' + suffix,
+      requestFeedback: 'request-feedback' + suffix,
+      postSendFields: 'post-send-fields' + suffix,
+      sendError: 'web-deletion-send-error' + suffix,
+      rateError: 'web-deletion-rate-error' + suffix,
+      formError: 'web-deletion-form-error' + suffix,
+      successBlock: 'web-deletion-success' + suffix,
+    };
+  }
+
+  function initDeletionForm(apiBase, ids) {
+    var unavailable = document.getElementById(ids.unavailable);
+    var formWrap = document.getElementById(ids.formWrap);
+    var form = document.getElementById(ids.form);
     if (!form || !formWrap || !unavailable) {
       return;
     }
@@ -136,17 +154,21 @@
     setHidden(unavailable, true);
     setHidden(formWrap, false);
 
-    var phoneInput = document.getElementById('deletion-phone');
-    var codeInput = document.getElementById('deletion-code');
-    var confirmCheck = document.getElementById('deletion-confirm');
-    var btnSend = document.getElementById('btn-send-code');
-    var btnDelete = document.getElementById('btn-delete-account');
-    var requestFeedback = document.getElementById('request-feedback');
-    var postSendFields = document.getElementById('post-send-fields');
-    var sendError = document.getElementById('web-deletion-send-error');
-    var rateError = document.getElementById('web-deletion-rate-error');
-    var formError = document.getElementById('web-deletion-form-error');
-    var successBlock = document.getElementById('web-deletion-success');
+    var phoneInput = document.getElementById(ids.phone);
+    var codeInput = document.getElementById(ids.code);
+    var confirmCheck = document.getElementById(ids.confirm);
+    var btnSend = document.getElementById(ids.btnSend);
+    var btnDelete = document.getElementById(ids.btnDelete);
+    var requestFeedback = document.getElementById(ids.requestFeedback);
+    var postSendFields = document.getElementById(ids.postSendFields);
+    var sendError = document.getElementById(ids.sendError);
+    var rateError = document.getElementById(ids.rateError);
+    var formError = document.getElementById(ids.formError);
+    var successBlock = document.getElementById(ids.successBlock);
+
+    if (!phoneInput || !codeInput || !confirmCheck || !btnSend || !btnDelete) {
+      return;
+    }
 
     var codeRequested = false;
     var focusAfterBusy = null;
@@ -345,6 +367,16 @@
     btnDelete.addEventListener('click', confirmDeletion);
 
     updateDeleteEnabled();
+  }
+
+  function init() {
+    var apiBase = readApiBase();
+    // English keeps the legacy unsuffixed ids; Vietnamese uses the same
+    // controller with -vi ids. Each form carries independent OTP state.
+    if (document.getElementById('web-deletion-form')) {
+      initDeletionForm(apiBase, deletionIds(''));
+    }
+    initDeletionForm(apiBase, deletionIds('-vi'));
   }
 
   if (document.readyState === 'loading') {
