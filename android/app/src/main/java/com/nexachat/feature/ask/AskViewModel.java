@@ -24,6 +24,7 @@ public final class AskViewModel extends ViewModel {
 
     private final SavedStateHandle savedStateHandle;
     private final AskRepository repository;
+    private final AskThreadStore threadStore;
     private final Executor mainExecutor;
     private final MutableLiveData<AskUiState> state;
     private final Disposable sessionSubscription;
@@ -40,13 +41,21 @@ public final class AskViewModel extends ViewModel {
     public AskViewModel(
             SavedStateHandle savedStateHandle,
             AskRepository repository,
+            AskThreadStore threadStore,
             @Named("summary_main") Executor mainExecutor,
             SessionEvents sessionEvents) {
         this.savedStateHandle = Objects.requireNonNull(savedStateHandle, "savedStateHandle");
         this.repository = Objects.requireNonNull(repository, "repository");
+        this.threadStore = Objects.requireNonNull(threadStore, "threadStore");
         this.mainExecutor = Objects.requireNonNull(mainExecutor, "mainExecutor");
         this.state = new MutableLiveData<>(AskUiState.idle(draft));
         this.boundConversationId = savedStateHandle.get(ARG_CONVERSATION_ID);
+        AskThreadStore.Snapshot retained = threadStore.restore(boundConversationId);
+        if (retained != null) {
+            // The sheet was closed and reopened inside one session: continue the thread.
+            draft = retained.getDraft();
+            state.setValue(AskUiState.idle(draft, retained.getTurns()));
+        }
         this.sessionSubscription = Objects.requireNonNull(sessionEvents, "sessionEvents")
                 .getEvents()
                 .subscribe(event -> {
@@ -146,11 +155,28 @@ public final class AskViewModel extends ViewModel {
                 false));
     }
 
-    /** Clears all transient ask data when the sheet is closed. */
+    /**
+     * Clears all transient ask data when the sheet is closed. The completed thread is
+     * first retained in the session-scoped {@link AskThreadStore} so reopening the sheet
+     * for the same conversation restores it; a trailing consent prompt is dropped because
+     * its one-shot retry state cannot survive the close.
+     */
     public void close() {
         requestGeneration++;
         cancelActiveRequest();
         pendingConsentQuestion = null;
+        if (!sessionInvalidated) {
+            List<AskTurn> turns = currentTurns();
+            String retainedDraft = draft;
+            AskTurn last = turns.isEmpty() ? null : turns.get(turns.size() - 1);
+            if (last != null && last.getStatus() == AskTurn.Status.CONSENT_REQUIRED) {
+                turns = new ArrayList<>(turns.subList(0, turns.size() - 1));
+                if (retainedDraft.isEmpty()) {
+                    retainedDraft = last.getQuestion();
+                }
+            }
+            threadStore.save(savedStateHandle.get(ARG_CONVERSATION_ID), retainedDraft, turns);
+        }
         draft = "";
         state.setValue(AskUiState.idle(draft));
     }
