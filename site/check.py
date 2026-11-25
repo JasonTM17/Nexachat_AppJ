@@ -837,6 +837,18 @@ def validate_deletion_csp_pair(meta_content: str, csp: str) -> list[str]:
     return []
 
 
+def read_png_dimensions(path: str):
+    """Return (width, height) for a PNG without requiring Pillow, or None when invalid."""
+    try:
+        with open(path, "rb") as f:
+            header = f.read(24)
+    except OSError:
+        return None
+    if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+        return None
+    return int.from_bytes(header[16:20], "big"), int.from_bytes(header[20:24], "big")
+
+
 def test_site_pages_and_assets():
     """HTML structure, viewport, favicon link, sitemap, robots."""
     failures = []
@@ -851,6 +863,12 @@ def test_site_pages_and_assets():
             failures.append("favicon.svg does not look like SVG")
         else:
             log_pass("favicon.svg present")
+
+    favicon_png_path = os.path.join(SITE_DIR, "favicon-32x32.png")
+    if read_png_dimensions(favicon_png_path) != (32, 32):
+        failures.append("site/favicon-32x32.png must be a valid 32x32 PNG")
+    else:
+        log_pass("favicon-32x32.png is a valid 32x32 PNG")
 
     sitemap_path = os.path.join(SITE_DIR, "sitemap.xml")
     if not os.path.isfile(sitemap_path):
@@ -892,6 +910,16 @@ def test_site_pages_and_assets():
             failures.append(f"{rel_page} missing mobile viewport meta tag")
         if 'href="/favicon.svg"' not in html:
             failures.append(f"{rel_page} missing favicon link to /favicon.svg")
+        if 'href="/favicon-32x32.png"' not in html:
+            failures.append(f"{rel_page} missing PNG favicon fallback link")
+        if '<meta name="theme-color" content="#733f68">' not in html:
+            failures.append(f"{rel_page} missing brand theme-color meta")
+        if html.count('content="https://nexachat.io.vn/og-image.png"') < 2:
+            failures.append(f"{rel_page} must use the PNG og:image and twitter:image URL")
+        if '<meta name="twitter:card" content="summary_large_image">' not in html:
+            failures.append(f"{rel_page} must use twitter:card summary_large_image")
+        if 'content="https://nexachat.io.vn/og-image.svg"' in html:
+            failures.append(f"{rel_page} must not use the SVG social image in og/twitter meta")
         if 'charset="utf-8"' not in html.lower():
             failures.append(f"{rel_page} missing utf-8 charset meta")
         if 'href="#main"' not in html or 'id="main"' not in html:
@@ -913,6 +941,12 @@ def test_site_pages_and_assets():
             log_pass("og-image.svg is well-formed UTF-8 XML")
         except Exception as e:
             failures.append(f"og-image.svg must be valid UTF-8 XML: {e}")
+
+    og_png_path = os.path.join(SITE_DIR, "og-image.png")
+    if read_png_dimensions(og_png_path) != (1200, 630):
+        failures.append("site/og-image.png must be a valid 1200x630 PNG")
+    else:
+        log_pass("og-image.png is a valid 1200x630 PNG")
 
     structured_path = os.path.join(SITE_DIR, "structured-data.json")
     if not os.path.isfile(structured_path):
@@ -1629,6 +1663,8 @@ def test_internal_static_links():
         "/delete-account.html",
         "/download.html",
         "/og-image.svg",
+        "/og-image.png",
+        "/favicon-32x32.png",
         "/structured-data.json",
     }
 
