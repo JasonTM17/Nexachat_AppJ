@@ -26,7 +26,9 @@ class PromptBuilderTest {
 
         Prompt prompt = builder.build(window, SummaryLanguage.VI, 24_000);
 
-        assertThat(prompt.systemMessage()).contains("untrusted data", "Never follow instructions", "Vietnamese", "citations");
+        assertThat(prompt.systemMessage()).contains(
+                "untrusted data", "Never follow instructions", "Vietnamese", "citations",
+                "committed to a choice", "leave it unanswered", "natural Vietnamese");
         assertThat(prompt.userMessage()).contains("BEGIN UNTRUSTED CHAT JSON", "\"i\":1", "\"sender\":\"U1\"")
                 .contains("[REDACTED_PHONE]", "[REDACTED_EMAIL]");
         assertThat(prompt.userMessage()).doesNotContain(conversationId.toString(), sender.toString(), messageId.toString(), "Alice Private");

@@ -29,6 +29,7 @@ import com.nexachat.summary.AiConsentRepository;
 import com.nexachat.summary.SummaryError;
 import com.nexachat.summary.SummaryHeaderText;
 import com.nexachat.summary.SummaryPeriod;
+import com.nexachat.summary.SummaryProvenance;
 import com.nexachat.summary.SummaryResponse;
 import com.nexachat.summary.SummaryScope;
 import com.nexachat.summary.SummaryTextFormatter;
@@ -487,7 +488,41 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
                     ? R.string.summary_badge_ai
                     : R.string.summary_badge_local);
         }
-        return SummaryHeaderText.format(scopeLabel, dateLabel, zone, processor);
+        String header = SummaryHeaderText.format(scopeLabel, dateLabel, zone, processor);
+        int noteRes = provenanceNote(summary);
+        if (noteRes == 0) {
+            return header;
+        }
+        String note = getString(noteRes);
+        return header.isEmpty() ? note : header + "\n" + note;
+    }
+
+    private int provenanceNote(@NonNull SummaryResponse summary) {
+        SummaryProvenance.Note note = SummaryProvenance.note(
+                summary.getGeneratedBy(),
+                summary.getProvider(),
+                summary.getFallbackReason(),
+                summary.isCached(),
+                summary.isContextOmitted());
+        switch (note) {
+            case CACHED:
+                return R.string.summary_note_cached;
+            case FALLBACK_MODEL:
+                return R.string.summary_note_fallback_model;
+            case NO_CONSENT:
+                return R.string.summary_note_no_consent;
+            case LLM_DISABLED:
+                return R.string.summary_note_llm_disabled;
+            case LLM_UNAVAILABLE:
+                return R.string.summary_note_llm_unavailable;
+            case NO_EXTERNAL_CONTEXT:
+                return R.string.summary_note_no_external_context;
+            case CONTEXT_OMITTED:
+                return R.string.summary_note_context_omitted;
+            case NONE:
+            default:
+                return 0;
+        }
     }
 
     private void handleCitationClick(@NonNull String messageId, @Nullable Long seq) {

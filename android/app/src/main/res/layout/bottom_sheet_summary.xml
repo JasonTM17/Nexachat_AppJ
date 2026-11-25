@@ -198,6 +198,7 @@
             android:layout_height="wrap_content"
             android:paddingHorizontal="@dimen/space_md"
             android:paddingBottom="@dimen/space_xs"
+            android:maxLines="4"
             android:textAppearance="?attr/textAppearanceLabelMedium"
             android:textColor="?attr/colorOnSurfaceVariant"
             android:visibility="gone" />
