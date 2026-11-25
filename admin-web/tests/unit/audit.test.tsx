@@ -74,9 +74,9 @@ describe('AuditPage', () => {
   it('shows the empty state', async () => {
     apiMock.mockResolvedValue(page([]));
     renderPage();
-    expect(await screen.findByText('Nothing here')).toBeInTheDocument();
+    expect(await screen.findByText('No audit events')).toBeInTheDocument();
     // no filters are set: generic hint, nothing to clear
-    expect(screen.getByText('No results to show right now.')).toBeInTheDocument();
+    expect(screen.getByText('Admin actions will appear here.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
   });
 
@@ -122,7 +122,7 @@ describe('AuditPage', () => {
     const user = userEvent.setup();
     apiMock.mockResolvedValue(page([]));
     renderPage();
-    await screen.findByText('Nothing here');
+    await screen.findByText('No audit events');
 
     await user.type(screen.getByLabelText('Action'), 'EXPORT');
     await waitFor(

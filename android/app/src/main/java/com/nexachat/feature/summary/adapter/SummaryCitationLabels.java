@@ -13,12 +13,6 @@ public final class SummaryCitationLabels {
     private SummaryCitationLabels() {
     }
 
-    @NonNull
-    public static String messageIdPrefix(@NonNull String messageId) {
-        int take = Math.min(4, messageId.length());
-        return messageId.substring(0, take);
-    }
-
     /**
      * Formats "Sender · HH:mm" for a cited message, prefixing a short date when the
      * message is not from the same local day as {@code nowEpochMs}. Returns null when

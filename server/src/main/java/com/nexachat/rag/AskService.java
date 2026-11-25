@@ -22,6 +22,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -33,9 +34,10 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 
 /**
- * The ask router: cache, answerability gate, extractive answer, then the LLM
- * tier only for the retrieved, budgeted context. Every step records its mode
- * and counters; the endpoint never returns 503 for a provider failure.
+ * The ask router: cache, answerability gate, precise extractive answer, then the
+ * typed LLM tier only for the retrieved, budgeted context. Provider abstentions
+ * are evidence-based NOT_FOUND results; only independent high-confidence
+ * factoid extraction may degrade a provider failure to EXTRACTIVE.
  */
 @Service
 @Profile("!test")
@@ -44,6 +46,7 @@ public class AskService {
     private static final Logger log = LoggerFactory.getLogger(AskService.class);
     private static final int LOOKUP_QUESTION_MAX_CHARS = 120;
     private static final int EXTRACTIVE_ANSWER_MAX_CHARS = 1_000;
+    private static final int RETRY_AFTER_TRANSIENT_SECONDS = 1;
 
     private final AskRateLimiter rateLimiter;
     private final ConversationRepository conversationRepository;
@@ -57,13 +60,7 @@ public class AskService {
     private final RagStats stats;
     private final ConversationAiOptOuts aiOptOuts;
     private final Clock clock;
-    /**
-     * One cold-cache computation per identical ask. Followers wait for the
-     * leader's response instead of repeating the embedding, retrieval and
-     * provider work. Conversation and user identify the membership scope, and
-     * the consent snapshot prevents a request from joining work started under
-     * a different consent epoch.
-     */
+    /** One cold-cache computation per identical ask and visibility snapshot. */
     private final ConcurrentHashMap<AskKey, CompletableFuture<AskResponse>> inFlight =
             new ConcurrentHashMap<>();
 
@@ -116,23 +113,25 @@ public class AskService {
         AskExecution execution = askForResponse(conversationId, userId, request);
         if (!execution.consentSnapshot().equals(consentRepository.snapshot(userId))) {
             stats.recordNotFound();
-            return AskResponse.notFound(execution.response().contextOmitted());
+            boolean attempted = execution.response().provenance() != null
+                    && execution.response().provenance().llmAttempted();
+            return AskResponse.notFound(execution.response().contextOmitted(),
+                    AskReason.CONSENT_REQUIRED, true, RETRY_AFTER_TRANSIENT_SECONDS,
+                    execution.response().evidenceOmitted(), attempted);
         }
         return execution.response();
     }
 
     AskExecution askForResponse(UUID conversationId, UUID userId, AskRequest request) {
+        AskDeadline deadline = AskDeadline.start(properties.getAsk().getDeadlineMs());
         stats.recordRequest();
         rateLimiter.consume(userId);
         if (!conversationRepository.existsById(conversationId)) {
             throw ApiException.of(ApiErrorCode.CONVERSATION_NOT_FOUND, "Conversation not found");
         }
-        java.time.Instant admittedFrom = memberRepository.findJoinedAt(conversationId, userId)
+        Instant admittedFrom = memberRepository.findJoinedAt(conversationId, userId)
                 .orElseThrow(() -> ApiException.of(ApiErrorCode.NOT_MEMBER, "Conversation membership required"));
-        // Capture before the E2EE gate: activation during capture must be seen by the gate;
-        // activation afterward changes this revision and suppresses response selection.
         RagQuestionCache.ContextSnapshot context = questionCache.contextSnapshot(conversationId);
-        // Membership gates the e2ee flag so a non-member cannot probe it.
         boolean e2ee = conversationRepository.findById(conversationId)
                 .map(Conversation::isE2eeEnabled).orElse(false);
         if (e2ee) {
@@ -143,7 +142,8 @@ public class AskService {
         SummaryConsentRepository.ConsentSnapshot consentSnapshot = consentRepository.snapshot(userId);
         if (!properties.isEnabled()) {
             stats.recordNotFound();
-            return new AskExecution(consentSnapshot, AskResponse.notFound(contextOmitted));
+            return new AskExecution(consentSnapshot, AskResponse.notFound(
+                    contextOmitted, AskReason.RAG_DISABLED, false, null, false, false));
         }
 
         String question = request.question().strip();
@@ -153,31 +153,79 @@ public class AskService {
                 : request.language();
         String questionHash = RagHashes.questionHash(hashInput(question, priorTurns));
 
+        AskExecution execution = computeForSnapshot(conversationId, userId, question, language,
+                questionHash, consentSnapshot, contextOmitted, admittedFrom, priorTurns, context, deadline);
+        if (questionCache.contextUnchanged(conversationId, context)) {
+            return execution;
+        }
+
+        // A source mutation made the just-computed visibility snapshot obsolete. Cache and
+        // local extractive work is cheap enough to recompute exactly once; once an LLM was
+        // already invoked for the obsolete snapshot, avoid buying a duplicate completion and
+        // return retryable CONTEXT_CHANGED rather than pretending there was no evidence.
+        if (deadline.expired()) {
+            return new AskExecution(consentSnapshot, timeoutResponse(contextOmitted,
+                    llmAttempted(execution.response())), conversationId, context);
+        }
+        if (!execution.response().usage().cached() && llmAttempted(execution.response())) {
+            // Do not purchase a duplicate provider completion for a source snapshot that is
+            // already obsolete. The typed retryable result lets the client retry promptly.
+            return new AskExecution(consentSnapshot, contextChangedResponse(
+                    contextOmitted, true), conversationId, context);
+        }
+        boolean encryptedNow = conversationRepository.findById(conversationId)
+                .map(Conversation::isE2eeEnabled).orElse(false);
+        if (encryptedNow) {
+            throw ApiException.of(ApiErrorCode.E2EE_AI_UNAVAILABLE,
+                    "AI features are unavailable in encrypted conversations");
+        }
+        RagQuestionCache.ContextSnapshot freshContext = questionCache.contextSnapshot(conversationId);
+        if (freshContext.equals(context)) {
+            return new AskExecution(consentSnapshot, contextChangedResponse(
+                    contextOmitted, llmAttempted(execution.response())), conversationId, context);
+        }
+        SummaryConsentRepository.ConsentSnapshot freshConsent = consentRepository.snapshot(userId);
+        boolean freshOmitted = aiOptOuts.hasOptedOutMessages(conversationId);
+        AskExecution recomputed = computeForSnapshot(conversationId, userId, question, language,
+                questionHash, freshConsent, freshOmitted, admittedFrom, priorTurns, freshContext, deadline);
+        if (!questionCache.contextUnchanged(conversationId, freshContext)) {
+            stats.recordNotFound();
+            return new AskExecution(freshConsent, contextChangedResponse(
+                    freshOmitted, llmAttempted(recomputed.response())), conversationId, freshContext);
+        }
+        return recomputed;
+    }
+
+    private AskExecution computeForSnapshot(
+            UUID conversationId,
+            UUID userId,
+            String question,
+            SummaryLanguage language,
+            String questionHash,
+            SummaryConsentRepository.ConsentSnapshot consentSnapshot,
+            boolean contextOmitted,
+            Instant admittedFrom,
+            List<AskPriorTurn> priorTurns,
+            RagQuestionCache.ContextSnapshot context,
+            AskDeadline deadline) {
         AskKey key = new AskKey(conversationId, userId, questionHash, language, consentSnapshot,
                 admittedFrom, context);
-        AskResponse response = computeOnce(key, contextOmitted, () -> compute(
+        AskResponse response = computeOnce(key, contextOmitted, deadline, () -> compute(
                 conversationId, userId, question, language, questionHash, consentSnapshot, contextOmitted,
-                admittedFrom, priorTurns, context));
-        // Followers select their own response only while the context they joined is still current.
-        if (!questionCache.contextUnchanged(conversationId, context)) {
-            stats.recordNotFound();
-            response = AskResponse.notFound(aiOptOuts.hasOptedOutMessages(conversationId));
-        }
+                admittedFrom, priorTurns, context, deadline));
         return new AskExecution(consentSnapshot, response, conversationId, context);
     }
 
-    /**
-     * Single-flight: the first caller for a key computes and every concurrent
-     * caller for the same key receives that result. The entry is removed in
-     * {@code finally}, so a failure is never cached and the next request
-     * recomputes. Callers that arrive after the leader removed the entry fall
-     * through to the exact cache, which the leader has already written.
-     */
-    private AskResponse computeOnce(AskKey key, boolean contextOmitted, Supplier<AskResponse> computation) {
+    /** Single-flight: the first caller for a key computes and concurrent callers receive that result. */
+    private AskResponse computeOnce(
+            AskKey key,
+            boolean contextOmitted,
+            AskDeadline deadline,
+            Supplier<AskResponse> computation) {
         CompletableFuture<AskResponse> leader = new CompletableFuture<>();
         CompletableFuture<AskResponse> pending = inFlight.putIfAbsent(key, leader);
         if (pending != null) {
-            return await(key, pending, contextOmitted);
+            return await(key, pending, contextOmitted, deadline);
         }
         try {
             AskResponse response = computation.get();
@@ -192,15 +240,26 @@ public class AskService {
         }
     }
 
-    private AskResponse await(AskKey key, CompletableFuture<AskResponse> pending, boolean contextOmitted) {
-        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(properties.getAsk().getSingleFlightWaitMs());
+    private AskResponse await(
+            AskKey key,
+            CompletableFuture<AskResponse> pending,
+            boolean contextOmitted,
+            AskDeadline deadline) {
+        long waitMs = properties.getAsk().getSingleFlightWaitMs();
+        if (deadline != null) {
+            waitMs = Math.min(waitMs, Math.max(0, deadline.remainingMs()));
+        }
         try {
-            return pending.get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+            return pending.get(Math.max(1, waitMs), TimeUnit.MILLISECONDS);
         } catch (TimeoutException exception) {
             // Detach only the observed stalled leader. Its late finally must not remove a replacement.
             inFlight.remove(key, pending);
             stats.recordNotFound();
-            return AskResponse.notFound(contextOmitted);
+            if (deadline != null && deadline.expired()) {
+                return timeoutResponse(contextOmitted, false);
+            }
+            return AskResponse.notFound(contextOmitted, AskReason.SINGLE_FLIGHT_TIMEOUT,
+                    true, RETRY_AFTER_TRANSIENT_SECONDS, false, false);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw ApiException.of(ApiErrorCode.INTERNAL_ERROR, "Interrupted while waiting for an AI answer");
@@ -224,15 +283,44 @@ public class AskService {
             String questionHash,
             SummaryConsentRepository.ConsentSnapshot consentSnapshot,
             boolean contextOmitted,
-            java.time.Instant admittedFrom,
+            Instant admittedFrom,
             List<AskPriorTurn> priorTurns,
-            RagQuestionCache.ContextSnapshot context) {
+            RagQuestionCache.ContextSnapshot context,
+            AskDeadline deadline) {
+        AskResponse completed = null;
+        try {
+            completed = computeWithin(conversationId, userId, question, language, questionHash,
+                    consentSnapshot, contextOmitted, admittedFrom, priorTurns, context, deadline);
+            if (deadline != null) {
+                deadline.check();
+            }
+            return completed;
+        } catch (AskDeadlineExceededException exception) {
+            stats.recordNotFound();
+            return timeoutResponse(contextOmitted,
+                    completed != null && completed.evidenceOmitted(), llmAttempted(completed));
+        }
+    }
+
+    private AskResponse computeWithin(
+            UUID conversationId,
+            UUID userId,
+            String question,
+            SummaryLanguage language,
+            String questionHash,
+            SummaryConsentRepository.ConsentSnapshot consentSnapshot,
+            boolean contextOmitted,
+            Instant admittedFrom,
+            List<AskPriorTurn> priorTurns,
+            RagQuestionCache.ContextSnapshot context,
+            AskDeadline deadline) {
+        check(deadline);
         boolean consented = consentSnapshot.consented();
         // Cached answers are shared per conversation and may cite or paraphrase content from
         // before this member's admission, so a late or returning member always recomputes.
         boolean sharedCacheVisible = !retrievalService.hasContentBeforeAdmission(conversationId, admittedFrom);
         RagEmbeddingService.EmbeddingOutcome questionEmbedding =
-                embeddingService.embedQuestion(userId, question, consented);
+                embeddingService.embedQuestion(userId, question, consented, deadline);
 
         if (consented && sharedCacheVisible) {
             Optional<RagQuestionCache.CachedAsk> exact = questionCache.findExact(
@@ -242,12 +330,10 @@ public class AskService {
                     && exact.get().language() == language
                     && questionCache.citationsValid(exact.get().citedIds(), exact.get().citedHash())) {
                 stats.recordCacheHit();
-                return cachedResponse(exact.get(), contextOmitted);
+                return cachedResponse(exact.get(), contextOmitted, "exact");
             }
 
             double semanticThreshold = properties.getRetrieval().getSemanticCacheThreshold();
-            // Follow-up questions like "what about Tuesday?" must not replay an
-            // unrelated cached answer for a similar current-question embedding.
             if (priorTurns.isEmpty()) {
                 for (RagQuestionCache.CachedQuestion candidate : questionCache.findCandidates(
                         conversationId, questionEmbedding.model())) {
@@ -256,7 +342,7 @@ public class AskService {
                             && candidate.ask().language() == language
                             && questionCache.citationsValid(candidate.ask().citedIds(), candidate.ask().citedHash())) {
                         stats.recordCacheHit();
-                        return cachedResponse(candidate.ask(), contextOmitted);
+                        return cachedResponse(candidate.ask(), contextOmitted, "semantic");
                     }
                 }
             }
@@ -264,42 +350,130 @@ public class AskService {
 
         boolean lookupLike = isLookupLike(question);
         boolean requiresAnswerEvidence = !isBroadAggregationQuestion(question);
+        check(deadline);
         RetrievalResult retrieval = retrievalService.retrieve(
-                conversationId, userId, question, language, consented, admittedFrom, requiresAnswerEvidence);
-        if (retrieval.isEmpty()
-                || retrieval.bestScore() < properties.getRetrieval().getNotFoundThreshold()) {
+                conversationId, userId, question, language, consented, admittedFrom,
+                requiresAnswerEvidence, deadline);
+        boolean evidenceOmitted = contextOmitted && retrieval.optedOutEvidenceOverlap();
+        if (retrieval.isEmpty()) {
             stats.recordNotFound();
-            return AskResponse.notFound(contextOmitted);
+            return AskResponse.notFound(contextOmitted, AskReason.NO_EVIDENCE,
+                    false, null, evidenceOmitted, false);
+        }
+        if (retrieval.bestScore() < properties.getRetrieval().getNotFoundThreshold()) {
+            stats.recordNotFound();
+            return AskResponse.notFound(contextOmitted, AskReason.LOW_SCORE,
+                    false, null, evidenceOmitted, false);
         }
 
-        if (lookupLike
-                && retrieval.bestScore() >= properties.getRetrieval().getExtractiveThreshold()) {
+        ExtractiveSelection extractive = selectExtractive(question, language, retrieval);
+        if (extractive != null
+                && retrieval.bestScore() >= properties.getRetrieval().getExtractiveThreshold()
+                && canAnswerDirectly(extractive, lookupLike)) {
             return answerExtractive(conversationId, questionEmbedding, questionHash, language, retrieval,
-                    userId, consentSnapshot, contextOmitted, context);
+                    extractive, userId, consentSnapshot, contextOmitted, evidenceOmitted, context,
+                    null, false);
         }
 
+        RagLlmOutcome outcome = null;
         if (consented) {
-            RagLlmAnswer llmAnswer = llmAnswerService.answer(
+            check(deadline);
+            outcome = llmAnswerService.answerDetailed(
                     userId, conversationId, question, language, retrieval.context(), retrieval.messages(),
-                    priorTurns);
-            if (llmAnswer != null) {
+                    priorTurns, deadline);
+            if (outcome.status() == RagLlmOutcome.Status.ANSWER && outcome.answer() != null) {
                 RagQuestionCache.CachedAsk answer = toCachedAsk(
-                        llmAnswer, retrieval.messages(), AskMode.LLM, language, context);
+                        outcome.answer(), retrieval.messages(), retrieval.context(), AskMode.LLM, language,
+                        context, question, null, true, outcome.sensitiveContentRedacted());
                 if (answer != null) {
                     saveAnswer(userId, consentSnapshot, conversationId, questionEmbedding, questionHash, answer);
-                    stats.recordLlmCall(retrieval.inputChars(), "fallback".equals(llmAnswer.provider()));
+                    stats.recordLlmCall(retrieval.inputChars(), "fallback".equals(outcome.answer().provider()));
                     return toResponse(answer, AskMode.LLM, 1, retrieval.inputChars(), false,
-                            llmAnswer.provider(), contextOmitted);
+                            outcome.answer().provider(), contextOmitted, evidenceOmitted);
                 }
+                outcome = RagLlmOutcome.providerError(true);
             }
         }
 
-        if (retrieval.bestScore() >= properties.getRetrieval().getExtractiveThreshold()) {
-            return answerExtractive(conversationId, questionEmbedding, questionHash, language, retrieval,
-                    userId, consentSnapshot, contextOmitted, context);
+        boolean llmAttempted = outcome != null && outcome.llmAttempted();
+        if (outcome != null && outcome.status() == RagLlmOutcome.Status.ABSTAIN) {
+            stats.recordNotFound();
+            return AskResponse.notFound(contextOmitted, AskReason.NO_EVIDENCE,
+                    false, null, evidenceOmitted, true);
         }
+        if (outcome != null && outcome.deadlineExceeded()) {
+            stats.recordNotFound();
+            return timeoutResponse(contextOmitted, evidenceOmitted, outcome.llmAttempted());
+        }
+
+        AskReason degradation = outcome == null
+                ? AskReason.CONSENT_REQUIRED
+                : reasonForOutcome(outcome);
+        if (extractive != null
+                && retrieval.bestScore() >= properties.getRetrieval().getExtractiveThreshold()
+                && canDegradeToExtractive(question, extractive)) {
+            return answerExtractive(conversationId, questionEmbedding, questionHash, language, retrieval,
+                    extractive, userId, consentSnapshot, contextOmitted, evidenceOmitted, context,
+                    degradation, llmAttempted);
+        }
+
         stats.recordNotFound();
-        return AskResponse.notFound(contextOmitted);
+        boolean retryable = degradation == AskReason.PROVIDER_ERROR || degradation == AskReason.BULKHEAD_REJECTED;
+        Integer retryAfter = degradation == AskReason.BULKHEAD_REJECTED ? RETRY_AFTER_TRANSIENT_SECONDS : null;
+        return AskResponse.notFound(contextOmitted, degradation, retryable, retryAfter,
+                evidenceOmitted, llmAttempted);
+    }
+
+    private AskReason reasonForOutcome(RagLlmOutcome outcome) {
+        if (outcome.consentRequired()) {
+            return AskReason.CONSENT_REQUIRED;
+        }
+        if (outcome.contextSuppressed()) {
+            return AskReason.CONTEXT_SUPPRESSED;
+        }
+        if (outcome.status() == RagLlmOutcome.Status.BULKHEAD_REJECTED) {
+            return AskReason.BULKHEAD_REJECTED;
+        }
+        return AskReason.PROVIDER_ERROR;
+    }
+
+    private boolean canAnswerDirectly(ExtractiveSelection selection, boolean lookupLike) {
+        if (selection.result().exactValue()) {
+            return true;
+        }
+        return lookupLike
+                && selection.result().coverage() >= properties.getRetrieval().getLexicalAnswerMinCoverage();
+    }
+
+    private boolean canDegradeToExtractive(String question, ExtractiveSelection selection) {
+        if (selection.result().exactValue()) {
+            return true;
+        }
+        double requiredCoverage = Math.max(0.8, properties.getRetrieval().getLexicalAnswerMinCoverage());
+        return RagExtractiveAnswerer.isFactoidRequest(question)
+                && selection.result().coverage() >= requiredCoverage;
+    }
+
+    private ExtractiveSelection selectExtractive(
+            String question, SummaryLanguage language, RetrievalResult retrieval) {
+        ExtractiveSelection firstSpan = null;
+        int limit = Math.min(3, retrieval.ranked().size());
+        for (int index = 0; index < limit; index++) {
+            RagMessage candidate = retrieval.ranked().get(index).message();
+            RagExtractiveAnswerer.Result result = RagExtractiveAnswerer.extract(
+                    question, language, candidate, EXTRACTIVE_ANSWER_MAX_CHARS);
+            if (result == null) {
+                continue;
+            }
+            ExtractiveSelection selection = new ExtractiveSelection(candidate, result);
+            if (result.exactValue()) {
+                return selection;
+            }
+            if (firstSpan == null) {
+                firstSpan = selection;
+            }
+        }
+        return firstSpan;
     }
 
     private AskResponse answerExtractive(
@@ -308,19 +482,26 @@ public class AskService {
             String questionHash,
             SummaryLanguage language,
             RetrievalResult retrieval,
+            ExtractiveSelection selection,
             UUID userId,
             SummaryConsentRepository.ConsentSnapshot consentSnapshot,
             boolean contextOmitted,
-            RagQuestionCache.ContextSnapshot context) {
+            boolean evidenceOmitted,
+            RagQuestionCache.ContextSnapshot context,
+            AskReason degradation,
+            boolean llmAttempted) {
         RagQuestionCache.CachedAsk answer = toCachedAsk(
-                retrieval.topMessage(), retrieval.messages(), AskMode.EXTRACTIVE, language, context);
+                selection, retrieval.messages(), AskMode.EXTRACTIVE, language, context,
+                degradation, llmAttempted);
         if (answer == null) {
             stats.recordNotFound();
-            return AskResponse.notFound(contextOmitted);
+            return AskResponse.notFound(contextOmitted, AskReason.NO_EVIDENCE,
+                    false, null, evidenceOmitted, llmAttempted);
         }
         saveAnswer(userId, consentSnapshot, conversationId, questionEmbedding, questionHash, answer);
         stats.recordExtractive();
-        return toResponse(answer, AskMode.EXTRACTIVE, 0, 0, false, null, contextOmitted);
+        return toResponse(answer, AskMode.EXTRACTIVE, 0,
+                llmAttempted ? retrieval.inputChars() : 0, false, null, contextOmitted, evidenceOmitted);
     }
 
     private void saveAnswer(
@@ -340,31 +521,45 @@ public class AskService {
     }
 
     private RagQuestionCache.CachedAsk toCachedAsk(
-            RagMessage message,
+            ExtractiveSelection selection,
             Map<UUID, RagMessage> messages,
             AskMode mode,
             SummaryLanguage language,
-            RagQuestionCache.ContextSnapshot context) {
-        if (message == null) {
+            RagQuestionCache.ContextSnapshot context,
+            AskReason degradation,
+            boolean llmAttempted) {
+        RagMessage message = selection.message();
+        if (message == null || messages.get(message.id()) == null) {
             return null;
         }
-        RagCitation citation = new RagCitation(message.id(), message.seq(), snippet(message.content()));
+        RagCitation citation = new RagCitation(message.id(), message.seq(),
+                snippet(message.content(), selection.result().extraction().startOffset()),
+                RagCitation.Role.PRIMARY);
+        AskProvenance provenance = AskProvenance.origin(mode, null, degradation, llmAttempted);
         return new RagQuestionCache.CachedAsk(
-                truncateByCodePoints(message.content(), EXTRACTIVE_ANSWER_MAX_CHARS),
+                selection.result().answer(),
                 List.of(citation),
                 mode.name(),
                 List.of(message.id()),
                 RagHashes.citationsHash(List.of(message)),
                 language,
-                context.revision(), context.expiresAt());
+                context.revision(), context.expiresAt(),
+                provenance,
+                false,
+                selection.result().extraction());
     }
 
     private RagQuestionCache.CachedAsk toCachedAsk(
             RagLlmAnswer llmAnswer,
             Map<UUID, RagMessage> messages,
+            List<RagContextItem> context,
             AskMode mode,
             SummaryLanguage language,
-            RagQuestionCache.ContextSnapshot context) {
+            RagQuestionCache.ContextSnapshot contextSnapshot,
+            String question,
+            AskReason degradation,
+            boolean llmAttempted,
+            boolean sensitiveContentRedacted) {
         List<RagCitation> citations = new ArrayList<>();
         List<UUID> citedIds = new ArrayList<>();
         List<RagMessage> citedMessages = new ArrayList<>();
@@ -373,13 +568,18 @@ public class AskService {
             if (message == null || citedIds.contains(citationId)) {
                 continue;
             }
-            citations.add(new RagCitation(citationId, message.seq(), snippet(message.content())));
+            citations.add(new RagCitation(citationId, message.seq(),
+                    snippet(message.content(), question),
+                    citationRole(context, citationId)));
             citedIds.add(citationId);
             citedMessages.add(message);
         }
         if (citations.isEmpty()) {
             return null;
         }
+        String generationProvider = llmAnswer.provider() == null ? "local" : llmAnswer.provider();
+        AskProvenance provenance = AskProvenance.origin(
+                mode, generationProvider, degradation, llmAttempted);
         return new RagQuestionCache.CachedAsk(
                 llmAnswer.answer(),
                 citations,
@@ -387,12 +587,54 @@ public class AskService {
                 citedIds,
                 RagHashes.citationsHash(citedMessages),
                 language,
-                context.revision(), context.expiresAt());
+                contextSnapshot.revision(), contextSnapshot.expiresAt(),
+                provenance,
+                sensitiveContentRedacted,
+                null);
     }
 
-    private AskResponse cachedResponse(RagQuestionCache.CachedAsk answer, boolean contextOmitted) {
-        return new AskResponse(answer.answer(), answer.citations(), AskMode.CACHE, contextOmitted,
-                new AskResponse.Usage(0, 0, true));
+    private RagCitation.Role citationRole(List<RagContextItem> context, UUID citationId) {
+        if (context != null) {
+            for (RagContextItem item : context) {
+                if (item.primaryMessageIds().contains(citationId)) {
+                    return RagCitation.Role.PRIMARY;
+                }
+            }
+        }
+        return RagCitation.Role.CONTEXT;
+    }
+
+    private AskResponse cachedResponse(
+            RagQuestionCache.CachedAsk answer, boolean contextOmitted, String cacheType) {
+        AskProvenance provenance = answer.provenance();
+        if (provenance == null) {
+            AskMode origin = parseMode(answer.mode());
+            provenance = AskProvenance.origin(origin, null, null, origin == AskMode.LLM);
+        }
+        return new AskResponse(
+                answer.answer(),
+                answer.citations(),
+                AskMode.CACHE,
+                contextOmitted,
+                new AskResponse.Usage(0, 0, true),
+                null,
+                provenance.degradationReason(),
+                provenance.degradationReason() == AskReason.BULKHEAD_REJECTED
+                        || provenance.degradationReason() == AskReason.PROVIDER_ERROR,
+                null,
+                provenance.withCacheType(cacheType),
+                false,
+                false,
+                answer.sensitiveContentRedacted(),
+                answer.extraction());
+    }
+
+    private AskMode parseMode(String value) {
+        try {
+            return AskMode.valueOf(value);
+        } catch (RuntimeException exception) {
+            return AskMode.EXTRACTIVE;
+        }
     }
 
     private AskResponse toResponse(
@@ -402,9 +644,52 @@ public class AskService {
             int inputChars,
             boolean cached,
             String provider,
-            boolean contextOmitted) {
-        return new AskResponse(answer.answer(), answer.citations(), mode, contextOmitted,
-                new AskResponse.Usage(llmCalls, inputChars, cached, provider));
+            boolean contextOmitted,
+            boolean evidenceOmitted) {
+        AskProvenance provenance = answer.provenance() == null
+                ? AskProvenance.origin(mode, provider, null, llmCalls > 0)
+                : answer.provenance();
+        return new AskResponse(
+                answer.answer(),
+                answer.citations(),
+                mode,
+                contextOmitted,
+                new AskResponse.Usage(llmCalls, inputChars, cached, provider),
+                null,
+                provenance.degradationReason(),
+                provenance.degradationReason() == AskReason.BULKHEAD_REJECTED
+                        || provenance.degradationReason() == AskReason.PROVIDER_ERROR,
+                null,
+                provenance,
+                evidenceOmitted,
+                evidenceOmitted,
+                answer.sensitiveContentRedacted(),
+                answer.extraction());
+    }
+
+    private AskResponse timeoutResponse(boolean contextOmitted, boolean llmAttempted) {
+        return timeoutResponse(contextOmitted, false, llmAttempted);
+    }
+
+    private AskResponse timeoutResponse(
+            boolean contextOmitted, boolean evidenceOmitted, boolean llmAttempted) {
+        return AskResponse.notFound(contextOmitted, AskReason.TIMEOUT,
+                true, RETRY_AFTER_TRANSIENT_SECONDS, evidenceOmitted, llmAttempted);
+    }
+
+    private AskResponse contextChangedResponse(boolean contextOmitted, boolean llmAttempted) {
+        return AskResponse.notFound(contextOmitted, AskReason.CONTEXT_CHANGED,
+                true, RETRY_AFTER_TRANSIENT_SECONDS, false, llmAttempted);
+    }
+
+    private static boolean llmAttempted(AskResponse response) {
+        return response != null && response.provenance() != null && response.provenance().llmAttempted();
+    }
+
+    private static void check(AskDeadline deadline) {
+        if (deadline != null) {
+            deadline.check();
+        }
     }
 
     private boolean isBroadAggregationQuestion(String question) {
@@ -444,19 +729,48 @@ public class AskService {
         return SummaryLanguage.valueOf(detected.name());
     }
 
-    private String snippet(String content) {
-        String folded = content == null ? "" : content.replaceAll("\\s+", " ").trim();
-        return truncateByCodePoints(folded, properties.getRetrieval().getMaxSnippetChars());
+    /** Query-centered snippet; when a span offset is known, center around that exact evidence. */
+    private String snippet(String content, String question) {
+        return snippet(content, pivotFor(content, question));
     }
 
-    private static String truncateByCodePoints(String text, int maxCodePoints) {
-        if (text == null) {
-            return "";
+    private String snippet(String content, int pivot) {
+        String folded = content == null ? "" : content.replaceAll("\\s+", " ").trim();
+        int max = properties.getRetrieval().getMaxSnippetChars();
+        int length = folded.codePointCount(0, folded.length());
+        if (length <= max) {
+            return folded;
         }
-        if (text.codePointCount(0, text.length()) <= maxCodePoints) {
-            return text;
+        int pivotCodePoint = Math.max(0, Math.min(pivot, folded.length()));
+        pivotCodePoint = folded.codePointCount(0, pivotCodePoint);
+        int startCodePoint = Math.max(0, pivotCodePoint - max / 3);
+        startCodePoint = Math.min(startCodePoint, Math.max(0, length - max));
+        int endCodePoint = Math.min(length, startCodePoint + max);
+        int start = folded.offsetByCodePoints(0, startCodePoint);
+        int end = folded.offsetByCodePoints(0, endCodePoint);
+        String snippet = folded.substring(start, end);
+        if (start > 0) {
+            snippet = "…" + snippet;
         }
-        return text.substring(0, text.offsetByCodePoints(0, maxCodePoints));
+        if (end < folded.length()) {
+            snippet = snippet + "…";
+        }
+        return snippet;
+    }
+
+    private int pivotFor(String content, String question) {
+        if (content == null || question == null) {
+            return 0;
+        }
+        String lower = content.toLowerCase(Locale.ROOT);
+        int best = -1;
+        for (String term : RagQuestionTerms.extract(question, SummaryLanguage.AUTO, 8)) {
+            int position = lower.indexOf(term.toLowerCase(Locale.ROOT));
+            if (position >= 0 && (best < 0 || position < best)) {
+                best = position;
+            }
+        }
+        return Math.max(0, best);
     }
 
     static String hashInput(String question, List<AskPriorTurn> priorTurns) {
@@ -466,6 +780,9 @@ public class AskService {
             return normalized;
         }
         return normalized + "\nprior:" + fingerprint;
+    }
+
+    private record ExtractiveSelection(RagMessage message, RagExtractiveAnswerer.Result result) {
     }
 
     private record AskKey(

@@ -171,4 +171,102 @@ class RagRetrievalServiceTest {
         assertThat(result.isEmpty()).isTrue();
         assertThat(result.context()).isEmpty();
     }
+
+    @Test
+    void rankedEvidenceOutsideTheRecentWindowIsRecoveredWithItsSequenceNeighborhood() {
+        UUID conversationId = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        properties.getRetrieval().setMaxCandidateMessages(4);
+        RagMessage fact = RagTestSupport.message(conversationId, UUID.randomUUID(), 1, senderId,
+                "Lan", "The migration freeze starts on March 14.");
+        index.add(fact);
+        List<UUID> fillerIds = new ArrayList<>();
+        for (long seq = 2; seq <= 10; seq++) {
+            UUID id = UUID.randomUUID();
+            fillerIds.add(id);
+            index.add(RagTestSupport.message(conversationId, id, seq, senderId,
+                    "Lan", "Ordinary filler message " + seq));
+        }
+
+        RetrievalResult result = service.retrieve(conversationId,
+                "When does the migration freeze start?", SummaryLanguage.EN, false);
+
+        assertThat(result.topMessage().id()).isEqualTo(fact.id());
+        assertThat(result.messages()).containsKey(fact.id());
+        assertThat(result.context()).isNotEmpty();
+        RagContextItem factItem = result.context().stream()
+                .filter(item -> item.messageIds().contains(fact.id()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(factItem.primaryMessageIds()).contains(fact.id());
+        assertThat(result.context().stream().flatMap(item -> item.messageIds().stream()))
+                .contains(fact.id(), fillerIds.get(0), fillerIds.get(1));
+    }
+
+    @Test
+    void replyParentInsideTheRecentWindowButOutsideTheRadiusIsRecovered() {
+        UUID conversationId = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        properties.getRetrieval().setNeighborRadius(0);
+        RagMessage parent = RagTestSupport.message(conversationId, UUID.randomUUID(), 1, senderId,
+                "Lan", "Parent context: the release train leaves on Friday.");
+        RagMessage child = new RagMessage(UUID.randomUUID(), conversationId, 5, senderId,
+                "Lan", "The migration freeze starts on March 14.", parent.createdAt().plusSeconds(10),
+                null, parent.id());
+        index.add(parent);
+        for (long seq = 2; seq <= 4; seq++) {
+            index.add(RagTestSupport.message(conversationId, UUID.randomUUID(), seq, senderId,
+                    "Lan", "Ordinary filler message " + seq));
+        }
+        index.add(child);
+
+        RetrievalResult result = service.retrieve(conversationId,
+                "When does the migration freeze start?", SummaryLanguage.EN, false);
+
+        assertThat(result.context().stream().flatMap(item -> item.messageIds().stream()))
+                .contains(child.id(), parent.id());
+    }
+
+    @Test
+    void budgetTruncationOmitsMessageIdsWhoseTextWasNeverSerialized() {
+        UUID conversationId = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        java.time.Instant base = java.time.Instant.parse("2026-01-01T10:00:00Z");
+        RagMessage first = new RagMessage(UUID.randomUUID(), conversationId, 1, senderId,
+                "Lan", "first exact context", base, null, null);
+        RagMessage second = new RagMessage(UUID.randomUUID(), conversationId, 2, senderId,
+                "Lan", "second exact context", base.plusSeconds(5), null, null);
+        RagMessage third = new RagMessage(UUID.randomUUID(), conversationId, 3, senderId,
+                "Lan", "third must not be cited", base.plusSeconds(10), null, null);
+        RagProperties.Retrieval config = new RagProperties().getRetrieval();
+        config.setNeighborRadius(2);
+        config.setMaxContextChars("first exact context".length() + 1 + "second exact context".length());
+
+        RagContextBuilder.ContextResult result = RagContextBuilder.build(
+                List.of(new ScoredMessage(first, 1.0)), List.of(first, second, third), index, config);
+
+        assertThat(result.context()).hasSize(1);
+        assertThat(result.context().get(0).messageIds()).containsExactly(first.id(), second.id());
+        assertThat(result.context().get(0).messageIds()).doesNotContain(third.id());
+        assertThat(result.messages()).doesNotContainKey(third.id());
+    }
+
+    @Test
+    void optedOutLexicalOverlapIsReportedSeparatelyFromRetrievedEvidence() {
+        UUID conversationId = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        RagMessage visible = RagTestSupport.message(conversationId, UUID.randomUUID(), 1, senderId,
+                "Lan", "The migration freeze starts on March 14.");
+        RagMessage omitted = RagTestSupport.message(conversationId, UUID.randomUUID(), 2, senderId,
+                "Lan", "A different migration freeze note from an opted-out author.");
+        index.add(visible);
+        index.add(omitted);
+        index.optOutMessage(omitted.id());
+
+        RetrievalResult result = service.retrieve(conversationId,
+                "When does the migration freeze start?", SummaryLanguage.EN, false);
+
+        assertThat(result.topMessage().id()).isEqualTo(visible.id());
+        assertThat(result.optedOutEvidenceOverlap()).isTrue();
+    }
 }

@@ -1542,34 +1542,105 @@ redacted prior turns only to resolve follow-up references. Semantic cache
 replay is skipped when `priorTurns` is present so a vague follow-up cannot
 reuse an unrelated cached answer.
 
-Response `200`:
+Response `200` (new fields are additive; older clients may ignore them):
 
 ```json
 {
   "answer": "The server migration is scheduled for March 14 at 02:00.",
   "citations": [
-    { "messageId": "uuid", "seq": 12, "snippet": "The server migration is ..." }
+    {
+      "messageId": "uuid",
+      "seq": 12,
+      "snippet": "The server migration is ...",
+      "role": "PRIMARY"
+    }
   ],
   "mode": "EXTRACTIVE",
   "contextOmitted": false,
-  "usage": { "llmCalls": 0, "inputChars": 0, "cached": false, "provider": null }
+  "usage": { "llmCalls": 0, "inputChars": 0, "cached": false, "provider": null },
+  "notFoundReason": null,
+  "degradationReason": null,
+  "retryable": false,
+  "retryAfterSeconds": null,
+  "provenance": {
+    "originMode": "EXTRACTIVE",
+    "generationProvider": null,
+    "cacheType": null,
+    "degradationReason": null,
+    "llmAttempted": false
+  },
+  "evidenceOmitted": false,
+  "retrievalAffected": false,
+  "sensitiveContentRedacted": false,
+  "extraction": {
+    "kind": "EVIDENCE_SPAN",
+    "messageId": "uuid",
+    "startOffset": 4,
+    "endOffset": 61,
+    "truncated": false,
+    "valueType": null
+  }
 }
 ```
 
-`mode` is `CACHE` (question cache hit), `NOT_FOUND` (answerability gate, no LLM
-call), `EXTRACTIVE` (one cited message answers a lookup-like question) or `LLM`
-(retrieved, budgeted context). `answer` is `null` for `NOT_FOUND`; `citations`
-is never null and every cited message belongs to the conversation. `usage`
-reports the number of LLM calls, the message characters sent to the LLM,
-whether the answer came from the cache, and `provider` (`primary` or `fallback`
-for an `LLM` answer, otherwise null). `contextOmitted` is a neutral flag: `true`
-when at least one eligible message in the conversation is currently excluded
-from retrieval because its author opted out; it never identifies the member.
+`mode` is `CACHE` (question cache hit), `NOT_FOUND` (no answer can be served),
+`EXTRACTIVE` (a precise local evidence span or exact value answers a lookup-like
+question) or `LLM` (retrieved, budgeted context). `answer` is `null` for
+`NOT_FOUND`; `citations` is never null and every serialized citation belongs to
+the conversation. Citation `role` is additive and distinguishes ranked primary
+evidence (`PRIMARY`) from reply/neighbor context (`CONTEXT`) when the server
+knows the distinction; older cached rows may omit it. Snippets are centered on
+the question/evidence rather than blindly using the start of a long message.
+`usage` reports the number of successful LLM answer generations, the message
+characters sent to the LLM, whether the answer came from the cache, and
+`provider` (`primary` or `fallback` for a cloud `LLM` answer, otherwise null).
+A failed provider attempt is preserved in `provenance.llmAttempted` rather than
+being misreported as a successful generation.
+
+For `NOT_FOUND`, `notFoundReason` is one of `NO_EVIDENCE`, `LOW_SCORE`,
+`CONSENT_REQUIRED`, `CONTEXT_SUPPRESSED`, `PROVIDER_ERROR`,
+`BULKHEAD_REJECTED`, `TIMEOUT`, `SINGLE_FLIGHT_TIMEOUT`, `CONTEXT_CHANGED` or
+`RAG_DISABLED`. The first two are evidence-based non-answer outcomes. Provider,
+capacity, deadline and context-race outcomes are degradations rather than proof
+that no evidence exists; they set `retryable` and, for short transient waits, a
+small `retryAfterSeconds` hint. `TIMEOUT` means the server's end-to-end ask
+budget (default 110 seconds, below the Android 130-second read timeout) was
+consumed. `SINGLE_FLIGHT_TIMEOUT` means a concurrent identical computation did
+not finish inside the remaining budget. `CONTEXT_CHANGED` means the source
+context moved while the answer was being computed or serialized; it is retryable
+and must not be interpreted as absence of evidence. `CONSENT_REQUIRED` means
+consent changed or is absent and the answer was suppressed without exposing its
+content. `llmAttempted` inside `provenance` preserves whether an LLM tier was
+actually attempted.
+
+`degradationReason` is normally null. It is set on a degraded successful
+answer, currently when provider failure, consent absence, bulkhead capacity or
+context suppression was independently answered by a high-confidence extractive
+factoid. `provenance` records the original generation mode (`originMode`), the
+generation provider (`primary`, `fallback` or `local` when known), the cache
+type for cache replay (`exact` or `semantic`), the degradation reason and
+whether an LLM was attempted. Cache hits replay the original provenance plus
+the cache type; cache rows written before this field existed infer conservative
+provenance from their stored mode. `sensitiveContentRedacted` is true when the
+server had to remove or transform sensitive/generated material (for example a
+URL or redaction placeholder) before serving it.
+
+`contextOmitted` remains the neutral broad flag: `true` when at least one
+eligible message in the conversation is currently excluded from retrieval
+because its author opted out; it never identifies the member. The additive
+`evidenceOmitted` is narrower and is true only when relevant evidence for this
+question overlapped opted-out content. `retrievalAffected` is true when that
+omission may have affected retrieval for this ask. `extraction` is additive
+metadata for extractive answers: span or exact-value kind, source message id,
+source offsets, truncation state and exact value type when applicable.
 
 Errors use the standard envelope: `400 VALIDATION_FAILED`, `403 NOT_MEMBER`,
 `404 CONVERSATION_NOT_FOUND`, `429 RATE_LIMITED` (ask bucket: 20/minute and
-200/day per user). Provider failures degrade to `NOT_FOUND` or `EXTRACTIVE`;
-the endpoint never answers `503` for a provider problem.
+200/day per user). A 429 includes `details.retryAfterSeconds`, `details.window`
+(`MINUTE` or `DAY`) and `details.limit`; the same positive retry value is also
+mirrored in the `Retry-After` header. Provider failures degrade to typed
+`NOT_FOUND` or an explicitly marked extractive degradation; the endpoint never
+answers `503` for a provider problem.
 
 `GET /api/v1/rag/stats` (Bearer) returns aggregate RAG counters only:
 `{requests, cacheHits, notFound, extractive, llmCalls, llmFallbackCalls,
@@ -1595,6 +1666,7 @@ messages and AI-opted-out conversations are never scanned or shown.
 | `GET /api/v1/admin/me` | staff | — | `200` `{userId, role, displayName}` | 401/403 |
 | `GET /api/v1/admin/overview` | staff | `?days=` | `200` KPIs + daily series | 401/403 |
 | `GET /api/v1/admin/system/health` | staff | — | `200` service status map | 401/403 |
+| `GET /api/v1/admin/rag/stats` | staff | — | `200` RAG counter snapshot (requests, cache, LLM, embeddings, `llmBulkheadRejections`) | 401/403 |
 | `GET /api/v1/admin/users` | staff | `?search=&role=&status=&createdFrom=&createdTo=&page=&size=` | `200` page of user summaries | 401/403 |
 | `GET /api/v1/admin/users/deleted` | staff | `?limit=` | `200` list of deleted accounts | 401/403 |
 | `GET /api/v1/admin/users/{userId}` | staff | — | `200` user detail + counters | 401/403 · `USER_NOT_FOUND` 404 |

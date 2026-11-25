@@ -250,43 +250,46 @@ class RagBenchmarkEvaluationTest {
         when(questionCache.citationsValid(any(), any())).thenReturn(true);
         when(questionCache.contextSnapshot(any())).thenReturn(new RagQuestionCache.ContextSnapshot(1, null));
         when(questionCache.contextUnchanged(any(), any())).thenReturn(true);
-        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
-            llmInvocations.incrementAndGet();
-            List<RagContextItem> context = invocation.getArgument(4);
-            if (context.isEmpty()) {
-                return null;
-            }
-            String llmQuestion = invocation.getArgument(2);
-            SummaryLanguage llmLanguage = invocation.getArgument(3);
-            Map<UUID, RagMessage> messages = invocation.getArgument(5);
-            Set<String> questionTerms = new HashSet<>(RagQuestionTerms.extract(llmQuestion, llmLanguage, 12));
-            RagMessage bestMessage = null;
-            int bestOverlap = 0;
-            for (RagContextItem item : context) {
-                for (UUID messageId : item.messageIds()) {
-                    RagMessage message = messages.get(messageId);
-                    if (message == null) {
-                        continue;
+when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    llmInvocations.incrementAndGet();
+                    List<RagContextItem> context = invocation.getArgument(4);
+                    if (context.isEmpty()) {
+                        return RagLlmOutcome.providerError(true);
                     }
-                    Set<String> messageTerms = new HashSet<>(RagQuestionTerms.contentTerms(
-                            message.content(), llmLanguage));
-                    int overlap = 0;
-                    for (String term : questionTerms) {
-                        if (messageTerms.contains(term)) {
-                            overlap++;
+                    String llmQuestion = invocation.getArgument(2);
+                    SummaryLanguage llmLanguage = invocation.getArgument(3);
+                    Map<UUID, RagMessage> messages = invocation.getArgument(5);
+                    Set<String> questionTerms = new HashSet<>(RagQuestionTerms.extract(llmQuestion, llmLanguage, 12));
+                    RagMessage bestMessage = null;
+                    int bestOverlap = 0;
+                    for (RagContextItem item : context) {
+                        for (UUID messageId : item.messageIds()) {
+                            RagMessage message = messages.get(messageId);
+                            if (message == null) {
+                                continue;
+                            }
+                            Set<String> messageTerms = new HashSet<>(RagQuestionTerms.contentTerms(
+                                    message.content(), llmLanguage));
+                            int overlap = 0;
+                            for (String term : questionTerms) {
+                                if (messageTerms.contains(term)) {
+                                    overlap++;
+                                }
+                            }
+                            if (overlap > bestOverlap) {
+                                bestOverlap = overlap;
+                                bestMessage = message;
+                            }
                         }
                     }
-                    if (overlap > bestOverlap) {
-                        bestOverlap = overlap;
-                        bestMessage = message;
+                    if (bestMessage == null) {
+                        return RagLlmOutcome.answer(
+                                new RagLlmAnswer("Synthetic answer.", context.get(0).messageIds()), false);
                     }
-                }
-            }
-            if (bestMessage == null) {
-                return new RagLlmAnswer("Synthetic answer.", context.get(0).messageIds());
-            }
-            return new RagLlmAnswer("Synthetic answer.", List.of(bestMessage.id()));
-        });
+                    return RagLlmOutcome.answer(
+                            new RagLlmAnswer("Synthetic answer.", List.of(bestMessage.id())), false);
+                });
 
         return new AskService(
                 rateLimiter, conversationRepository, memberRepository, consentRepository,

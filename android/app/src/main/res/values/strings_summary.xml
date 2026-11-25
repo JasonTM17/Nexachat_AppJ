@@ -16,8 +16,11 @@
     <string name="summary_note_no_external_context">No message in this range may be sent to external AI.</string>
     <string name="summary_note_context_omitted">Some messages were left out because their authors turned off external AI.</string>
     <string name="summary_scope_unread">Unread</string>
-    <string name="summary_scope_last_n">Last N</string>
-    <string name="summary_scope_last_n_format">Last %1$d</string>
+    <string name="summary_scope_last_n">Recent messages</string>
+    <plurals name="summary_scope_last_n_format">
+        <item quantity="one">%1$d recent message</item>
+        <item quantity="other">%1$d recent messages</item>
+    </plurals>
     <string name="summary_scope_today">Today</string>
     <string name="summary_section_overview">Overview</string>
     <string name="summary_section_key_points">Key points</string>
@@ -26,7 +29,7 @@
     <string name="summary_section_questions">Open questions</string>
     <string name="summary_section_topics">Topics</string>
     <string name="summary_citation_chip">↗ %1$s</string>
-    <string name="summary_citation_unavailable">Unavailable</string>
+    <string name="summary_citation_message">Message</string>
     <string name="summary_action_copy">Copy</string>
     <string name="summary_action_share">Share into chat</string>
     <string name="summary_action_regenerate">Regenerate</string>
@@ -35,7 +38,7 @@
     <string name="summary_error_too_few">Not enough messages</string>
     <string name="summary_error_too_few_desc">At least 5 messages are required to generate a summary.</string>
     <string name="summary_error_rate_limited">Too many requests</string>
-    <string name="summary_error_rate_limited_desc">Try again in a moment.</string>
+    <string name="summary_error_rate_limited_desc">Try again later.</string>
     <string name="summary_error_offline">No connection. Check your network and try again.</string>
     <string name="summary_error_not_member">You are no longer in this conversation</string>
     <string name="summary_error_e2ee_unavailable">Summaries are not available in encrypted chats</string>

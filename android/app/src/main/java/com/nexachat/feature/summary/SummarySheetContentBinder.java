@@ -10,6 +10,7 @@ import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.core.widget.TextViewCompat;
 import com.google.android.material.color.MaterialColors;
@@ -24,39 +25,36 @@ import com.nexachat.summary.SummaryActionItem;
 import com.nexachat.summary.SummaryItem;
 import com.nexachat.summary.SummaryResponse;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /** Inflates structured summary sections into a vertical container. */
 public final class SummarySheetContentBinder {
 
     public interface OnCitationClickListener {
-        void onCitationClick(@NonNull String messageId);
+        void onCitationClick(@NonNull String messageId, @Nullable Long seq);
     }
 
     private final Context context;
     private final Map<String, Long> messageSeqMap;
-    private final Set<String> localMessageIds;
     private final Map<String, String> messageSenderMap;
     private final Map<String, Long> messageTimeMap;
     private final OnCitationClickListener citationListener;
-    private final HashMap<String, Boolean> actionChecked = new HashMap<>();
+    private final Map<String, Boolean> actionChecked;
 
     public SummarySheetContentBinder(
             @NonNull Context context,
             @NonNull Map<String, Long> messageSeqMap,
-            @NonNull Set<String> localMessageIds,
             @NonNull Map<String, String> messageSenderMap,
             @NonNull Map<String, Long> messageTimeMap,
+            @NonNull Map<String, Boolean> actionChecked,
             @NonNull OnCitationClickListener citationListener
     ) {
         this.context = context;
         this.messageSeqMap = messageSeqMap;
-        this.localMessageIds = localMessageIds;
         this.messageSenderMap = messageSenderMap;
         this.messageTimeMap = messageTimeMap;
+        this.actionChecked = actionChecked;
         this.citationListener = citationListener;
     }
 
@@ -188,7 +186,7 @@ public final class SummarySheetContentBinder {
         list.setVisibility(View.VISIBLE);
         list.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false));
         SummaryCitationAdapter adapter = new SummaryCitationAdapter(messageId -> {
-            citationListener.onCitationClick(messageId);
+            citationListener.onCitationClick(messageId, messageSeqMap.get(messageId));
         });
         list.setAdapter(adapter);
         List<SummaryCitationItem> items = new ArrayList<>();
@@ -197,8 +195,9 @@ public final class SummarySheetContentBinder {
                 continue;
             }
             Long seq = messageSeqMap.get(messageId);
-            boolean jumpable = com.nexachat.core.ui.SummaryUiRules.isCitationJumpable(
-                    messageId, localMessageIds);
+            // Every citation is jumpable: the chat pages backwards (or around the
+            // sequence, when one is known) until the message is loaded, and reports
+            // a gone message instead of leaving a dead disabled chip behind.
             Long createdAt = messageTimeMap.get(messageId);
             String senderTime = SummaryCitationLabels.senderTime(
                     messageSenderMap.get(messageId),
@@ -209,15 +208,13 @@ public final class SummarySheetContentBinder {
                     ? senderTime
                     : seq != null
                             ? context.getString(R.string.summary_citation_seq, seq)
-                            : SummaryCitationLabels.messageIdPrefix(messageId);
-            String chipText = jumpable
-                    ? context.getString(R.string.summary_citation_chip, label)
-                    : context.getString(R.string.summary_citation_unavailable);
+                            : context.getString(R.string.summary_citation_message);
+            String chipText = context.getString(R.string.summary_citation_chip, label);
             String contentDescription = senderTime != null
                     ? context.getString(R.string.cd_summary_citation_from, senderTime)
                     : null;
             items.add(new SummaryCitationItem(
-                    messageId, chipText, contentDescription, jumpable));
+                    messageId, chipText, contentDescription, true));
         }
         adapter.submitList(items);
     }

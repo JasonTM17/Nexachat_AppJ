@@ -82,16 +82,27 @@ public class RagRetrievalService {
     public RetrievalResult retrieve(
             UUID conversationId, UUID userId, String question, SummaryLanguage language, boolean consented,
             java.time.Instant admittedFrom, boolean requireAnswerEvidence) {
+        return retrieve(conversationId, userId, question, language, consented,
+                admittedFrom, requireAnswerEvidence, null);
+    }
+
+    /** Deadline-aware variant used by the synchronous ask path. */
+    public RetrievalResult retrieve(
+            UUID conversationId, UUID userId, String question, SummaryLanguage language, boolean consented,
+            java.time.Instant admittedFrom, boolean requireAnswerEvidence, AskDeadline deadline) {
+        check(deadline);
         RagProperties.Retrieval config = properties.getRetrieval();
         List<RagMessage> recent = index.recentMessages(
                 conversationId, config.getMaxCandidateMessages(), admittedFrom);
-        if (recent.isEmpty()) {
-            return RetrievalResult.empty();
-        }
-
         List<String> terms = RagQuestionTerms.extract(question, language, config.getLexicalTermLimit());
         List<RagMessage> lexicalCandidates = index.lexicalCandidates(
                 conversationId, terms, config.getLexicalCandidateLimit(), admittedFrom);
+        boolean optedOutEvidenceOverlap = requireAnswerEvidence
+                ? index.hasOptedOutLexicalCandidates(conversationId, terms, admittedFrom)
+                : index.hasOptedOutMessages(conversationId, admittedFrom);
+        if (recent.isEmpty()) {
+            return empty(optedOutEvidenceOverlap);
+        }
 
         Map<UUID, RagMessage> vectorCandidateMap = new LinkedHashMap<>();
         int recentWindow = Math.min(config.getVectorCandidateLimit(), recent.size());
@@ -104,11 +115,16 @@ public class RagRetrievalService {
         }
         List<RagMessage> vectorCandidates = List.copyOf(vectorCandidateMap.values());
 
+        check(deadline);
+        int inlineEmbeddingBudget = Math.min(
+                properties.getIndex().getLazyLimit(),
+                properties.getAsk().getMaxInlineEmbeddingComputations());
         RagEmbeddingService.RetrievalEmbeddings embedded = embeddings.embedForRetrieval(
-                userId, question, vectorCandidates, properties.getIndex().getLazyLimit(), consented);
+                userId, question, vectorCandidates, inlineEmbeddingBudget, consented, deadline);
+        check(deadline);
         if (requireAnswerEvidence && !hasAnswerEvidence(
                 question, language, lexicalCandidates, vectorCandidates, embedded, config)) {
-            return RetrievalResult.empty();
+            return empty(optedOutEvidenceOverlap);
         }
 
         List<ScoredMessage> lexicalRanked = RagScorer.lexicalRank(lexicalCandidates, question, language);
@@ -116,7 +132,7 @@ public class RagRetrievalService {
                 vectorCandidates, embedded.vectors(), embedded.questionVector());
         List<ScoredMessage> fused = RagScorer.fuse(lexicalRanked, vectorRanked, config.getRrfK());
         if (fused.isEmpty()) {
-            return RetrievalResult.empty();
+            return empty(optedOutEvidenceOverlap);
         }
 
         Map<String, RagMessage> messagesById = new LinkedHashMap<>();
@@ -134,18 +150,34 @@ public class RagRetrievalService {
                 .filter(scored -> scored.message() != null)
                 .toList();
         if (ranked.isEmpty()) {
-            return RetrievalResult.empty();
+            return empty(optedOutEvidenceOverlap);
         }
 
+        check(deadline);
         RagContextBuilder.ContextResult contextResult = RagContextBuilder.build(
                 ranked, recent, index, config, admittedFrom);
+        check(deadline);
         return new RetrievalResult(
                 ranked,
                 ranked.get(0).message(),
                 contextResult.context(),
                 ranked.get(0).score(),
                 contextResult.inputChars(),
-                contextResult.messages());
+                contextResult.messages(),
+                optedOutEvidenceOverlap);
+    }
+
+    private static RetrievalResult empty(boolean optedOutEvidenceOverlap) {
+        if (!optedOutEvidenceOverlap) {
+            return RetrievalResult.empty();
+        }
+        return new RetrievalResult(List.of(), null, List.of(), 0.0, 0, Map.of(), true);
+    }
+
+    private static void check(AskDeadline deadline) {
+        if (deadline != null) {
+            deadline.check();
+        }
     }
 
     private boolean hasAnswerEvidence(

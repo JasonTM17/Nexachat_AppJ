@@ -43,7 +43,7 @@ public class AlertRuleService {
     @Transactional
     public AlertRuleRow create(String name, String category, String severity,
                                String patternType, String pattern, String locale,
-                               String description, UUID actorId, User.Role actorRole, String ip) {
+                               String description, String reason, UUID actorId, User.Role actorRole, String ip) {
         requireAdmin(actorRole);
         AlertCategory cat = AlertCategory.parse(category);
         AlertSeverity sev = AlertSeverity.parse(severity);
@@ -53,8 +53,11 @@ public class AlertRuleService {
         repository.insert(id, requireText(name, "name", 200), cat.name(), sev.name(), type,
                 "CARD".equals(type) ? CARD_PATTERN_SENTINEL : pattern.trim(), locale,
                 false, description, actorId);
+        // Rule creation is a safety-routing mutation just like update/delete;
+        // keep the operator's confirmation reason on the audit row. Older
+        // clients can omit the field and still audit null exactly as before.
         auditService.record(actorId, actorRole, "RULE_CREATE", "alert_rule", id.toString(),
-                null, Map.of("name", name, "category", cat.name()), ip);
+                reason, Map.of("name", name, "category", cat.name()), ip);
         return repository.findById(id).orElseThrow();
     }
 

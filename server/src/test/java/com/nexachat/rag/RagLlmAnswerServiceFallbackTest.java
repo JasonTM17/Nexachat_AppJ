@@ -111,8 +111,10 @@ class RagLlmAnswerServiceFallbackTest {
                 FakeOpenAiServer.jsonResponse("{\"answer\":null,\"citations\":[]}")));
 
         for (int index = 0; index < 5; index++) {
-            RagLlmAnswer answer = answer("What unrelated fact was never mentioned?");
-            assertThat(answer).isNull();
+            RagLlmOutcome outcome = detailedAnswer("What unrelated fact was never mentioned?");
+            assertThat(outcome.status()).isEqualTo(RagLlmOutcome.Status.ABSTAIN);
+            assertThat(outcome.llmAttempted()).isTrue();
+            assertThat(outcome.answer()).isNull();
         }
 
         assertThat(circuitBreaker.allowRequest())
@@ -220,9 +222,11 @@ class RagLlmAnswerServiceFallbackTest {
         primary.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 500, "primary down"));
         fallback.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 503, "fallback down"));
 
-        RagLlmAnswer answer = answer("When is the migration?");
+        RagLlmOutcome outcome = detailedAnswer("When is the migration?");
 
-        assertThat(answer).isNull();
+        assertThat(outcome.status()).isEqualTo(RagLlmOutcome.Status.PROVIDER_ERROR);
+        assertThat(outcome.llmAttempted()).isTrue();
+        assertThat(outcome.answer()).isNull();
         assertThat(fallback.requestCount()).isPositive();
     }
 
@@ -305,9 +309,11 @@ class RagLlmAnswerServiceFallbackTest {
         service = new RagLlmAnswerService(client, new RagPromptBuilder(new ObjectMapper(), new com.nexachat.summary.llm.Redactor()),
                 new RagOutputValidator(new ObjectMapper()), circuitBreaker, consentRepository, stats);
 
-        RagLlmAnswer answer = answer("When is the migration?");
+        RagLlmOutcome outcome = detailedAnswer("When is the migration?");
 
-        assertThat(answer).isNull();
+        assertThat(outcome.status()).isEqualTo(RagLlmOutcome.Status.PROVIDER_ERROR);
+        assertThat(outcome.consentRequired()).isTrue();
+        assertThat(outcome.llmAttempted()).isFalse();
         assertThat(primary.requestCount()).isZero();
         assertThat(fallback.requestCount()).isZero();
     }
@@ -388,9 +394,10 @@ class RagLlmAnswerServiceFallbackTest {
             Future<RagLlmAnswer> first = executor.submit(() -> answer("When is the migration?"));
             assertThat(primaryEntered.await(5, TimeUnit.SECONDS)).isTrue();
 
-            RagLlmAnswer rejected = answer("When is the migration?");
+            RagLlmOutcome rejected = detailedAnswer("When is the migration?");
 
-            assertThat(rejected).isNull();
+            assertThat(rejected.status()).isEqualTo(RagLlmOutcome.Status.BULKHEAD_REJECTED);
+            assertThat(rejected.llmAttempted()).isFalse();
             assertThat(stats.snapshot().llmBulkheadRejections()).isEqualTo(1);
             assertThat(stats.snapshot().llmFailures()).isZero();
             releasePrimary.countDown();
@@ -473,6 +480,11 @@ class RagLlmAnswerServiceFallbackTest {
 
     private RagLlmAnswer answer(String question) {
         return service.answer(userId, conversationId, question, SummaryLanguage.EN, context(), contextMessages());
+    }
+
+    private RagLlmOutcome detailedAnswer(String question) {
+        return service.answerDetailed(userId, conversationId, question, SummaryLanguage.EN,
+                context(), contextMessages(), List.of());
     }
 
     private java.util.Map<UUID, RagMessage> contextMessages() {
