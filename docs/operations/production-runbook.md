@@ -1,6 +1,6 @@
 # Production Runbook
 
-Operational runbook for the NexaChat `v1.1.0` production deployment on free-tier infrastructure.
+Operational runbook for the NexaChat production deployment on free-tier infrastructure.
 
 ## 1. Production Topology
 
@@ -12,7 +12,7 @@ Operational runbook for the NexaChat `v1.1.0` production deployment on free-tier
 | **Push Notifications** | Firebase Cloud Messaging (FCM v1) | Global / Google Cloud | `fcm.googleapis.com` | OAuth2 service-account authentication via `FCM_SERVICE_ACCOUNT_JSON`. |
 | **Realtime Bridge (Opt-in)** | Firebase Realtime Database (RTDB) | Singapore / Asia-SE1 | `https://<project>-default-rtdb.asia-southeast1.firebasedatabase.app` | Ephemeral presence, typing, and call-status projection. Security rules in `tools/firebase-rules/database.rules.json`. |
 | **Static Web Site** | Vercel (Hobby Free tier) | Global Edge | `https://nexachat.io.vn` | Serves `site/` static landing page, `/.well-known/assetlinks.json`, `/join/*` fallback, `/delete-account.html`. |
-| **Client Distribution** | GitHub Releases | Global CDN | `github.com/.../releases/tag/v1.1.0` | Signed release APK (`app-release.apk`) distributed directly to Android users. |
+| **Client Distribution** | GitHub Releases | Global CDN | `github.com/JasonTM17/Nexachat_AppJ/releases/latest` | Signed release APK (`nexachat-vX.Y.Z.apk`) and Play bundle (`.aab`) published directly on tag release. |
 
 ---
 
@@ -26,7 +26,7 @@ Operational runbook for the NexaChat `v1.1.0` production deployment on free-tier
    - JVM flags configure cgroup memory allocation: the `render.yaml` `JAVA_OPTS` block (`render.yaml:44-55`) is the source of truth for production (`-XX:MaxRAMPercentage=60.0`, `-XX:+UseSerialGC`, `-Xss512k`, `-XX:TieredStopAtLevel=1`, `-XX:+ExitOnOutOfMemoryError`, and AppCDS archive `-XX:SharedArchiveFile=/app/application.jsa`), overriding the container image default at `server/Dockerfile:80`. Readiness is locally measured at 120–185 s with the archive and 167–328 s without, at 0.1 CPU / 512 MB (readiness on Render not yet measured).
    - `ProductionDataSourceConfiguration` validates that required credentials (`spring.datasource.url`, `spring.datasource.username`, `spring.datasource.password`, and `STORAGE_ROOT` when provider is `local`) are present and non-empty (`server/src/main/java/com/nexachat/config/ProductionDataSourceConfiguration.java:18-30`).
    - `ProductionJwtSecretGuard` validates that `JWT_SECRET` is not the development default and has at least 8 distinct characters (`server/src/main/java/com/nexachat/config/ProductionJwtSecretGuard.java:48`).
-   - Flyway executes forward migrations (`V1`–`V20`, `V22`, and `V24`–`V44`; `V21` and `V23` are reserved and have no files) with validation enabled (`validate-on-migrate: true`, `server/src/main/resources/application-prod.yml:47`).
+   - Flyway executes forward migrations (`V1`–`V20`, `V22`, and `V24`–`V48`; `V21` and `V23` are reserved and have no files) with validation enabled (`validate-on-migrate: true`, `server/src/main/resources/application-prod.yml:47`).
 4. **Liveness Probe**: Render checks container liveness via `curl -fsS http://localhost:8080/actuator/health/liveness` (`server/Dockerfile:82-83`).
 5. **Post-Deploy Smoke Check**: Run `tools/ops/prod-smoke.sh` immediately after deployment completes.
 
@@ -52,7 +52,7 @@ Operational runbook for the NexaChat `v1.1.0` production deployment on free-tier
 
 ### Free-Tier Sleep Cycle
 
-- **Render Web Service**: Spins down after 15 minutes of zero HTTP traffic unless kept awake. In the supported production configuration, an external uptime monitor pings `https://api.nexachat.io.vn/actuator/health/liveness` every 5 minutes (`docs/operations/deploy-render.md`), keeping Render awake 24/7 (covered by Render's 750 free instance hours per month).
+- **Render Web Service**: Spins down after 15 minutes of zero HTTP traffic unless kept awake. In the supported production configuration, the `prod-keep-warm` GitHub Actions workflow (`.github/workflows/keep-warm.yml`, cron every 10 minutes, subject to GitHub scheduler jitter) or an external uptime monitor pings `https://nexachat-api-rl1v.onrender.com/actuator/health/liveness` (`https://api.nexachat.io.vn/actuator/health/liveness`), keeping Render awake 24/7 (covered by Render's 750 free instance hours per month).
 - **Neon Serverless Postgres**: Automatically suspends compute after 5 minutes of idle connection inactivity. Because the liveness endpoint only checks `ping` (`server/src/main/resources/application.yml:55-56`) and never queries the database, Neon can suspend even while Render stays awake.
 - **Wake-up Duration**:
   - Total cold start: In local benchmarking capped at 512 MB / 0.1 CPU, Spring Boot reached readiness in 120–185 s with the AppCDS archive and 167–328 s without (readiness on Render not yet measured; the first live Render deploy without AppCDS measured 123 s from container start to a healthy check, with Spring Boot starting in 106.6 s, including the first Flyway run on Neon). The Android client waits up to 150 s for health before an auth request.

@@ -167,7 +167,7 @@ and require labeled evaluation before being treated as production calibration.
 | Extractive gate | lookup-like question and fused score ≥ 0.62 |
 | Context budget | 3,000 characters |
 | Lazy indexing per request | 500 candidate messages; at most 32 new external vectors per ask |
-| Background backfill | 200 messages/minute |
+| Background backfill | 200 messages/minute (1,800,000 ms tick on `render` profile) |
 | Ask rate limit | 20/minute, 200/day per user |
 
 The background backfill always indexes with the local `lexical` provider, even
@@ -211,6 +211,7 @@ same question cache as a primary call; a cache hit never calls either provider.
 | `nexachat.rag.embedding.api-key` | `NEXACHAT_RAG_EMBEDDING_API_KEY` | falls back to `NEXACHAT_SUMMARY_LLM_API_KEY` |
 | `nexachat.rag.embedding.dim` | `NEXACHAT_RAG_EMBEDDING_DIM` | `256` |
 | `nexachat.rag.embedding.timeout-ms` | `NEXACHAT_RAG_EMBEDDING_TIMEOUT_MS` | `20000` |
+| `nexachat.rag.embedding.batch-size` | `NEXACHAT_RAG_EMBEDDING_BATCH_SIZE` | `32` |
 | `nexachat.rag.retrieval.max-context-chars` | `NEXACHAT_RAG_MAX_CONTEXT_CHARS` | `3000` |
 | `nexachat.rag.retrieval.not-found-threshold` | `NEXACHAT_RAG_NOT_FOUND_THRESHOLD` | `0.18` |
 | `nexachat.rag.retrieval.extractive-threshold` | `NEXACHAT_RAG_EXTRACTIVE_THRESHOLD` | `0.62` |
@@ -220,6 +221,7 @@ same question cache as a primary call; a cache hit never calls either provider.
 | `nexachat.rag.index.lazy-limit` | `NEXACHAT_RAG_INDEX_LAZY_LIMIT` | `500` |
 | `nexachat.rag.index.external-lazy-limit` | `NEXACHAT_RAG_INDEX_EXTERNAL_LAZY_LIMIT` | `32` |
 | `nexachat.rag.index.backfill-rate-per-minute` | `NEXACHAT_RAG_BACKFILL_RATE_PER_MINUTE` | `200` |
+| `nexachat.rag.index.backfill-interval-ms` | `NEXACHAT_RAG_BACKFILL_INTERVAL_MS` | `60000` (`1800000` on `render`) |
 | `nexachat.rag.ask.rate-limit-per-minute` | `NEXACHAT_RAG_ASK_RATE_LIMIT_PER_MINUTE` | `20` |
 | `nexachat.rag.ask.rate-limit-per-day` | `NEXACHAT_RAG_ASK_RATE_LIMIT_PER_DAY` | `200` |
 | `nexachat.rag.ask.cache-ttl-hours` | `NEXACHAT_RAG_ASK_CACHE_TTL_HOURS` | `24` |

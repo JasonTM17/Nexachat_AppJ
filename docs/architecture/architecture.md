@@ -3,7 +3,7 @@
 > Current implementation view: Android app (Java 21 LTS, XML Views + Fragments +
 > ViewBinding, ViewModel + LiveData, RxJava 3, offline-first Room v23) → REST
 > `/api/v1` + STOMP over WebSocket → Spring Boot 3.5.16 modular monolith → PostgreSQL 16
-> (Flyway V1–V20 + V22 + V24–V47; V21/V23 reserved) + local or S3-compatible file storage. Conversation RAG is available through the
+> (Flyway V1–V20 + V22 + V24–V48; V21/V23 reserved) + local or S3-compatible file storage. Conversation RAG is available through the
 > server API (`POST /api/v1/conversations/{id}/ask`) and Android Ask screen
 > ([docs/architecture/rag.md](rag.md)).
 > Call signaling shares STOMP (`server/call`,
@@ -25,7 +25,7 @@ flowchart LR
             REST["Retrofit/OkHttp<br/>+ AuthInterceptor/Authenticator"]
             STOMP["StompClient<br/>(OkHttp WebSocket + STOMP frames)"]
             ROUTER["EphemeralStateRouter<br/>(STOMP default, opt-in Firebase)"]
-            ROOM[("Room DB v21 (RxJava 3)<br/>cache · caller-owned labels · owner-scoped outbox · offline_outbox · users · call_logs · sync cursors")]
+            ROOM[("Room DB v23 (RxJava 3)<br/>cache · caller-owned labels · owner-scoped outbox · offline_outbox · users · call_logs · sync cursors")]
             STORE["RxDataStore + TokenStore<br/>(Android Keystore AES)"]
             SETTINGS["Local theme + locale settings"]
         end
@@ -66,7 +66,7 @@ flowchart LR
         PRESENCE["PresenceSessionRegistry<br/>(in-memory, per node)"]
     end
 
-    PG[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V47 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin · sync cursors · google_signup · e2ee")]
+    PG[("PostgreSQL 16<br/>Flyway V1–V20 + V22 + V24–V48 migrations<br/>seq · watermarks · idempotency · calls · rag · reactions · reminders · polls · labels · invites · mentions · pin/seen · token_cutoff · retention · refresh replay · tombstoning · otps · google_signin · sync cursors · google_signup · e2ee")]
     STORAGE["File storage<br/>(StorageService: local or S3-compatible)"]
     FCM[["FCM (HTTP v1 OAuth2, GoogleHttpFcmGateway)"]]
 
@@ -215,12 +215,12 @@ sequenceDiagram
   not hide the peers from that user. Last-disconnect offline notification is
   coalesced for five seconds.
 
-## 5. V12–V47 feature modules & realtime extensions
+## 5. V12–V48 feature modules & realtime extensions
 
-V36–V47 (admin console, message translation, blocks/reports/stars,
+V36–V48 (admin console, message translation, blocks/reports/stars,
 disappearing messages, call media type, signup email OTP, chat streaks, public
 feed, streak run floors, applied-migration repair, scheduled messages, RAG
-context revision) are itemized in the migration table of
+context revision, and model-keyed message embeddings) are itemized in the migration table of
 [docs/architecture/api-contract.md](api-contract.md#migration-history) and in the
 per-feature docs (admin-console.md, ai-translation.md, streaks.md,
 public-feed.md, calls.md).
