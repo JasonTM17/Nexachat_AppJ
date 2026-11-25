@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -16,6 +17,9 @@ import java.util.UUID;
 
 @Service
 public class DefaultFcmPushService implements FcmPushService {
+    // Leaves enough headroom for the fixed CALL_INVITE pointer fields so the
+    // serialized data payload stays below the client's 512-byte drop ceiling.
+    private static final int MAX_CALLER_NAME_UTF8_BYTES = 96;
 
     private static final Logger log = LoggerFactory.getLogger(DefaultFcmPushService.class);
     private static final long DEFAULT_RING_TIMEOUT_MS = 45_000L;
@@ -136,12 +140,34 @@ public class DefaultFcmPushService implements FcmPushService {
         data.put("conversationId", conversationId.toString());
         data.put("callerId", callerId.toString());
         data.put("recipientId", recipientId.toString());
-        data.put("callerName", callerName != null ? callerName : "");
+        data.put("callerName", truncateUtf8(callerName, MAX_CALLER_NAME_UTF8_BYTES));
         data.put("callType", callType != null ? callType : "AUDIO");
         data.put("timestamp", String.valueOf(timestamp));
         data.put("ringExpiresAt", String.valueOf(Math.addExact(timestamp, ringTimeoutMs)));
 
         dispatchToTokens(tokens, data, "HIGH", 60L);
+    }
+
+    static String truncateUtf8(String value, int maxBytes) {
+        if (value == null) {
+            return "";
+        }
+        if (value.getBytes(StandardCharsets.UTF_8).length <= maxBytes) {
+            return value;
+        }
+        StringBuilder truncated = new StringBuilder();
+        int used = 0;
+        for (int offset = 0; offset < value.length();) {
+            int codePoint = value.codePointAt(offset);
+            int width = new String(Character.toChars(codePoint)).getBytes(StandardCharsets.UTF_8).length;
+            if (used + width > maxBytes) {
+                break;
+            }
+            truncated.appendCodePoint(codePoint);
+            used += width;
+            offset += Character.charCount(codePoint);
+        }
+        return truncated.toString();
     }
 
     private void dispatchToTokens(List<UserDeviceToken> tokens, Map<String, String> data,

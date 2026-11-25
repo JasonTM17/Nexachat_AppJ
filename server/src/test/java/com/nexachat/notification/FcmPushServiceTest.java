@@ -286,6 +286,32 @@ class FcmPushServiceTest {
     }
 
     @Test
+    void callInviteCallerNameIsUtf8TruncatedBeforeTheClientDropCeiling() throws Exception {
+        User user = mock(User.class);
+        UserDeviceToken token = UserDeviceToken.create(user, "fcm-token-long-caller", UserDeviceToken.Platform.ANDROID, "Pixel 8");
+        when(tokenRepository.findByUserId(userId)).thenReturn(List.of(token));
+
+        String longName = "Trần".repeat(80) + "🙂".repeat(80);
+        pushService.sendCallInviteNotification(
+                userId, UUID.randomUUID(), conversationId, UUID.randomUUID(), longName, "AUDIO", System.currentTimeMillis());
+
+        List<MockFcmGateway.SentPush> sent = mockGateway.getSentPushes();
+        assertThat(sent).hasSize(1);
+        String callerName = sent.get(0).data().get("callerName");
+        assertThat(callerName.getBytes(StandardCharsets.UTF_8).length).isLessThanOrEqualTo(96);
+        assertThat(callerName).isEqualTo("Trần".repeat(16));
+        byte[] jsonBytes = objectMapper.writeValueAsString(sent.get(0).data()).getBytes(StandardCharsets.UTF_8);
+        assertThat(jsonBytes.length).isLessThan(500);
+    }
+
+    @Test
+    void callInviteCallerNameTruncationDoesNotSplitAWideUtf8CodePoint() {
+        assertThat(DefaultFcmPushService.truncateUtf8("🙂🙂🙂", 5)).isEqualTo("🙂");
+        assertThat(DefaultFcmPushService.truncateUtf8("🙂🙂🙂", 8)).isEqualTo("🙂🙂");
+        assertThat(DefaultFcmPushService.truncateUtf8(null, 96)).isEmpty();
+    }
+
+    @Test
     void callInviteExpiryUsesTheConfiguredServerRingTimeout() {
         User user = mock(User.class);
         UserDeviceToken token = UserDeviceToken.create(
