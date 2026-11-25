@@ -19,7 +19,7 @@
     <string name="summary_section_questions">Open questions</string>
     <string name="summary_section_topics">Topics</string>
     <string name="summary_citation_chip">↗ %1$s</string>
-    <string name="summary_citation_unavailable">Unavailable</string>
+    <string name="summary_citation_message">Message</string>
     <string name="summary_action_copy">Copy</string>
     <string name="summary_action_share">Share into chat</string>
     <string name="summary_action_regenerate">Regenerate</string>

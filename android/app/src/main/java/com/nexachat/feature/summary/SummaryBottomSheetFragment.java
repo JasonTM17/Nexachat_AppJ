@@ -36,10 +36,8 @@ import com.nexachat.summary.SummaryUiState;
 import com.nexachat.summary.SummaryViewModel;
 import dagger.hilt.android.AndroidEntryPoint;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import javax.inject.Inject;
 
 /**
@@ -48,12 +46,8 @@ import javax.inject.Inject;
 @AndroidEntryPoint
 public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
 
-    public interface OnCitationClickListener {
-        void onCitationClick(@NonNull String messageId);
-    }
-
     public interface Listener {
-        void onJumpToMessage(@NonNull String messageId);
+        void onJumpToMessage(@NonNull String messageId, @Nullable Long seq);
 
         void onShareIntoChat(@NonNull String shareText);
     }
@@ -71,12 +65,9 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
     private SummaryViewModel viewModel;
     @Nullable
     private Listener listener;
-    @Nullable
-    private OnCitationClickListener citationListener;
     private final Map<String, Long> messageSeqMap = new HashMap<>();
     private final Map<String, String> messageSenderMap = new HashMap<>();
     private final Map<String, Long> messageTimeMap = new HashMap<>();
-    private final Set<String> localMessageIds = new HashSet<>();
     private boolean preferAiMode;
     private boolean userOverrodeMode;
     private boolean consentSavePending;
@@ -95,20 +86,13 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         listener = value;
     }
 
-    public void setOnCitationClickListener(@Nullable OnCitationClickListener value) {
-        citationListener = value;
-    }
-
     public void setCitationContext(
             @NonNull Map<String, Long> seqMap,
-            @NonNull Set<String> messageIds,
             @NonNull Map<String, String> senders,
             @NonNull Map<String, Long> times
     ) {
         messageSeqMap.clear();
         messageSeqMap.putAll(seqMap);
-        localMessageIds.clear();
-        localMessageIds.addAll(messageIds);
         messageSenderMap.clear();
         messageSenderMap.putAll(senders);
         messageTimeMap.clear();
@@ -191,12 +175,10 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
             return;
         }
         messageSeqMap.clear();
-        localMessageIds.clear();
         messageSenderMap.clear();
         messageTimeMap.clear();
         for (int i = 0; i < ids.length; i++) {
             messageSeqMap.put(ids[i], seqs[i]);
-            localMessageIds.add(ids[i]);
             if (senders != null && senders.length == ids.length && senders[i] != null) {
                 messageSenderMap.put(ids[i], senders[i]);
             }
@@ -470,10 +452,9 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
             SummarySheetContentBinder binder = new SummarySheetContentBinder(
                     requireContext(),
                     messageSeqMap,
-                    localMessageIds,
                     messageSenderMap,
                     messageTimeMap,
-                    messageId -> handleCitationClick(messageId)
+                    (messageId, seq) -> handleCitationClick(messageId, seq)
             );
             binder.bind(binding.summaryContent, state.getSummary());
         }
@@ -506,12 +487,10 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         return SummaryHeaderText.format(scopeLabel, dateLabel, zone, processor);
     }
 
-    private void handleCitationClick(@NonNull String messageId) {
+    private void handleCitationClick(@NonNull String messageId, @Nullable Long seq) {
         dismissSheet();
-        if (citationListener != null) {
-            citationListener.onCitationClick(messageId);
-        } else if (listener != null) {
-            listener.onJumpToMessage(messageId);
+        if (listener != null) {
+            listener.onJumpToMessage(messageId, seq);
         }
     }
 
@@ -616,7 +595,7 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         args.putLongArray(ARG_MESSAGE_SEQS, seqs);
         args.putStringArray(ARG_MESSAGE_SENDERS, senderArray);
         args.putLongArray(ARG_MESSAGE_TIMES, timeArray);
-        setCitationContext(seqMap, new HashSet<>(seqMap.keySet()), senders, times);
+        setCitationContext(seqMap, senders, times);
     }
 
     /** Footer labels stack when intrinsic widths plus margins no longer fit the sheet. */

@@ -18,7 +18,7 @@
     <string name="summary_section_questions">Câu hỏi</string>
     <string name="summary_section_topics">Chủ đề</string>
     <string name="summary_citation_chip">↗ %1$s</string>
-    <string name="summary_citation_unavailable">Không khả dụng</string>
+    <string name="summary_citation_message">Tin nhắn</string>
     <string name="summary_action_copy">Sao chép</string>
     <string name="summary_action_share">Gửi vào trò chuyện</string>
     <string name="summary_action_regenerate">Tạo lại</string>

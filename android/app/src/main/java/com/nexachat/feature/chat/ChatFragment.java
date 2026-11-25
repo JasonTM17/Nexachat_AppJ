@@ -2667,8 +2667,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     private void attachSummaryListener(
             @NonNull com.nexachat.feature.summary.SummaryBottomSheetFragment sheet) {
         sheet.setListener(new com.nexachat.feature.summary.SummaryBottomSheetFragment.Listener() {
-            @Override public void onJumpToMessage(@NonNull String messageId) {
-                if (viewModel != null) viewModel.jumpToMessage(messageId);
+            @Override public void onJumpToMessage(@NonNull String messageId,
+                    @Nullable Long seq) {
+                if (viewModel != null) viewModel.jumpToMessage(messageId, seq);
             }
             @Override public void onShareIntoChat(@NonNull String shareText) {
                 if (viewModel != null) viewModel.onInputChange(shareText);
