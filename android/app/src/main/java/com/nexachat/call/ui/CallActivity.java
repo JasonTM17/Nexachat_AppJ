@@ -90,6 +90,11 @@ public class CallActivity extends ComponentActivity {
     private View localPreviewCard;
     private Button cameraButton;
     private Button switchCameraButton;
+    private View controlsRow;
+    private boolean controlsHidden;
+    private boolean autoHideScheduled;
+    private static final long CONTROLS_HIDE_DELAY_MS = 5_000L;
+    private static final long CONTROLS_FADE_MS = 250L;
     private boolean renderersInitialized;
     private boolean localVideoBound;
     private boolean remoteVideoBound;
@@ -304,6 +309,7 @@ public class CallActivity extends ComponentActivity {
         }
         mainHandler.removeCallbacks(timerTick);
         mainHandler.removeCallbacks(finishEndedScreen);
+        cancelAutoHide();
         if (pulseAnimator != null) {
             pulseAnimator.cancel();
             pulseAnimator = null;
@@ -363,6 +369,7 @@ public class CallActivity extends ComponentActivity {
         localPreviewCard = findViewById(R.id.call_local_preview);
         cameraButton = findViewById(R.id.call_camera);
         switchCameraButton = findViewById(R.id.call_camera_switch);
+        controlsRow = findViewById(R.id.call_controls_row);
     }
 
     private void startFirebaseCallStatusDisplay() {
@@ -399,6 +406,84 @@ public class CallActivity extends ComponentActivity {
             switchCameraButton.setOnClickListener(view -> callManager.switchCamera());
         }
         hangUpButton.setOnClickListener(view -> callManager.hangUp());
+    }
+
+    /**
+     * WhatsApp/Meet-style immersive mode: in a live video call the control row
+     * fades out after a few seconds without touches so it stops covering the
+     * video; any tap brings it back. Touch-driven only — render passes must not
+     * reset the countdown, or frequent state refreshes would pin it forever.
+     */
+    private final Runnable autoHideTick = () -> {
+        autoHideScheduled = false;
+        if (currentSession != null && CallAutoHidePolicy.shouldAutoHide(
+                currentSession.getMediaType(), currentSession.getState())) {
+            controlsHidden = true;
+            setControlsRowVisible(false, true);
+        }
+    };
+
+    private void scheduleAutoHide() {
+        if (autoHideScheduled) return;
+        autoHideScheduled = true;
+        mainHandler.removeCallbacks(autoHideTick);
+        mainHandler.postDelayed(autoHideTick, CONTROLS_HIDE_DELAY_MS);
+    }
+
+    private void cancelAutoHide() {
+        autoHideScheduled = false;
+        mainHandler.removeCallbacks(autoHideTick);
+    }
+
+    private void setControlsRowVisible(boolean show, boolean animate) {
+        if (controlsRow == null) return;
+        controlsRow.animate().cancel();
+        // Pure visibility toggle on purpose: alpha animations run on the render
+        // thread and their end-state can desync from the view property on some
+        // devices, leaving the row invisible despite alpha=1. Visibility is a
+        // plain layout property and cannot desync. INVISIBLE (not GONE) keeps
+        // the layout stable so nothing jumps when the bar fades out.
+        controlsRow.setAlpha(show ? 1f : 0f);
+        controlsRow.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
+    }
+
+    /** Reconciles the auto-hide overlay with the latest session state. */
+    private void syncAutoHide(CallSession session) {
+        boolean eligible = session != null && CallAutoHidePolicy.shouldAutoHide(
+                session.getMediaType(), session.getState());
+        if (!eligible) {
+            cancelAutoHide();
+            if (controlsHidden || (controlsRow != null
+                    && (controlsRow.getVisibility() != View.VISIBLE || controlsRow.getAlpha() < 1f))) {
+                controlsHidden = false;
+                setControlsRowVisible(true, false);
+            }
+            return;
+        }
+        if (!controlsHidden) scheduleAutoHide();
+    }
+
+    @Override public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+        if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+            handleUserPresence();
+        }
+        return super.dispatchTouchEvent(event);
+    }
+
+    private void handleUserPresence() {
+        if (currentSession == null || !CallAutoHidePolicy.shouldAutoHide(
+                currentSession.getMediaType(), currentSession.getState())) {
+            return;
+        }
+        if (controlsHidden) {
+            // The revealing tap must not reach the buttons: while hidden they are
+            // INVISIBLE, so this touch lands on the background and the next tap
+            // hits the actual control — exactly how the big apps sequence it.
+            controlsHidden = false;
+            setControlsRowVisible(true, true);
+        }
+        cancelAutoHide();
+        scheduleAutoHide();
     }
 
     private void renderCurrent() {
@@ -498,6 +583,7 @@ public class CallActivity extends ComponentActivity {
         if (switchCameraButton != null) {
             setControlVisible(switchCameraButton, showCameraControls);
         }
+        syncAutoHide(session);
     }
 
     /** Shows or hides a control together with its column (button and label). */
