@@ -43,8 +43,18 @@ EXPECTED_UPLOAD_FINGERPRINT = (
     "AA:A9:6B:96:7C:ED:C6:78:DE:9C:77:35:78:5C:87:8C:B2:5D:AA:43:52:9B:E0:DF:EF:0B:73:93:4D:BE:01:7A"
 )
 EXPECTED_PACKAGE_NAME = "com.nexachat"
-OFFICIAL_RELEASE_APK_URL = "https://github.com/JasonTM17/Nexachat_AppJ/releases/latest"
+OFFICIAL_RELEASE_PAGE_URL = "https://github.com/JasonTM17/Nexachat_AppJ/releases/latest"
+OFFICIAL_RELEASES_URL = "https://github.com/JasonTM17/Nexachat_AppJ/releases"
+OFFICIAL_DIRECT_APK_URL = "https://github.com/JasonTM17/Nexachat_AppJ/releases/latest/download/nexachat-latest.apk"
+OFFICIAL_DIRECT_CHECKSUM_URL = f"{OFFICIAL_DIRECT_APK_URL}.sha256"
+SUPPORT_ISSUES_URL = "https://github.com/JasonTM17/Nexachat_AppJ/issues"
 DOWNLOAD_PAGE = "download.html"
+DOWNLOAD_ALLOWED_EXTERNAL_URLS = frozenset({
+    OFFICIAL_RELEASE_PAGE_URL,
+    OFFICIAL_RELEASES_URL,
+    OFFICIAL_DIRECT_APK_URL,
+    OFFICIAL_DIRECT_CHECKSUM_URL,
+})
 ANDROID_API_TO_VERSION = {
     21: "5.0",
     23: "6.0",
@@ -647,14 +657,16 @@ def test_no_external_urls():
                 for m in matches:
                     if is_nexachat_site_url(m):
                         continue
-                    if rel_path == DOWNLOAD_PAGE and m == OFFICIAL_RELEASE_APK_URL:
+                    if rel_path == DOWNLOAD_PAGE and m in DOWNLOAD_ALLOWED_EXTERNAL_URLS:
+                        continue
+                    if m == SUPPORT_ISSUES_URL:
                         continue
                     disallowed.append(m)
                 if disallowed:
                     failures.append(f"External URL(s) found in {rel_path}: {disallowed}")
 
     if not failures:
-        log_pass(f"No third-party URLs found across {scanned} HTML/CSS/JS file(s) (allowed: release link on {DOWNLOAD_PAGE})")
+        log_pass(f"No third-party URLs found across {scanned} HTML/CSS/JS file(s) (allowed: official GitHub release/support links)")
     return failures
 
 
@@ -825,6 +837,18 @@ def validate_deletion_csp_pair(meta_content: str, csp: str) -> list[str]:
     return []
 
 
+def read_png_dimensions(path: str):
+    """Return (width, height) for a PNG without requiring Pillow, or None when invalid."""
+    try:
+        with open(path, "rb") as f:
+            header = f.read(24)
+    except OSError:
+        return None
+    if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+        return None
+    return int.from_bytes(header[16:20], "big"), int.from_bytes(header[20:24], "big")
+
+
 def test_site_pages_and_assets():
     """HTML structure, viewport, favicon link, sitemap, robots."""
     failures = []
@@ -839,6 +863,12 @@ def test_site_pages_and_assets():
             failures.append("favicon.svg does not look like SVG")
         else:
             log_pass("favicon.svg present")
+
+    favicon_png_path = os.path.join(SITE_DIR, "favicon-32x32.png")
+    if read_png_dimensions(favicon_png_path) != (32, 32):
+        failures.append("site/favicon-32x32.png must be a valid 32x32 PNG")
+    else:
+        log_pass("favicon-32x32.png is a valid 32x32 PNG")
 
     sitemap_path = os.path.join(SITE_DIR, "sitemap.xml")
     if not os.path.isfile(sitemap_path):
@@ -880,6 +910,16 @@ def test_site_pages_and_assets():
             failures.append(f"{rel_page} missing mobile viewport meta tag")
         if 'href="/favicon.svg"' not in html:
             failures.append(f"{rel_page} missing favicon link to /favicon.svg")
+        if 'href="/favicon-32x32.png"' not in html:
+            failures.append(f"{rel_page} missing PNG favicon fallback link")
+        if '<meta name="theme-color" content="#733f68">' not in html:
+            failures.append(f"{rel_page} missing brand theme-color meta")
+        if html.count('content="https://nexachat.io.vn/og-image.png"') < 2:
+            failures.append(f"{rel_page} must use the PNG og:image and twitter:image URL")
+        if '<meta name="twitter:card" content="summary_large_image">' not in html:
+            failures.append(f"{rel_page} must use twitter:card summary_large_image")
+        if 'content="https://nexachat.io.vn/og-image.svg"' in html:
+            failures.append(f"{rel_page} must not use the SVG social image in og/twitter meta")
         if 'charset="utf-8"' not in html.lower():
             failures.append(f"{rel_page} missing utf-8 charset meta")
         if 'href="#main"' not in html or 'id="main"' not in html:
@@ -901,6 +941,12 @@ def test_site_pages_and_assets():
             log_pass("og-image.svg is well-formed UTF-8 XML")
         except Exception as e:
             failures.append(f"og-image.svg must be valid UTF-8 XML: {e}")
+
+    og_png_path = os.path.join(SITE_DIR, "og-image.png")
+    if read_png_dimensions(og_png_path) != (1200, 630):
+        failures.append("site/og-image.png must be a valid 1200x630 PNG")
+    else:
+        log_pass("og-image.png is a valid 1200x630 PNG")
 
     structured_path = os.path.join(SITE_DIR, "structured-data.json")
     if not os.path.isfile(structured_path):
@@ -1241,9 +1287,29 @@ def test_bilingual_language_navigation():
                 )
                 if anchor.search(footer_html) is None:
                     failures.append(f"{rel_page} footer must link {target}#{fragment} with lang=\"{lang}\"")
+        if f'href="{SUPPORT_ISSUES_URL}"' not in footer_html:
+            failures.append(f"{rel_page} footer must link the GitHub issues support channel")
+
+    css_path = os.path.join(SITE_DIR, "style.css")
+    if os.path.isfile(css_path):
+        with open(css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+        required_css = {
+            "English sections hidden by default": "#lang-en {\n  display: none;",
+            "Vietnamese sections hidden when English is targeted": "body:has(#lang-en:target) #lang-vi",
+            "English footer links hidden by default": "body:has(#lang-en) .site-footer a[lang='en']",
+            "Vietnamese footer links hidden when English is targeted": "body:has(#lang-en:target) .site-footer a[lang='vi']",
+            "Nested English targets hide Vietnamese footer links": "body:has(#lang-en :target) .site-footer a[lang='vi']",
+            "English page-action links hidden by default": "body:has(#lang-en) .page-actions a[lang='en']",
+        }
+        for label, needle in required_css.items():
+            if needle not in css:
+                failures.append(f"style.css missing language visibility rule: {label}")
+    else:
+        failures.append("Missing site/style.css for language visibility checks")
 
     if not failures:
-        log_pass("Long bilingual pages have translated section landmarks, jump links, and matching footer targets")
+        log_pass("Long bilingual pages have translated section landmarks, jump links, matching footer targets, and active-language visibility rules")
     return failures
 
 
@@ -1290,6 +1356,10 @@ def test_privacy_policy_disclosures():
         if phrase not in html:
             failures.append(f"privacy.html missing English Firebase disclosure: {ascii(phrase)}")
     failures.extend(account_guidance_failures(html, "privacy.html"))
+    if "Operator and contact" not in html or "Nhà vận hành và liên hệ" not in html:
+        failures.append("privacy.html missing bilingual operator/contact sections")
+    if html.count(f'href="{SUPPORT_ISSUES_URL}"') < 2:
+        failures.append("privacy.html operator/contact sections must link the GitHub issues channel in both languages")
     if not failures:
         log_pass(
             "Privacy page discloses Firebase behavior and conditional account guidance in vi/en"
@@ -1297,7 +1367,7 @@ def test_privacy_policy_disclosures():
     return failures
 
 
-def account_guidance_failures(markup: str, rel_page: str) -> list[str]:
+def account_guidance_failures(markup: str, rel_page: str, include_google_creation: bool = True) -> list[str]:
     """Check the conditions and available account paths without freezing sentence wording."""
     visible_text = re.sub(r"<[^>]*>", " ", markup)
     visible_text = re.sub(r"\s+", " ", visible_text).casefold()
@@ -1333,6 +1403,8 @@ def account_guidance_failures(markup: str, rel_page: str) -> list[str]:
     }
     failures = []
     for lang, checks in meanings.items():
+        if not include_google_creation:
+            checks = checks[1:]
         for description, pattern in checks:
             if re.search(pattern, visible_text, re.IGNORECASE) is None:
                 failures.append(f"{rel_page} ({lang}) must state that {description}")
@@ -1360,7 +1432,7 @@ def test_account_deletion_page():
     for phrase in DELETION_PAGE_EN_PHRASES:
         if phrase not in html:
             failures.append(f"{DELETION_PAGE} missing English deletion copy: {phrase}")
-    failures.extend(account_guidance_failures(html, DELETION_PAGE))
+    failures.extend(account_guidance_failures(html, DELETION_PAGE, include_google_creation=False))
 
     privacy_path = os.path.join(SITE_DIR, "privacy.html")
     if os.path.isfile(privacy_path):
@@ -1414,12 +1486,25 @@ def test_account_deletion_page():
             if needle not in js_body:
                 failures.append(f"delete-account.js missing required fragment: {needle}")
 
-    if html.count('role="alert"') < 5:
-        failures.append(f"{DELETION_PAGE} must expose form errors and rate-limit feedback with role=\"alert\"")
-    if 'aria-labelledby="web-deletion-heading-vi web-deletion-heading-en"' not in html:
-        failures.append(f"{DELETION_PAGE} web-deletion section must be labelled by both language headings")
-    if "Gửi mã · Send code" not in html or "Xóa tài khoản · Delete account" not in html:
-        failures.append(f"{DELETION_PAGE} form buttons must show bilingual visible labels")
+    if html.count('role="alert"') < 10:
+        failures.append(f"{DELETION_PAGE} must expose per-language form errors and rate-limit feedback with role=\"alert\"")
+
+    vi_section_start = html.find('<section id="lang-vi"')
+    en_section_start = html.find('<section id="lang-en"')
+    vi_web_start = html.find('id="web-deletion-section-vi"')
+    en_web_start = html.find('id="web-deletion-section"')
+    if not (vi_section_start != -1 and vi_web_start != -1 and en_section_start != -1 and vi_section_start < vi_web_start < en_section_start):
+        failures.append(f"{DELETION_PAGE} Vietnamese web-deletion form must live inside #lang-vi")
+    if not (en_section_start != -1 and en_web_start != -1 and en_section_start < en_web_start):
+        failures.append(f"{DELETION_PAGE} English web-deletion form must live inside #lang-en")
+    if 'id="web-deletion-form-vi"' not in html or 'id="web-deletion-form"' not in html:
+        failures.append(f"{DELETION_PAGE} must carry one uniquely-identified web deletion form per language")
+    if 'aria-labelledby="web-deletion-heading-vi"' not in html or 'aria-labelledby="web-deletion-heading-en"' not in html:
+        failures.append(f"{DELETION_PAGE} web-deletion sections must be labelled by their own language heading")
+    if "Gửi mã" not in html or "Send code" not in html or "Xóa tài khoản" not in html or "Delete account" not in html:
+        failures.append(f"{DELETION_PAGE} form buttons must show localized visible labels")
+    if "Gửi mã · Send code" in html or "Xóa tài khoản · Delete account" in html:
+        failures.append(f"{DELETION_PAGE} must not render doubled bilingual button labels")
 
     if not failures:
         log_pass("Account-deletion page is present, bilingual, linked from privacy and every footer")
@@ -1442,22 +1527,51 @@ def test_download_page():
     if "noindex" in html.lower():
         failures.append(f"{DOWNLOAD_PAGE} must be indexable (no noindex robots meta)")
 
-    # Primary download button
+    # Primary download button, secondary release/changelog links, and release version
     btn_pattern = re.compile(
-        r'<a[^>]+class="[^"]*\bbtn\b[^"]*"[^>]+href="' + re.escape(OFFICIAL_RELEASE_APK_URL) + r'"'
+        r'<a[^>]+class="[^"]*\bbtn\b[^"]*"[^>]+href="' + re.escape(OFFICIAL_DIRECT_APK_URL) + r'"'
     )
     if not btn_pattern.search(html):
-        failures.append(f"{DOWNLOAD_PAGE} missing primary .btn link to {OFFICIAL_RELEASE_APK_URL}")
+        failures.append(f"{DOWNLOAD_PAGE} missing primary .btn link to {OFFICIAL_DIRECT_APK_URL}")
+    if f'href="{OFFICIAL_RELEASE_PAGE_URL}"' not in html:
+        failures.append(f"{DOWNLOAD_PAGE} missing secondary link to {OFFICIAL_RELEASE_PAGE_URL}")
+    if f'href="{OFFICIAL_RELEASES_URL}"' not in html:
+        failures.append(f"{DOWNLOAD_PAGE} missing changelog link to {OFFICIAL_RELEASES_URL}")
+    if f'href="{OFFICIAL_DIRECT_CHECKSUM_URL}"' not in html:
+        failures.append(f"{DOWNLOAD_PAGE} missing direct checksum link to {OFFICIAL_DIRECT_CHECKSUM_URL}")
+
+    release_workflow_path = os.path.join(REPO_DIR, ".github", "workflows", "android-release.yml")
+    if not os.path.isfile(release_workflow_path):
+        failures.append("Missing .github/workflows/android-release.yml for stable APK asset validation")
+    else:
+        with open(release_workflow_path, "r", encoding="utf-8") as f:
+            release_workflow = f.read()
+        for needle, description in (
+            ("stable_asset_name='nexachat-latest.apk'", "stable APK asset name"),
+            ('cp "$apk" "$asset_dir/$stable_asset_name"', "stable APK asset copy"),
+            ('sha256sum "$stable_asset_name" > "$stable_asset_name.sha256"', "stable checksum generation"),
+            ('stable_apk="$asset_dir/nexachat-latest.apk"', "stable upload path"),
+            ('"$stable_apk" "$stable_checksum"', "stable asset upload"),
+        ):
+            if needle not in release_workflow:
+                failures.append(f"android-release.yml missing {description}")
+
     download_text = re.sub(r"<[^>]*>", " ", html)
     download_text = re.sub(r"\s+", " ", download_text).casefold()
-    if "mở bản phát hành mới nhất" not in download_text:
-        failures.append(f"{DOWNLOAD_PAGE} missing the Vietnamese latest-release button label")
-    if "open latest release" not in download_text:
-        failures.append(f"{DOWNLOAD_PAGE} missing the English latest-release button label")
-    if "chọn tệp apk trong mục assets" not in download_text:
-        failures.append(f"{DOWNLOAD_PAGE} missing the Vietnamese APK-under-Assets hint")
-    if "choose the apk under assets" not in download_text:
-        failures.append(f"{DOWNLOAD_PAGE} missing the English APK-under-Assets hint")
+    for needle, description in (
+        ("tải apk nexachat", "Vietnamese direct-download button label"),
+        ("download nexachat apk", "English direct-download button label"),
+        ("v1.2.22", "current release version"),
+        ("tháng 11/2026", "Vietnamese release date"),
+        ("november 2026", "English release date"),
+        ("không được phân phối qua google play", "Vietnamese no-Google-Play statement"),
+        ("not distributed through google play", "English no-Google-Play statement"),
+        ("play protect", "Play Protect sideloading guidance"),
+        ("trên chính điện thoại", "Vietnamese on-device checksum path"),
+        ("on the phone itself", "English on-device checksum path"),
+    ):
+        if needle not in download_text:
+            failures.append(f"{DOWNLOAD_PAGE} missing {description}")
 
     # Dynamic minSdk check against android/app/build.gradle
     min_sdk, err = read_android_min_sdk()
@@ -1584,6 +1698,8 @@ def test_internal_static_links():
         "/delete-account.html",
         "/download.html",
         "/og-image.svg",
+        "/og-image.png",
+        "/favicon-32x32.png",
         "/structured-data.json",
     }
 
