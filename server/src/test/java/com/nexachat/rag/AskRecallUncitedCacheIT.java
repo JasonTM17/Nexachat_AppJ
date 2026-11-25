@@ -142,10 +142,16 @@ class AskRecallUncitedCacheIT {
         JsonNode firstBody = objectMapper.readTree(first.getResponse().getContentAsString());
         assertThat(firstBody.path("mode").asText()).isEqualTo("LLM");
         assertThat(firstBody.path("answer").asText()).contains("alpha-bravo");
+        assertThat(embeddingCount(secretMessageId))
+                .as("the ask path lazily indexes the recalled text before deletion")
+                .isPositive();
 
         mockMvc.perform(delete("/api/v1/conversations/{c}/messages/{m}", conversationId, secretMessageId)
                         .header("Authorization", bearer(peer)))
                 .andExpect(status().isNoContent());
+        assertThat(embeddingCount(secretMessageId))
+                .as("recall removes derived embedding vectors for every model")
+                .isZero();
 
         MvcResult second = mockMvc.perform(post("/api/v1/conversations/" + conversationId + "/ask")
                         .header("Authorization", bearer(caller))
@@ -183,6 +189,12 @@ class AskRecallUncitedCacheIT {
     private static String env(String name, String fallback) {
         String value = System.getenv(name);
         return (value == null || value.isBlank()) ? fallback : value;
+    }
+
+    private int embeddingCount(UUID messageId) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM message_embeddings WHERE message_id = ?", Integer.class, messageId);
+        return count == null ? 0 : count;
     }
 
     private String bearer(User user) {
