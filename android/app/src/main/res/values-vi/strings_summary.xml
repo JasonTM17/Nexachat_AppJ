@@ -8,8 +8,8 @@
     <string name="summary_badge_local">Cục bộ</string>
     <string name="summary_badge_ai">AI</string>
     <string name="summary_scope_unread">Chưa đọc</string>
-    <string name="summary_scope_last_n">N tin gần nhất</string>
-    <string name="summary_scope_last_n_format">%1$d tin gần nhất</string>
+    <string name="summary_scope_last_n">Tin nhắn gần đây</string>
+    <string name="summary_scope_last_n_format">%1$d tin nhắn gần đây</string>
     <string name="summary_scope_today">Hôm nay</string>
     <string name="summary_section_overview">Tổng quan</string>
     <string name="summary_section_key_points">Ý chính</string>
@@ -27,7 +27,7 @@
     <string name="summary_error_too_few">Chưa đủ tin nhắn</string>
     <string name="summary_error_too_few_desc">Cần ít nhất 5 tin nhắn để tóm tắt.</string>
     <string name="summary_error_rate_limited">Thử quá nhiều lần</string>
-    <string name="summary_error_rate_limited_desc">Hãy thử lại sau ít phút.</string>
+    <string name="summary_error_rate_limited_desc">Hãy thử lại sau.</string>
     <string name="summary_error_offline">Không có kết nối. Hãy kiểm tra mạng và thử lại.</string>
     <string name="summary_error_not_member">Bạn không còn trong cuộc trò chuyện này</string>
     <string name="summary_error_e2ee_unavailable">Không thể tóm tắt trong cuộc trò chuyện được mã hóa</string>

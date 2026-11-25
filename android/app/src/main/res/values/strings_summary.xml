@@ -9,8 +9,8 @@
     <string name="summary_badge_local">Local</string>
     <string name="summary_badge_ai">AI</string>
     <string name="summary_scope_unread">Unread</string>
-    <string name="summary_scope_last_n">Last N</string>
-    <string name="summary_scope_last_n_format">Last %1$d</string>
+    <string name="summary_scope_last_n">Recent messages</string>
+    <string name="summary_scope_last_n_format">%1$d recent messages</string>
     <string name="summary_scope_today">Today</string>
     <string name="summary_section_overview">Overview</string>
     <string name="summary_section_key_points">Key points</string>
@@ -28,7 +28,7 @@
     <string name="summary_error_too_few">Not enough messages</string>
     <string name="summary_error_too_few_desc">At least 5 messages are required to generate a summary.</string>
     <string name="summary_error_rate_limited">Too many requests</string>
-    <string name="summary_error_rate_limited_desc">Try again in a moment.</string>
+    <string name="summary_error_rate_limited_desc">Try again later.</string>
     <string name="summary_error_offline">No connection. Check your network and try again.</string>
     <string name="summary_error_not_member">You are no longer in this conversation</string>
     <string name="summary_error_e2ee_unavailable">Summaries are not available in encrypted chats</string>
