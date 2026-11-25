@@ -361,6 +361,8 @@ nexachat:
       rrf-k: ${NEXACHAT_RAG_RRF_K:60}
       not-found-threshold: ${NEXACHAT_RAG_NOT_FOUND_THRESHOLD:0.18}
       extractive-threshold: ${NEXACHAT_RAG_EXTRACTIVE_THRESHOLD:0.62}
+      lexical-answer-min-coverage: ${NEXACHAT_RAG_LEXICAL_ANSWER_MIN_COVERAGE:0.60}
+      vector-answer-threshold: ${NEXACHAT_RAG_VECTOR_ANSWER_THRESHOLD:0.60}
       semantic-cache-threshold: ${NEXACHAT_RAG_SEMANTIC_CACHE_THRESHOLD:0.92}
       max-snippet-chars: ${NEXACHAT_RAG_MAX_SNIPPET_CHARS:280}
     index:

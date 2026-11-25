@@ -8,9 +8,11 @@ import com.nexachat.summary.engine.SummarySignals;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -48,6 +50,19 @@ public class RagRetrievalService {
     public RetrievalResult retrieve(
             UUID conversationId, String question, SummaryLanguage language, boolean consented,
             java.time.Instant admittedFrom) {
+        return retrieve(conversationId, question, language, consented, admittedFrom, false);
+    }
+
+    /**
+     * When {@code requireAnswerEvidence} is true, rank evidence alone is not
+     * enough: at least one candidate must share sufficient question-term
+     * coverage, or the raw vector evidence must clear a calibrated confidence
+     * margin. This keeps reciprocal-rank positions useful for ordering without
+     * allowing the recent-message window to manufacture answerability.
+     */
+    public RetrievalResult retrieve(
+            UUID conversationId, String question, SummaryLanguage language, boolean consented,
+            java.time.Instant admittedFrom, boolean requireAnswerEvidence) {
         RagProperties.Retrieval config = properties.getRetrieval();
         List<RagMessage> recent = index.recentMessages(
                 conversationId, config.getMaxCandidateMessages(), admittedFrom);
@@ -72,6 +87,10 @@ public class RagRetrievalService {
 
         RagEmbeddingService.RetrievalEmbeddings embedded = embeddings.embedForRetrieval(
                 question, vectorCandidates, properties.getIndex().getLazyLimit(), consented);
+        if (requireAnswerEvidence && !hasAnswerEvidence(
+                question, language, lexicalCandidates, vectorCandidates, embedded, config)) {
+            return RetrievalResult.empty();
+        }
 
         List<ScoredMessage> lexicalRanked = RagScorer.lexicalRank(lexicalCandidates, question, language);
         List<ScoredMessage> vectorRanked = RagScorer.vectorRank(
@@ -108,6 +127,79 @@ public class RagRetrievalService {
                 ranked.get(0).score(),
                 contextResult.inputChars(),
                 contextResult.messages());
+    }
+
+    private boolean hasAnswerEvidence(
+            String question,
+            SummaryLanguage language,
+            List<RagMessage> lexicalCandidates,
+            List<RagMessage> vectorCandidates,
+            RagEmbeddingService.RetrievalEmbeddings embedded,
+            RagProperties.Retrieval config) {
+        if (bestLexicalCoverage(question, language, lexicalCandidates, config)
+                >= config.getLexicalAnswerMinCoverage()) {
+            return true;
+        }
+        if (embedded == null || embedded.questionVector() == null) {
+            return false;
+        }
+        double best = 0.0;
+        double second = 0.0;
+        for (RagMessage candidate : vectorCandidates) {
+            float[] vector = embedded.vectors() == null ? null : embedded.vectors().get(candidate.id());
+            if (vector == null) {
+                continue;
+            }
+            double cosine = VectorCodec.cosine(embedded.questionVector(), vector);
+            if (cosine > best) {
+                second = best;
+                best = cosine;
+            } else if (cosine > second) {
+                second = cosine;
+            }
+        }
+        return best >= config.getVectorAnswerThreshold();
+    }
+
+    private double bestLexicalCoverage(
+            String question,
+            SummaryLanguage language,
+            List<RagMessage> lexicalCandidates,
+            RagProperties.Retrieval config) {
+        Set<String> questionTerms = new HashSet<>(RagQuestionTerms.extract(
+                question, language, config.getLexicalTermLimit()));
+        if (questionTerms.isEmpty()) {
+            return 0.0;
+        }
+        double best = 0.0;
+        for (RagMessage candidate : lexicalCandidates) {
+            Set<String> messageTerms = new HashSet<>(RagQuestionTerms.contentTerms(candidate.content(), language));
+            int matched = 0;
+            for (String term : questionTerms) {
+                if (containsMatchingTerm(messageTerms, term)) {
+                    matched++;
+                }
+            }
+            best = Math.max(best, (double) matched / questionTerms.size());
+        }
+        return best;
+    }
+
+    private static boolean containsMatchingTerm(Set<String> messageTerms, String questionTerm) {
+        if (messageTerms.contains(questionTerm)) {
+            return true;
+        }
+        if (questionTerm.length() < 5) {
+            return false;
+        }
+        for (String messageTerm : messageTerms) {
+            if (messageTerm.length() >= 5
+                    && Math.abs(messageTerm.length() - questionTerm.length()) <= 3
+                    && (messageTerm.startsWith(questionTerm) || questionTerm.startsWith(messageTerm))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

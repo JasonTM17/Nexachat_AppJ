@@ -78,6 +78,15 @@ fallback never mixes spaces with an external index, and changing
 recomputed under the new identity. The in-memory vector cache and the ask
 cache are scoped by the same identity.
 
+
+For lookup-like questions, reciprocal-rank position is ordering evidence only and
+cannot by itself make the recent-message window answerable. The gate requires at
+least 60% distinct question-term coverage in a lexical candidate (with a bounded
+prefix match for simple inflections), or raw vector cosine at least 0.60. Broad aggregation prompts such as
+summaries and action-item lists bypass that lookup evidence requirement because
+the whole recent context is their subject. These thresholds are operator-tunable
+and require labeled evaluation before being treated as production calibration.
+
 ## Consent and privacy
 
 - The external embedding provider and the LLM tier are used only when the
@@ -137,7 +146,7 @@ cache are scoped by the same identity.
 |---|---|
 | Exact question cache | 24 h TTL |
 | Semantic cache | cosine ≥ 0.92, same model, cited messages unchanged |
-| Answerability gate | fused score < 0.18 → `NOT_FOUND` |
+| Answerability gate | lookup-like questions require raw lexical or vector evidence, then fused score < 0.18 → `NOT_FOUND` |
 | Extractive gate | lookup-like question and fused score ≥ 0.62 |
 | Context budget | 3,000 characters |
 | Lazy indexing per request | 500 messages |
@@ -188,6 +197,8 @@ same question cache as a primary call; a cache hit never calls either provider.
 | `nexachat.rag.retrieval.max-context-chars` | `NEXACHAT_RAG_MAX_CONTEXT_CHARS` | `3000` |
 | `nexachat.rag.retrieval.not-found-threshold` | `NEXACHAT_RAG_NOT_FOUND_THRESHOLD` | `0.18` |
 | `nexachat.rag.retrieval.extractive-threshold` | `NEXACHAT_RAG_EXTRACTIVE_THRESHOLD` | `0.62` |
+| `nexachat.rag.retrieval.lexical-answer-min-coverage` | `NEXACHAT_RAG_LEXICAL_ANSWER_MIN_COVERAGE` | `0.60` |
+| `nexachat.rag.retrieval.vector-answer-threshold` | `NEXACHAT_RAG_VECTOR_ANSWER_THRESHOLD` | `0.60` |
 | `nexachat.rag.retrieval.semantic-cache-threshold` | `NEXACHAT_RAG_SEMANTIC_CACHE_THRESHOLD` | `0.92` |
 | `nexachat.rag.index.lazy-limit` | `NEXACHAT_RAG_INDEX_LAZY_LIMIT` | `500` |
 | `nexachat.rag.index.backfill-rate-per-minute` | `NEXACHAT_RAG_BACKFILL_RATE_PER_MINUTE` | `200` |
