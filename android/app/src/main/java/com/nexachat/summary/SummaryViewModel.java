@@ -7,6 +7,8 @@ import androidx.lifecycle.ViewModel;
 import dagger.hilt.android.lifecycle.HiltViewModel;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.TimeZone;
 import java.util.concurrent.Executor;
@@ -34,6 +36,10 @@ public final class SummaryViewModel extends ViewModel {
     private SummaryScope lastScope;
     private Integer lastLimit;
     private String boundConversationId;
+    // Checkbox state of the rendered action items, keyed by action key. Living on the
+    // ViewModel keeps it across rebinds and rotation; the sheet's death drops it, so a
+    // freshly opened summary always starts unchecked.
+    private final Map<String, Boolean> actionItemChecks = new HashMap<>();
     private final AtomicLong requestGeneration = new AtomicLong();
     private long boundCacheEpoch;
     private final SummaryRepository.Cancellable cacheInvalidationSubscription;
@@ -74,6 +80,11 @@ public final class SummaryViewModel extends ViewModel {
 
     public LiveData<SummaryUiState> state() {
         return state;
+    }
+
+    /** Mutable checkbox state shared with the sheet binder; keyed by action item key. */
+    public Map<String, Boolean> actionItemChecks() {
+        return actionItemChecks;
     }
 
     public void request(SummaryScope scope, Integer limit) {

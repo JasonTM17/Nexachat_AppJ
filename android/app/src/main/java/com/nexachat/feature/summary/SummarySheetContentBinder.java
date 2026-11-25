@@ -25,7 +25,6 @@ import com.nexachat.summary.SummaryActionItem;
 import com.nexachat.summary.SummaryItem;
 import com.nexachat.summary.SummaryResponse;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -41,19 +40,21 @@ public final class SummarySheetContentBinder {
     private final Map<String, String> messageSenderMap;
     private final Map<String, Long> messageTimeMap;
     private final OnCitationClickListener citationListener;
-    private final HashMap<String, Boolean> actionChecked = new HashMap<>();
+    private final Map<String, Boolean> actionChecked;
 
     public SummarySheetContentBinder(
             @NonNull Context context,
             @NonNull Map<String, Long> messageSeqMap,
             @NonNull Map<String, String> messageSenderMap,
             @NonNull Map<String, Long> messageTimeMap,
+            @NonNull Map<String, Boolean> actionChecked,
             @NonNull OnCitationClickListener citationListener
     ) {
         this.context = context;
         this.messageSeqMap = messageSeqMap;
         this.messageSenderMap = messageSenderMap;
         this.messageTimeMap = messageTimeMap;
+        this.actionChecked = actionChecked;
         this.citationListener = citationListener;
     }
 

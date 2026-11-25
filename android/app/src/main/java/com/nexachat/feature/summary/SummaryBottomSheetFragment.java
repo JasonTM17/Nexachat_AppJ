@@ -454,6 +454,7 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
                     messageSeqMap,
                     messageSenderMap,
                     messageTimeMap,
+                    viewModel.actionItemChecks(),
                     (messageId, seq) -> handleCitationClick(messageId, seq)
             );
             binder.bind(binding.summaryContent, state.getSummary());
