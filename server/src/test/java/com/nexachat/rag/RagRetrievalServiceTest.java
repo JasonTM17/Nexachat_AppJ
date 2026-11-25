@@ -77,6 +77,37 @@ class RagRetrievalServiceTest {
     }
 
     @Test
+    void answerEvidenceGateRejectsAnUnrelatedLookupInANonemptyConversation() {
+        UUID conversationId = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        for (long seq = 1; seq <= 5; seq++) {
+            index.add(RagTestSupport.message(conversationId, UUID.randomUUID(), seq, senderId,
+                    "Lan", "Lunch planning and ordinary team chatter number " + seq));
+        }
+
+        RetrievalResult ungated = service.retrieve(conversationId,
+                "What is the database password?", SummaryLanguage.EN, false);
+        RetrievalResult gated = service.retrieve(conversationId,
+                "What is the database password?", SummaryLanguage.EN, false, null, true);
+
+        assertThat(ungated.isEmpty()).isFalse();
+        assertThat(gated.isEmpty()).isTrue();
+    }
+
+    @Test
+    void answerEvidenceGateKeepsAMatchingLookupCandidate() {
+        UUID conversationId = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        index.add(RagTestSupport.message(conversationId, UUID.randomUUID(), 1, senderId,
+                "Lan", "The server migration is scheduled for March 14 at 02:00."));
+
+        RetrievalResult gated = service.retrieve(conversationId,
+                "When is the server migration scheduled?", SummaryLanguage.EN, false, null, true);
+
+        assertThat(gated.isEmpty()).isFalse();
+    }
+
+    @Test
     void emptyConversationReturnsAnEmptyResult() {
         RetrievalResult result = service.retrieve(UUID.randomUUID(),
                 "Any question?", SummaryLanguage.EN, false);

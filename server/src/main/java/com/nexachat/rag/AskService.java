@@ -262,15 +262,17 @@ public class AskService {
             }
         }
 
+        boolean lookupLike = isLookupLike(question);
+        boolean requiresAnswerEvidence = lookupLike && !isBroadAggregationQuestion(question);
         RetrievalResult retrieval = retrievalService.retrieve(
-                conversationId, question, language, consented, admittedFrom);
+                conversationId, question, language, consented, admittedFrom, requiresAnswerEvidence);
         if (retrieval.isEmpty()
                 || retrieval.bestScore() < properties.getRetrieval().getNotFoundThreshold()) {
             stats.recordNotFound();
             return AskResponse.notFound(contextOmitted);
         }
 
-        if (isLookupLike(question)
+        if (lookupLike
                 && retrieval.bestScore() >= properties.getRetrieval().getExtractiveThreshold()) {
             return answerExtractive(conversationId, questionEmbedding, questionHash, language, retrieval,
                     userId, consentSnapshot, contextOmitted, context);
@@ -403,6 +405,13 @@ public class AskService {
             boolean contextOmitted) {
         return new AskResponse(answer.answer(), answer.citations(), mode, contextOmitted,
                 new AskResponse.Usage(llmCalls, inputChars, cached, provider));
+    }
+
+    private boolean isBroadAggregationQuestion(String question) {
+        String folded = RagQuestionNormalizer.normalize(question);
+        return folded.matches("^(summarize|summary|catch me up|tom tat)(\\s|$).*")
+                || folded.matches("^list (the )?(action items|tasks|decisions)(\\s|$).*")
+                || folded.matches("^(what did we decide|what was decided)(\\s|$).*");
     }
 
     private boolean isLookupLike(String question) {
