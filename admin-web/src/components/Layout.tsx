@@ -1,18 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '../auth';
 import { useI18n, type StringKey } from '../i18n';
 import { tokenStore } from '../api';
-import { initialTheme, persistTheme } from '../lib/theme';
+import { NavIcon, type NavIconName } from './NavIcon';
+import { ThemeToggle } from './ThemeToggle';
 
-const NAV: { to: string; key: StringKey; icon: string }[] = [
-  { to: '/overview', key: 'nav.overview', icon: '◐' },
-  { to: '/users', key: 'nav.users', icon: '◍' },
-  { to: '/alerts', key: 'nav.alerts', icon: '▲' },
-  { to: '/feed', key: 'nav.feed', icon: '❖' },
-  { to: '/rules', key: 'nav.rules', icon: '☰' },
-  { to: '/audit', key: 'nav.audit', icon: '◷' },
-  { to: '/system', key: 'nav.system', icon: '◈' },
+const NAV: { to: string; key: StringKey; icon: NavIconName }[] = [
+  { to: '/overview', key: 'nav.overview', icon: 'overview' },
+  { to: '/users', key: 'nav.users', icon: 'users' },
+  { to: '/alerts', key: 'nav.alerts', icon: 'alerts' },
+  { to: '/feed', key: 'nav.feed', icon: 'feed' },
+  { to: '/rules', key: 'nav.rules', icon: 'rules' },
+  { to: '/audit', key: 'nav.audit', icon: 'audit' },
+  { to: '/system', key: 'nav.system', icon: 'system' },
 ];
 
 const TITLES: Record<string, StringKey> = {
@@ -25,26 +26,24 @@ const TITLES: Record<string, StringKey> = {
   '/system': 'nav.system',
 };
 
+const BLURBS: Record<string, StringKey> = {
+  '/overview': 'page.overview',
+  '/users': 'page.users',
+  '/alerts': 'page.alerts',
+  '/feed': 'page.feed',
+  '/rules': 'page.rules',
+  '/audit': 'page.audit',
+  '/system': 'page.system',
+};
+
 export default function Layout() {
   const { t, lang, setLang } = useI18n();
   const { signOut, me } = useSession();
   const navigate = useNavigate();
   const location = useLocation();
-  // Tri-state: stored explicit choice wins, otherwise the OS preference.
-  // Mounting must NOT persist — only an explicit toggle writes localStorage.
-  const [theme, setTheme] = useState<'light' | 'dark'>(initialTheme);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
-
-  const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark';
-    persistTheme(next);
-    setTheme(next);
-  };
 
   const title = TITLES[location.pathname] ?? 'app.name';
+  const blurb = BLURBS[location.pathname];
 
   // Per-route window title so tabs and screen readers identify the page.
   useEffect(() => {
@@ -53,6 +52,9 @@ export default function Layout() {
 
   return (
     <div className="shell">
+      <a className="skip-link" href="#main">
+        {t('nav.skip')}
+      </a>
       <aside className="sidebar">
         <div className="brand">{t('app.name')}</div>
         <nav aria-label={t('nav.primary')}>
@@ -64,7 +66,7 @@ export default function Layout() {
               aria-label={t(item.key)}
               className={({ isActive }) => `navlink${isActive ? ' active' : ''}`}
             >
-              <span aria-hidden="true">{item.icon}</span>
+              <NavIcon name={item.icon} />
               <span className="label">{t(item.key)}</span>
             </NavLink>
           ))}
@@ -78,18 +80,25 @@ export default function Layout() {
             navigate('/login');
           }}
         >
-          <span aria-hidden="true">↩</span>
+          <NavIcon name="logout" />
           <span className="label">{t('nav.logout')}</span>
         </button>
       </aside>
-      <main className="main">
+      <main className="main" id="main">
         <header className="topbar">
-          <h1>{t(title)}</h1>
+          <div className="topbar-title">
+            <h1>{t(title)}</h1>
+            {blurb && <p className="page-blurb">{t(blurb)}</p>}
+          </div>
           <div className="topbar-actions">
-            {me && <span className="chip">{me.role}</span>}
+            {me && (
+              <span className="who">
+                {me.displayName && <span className="who-name">{me.displayName}</span>}
+                <span className="chip">{me.role}</span>
+              </span>
+            )}
             <select
-              className="select"
-              style={{ width: 'auto' }}
+              className="select lang-select"
               aria-label={t('lang.label')}
               value={lang}
               onChange={(e) => setLang(e.target.value as 'en' | 'vi')}
@@ -97,15 +106,7 @@ export default function Layout() {
               <option value="en">EN</option>
               <option value="vi">VI</option>
             </select>
-            <button
-              className="btn ghost sm"
-              onClick={toggleTheme}
-              aria-label={t('theme.toggle')}
-              aria-pressed={theme === 'dark'}
-              title={`${t('theme.light')}/${t('theme.dark')}`}
-            >
-              {theme === 'dark' ? '☀' : '☾'}
-            </button>
+            <ThemeToggle />
           </div>
         </header>
         {!tokenStore.access ? null : <Outlet />}

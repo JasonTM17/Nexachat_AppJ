@@ -125,7 +125,7 @@ button, input, select, textarea {
 
 /* ---------- Layout ---------- */
 
-.shell { display: flex; min-height: 100vh; }
+.shell { display: flex; min-height: 100vh; position: relative; }
 
 .sidebar {
   width: 220px;
@@ -908,4 +908,71 @@ a.kpi-link:hover { border-color: var(--plum-300); }
 
   td .action-row { flex-direction: column; align-items: stretch; }
   td .action-row .btn { justify-content: center; }
+}
+
+/* ---------- Console polish: icons, skip link, blurbs, operator chip ---------- */
+
+.nav-ico {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -48px;
+  z-index: 80;
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 650;
+  text-decoration: none;
+}
+.skip-link:focus { top: 12px; }
+
+.topbar-title { min-width: 0; flex: 1 1 240px; }
+.page-blurb {
+  margin: 4px 0 0;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+  max-width: 62ch;
+}
+
+.who { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.who-name {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+.who .chip {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+}
+
+.btn.icon-btn { width: 2.75rem; min-height: 2.75rem; padding: 0; }
+.btn.sm.icon-btn::before { inset: 0; }
+
+.login-tools { display: inline-flex; align-items: center; gap: 8px; }
+
+/* Comes after the width:100% rule above. A lone .lang-select earlier in the
+   file loses the cascade and stretches the whole top bar. */
+.select.lang-select {
+  width: auto;
+  flex: 0 0 auto;
+  min-width: 76px;
+  max-width: 96px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
 }

@@ -4,6 +4,7 @@ import { useSession } from '../auth';
 import { useI18n } from '../i18n';
 import { ApiException } from '../api';
 import type { StringKey } from '../i18n';
+import { ThemeToggle } from '../components/ThemeToggle';
 
 export default function LoginPage() {
   const { t, lang, setLang } = useI18n();
@@ -70,15 +71,18 @@ export default function LoginPage() {
         <div className="card login-card">
           <div className="login-card-head">
             <h1>{t('login.welcome')}</h1>
-            <select
-              className="select"
-              aria-label={t('lang.label')}
-              value={lang}
-              onChange={(e) => setLang(e.target.value as 'en' | 'vi')}
-            >
-              <option value="en">EN</option>
-              <option value="vi">VI</option>
-            </select>
+            <div className="login-tools">
+              <select
+                className="select lang-select"
+                aria-label={t('lang.label')}
+                value={lang}
+                onChange={(e) => setLang(e.target.value as 'en' | 'vi')}
+              >
+                <option value="en">EN</option>
+                <option value="vi">VI</option>
+              </select>
+              <ThemeToggle />
+            </div>
           </div>
           <p className="login-sub">{t('login.subtitle')}</p>
           <form onSubmit={submit} aria-busy={busy}>
