@@ -100,8 +100,10 @@ git init -q "$FIXTURE_REPO"
 (
     cd "$FIXTURE_REPO"
     git config core.autocrlf false
-    git config user.name "NexaChat Test"
-    git config user.email "test@nexachat.local"
+    fixture_name="$(git -C "$REPO_DIR" config user.name 2>/dev/null || printf 'NexaChat Test')"
+    fixture_email="$(git -C "$REPO_DIR" config user.email 2>/dev/null || printf 'test@nexachat.local')"
+    git config user.name "$fixture_name"
+    git config user.email "$fixture_email"
     mkdir -p site server admin-web
 
     # Commit 1: initial baseline

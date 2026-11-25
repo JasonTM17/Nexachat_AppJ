@@ -409,9 +409,26 @@ public class AskService {
 
     private boolean isBroadAggregationQuestion(String question) {
         String folded = RagQuestionNormalizer.normalize(question);
-        return folded.matches("^(summarize|summary|catch me up|tom tat)(\\s|$).*")
-                || folded.matches("^list (the )?(action items|tasks|decisions)(\\s|$).*")
-                || folded.matches("^(what did we decide|what was decided)(\\s|$).*");
+        String withoutPoliteness = folded.replaceFirst(
+                "^(?:(?:please|can you|could you|would you|will you|help me|vui long|cho toi|cho minh|giup toi|giup minh)\\s+)+",
+                "");
+        boolean explicitAggregation = withoutPoliteness.matches(
+                "^(summarize|summary|recap|catch me up|tom tat|tong hop|tong quan)(\\s|$).*")
+                || withoutPoliteness.matches("^list (the )?(action items|tasks|decisions)(\\s|$).*")
+                || withoutPoliteness.matches("^(liet ke|cac quyet dinh|nhung quyet dinh)(\\s|$).*")
+                || withoutPoliteness.matches("^(what did we decide|what was decided)(\\s|$).*");
+        if (explicitAggregation) {
+            return true;
+        }
+        boolean openEndedScope = folded.contains(" any other relevant ")
+                || folded.contains(" every other relevant ")
+                || folded.contains(" anything else")
+                || folded.contains(" everything else");
+        boolean corpusAnchor = folded.contains(" team discussion")
+                || folded.contains(" conversation")
+                || folded.contains(" meeting")
+                || folded.contains(" we discussed together");
+        return folded.contains(" and ") && openEndedScope && corpusAnchor;
     }
 
     private boolean isLookupLike(String question) {

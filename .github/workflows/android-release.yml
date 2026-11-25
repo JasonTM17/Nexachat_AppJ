@@ -191,6 +191,9 @@ jobs:
           asset_name="nexachat-${RELEASE_TAG}.apk"
           cp "$apk" "$asset_dir/$asset_name"
           (cd "$asset_dir" && sha256sum "$asset_name" > "$asset_name.sha256")
+          stable_asset_name='nexachat-latest.apk'
+          cp "$apk" "$asset_dir/$stable_asset_name"
+          (cd "$asset_dir" && sha256sum "$stable_asset_name" > "$stable_asset_name.sha256")
           # The Play upload bundle must carry the same signer as the APK.
           aab='android/app/build/outputs/bundle/release/app-release.aab'
           if [[ ! -f "$aab" ]]; then
@@ -220,6 +223,8 @@ jobs:
           asset_dir="$RUNNER_TEMP/nexachat-release-assets"
           apk="$asset_dir/nexachat-${RELEASE_TAG}.apk"
           checksum="$apk.sha256"
+          stable_apk="$asset_dir/nexachat-latest.apk"
+          stable_checksum="$stable_apk.sha256"
           aab="$asset_dir/nexachat-${RELEASE_TAG}.aab"
           aab_checksum="$aab.sha256"
           notes_file="docs/release-notes/${RELEASE_TAG}.md"
@@ -231,9 +236,9 @@ jobs:
             notes_arg=(--generate-notes)
           fi
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "$apk" "$checksum" "$aab" "$aab_checksum" --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$RELEASE_TAG" "$apk" "$checksum" "$stable_apk" "$stable_checksum" "$aab" "$aab_checksum" --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$RELEASE_TAG" "$apk" "$checksum" "$aab" "$aab_checksum" "${notes_arg[@]}" --repo "$GITHUB_REPOSITORY"
+            gh release create "$RELEASE_TAG" "$apk" "$checksum" "$stable_apk" "$stable_checksum" "$aab" "$aab_checksum" "${notes_arg[@]}" --repo "$GITHUB_REPOSITORY"
           fi
 
       - name: Remove temporary keystore

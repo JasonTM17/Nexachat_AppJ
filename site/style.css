@@ -186,6 +186,13 @@ body:has(#lang-en:target) .language-switch a[href='#lang-en'] {
   border-top: 1px solid var(--border-color);
 }
 
+/* Nested bilingual status text exists for backwards-compatible form markup;
+   inside a language section only that section's language may be visible. */
+#lang-en [lang='vi'],
+#lang-vi [lang='en'] {
+  display: none;
+}
+
 .brand {
   font-size: clamp(1.75rem, 5vw, 2rem);
   font-weight: 700;
@@ -328,6 +335,25 @@ body:has(#lang-en:target) .language-switch a[href='#lang-en'] {
   border-radius: 4px;
 }
 
+body:has(#lang-en) .site-footer a[lang='en'],
+body:has(#lang-en) .page-actions a[lang='en'] {
+  display: none;
+}
+
+body:has(#lang-en:target) .site-footer a[lang='vi'],
+body:has(#lang-en :target) .site-footer a[lang='vi'],
+body:has(#lang-en:target) .page-actions a[lang='vi'],
+body:has(#lang-en :target) .page-actions a[lang='vi'] {
+  display: none;
+}
+
+body:has(#lang-en:target) .site-footer a[lang='en'],
+body:has(#lang-en :target) .site-footer a[lang='en'],
+body:has(#lang-en:target) .page-actions a[lang='en'],
+body:has(#lang-en :target) .page-actions a[lang='en'] {
+  display: inline-flex;
+}
+
 .prose h2 {
   font-size: 1.125rem;
   margin: 1.75rem 0 0.625rem;
@@ -401,6 +427,10 @@ body:has(#lang-en:target) .language-switch a[href='#lang-en'] {
 }
 
 .page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
   margin-top: 1.5rem;
   text-align: center;
 }
@@ -657,8 +687,11 @@ body:has(#lang-en :target) .home-lang[href="#lang-en"] {
   display: block;
 }
 
-#lang-en:target ~ #lang-vi,
-#lang-en:has(:target) ~ #lang-vi {
+/* Hide the Vietnamese pane with a body-scoped :has() rule instead of a
+   general-sibling rule: the home page orders English before Vietnamese, while
+   the secondary pages order Vietnamese before English. */
+body:has(#lang-en:target) #lang-vi,
+body:has(#lang-en :target) #lang-vi {
   display: none;
 }
 
