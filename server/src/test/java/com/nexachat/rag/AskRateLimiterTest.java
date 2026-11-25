@@ -63,8 +63,13 @@ class AskRateLimiterTest {
         }
 
         assertThatThrownBy(() -> rateLimiter.consume(user))
-                .isInstanceOfSatisfying(ApiException.class,
-                        exception -> assertThat(exception.getCode()).isEqualTo(ApiErrorCode.RATE_LIMITED));
+                .isInstanceOfSatisfying(ApiException.class, exception -> {
+                    assertThat(exception.getCode()).isEqualTo(ApiErrorCode.RATE_LIMITED);
+                    assertThat(exception.getDetails())
+                            .containsEntry("retryAfterSeconds", 45L)
+                            .containsEntry("window", "MINUTE")
+                            .containsEntry("limit", 20);
+                });
     }
 
     @Test

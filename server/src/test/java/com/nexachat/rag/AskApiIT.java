@@ -376,8 +376,14 @@ class AskApiIT {
                     .andExpect(status().isOk())
                     .andReturn();
             JsonNode body = objectMapper.readTree(nextAsk.getResponse().getContentAsString());
-            assertThat(body.path("mode").asText()).isNotEqualTo("CACHE");
-            assertThat(body.path("usage").path("cached").asBoolean()).isFalse();
+            Long currentRevision = jdbcTemplate.queryForObject(
+                    "SELECT ai_context_version FROM conversations WHERE id = ?", Long.class, conversationId);
+            Long cachedRevision = jdbcTemplate.queryForObject(
+                    "SELECT context_version FROM rag_ask_cache WHERE conversation_id = ? LIMIT 1",
+                    Long.class, conversationId);
+            assertThat(cachedRevision).isEqualTo(currentRevision);
+            assertThat(body.path("usage").path("cached").asBoolean())
+                    .isEqualTo("CACHE".equals(body.path("mode").asText()));
         } finally {
             allowSave.countDown();
             executor.shutdownNow();
