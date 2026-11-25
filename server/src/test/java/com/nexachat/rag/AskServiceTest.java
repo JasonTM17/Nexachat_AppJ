@@ -186,6 +186,55 @@ class AskServiceTest {
         verify(llmAnswerService).answer(eq(userId), eq(conversationId), any(), any(), any(), any(), any());
     }
 
+
+    @Test
+    void multiMessageSynthesisUsesTheLlmInsteadOfRequiringOneCompositionalMessage() {
+        RagMessage budget = addMessage(conversationId, senderId, 1,
+                "The budget was approved for the release plan.");
+        RagMessage secret = addMessage(conversationId, senderId, 2,
+                "The secret alpha bravo value is ready for review and rollout.");
+        setConsent(true);
+        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new RagLlmAnswer("The budget and secret value are ready.",
+                        List.of(budget.id(), secret.id())));
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("Please tell me the secret alpha bravo value and the budget approval details "
+                        + "from the team discussion, including the release plan, the review status, the rollout "
+                        + "timing and any other relevant project milestones", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.LLM);
+        verify(llmAnswerService).answer(eq(userId), eq(conversationId), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void politeSummaryParaphraseStillBypassesCompositionalLookupEvidence() {
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "The server migration is scheduled for March 14 at 02:00.");
+        setConsent(true);
+        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(new RagLlmAnswer("The migration is on March 14.", List.of(fact.id())));
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("Please summarize the migration decision.", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.LLM);
+        verify(llmAnswerService).answer(eq(userId), eq(conversationId), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void openEndedTailWithoutCorpusScopeDoesNotBypassCompositeEvidence() {
+        addMessage(conversationId, senderId, 1, "The budget was approved for the release plan.");
+        setConsent(true);
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("What is the database password and any other relevant project milestones?",
+                        SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
+    }
+
     @Test
     void lookupQuestionIsAnsweredExtractiveWithoutAnLlmCall() {
         RagMessage fact = addMessage(conversationId, senderId, 1,
