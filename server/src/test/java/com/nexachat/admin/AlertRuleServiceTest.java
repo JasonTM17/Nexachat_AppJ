@@ -13,6 +13,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
@@ -106,6 +107,34 @@ class AlertRuleServiceTest {
                 eq("alert_rule"), eq(ruleId.toString()), eq("rule was superseded by the new scanner"),
                 eq(Map.of("enabled", false, "severity", "MEDIUM", "name", "Built-in scanner")),
                 eq("203.0.113.7"));
+    }
+
+    @Test
+    void createdReasonIsAuditedWithTheRuleCreate() {
+        AlertRuleRow rule = customRule();
+        when(repository.findById(any())).thenReturn(Optional.of(rule));
+
+        AlertRuleRow created = service.create("Payments keyword", "CUSTOM", "MEDIUM", "KEYWORD",
+                "invoice", "any", null, "new invoice scam wave", actorId, User.Role.ADMIN,
+                "203.0.113.7");
+
+        assertThat(created).isSameAs(rule);
+        verify(auditService).record(eq(actorId), eq(User.Role.ADMIN), eq("RULE_CREATE"),
+                eq("alert_rule"), any(), eq("new invoice scam wave"),
+                eq(Map.of("name", "Payments keyword", "category", "CUSTOM")), eq("203.0.113.7"));
+    }
+
+    @Test
+    void createdRuleWithoutAReasonStillAuditsANullReason() {
+        AlertRuleRow rule = customRule();
+        when(repository.findById(any())).thenReturn(Optional.of(rule));
+
+        service.create("Payments keyword", "CUSTOM", "MEDIUM", "KEYWORD",
+                "invoice", "any", null, null, actorId, User.Role.ADMIN, "203.0.113.7");
+
+        verify(auditService).record(eq(actorId), eq(User.Role.ADMIN), eq("RULE_CREATE"),
+                eq("alert_rule"), any(), isNull(),
+                eq(Map.of("name", "Payments keyword", "category", "CUSTOM")), eq("203.0.113.7"));
     }
 
     private AlertRuleRow customRule() {

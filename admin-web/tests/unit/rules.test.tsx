@@ -67,7 +67,7 @@ describe('RulesPage', () => {
     expect(await screen.findByText('phish-en')).toBeInTheDocument();
     expect(apiMock).toHaveBeenCalledWith('/api/v1/admin/rules');
     const row = screen.getByText('phish-en').closest('tr') as HTMLElement;
-    expect(within(row).getByText('SCAM_PHISHING')).toBeInTheDocument();
+    expect(within(row).getByText('Scams & phishing')).toBeInTheDocument();
     expect(within(row).getByText('KEYWORD')).toBeInTheDocument();
     expect(within(row).getByText('password')).toBeInTheDocument();
     expect(
@@ -82,7 +82,7 @@ describe('RulesPage', () => {
   it('shows the empty state', async () => {
     stubRoutes([]);
     renderPage();
-    expect(await screen.findByText('Nothing here')).toBeInTheDocument();
+    expect(await screen.findByText('No rules yet')).toBeInTheDocument();
   });
 
   it('disables a rule after confirmation and reloads', async () => {
@@ -173,6 +173,9 @@ describe('RulesPage', () => {
 
     apiMock.mockResolvedValueOnce(rule({ id: 'r9', name: 'my-rule' }));
     await user.click(save);
+    const dialog = screen.getByRole('alertdialog', { name: 'New rule' });
+    await user.type(within(dialog).getByLabelText(/Reason/), 'tuning coverage');
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
     await waitFor(() =>
       expect(apiMock).toHaveBeenCalledWith(
         '/api/v1/admin/rules',
@@ -184,6 +187,7 @@ describe('RulesPage', () => {
             severity: 'MEDIUM',
             patternType: 'KEYWORD',
             pattern: 'seed phrase',
+            reason: 'tuning coverage',
           }),
         }),
       ),
@@ -225,7 +229,10 @@ describe('RulesPage', () => {
     apiMock.mockImplementationOnce(() => new Promise<void>((res) => { resolveCreate = res; }));
     const save = within(formCard).getByRole('button', { name: 'Save' });
     await user.dblClick(save);
-    expect(save).toBeDisabled();
+    const dialogs = screen.getAllByRole('alertdialog', { name: 'New rule' });
+    expect(dialogs).toHaveLength(1);
+    await user.type(within(dialogs[0]).getByLabelText(/Reason/), 'tuning coverage');
+    await user.click(within(dialogs[0]).getByRole('button', { name: 'Confirm' }));
 
     resolveCreate();
     await waitFor(() => {

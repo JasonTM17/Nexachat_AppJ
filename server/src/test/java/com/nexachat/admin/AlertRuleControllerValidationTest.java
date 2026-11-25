@@ -27,6 +27,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -64,6 +65,27 @@ class AlertRuleControllerValidationTest {
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void createPassesTheOptionalAuditReasonToTheService() throws Exception {
+        signInAsAdmin();
+
+        mockMvc.perform(post("/api/v1/admin/rules")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{"
+                                + "\"name\":\"Payments keyword\","
+                                + "\"category\":\"CUSTOM\","
+                                + "\"severity\":\"MEDIUM\","
+                                + "\"patternType\":\"KEYWORD\","
+                                + "\"pattern\":\"invoice\","
+                                + "\"reason\":\"new invoice scam wave\""
+                                + "}"))
+                .andExpect(status().isCreated());
+
+        verify(service).create(eq("Payments keyword"), eq("CUSTOM"), eq("MEDIUM"), eq("KEYWORD"),
+                eq("invoice"), isNull(), isNull(), eq("new invoice scam wave"), any(),
+                eq(User.Role.ADMIN), any());
     }
 
     @Test

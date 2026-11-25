@@ -42,7 +42,8 @@ public class AlertRuleController {
                               @NotBlank String patternType,
                               @Size(max = 200) String pattern,
                               @Size(max = 8) String locale,
-                              @Size(max = 500) String description) {
+                              @Size(max = 500) String description,
+                              @Size(max = 500) String reason) {
     }
 
     public record RulePatch(@Size(max = 200) String name,
@@ -78,7 +79,7 @@ public class AlertRuleController {
                                HttpServletRequest request) {
         JwtPrincipal actor = AdminGuard.requireStaff();
         return service.create(body.name(), body.category(), body.severity(), body.patternType(),
-                body.pattern(), body.locale(), body.description(),
+                body.pattern(), body.locale(), body.description(), body.reason(),
                 actor.userId(), AdminGuard.role(), clientIp(request));
     }
 

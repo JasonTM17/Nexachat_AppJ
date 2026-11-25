@@ -19,6 +19,7 @@ export default function AuditPage() {
   const [page, setPage] = useState(0);
   const [data, setData] = useState<Page<AuditEntry> | null>(null);
   const [failed, setFailed] = useState(false);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const actorInput = useDebouncedValue(actor, SEARCH_DEBOUNCE_MS);
   const actionInput = useDebouncedValue(action, SEARCH_DEBOUNCE_MS);
   const targetInput = useDebouncedValue(target, SEARCH_DEBOUNCE_MS);
@@ -38,9 +39,14 @@ export default function AuditPage() {
 
   const load = useCallback(() => {
     setFailed(false);
-    latest(api<Page<AuditEntry>>(`/api/v1/admin/audit?${params}`), (data) => {
-      if (data) setData(data);
-      else setFailed(true);
+    latest(api<Page<AuditEntry>>(`/api/v1/admin/audit?${params}`), (data, err) => {
+      if (data) {
+        setData(data);
+        setLoadError(null);
+      } else {
+        setLoadError(err);
+        setFailed(true);
+      }
     });
   }, [params, latest]);
 
@@ -99,12 +105,13 @@ export default function AuditPage() {
       </div>
 
       {failed ? (
-        <ErrorBlock onRetry={load} />
+        <ErrorBlock onRetry={load} error={loadError} />
       ) : !data ? (
         <Loading />
       ) : data.items.length === 0 ? (
         <Empty
-          hint={actorApplied || action || target ? t('common.empty.filtered') : undefined}
+          title={!(actorApplied || action || target) ? t('audit.empty.title') : undefined}
+          hint={actorApplied || action || target ? t('common.empty.filtered') : t('audit.empty.hint')}
           onClearFilters={
             actor || action || target
               ? () => {
@@ -118,7 +125,7 @@ export default function AuditPage() {
         />
       ) : (
         <>
-          <div className="table-wrap">
+          <div className="table-wrap responsive-cards">
             <table>
               <thead>
                 <tr>
@@ -133,27 +140,28 @@ export default function AuditPage() {
               <tbody>
                 {data.items.map((e) => (
                   <tr className="plain" key={e.id}>
-                    <td style={{ whiteSpace: 'nowrap' }}>{fmtTime(e.createdAt)}</td>
-                    <td className="col-lo">
+                    <td data-label={t('audit.col.time')} style={{ whiteSpace: 'nowrap' }}>{fmtTime(e.createdAt)}</td>
+                    <td data-label={t('audit.col.actor')} className="col-lo">
                       <div className="mono" style={{ fontSize: 11 }}>{e.actorId}</div>
                       <Chip>{e.actorRole}</Chip>
                     </td>
-                    <td>
+                    <td data-label={t('audit.col.action')}>
                       <Chip tone={e.action.endsWith('_DENIED') ? 'high' : undefined}>
                         {e.action}
                       </Chip>
                     </td>
-                    <td className="col-lo">
+                    <td data-label={t('audit.col.target')} className="col-lo">
                       <div>{e.targetType}</div>
                       {e.targetId && (
                         <div className="muted mono" style={{ fontSize: 11 }}>{e.targetId}</div>
                       )}
                     </td>
-                    <td className="truncate col-lo" title={e.reason ?? undefined}>
+                    <td data-label={t('audit.col.reason')} className="truncate col-lo" title={e.reason ?? undefined}>
                       {e.reason ?? '—'}
                     </td>
                     <td
                       className="muted mono col-lo"
+                      data-label={t('audit.col.detail')}
                       style={{ fontSize: 11, maxWidth: 240 }}
                       title={e.detail ? JSON.stringify(e.detail) : undefined}
                     >

@@ -111,7 +111,7 @@ describe('AlertsPage', () => {
     expect(apiMock).toHaveBeenCalledWith('/api/v1/admin/alerts?status=OPEN&page=0&size=25');
     const row = screen.getByText('send me your password').closest('tr') as HTMLElement;
     expect(within(row).getByText('HIGH')).toBeInTheDocument();
-    expect(within(row).getByText('SCAM_PHISHING')).toBeInTheDocument();
+    expect(within(row).getByText('Scams & phishing')).toBeInTheDocument();
     expect(within(row).getByText('Open')).toBeInTheDocument();
     // i18n keys are resolved, not leaked raw
     expect(screen.getByRole('columnheader', { name: 'Snippet' })).toBeInTheDocument();
@@ -128,7 +128,7 @@ describe('AlertsPage', () => {
   it('shows the empty state', async () => {
     stubRoutes({ list: page([]) });
     renderPage();
-    expect(await screen.findByText('Nothing here')).toBeInTheDocument();
+    expect(await screen.findByText('No open alerts')).toBeInTheDocument();
   });
 
   it('opens the row with Space and marks it busy while the detail loads', async () => {
@@ -150,7 +150,7 @@ describe('AlertsPage', () => {
     expect(row).toHaveAttribute('aria-busy', 'true');
 
     resolveDetail(detail());
-    expect(await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Scams & phishing · HIGH' })).toBeInTheDocument();
     await waitFor(() => expect(row).not.toHaveAttribute('aria-busy'));
   });
 
@@ -170,7 +170,7 @@ describe('AlertsPage', () => {
 
     await user.click(row);
     resolvers[0](detail());
-    await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' });
+    await screen.findByRole('dialog', { name: 'Scams & phishing · HIGH' });
 
     // A second fetch for the same alert (e.g. the post-action refetch) is in
     // flight when the user dismisses the drawer; its late response must not
@@ -238,7 +238,7 @@ describe('AlertsPage', () => {
     renderPage();
 
     await user.click(await screen.findByText('send me your password'));
-    const drawer = await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' });
+    const drawer = await screen.findByRole('dialog', { name: 'Scams & phishing · HIGH' });
     expect(apiMock).toHaveBeenCalledWith('/api/v1/admin/alerts/a1');
     // detail renders sender, rule chip and existing note
     expect(within(drawer).getByText('Quân')).toBeInTheDocument();
@@ -272,7 +272,7 @@ describe('AlertsPage', () => {
     renderPage();
 
     await user.click(await screen.findByText('send me your password'));
-    const drawer = await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' });
+    const drawer = await screen.findByRole('dialog', { name: 'Scams & phishing · HIGH' });
     const detailCalls = () =>
       apiMock.mock.calls.filter(([p]) => p === '/api/v1/admin/alerts/a1').length;
     const listCalls = () =>
@@ -286,7 +286,7 @@ describe('AlertsPage', () => {
 
     // The failure renders inside the drawer (the page-top alert sits behind
     // the scrim); the confirm dialog closed but the drawer stayed open.
-    expect(await within(drawer).findByRole('alert')).toHaveTextContent('Something went wrong');
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent('Server error 500. Try again.');
     expect(screen.queryByRole('alertdialog')).toBeNull();
     // Both the detail and the list are refetched after the failed action.
     await waitFor(() => expect(detailCalls()).toBe(3));
@@ -299,7 +299,7 @@ describe('AlertsPage', () => {
     renderPage();
 
     await user.click(await screen.findByText('send me your password'));
-    const drawer = await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' });
+    const drawer = await screen.findByRole('dialog', { name: 'Scams & phishing · HIGH' });
     await user.click(within(drawer).getByRole('button', { name: 'Resolve' }));
     const dialog = screen.getByRole('alertdialog', { name: 'Resolved' });
     // status changes do not ask for a reason
@@ -321,7 +321,7 @@ describe('AlertsPage', () => {
     renderPage();
 
     await user.click(await screen.findByText('send me your password'));
-    const drawer = await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' });
+    const drawer = await screen.findByRole('dialog', { name: 'Scams & phishing · HIGH' });
     await user.click(within(drawer).getByRole('button', { name: 'Reveal context' }));
     const dialog = screen.getByRole('alertdialog', { name: 'Reveal context' });
     await user.type(within(dialog).getByLabelText(/Reason/), 'active investigation');
@@ -357,7 +357,7 @@ describe('AlertsPage', () => {
     renderPage();
 
     await user.click(await screen.findByText('send me your password'));
-    const drawer = await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' });
+    const drawer = await screen.findByRole('dialog', { name: 'Scams & phishing · HIGH' });
     const add = within(drawer).getByRole('button', { name: 'Add' });
     expect(add).toBeDisabled();
 
@@ -467,7 +467,7 @@ describe('AlertsPage', () => {
     row.focus();
     await user.keyboard('{Enter}');
     expect(
-      await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' }),
+      await screen.findByRole('dialog', { name: 'Scams & phishing · HIGH' }),
     ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Close' }));
 
@@ -477,7 +477,7 @@ describe('AlertsPage', () => {
     row.focus();
     await user.keyboard('[Space]');
     expect(
-      await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' }),
+      await screen.findByRole('dialog', { name: 'Scams & phishing · HIGH' }),
     ).toBeInTheDocument();
   });
 
@@ -504,7 +504,7 @@ describe('AlertsPage', () => {
     ) as HTMLElement;
     await user.click(row);
     expect(await within(row).findByRole('alert')).toHaveTextContent(
-      'Something went wrong',
+      'Server error 500. Try again.',
     );
     // the drawer never opens and no banner duplicates the row-level error
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -517,7 +517,7 @@ describe('AlertsPage', () => {
     renderPage();
 
     await user.click(await screen.findByText('send me your password'));
-    const drawer = await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' });
+    const drawer = await screen.findByRole('dialog', { name: 'Scams & phishing · HIGH' });
     await user.type(within(drawer).getByLabelText('Add a note'), 'contacted sender');
 
     let resolveNote!: () => void;
@@ -543,7 +543,7 @@ describe('AlertsPage', () => {
     renderPage();
 
     await user.click(await screen.findByText('send me your password'));
-    const drawer = await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' });
+    const drawer = await screen.findByRole('dialog', { name: 'Scams & phishing · HIGH' });
     const assign = within(drawer).getByRole('button', { name: 'Assign to me' });
 
     let resolveAssign!: () => void;
@@ -569,12 +569,12 @@ describe('AlertsPage', () => {
     await screen.findByText('send me your password');
 
     await user.click(screen.getByText('send me your password'));
-    const drawer = await screen.findByRole('dialog', { name: 'SCAM_PHISHING · HIGH' });
+    const drawer = await screen.findByRole('dialog', { name: 'Scams & phishing · HIGH' });
     apiMock.mockRejectedValueOnce(new ApiException(500, 'X', 'boom'));
     await user.click(within(drawer).getByRole('button', { name: 'Resolve' }));
     const dialog = screen.getByRole('alertdialog', { name: 'Resolved' });
     await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Server error 500. Try again.');
 
     // Close the drawer and change the query; a banner for a failed action on
     // the previous view must not linger over the new one.
