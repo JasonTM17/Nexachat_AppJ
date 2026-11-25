@@ -267,6 +267,21 @@ public final class TokenStoreTest {
     }
 
     @Test
+    public void historyJumpFloorPreservesEarliestTailFloorConsumesOnceAndClearsOnLogout() {
+        store.recordHistoryJumpFloorIfAbsent("conv-1", 5000L)
+                .andThen(store.recordHistoryJumpFloorIfAbsent("conv-1", 40L))
+                .andThen(store.recordHistoryJumpFloorIfAbsent("conv-2", 900L))
+                .test()
+                .assertComplete();
+
+        store.consumeHistoryJumpFloor("conv-1").test().assertValue(5000L);
+        store.consumeHistoryJumpFloor("conv-1").test().assertValue(0L);
+
+        store.clear().test().assertComplete();
+        store.consumeHistoryJumpFloor("conv-2").test().assertValue(0L);
+    }
+
+    @Test
     public void delayedUnregisterCompletionCannotClearANewerPendingRequest() {
         store.savePendingDeviceTokenUnregister("old-token-fixture", "user-1")
                 .andThen(store.savePendingDeviceTokenUnregister("new-token-fixture", "user-2"))

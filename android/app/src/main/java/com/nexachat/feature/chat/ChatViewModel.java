@@ -1497,8 +1497,21 @@ public final class ChatViewModel extends ViewModel {
 
     /** Loads a bounded history window before emitting the one-shot scroll target. */
     public void jumpToMessage(String messageId) {
-        disposables.add(messageRepository.loadUntilLoaded(
-                        conversationId, messageId, MessageRepository.MAX_JUMP_PAGES)
+        jumpToMessage(messageId, null);
+    }
+
+    /**
+     * Loads history around {@code messageId} before emitting the scroll target.
+     * When {@code targetSeq} is provided (e.g. from Ask citations), history loading
+     * pages contiguously or jumps around {@code targetSeq} beyond {@link MessageRepository#MAX_JUMP_PAGES}.
+     */
+    public void jumpToMessage(String messageId, @Nullable Long targetSeq) {
+        Single<MessageJump> loader = targetSeq != null && targetSeq > 0L
+                ? messageRepository.loadUntilLoaded(
+                        conversationId, messageId, targetSeq, MessageRepository.MAX_JUMP_PAGES)
+                : messageRepository.loadUntilLoaded(
+                        conversationId, messageId, MessageRepository.MAX_JUMP_PAGES);
+        disposables.add(loader
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(jump -> {

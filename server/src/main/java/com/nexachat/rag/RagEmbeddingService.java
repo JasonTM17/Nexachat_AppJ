@@ -1,5 +1,6 @@
 package com.nexachat.rag;
 
+import com.nexachat.summary.SummaryConsentRepository;
 import com.nexachat.summary.llm.CircuitBreaker;
 import com.nexachat.summary.llm.Redactor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,11 +15,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
  * Computes and stores embeddings. Retrieval always degrades to the offline
- * lexical provider when an external call fails, so the ask endpoint never
- * becomes unavailable because an embedding vendor is down.
+ * lexical provider when the caller has not consented to external AI processing,
+ * when requester consent is revoked before an external call, or when an external
+ * call fails, so the ask endpoint never leaks data or becomes unavailable
+ * because an embedding vendor is down.
  */
 @Service
 @Profile("!test")
@@ -31,6 +35,7 @@ public class RagEmbeddingService {
     private final RagStats stats;
     private final Redactor redactor;
     private final CircuitBreaker circuitBreaker;
+    private final SummaryConsentRepository consentRepository;
 
     public RagEmbeddingService(
             RagEmbeddingProviders providers,
@@ -39,7 +44,19 @@ public class RagEmbeddingService {
             RagProperties properties,
             RagStats stats,
             Redactor redactor) {
-        this(providers, index, cache, properties, stats, redactor, new CircuitBreaker(Clock.systemUTC()));
+        this(providers, index, cache, properties, stats, redactor,
+                new CircuitBreaker(Clock.systemUTC()), null);
+    }
+
+    public RagEmbeddingService(
+            RagEmbeddingProviders providers,
+            RagMessageIndex index,
+            VectorCache cache,
+            RagProperties properties,
+            RagStats stats,
+            Redactor redactor,
+            @Qualifier("ragEmbeddingCircuitBreaker") CircuitBreaker circuitBreaker) {
+        this(providers, index, cache, properties, stats, redactor, circuitBreaker, null);
     }
 
     @Autowired
@@ -50,7 +67,8 @@ public class RagEmbeddingService {
             RagProperties properties,
             RagStats stats,
             Redactor redactor,
-            @Qualifier("ragEmbeddingCircuitBreaker") CircuitBreaker circuitBreaker) {
+            @Qualifier("ragEmbeddingCircuitBreaker") CircuitBreaker circuitBreaker,
+            @Autowired(required = false) SummaryConsentRepository consentRepository) {
         this.providers = providers;
         this.index = index;
         this.cache = cache;
@@ -58,25 +76,34 @@ public class RagEmbeddingService {
         this.stats = stats;
         this.redactor = redactor;
         this.circuitBreaker = circuitBreaker;
+        this.consentRepository = consentRepository;
     }
 
     public EmbeddingOutcome embedQuestion(String question, boolean consented) {
+        return embedQuestion(null, question, consented);
+    }
+
+    public EmbeddingOutcome embedQuestion(UUID userId, String question, boolean consented) {
         EmbeddingProvider provider = runtimeProvider(consented);
         try {
-            float[] vector = embed(provider, inputFor(question, provider));
+            float[] vector = embed(userId, provider, inputFor(question, provider));
             return new EmbeddingOutcome(vector, provider.id());
         } catch (EmbeddingProviderException exception) {
-            float[] vector = embed(providers.local(), question == null ? "" : question);
+            float[] vector = embed(null, providers.local(), question == null ? "" : question);
             return new EmbeddingOutcome(vector, providers.local().id());
         }
     }
 
     public VectorOutcome ensureVectors(List<RagMessage> messages, int limit, boolean consented) {
+        return ensureVectors(null, messages, limit, consented);
+    }
+
+    public VectorOutcome ensureVectors(UUID userId, List<RagMessage> messages, int limit, boolean consented) {
         EmbeddingProvider provider = runtimeProvider(consented);
         try {
-            return ensureVectorsWith(provider, messages, limit);
+            return ensureVectorsWith(userId, provider, messages, limit);
         } catch (EmbeddingProviderException exception) {
-            return ensureVectorsWith(providers.local(), messages, limit);
+            return ensureVectorsWith(null, providers.local(), messages, limit);
         }
     }
 
@@ -86,17 +113,22 @@ public class RagEmbeddingService {
      */
     public RetrievalEmbeddings embedForRetrieval(
             String question, List<RagMessage> candidates, int limit, boolean consented) {
+        return embedForRetrieval(null, question, candidates, limit, consented);
+    }
+
+    public RetrievalEmbeddings embedForRetrieval(
+            UUID userId, String question, List<RagMessage> candidates, int limit, boolean consented) {
         EmbeddingProvider provider = runtimeProvider(consented);
         try {
-            float[] questionVector = embed(provider, inputFor(question, provider));
+            float[] questionVector = embed(userId, provider, inputFor(question, provider));
             int vectorBudget = provider == providers.external()
                     ? Math.min(limit, Math.max(0, properties.getIndex().getExternalLazyLimit()))
                     : limit;
-            VectorOutcome vectors = ensureVectorsWith(provider, candidates, vectorBudget);
+            VectorOutcome vectors = ensureVectorsWith(userId, provider, candidates, vectorBudget);
             return new RetrievalEmbeddings(questionVector, vectors.vectors(), provider.id());
         } catch (EmbeddingProviderException exception) {
-            float[] questionVector = embed(providers.local(), question == null ? "" : question);
-            VectorOutcome vectors = ensureVectorsWith(providers.local(), candidates, limit);
+            float[] questionVector = embed(null, providers.local(), question == null ? "" : question);
+            VectorOutcome vectors = ensureVectorsWith(null, providers.local(), candidates, limit);
             return new RetrievalEmbeddings(questionVector, vectors.vectors(), providers.local().id());
         }
     }
@@ -117,7 +149,7 @@ public class RagEmbeddingService {
                 break;
             }
             try {
-                ensureVectorsWith(provider, batch, batch.size(), true);
+                ensureVectorsWith(null, provider, batch, batch.size(), true);
                 indexed += batch.size();
             } catch (EmbeddingProviderException exception) {
                 break;
@@ -133,12 +165,13 @@ public class RagEmbeddingService {
         return providers.primary();
     }
 
-    private VectorOutcome ensureVectorsWith(EmbeddingProvider provider, List<RagMessage> messages, int limit) {
-        return ensureVectorsWith(provider, messages, limit, provider == providers.primary());
+    private VectorOutcome ensureVectorsWith(
+            UUID userId, EmbeddingProvider provider, List<RagMessage> messages, int limit) {
+        return ensureVectorsWith(userId, provider, messages, limit, provider == providers.primary());
     }
 
     private VectorOutcome ensureVectorsWith(
-            EmbeddingProvider provider, List<RagMessage> messages, int limit, boolean persist) {
+            UUID userId, EmbeddingProvider provider, List<RagMessage> messages, int limit, boolean persist) {
         if (messages == null || messages.isEmpty()) {
             return new VectorOutcome(Map.of(), provider.id());
         }
@@ -193,7 +226,7 @@ public class RagEmbeddingService {
             List<String> inputs = batch.stream()
                     .map(message -> inputFor(message.content(), provider))
                     .toList();
-            List<float[]> vectors = embedAll(provider, inputs);
+            List<float[]> vectors = embedAll(userId, provider, inputs);
             Map<UUID, float[]> savedVectors = new HashMap<>();
             Map<UUID, String> savedHashes = new HashMap<>();
             for (int position = 0; position < batch.size(); position++) {
@@ -224,40 +257,45 @@ public class RagEmbeddingService {
         return redactor.redact(text);
     }
 
-    private float[] embed(EmbeddingProvider provider, String input) {
-        if (provider != providers.local() && !circuitBreaker.allowRequest()) {
-            throw new EmbeddingProviderException("embedding circuit breaker is open");
-        }
-        try {
-            float[] vector = provider.embed(input);
-            if (provider != providers.local()) {
-                stats.recordEmbeddingCall(1);
-                circuitBreaker.recordSuccess();
-            }
-            return vector;
-        } catch (RuntimeException exception) {
-            if (provider != providers.local()) {
-                stats.recordEmbeddingFailure();
-                circuitBreaker.recordFailure();
-            }
-            if (exception instanceof EmbeddingProviderException providerException) {
-                throw providerException;
-            }
-            throw new EmbeddingProviderException("embedding request failed", exception);
+    private void requireConsentIfExternal(EmbeddingProvider provider, UUID userId) {
+        // Re-read consent right before an external HTTP call so a mid-request revocation
+        // aborts before text leaves the boundary and falls back to lexical without
+        // penalizing the external provider circuit breaker.
+        if (provider != providers.local()
+                && userId != null
+                && consentRepository != null
+                && !consentRepository.isConsented(userId)) {
+            throw new EmbeddingConsentRevokedException();
         }
     }
 
-    private List<float[]> embedAll(EmbeddingProvider provider, List<String> inputs) {
+    private float[] embed(UUID userId, EmbeddingProvider provider, String input) {
+        return executeEmbeddingCall(userId, provider, 1, "embedding request failed",
+                () -> provider.embed(input));
+    }
+
+    private List<float[]> embedAll(UUID userId, EmbeddingProvider provider, List<String> inputs) {
+        return executeEmbeddingCall(userId, provider, inputs.size(), "embedding batch failed",
+                () -> provider.embedAll(inputs));
+    }
+
+    private <T> T executeEmbeddingCall(
+            UUID userId,
+            EmbeddingProvider provider,
+            int inputCount,
+            String failureMessage,
+            Supplier<T> call) {
+        requireConsentIfExternal(provider, userId);
         if (provider != providers.local() && !circuitBreaker.allowRequest()) {
             throw new EmbeddingProviderException("embedding circuit breaker is open");
         }
         try {
-            List<float[]> vectors = provider.embedAll(inputs);
+            T result = call.get();
             if (provider != providers.local()) {
-                stats.recordEmbeddingCall(inputs.size());
+                stats.recordEmbeddingCall(inputCount);
                 circuitBreaker.recordSuccess();
             }
-            return vectors;
+            return result;
         } catch (RuntimeException exception) {
             if (provider != providers.local()) {
                 stats.recordEmbeddingFailure();
@@ -266,7 +304,13 @@ public class RagEmbeddingService {
             if (exception instanceof EmbeddingProviderException providerException) {
                 throw providerException;
             }
-            throw new EmbeddingProviderException("embedding batch failed", exception);
+            throw new EmbeddingProviderException(failureMessage, exception);
+        }
+    }
+
+    private static final class EmbeddingConsentRevokedException extends EmbeddingProviderException {
+        private EmbeddingConsentRevokedException() {
+            super("AI consent revoked");
         }
     }
 

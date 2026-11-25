@@ -101,6 +101,8 @@ public final class MessageRepository {
     public static final int EVENT_BUFFER = 32;
     /** Backward history page budget; approximately 600 messages at the default page size. */
     public static final int MAX_JUMP_PAGES = 20;
+    /** Lookahead above a cited sequence so anchored jumps land with surrounding context. */
+    static final long JUMP_ANCHOR_LOOKAHEAD = MessageApi.DEFAULT_PAGE_SIZE / 2L;
     /** Minimum query length accepted by the server search endpoint. */
     public static final int MIN_SEARCH_CHARS = 2;
     /** Maximum result count accepted by the server search endpoint. */
@@ -485,11 +487,13 @@ public final class MessageRepository {
      * can observe the returned {@code hasMore} value.
      */
     public Completable openConversation(String conversationId) {
-        return operationTracker.track(Completable.fromAction(() -> {
+        return operationTracker.track(cleanupJumpIslandFloor(conversationId)
+                .andThen(Completable.fromAction(() -> {
                     activeConversation.set(conversationId);
                     session.ensureConnected();
                     session.watchConversation(conversationId);
-                }).andThen(resyncForward(conversationId))
+                }))
+                .andThen(resyncForward(conversationId))
                 .andThen(messageDao.maxSeq(conversationId).flatMapCompletable(seq -> sendRead(conversationId, seq)))
                 .andThen(flushOutbox())
                 .andThen(refreshPins(conversationId).ignoreElement())
@@ -534,8 +538,14 @@ public final class MessageRepository {
 
     /** Fetches one history page and writes it through to Room. */
     public Single<Result<MessagePageDto>> refreshHistory(String conversationId, @Nullable Long beforeSeq) {
+        return refreshHistory(conversationId, beforeSeq, MessageApi.DEFAULT_PAGE_SIZE);
+    }
+
+    /** Fetches one history page with an explicit page limit and writes it through to Room. */
+    public Single<Result<MessagePageDto>> refreshHistory(
+            String conversationId, @Nullable Long beforeSeq, int limit) {
         return operationTracker.track(call(messageApi.getMessages(
-                conversationId, beforeSeq, null, MessageApi.DEFAULT_PAGE_SIZE))
+                conversationId, beforeSeq, null, limit))
                 .flatMap(result -> {
                     if (result instanceof Result.Success<?> success) {
                         MessagePageDto page = (MessagePageDto) success.getValue();
@@ -572,11 +582,137 @@ public final class MessageRepository {
         }).subscribeOn(Schedulers.io()));
     }
 
+    /**
+     * Loads history around a known sequence number (e.g. an Ask citation).
+     * Within {@code maxPages * MAX_PAGE_SIZE} of the local tail, pages backward
+     * contiguously with 100-item pages so Room history stays gap-free; beyond that
+     * horizon, fetches directly around {@code targetSeq} while recording the
+     * contiguous tail floor so the isolated window is cleaned on conversation reopen.
+     */
+    public Single<MessageJump> loadUntilLoaded(
+            String conversationId, String messageId, @Nullable Long targetSeq, int maxPages) {
+        if (targetSeq == null || targetSeq <= 0L) {
+            return loadUntilLoaded(conversationId, messageId, maxPages);
+        }
+        return operationTracker.track(messageDao.exists(messageId).flatMap(found -> {
+            if (found) return Single.just(MessageJump.Found);
+            return messageDao.minSeq(conversationId).flatMap(min -> {
+                if (min > 0L) {
+                    return loadTargetedBySeq(conversationId, messageId, targetSeq, min, maxPages);
+                }
+                return refreshHistory(conversationId).flatMap(first -> {
+                    if (first instanceof Result.Failure<?> failure) {
+                        return Single.just(new MessageJump.Failed(failure.getError()));
+                    }
+                    return messageDao.exists(messageId).flatMap(nowFound -> {
+                        if (nowFound) return Single.just(MessageJump.Found);
+                        return messageDao.minSeq(conversationId).flatMap(nextMin -> nextMin > 0L
+                                ? loadTargetedBySeq(conversationId, messageId, targetSeq, nextMin, maxPages)
+                                : Single.just(MessageJump.NotFound));
+                    });
+                });
+            });
+        }).subscribeOn(Schedulers.io()));
+    }
+
+    private Single<MessageJump> loadTargetedBySeq(
+            String conversationId, String messageId, long targetSeq, long minSeq, int maxPages) {
+        if (targetSeq >= minSeq) {
+            return fetchAnchoredAtSeq(conversationId, messageId, targetSeq, 0L);
+        }
+        long contiguousHorizon = (long) Math.max(1, maxPages) * MessageApi.MAX_PAGE_SIZE;
+        if (minSeq - targetSeq <= contiguousHorizon) {
+            return loadOlderPages(
+                    conversationId, messageId, targetSeq, Math.max(1, maxPages), MessageApi.MAX_PAGE_SIZE);
+        }
+        return fetchAnchoredAtSeq(conversationId, messageId, targetSeq, minSeq);
+    }
+
+    private Single<MessageJump> fetchAnchoredAtSeq(
+            String conversationId, String messageId, long targetSeq, long floorIfOlder) {
+        long anchorBeforeSeq = targetSeq > Long.MAX_VALUE - JUMP_ANCHOR_LOOKAHEAD
+                ? Long.MAX_VALUE
+                : targetSeq + JUMP_ANCHOR_LOOKAHEAD;
+        return fetchAndPersistAnchoredPage(conversationId, messageId, targetSeq, anchorBeforeSeq, floorIfOlder, true);
+    }
+
+    private Single<MessageJump> fetchAndPersistAnchoredPage(
+            String conversationId,
+            String messageId,
+            long targetSeq,
+            long beforeSeq,
+            long floorIfOlder,
+            boolean allowExactRetry) {
+        return call(messageApi.getMessages(conversationId, beforeSeq, null, MessageApi.DEFAULT_PAGE_SIZE))
+                .flatMap(result -> {
+                    if (result instanceof Result.Failure<?> failure) {
+                        return Single.just(new MessageJump.Failed(failure.getError()));
+                    }
+                    MessagePageDto page = (MessagePageDto) ((Result.Success<?>) result).getValue();
+                    List<MessageDto> items = page.getItems() == null ? Collections.emptyList() : page.getItems();
+                    Completable recordFloor = shouldRecordJumpFloor(floorIfOlder, items)
+                            ? recordHistoryJumpFloorIfAbsent(conversationId, floorIfOlder)
+                            : Completable.complete();
+                    return recordFloor
+                            .andThen(storeHistoryItems(conversationId, items))
+                            .andThen(messageDao.exists(messageId))
+                            .flatMap(found -> {
+                                if (found) return Single.just(MessageJump.Found);
+                                if (allowExactRetry && page.getHasMore() && !items.isEmpty()
+                                        && lowestSeqInPage(items) > targetSeq && beforeSeq > targetSeq + 1L) {
+                                    return fetchAndPersistAnchoredPage(
+                                            conversationId, messageId, targetSeq, targetSeq + 1L, floorIfOlder, false);
+                                }
+                                return Single.just(MessageJump.NotFound);
+                            });
+                });
+    }
+
+    private static boolean shouldRecordJumpFloor(long floorIfOlder, List<MessageDto> items) {
+        return floorIfOlder > 0L && lowestSeqInPage(items) < floorIfOlder;
+    }
+
+    private static long lowestSeqInPage(List<MessageDto> items) {
+        long lowest = Long.MAX_VALUE;
+        for (MessageDto dto : items) {
+            if (dto != null && dto.getSeq() != null && dto.getSeq() < lowest) {
+                lowest = dto.getSeq();
+            }
+        }
+        return lowest;
+    }
+
+    private Completable recordHistoryJumpFloorIfAbsent(String conversationId, long floorSeq) {
+        Completable write = tokenStore == null ? null : tokenStore.recordHistoryJumpFloorIfAbsent(conversationId, floorSeq);
+        return write == null ? Completable.complete() : write;
+    }
+
+    private Completable cleanupJumpIslandFloor(String conversationId) {
+        Single<Long> consume = tokenStore == null ? null : tokenStore.consumeHistoryJumpFloor(conversationId);
+        if (consume == null) {
+            return Completable.complete();
+        }
+        return consume.flatMapCompletable(floor -> {
+            if (floor == null || floor <= 0L) {
+                return Completable.complete();
+            }
+            Completable delete = messageDao.deleteBelowSeq(conversationId, floor);
+            return delete == null ? Completable.complete() : delete;
+        });
+    }
+
     private Single<MessageJump> loadOlderPages(String conversationId, String messageId, int pagesLeft) {
+        return loadOlderPages(conversationId, messageId, null, pagesLeft, MessageApi.DEFAULT_PAGE_SIZE);
+    }
+
+    private Single<MessageJump> loadOlderPages(
+            String conversationId, String messageId, @Nullable Long stopAtSeq, int pagesLeft, int limit) {
         if (pagesLeft <= 0) return Single.just(MessageJump.NotFound);
         return messageDao.minSeq(conversationId).flatMap(oldest -> {
-            if (oldest <= 0L) return Single.just(MessageJump.NotFound);
-            return refreshHistory(conversationId, oldest).flatMap(pageResult -> {
+            if (oldest <= 0L || (stopAtSeq != null && oldest <= stopAtSeq)) {
+                return Single.just(MessageJump.NotFound);
+            }
+            return refreshHistory(conversationId, oldest, limit).flatMap(pageResult -> {
                 if (pageResult instanceof Result.Failure<?> failure) {
                     return Single.just(new MessageJump.Failed(failure.getError()));
                 }
@@ -584,7 +720,7 @@ public final class MessageRepository {
                 return messageDao.exists(messageId).flatMap(found -> {
                     if (found) return Single.just(MessageJump.Found);
                     if (!page.getHasMore()) return Single.just(MessageJump.NotFound);
-                    return loadOlderPages(conversationId, messageId, pagesLeft - 1);
+                    return loadOlderPages(conversationId, messageId, stopAtSeq, pagesLeft - 1, limit);
                 });
             });
         });
