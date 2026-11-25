@@ -439,6 +439,7 @@
     <string name="ask_chat_unavailable">Cuộc trò chuyện không còn khả dụng.</string>
     <string name="ask_invalid_question">Nhập câu hỏi từ 1 đến 500 ký tự.</string>
     <string name="ask_consent_title">Bật AI để trả lời?</string>
+    <string name="ask_consent_message">Nội dung tin nhắn sẽ được ẩn danh hóa và lược bỏ thông tin nhạy cảm trước khi gửi đến dịch vụ AI bên ngoài. Bạn có muốn bật trả lời bằng AI không?</string>
     <string name="ask_consent_required">Hãy bật quyền dùng AI để trả lời câu hỏi.</string>
     <string name="ask_rate_limited">Bạn hỏi quá nhanh. Hãy thử lại sau.</string>
     <plurals name="ask_rate_limited_retry">

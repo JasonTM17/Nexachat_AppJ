@@ -442,6 +442,7 @@
     <string name="ask_chat_unavailable">This chat is no longer available.</string>
     <string name="ask_invalid_question">Enter a question with 1–500 characters.</string>
     <string name="ask_consent_title">Use AI to answer?</string>
+    <string name="ask_consent_message">When enabled, message text is anonymized and sensitive information is redacted before being sent to an external AI service. Enable AI answers?</string>
     <string name="ask_consent_required">AI consent is needed to answer this question.</string>
     <string name="ask_rate_limited">Too many questions. Please try again later.</string>
     <plurals name="ask_rate_limited_retry">

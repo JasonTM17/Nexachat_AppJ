@@ -329,7 +329,7 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
         consentDialogShowing = true;
         consentDialog = new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.ask_consent_title)
-                .setMessage(R.string.dialog_ai_consent_message)
+                .setMessage(R.string.ask_consent_message)
                 .setNegativeButton(R.string.dialog_ai_consent_dismiss,
                         (dialog, which) -> {
                             consentDialogShowing = false;
