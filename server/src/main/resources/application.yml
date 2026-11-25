@@ -376,7 +376,10 @@ nexachat:
       rate-limit-per-minute: ${NEXACHAT_RAG_ASK_RATE_LIMIT_PER_MINUTE:20}
       rate-limit-per-day: ${NEXACHAT_RAG_ASK_RATE_LIMIT_PER_DAY:200}
       cache-ttl-hours: ${NEXACHAT_RAG_ASK_CACHE_TTL_HOURS:24}
-      single-flight-wait-ms: ${NEXACHAT_RAG_ASK_SINGLE_FLIGHT_WAIT_MS:120000}
+      # End-to-end server budget and follower wait stay below Android's 130-second read timeout.
+      single-flight-wait-ms: ${NEXACHAT_RAG_ASK_SINGLE_FLIGHT_WAIT_MS:110000}
+      deadline-ms: ${NEXACHAT_RAG_ASK_DEADLINE_MS:110000}
+      max-inline-embedding-computations: ${NEXACHAT_RAG_ASK_MAX_INLINE_EMBEDDING_COMPUTATIONS:500}
     llm:
       max-concurrent: ${NEXACHAT_RAG_LLM_MAX_CONCURRENT:8}
       bulkhead-wait-ms: ${NEXACHAT_RAG_LLM_BULKHEAD_WAIT_MS:500}

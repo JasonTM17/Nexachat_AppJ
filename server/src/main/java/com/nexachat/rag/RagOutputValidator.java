@@ -27,6 +27,8 @@ public final class RagOutputValidator {
     private static final Pattern URL = Pattern.compile("(?i)\\b(?:https?://|www\\.)[^\\s<>]+|\\b[a-z0-9.-]+\\.[a-z]{2,}(?:/[^\\s<>]*)?");
     private static final Pattern HTML_TAG = Pattern.compile("<[^>]*>");
     private static final Pattern MARKUP = Pattern.compile("[`*_~>#]+");
+    private static final Pattern REDACTION_PLACEHOLDER = Pattern.compile(
+            "\\[REDACTED_(?:EMAIL|PHONE|NUMBER|TOKEN|URL)]");
 
     private final ObjectMapper objectMapper;
 
@@ -68,7 +70,8 @@ public final class RagOutputValidator {
         if (answerNode.isNull()) {
             return citationsNode.isEmpty() ? Validation.abstain() : Validation.invalid();
         }
-        String answer = cleanText(answerNode.textValue());
+        CleanedText cleaned = cleanText(answerNode.textValue());
+        String answer = cleaned.text();
         if (answer == null || answer.isBlank()) {
             return Validation.invalid();
         }
@@ -88,7 +91,7 @@ public final class RagOutputValidator {
         if (!LanguageCheck.matches(answer, prompt.language())) {
             return Validation.invalid();
         }
-        return Validation.answer(new RagLlmAnswer(answer, List.copyOf(citationIds)));
+        return Validation.answer(new RagLlmAnswer(answer, List.copyOf(citationIds)), cleaned.sensitiveContentRedacted());
     }
 
     public enum Status {
@@ -97,24 +100,28 @@ public final class RagOutputValidator {
         INVALID
     }
 
-    public record Validation(Status status, RagLlmAnswer answer) {
-        private static Validation answer(RagLlmAnswer answer) {
-            return new Validation(Status.ANSWER, answer);
+    public record Validation(Status status, RagLlmAnswer answer, boolean sensitiveContentRedacted) {
+        private static Validation answer(RagLlmAnswer answer, boolean sensitiveContentRedacted) {
+            return new Validation(Status.ANSWER, answer, sensitiveContentRedacted);
         }
 
         private static Validation abstain() {
-            return new Validation(Status.ABSTAIN, null);
+            return new Validation(Status.ABSTAIN, null, false);
         }
 
         private static Validation invalid() {
-            return new Validation(Status.INVALID, null);
+            return new Validation(Status.INVALID, null, false);
         }
     }
 
-    private static String cleanText(String input) {
+    private static CleanedText cleanText(String input) {
+        boolean sensitiveRedacted = input != null && REDACTION_PLACEHOLDER.matcher(input).find();
         String cleaned = MARKDOWN_LINK.matcher(input).replaceAll("$1");
         cleaned = HTML_TAG.matcher(cleaned).replaceAll(" ");
-        cleaned = URL.matcher(cleaned).replaceAll(" ");
+        if (URL.matcher(cleaned).find()) {
+            sensitiveRedacted = true;
+            cleaned = URL.matcher(cleaned).replaceAll(" ");
+        }
         cleaned = MARKUP.matcher(cleaned).replaceAll("");
         cleaned = cleaned.replaceAll("[\\p{Cntrl}&&[^\\r\\n\\t]]", " ")
                 .replaceAll("\\s+", " ").trim();
@@ -122,6 +129,12 @@ public final class RagOutputValidator {
         if (codePoints > MAX_ANSWER_CHARS) {
             cleaned = cleaned.substring(0, cleaned.offsetByCodePoints(0, MAX_ANSWER_CHARS)).trim();
         }
-        return cleaned;
+        if (REDACTION_PLACEHOLDER.matcher(cleaned).find()) {
+            sensitiveRedacted = true;
+        }
+        return new CleanedText(cleaned, sensitiveRedacted);
+    }
+
+    private record CleanedText(String text, boolean sensitiveContentRedacted) {
     }
 }

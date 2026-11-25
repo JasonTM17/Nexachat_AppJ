@@ -95,10 +95,16 @@ public final class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvide
 
     @Override
     public float[] embed(String text) {
+        return embed(text, timeoutMs);
+    }
+
+    @Override
+    public float[] embed(String text, long timeoutBudgetMs) {
         if (text == null) {
             text = "";
         }
-        return parse(execute(requestBody(text), endpoint));
+        long effectiveTimeout = Math.max(1, Math.min(timeoutMs, timeoutBudgetMs));
+        return parse(execute(requestBody(text), endpoint, effectiveTimeout));
     }
 
     /**
@@ -110,34 +116,61 @@ public final class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvide
      */
     @Override
     public List<float[]> embedAll(List<String> texts) {
+        return embedAllInternal(texts, 0L);
+    }
+
+    @Override
+    public List<float[]> embedAll(List<String> texts, long timeoutBudgetMs) {
+        long deadlineNanos = System.nanoTime()
+                + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(Math.max(1, timeoutBudgetMs));
+        return embedAllInternal(texts, deadlineNanos);
+    }
+
+    private List<float[]> embedAllInternal(List<String> texts, long deadlineNanos) {
         if (texts == null || texts.isEmpty()) {
             return List.of();
         }
         if (texts.size() == 1) {
-            return List.of(embed(texts.get(0)));
+            return List.of(embed(texts.get(0), chunkBudgetMs(deadlineNanos)));
         }
         List<float[]> vectors = new ArrayList<>(texts.size());
         for (int start = 0; start < texts.size(); start += batchSize) {
             List<String> chunk = texts.subList(start, Math.min(texts.size(), start + batchSize));
             if (batchShapeUnsupported.get()) {
-                vectors.addAll(EmbeddingProvider.super.embedAll(chunk));
+                for (String text : chunk) {
+                    vectors.add(embed(text, chunkBudgetMs(deadlineNanos)));
+                }
                 continue;
             }
             try {
-                vectors.addAll(embedBatch(chunk));
+                vectors.addAll(embedBatch(chunk, chunkBudgetMs(deadlineNanos)));
             } catch (EmbeddingProviderException exception) {
                 if (!isBatchShapeUnsupported(exception)) {
                     throw exception;
                 }
                 batchShapeUnsupported.set(true);
-                vectors.addAll(EmbeddingProvider.super.embedAll(chunk));
+                for (String text : chunk) {
+                    vectors.add(embed(text, chunkBudgetMs(deadlineNanos)));
+                }
             }
         }
         return List.copyOf(vectors);
     }
 
-    private List<float[]> embedBatch(List<String> texts) {
-        return parseBatch(execute(requestBatchBody(texts), batchEndpoint), texts.size());
+    private long chunkBudgetMs(long deadlineNanos) {
+        if (deadlineNanos <= 0) {
+            return timeoutMs;
+        }
+        long remaining = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime());
+        if (remaining <= 0) {
+            throw new EmbeddingProviderException("embedding request timed out");
+        }
+        return remaining;
+    }
+
+    private List<float[]> embedBatch(List<String> texts, long timeoutBudgetMs) {
+        long effectiveTimeout = Math.max(1, Math.min(timeoutMs, timeoutBudgetMs));
+        return parseBatch(execute(requestBatchBody(texts), batchEndpoint, effectiveTimeout), texts.size());
     }
 
     private static boolean isBatchShapeUnsupported(EmbeddingProviderException exception) {
@@ -145,9 +178,9 @@ public final class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvide
         return status == 400 || status == 404 || status == 405 || status == 422;
     }
 
-    private JsonNode execute(byte[] body, URI target) {
+    private JsonNode execute(byte[] body, URI target, long timeoutBudgetMs) {
         HttpRequest.Builder request = HttpRequest.newBuilder(target)
-                .timeout(Duration.ofMillis(Math.max(100, timeoutMs)))
+                .timeout(Duration.ofMillis(Math.max(1, timeoutBudgetMs)))
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body));

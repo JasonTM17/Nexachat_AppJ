@@ -84,12 +84,18 @@ public class RagEmbeddingService {
     }
 
     public EmbeddingOutcome embedQuestion(UUID userId, String question, boolean consented) {
+        return embedQuestion(userId, question, consented, null);
+    }
+
+    public EmbeddingOutcome embedQuestion(UUID userId, String question, boolean consented, AskDeadline deadline) {
+        check(deadline);
         EmbeddingProvider provider = runtimeProvider(consented);
         try {
-            float[] vector = embed(userId, provider, inputFor(question, provider));
+            float[] vector = embed(userId, provider, inputFor(question, provider), deadline);
             return new EmbeddingOutcome(vector, provider.id());
         } catch (EmbeddingProviderException exception) {
-            float[] vector = embed(null, providers.local(), question == null ? "" : question);
+            check(deadline);
+            float[] vector = embed(null, providers.local(), question == null ? "" : question, deadline);
             return new EmbeddingOutcome(vector, providers.local().id());
         }
     }
@@ -118,17 +124,26 @@ public class RagEmbeddingService {
 
     public RetrievalEmbeddings embedForRetrieval(
             UUID userId, String question, List<RagMessage> candidates, int limit, boolean consented) {
+        return embedForRetrieval(userId, question, candidates, limit, consented, null);
+    }
+
+    public RetrievalEmbeddings embedForRetrieval(
+            UUID userId, String question, List<RagMessage> candidates, int limit, boolean consented,
+            AskDeadline deadline) {
+        check(deadline);
         EmbeddingProvider provider = runtimeProvider(consented);
         try {
-            float[] questionVector = embed(userId, provider, inputFor(question, provider));
+            float[] questionVector = embed(userId, provider, inputFor(question, provider), deadline);
             int vectorBudget = provider == providers.external()
                     ? Math.min(limit, Math.max(0, properties.getIndex().getExternalLazyLimit()))
                     : limit;
-            VectorOutcome vectors = ensureVectorsWith(userId, provider, candidates, vectorBudget);
+            check(deadline);
+            VectorOutcome vectors = ensureVectorsWith(userId, provider, candidates, vectorBudget, deadline);
             return new RetrievalEmbeddings(questionVector, vectors.vectors(), provider.id());
         } catch (EmbeddingProviderException exception) {
-            float[] questionVector = embed(null, providers.local(), question == null ? "" : question);
-            VectorOutcome vectors = ensureVectorsWith(null, providers.local(), candidates, limit);
+            check(deadline);
+            float[] questionVector = embed(null, providers.local(), question == null ? "" : question, deadline);
+            VectorOutcome vectors = ensureVectorsWith(null, providers.local(), candidates, limit, deadline);
             return new RetrievalEmbeddings(questionVector, vectors.vectors(), providers.local().id());
         }
     }
@@ -167,11 +182,22 @@ public class RagEmbeddingService {
 
     private VectorOutcome ensureVectorsWith(
             UUID userId, EmbeddingProvider provider, List<RagMessage> messages, int limit) {
-        return ensureVectorsWith(userId, provider, messages, limit, provider == providers.primary());
+        return ensureVectorsWith(userId, provider, messages, limit, provider == providers.primary(), null);
+    }
+
+    private VectorOutcome ensureVectorsWith(
+            UUID userId, EmbeddingProvider provider, List<RagMessage> messages, int limit, AskDeadline deadline) {
+        return ensureVectorsWith(userId, provider, messages, limit, provider == providers.primary(), deadline);
     }
 
     private VectorOutcome ensureVectorsWith(
             UUID userId, EmbeddingProvider provider, List<RagMessage> messages, int limit, boolean persist) {
+        return ensureVectorsWith(userId, provider, messages, limit, persist, null);
+    }
+
+    private VectorOutcome ensureVectorsWith(
+            UUID userId, EmbeddingProvider provider, List<RagMessage> messages, int limit, boolean persist,
+            AskDeadline deadline) {
         if (messages == null || messages.isEmpty()) {
             return new VectorOutcome(Map.of(), provider.id());
         }
@@ -223,10 +249,12 @@ public class RagEmbeddingService {
                 ? List.copyOf(missing.subList(missing.size() - budget, missing.size()))
                 : missing;
         if (!batch.isEmpty()) {
+            check(deadline);
             List<String> inputs = batch.stream()
                     .map(message -> inputFor(message.content(), provider))
                     .toList();
-            List<float[]> vectors = embedAll(userId, provider, inputs);
+            List<float[]> vectors = embedAll(userId, provider, inputs, deadline);
+            check(deadline);
             Map<UUID, float[]> savedVectors = new HashMap<>();
             Map<UUID, String> savedHashes = new HashMap<>();
             for (int position = 0; position < batch.size(); position++) {
@@ -269,14 +297,25 @@ public class RagEmbeddingService {
         }
     }
 
-    private float[] embed(UUID userId, EmbeddingProvider provider, String input) {
+    private float[] embed(UUID userId, EmbeddingProvider provider, String input, AskDeadline deadline) {
         return executeEmbeddingCall(userId, provider, 1, "embedding request failed",
-                () -> provider.embed(input));
+                () -> provider.embed(input, networkBudget(deadline)), deadline);
     }
 
-    private List<float[]> embedAll(UUID userId, EmbeddingProvider provider, List<String> inputs) {
+    private List<float[]> embedAll(
+            UUID userId, EmbeddingProvider provider, List<String> inputs, AskDeadline deadline) {
         return executeEmbeddingCall(userId, provider, inputs.size(), "embedding batch failed",
-                () -> provider.embedAll(inputs));
+                () -> provider.embedAll(inputs, networkBudget(deadline)), deadline);
+    }
+
+    private static long networkBudget(AskDeadline deadline) {
+        return deadline == null ? Long.MAX_VALUE : deadline.networkBudgetMs();
+    }
+
+    private static void check(AskDeadline deadline) {
+        if (deadline != null) {
+            deadline.check();
+        }
     }
 
     private <T> T executeEmbeddingCall(
@@ -284,19 +323,25 @@ public class RagEmbeddingService {
             EmbeddingProvider provider,
             int inputCount,
             String failureMessage,
-            Supplier<T> call) {
+            Supplier<T> call,
+            AskDeadline deadline) {
         requireConsentIfExternal(provider, userId);
+        check(deadline);
         if (provider != providers.local() && !circuitBreaker.allowRequest()) {
             throw new EmbeddingProviderException("embedding circuit breaker is open");
         }
         try {
             T result = call.get();
+            check(deadline);
             if (provider != providers.local()) {
                 stats.recordEmbeddingCall(inputCount);
                 circuitBreaker.recordSuccess();
             }
             return result;
         } catch (RuntimeException exception) {
+            if (exception instanceof AskDeadlineExceededException deadlineExceeded) {
+                throw deadlineExceeded;
+            }
             if (provider != providers.local()) {
                 stats.recordEmbeddingFailure();
                 circuitBreaker.recordFailure();
