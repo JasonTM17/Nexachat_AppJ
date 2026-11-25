@@ -330,6 +330,7 @@
     <string name="action_admin_delete_desc">Remove it for all members</string>
     <string name="attachment_picker_title">Add attachment</string>
     <string name="forwarded_snackbar">Forwarded</string>
+    <string name="chat_opening_message">Opening message…</string>
     <string name="action_view">View</string>
 
     <!-- Message Edit -->

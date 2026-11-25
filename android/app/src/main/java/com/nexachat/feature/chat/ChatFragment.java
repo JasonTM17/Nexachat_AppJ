@@ -174,6 +174,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     @Nullable private String lastProbedBlockPeerId;
     private String conversationId = "";
     private String pulsingMessageId;
+    @Nullable private Snackbar jumpProgressSnackbar;
     private MentionDraft composerMentionDraft = MentionDraft.empty("");
     private MentionDraft.Query mentionQuery;
     private MentionSuggestionAdapter mentionAdapter;
@@ -1312,6 +1313,13 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                 jumpToLoadedMessage(id);
             }
         });
+        viewModel.getJumpInFlight().observe(getViewLifecycleOwner(), inFlight -> {
+            if (Boolean.TRUE.equals(inFlight)) {
+                showJumpProgress();
+            } else {
+                hideJumpProgress();
+            }
+        });
         viewModel.getActionEvents().observe(getViewLifecycleOwner(), raw -> {
             ChatActionEvent event = raw == null ? null : raw.consume();
             if (event instanceof ChatActionEvent.MessageEdited) render();
@@ -1983,6 +1991,27 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         // be skipped as a duplicate render.
         rowRenderInputs.invalidate();
         binding.messageList.setVisibility(showLoading || showEmpty || showError ? View.GONE : View.VISIBLE);
+    }
+
+    /**
+     * Transient progress while a citation or quote target outside the loaded window is
+     * paged in: without it the sheet just vanishes and the chat sits silent until the
+     * success pulse lands. Dismissed as soon as the jump resolves one way or the other.
+     */
+    private void showJumpProgress() {
+        if (binding == null || jumpProgressSnackbar != null) {
+            return;
+        }
+        jumpProgressSnackbar = anchoredSnackbar(
+                binding.getRoot(), R.string.chat_opening_message, Snackbar.LENGTH_INDEFINITE);
+        jumpProgressSnackbar.show();
+    }
+
+    private void hideJumpProgress() {
+        if (jumpProgressSnackbar != null) {
+            jumpProgressSnackbar.dismiss();
+            jumpProgressSnackbar = null;
+        }
     }
 
     private void jumpToLoadedMessage(String messageId) {
@@ -2963,6 +2992,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         }
         adapter = null;
         binding = null;
+        jumpProgressSnackbar = null;
         unreadDividerLocalReadSeq = null;
         unreadDividerDismissed = false;
         unreadDividerWasVisible = false;

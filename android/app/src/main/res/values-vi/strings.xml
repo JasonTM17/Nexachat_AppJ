@@ -327,6 +327,7 @@
     <string name="action_admin_delete_desc">Gỡ tin nhắn với tất cả thành viên</string>
     <string name="attachment_picker_title">Đính kèm</string>
     <string name="forwarded_snackbar">Đã chuyển tiếp</string>
+    <string name="chat_opening_message">Đang mở tin nhắn…</string>
     <string name="action_view">Xem</string>
 
     <!-- Message Edit -->
