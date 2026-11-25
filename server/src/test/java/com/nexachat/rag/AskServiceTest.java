@@ -196,9 +196,9 @@ class AskServiceTest {
         RagMessage secret = addMessage(conversationId, senderId, 2,
                 "The secret alpha bravo value is ready for review and rollout.");
         setConsent(true);
-        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(new RagLlmAnswer("The budget and secret value are ready.",
-                        List.of(budget.id(), secret.id())));
+        when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(RagLlmOutcome.answer(new RagLlmAnswer("The budget and secret value are ready.",
+                        List.of(budget.id(), secret.id())), false));
 
         AskResponse response = service.ask(conversationId, userId,
                 new AskRequest("Please tell me the secret alpha bravo value and the budget approval details "
@@ -206,7 +206,7 @@ class AskServiceTest {
                         + "timing and any other relevant project milestones", SummaryLanguage.EN));
 
         assertThat(response.mode()).isEqualTo(AskMode.LLM);
-        verify(llmAnswerService).answer(eq(userId), eq(conversationId), any(), any(), any(), any(), any());
+        verify(llmAnswerService).answerDetailed(eq(userId), eq(conversationId), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -214,14 +214,14 @@ class AskServiceTest {
         RagMessage fact = addMessage(conversationId, senderId, 1,
                 "The server migration is scheduled for March 14 at 02:00.");
         setConsent(true);
-        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(new RagLlmAnswer("The migration is on March 14.", List.of(fact.id())));
+        when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(RagLlmOutcome.answer(new RagLlmAnswer("The migration is on March 14.", List.of(fact.id())), false));
 
         AskResponse response = service.ask(conversationId, userId,
                 new AskRequest("Please summarize the migration decision.", SummaryLanguage.EN));
 
         assertThat(response.mode()).isEqualTo(AskMode.LLM);
-        verify(llmAnswerService).answer(eq(userId), eq(conversationId), any(), any(), any(), any(), any());
+        verify(llmAnswerService).answerDetailed(eq(userId), eq(conversationId), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -234,7 +234,7 @@ class AskServiceTest {
                         SummaryLanguage.EN));
 
         assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
+        verify(llmAnswerService, never()).answerDetailed(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
