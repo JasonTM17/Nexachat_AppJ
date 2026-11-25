@@ -293,12 +293,13 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
             viewModel.refresh();
         } else {
             updateConsentCard(false);
-            Boolean consent = consentRepository.aiSummaryConsent().getValue();
-            if (Boolean.TRUE.equals(consent)) {
-                consentRepository.setConsent(false, () -> viewModel.refresh());
-            } else {
-                viewModel.refresh();
-            }
+            // The Local chip is a per-sheet engine preference, never an account-wide
+            // consent revocation: writing consent false here silently flipped the
+            // account-level setting and dropped the whole summary cache. The server
+            // still derives the engine from account consent and window complexity
+            // (local-first routing), so with consent granted a complex window may
+            // remain AI-generated; the result header badge always names what ran.
+            viewModel.refresh();
         }
     }
 
