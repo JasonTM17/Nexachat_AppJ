@@ -29,6 +29,7 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           # Dedup: don't open a new issue every 10 min while prod stays down.
@@ -42,6 +43,7 @@ jobs:
         if: success()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           open_number=$(gh issue list --state open --search "prod liveness failing (keep-warm) in:title" --limit 1 --json number -q '.[0].number // empty')
