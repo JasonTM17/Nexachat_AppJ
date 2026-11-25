@@ -84,16 +84,12 @@ public class CallActivity extends ComponentActivity {
     private Button hangUpButton;
     private View pulseRing;
     private android.animation.AnimatorSet pulseAnimator;
-    private TextView muteLabel;
-    private TextView speakerLabel;
-    private TextView hangUpLabel;
     private View avatarWrap;
     private org.webrtc.SurfaceViewRenderer remoteVideoView;
     private org.webrtc.SurfaceViewRenderer localVideoView;
     private View localPreviewCard;
     private Button cameraButton;
     private Button switchCameraButton;
-    private TextView cameraLabel;
     private boolean renderersInitialized;
     private boolean localVideoBound;
     private boolean remoteVideoBound;
@@ -361,16 +357,12 @@ public class CallActivity extends ComponentActivity {
         speakerButton = findViewById(R.id.call_speaker);
         hangUpButton = findViewById(R.id.call_hang_up);
         pulseRing = findViewById(R.id.call_pulse_ring);
-        muteLabel = findViewById(R.id.call_mute_label);
-        speakerLabel = findViewById(R.id.call_speaker_label);
-        hangUpLabel = findViewById(R.id.call_hang_up_label);
         avatarWrap = findViewById(R.id.call_avatar_wrap);
         remoteVideoView = findViewById(R.id.call_remote_video);
         localVideoView = findViewById(R.id.call_local_video);
         localPreviewCard = findViewById(R.id.call_local_preview);
         cameraButton = findViewById(R.id.call_camera);
         switchCameraButton = findViewById(R.id.call_camera_switch);
-        cameraLabel = findViewById(R.id.call_camera_label);
     }
 
     private void startFirebaseCallStatusDisplay() {
@@ -463,20 +455,6 @@ public class CallActivity extends ComponentActivity {
         setControlVisible(muteButton, model.isShowMute());
         setControlVisible(speakerButton, model.isShowSpeaker());
         setControlVisible(hangUpButton, model.isShowHangUp());
-        if (muteLabel != null) {
-            muteLabel.setVisibility(model.isShowMute() ? View.VISIBLE : View.GONE);
-            muteLabel.setText(session.isMuted() ? R.string.call_unmute : R.string.call_mute);
-        }
-        if (speakerLabel != null) {
-            speakerLabel.setVisibility(model.isShowSpeaker() ? View.VISIBLE : View.GONE);
-            speakerLabel.setText(session.isSpeakerOn() ? R.string.call_earpiece : R.string.call_speaker);
-        }
-        if (hangUpLabel != null) {
-            hangUpLabel.setVisibility(model.isShowHangUp() ? View.VISIBLE : View.GONE);
-            if (model.getHangUpLabelRes() != 0) {
-                hangUpLabel.setText(model.getHangUpLabelRes());
-            }
-        }
         if (muteButton instanceof com.google.android.material.button.MaterialButton) {
             ((com.google.android.material.button.MaterialButton) muteButton)
                     .setIconResource(session.isMuted() ? R.drawable.ic_mic_off : R.drawable.ic_mic);
@@ -519,14 +497,6 @@ public class CallActivity extends ComponentActivity {
         }
         if (switchCameraButton != null) {
             setControlVisible(switchCameraButton, showCameraControls);
-            View switchLabel = findViewById(R.id.call_camera_switch_label);
-            if (switchLabel != null) {
-                switchLabel.setVisibility(showCameraControls ? View.VISIBLE : View.GONE);
-            }
-        }
-        if (cameraLabel != null) {
-            cameraLabel.setVisibility(showCameraControls ? View.VISIBLE : View.GONE);
-            cameraLabel.setText(session.isCameraOn() ? R.string.call_camera_off : R.string.call_camera_on);
         }
     }
 
