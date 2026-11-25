@@ -109,7 +109,7 @@ class AskServiceTest {
                         .isEqualTo(ApiErrorCode.E2EE_AI_UNAVAILABLE));
         verify(provider, never()).embedQuestion(any(), any(), anyBoolean());
         verify(questionCache, never()).findExact(any(), any(), any());
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
+        verify(llmAnswerService, never()).answerDetailed(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -119,7 +119,7 @@ class AskServiceTest {
         assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
         assertThat(response.answer()).isNull();
         assertThat(response.usage().llmCalls()).isZero();
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
+        verify(llmAnswerService, never()).answerDetailed(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -134,7 +134,7 @@ class AskServiceTest {
                 new AskRequest("What is the database password?", SummaryLanguage.EN));
 
         assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
+        verify(llmAnswerService, never()).answerDetailed(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -149,7 +149,7 @@ class AskServiceTest {
                 new AskRequest("Find the database password.", SummaryLanguage.EN));
 
         assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
+        verify(llmAnswerService, never()).answerDetailed(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -166,7 +166,7 @@ class AskServiceTest {
                 new AskRequest(longDeclarative, SummaryLanguage.EN));
 
         assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
+        verify(llmAnswerService, never()).answerDetailed(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -174,16 +174,18 @@ class AskServiceTest {
         RagMessage fact = addMessage(conversationId, senderId, 1,
                 "The database password for the staging service is correct-horse-battery.");
         setConsent(true);
-        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(new RagLlmAnswer("The staging database password is correct-horse-battery.",
-                        List.of(fact.id())));
+        when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(RagLlmOutcome.answer(
+                        new RagLlmAnswer("The staging database password is correct-horse-battery.",
+                                List.of(fact.id())), false));
 
         AskResponse response = service.ask(conversationId, userId,
                 new AskRequest("Find the database password for the staging service.", SummaryLanguage.EN));
 
         assertThat(response.mode()).isEqualTo(AskMode.LLM);
         assertThat(response.answer()).contains("correct-horse-battery");
-        verify(llmAnswerService).answer(eq(userId), eq(conversationId), any(), any(), any(), any(), any());
+        verify(llmAnswerService).answerDetailed(
+                eq(userId), eq(conversationId), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -197,7 +199,62 @@ class AskServiceTest {
         assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
         assertThat(response.citations()).extracting(RagCitation::messageId).contains(fact.id());
         assertThat(response.usage().llmCalls()).isZero();
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
+        verify(llmAnswerService, never()).answerDetailed(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void exactValueLookupIsAnsweredLocallyWithPreciseExtractionMetadata() {
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "Maya's contact email is maya@example.com for production access questions.");
+        setConsent(true);
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("What is Maya's email?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).isEqualTo("maya@example.com");
+        assertThat(response.extraction()).isNotNull();
+        assertThat(response.extraction().kind()).isEqualTo("EXACT_VALUE");
+        assertThat(response.extraction().valueType()).isEqualTo("EMAIL");
+        assertThat(response.extraction().sourceMessageId()).isEqualTo(fact.id());
+        assertThat(response.answer()).doesNotContain("production access");
+        verify(llmAnswerService, never()).answerDetailed(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void providerFailureCanDegradeOnlyThroughIndependentHighConfidenceExtraction() {
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "The migration date is March 14 and the rollout review is complete.");
+        setConsent(true);
+        when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(RagLlmOutcome.providerError(true));
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("Find the migration date.", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).contains("March 14");
+        assertThat(response.degradationReason()).isEqualTo(AskReason.PROVIDER_ERROR);
+        assertThat(response.retryable()).isTrue();
+        assertThat(response.provenance().llmAttempted()).isTrue();
+        assertThat(response.citations()).extracting(RagCitation::messageId).contains(fact.id());
+    }
+
+    @Test
+    void validLlmAbstentionNeverFallsBackToVerbatimExtraction() {
+        addMessage(conversationId, senderId, 1,
+                "The migration date is March 14 and the rollout review is complete.");
+        setConsent(true);
+        when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(RagLlmOutcome.abstain());
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("Find the migration date.", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+        assertThat(response.answer()).isNull();
+        assertThat(response.provenance().llmAttempted()).isTrue();
     }
 
     @Test
@@ -206,8 +263,9 @@ class AskServiceTest {
         RagMessage fact = addMessage(conversationId, senderId, 1,
                 "The server migration is scheduled for March 14 at 02:00.");
         setConsent(true);
-        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(new RagLlmAnswer("The migration is on March 14.", List.of(fact.id())));
+        when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(RagLlmOutcome.answer(
+                        new RagLlmAnswer("The migration is on March 14.", List.of(fact.id())), false));
 
         AskResponse response = service.ask(conversationId, userId,
                 new AskRequest("Summarize everything we decided about the migration plan?", SummaryLanguage.EN));
@@ -216,7 +274,8 @@ class AskServiceTest {
         assertThat(response.answer()).contains("March 14");
         assertThat(response.usage().llmCalls()).isEqualTo(1);
         assertThat(response.usage().inputChars()).isPositive();
-        verify(llmAnswerService).answer(eq(userId), eq(conversationId), any(), any(), any(), any(), any());
+        verify(llmAnswerService).answerDetailed(
+                eq(userId), eq(conversationId), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -228,13 +287,13 @@ class AskServiceTest {
                 new AskRequest("Summarize everything we decided about the migration plan?", SummaryLanguage.EN));
 
         assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
+        verify(llmAnswerService, never()).answerDetailed(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
     void askCacheKeyUsesTheEmbeddingModelIdentity() {
         RagEmbeddingService embeddingService = mock(RagEmbeddingService.class);
-        when(embeddingService.embedQuestion(any(), any(), anyBoolean()))
+        when(embeddingService.embedQuestion(any(), any(), anyBoolean(), any()))
                 .thenReturn(new RagEmbeddingService.EmbeddingOutcome(
                         new float[256], "openai-compatible:gemini-embedding-001"));
         setConsent(true);
@@ -267,7 +326,7 @@ class AskServiceTest {
         assertThat(response.mode()).isEqualTo(AskMode.CACHE);
         assertThat(response.usage().cached()).isTrue();
         assertThat(response.usage().llmCalls()).isZero();
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
+        verify(llmAnswerService, never()).answerDetailed(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -288,7 +347,7 @@ class AskServiceTest {
         assertThat(response.answer()).doesNotContain("Provider answer");
         verify(questionCache, never()).findExact(any(), any(), any());
         verify(questionCache, never()).findCandidates(any(), any());
-        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
+        verify(llmAnswerService, never()).answerDetailed(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

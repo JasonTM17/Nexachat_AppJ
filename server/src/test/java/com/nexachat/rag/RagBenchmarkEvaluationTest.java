@@ -199,14 +199,16 @@ class RagBenchmarkEvaluationTest {
         when(questionCache.citationsValid(any(), any())).thenReturn(true);
         when(questionCache.contextSnapshot(any())).thenReturn(new RagQuestionCache.ContextSnapshot(1, null));
         when(questionCache.contextUnchanged(any(), any())).thenReturn(true);
-        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
-            llmInvocations.incrementAndGet();
-            List<RagContextItem> context = invocation.getArgument(4);
-            if (context.isEmpty()) {
-                return null;
-            }
-            return new RagLlmAnswer("Synthetic answer.", context.get(0).messageIds());
-        });
+        when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    llmInvocations.incrementAndGet();
+                    List<RagContextItem> context = invocation.getArgument(4);
+                    if (context.isEmpty()) {
+                        return RagLlmOutcome.providerError(true);
+                    }
+                    return RagLlmOutcome.answer(
+                            new RagLlmAnswer("Synthetic answer.", context.get(0).messageIds()), false);
+                });
 
         return new AskService(
                 rateLimiter, conversationRepository, memberRepository, consentRepository,

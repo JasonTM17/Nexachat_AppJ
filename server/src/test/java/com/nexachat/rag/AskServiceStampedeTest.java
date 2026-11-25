@@ -102,11 +102,11 @@ class AskServiceStampedeTest {
         when(consentRepository.isConsented(any())).thenAnswer(invocation -> consented.get());
         when(consentRepository.snapshot(any())).thenAnswer(invocation ->
                 new ConsentSnapshot(consented.get(), consentEpoch.get()));
-        when(embeddingService.embedQuestion(any(), any(), anyBoolean())).thenAnswer(invocation -> {
+        when(embeddingService.embedQuestion(any(), any(), anyBoolean(), any())).thenAnswer(invocation -> {
             embeddingCalls.incrementAndGet();
             return new RagEmbeddingService.EmbeddingOutcome(new float[] {1f, 0f}, "test-embedding-model");
         });
-        when(retrievalService.retrieve(any(), any(), any(), any(), anyBoolean(), any(), anyBoolean())).thenAnswer(invocation -> {
+        when(retrievalService.retrieve(any(), any(), any(), any(), anyBoolean(), any(), anyBoolean(), any())).thenAnswer(invocation -> {
             Boolean allowExternal = invocation.getArgument(4);
             if (!allowExternal) {
                 nonConsentedRetrievalReached.countDown();
@@ -173,7 +173,7 @@ class AskServiceStampedeTest {
             assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
         });
         verify(rateLimiter, times(CALLERS)).consume(userId);
-        verify(retrievalService, times(1)).retrieve(eq(conversationId), any(), any(), any(), anyBoolean(), any(), anyBoolean());
+        verify(retrievalService, times(1)).retrieve(eq(conversationId), any(), any(), any(), anyBoolean(), any(), anyBoolean(), any());
     }
 
     @Test
@@ -221,7 +221,7 @@ class AskServiceStampedeTest {
 
         assertThat(consentedAsk.get(WAIT_SECONDS, TimeUnit.SECONDS).mode()).isEqualTo(AskMode.NOT_FOUND);
         assertThat(answerProviderCalls.get()).isEqualTo(1);
-        verify(retrievalService, times(2)).retrieve(eq(conversationId), any(), any(), any(), anyBoolean(), any(), anyBoolean());
+        verify(retrievalService, times(2)).retrieve(eq(conversationId), any(), any(), any(), anyBoolean(), any(), anyBoolean(), any());
     }
 
     @Test
@@ -229,13 +229,13 @@ class AskServiceStampedeTest {
         CountDownLatch firstProviderEntered = new CountDownLatch(1);
         CountDownLatch secondProviderEntered = new CountDownLatch(1);
         CountDownLatch releaseProvider = new CountDownLatch(1);
-        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+        when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
             int call = answerProviderCalls.incrementAndGet();
             (call == 1 ? firstProviderEntered : secondProviderEntered).countDown();
             if (!releaseProvider.await(WAIT_SECONDS, TimeUnit.SECONDS)) {
                 throw new IllegalStateException("the provider was never released");
             }
-            return new RagLlmAnswer(ANSWER, List.of(fact.id()));
+            return RagLlmOutcome.answer(new RagLlmAnswer(ANSWER, List.of(fact.id())), false);
         });
 
         Future<AskResponse> oldEpochAsk = executor.submit(
@@ -279,7 +279,7 @@ class AskServiceStampedeTest {
 
     @Test
     void aFailedAnswerIsNotReusedByTheNextRequest() {
-        when(retrievalService.retrieve(any(), any(), any(), any(), anyBoolean(), any(), anyBoolean()))
+        when(retrievalService.retrieve(any(), any(), any(), any(), anyBoolean(), any(), anyBoolean(), any()))
                 .thenThrow(new IllegalStateException("retrieval is down"))
                 .thenReturn(retrieval);
         answerWith(new CountDownLatch(0), null);
@@ -352,8 +352,8 @@ class AskServiceStampedeTest {
             // The timed-out follower detached only that stalled flight; a later caller can lead.
             doAnswer(invocation -> {
                         answerProviderCalls.incrementAndGet();
-                        return new RagLlmAnswer("Recovered current answer.", List.of(fact.id()));
-                    }).when(llmAnswerService).answer(any(), any(), any(), any(), any(), any(), any());
+                        return RagLlmOutcome.answer(new RagLlmAnswer("Recovered current answer.", List.of(fact.id())), false);
+                    }).when(llmAnswerService).answerDetailed(any(), any(), any(), any(), any(), any(), any(), any());
             AskResponse recovered = service.ask(conversationId, userId, request(SummaryLanguage.EN));
             assertThat(recovered.answer()).isEqualTo("Recovered current answer.");
             assertThat(answerProviderCalls.get()).isEqualTo(2);
@@ -399,12 +399,12 @@ class AskServiceStampedeTest {
         CountDownLatch newEntered = new CountDownLatch(1);
         CountDownLatch releaseOld = new CountDownLatch(1);
         CountDownLatch releaseNew = new CountDownLatch(1);
-        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any()))
+        when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     int call = answerProviderCalls.incrementAndGet();
                     (call == 1 ? oldEntered : newEntered).countDown();
                     (call == 1 ? releaseOld : releaseNew).await(WAIT_SECONDS, TimeUnit.SECONDS);
-                    return new RagLlmAnswer(ANSWER, List.of(fact.id()));
+                    return RagLlmOutcome.answer(new RagLlmAnswer(ANSWER, List.of(fact.id())), false);
                 });
         Future<AskResponse> oldLeader = executor.submit(
                 () -> service.ask(conversationId, userId, request(SummaryLanguage.EN)));
@@ -433,12 +433,12 @@ class AskServiceStampedeTest {
         CountDownLatch firstEntered = new CountDownLatch(1);
         CountDownLatch secondEntered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
-        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any()))
+        when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     int call = answerProviderCalls.incrementAndGet();
                     (call == 1 ? firstEntered : secondEntered).countDown();
                     release.await(WAIT_SECONDS, TimeUnit.SECONDS);
-                    return new RagLlmAnswer(ANSWER, List.of(fact.id()));
+                    return RagLlmOutcome.answer(new RagLlmAnswer(ANSWER, List.of(fact.id())), false);
                 });
         Future<AskResponse> first = executor.submit(
                 () -> service.ask(conversationId, userId, request(SummaryLanguage.EN)));
@@ -458,7 +458,7 @@ class AskServiceStampedeTest {
     }
 
     private void answerWith(CountDownLatch releaseProvider, CountDownLatch providerEntrances) {
-        when(llmAnswerService.answer(any(), any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+        when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
             answerProviderCalls.incrementAndGet();
             if (providerEntrances != null) {
                 providerEntrances.countDown();
@@ -466,7 +466,7 @@ class AskServiceStampedeTest {
             if (!releaseProvider.await(WAIT_SECONDS, TimeUnit.SECONDS)) {
                 throw new IllegalStateException("the provider was never released");
             }
-            return new RagLlmAnswer(ANSWER, List.of(fact.id()));
+            return RagLlmOutcome.answer(new RagLlmAnswer(ANSWER, List.of(fact.id())), false);
         });
     }
 

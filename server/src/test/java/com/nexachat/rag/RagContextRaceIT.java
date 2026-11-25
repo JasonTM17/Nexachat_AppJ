@@ -148,6 +148,9 @@ class RagContextRaceIT extends FeatureItSupport {
         }
         JsonNode obsolete = oldRequest.get(8, TimeUnit.SECONDS);
         assertThat(obsolete.path("mode").asText()).isEqualTo("NOT_FOUND");
+        assertThat(obsolete.path("notFoundReason").asText()).isEqualTo("CONTEXT_CHANGED");
+        assertThat(obsolete.path("retryable").asBoolean()).isTrue();
+        assertThat(obsolete.path("retryAfterSeconds").asInt()).isEqualTo(1);
         assertThat(obsolete.toString()).doesNotContain("alpha-bravo");
         assertThat(cacheRows()).isZero();
 

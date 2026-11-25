@@ -83,6 +83,51 @@ public class InMemoryRagMessageIndex implements RagMessageIndex {
     }
 
     @Override
+    public List<RagMessage> messagesAroundSeq(
+            UUID conversationId, long centerSeq, int radius, java.time.Instant admittedFrom) {
+        int boundedRadius = Math.clamp(radius, 0, 20);
+        List<RagMessage> matching = new ArrayList<>();
+        for (RagMessage message : messages) {
+            if (message.conversationId().equals(conversationId)
+                    && message.seq() >= Math.max(0, centerSeq - boundedRadius)
+                    && message.seq() <= centerSeq + boundedRadius
+                    && !optedOutMessages.contains(message.id())
+                    && (admittedFrom == null || !message.createdAt().isBefore(admittedFrom))) {
+                matching.add(message);
+            }
+        }
+        matching.sort(Comparator.comparingLong(RagMessage::seq));
+        return List.copyOf(matching);
+    }
+
+    @Override
+    public boolean hasOptedOutLexicalCandidates(
+            UUID conversationId, List<String> terms, java.time.Instant admittedFrom) {
+        if (terms == null || terms.isEmpty()) {
+            return false;
+        }
+        for (RagMessage message : messages) {
+            if (!message.conversationId().equals(conversationId)
+                    || !optedOutMessages.contains(message.id())
+                    || (admittedFrom != null && message.createdAt().isBefore(admittedFrom))) {
+                continue;
+            }
+            String folded = Tokenizer.foldForMatching(message.content());
+            if (terms.stream().anyMatch(folded::contains)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public boolean hasOptedOutMessages(UUID conversationId, java.time.Instant admittedFrom) {
+        return messages.stream().anyMatch(message -> message.conversationId().equals(conversationId)
+                && optedOutMessages.contains(message.id())
+                && (admittedFrom == null || !message.createdAt().isBefore(admittedFrom)));
+    }
+
+    @Override
     public Map<UUID, float[]> loadVectors(String model, Collection<UUID> messageIds) {
         Map<UUID, float[]> modelVectors = vectors.getOrDefault(model, Map.of());
         Map<UUID, float[]> result = new LinkedHashMap<>();
