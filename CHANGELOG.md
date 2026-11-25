@@ -6,6 +6,53 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.24] - 2026-11-25
+
+Server + Android + admin-web release. See
+[docs/release-notes/v1.2.24.md](docs/release-notes/v1.2.24.md).
+
+### Added
+- Android: a one-line provenance note under the summary header explains how a
+  summary was produced — saved copy, backup model, external AI off or
+  unavailable, or messages omitted by sender opt-out (EN/VI).
+- Server: additive typed Ask outcome metadata — `notFoundReason`,
+  `degradationReason`, `retryable`, `retryAfterSeconds`, provenance and
+  extraction details; deep-history evidence loads through bounded sequence
+  windows.
+- Admin web: RAG health panel on the System page backed by the new
+  admin-guarded `GET /api/v1/admin/rag/stats`; SVG navigation icons, a shared
+  theme toggle, skip-to-content link, per-page blurbs and operator display
+  name (EN/VI).
+- Site: stable `nexachat-latest.apk` download asset with checksum, guarded by
+  a `site/check.py` regression gate.
+
+### Fixed
+- Server: compositional RAG lookup questions require term evidence for every
+  essential component, closing wrong-answer holes such as
+  "satellite deployment window" while legitimate scoped multi-message
+  synthesis still answers.
+- Server: end-to-end Ask deadline returns retryable TIMEOUT instead of false
+  NOT_FOUND; the post-edit/recall context race recomputes once or reports
+  CONTEXT_CHANGED; extractive answers are minimal spans with citation
+  precision improvements.
+- Server: AI summary consent is re-read immediately before every outbound
+  call — retries, cloud fallback and the local-server model — so a mid-flight
+  revocation cancels the next call without counting as a provider failure.
+- Server: sharper summary prompts — settled-vs-open overviews, non-repeating
+  key points, stricter decision/action-item/question criteria and more
+  natural Vietnamese output.
+- Android: Ask threads stop re-inflating per keystroke and survive sheet
+  dismissal in-session; the Local chip no longer revokes account-wide AI
+  consent; consent-save failures surface a snackbar; action-item checkbox
+  state survives rebinds/rotation; out-of-window citations jump via
+  seq-aware paging.
+- Admin web: operations remediation — working deep links, honest 5xx labels,
+  polling queues with manual refresh, correct modal focus trapping, mobile
+  table columns, confirm-on-unhide, success toasts and contextual empty
+  states.
+- Site: bilingual pages render one language at a time; web account deletion
+  splits independent VI/EN forms.
+
 ## [1.2.23] - 2026-11-25
 
 Server + Android release. See
