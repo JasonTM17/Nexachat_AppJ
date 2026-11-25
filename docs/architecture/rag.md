@@ -238,13 +238,17 @@ All settings work offline with no key.
 
 `tools/rag-eval/run-benchmark.sh` runs `RagBenchmarkEvaluationTest`, a
 synthetic Vietnamese + English corpus (32 conversations, 6,400 messages, 192
-lookup questions with gold message ids). Latest reported result:
+lookup questions with gold message ids). It also includes 96 English/Vietnamese
+negative lookup questions whose facts are absent; every one must return
+`NOT_FOUND` with no LLM call and no citation. Latest reported result:
 
 ```
 recall@3=1.000 recall@5=1.000 mrr=1.000 citationValidity=1.000
 zeroLlm=70.0% meanInputChars=1640.6 baselineChars=7951.4 reduction=79.4%
+negativeQuestions=96 negativeNotFound=1.000 negativeLlm=0 negativeCitations=0
 ```
 
 Targets: recall@5 ≥ 0.85 on lookup questions with the lexical provider,
-≥ 40% of requests with zero LLM calls, and input characters reduced by ≥ 70%
-against the whole-window baseline.
+≥ 40% of requests with zero LLM calls, input characters reduced by ≥ 70%
+against the whole-window baseline, and 100% `NOT_FOUND` on the negative
+multilingual lookup set.
