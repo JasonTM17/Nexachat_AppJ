@@ -250,7 +250,7 @@ class RagBenchmarkEvaluationTest {
         when(questionCache.citationsValid(any(), any())).thenReturn(true);
         when(questionCache.contextSnapshot(any())).thenReturn(new RagQuestionCache.ContextSnapshot(1, null));
         when(questionCache.contextUnchanged(any(), any())).thenReturn(true);
-when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
+        when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     llmInvocations.incrementAndGet();
                     List<RagContextItem> context = invocation.getArgument(4);
@@ -284,8 +284,7 @@ when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), a
                         }
                     }
                     if (bestMessage == null) {
-                        return RagLlmOutcome.answer(
-                                new RagLlmAnswer("Synthetic answer.", context.get(0).messageIds()), false);
+                        return RagLlmOutcome.abstain();
                     }
                     return RagLlmOutcome.answer(
                             new RagLlmAnswer("Synthetic answer.", List.of(bestMessage.id())), false);
