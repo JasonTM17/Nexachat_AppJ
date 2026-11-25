@@ -6,6 +6,19 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.26] - 2026-11-25
+
+Android release focused on immersive in-call controls. See
+[docs/release-notes/v1.2.26.md](docs/release-notes/v1.2.26.md).
+
+### Added
+- Android: during live video calls the control row auto-hides after a few
+  seconds without touches and any tap reveals it again — the immersive
+  WhatsApp/Google Meet/FaceTime pattern. The revealing tap never triggers a
+  hidden button, controls use INVISIBLE rather than GONE so the layout never
+  jumps, and voice calls plus ringing/terminal phases always keep controls.
+
+
 ## [1.2.25] - 2026-11-25
 
 Android + server release focused on 1-to-1 voice/video calling. See
