@@ -35,6 +35,10 @@ public class RagStatsMeterBinder {
         FunctionCounter.builder(PREFIX + "llm_failures", stats, value -> value.snapshot().llmFailures())
                 .description("RAG LLM failures")
                 .register(registry);
+        FunctionCounter.builder(PREFIX + "llm_bulkhead_rejections", stats,
+                        value -> value.snapshot().llmBulkheadRejections())
+                .description("RAG LLM calls rejected by the concurrency bulkhead")
+                .register(registry);
         FunctionCounter.builder(PREFIX + "embedding_calls", stats, value -> value.snapshot().embeddingCalls())
                 .description("Embedding calls")
                 .register(registry);

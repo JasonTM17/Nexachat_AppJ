@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Answer generation through the existing OpenAI-compatible LLM client. The
@@ -39,6 +41,8 @@ public class RagLlmAnswerService {
     private final SummaryConsentRepository consentRepository;
     private final RagStats stats;
     private final ConversationAiOptOuts aiOptOuts;
+    private final Semaphore llmBulkhead;
+    private final long bulkheadWaitMs;
 
     public RagLlmAnswerService(
             LlmClient llmClient,
@@ -48,7 +52,19 @@ public class RagLlmAnswerService {
             SummaryConsentRepository consentRepository,
             RagStats stats) {
         this(llmClient, promptBuilder, outputValidator, circuitBreaker, consentRepository, stats,
-                ConversationAiOptOuts.none());
+                ConversationAiOptOuts.none(), new RagProperties());
+    }
+
+    public RagLlmAnswerService(
+            LlmClient llmClient,
+            RagPromptBuilder promptBuilder,
+            RagOutputValidator outputValidator,
+            @Qualifier("ragCircuitBreaker") CircuitBreaker circuitBreaker,
+            SummaryConsentRepository consentRepository,
+            RagStats stats,
+            ConversationAiOptOuts aiOptOuts) {
+        this(llmClient, promptBuilder, outputValidator, circuitBreaker, consentRepository, stats,
+                aiOptOuts, new RagProperties());
     }
 
     @Autowired
@@ -59,7 +75,8 @@ public class RagLlmAnswerService {
             @Qualifier("ragCircuitBreaker") CircuitBreaker circuitBreaker,
             SummaryConsentRepository consentRepository,
             RagStats stats,
-            ConversationAiOptOuts aiOptOuts) {
+            ConversationAiOptOuts aiOptOuts,
+            RagProperties properties) {
         this.llmClient = llmClient;
         this.promptBuilder = promptBuilder;
         this.outputValidator = outputValidator;
@@ -67,6 +84,10 @@ public class RagLlmAnswerService {
         this.consentRepository = consentRepository;
         this.stats = stats;
         this.aiOptOuts = aiOptOuts;
+        RagProperties effectiveProperties = properties == null ? new RagProperties() : properties;
+        this.llmBulkhead = new Semaphore(
+                Math.max(1, effectiveProperties.getLlm().getMaxConcurrent()), true);
+        this.bulkheadWaitMs = Math.max(0, effectiveProperties.getLlm().getBulkheadWaitMs());
     }
 
     public RagLlmAnswer answer(
@@ -113,68 +134,83 @@ public class RagLlmAnswerService {
             return null;
         }
 
-        RagPrompt prompt = promptBuilder.build(question, language, externalContext, priorTurns);
+        boolean bulkheadAcquired = false;
         boolean primaryAttempted = false;
         boolean breakerRecorded = false;
         try {
-            LlmClient.LlmCallResult completion;
-            boolean fallbackUsed = false;
-            boolean primaryUsed = false;
-            boolean primaryFailed = false;
-            if (primary != null) {
-                primaryAttempted = breakerAllows;
-                try {
-                    completion = llmClient.completeTextWithFallback(
-                            prompt.systemMessage(), prompt.userMessage(),
-                            breakerAllows ? primary : null, fallback);
-                    fallbackUsed = completion.fallbackUsed();
-                    primaryUsed = breakerAllows && !fallbackUsed;
-                    primaryFailed = breakerAllows && fallbackUsed;
-                } catch (RuntimeException exception) {
-                    primaryFailed = breakerAllows;
-                    if (secondary == null) {
-                        throw exception;
+            bulkheadAcquired = llmBulkhead.tryAcquire(bulkheadWaitMs, TimeUnit.MILLISECONDS);
+            if (!bulkheadAcquired) {
+                stats.recordLlmBulkheadRejection();
+                return null;
+            }
+            RagPrompt prompt = promptBuilder.build(question, language, externalContext, priorTurns);
+            try {
+                LlmClient.LlmCallResult completion;
+                boolean fallbackUsed = false;
+                boolean primaryUsed = false;
+                boolean primaryFailed = false;
+                if (primary != null) {
+                    primaryAttempted = breakerAllows;
+                    try {
+                        completion = llmClient.completeTextWithFallback(
+                                prompt.systemMessage(), prompt.userMessage(),
+                                breakerAllows ? primary : null, fallback);
+                        fallbackUsed = completion.fallbackUsed();
+                        primaryUsed = breakerAllows && !fallbackUsed;
+                        primaryFailed = breakerAllows && fallbackUsed;
+                    } catch (RuntimeException exception) {
+                        primaryFailed = breakerAllows;
+                        if (secondary == null) {
+                            throw exception;
+                        }
+                        completion = llmClient.completeTextWithTargetResult(
+                                prompt.systemMessage(), prompt.userMessage(), secondary);
                     }
+                } else {
                     completion = llmClient.completeTextWithTargetResult(
                             prompt.systemMessage(), prompt.userMessage(), secondary);
                 }
-            } else {
-                completion = llmClient.completeTextWithTargetResult(
-                        prompt.systemMessage(), prompt.userMessage(), secondary);
-            }
-            RagOutputValidator.Validation validation = outputValidator.validateDetailed(completion.content(), prompt);
-            // Validate before recording: a primary that answers 200 with an
-            // unusable body is a failing primary, not a healthy one — the
-            // breaker must open on it and the failure stat must count it,
-            // exactly like the summary lane treats bad output. A protocol-valid
-            // abstention is successful provider behavior and must not poison the breaker.
-            if (validation.status() == RagOutputValidator.Status.INVALID) {
-                if (primaryUsed || primaryFailed) {
+                RagOutputValidator.Validation validation = outputValidator.validateDetailed(completion.content(), prompt);
+                // Validate before recording: a primary that answers 200 with an
+                // unusable body is a failing primary, not a healthy one — the
+                // breaker must open on it and the failure stat must count it,
+                // exactly like the summary lane treats bad output. A protocol-valid
+                // abstention is successful provider behavior and must not poison the breaker.
+                if (validation.status() == RagOutputValidator.Status.INVALID) {
+                    if (primaryUsed || primaryFailed) {
+                        circuitBreaker.recordFailure();
+                        breakerRecorded = true;
+                    }
+                    stats.recordLlmFailure();
+                    return null;
+                }
+                if (primaryUsed) {
+                    circuitBreaker.recordSuccess();
+                    breakerRecorded = true;
+                } else if (primaryFailed) {
                     circuitBreaker.recordFailure();
                     breakerRecorded = true;
+                }
+                if (validation.status() == RagOutputValidator.Status.ABSTAIN) {
+                    return null;
+                }
+                RagLlmAnswer answer = validation.answer();
+                String provider = fallbackUsed ? "fallback" : (primaryUsed ? "primary" : null);
+                return new RagLlmAnswer(answer.answer(), answer.citationIds(), provider);
+            } catch (RuntimeException exception) {
+                if (primaryAttempted && !breakerRecorded) {
+                    circuitBreaker.recordFailure();
                 }
                 stats.recordLlmFailure();
                 return null;
             }
-            if (primaryUsed) {
-                circuitBreaker.recordSuccess();
-                breakerRecorded = true;
-            } else if (primaryFailed) {
-                circuitBreaker.recordFailure();
-                breakerRecorded = true;
-            }
-            if (validation.status() == RagOutputValidator.Status.ABSTAIN) {
-                return null;
-            }
-            RagLlmAnswer answer = validation.answer();
-            String provider = fallbackUsed ? "fallback" : (primaryUsed ? "primary" : null);
-            return new RagLlmAnswer(answer.answer(), answer.citationIds(), provider);
-        } catch (RuntimeException exception) {
-            if (primaryAttempted && !breakerRecorded) {
-                circuitBreaker.recordFailure();
-            }
-            stats.recordLlmFailure();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
             return null;
+        } finally {
+            if (bulkheadAcquired) {
+                llmBulkhead.release();
+            }
         }
     }
 
