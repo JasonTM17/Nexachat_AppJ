@@ -44,6 +44,7 @@ EXPECTED_UPLOAD_FINGERPRINT = (
 )
 EXPECTED_PACKAGE_NAME = "com.nexachat"
 OFFICIAL_RELEASE_APK_URL = "https://github.com/JasonTM17/Nexachat_AppJ/releases/latest"
+SUPPORT_ISSUES_URL = "https://github.com/JasonTM17/Nexachat_AppJ/issues"
 DOWNLOAD_PAGE = "download.html"
 ANDROID_API_TO_VERSION = {
     21: "5.0",
@@ -648,6 +649,8 @@ def test_no_external_urls():
                     if is_nexachat_site_url(m):
                         continue
                     if rel_path == DOWNLOAD_PAGE and m == OFFICIAL_RELEASE_APK_URL:
+                        continue
+                    if m == SUPPORT_ISSUES_URL:
                         continue
                     disallowed.append(m)
                 if disallowed:
@@ -1297,7 +1300,7 @@ def test_privacy_policy_disclosures():
     return failures
 
 
-def account_guidance_failures(markup: str, rel_page: str) -> list[str]:
+def account_guidance_failures(markup: str, rel_page: str, include_google_creation: bool = True) -> list[str]:
     """Check the conditions and available account paths without freezing sentence wording."""
     visible_text = re.sub(r"<[^>]*>", " ", markup)
     visible_text = re.sub(r"\s+", " ", visible_text).casefold()
@@ -1333,6 +1336,8 @@ def account_guidance_failures(markup: str, rel_page: str) -> list[str]:
     }
     failures = []
     for lang, checks in meanings.items():
+        if not include_google_creation:
+            checks = checks[1:]
         for description, pattern in checks:
             if re.search(pattern, visible_text, re.IGNORECASE) is None:
                 failures.append(f"{rel_page} ({lang}) must state that {description}")
@@ -1360,7 +1365,7 @@ def test_account_deletion_page():
     for phrase in DELETION_PAGE_EN_PHRASES:
         if phrase not in html:
             failures.append(f"{DELETION_PAGE} missing English deletion copy: {phrase}")
-    failures.extend(account_guidance_failures(html, DELETION_PAGE))
+    failures.extend(account_guidance_failures(html, DELETION_PAGE, include_google_creation=False))
 
     privacy_path = os.path.join(SITE_DIR, "privacy.html")
     if os.path.isfile(privacy_path):
@@ -1414,12 +1419,25 @@ def test_account_deletion_page():
             if needle not in js_body:
                 failures.append(f"delete-account.js missing required fragment: {needle}")
 
-    if html.count('role="alert"') < 5:
-        failures.append(f"{DELETION_PAGE} must expose form errors and rate-limit feedback with role=\"alert\"")
-    if 'aria-labelledby="web-deletion-heading-vi web-deletion-heading-en"' not in html:
-        failures.append(f"{DELETION_PAGE} web-deletion section must be labelled by both language headings")
-    if "Gửi mã · Send code" not in html or "Xóa tài khoản · Delete account" not in html:
-        failures.append(f"{DELETION_PAGE} form buttons must show bilingual visible labels")
+    if html.count('role="alert"') < 10:
+        failures.append(f"{DELETION_PAGE} must expose per-language form errors and rate-limit feedback with role=\"alert\"")
+
+    vi_section_start = html.find('<section id="lang-vi"')
+    en_section_start = html.find('<section id="lang-en"')
+    vi_web_start = html.find('id="web-deletion-section-vi"')
+    en_web_start = html.find('id="web-deletion-section"')
+    if not (vi_section_start != -1 and vi_web_start != -1 and en_section_start != -1 and vi_section_start < vi_web_start < en_section_start):
+        failures.append(f"{DELETION_PAGE} Vietnamese web-deletion form must live inside #lang-vi")
+    if not (en_section_start != -1 and en_web_start != -1 and en_section_start < en_web_start):
+        failures.append(f"{DELETION_PAGE} English web-deletion form must live inside #lang-en")
+    if 'id="web-deletion-form-vi"' not in html or 'id="web-deletion-form"' not in html:
+        failures.append(f"{DELETION_PAGE} must carry one uniquely-identified web deletion form per language")
+    if 'aria-labelledby="web-deletion-heading-vi"' not in html or 'aria-labelledby="web-deletion-heading-en"' not in html:
+        failures.append(f"{DELETION_PAGE} web-deletion sections must be labelled by their own language heading")
+    if "Gửi mã" not in html or "Send code" not in html or "Xóa tài khoản" not in html or "Delete account" not in html:
+        failures.append(f"{DELETION_PAGE} form buttons must show localized visible labels")
+    if "Gửi mã · Send code" in html or "Xóa tài khoản · Delete account" in html:
+        failures.append(f"{DELETION_PAGE} must not render doubled bilingual button labels")
 
     if not failures:
         log_pass("Account-deletion page is present, bilingual, linked from privacy and every footer")
