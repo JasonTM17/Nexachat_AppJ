@@ -106,7 +106,7 @@ class AskServiceStampedeTest {
             embeddingCalls.incrementAndGet();
             return new RagEmbeddingService.EmbeddingOutcome(new float[] {1f, 0f}, "test-embedding-model");
         });
-        when(retrievalService.retrieve(any(), any(), any(), anyBoolean(), any())).thenAnswer(invocation -> {
+        when(retrievalService.retrieve(any(), any(), any(), anyBoolean(), any(), anyBoolean())).thenAnswer(invocation -> {
             Boolean allowExternal = invocation.getArgument(3);
             if (!allowExternal) {
                 nonConsentedRetrievalReached.countDown();
@@ -173,7 +173,7 @@ class AskServiceStampedeTest {
             assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
         });
         verify(rateLimiter, times(CALLERS)).consume(userId);
-        verify(retrievalService, times(1)).retrieve(eq(conversationId), any(), any(), anyBoolean(), any());
+        verify(retrievalService, times(1)).retrieve(eq(conversationId), any(), any(), anyBoolean(), any(), anyBoolean());
     }
 
     @Test
@@ -221,7 +221,7 @@ class AskServiceStampedeTest {
 
         assertThat(consentedAsk.get(WAIT_SECONDS, TimeUnit.SECONDS).mode()).isEqualTo(AskMode.NOT_FOUND);
         assertThat(answerProviderCalls.get()).isEqualTo(1);
-        verify(retrievalService, times(2)).retrieve(eq(conversationId), any(), any(), anyBoolean(), any());
+        verify(retrievalService, times(2)).retrieve(eq(conversationId), any(), any(), anyBoolean(), any(), anyBoolean());
     }
 
     @Test
@@ -279,7 +279,7 @@ class AskServiceStampedeTest {
 
     @Test
     void aFailedAnswerIsNotReusedByTheNextRequest() {
-        when(retrievalService.retrieve(any(), any(), any(), anyBoolean(), any()))
+        when(retrievalService.retrieve(any(), any(), any(), anyBoolean(), any(), anyBoolean()))
                 .thenThrow(new IllegalStateException("retrieval is down"))
                 .thenReturn(retrieval);
         answerWith(new CountDownLatch(0), null);
