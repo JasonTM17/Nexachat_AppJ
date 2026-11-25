@@ -18,6 +18,7 @@ public class RagStats {
     private final LongAdder llmCalls = new LongAdder();
     private final LongAdder llmFallbackCalls = new LongAdder();
     private final LongAdder llmFailures = new LongAdder();
+    private final LongAdder llmBulkheadRejections = new LongAdder();
     private final LongAdder inputChars = new LongAdder();
     private final LongAdder embeddingCalls = new LongAdder();
     private final LongAdder embeddingFailures = new LongAdder();
@@ -55,6 +56,10 @@ public class RagStats {
         llmFailures.increment();
     }
 
+    public void recordLlmBulkheadRejection() {
+        llmBulkheadRejections.increment();
+    }
+
     public void recordEmbeddingCall(int count) {
         embeddingCalls.add(Math.max(0, count));
     }
@@ -78,6 +83,7 @@ public class RagStats {
                 calls,
                 llmFallbackCalls.sum(),
                 llmFailures.sum(),
+                llmBulkheadRejections.sum(),
                 inputChars.sum(),
                 meanInputChars,
                 embeddingCalls.sum(),
@@ -93,6 +99,7 @@ public class RagStats {
         llmCalls.reset();
         llmFallbackCalls.reset();
         llmFailures.reset();
+        llmBulkheadRejections.reset();
         inputChars.reset();
         embeddingCalls.reset();
         embeddingFailures.reset();
@@ -107,6 +114,7 @@ public class RagStats {
             long llmCalls,
             long llmFallbackCalls,
             long llmFailures,
+            long llmBulkheadRejections,
             long inputChars,
             double meanInputChars,
             long embeddingCalls,

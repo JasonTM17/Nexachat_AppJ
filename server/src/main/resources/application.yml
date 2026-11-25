@@ -377,6 +377,9 @@ nexachat:
       rate-limit-per-day: ${NEXACHAT_RAG_ASK_RATE_LIMIT_PER_DAY:200}
       cache-ttl-hours: ${NEXACHAT_RAG_ASK_CACHE_TTL_HOURS:24}
       single-flight-wait-ms: ${NEXACHAT_RAG_ASK_SINGLE_FLIGHT_WAIT_MS:120000}
+    llm:
+      max-concurrent: ${NEXACHAT_RAG_LLM_MAX_CONCURRENT:8}
+      bulkhead-wait-ms: ${NEXACHAT_RAG_LLM_BULKHEAD_WAIT_MS:500}
   fcm:
     enabled: ${FCM_ENABLED:false}
     project-id: ${FCM_PROJECT_ID:}

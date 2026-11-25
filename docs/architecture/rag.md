@@ -96,16 +96,22 @@ requests inside one ask. Older external vectors remain a warmup/indexing
 roadmap item; offline lexical backfill and lexical retrieval continue to
 provide degradation coverage.
 
+Answer-generation calls are bounded JVM-wide by a fair semaphore
+(`nexachat.rag.llm.max-concurrent`, default 8). A request that cannot acquire a
+permit within `nexachat.rag.llm.bulkhead-wait-ms` degrades through the normal
+extractive/NOT_FOUND path instead of queueing unbounded outbound provider work;
+the rejection is counted separately from provider failures.
+
 For lookup-like questions, reciprocal-rank position and raw vector similarity are
 ordering evidence only; neither can by itself make the recent-message window
 answerable. The default gate requires all essential question terms to co-occur in
 one candidate. Query scaffolding is ignored, and bounded prefix/edit-distance
-matching covers simple inflections and typos. Vector cosine at least 0.60 can
-support a fuzzy-matched candidate, but cannot substitute for compositional term
-evidence. Broad aggregation prompts such as summaries and action-item lists
-bypass that lookup evidence requirement because the whole recent context is their
-subject. These thresholds are operator-tunable and require labeled evaluation
-before being treated as production calibration.
+matching covers simple inflections and long-token typos. Vector cosine at least
+0.60 can support a fuzzy-matched candidate, but cannot substitute for
+compositional term evidence. Broad aggregation prompts such as summaries and
+action-item lists bypass that lookup evidence requirement because the whole
+recent context is their subject. These thresholds are operator-tunable and
+require labeled evaluation before being treated as production calibration.
 
 ## Consent and privacy
 
@@ -228,6 +234,8 @@ same question cache as a primary call; a cache hit never calls either provider.
 | `nexachat.rag.ask.rate-limit-per-minute` | `NEXACHAT_RAG_ASK_RATE_LIMIT_PER_MINUTE` | `20` |
 | `nexachat.rag.ask.rate-limit-per-day` | `NEXACHAT_RAG_ASK_RATE_LIMIT_PER_DAY` | `200` |
 | `nexachat.rag.ask.cache-ttl-hours` | `NEXACHAT_RAG_ASK_CACHE_TTL_HOURS` | `24` |
+| `nexachat.rag.llm.max-concurrent` | `NEXACHAT_RAG_LLM_MAX_CONCURRENT` | `8` |
+| `nexachat.rag.llm.bulkhead-wait-ms` | `NEXACHAT_RAG_LLM_BULKHEAD_WAIT_MS` | `500` |
 | `nexachat.security.admin-phones` | `NEXACHAT_ADMIN_PHONES` | — (empty ⇒ stats endpoint denied to all) |
 | `nexachat.summary.llm-fallback.enabled` | `NEXACHAT_SUMMARY_LLM_FALLBACK_ENABLED` | `false` |
 | `nexachat.summary.llm-fallback.base-url` | `NEXACHAT_SUMMARY_LLM_FALLBACK_BASE_URL` | `https://api.deepseek.com` |

@@ -6,6 +6,29 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.23] - 2026-11-25
+
+Server + Android release. See
+[docs/release-notes/v1.2.23.md](docs/release-notes/v1.2.23.md).
+
+### Added
+- Android: Ask citation jumps can load a bounded history window around a cited
+  message `seq`, making deep evidence reachable in long conversations without
+  linear paging.
+
+### Fixed
+- Server: external embedding consent is re-checked immediately before vendor
+  calls; revoked consent falls back to internal lexical embeddings.
+- Server: non-interrogative narrow prompts require retrieval evidence before
+  answering, preventing unsupported inference from imperative/declarative
+  prompts.
+- Server: concurrent LLM answer generation is fairly bounded with configurable
+  concurrency/wait settings and a separate rejection metric.
+- Tests: multilingual negative RAG benchmark catches hallucination and
+  unsupported-answer regressions.
+- Ops: `keep-warm.yml` passes `GH_REPO` to `gh issue` commands so production
+  alert automation can open/close issues reliably.
+
 ## [1.2.22] - 2026-11-25
 
 Server + Android release. See
