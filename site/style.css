@@ -335,6 +335,25 @@ body:has(#lang-en:target) .language-switch a[href='#lang-en'] {
   border-radius: 4px;
 }
 
+body:has(#lang-en) .site-footer a[lang='en'],
+body:has(#lang-en) .page-actions a[lang='en'] {
+  display: none;
+}
+
+body:has(#lang-en:target) .site-footer a[lang='vi'],
+body:has(#lang-en :target) .site-footer a[lang='vi'],
+body:has(#lang-en:target) .page-actions a[lang='vi'],
+body:has(#lang-en :target) .page-actions a[lang='vi'] {
+  display: none;
+}
+
+body:has(#lang-en:target) .site-footer a[lang='en'],
+body:has(#lang-en :target) .site-footer a[lang='en'],
+body:has(#lang-en:target) .page-actions a[lang='en'],
+body:has(#lang-en :target) .page-actions a[lang='en'] {
+  display: inline-flex;
+}
+
 .prose h2 {
   font-size: 1.125rem;
   margin: 1.75rem 0 0.625rem;

@@ -1290,8 +1290,26 @@ def test_bilingual_language_navigation():
         if f'href="{SUPPORT_ISSUES_URL}"' not in footer_html:
             failures.append(f"{rel_page} footer must link the GitHub issues support channel")
 
+    css_path = os.path.join(SITE_DIR, "style.css")
+    if os.path.isfile(css_path):
+        with open(css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+        required_css = {
+            "English sections hidden by default": "#lang-en {\n  display: none;",
+            "Vietnamese sections hidden when English is targeted": "body:has(#lang-en:target) #lang-vi",
+            "English footer links hidden by default": "body:has(#lang-en) .site-footer a[lang='en']",
+            "Vietnamese footer links hidden when English is targeted": "body:has(#lang-en:target) .site-footer a[lang='vi']",
+            "Nested English targets hide Vietnamese footer links": "body:has(#lang-en :target) .site-footer a[lang='vi']",
+            "English page-action links hidden by default": "body:has(#lang-en) .page-actions a[lang='en']",
+        }
+        for label, needle in required_css.items():
+            if needle not in css:
+                failures.append(f"style.css missing language visibility rule: {label}")
+    else:
+        failures.append("Missing site/style.css for language visibility checks")
+
     if not failures:
-        log_pass("Long bilingual pages have translated section landmarks, jump links, and matching footer targets")
+        log_pass("Long bilingual pages have translated section landmarks, jump links, matching footer targets, and active-language visibility rules")
     return failures
 
 
