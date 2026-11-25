@@ -908,7 +908,8 @@ public class CallActivity extends ComponentActivity {
         }
         CallState state = currentSession.getState();
         if (state == CallState.OUTGOING_RINGING || state == CallState.INCOMING_RINGING) return;
-        if (state == CallState.CONNECTING || state == CallState.ACTIVE) {
+        if (state == CallState.CONNECTING || state == CallState.ACTIVE
+                || state == CallState.RECONNECTING_NETWORK) {
             moveTaskToBack(true);
             return;
         }

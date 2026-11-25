@@ -160,6 +160,99 @@ public final class CallManagerRoamingTest {
     }
 
     @Test
+    public void iceConfigStrandedByReconnectBlipIsRedrivenOnResume() {
+        // The ICE-config REST load runs independently of the signaling transport.
+        // If it completes during a reconnect blip, finishMediaStart discards the
+        // result — unless media start is re-driven on resume, the call hangs in
+        // CONNECTING forever with no engine and no timeout.
+        java.util.concurrent.Executor io = task -> ioQueue.add(task);
+        ioQueue.clear();
+        manager.close();
+        scheduler.runCurrent();
+        manager = new CallManager(
+                signaling,
+                () -> CallRepository.Result.success(new IceConfig(Collections.emptyList(), 60)),
+                scheduler,
+                io,
+                () -> nowMs,
+                () -> "call-roam-1",
+                50L,
+                false,
+                peerNames);
+        manager.attachMediaEngine(media);
+
+        manager.startOutgoing("conversation-1", "peer-1", "Peer");
+        scheduler.runCurrent();
+        signaling.emit(new CallEvent(CallEvent.Type.CALL_ACCEPTED, "CALL_ACCEPTED", "call-roam-1",
+                "conversation-1", null, null, null, null, null, null));
+        scheduler.runCurrent();
+        assertEquals(CallState.CONNECTING, manager.currentSessionForTest().getState());
+        assertEquals("config load must be in flight", 1, ioQueue.size());
+
+        // Signaling drops while the REST load is still in flight.
+        signaling.disconnect();
+        scheduler.runCurrent();
+        assertEquals(CallState.RECONNECTING_NETWORK, manager.currentSessionForTest().getState());
+
+        // The load completes during the blip — its result is discarded.
+        drainIo();
+        scheduler.runCurrent();
+        assertEquals(0, media.startCount);
+
+        // Transport returns: media start must be re-driven, not stranded.
+        signaling.connect();
+        scheduler.runCurrent();
+        assertEquals(CallState.CONNECTING, manager.currentSessionForTest().getState());
+        assertEquals("media start must be re-driven on resume", 1, ioQueue.size());
+
+        drainIo();
+        scheduler.runCurrent();
+        assertEquals(1, media.startCount);
+        media.listener.onConnected();
+        scheduler.runCurrent();
+        assertEquals(CallState.ACTIVE, manager.currentSessionForTest().getState());
+    }
+
+    @Test
+    public void mediaConnectedDuringBlipResumesStraightToActive() {
+        // Media runs P2P and can finish ICE setup while signaling is down. The
+        // connected callback must be remembered, or the resume lands in CONNECTING
+        // with nothing left to fire it — the call hangs despite live media.
+        manager.startOutgoing("conversation-1", "peer-1", "Peer");
+        scheduler.runCurrent();
+        signaling.emit(new CallEvent(CallEvent.Type.CALL_ACCEPTED, "CALL_ACCEPTED", "call-roam-1",
+                "conversation-1", null, null, null, null, null, null));
+        scheduler.runCurrent();
+        assertEquals(CallState.CONNECTING, manager.currentSessionForTest().getState());
+        assertEquals(1, media.startCount);
+
+        signaling.disconnect();
+        scheduler.runCurrent();
+        assertEquals(CallState.RECONNECTING_NETWORK, manager.currentSessionForTest().getState());
+
+        // ICE connects during the blip — too early to celebrate, but remember it.
+        media.listener.onConnected();
+        scheduler.runCurrent();
+
+        scheduler.advanceBy(5_000L);
+        signaling.connect();
+        scheduler.runCurrent();
+
+        assertEquals(CallState.ACTIVE, manager.currentSessionForTest().getState());
+        assertEquals("fresh ICE must not be restarted", 0, media.restartIceCount);
+    }
+
+    private final java.util.List<Runnable> ioQueue = new ArrayList<>();
+
+    private void drainIo() {
+        while (!ioQueue.isEmpty()) {
+            java.util.List<Runnable> batch = new ArrayList<>(ioQueue);
+            ioQueue.clear();
+            for (Runnable task : batch) task.run();
+        }
+    }
+
+    @Test
     public void reconnectGraceTimerExpiresEndsCall() {
         establishActiveCall();
 
@@ -343,12 +436,14 @@ public final class CallManagerRoamingTest {
 
     private static final class FakeMediaEngine implements CallMediaEngine {
         int restartIceCount;
+        int startCount;
         final List<CallSignal.IceCandidate> remoteIce = new ArrayList<>();
         Listener listener;
 
         @Override
         public void start(boolean isCaller, IceConfig config, Listener listener) {
             this.listener = listener;
+            startCount++;
         }
 
         @Override

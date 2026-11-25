@@ -56,6 +56,12 @@ public final class CallUiModelMapper {
                 return model(video ? R.string.call_state_connected_video
                                 : R.string.call_state_connected, 0,
                         R.string.call_hang_up, true, true, true, true);
+            case RECONNECTING_NETWORK:
+                // The media path is P2P and usually still live — this is a
+                // transient transport state, never a terminal one. Controls
+                // (above all hang up) must stay available.
+                return model(R.string.call_state_reconnecting, 0,
+                        R.string.call_hang_up, true, true, true, true);
             case ENDED:
                 return ended(titleFor(session.getEndReason()));
             case IDLE:

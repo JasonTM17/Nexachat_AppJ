@@ -23,6 +23,14 @@ public class CallStartupReconciler {
 
     private final CallRecordRepository repository;
 
+    /**
+     * Construction happens during context refresh, before the web server
+     * accepts traffic — so any row started before this instant predates the
+     * boot and cannot belong to a live post-restart session. The filter closes
+     * the race with rapid re-INVITEs that land before the sweep runs.
+     */
+    private final Instant bootInstant = Instant.now();
+
     public CallStartupReconciler(CallRecordRepository repository) {
         this.repository = repository;
     }
@@ -37,7 +45,10 @@ public class CallStartupReconciler {
     }
 
     int closeOrphanedCalls() {
-        List<CallRecord> orphaned = repository.findByStateIn(List.of(CallState.RINGING, CallState.ACTIVE));
+        List<CallRecord> orphaned = repository.findByStateIn(List.of(CallState.RINGING, CallState.ACTIVE))
+                .stream()
+                .filter(record -> record.getStartedAt() == null || record.getStartedAt().isBefore(bootInstant))
+                .toList();
         if (orphaned.isEmpty()) {
             return 0;
         }

@@ -232,21 +232,33 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
      * Runs on mediaExecutor; inspection failures never fail the call.
      */
     private void stopCaptureIfPeerDeclinedVideo(long callGeneration) {
-        if (peerConnection == null || activeMediaType != CallMediaType.VIDEO || !cameraOn) return;
+        if (activeMediaType != CallMediaType.VIDEO || !cameraOn) return;
+        if (peerDeclinedVideo()) {
+            stopCapture();
+            markCameraUnavailable(callGeneration);
+        }
+    }
+
+    /**
+     * True when the applied remote description negotiated the video m-line
+     * INACTIVE — the peer answered voice-only and no frame will ever be
+     * received for the rest of this call. Inspection is best-effort: any
+     * failure fails open to the pre-fix behavior rather than risking the call.
+     */
+    private boolean peerDeclinedVideo() {
+        if (peerConnection == null) return false;
         try {
             for (RtpTransceiver transceiver : peerConnection.getTransceivers()) {
                 if (transceiver.getMediaType() != MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO) {
                     continue;
                 }
-                if (transceiver.getCurrentDirection() == RtpTransceiver.RtpTransceiverDirection.INACTIVE) {
-                    stopCapture();
-                    markCameraUnavailable(callGeneration);
-                }
-                return;
+                return transceiver.getCurrentDirection()
+                        == RtpTransceiver.RtpTransceiverDirection.INACTIVE;
             }
         } catch (RuntimeException ignored) {
             // Direction inspection is best-effort; keep the call regardless.
         }
+        return false;
     }
 
     @Override
@@ -292,11 +304,13 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
         long callGeneration = generation.get();
         mediaExecutor.execute(() -> {
             if (!isActive(callGeneration)) return;
-            if (enabled && videoCapturer == null) {
-                // No capturer exists (no camera device, permission or HAL loss):
-                // nothing can ever stream — keep the engine honest instead of
-                // letting the session claim "camera on". markCameraUnavailable
-                // resets cameraOn and re-fires the event for the UI.
+            if (enabled && (videoCapturer == null || peerDeclinedVideo())) {
+                // No capturer exists (no camera device, permission or HAL loss),
+                // or the peer answered voice-only and the video m-line is dead
+                // for the rest of this call: nothing can ever reach the peer —
+                // keep the engine honest instead of letting the session claim
+                // "camera on". markCameraUnavailable resets cameraOn and
+                // re-fires the event for the UI.
                 markCameraUnavailable(callGeneration);
                 return;
             }
