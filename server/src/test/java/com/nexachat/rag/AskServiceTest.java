@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -252,6 +253,23 @@ class AskServiceTest {
     }
 
     @Test
+    void citationSnippetCentersOnEvidenceAfterLeadingWhitespace() {
+        String factText = "The pavilion fee is $120.";
+        String trailingProse = "Additional logistics notes for the pavilion event. ".repeat(12);
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "\n".repeat(300) + factText + "\n\n" + trailingProse);
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("What is the pavilion fee?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.citations()).singleElement().satisfies(citation -> {
+            assertThat(citation.messageId()).isEqualTo(fact.id());
+            assertThat(citation.snippet()).contains(factText);
+        });
+    }
+
+    @Test
     void exactValueLookupIsAnsweredLocallyWithPreciseExtractionMetadata() {
         RagMessage fact = addMessage(conversationId, senderId, 1,
                 "Maya's contact email is maya@example.com for production access questions.");
@@ -376,6 +394,39 @@ class AskServiceTest {
         assertThat(response.usage().cached()).isTrue();
         assertThat(response.usage().llmCalls()).isZero();
         verify(llmAnswerService, never()).answerDetailed(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void providerErrorDegradedCacheHitIsNotRetryable() {
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "The migration date is March 14 and the rollout review is complete.");
+        setConsent(true);
+        AtomicReference<RagQuestionCache.CachedAsk> stored = new AtomicReference<>();
+        when(questionCache.findExact(any(), any(), any()))
+                .thenAnswer(invocation -> Optional.ofNullable(stored.get()));
+        when(questionCache.saveIfConsentSnapshotMatches(any(), any(), any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    stored.set(invocation.getArgument(6));
+                    return true;
+                });
+        when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(RagLlmOutcome.providerError(true));
+        AskRequest request = new AskRequest("Find the migration date.", SummaryLanguage.EN);
+
+        AskResponse fresh = service.ask(conversationId, userId, request);
+        assertThat(fresh.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(fresh.degradationReason()).isEqualTo(AskReason.PROVIDER_ERROR);
+        assertThat(fresh.retryable()).isTrue();
+        assertThat(stored.get()).isNotNull();
+
+        AskResponse response = service.ask(conversationId, userId, request);
+
+        assertThat(response.mode()).isEqualTo(AskMode.CACHE);
+        assertThat(response.retryable()).isFalse();
+        assertThat(response.degradationReason()).isNull();
+        assertThat(response.provenance().cacheType()).isEqualTo("exact");
+        assertThat(response.provenance().degradationReason()).isEqualTo(AskReason.PROVIDER_ERROR);
+        assertThat(response.citations()).extracting(RagCitation::messageId).contains(fact.id());
     }
 
     @Test

@@ -22,7 +22,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -32,6 +31,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The ask router: cache, answerability gate, precise extractive answer, then the
@@ -611,6 +612,9 @@ public class AskService {
             AskMode origin = parseMode(answer.mode());
             provenance = AskProvenance.origin(origin, null, null, origin == AskMode.LLM);
         }
+        // A replay is not a fresh degradation signal. Provenance retains why the
+        // original answer was degraded, but this response must not invite a retry
+        // that deterministically hits the same cache entry.
         return new AskResponse(
                 answer.answer(),
                 answer.citations(),
@@ -618,9 +622,8 @@ public class AskService {
                 contextOmitted,
                 new AskResponse.Usage(0, 0, true),
                 null,
-                provenance.degradationReason(),
-                provenance.degradationReason() == AskReason.BULKHEAD_REJECTED
-                        || provenance.degradationReason() == AskReason.PROVIDER_ERROR,
+                null,
+                false,
                 null,
                 provenance.withCacheType(cacheType),
                 false,
@@ -735,42 +738,96 @@ public class AskService {
     }
 
     private String snippet(String content, int pivot) {
-        String folded = content == null ? "" : content.replaceAll("\\s+", " ").trim();
+        FoldedContent folded = foldContent(content);
+        String text = folded.text();
         int max = properties.getRetrieval().getMaxSnippetChars();
-        int length = folded.codePointCount(0, folded.length());
+        int length = text.codePointCount(0, text.length());
         if (length <= max) {
-            return folded;
+            return text;
         }
-        int pivotCodePoint = Math.max(0, Math.min(pivot, folded.length()));
-        pivotCodePoint = folded.codePointCount(0, pivotCodePoint);
+        int pivotIndex = folded.indexForRawOffset(pivot);
+        int pivotCodePoint = text.codePointCount(0, pivotIndex);
         int startCodePoint = Math.max(0, pivotCodePoint - max / 3);
         startCodePoint = Math.min(startCodePoint, Math.max(0, length - max));
         int endCodePoint = Math.min(length, startCodePoint + max);
-        int start = folded.offsetByCodePoints(0, startCodePoint);
-        int end = folded.offsetByCodePoints(0, endCodePoint);
-        String snippet = folded.substring(start, end);
+        int start = text.offsetByCodePoints(0, startCodePoint);
+        int end = text.offsetByCodePoints(0, endCodePoint);
+        String snippet = text.substring(start, end);
         if (start > 0) {
             snippet = "…" + snippet;
         }
-        if (end < folded.length()) {
+        if (end < text.length()) {
             snippet = snippet + "…";
         }
         return snippet;
+    }
+
+    /**
+     * Fold whitespace exactly like the rendered snippet while preserving a raw-to-folded
+     * offset map. Extraction and query pivots are raw-content offsets, so the window must
+     * account for whitespace removed before the pivot instead of reusing the raw index.
+     */
+    private FoldedContent foldContent(String content) {
+        String raw = content == null ? "" : content;
+        int[] rawToFolded = new int[raw.length() + 1];
+        StringBuilder folded = new StringBuilder(raw.length());
+        int index = 0;
+        while (index < raw.length()) {
+            if (isSnippetWhitespace(raw.charAt(index))) {
+                rawToFolded[index] = folded.length();
+                while (index < raw.length() && isSnippetWhitespace(raw.charAt(index))) {
+                    index++;
+                    rawToFolded[index] = folded.length() + 1;
+                }
+                folded.append(' ');
+            } else {
+                rawToFolded[index] = folded.length();
+                folded.append(raw.charAt(index));
+                index++;
+                rawToFolded[index] = folded.length();
+            }
+        }
+        rawToFolded[raw.length()] = folded.length();
+
+        int leadingTrim = 0;
+        while (leadingTrim < folded.length() && folded.charAt(leadingTrim) <= ' ') {
+            leadingTrim++;
+        }
+        int end = folded.length();
+        while (end > leadingTrim && folded.charAt(end - 1) <= ' ') {
+            end--;
+        }
+        return new FoldedContent(folded.substring(leadingTrim, end), rawToFolded, leadingTrim);
+    }
+
+    /** The whitespace characters matched by the regex {@code \s} in Java. */
+    private static boolean isSnippetWhitespace(char current) {
+        return current == ' ' || current == '\t' || current == '\n'
+                || current == '\u000b' || current == '\f' || current == '\r';
     }
 
     private int pivotFor(String content, String question) {
         if (content == null || question == null) {
             return 0;
         }
-        String lower = content.toLowerCase(Locale.ROOT);
         int best = -1;
         for (String term : RagQuestionTerms.extract(question, SummaryLanguage.AUTO, 8)) {
-            int position = lower.indexOf(term.toLowerCase(Locale.ROOT));
+            int position = indexOfIgnoreCase(content, term);
             if (position >= 0 && (best < 0 || position < best)) {
                 best = position;
             }
         }
         return Math.max(0, best);
+    }
+
+    /** Case-insensitive search whose result remains a raw-content UTF-16 offset. */
+    private static int indexOfIgnoreCase(String content, String term) {
+        if (term == null || term.isEmpty()) {
+            return -1;
+        }
+        Matcher matcher = Pattern.compile(Pattern.quote(term),
+                Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(content);
+        return matcher.find() ? matcher.start() : -1;
     }
 
     static String hashInput(String question, List<AskPriorTurn> priorTurns) {
@@ -780,6 +837,15 @@ public class AskService {
             return normalized;
         }
         return normalized + "\nprior:" + fingerprint;
+    }
+
+    private record FoldedContent(String text, int[] rawToFolded, int leadingTrim) {
+
+        int indexForRawOffset(int rawOffset) {
+            int clamped = Math.max(0, Math.min(rawOffset, rawToFolded.length - 1));
+            int mapped = rawToFolded[clamped] - leadingTrim;
+            return Math.max(0, Math.min(mapped, text.length()));
+        }
     }
 
     private record ExtractiveSelection(RagMessage message, RagExtractiveAnswerer.Result result) {
