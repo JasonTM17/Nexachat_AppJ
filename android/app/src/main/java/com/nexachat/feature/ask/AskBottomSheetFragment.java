@@ -233,60 +233,51 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
 
     @Nullable
     private CharSequence turnStatusMessage(@NonNull AskTurn turn) {
-        return switch (turn.getStatus()) {
-            case NOT_FOUND -> getString(R.string.ask_not_found);
-            case RATE_LIMITED -> {
-                Long retryAfter = turn.getRetryAfterSeconds();
-                yield retryAfter == null
-                        ? getString(R.string.ask_rate_limited)
-                        : com.nexachat.res.QuantityStrings.askRateLimitedRetry(
-                                getResources(), retryAfter.intValue());
-            }
-            case CONSENT_REQUIRED -> getString(R.string.ask_consent_required);
-            case ERROR -> {
-                AskError error = turn.getError();
-                if (error == AskError.CHAT_UNAVAILABLE) {
-                    yield getString(R.string.ask_chat_unavailable);
-                }
-                if (error == AskError.VALIDATION) {
-                    yield getString(R.string.ask_invalid_question);
-                }
-                if (error == AskError.CONSENT_REQUIRED) {
-                    yield getString(R.string.ask_consent_required);
-                }
-                if (error == AskError.NETWORK) {
-                    yield getString(R.string.ask_error_offline);
-                }
-                if (error == AskError.E2EE_UNAVAILABLE) {
-                    yield getString(R.string.ask_e2ee_unavailable);
-                }
-                yield getString(R.string.ask_error_generic);
-            }
-            case ANSWER -> null;
-        };
+        if (turn.getStatus() == AskTurn.Status.ANSWER) {
+            return null;
+        }
+        return resolveStatusMessage(
+                turn.getStatus() == AskTurn.Status.NOT_FOUND,
+                turn.getStatus() == AskTurn.Status.RATE_LIMITED,
+                turn.getStatus() == AskTurn.Status.CONSENT_REQUIRED,
+                turn.getRetryAfterSeconds(),
+                turn.getError());
     }
 
     @NonNull
     private CharSequence statusMessage(@NonNull AskUiState state) {
-        if (state.getStatus() == AskUiState.Status.NOT_FOUND) {
+        return resolveStatusMessage(
+                state.getStatus() == AskUiState.Status.NOT_FOUND,
+                state.getStatus() == AskUiState.Status.RATE_LIMITED,
+                state.getStatus() == AskUiState.Status.CONSENT_REQUIRED,
+                state.getRetryAfterSeconds(),
+                state.getError());
+    }
+
+    @NonNull
+    private CharSequence resolveStatusMessage(
+            boolean notFound,
+            boolean rateLimited,
+            boolean consentRequired,
+            @Nullable Long retryAfterSeconds,
+            @Nullable AskError error) {
+        if (notFound) {
             return getString(R.string.ask_not_found);
         }
-        if (state.getStatus() == AskUiState.Status.RATE_LIMITED) {
-            Long retryAfter = state.getRetryAfterSeconds();
-            return retryAfter == null
+        if (rateLimited) {
+            return retryAfterSeconds == null
                     ? getString(R.string.ask_rate_limited)
                     : com.nexachat.res.QuantityStrings.askRateLimitedRetry(
-                            getResources(), retryAfter.intValue());
+                            getResources(), retryAfterSeconds.intValue());
         }
-        AskError error = state.getError();
+        if (consentRequired || error == AskError.CONSENT_REQUIRED) {
+            return getString(R.string.ask_consent_required);
+        }
         if (error == AskError.CHAT_UNAVAILABLE) {
             return getString(R.string.ask_chat_unavailable);
         }
         if (error == AskError.VALIDATION) {
             return getString(R.string.ask_invalid_question);
-        }
-        if (error == AskError.CONSENT_REQUIRED) {
-            return getString(R.string.ask_consent_required);
         }
         if (error == AskError.NETWORK) {
             return getString(R.string.ask_error_offline);

@@ -30,10 +30,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           # Dedup: don't open a new issue every 10 min while prod stays down.
           open=$(gh issue list --state open --search "prod liveness failing (keep-warm) in:title" --limit 1 --json number -q 'length')
           if [ "$open" = "0" ]; then
             gh issue create \
               --title "prod liveness failing (keep-warm)" \
               --body "Ping returned non-200 in ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Render Free may be cold, crashed, or Render may be down."
+          fi
+      - name: Close alert on recovery
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          open_number=$(gh issue list --state open --search "prod liveness failing (keep-warm) in:title" --limit 1 --json number -q '.[0].number // empty')
+          if [ -n "$open_number" ]; then
+            gh issue close "$open_number" \
+              --comment "Prod liveness recovered (HTTP 200) in ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}."
           fi

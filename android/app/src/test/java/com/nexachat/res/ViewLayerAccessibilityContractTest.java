@@ -313,6 +313,39 @@ public final class ViewLayerAccessibilityContractTest {
                 assignment.contains("R.string.action_rename_group"));
     }
 
+    /**
+     * Clickable whole-row wrappers around switches carry explicit labels so
+     * TalkBack and flat UI dumps never encounter an unnamed clickable container (#254).
+     */
+    @Test
+    public void switchRowWrappersHaveAccessibilityDescriptions() throws Exception {
+        String[][] rows = {
+                {"fragment_profile.xml", "amoledBlackRow"},
+                {"fragment_profile.xml", "aiConsentRow"},
+                {"fragment_profile.xml", "showPresenceRow"},
+                {"fragment_profile.xml", "showSeenRow"},
+                {"fragment_profile.xml", "streakRemindersRow"},
+                {"dialog_conversation_settings.xml", "aiOptOutRow"},
+                {"dialog_conversation_settings.xml", "autoTranslateRow"},
+        };
+        List<String> violations = new ArrayList<>();
+        for (String[] entry : rows) {
+            String layout = entry[0];
+            String rowId = entry[1];
+            Element row = findById(parse(layout), rowId);
+            if (row == null) {
+                violations.add(layout + ": missing @id/" + rowId);
+                continue;
+            }
+            if (attr(row, "contentDescription").isEmpty()) {
+                violations.add(layout + ": " + rowId + " must declare android:contentDescription");
+            }
+        }
+        if (!violations.isEmpty()) {
+            fail("Switch row accessibility:\n" + String.join("\n", violations));
+        }
+    }
+
     private static List<Element> descendantsWithText(Element root) {
         List<Element> found = new ArrayList<>();
         NodeList children = root.getChildNodes();
