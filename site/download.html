@@ -34,28 +34,35 @@
           <svg class="brand-mark" viewBox="0 0 108 108" aria-hidden="true" focusable="false"><path d="M24 20H36L64 60V20H80V84H66L40 47V72L24 84Z"/></svg>
           <span>Tải NexaChat</span>
         </h1>
-        <p class="lead">Tập tin cài đặt APK cho thiết bị Android.</p>
+        <p class="lead">Tệp cài đặt APK chính thức cho thiết bị Android.</p>
         <div class="page-actions">
-          <a class="btn btn-lg" href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest" aria-label="Mở bản phát hành mới nhất, Open latest release">Mở bản phát hành mới nhất</a>
-          <p class="install-hint">Chọn tệp APK trong mục Assets trên trang bản phát hành mới nhất.</p>
+          <a class="btn btn-lg" href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest/download/nexachat-latest.apk" aria-label="Tải tệp APK NexaChat mới nhất">Tải APK NexaChat</a>
         </div>
+        <p class="install-hint">Phiên bản mới nhất: <strong>v1.2.22</strong> — tháng 11/2026 · <a href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest">Trang phát hành</a> · <a href="https://github.com/JasonTM17/Nexachat_AppJ/releases">Nhật ký thay đổi</a></p>
+
         <h2>Yêu cầu hệ thống</h2>
         <p>Hệ điều hành tối thiểu: <strong>Android 8.0 (API 26)</strong> trở lên.</p>
 
+        <h2>Nguồn phát hành chính thức</h2>
+        <p>NexaChat <strong>không</strong> được phân phối qua Google Play. Tệp APK chính thức chỉ có trên trang này và trang GitHub Releases của dự án; đừng cài đặt APK NexaChat từ nguồn khác.</p>
+
         <h2>Hướng dẫn cài đặt</h2>
         <ol>
-          <li>Tải tệp APK từ liên kết phát hành chính thức ở trên.</li>
-          <li>Khi trình duyệt hoặc hệ thống hiển thị cảnh báo bảo mật, chọn cho phép cài đặt từ nguồn này.</li>
+          <li>Nhấn <strong>Tải APK NexaChat</strong> ở trên và đợi tệp tải xuống xong.</li>
+          <li>Nếu trình duyệt hoặc Android hỏi quyền cài ứng dụng không xác định, chỉ cho phép cài đặt từ nguồn này cho trình duyệt hoặc trình quản lý tệp bạn đang dùng.</li>
+          <li>Play Protect hoặc Android có thể cảnh báo về “ứng dụng không xác định”. Đây là cảnh báo thường gặp khi cài trực tiếp ngoài Google Play. Chỉ tiếp tục khi tệp đến từ liên kết chính thức này, giữ Play Protect bật, sau đó chọn <strong>Chi tiết</strong> rồi <strong>Vẫn cài đặt</strong> nếu tùy chọn đó xuất hiện (cách gọi có thể khác theo thiết bị).</li>
           <li>Mở tệp APK đã tải về và chọn <strong>Cài đặt</strong> để hoàn tất.</li>
         </ol>
 
         <h2>Kiểm tra tính toàn vẹn (SHA-256)</h2>
-        <p>Mỗi bản phát hành đi kèm một tệp <code>.sha256</code> chứa mã băm SHA-256 tương ứng của bản dựng APK. Bạn có thể kiểm tra trước khi cài đặt:</p>
+        <p>Mỗi bản phát hành có tệp <a href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest/download/nexachat-latest.apk.sha256"><code>nexachat-latest.apk.sha256</code></a> chứa mã băm SHA-256 của APK. Việc kiểm tra là tùy chọn nhưng nên thực hiện.</p>
+        <p><strong>Trên chính điện thoại:</strong> tải và mở tệp <code>.sha256</code>, sao chép chuỗi 64 ký tự hex đầu tiên, rồi dùng một công cụ kiểm tra checksum đáng tin cậy trên điện thoại để tính SHA-256 của APK đã tải. Hai chuỗi phải khớp hoàn toàn; nếu khác, hãy xóa APK và tải lại từ trang này.</p>
+        <p><strong>Nâng cao trên máy tính (tùy chọn):</strong> đặt APK và tệp <code>.sha256</code> trong cùng một thư mục, rồi chạy lệnh phù hợp:</p>
         <p>Trên Linux hoặc macOS:</p>
-        <pre><code>sha256sum -c &lt;tên-tệp&gt;.apk.sha256</code></pre>
+        <pre><code>sha256sum -c nexachat-latest.apk.sha256</code></pre>
         <p>Trên Windows (PowerShell):</p>
-        <pre><code>Get-FileHash &lt;tên-tệp&gt;.apk -Algorithm SHA256</code></pre>
-        <p>So sánh mã băm thu được với giá trị được công bố trong tệp <code>.sha256</code> trên trang phát hành GitHub Releases.</p>
+        <pre><code>Get-FileHash .\nexachat-latest.apk -Algorithm SHA256</code></pre>
+        <p>Với Windows, so sánh giá trị Hash với chuỗi trong tệp <code>.sha256</code> (không phân biệt chữ hoa/chữ thường).</p>
 
         <h2>Quy định và điều khoản</h2>
         <p>Xem <a href="/privacy.html#lang-vi">Quyền riêng tư</a> và <a href="/terms.html#lang-vi">Điều khoản sử dụng</a> để biết thông tin chi tiết về bảo mật dữ liệu và phạm vi dịch vụ.</p>
@@ -66,28 +73,35 @@
           <svg class="brand-mark" viewBox="0 0 108 108" aria-hidden="true" focusable="false"><path d="M24 20H36L64 60V20H80V84H66L40 47V72L24 84Z"/></svg>
           <span>Download NexaChat</span>
         </h1>
-        <p class="lead">APK installation package for Android devices.</p>
+        <p class="lead">Official APK installation package for Android devices.</p>
         <div class="page-actions">
-          <a class="btn btn-lg" href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest" aria-label="Open latest release">Open latest release</a>
-          <p class="install-hint">Choose the APK under Assets on the latest release page.</p>
+          <a class="btn btn-lg" href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest/download/nexachat-latest.apk" aria-label="Download the latest NexaChat APK">Download NexaChat APK</a>
         </div>
+        <p class="install-hint">Latest version: <strong>v1.2.22</strong> — November 2026 · <a href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest">Release page</a> · <a href="https://github.com/JasonTM17/Nexachat_AppJ/releases">Changelog</a></p>
+
         <h2>System requirements</h2>
         <p>Minimum operating system: <strong>Android 8.0 (API 26)</strong> or newer.</p>
 
+        <h2>Official distribution</h2>
+        <p>NexaChat is <strong>not</strong> distributed through Google Play. The official APK is available only on this page and the project's GitHub Releases; do not install a NexaChat APK from anywhere else.</p>
+
         <h2>Installation guide</h2>
         <ol>
-          <li>Download the APK file from the official release link above.</li>
-          <li>When prompted by your browser or system, allow installing from this source.</li>
-          <li>Open the downloaded APK and select <strong>Install</strong> to complete installation.</li>
+          <li>Select <strong>Download NexaChat APK</strong> above and wait for the download to finish.</li>
+          <li>If your browser or Android asks for permission to install unknown apps, only allow installing from this source for the browser or file manager you are using.</li>
+          <li>Play Protect or Android may warn about an “unknown app”. This warning is expected for a direct install outside Google Play. Continue only if the file came from this official link, keep Play Protect enabled, then choose <strong>More details</strong> and <strong>Install anyway</strong> if that option appears (wording varies by device).</li>
+          <li>Open the downloaded APK file and select <strong>Install</strong> to complete installation.</li>
         </ol>
 
         <h2>SHA-256 checksum verification</h2>
-        <p>Each release provides a corresponding <code>.sha256</code> file containing the cryptographic checksum of the APK. You can verify integrity before installing:</p>
+        <p>Every release includes <a href="https://github.com/JasonTM17/Nexachat_AppJ/releases/latest/download/nexachat-latest.apk.sha256"><code>nexachat-latest.apk.sha256</code></a>, which contains the APK's SHA-256 checksum. Verification is optional but recommended.</p>
+        <p><strong>On the phone itself:</strong> download and open the small <code>.sha256</code> file, copy the first 64 hexadecimal characters, then use a checksum utility you trust on the phone to calculate the downloaded APK's SHA-256. The two strings must match exactly; if they differ, delete the APK and download it again from this page.</p>
+        <p><strong>Optional advanced desktop check:</strong> place the APK and the <code>.sha256</code> file in the same directory, then run the appropriate command:</p>
         <p>On Linux or macOS:</p>
-        <pre><code>sha256sum -c &lt;filename&gt;.apk.sha256</code></pre>
+        <pre><code>sha256sum -c nexachat-latest.apk.sha256</code></pre>
         <p>On Windows (PowerShell):</p>
-        <pre><code>Get-FileHash &lt;filename&gt;.apk -Algorithm SHA256</code></pre>
-        <p>Compare the computed hash against the value published in the <code>.sha256</code> release asset on GitHub Releases.</p>
+        <pre><code>Get-FileHash .\nexachat-latest.apk -Algorithm SHA256</code></pre>
+        <p>On Windows, compare the Hash value with the string in the <code>.sha256</code> file (case does not matter).</p>
 
         <h2>Privacy and terms</h2>
         <p>Review our <a href="/privacy.html#lang-en">Privacy Policy</a> and <a href="/terms.html#lang-en">Terms of Service</a> for data handling and service scope details.</p>

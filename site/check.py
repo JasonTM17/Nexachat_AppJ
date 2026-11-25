@@ -43,9 +43,18 @@ EXPECTED_UPLOAD_FINGERPRINT = (
     "AA:A9:6B:96:7C:ED:C6:78:DE:9C:77:35:78:5C:87:8C:B2:5D:AA:43:52:9B:E0:DF:EF:0B:73:93:4D:BE:01:7A"
 )
 EXPECTED_PACKAGE_NAME = "com.nexachat"
-OFFICIAL_RELEASE_APK_URL = "https://github.com/JasonTM17/Nexachat_AppJ/releases/latest"
+OFFICIAL_RELEASE_PAGE_URL = "https://github.com/JasonTM17/Nexachat_AppJ/releases/latest"
+OFFICIAL_RELEASES_URL = "https://github.com/JasonTM17/Nexachat_AppJ/releases"
+OFFICIAL_DIRECT_APK_URL = "https://github.com/JasonTM17/Nexachat_AppJ/releases/latest/download/nexachat-latest.apk"
+OFFICIAL_DIRECT_CHECKSUM_URL = f"{OFFICIAL_DIRECT_APK_URL}.sha256"
 SUPPORT_ISSUES_URL = "https://github.com/JasonTM17/Nexachat_AppJ/issues"
 DOWNLOAD_PAGE = "download.html"
+DOWNLOAD_ALLOWED_EXTERNAL_URLS = frozenset({
+    OFFICIAL_RELEASE_PAGE_URL,
+    OFFICIAL_RELEASES_URL,
+    OFFICIAL_DIRECT_APK_URL,
+    OFFICIAL_DIRECT_CHECKSUM_URL,
+})
 ANDROID_API_TO_VERSION = {
     21: "5.0",
     23: "6.0",
@@ -648,7 +657,7 @@ def test_no_external_urls():
                 for m in matches:
                     if is_nexachat_site_url(m):
                         continue
-                    if rel_path == DOWNLOAD_PAGE and m == OFFICIAL_RELEASE_APK_URL:
+                    if rel_path == DOWNLOAD_PAGE and m in DOWNLOAD_ALLOWED_EXTERNAL_URLS:
                         continue
                     if m == SUPPORT_ISSUES_URL:
                         continue
@@ -657,7 +666,7 @@ def test_no_external_urls():
                     failures.append(f"External URL(s) found in {rel_path}: {disallowed}")
 
     if not failures:
-        log_pass(f"No third-party URLs found across {scanned} HTML/CSS/JS file(s) (allowed: release link on {DOWNLOAD_PAGE})")
+        log_pass(f"No third-party URLs found across {scanned} HTML/CSS/JS file(s) (allowed: official GitHub release/support links)")
     return failures
 
 
@@ -1460,22 +1469,34 @@ def test_download_page():
     if "noindex" in html.lower():
         failures.append(f"{DOWNLOAD_PAGE} must be indexable (no noindex robots meta)")
 
-    # Primary download button
+    # Primary download button, secondary release/changelog links, and release version
     btn_pattern = re.compile(
-        r'<a[^>]+class="[^"]*\bbtn\b[^"]*"[^>]+href="' + re.escape(OFFICIAL_RELEASE_APK_URL) + r'"'
+        r'<a[^>]+class="[^"]*\bbtn\b[^"]*"[^>]+href="' + re.escape(OFFICIAL_DIRECT_APK_URL) + r'"'
     )
     if not btn_pattern.search(html):
-        failures.append(f"{DOWNLOAD_PAGE} missing primary .btn link to {OFFICIAL_RELEASE_APK_URL}")
+        failures.append(f"{DOWNLOAD_PAGE} missing primary .btn link to {OFFICIAL_DIRECT_APK_URL}")
+    if f'href="{OFFICIAL_RELEASE_PAGE_URL}"' not in html:
+        failures.append(f"{DOWNLOAD_PAGE} missing secondary link to {OFFICIAL_RELEASE_PAGE_URL}")
+    if f'href="{OFFICIAL_RELEASES_URL}"' not in html:
+        failures.append(f"{DOWNLOAD_PAGE} missing changelog link to {OFFICIAL_RELEASES_URL}")
+    if f'href="{OFFICIAL_DIRECT_CHECKSUM_URL}"' not in html:
+        failures.append(f"{DOWNLOAD_PAGE} missing direct checksum link to {OFFICIAL_DIRECT_CHECKSUM_URL}")
     download_text = re.sub(r"<[^>]*>", " ", html)
     download_text = re.sub(r"\s+", " ", download_text).casefold()
-    if "mở bản phát hành mới nhất" not in download_text:
-        failures.append(f"{DOWNLOAD_PAGE} missing the Vietnamese latest-release button label")
-    if "open latest release" not in download_text:
-        failures.append(f"{DOWNLOAD_PAGE} missing the English latest-release button label")
-    if "chọn tệp apk trong mục assets" not in download_text:
-        failures.append(f"{DOWNLOAD_PAGE} missing the Vietnamese APK-under-Assets hint")
-    if "choose the apk under assets" not in download_text:
-        failures.append(f"{DOWNLOAD_PAGE} missing the English APK-under-Assets hint")
+    for needle, description in (
+        ("tải apk nexachat", "Vietnamese direct-download button label"),
+        ("download nexachat apk", "English direct-download button label"),
+        ("v1.2.22", "current release version"),
+        ("tháng 11/2026", "Vietnamese release date"),
+        ("november 2026", "English release date"),
+        ("không được phân phối qua google play", "Vietnamese no-Google-Play statement"),
+        ("not distributed through google play", "English no-Google-Play statement"),
+        ("play protect", "Play Protect sideloading guidance"),
+        ("trên chính điện thoại", "Vietnamese on-device checksum path"),
+        ("on the phone itself", "English on-device checksum path"),
+    ):
+        if needle not in download_text:
+            failures.append(f"{DOWNLOAD_PAGE} missing {description}")
 
     # Dynamic minSdk check against android/app/build.gradle
     min_sdk, err = read_android_min_sdk()
