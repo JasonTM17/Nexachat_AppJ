@@ -136,7 +136,7 @@ public class RagProperties {
         private int rrfK = 60;
         private double notFoundThreshold = 0.18;
         private double extractiveThreshold = 0.62;
-        private double lexicalAnswerMinCoverage = 0.60;
+        private double lexicalAnswerMinCoverage = 1.0;
         private double vectorAnswerThreshold = 0.60;
         private double semanticCacheThreshold = 0.92;
         private int maxSnippetChars = 280;

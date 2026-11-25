@@ -107,6 +107,62 @@ class RagRetrievalServiceTest {
         assertThat(gated.isEmpty()).isFalse();
     }
 
+
+    @Test
+    void answerEvidenceGateRejectsCompositeQuestionWhenOnlyPartOfEntityIsPresent() {
+        UUID conversationId = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        index.add(RagTestSupport.message(conversationId, UUID.randomUUID(), 1, senderId,
+                "Lan", "The deployment window is Friday at 10am."));
+
+        RetrievalResult gated = service.retrieve(conversationId,
+                "What is the satellite deployment window?", SummaryLanguage.EN, false, null, true);
+
+        assertThat(gated.isEmpty()).isTrue();
+    }
+
+    @Test
+    void answerEvidenceGateRejectsEvidenceSplitAcrossMessages() {
+        UUID conversationId = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        index.add(RagTestSupport.message(conversationId, UUID.randomUUID(), 1, senderId,
+                "Lan", "The satellite vendor was selected."));
+        index.add(RagTestSupport.message(conversationId, UUID.randomUUID(), 2, senderId,
+                "Lan", "The deployment window is Friday at 10am."));
+
+        RetrievalResult gated = service.retrieve(conversationId,
+                "What is the satellite deployment window?", SummaryLanguage.EN, false, null, true);
+
+        assertThat(gated.isEmpty()).isTrue();
+    }
+
+
+    @Test
+    void answerEvidenceGateDoesNotTreatShortNearHomographsAsTypos() {
+        UUID conversationId = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        index.add(RagTestSupport.message(conversationId, UUID.randomUUID(), 1, senderId,
+                "Lan", "The plain deployment window is Friday at 10am."));
+
+        RetrievalResult gated = service.retrieve(conversationId,
+                "What is the plan deployment window?", SummaryLanguage.EN, false, null, true);
+
+        assertThat(gated.isEmpty()).isTrue();
+    }
+
+    @Test
+    void answerEvidenceGateAcceptsABoundedTypoInACompositionalMatch() {
+        UUID conversationId = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        index.add(RagTestSupport.message(conversationId, UUID.randomUUID(), 1, senderId,
+                "Lan", "The deployment window is Friday at 10am."));
+
+        RetrievalResult gated = service.retrieve(conversationId,
+                "What is the deployment windo?", SummaryLanguage.EN, false, null, true);
+
+        assertThat(gated.isEmpty()).isFalse();
+    }
+
     @Test
     void emptyConversationReturnsAnEmptyResult() {
         RetrievalResult result = service.retrieve(UUID.randomUUID(),

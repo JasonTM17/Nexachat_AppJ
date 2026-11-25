@@ -8,6 +8,7 @@ import com.nexachat.summary.SummaryLanguage;
 import com.nexachat.summary.llm.Redactor;
 import org.junit.jupiter.api.Test;
 
+import java.text.Normalizer;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -38,6 +39,10 @@ class RagBenchmarkEvaluationTest {
     private static final double MIN_RECALL_AT_3 = 0.70;
     private static final double MIN_ZERO_LLM_RATIO = 0.40;
     private static final double MAX_INPUT_CHAR_RATIO = 0.30;
+    private static final double MIN_AUGMENTED_RECALL_AT_5 = 0.80;
+    private static final double MIN_AUGMENTED_RECALL_AT_3 = 0.70;
+    private static final double MIN_AUGMENTED_MRR = 0.75;
+    private static final double MIN_DISTRACTOR_NOT_FOUND = 0.95;
 
     private static final String[] EN_TOPICS = {
             "deployment window", "budget", "kickoff meeting", "support escalations",
@@ -88,22 +93,37 @@ class RagBenchmarkEvaluationTest {
             "Tôi cần bạn tìm chính xác lịch trình diễn robot dưới nước đã được nhắc đến "
                     + "trong cuộc trò chuyện này vì tôi cần cho việc triển khai."};
 
+    private static final String[] EN_DISTRACTOR_LOOKUP = {
+            "What is the deployment budget?",
+            "What is the satellite deployment window?",
+            "When is the security hiring plan?"};
+    private static final String[] VI_DISTRACTOR_LOOKUP = {
+            "Ngân sách cho cuộc họp khởi động là gì?",
+            "Lịch trình phóng vệ tinh là gì?",
+            "Kế hoạch tuyển dụng bảo mật là gì?"};
+
     @Test
     void benchmarkMeetsRetrievalAndCostTargets() {
         SyntheticCorpus corpus = SyntheticCorpus.generate();
         RagRetrievalService retrieval = RagTestSupport.retrieval(corpus.index(), new RagProperties());
 
         RetrievalMetrics retrievalMetrics = evaluateRetrieval(corpus, retrieval);
+        RetrievalMetrics augmentedMetrics = evaluateAugmentedRetrieval(corpus, retrieval);
         AtomicInteger llmInvocations = new AtomicInteger();
         AskService askService = newAskService(corpus, llmInvocations);
         RouterMetrics routerMetrics = evaluateRouter(corpus, askService);
         NegativeMetrics negativeMetrics = evaluateNegativeQuestions(corpus, askService, llmInvocations);
+        NegativeMetrics distractorMetrics = evaluateDistractorQuestions(corpus, askService, llmInvocations);
+        PositiveMetrics augmentedPositiveMetrics = evaluateAugmentedPositiveQuestions(corpus, askService);
 
         System.out.printf(
                 "rag-eval: conversations=%d messages=%d lookupQuestions=%d "
                         + "recall@3=%.3f recall@5=%.3f mrr=%.3f citationValidity=%.3f "
                         + "zeroLlm=%.1f%% meanInputChars=%.1f baselineChars=%.1f reduction=%.1f%% "
-                        + "negativeQuestions=%d negativeNotFound=%.3f negativeLlm=%d negativeCitations=%d%n",
+                        + "negativeQuestions=%d negativeNotFound=%.3f negativeLlm=%d negativeCitations=%d "
+                        + "augmentedQuestions=%d augmentedRecall@3=%.3f augmentedRecall@5=%.3f augmentedMrr=%.3f "
+                        + "distractorQuestions=%d distractorNotFound=%.3f distractorLlm=%d distractorCitations=%d "
+                        + "augmentedAnswered=%.3f augmentedCorrectCitations=%.3f augmentedNotFound=%d%n",
                 CONVERSATION_COUNT,
                 CONVERSATION_COUNT * MESSAGES_PER_CONVERSATION,
                 corpus.lookupQuestions().size(),
@@ -118,7 +138,18 @@ class RagBenchmarkEvaluationTest {
                 corpus.negativeQuestions().size(),
                 negativeMetrics.notFoundRatio(),
                 negativeMetrics.llmCalls(),
-                negativeMetrics.citationCount());
+                negativeMetrics.citationCount(),
+                corpus.augmentedLookupQuestions().size(),
+                augmentedMetrics.recallAt3(),
+                augmentedMetrics.recallAt5(),
+                augmentedMetrics.mrr(),
+                corpus.distractorQuestions().size(),
+                distractorMetrics.notFoundRatio(),
+                distractorMetrics.llmCalls(),
+                distractorMetrics.citationCount(),
+                augmentedPositiveMetrics.answeredRatio(),
+                augmentedPositiveMetrics.correctCitationRatio(),
+                augmentedPositiveMetrics.notFound());
 
         assertThat(corpus.lookupQuestions().size()).isGreaterThanOrEqualTo(150);
         assertThat(corpus.negativeQuestions().size()).isGreaterThanOrEqualTo(96);
@@ -131,15 +162,35 @@ class RagBenchmarkEvaluationTest {
         assertThat(negativeMetrics.notFoundRatio()).isEqualTo(1.0);
         assertThat(negativeMetrics.llmCalls()).isZero();
         assertThat(negativeMetrics.citationCount()).isZero();
+        assertThat(corpus.augmentedLookupQuestions().size()).isGreaterThanOrEqualTo(150);
+        assertThat(augmentedMetrics.recallAt5()).isGreaterThanOrEqualTo(MIN_AUGMENTED_RECALL_AT_5);
+        assertThat(augmentedMetrics.recallAt3()).isGreaterThanOrEqualTo(MIN_AUGMENTED_RECALL_AT_3);
+        assertThat(augmentedMetrics.mrr()).isGreaterThanOrEqualTo(MIN_AUGMENTED_MRR);
+        assertThat(augmentedMetrics.citationValidity()).isEqualTo(1.0);
+        assertThat(corpus.distractorQuestions().size()).isGreaterThanOrEqualTo(96);
+        assertThat(distractorMetrics.notFoundRatio()).isGreaterThanOrEqualTo(MIN_DISTRACTOR_NOT_FOUND);
+        assertThat(distractorMetrics.llmCalls()).isZero();
+        assertThat(distractorMetrics.citationCount()).isZero();
+        assertThat(augmentedPositiveMetrics.answeredRatio()).isGreaterThanOrEqualTo(0.95);
+        assertThat(augmentedPositiveMetrics.correctCitationRatio()).isGreaterThanOrEqualTo(0.90);
     }
 
     private RetrievalMetrics evaluateRetrieval(SyntheticCorpus corpus, RagRetrievalService retrieval) {
+        return evaluateLookupQuestions(corpus.lookupQuestions(), corpus.messageIds(), retrieval);
+    }
+
+    private RetrievalMetrics evaluateAugmentedRetrieval(SyntheticCorpus corpus, RagRetrievalService retrieval) {
+        return evaluateLookupQuestions(corpus.augmentedLookupQuestions(), corpus.messageIds(), retrieval);
+    }
+
+    private RetrievalMetrics evaluateLookupQuestions(List<LookupQuestion> questions,
+            Map<UUID, Set<UUID>> messageIds, RagRetrievalService retrieval) {
         int hitsAt3 = 0;
         int hitsAt5 = 0;
         double reciprocalRank = 0.0;
         int validCitations = 0;
         int totalCitations = 0;
-        for (LookupQuestion question : corpus.lookupQuestions()) {
+        for (LookupQuestion question : questions) {
             RetrievalResult result = retrieval.retrieve(question.conversationId(),
                     question.question(), question.language(), false);
             int rank = -1;
@@ -158,7 +209,7 @@ class RagBenchmarkEvaluationTest {
                 }
                 reciprocalRank += 1.0 / rank;
             }
-            Set<UUID> conversationIds = corpus.messageIds().get(question.conversationId());
+            Set<UUID> conversationIds = messageIds.get(question.conversationId());
             for (RagContextItem item : result.context()) {
                 for (UUID messageId : item.messageIds()) {
                     totalCitations++;
@@ -168,7 +219,7 @@ class RagBenchmarkEvaluationTest {
                 }
             }
         }
-        int questionCount = corpus.lookupQuestions().size();
+        int questionCount = questions.size();
         return new RetrievalMetrics(
                 (double) hitsAt3 / questionCount,
                 (double) hitsAt5 / questionCount,
@@ -199,15 +250,45 @@ class RagBenchmarkEvaluationTest {
         when(questionCache.citationsValid(any(), any())).thenReturn(true);
         when(questionCache.contextSnapshot(any())).thenReturn(new RagQuestionCache.ContextSnapshot(1, null));
         when(questionCache.contextUnchanged(any(), any())).thenReturn(true);
-        when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
+when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
                     llmInvocations.incrementAndGet();
                     List<RagContextItem> context = invocation.getArgument(4);
                     if (context.isEmpty()) {
                         return RagLlmOutcome.providerError(true);
                     }
+                    String llmQuestion = invocation.getArgument(2);
+                    SummaryLanguage llmLanguage = invocation.getArgument(3);
+                    Map<UUID, RagMessage> messages = invocation.getArgument(5);
+                    Set<String> questionTerms = new HashSet<>(RagQuestionTerms.extract(llmQuestion, llmLanguage, 12));
+                    RagMessage bestMessage = null;
+                    int bestOverlap = 0;
+                    for (RagContextItem item : context) {
+                        for (UUID messageId : item.messageIds()) {
+                            RagMessage message = messages.get(messageId);
+                            if (message == null) {
+                                continue;
+                            }
+                            Set<String> messageTerms = new HashSet<>(RagQuestionTerms.contentTerms(
+                                    message.content(), llmLanguage));
+                            int overlap = 0;
+                            for (String term : questionTerms) {
+                                if (messageTerms.contains(term)) {
+                                    overlap++;
+                                }
+                            }
+                            if (overlap > bestOverlap) {
+                                bestOverlap = overlap;
+                                bestMessage = message;
+                            }
+                        }
+                    }
+                    if (bestMessage == null) {
+                        return RagLlmOutcome.answer(
+                                new RagLlmAnswer("Synthetic answer.", context.get(0).messageIds()), false);
+                    }
                     return RagLlmOutcome.answer(
-                            new RagLlmAnswer("Synthetic answer.", context.get(0).messageIds()), false);
+                            new RagLlmAnswer("Synthetic answer.", List.of(bestMessage.id())), false);
                 });
 
         return new AskService(
@@ -275,6 +356,51 @@ class RagBenchmarkEvaluationTest {
                 llmInvocations.get() - llmCallsBefore, citationCount);
     }
 
+    private NegativeMetrics evaluateDistractorQuestions(SyntheticCorpus corpus, AskService service,
+            AtomicInteger llmInvocations) {
+        UUID userId = UUID.randomUUID();
+        int notFound = 0;
+        int citationCount = 0;
+        int llmCallsBefore = llmInvocations.get();
+        for (BenchmarkQuestion question : corpus.distractorQuestions()) {
+            AskResponse response = service.ask(question.conversationId(), userId,
+                    new AskRequest(question.question(), question.language()));
+            if (response.mode() == AskMode.NOT_FOUND) {
+                notFound++;
+            }
+            citationCount += response.citations().size();
+        }
+        int total = corpus.distractorQuestions().size();
+        return new NegativeMetrics((double) notFound / total,
+                llmInvocations.get() - llmCallsBefore, citationCount);
+    }
+
+    private PositiveMetrics evaluateAugmentedPositiveQuestions(SyntheticCorpus corpus, AskService service) {
+        UUID userId = UUID.randomUUID();
+        int answered = 0;
+        int correctCitations = 0;
+        int notFound = 0;
+        for (LookupQuestion question : corpus.augmentedLookupQuestions()) {
+            AskResponse response = service.ask(question.conversationId(), userId,
+                    new AskRequest(question.question(), question.language()));
+            if (response.mode() == AskMode.NOT_FOUND) {
+                notFound++;
+                continue;
+            }
+            answered++;
+            boolean correct = response.citations().stream()
+                    .anyMatch(citation -> citation.messageId().equals(question.goldMessageId()));
+            if (correct) {
+                correctCitations++;
+            }
+        }
+        int total = corpus.augmentedLookupQuestions().size();
+        return new PositiveMetrics((double) answered / total, (double) correctCitations / total, notFound);
+    }
+
+    private record PositiveMetrics(double answeredRatio, double correctCitationRatio, int notFound) {
+    }
+
     private record NegativeMetrics(double notFoundRatio, int llmCalls, int citationCount) {
     }
 
@@ -301,8 +427,10 @@ class RagBenchmarkEvaluationTest {
     private static final class SyntheticCorpus {
         private final InMemoryRagMessageIndex index = new InMemoryRagMessageIndex();
         private final List<LookupQuestion> lookupQuestions = new ArrayList<>();
+        private final List<LookupQuestion> augmentedLookupQuestions = new ArrayList<>();
         private final List<BenchmarkQuestion> questions = new ArrayList<>();
         private final List<BenchmarkQuestion> negativeQuestions = new ArrayList<>();
+        private final List<BenchmarkQuestion> distractorQuestions = new ArrayList<>();
         private final Map<UUID, Set<UUID>> messageIds = new HashMap<>();
         private final Map<UUID, Integer> baselineChars = new HashMap<>();
 
@@ -340,6 +468,9 @@ class RagBenchmarkEvaluationTest {
                                 : "What is the " + topic + "?";
                         lookupQuestions.add(new LookupQuestion(conversationId, question,
                                 vietnamese ? SummaryLanguage.VI : SummaryLanguage.EN, factId));
+                        augmentedLookupQuestions.add(new LookupQuestion(conversationId,
+                                augmentedQuestion(topic, vietnamese, factIndex),
+                                vietnamese ? SummaryLanguage.VI : SummaryLanguage.EN, factId));
                         questions.add(new BenchmarkQuestion(conversationId, question,
                                 vietnamese ? SummaryLanguage.VI : SummaryLanguage.EN));
                         factsPlaced++;
@@ -365,6 +496,11 @@ class RagBenchmarkEvaluationTest {
                     negativeQuestions.add(new BenchmarkQuestion(conversationId, question,
                             vietnamese ? SummaryLanguage.VI : SummaryLanguage.EN));
                 }
+                String[] distractorPrompts = vietnamese ? VI_DISTRACTOR_LOOKUP : EN_DISTRACTOR_LOOKUP;
+                for (String question : distractorPrompts) {
+                    distractorQuestions.add(new BenchmarkQuestion(conversationId, question,
+                            vietnamese ? SummaryLanguage.VI : SummaryLanguage.EN));
+                }
                 messageIds.put(conversationId, ids);
                 baselineChars.put(conversationId, baseline);
             }
@@ -387,6 +523,14 @@ class RagBenchmarkEvaluationTest {
             return negativeQuestions;
         }
 
+        List<LookupQuestion> augmentedLookupQuestions() {
+            return augmentedLookupQuestions;
+        }
+
+        List<BenchmarkQuestion> distractorQuestions() {
+            return distractorQuestions;
+        }
+
         Map<UUID, Set<UUID>> messageIds() {
             return messageIds;
         }
@@ -394,5 +538,52 @@ class RagBenchmarkEvaluationTest {
         Map<UUID, Integer> baselineChars() {
             return baselineChars;
         }
+    }
+
+    private static String augmentedQuestion(String topic, boolean vietnamese, int factIndex) {
+        int variant = factIndex % 6;
+        if (vietnamese) {
+            return switch (variant) {
+                case 0 -> dropOneCharacter(topic, factIndex) + " là gì?";
+                case 1 -> "Cho mình biết " + topic + ".";
+                case 2 -> "Tìm " + topic + ".";
+                case 3 -> stripAccents(topic + " là gì");
+                case 4 -> "Giải thích " + topic + " giúp mình.";
+                default -> "Mình cần chi tiết " + topic + ".";
+            };
+        }
+        return switch (variant) {
+            case 0 -> "What is the " + dropOneCharacter(topic, factIndex) + "?";
+            case 1 -> "Tell me about the " + topic + ".";
+            case 2 -> "Find the " + topic + ".";
+            case 3 -> "what is " + topic;
+            case 4 -> "Can you explain the " + topic + "?";
+            default -> "I need the " + topic + " details.";
+        };
+    }
+
+    private static String dropOneCharacter(String text, int salt) {
+        if (text == null || text.length() < 2) {
+            return text;
+        }
+        String[] tokens = text.split(" ");
+        int longest = 0;
+        for (int index = 1; index < tokens.length; index++) {
+            if (tokens[index].length() > tokens[longest].length()) {
+                longest = index;
+            }
+        }
+        if (tokens[longest].length() < 5) {
+            return text;
+        }
+        int position = Math.floorMod(salt * 5 + 2, tokens[longest].length());
+        tokens[longest] = tokens[longest].substring(0, position) + tokens[longest].substring(position + 1);
+        return String.join(" ", tokens);
+    }
+
+    private static String stripAccents(String text) {
+        String normalized = Normalizer.normalize(text, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "");
+        return normalized.replace('đ', 'd').replace('Đ', 'D');
     }
 }
