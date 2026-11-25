@@ -259,6 +259,7 @@ public class RagProperties {
 
     public static class Index {
         private int lazyLimit = 500;
+        private int externalLazyLimit = 32;
         private int backfillRatePerMinute = 200;
         private int cacheMaxVectors = 4_096;
         private boolean backfillEnabled = true;
@@ -270,6 +271,17 @@ public class RagProperties {
 
         public void setLazyLimit(int lazyLimit) {
             this.lazyLimit = lazyLimit;
+        }
+
+        public int getExternalLazyLimit() {
+            return externalLazyLimit;
+        }
+
+        public void setExternalLazyLimit(int externalLazyLimit) {
+            if (externalLazyLimit < 0 || externalLazyLimit > 500) {
+                throw new IllegalArgumentException("externalLazyLimit must be between 0 and 500");
+            }
+            this.externalLazyLimit = externalLazyLimit;
         }
 
         public int getBackfillRatePerMinute() {

@@ -367,6 +367,7 @@ nexachat:
       max-snippet-chars: ${NEXACHAT_RAG_MAX_SNIPPET_CHARS:280}
     index:
       lazy-limit: ${NEXACHAT_RAG_INDEX_LAZY_LIMIT:500}
+      external-lazy-limit: ${NEXACHAT_RAG_INDEX_EXTERNAL_LAZY_LIMIT:32}
       backfill-rate-per-minute: ${NEXACHAT_RAG_BACKFILL_RATE_PER_MINUTE:200}
       cache-max-vectors: ${NEXACHAT_RAG_CACHE_MAX_VECTORS:4096}
       backfill-enabled: ${NEXACHAT_RAG_BACKFILL_ENABLED:true}
