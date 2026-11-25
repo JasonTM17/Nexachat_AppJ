@@ -1253,6 +1253,8 @@ def test_bilingual_language_navigation():
                 )
                 if anchor.search(footer_html) is None:
                     failures.append(f"{rel_page} footer must link {target}#{fragment} with lang=\"{lang}\"")
+        if f'href="{SUPPORT_ISSUES_URL}"' not in footer_html:
+            failures.append(f"{rel_page} footer must link the GitHub issues support channel")
 
     if not failures:
         log_pass("Long bilingual pages have translated section landmarks, jump links, and matching footer targets")
@@ -1302,6 +1304,10 @@ def test_privacy_policy_disclosures():
         if phrase not in html:
             failures.append(f"privacy.html missing English Firebase disclosure: {ascii(phrase)}")
     failures.extend(account_guidance_failures(html, "privacy.html"))
+    if "Operator and contact" not in html or "Nhà vận hành và liên hệ" not in html:
+        failures.append("privacy.html missing bilingual operator/contact sections")
+    if html.count(f'href="{SUPPORT_ISSUES_URL}"') < 2:
+        failures.append("privacy.html operator/contact sections must link the GitHub issues channel in both languages")
     if not failures:
         log_pass(
             "Privacy page discloses Firebase behavior and conditional account guidance in vi/en"
