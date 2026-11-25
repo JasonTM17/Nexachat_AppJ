@@ -63,6 +63,11 @@ public final class AskModelsTest {
         assertEquals(AskError.CONSENT_REQUIRED,
                 AskErrorMapper.fromHttp(403,
                         "{\"error\":{\"code\":\"CONSENT_REQUIRED\"}}").getError());
+        assertEquals(AskError.E2EE_UNAVAILABLE,
+                AskErrorMapper.fromHttp(409,
+                        "{\"error\":{\"code\":\"E2EE_AI_UNAVAILABLE\"}}").getError());
+        assertEquals(AskError.NETWORK,
+                AskErrorMapper.fromFailure(new java.io.IOException("offline")).getError());
         AskErrorMapping rateLimited = AskErrorMapper.fromHttp(429,
                 "{\"error\":{\"code\":\"RATE_LIMITED\",\"details\":{\"retryAfterSeconds\":23}}}");
         assertEquals(AskError.RATE_LIMITED, rateLimited.getError());

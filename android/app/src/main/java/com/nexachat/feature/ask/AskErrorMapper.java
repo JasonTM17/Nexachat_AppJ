@@ -49,6 +49,8 @@ public final class AskErrorMapper {
                 return AskError.CHAT_UNAVAILABLE;
             case "RATE_LIMITED":
                 return AskError.RATE_LIMITED;
+            case "E2EE_AI_UNAVAILABLE":
+                return AskError.E2EE_UNAVAILABLE;
             case "CONSENT_REQUIRED":
             case "AI_CONSENT_REQUIRED":
             case "AI_SUMMARY_CONSENT_REQUIRED":
