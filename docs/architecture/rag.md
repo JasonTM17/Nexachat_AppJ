@@ -78,6 +78,19 @@ fallback never mixes spaces with an external index, and changing
 recomputed under the new identity. The in-memory vector cache and the ask
 cache are scoped by the same identity.
 
+
+External embedding providers use native batch embedding APIs where available:
+OpenAI-compatible array inputs and Gemini `batchEmbedContents`, chunked by
+`nexachat.rag.embedding.batch-size` (default 32). Batch-shaped rejections fall
+back to serial single embedding calls for that chunk; transport/server failures
+still degrade the whole retrieval request to the local provider rather than
+multiplying an outage across hundreds of serial calls. Lazy indexing prefers
+the newest tail of missing candidates and is capped separately for external
+providers so a cold conversation cannot fan out into hundreds of embedding
+requests inside one ask. Older external vectors remain a warmup/indexing
+roadmap item; offline lexical backfill and lexical retrieval continue to
+provide degradation coverage.
+
 ## Consent and privacy
 
 - The external embedding provider and the LLM tier are used only when the
@@ -140,7 +153,7 @@ cache are scoped by the same identity.
 | Answerability gate | fused score < 0.18 → `NOT_FOUND` |
 | Extractive gate | lookup-like question and fused score ≥ 0.62 |
 | Context budget | 3,000 characters |
-| Lazy indexing per request | 500 messages |
+| Lazy indexing per request | 500 candidate messages; at most 32 new external vectors per ask |
 | Background backfill | 200 messages/minute |
 | Ask rate limit | 20/minute, 200/day per user |
 
@@ -190,6 +203,7 @@ same question cache as a primary call; a cache hit never calls either provider.
 | `nexachat.rag.retrieval.extractive-threshold` | `NEXACHAT_RAG_EXTRACTIVE_THRESHOLD` | `0.62` |
 | `nexachat.rag.retrieval.semantic-cache-threshold` | `NEXACHAT_RAG_SEMANTIC_CACHE_THRESHOLD` | `0.92` |
 | `nexachat.rag.index.lazy-limit` | `NEXACHAT_RAG_INDEX_LAZY_LIMIT` | `500` |
+| `nexachat.rag.index.external-lazy-limit` | `NEXACHAT_RAG_INDEX_EXTERNAL_LAZY_LIMIT` | `32` |
 | `nexachat.rag.index.backfill-rate-per-minute` | `NEXACHAT_RAG_BACKFILL_RATE_PER_MINUTE` | `200` |
 | `nexachat.rag.ask.rate-limit-per-minute` | `NEXACHAT_RAG_ASK_RATE_LIMIT_PER_MINUTE` | `20` |
 | `nexachat.rag.ask.rate-limit-per-day` | `NEXACHAT_RAG_ASK_RATE_LIMIT_PER_DAY` | `200` |

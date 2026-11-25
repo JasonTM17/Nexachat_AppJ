@@ -89,7 +89,10 @@ public class RagEmbeddingService {
         EmbeddingProvider provider = runtimeProvider(consented);
         try {
             float[] questionVector = embed(provider, inputFor(question, provider));
-            VectorOutcome vectors = ensureVectorsWith(provider, candidates, limit);
+            int vectorBudget = provider == providers.external()
+                    ? Math.min(limit, Math.max(0, properties.getIndex().getExternalLazyLimit()))
+                    : limit;
+            VectorOutcome vectors = ensureVectorsWith(provider, candidates, vectorBudget);
             return new RetrievalEmbeddings(questionVector, vectors.vectors(), provider.id());
         } catch (EmbeddingProviderException exception) {
             float[] questionVector = embed(providers.local(), question == null ? "" : question);
@@ -183,7 +186,9 @@ public class RagEmbeddingService {
         }
 
         int budget = Math.max(0, limit);
-        List<RagMessage> batch = missing.size() > budget ? List.copyOf(missing.subList(0, budget)) : missing;
+        List<RagMessage> batch = missing.size() > budget
+                ? List.copyOf(missing.subList(missing.size() - budget, missing.size()))
+                : missing;
         if (!batch.isEmpty()) {
             List<String> inputs = batch.stream()
                     .map(message -> inputFor(message.content(), provider))

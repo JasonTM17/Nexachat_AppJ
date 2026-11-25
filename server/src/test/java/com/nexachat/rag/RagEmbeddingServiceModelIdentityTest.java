@@ -11,11 +11,13 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class RagEmbeddingServiceModelIdentityTest {
 
@@ -38,7 +40,17 @@ class RagEmbeddingServiceModelIdentityTest {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/embeddings", exchange -> {
             requestCount++;
-            byte[] payload = responsePayload();
+            byte[] requestBytes = exchange.getRequestBody().readAllBytes();
+            int inputCount = 1;
+            try {
+                com.fasterxml.jackson.databind.JsonNode input = new ObjectMapper().readTree(requestBytes).path("input");
+                if (input.isArray()) {
+                    inputCount = input.size();
+                }
+            } catch (IOException exception) {
+                throw new IllegalStateException(exception);
+            }
+            byte[] payload = responsePayload(inputCount);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(status, payload.length);
             exchange.getResponseBody().write(payload);
@@ -131,7 +143,42 @@ class RagEmbeddingServiceModelIdentityTest {
         assertThat(recovered.vectors().get(messageId)).containsExactly(vector(1.0f));
     }
 
-    private byte[] responsePayload() {
+    @Test
+    void externalLazyLimitRejectsInvalidValues() {
+        assertThatThrownBy(() -> properties.getIndex().setExternalLazyLimit(-1))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> properties.getIndex().setExternalLazyLimit(501))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void externalLazyIndexingIsCappedAndPrefersTheNewestTail() {
+        properties.getIndex().setExternalLazyLimit(5);
+        UUID conversationId = UUID.randomUUID();
+        UUID senderId = UUID.randomUUID();
+        List<RagMessage> messages = new ArrayList<>();
+        for (long seq = 1; seq <= 20; seq++) {
+            RagMessage message = RagTestSupport.message(
+                    conversationId, UUID.randomUUID(), seq, senderId, "User", "Message number " + seq);
+            index.add(message);
+            messages.add(message);
+        }
+        responseVector = vector(1.0f);
+
+        RagEmbeddingService.RetrievalEmbeddings outcome =
+                embeddings.embedForRetrieval("What happened?", messages, 500, true);
+
+        assertThat(outcome.vectors()).hasSize(5);
+        assertThat(outcome.vectors()).doesNotContainKey(messages.get(0).id());
+        for (int position = 15; position < 20; position++) {
+            assertThat(outcome.vectors()).containsKey(messages.get(position).id());
+        }
+        assertThat(requestCount)
+                .as("one question embedding plus one batched candidate request")
+                .isEqualTo(2);
+    }
+
+    private byte[] responsePayload(int inputCount) {
         try {
             ObjectMapper mapper = new ObjectMapper();
             ArrayNode values = mapper.createArrayNode();
@@ -139,7 +186,12 @@ class RagEmbeddingServiceModelIdentityTest {
                 values.add(responseVector[index]);
             }
             ObjectNode root = mapper.createObjectNode();
-            root.putArray("data").addObject().set("embedding", values);
+            ArrayNode data = root.putArray("data");
+            for (int position = 0; position < inputCount; position++) {
+                ObjectNode row = data.addObject();
+                row.put("index", position);
+                row.set("embedding", values);
+            }
             return mapper.writeValueAsBytes(root);
         } catch (IOException exception) {
             throw new IllegalStateException(exception);

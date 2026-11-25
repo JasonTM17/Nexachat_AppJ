@@ -25,7 +25,8 @@ public class RagEmbeddingProviders {
                         config.getApiKey(),
                         config.getDim(),
                         config.getTimeoutMs(),
-                        "gemini".equalsIgnoreCase(config.getMode()));
+                        "gemini".equalsIgnoreCase(config.getMode()),
+                        config.getBatchSize());
             } catch (RuntimeException exception) {
                 built = null;
             }
