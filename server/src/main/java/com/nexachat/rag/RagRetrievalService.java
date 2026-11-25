@@ -56,8 +56,8 @@ public class RagRetrievalService {
     /**
      * When {@code requireAnswerEvidence} is true, rank evidence alone is not
      * enough: at least one candidate must share sufficient question-term
-     * coverage, or the raw vector evidence must clear a calibrated confidence
-     * margin. This keeps reciprocal-rank positions useful for ordering without
+     * coverage, or the raw vector evidence must clear the configured
+     * answerability threshold. This keeps reciprocal-rank positions useful for ordering without
      * allowing the recent-message window to manufacture answerability.
      */
     public RetrievalResult retrieve(
@@ -144,19 +144,12 @@ public class RagRetrievalService {
             return false;
         }
         double best = 0.0;
-        double second = 0.0;
         for (RagMessage candidate : vectorCandidates) {
             float[] vector = embedded.vectors() == null ? null : embedded.vectors().get(candidate.id());
             if (vector == null) {
                 continue;
             }
-            double cosine = VectorCodec.cosine(embedded.questionVector(), vector);
-            if (cosine > best) {
-                second = best;
-                best = cosine;
-            } else if (cosine > second) {
-                second = cosine;
-            }
+            best = Math.max(best, VectorCodec.cosine(embedded.questionVector(), vector));
         }
         return best >= config.getVectorAnswerThreshold();
     }
