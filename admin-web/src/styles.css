@@ -439,25 +439,277 @@ a.kpi-link:hover { border-color: var(--plum-300); }
 
 /* ---------- Login ---------- */
 
+/* The sign-in screen is the product's front door: a quiet plum atmosphere
+   (soft aurora washes + film grain, never a loud gradient), then three
+   centred planes — brand lockup, form card, footnote — so the composition
+   reads with depth instead of a flat card on a flat fill. */
 .login-page {
+  /* Light theme works like a studio backdrop: a near-white centre light
+     behind the card, blush washes kept low so the ivory base dominates,
+     and a gentle plum fall-off toward the edges. */
+  --login-glow-corner: rgba(169, 122, 157, 0.11);
+  --login-glow-opposite: rgba(252, 215, 244, 0.26);
+  --login-glow-halo: rgba(255, 255, 255, 0.75);
+  --login-vignette: rgba(115, 63, 104, 0.08);
   min-height: 100vh;
   display: grid;
   place-items: center;
-  background:
-    radial-gradient(700px 400px at 15% 10%, rgba(115, 63, 104, 0.25), transparent),
-    radial-gradient(600px 500px at 90% 85%, rgba(252, 215, 244, 0.16), transparent),
-    var(--bg);
-  padding: 20px;
+  padding: clamp(16px, 4vw, 28px);
+  position: relative;
+  /* Clips only the oversized aurora layer; real content sizes the page
+     itself, so small/landscape screens still scroll normally. */
+  overflow: hidden;
+  background: var(--bg);
 }
 
-.login-card { width: min(380px, 100%); }
-.login-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.login-head .select { width: auto; min-width: 76px; }
-.login-card h1 { margin: 0 0 4px; font-size: 20px; }
-.login-card .sub { color: var(--text-2); font-size: 13px; margin-bottom: 20px; }
+[data-theme='dark'] .login-page {
+  --login-glow-corner: rgba(141, 90, 129, 0.3);
+  --login-glow-opposite: rgba(79, 42, 71, 0.55);
+  --login-glow-halo: rgba(100, 59, 89, 0.34);
+  --login-vignette: rgba(10, 4, 9, 0.5);
+}
+
+/* Aurora: three very soft plum washes — a halo behind the card plus one
+   wash in each opposite corner. The layer is oversized so the slow drift
+   never exposes an edge; the motion is transform-only (compositor cheap)
+   and the global reduced-motion rule stills it. */
+.login-page::before {
+  content: '';
+  position: absolute;
+  inset: -12%;
+  background:
+    radial-gradient(55% 46% at 50% 44%, var(--login-glow-halo) 0%, transparent 70%),
+    radial-gradient(44% 40% at 10% 4%, var(--login-glow-corner) 0%, transparent 70%),
+    radial-gradient(48% 44% at 92% 98%, var(--login-glow-opposite) 0%, transparent 72%);
+  animation: login-aurora 30s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes login-aurora {
+  from { transform: translate3d(-1.2%, -1%, 0) scale(1); }
+  to { transform: translate3d(1.2%, 1.4%, 0) scale(1.045); }
+}
+
+/* Film grain + gentle vignette. The grain is a tiny inline SVG turbulence
+   tile (desaturated, ~160 bytes) that keeps the large soft radials from
+   banding on OLED/8-bit panels — invisible on text because it stays under
+   the stage. Opacity is deliberately very low. */
+.login-page::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(130% 105% at 50% 42%, transparent 55%, var(--login-vignette) 100%);
+  background-size: 160px 160px, 100% 100%;
+  opacity: 0.05;
+  pointer-events: none;
+}
+
+[data-theme='dark'] .login-page::after { opacity: 0.07; }
+
+.login-stage {
+  position: relative;
+  z-index: 1;
+  width: min(400px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+@keyframes login-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* --- Brand lockup --- */
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  animation: login-in 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.login-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  box-shadow:
+    0 1px 2px rgba(42, 16, 36, 0.25),
+    0 6px 16px rgba(115, 63, 104, 0.35);
+}
+
+/* Same voice as the sidebar brand inside the shell: plum in light,
+   primary lavender in dark. */
+.login-wordmark {
+  font-size: 15.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--plum-600);
+}
+
+[data-theme='dark'] .login-wordmark { color: var(--primary); }
+
+/* --- Card --- */
+
+.login-card {
+  width: 100%;
+  padding: clamp(22px, 5vw, 30px);
+  border-radius: 20px;
+  /* Layered elevation: tight contact shadow, soft ambient spread, and a
+     wide plum-tinted bloom that ties the card to the aurora behind it. */
+  box-shadow:
+    0 1px 2px rgba(42, 16, 36, 0.06),
+    0 10px 28px rgba(42, 16, 36, 0.09),
+    0 32px 80px rgba(115, 63, 104, 0.16);
+  animation: login-in 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) 0.08s both;
+}
+
+[data-theme='dark'] .login-card {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 2px 4px rgba(0, 0, 0, 0.4),
+    0 16px 40px rgba(0, 0, 0, 0.45),
+    0 40px 90px rgba(0, 0, 0, 0.35);
+}
+
+.login-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.login-card-head .select { width: auto; min-width: 72px; }
+
+.login-card h1 {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.login-sub {
+  margin: 6px 0 20px;
+  color: var(--text-2);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+/* Fields sit one step off the card surface (surface-2) so they read as
+   tactile filled wells instead of bare outlines on a same-colour card;
+   focus keeps the fill and lets border + ring carry the state. */
+.login-card .input { background: var(--surface-2); }
+
+/* Password managers make autofill the dominant sign-in path; Chrome's
+   default autofill yellow would break the wells, so repaint the interior
+   with the theme fill (the classic inset-shadow override) and keep the
+   focus ring layered on top when both states coincide. */
+.login-card .input:-webkit-autofill {
+  -webkit-box-shadow: inset 0 0 0 1000px var(--surface-2);
+  -webkit-text-fill-color: var(--text);
+}
+
+.login-card .input:-webkit-autofill:focus {
+  -webkit-box-shadow: inset 0 0 0 1000px var(--surface-2), var(--focus);
+}
+
+/* --- Form messages: filled containers with a left accent, so feedback is
+   visible at a glance instead of bare coloured text. Scoped to the login
+   card; dialogs keep the plain inline style. --- */
 
 .form-error { color: var(--danger); font-size: 13px; margin-bottom: 12px; }
 [data-theme='dark'] .form-error { color: #ffb3af; }
+
+.login-card .form-error,
+.login-card .form-notice {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border-left: 3px solid transparent;
+  line-height: 1.45;
+  margin-bottom: 16px;
+}
+
+.login-card .form-error {
+  background: var(--danger-container);
+  border-left-color: var(--danger);
+}
+
+.login-card .form-notice {
+  background: var(--warn-container);
+  border-left-color: #c77f1f;
+  color: var(--warn-text);
+  font-size: 13px;
+}
+
+/* --- Hero submit: the one gradient button in the product. Stops are the
+   brand plum shifted slightly light-to-dark (white text still >= 7:1 in
+   light, >= 6.7:1 on the dark theme's lavender). --- */
+
+.btn.login-submit {
+  width: 100%;
+  min-height: 46px;
+  margin-top: 4px;
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  background: linear-gradient(180deg, #7c4570 0%, #6a385f 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 1px 2px rgba(42, 16, 36, 0.25),
+    0 8px 20px rgba(115, 63, 104, 0.3);
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn.login-submit:hover:not(:disabled) {
+  background: linear-gradient(180deg, #854e78 0%, #6a385f 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 2px 3px rgba(42, 16, 36, 0.25),
+    0 10px 24px rgba(115, 63, 104, 0.36);
+}
+
+[data-theme='dark'] .btn.login-submit {
+  background: linear-gradient(180deg, #eeb9e1 0%, #dda2d0 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 8px 20px rgba(229, 174, 217, 0.18);
+}
+
+[data-theme='dark'] .btn.login-submit:hover:not(:disabled) {
+  background: linear-gradient(180deg, #f4c9e8 0%, #e0a8d4 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 2px 3px rgba(0, 0, 0, 0.4),
+    0 10px 24px rgba(229, 174, 217, 0.24);
+}
+
+/* The global primary focus rule strips box-shadow so the halo can't fake
+   the indicator; here the solid outline remains the indicator and the
+   elevation shadow is decorative, so it may stay. */
+.btn.login-submit:focus-visible {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 1px 2px rgba(42, 16, 36, 0.25),
+    0 8px 20px rgba(115, 63, 104, 0.3);
+}
+
+/* --- Footnote --- */
+
+.login-foot {
+  margin: 18px 0 0;
+  font-size: 12px;
+  color: var(--text-2);
+  text-align: center;
+  animation: login-in 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) 0.16s both;
+}
+
+@media (max-width: 480px) {
+  .login-brand { margin-bottom: 14px; }
+  .login-foot { margin-top: 14px; }
+}
 
 /* ---------- Misc ---------- */
 
