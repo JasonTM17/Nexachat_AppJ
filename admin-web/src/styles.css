@@ -25,6 +25,9 @@
   /* Input boundaries must clear the WCAG 1.4.11 3:1 non-text floor against
      the field surface: plum-300 on #ffffff = 3.52:1 (old --border was 1.43:1). */
   --input-border: #a97a9d;
+  /* Hover deepens toward plum-400 (5.37:1 on white) without reaching the
+     focus colour, so hover and focus never read as the same state. */
+  --input-border-hover: #8d5a81;
   --primary: #733f68;
   --on-primary: #ffffff;
   --primary-hover: #643b59;
@@ -58,6 +61,8 @@
   --border: #4d3a4d;
   /* plum-300 on the dark surface #2a1f2b = 4.48:1 (old --border was 1.53:1). */
   --input-border: #a97a9d;
+  /* Dark hover lightens toward plum-200 (8.36:1 on the dark surface). */
+  --input-border-hover: #d4b3cc;
   --primary: #e5aed9;
   --on-primary: #43203c;
   --primary-hover: #f0c4e6;
@@ -276,8 +281,17 @@ button, input, select, textarea {
   border-radius: 12px;
   background: var(--surface);
   color: var(--text);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .input, .select { min-height: 2.75rem; }
+
+/* Quiet hover deepening; suppressed while focused so the two states never
+   fight over the same border. */
+.input:hover:not(:disabled):not(:focus),
+.select:hover:not(:disabled):not(:focus),
+.textarea:hover:not(:disabled):not(:focus) {
+  border-color: var(--input-border-hover);
+}
 
 .input:focus, .select:focus, .textarea:focus {
   outline: none;
@@ -377,6 +391,13 @@ a.kpi-link:hover { border-color: var(--plum-300); }
 .spark polyline { fill: none; stroke: var(--primary); stroke-width: 2; }
 .spark .fill { fill: var(--primary); opacity: 0.12; stroke: none; }
 .spark text { fill: var(--text-2); font-size: 10px; }
+.chart-window { display: flex; justify-content: space-between; gap: 8px; color: var(--text-2); font-size: 12px; margin-bottom: 4px; }
+.chart-axis { display: flex; justify-content: space-between; gap: 8px; color: var(--text-2); font-size: 11px; margin-top: -4px; }
+.chart-axis .minmax { margin-inline: auto; }
+.chart-data { margin-top: 8px; font-size: 12px; }
+.chart-data summary { cursor: pointer; color: var(--text-2); font-weight: 600; }
+.chart-data-scroll { max-height: 220px; overflow: auto; margin-top: 8px; border: 1px solid var(--border); border-radius: 10px; }
+.chart-data th, .chart-data td { padding: 7px 10px; }
 
 /* ---------- Overview page head ---------- */
 
@@ -772,6 +793,35 @@ a.kpi-link:hover { border-color: var(--plum-300); }
 .note { border-left: 3px solid var(--container); padding: 6px 12px; margin-bottom: 8px; }
 .note .meta { font-size: 11px; color: var(--text-2); }
 
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 80;
+  max-width: min(92vw, 520px);
+  padding: 10px 16px;
+  border-radius: var(--radius-pill);
+  background: var(--plum-900);
+  color: #ffffff;
+  box-shadow: var(--shadow);
+  font-weight: 600;
+}
+[data-theme='dark'] .toast { background: var(--primary); color: var(--on-primary); }
+
+.rag-panel { margin-bottom: 22px; }
+.rag-panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.rag-panel-head h3 { margin: 0; }
+.rag-panel-head .sub { margin-top: 2px; }
+.rag-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+.rag-grid section { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; background: var(--surface-2); }
+.rag-grid h4 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-2); }
+.rag-grid dl { margin: 0; }
+.rag-stat { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-top: 1px solid var(--border); }
+.rag-stat:first-of-type { border-top: none; }
+.rag-stat dt { color: var(--text-2); }
+.rag-stat dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+
 /* ---------- Responsive ---------- */
 
 @media (max-width: 720px) {
@@ -790,6 +840,71 @@ a.kpi-link:hover { border-color: var(--plum-300); }
 
   th, td { padding: 10px; }
   .truncate { max-width: 120px; }
+
+  /* Audit and rule tables cannot hide low-priority columns: unlike users and
+     alerts they have no detail drawer carrying the dropped values. Reflow
+     those rows into labelled cards instead, keeping the same single DOM
+     controls (not duplicated mobile-only editors) available. */
+  .table-wrap.responsive-cards {
+    overflow: visible;
+    border: none;
+    background: none;
+    border-radius: 0;
+  }
+  .responsive-cards table,
+  .responsive-cards tbody,
+  .responsive-cards tr,
+  .responsive-cards td {
+    display: block;
+    width: 100%;
+  }
+  .responsive-cards thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .responsive-cards tr {
+    margin-bottom: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .responsive-cards td {
+    display: grid;
+    grid-template-columns: minmax(92px, 34%) minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    padding: 10px 12px;
+  }
+  .responsive-cards td::before {
+    content: attr(data-label);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-2);
+  }
+  /* Specificity intentionally beats the generic .col-lo hide rule above. */
+  .responsive-cards td.col-lo { display: grid; }
+  .responsive-cards td.col-actions {
+    position: static;
+    box-shadow: none;
+    background: transparent;
+  }
+  .responsive-cards td.truncate {
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 
   td .action-row { flex-direction: column; align-items: stretch; }
   td .action-row .btn { justify-content: center; }

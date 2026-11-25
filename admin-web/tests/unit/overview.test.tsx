@@ -75,7 +75,7 @@ describe('OverviewPage', () => {
     // bytes and rates are formatted, not raw numbers
     expect(tile('Database')).toHaveTextContent('2.0 MB');
     expect(tile('Uploads')).toHaveTextContent('512.0 KB');
-    expect(tile('5xx rate')).toHaveTextContent('1.50%');
+    expect(tile('5xx since restart')).toHaveTextContent('1.50%');
     // queue depth uses the interpolated detail string
     expect(tile('Scan queue')).toHaveTextContent('4');
     expect(tile('Scan queue')).toHaveTextContent('2 dropped / 300 scanned');
@@ -122,7 +122,7 @@ describe('OverviewPage', () => {
     const user = userEvent.setup();
     apiMock.mockRejectedValueOnce(new ApiException(500, 'X', 'boom'));
     renderPage();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Server error 500. Try again.');
     apiMock.mockResolvedValueOnce(overview());
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Signups today')).toBeInTheDocument();
@@ -193,7 +193,7 @@ describe('OverviewPage live refresh', () => {
     expect(apiMock).toHaveBeenCalledTimes(2);
     // stale data stays on screen; the error block does not replace it
     expect(screen.getByText('Signups today')).toBeInTheDocument();
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
     expect(screen.getByText(/Refresh failed/)).toBeInTheDocument();
     // the manual refresh button is the retry affordance
     apiMock.mockResolvedValueOnce(

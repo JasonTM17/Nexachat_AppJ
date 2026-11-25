@@ -13,9 +13,14 @@ import './styles.css';
 // Layout keeps data-theme in sync and persists only explicit toggles.
 document.documentElement.dataset.theme = initialTheme();
 
+// The production bundle is served below /admin (vite --base=/admin/), while
+// the dev server keeps the root base. Strip the trailing slash because React
+// Router basenames are path prefixes such as "/admin", not directories.
+const routerBasename = import.meta.env.BASE_URL.replace(/\/+$/, '') || undefined;
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename={routerBasename}>
       <I18nProvider>
         <SessionProvider>
           <App />
