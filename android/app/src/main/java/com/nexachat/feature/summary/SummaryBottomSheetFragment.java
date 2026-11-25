@@ -79,6 +79,7 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
     private final Set<String> localMessageIds = new HashSet<>();
     private boolean preferAiMode;
     private boolean userOverrodeMode;
+    private boolean consentSavePending;
     private int selectedLimit = SummaryViewModel.DEFAULT_LAST_N;
 
     @NonNull
@@ -145,6 +146,7 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
             updateModeSelection();
         });
         viewModel.state().observe(getViewLifecycleOwner(), this::render);
+        consentRepository.error().observe(getViewLifecycleOwner(), this::onConsentError);
         SummaryUiState restored = viewModel.state().getValue();
         if (restored != null && restored.getLimit() != null) {
             selectedLimit = restored.getLimit();
@@ -271,7 +273,13 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         binding.summaryModeAi.setOnClickListener(v -> selectMode(true));
         binding.summaryConsentConfirm.setOnClickListener(v -> {
             updateConsentCard(false);
-            consentRepository.setConsent(true, () -> viewModel.refresh());
+            consentSavePending = true;
+            consentRepository.setConsent(true, () -> {
+                consentSavePending = false;
+                if (viewModel != null) {
+                    viewModel.refresh();
+                }
+            });
         });
         binding.summaryConsentDismiss.setOnClickListener(v -> {
             preferAiMode = false;
@@ -315,6 +323,25 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         if (binding != null) {
             binding.summaryConsentCard.setVisibility(visible ? View.VISIBLE : View.GONE);
         }
+    }
+
+    /**
+     * Mirrors the ask sheet: a failed consent write rolls back to the last confirmed
+     * value, so the user must hear about it and get the consent card back to retry.
+     * Refresh errors also publish here, so the pending flag gates the snackbar to
+     * failures of a save this sheet actually started.
+     */
+    private void onConsentError(@Nullable SummaryError error) {
+        if (!consentSavePending || error == null) {
+            return;
+        }
+        consentSavePending = false;
+        if (binding == null) {
+            return;
+        }
+        updateConsentCard(true);
+        Snackbar.make(binding.getRoot(), R.string.settings_consent_update_failed,
+                Snackbar.LENGTH_LONG).show();
     }
 
     private void applyFooterInsets() {
