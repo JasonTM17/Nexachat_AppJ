@@ -8,6 +8,13 @@
     <string name="summary_title">Conversation summary</string>
     <string name="summary_badge_local">Local</string>
     <string name="summary_badge_ai">AI</string>
+    <string name="summary_note_cached">Saved summary</string>
+    <string name="summary_note_fallback_model">Written by the backup AI model.</string>
+    <string name="summary_note_no_consent">External AI is off, so this summary was built from the messages.</string>
+    <string name="summary_note_llm_disabled">External AI is not available, so this summary was built from the messages.</string>
+    <string name="summary_note_llm_unavailable">External AI did not answer, so this summary was built from the messages.</string>
+    <string name="summary_note_no_external_context">No message in this range may be sent to external AI.</string>
+    <string name="summary_note_context_omitted">Some messages were left out because their authors turned off external AI.</string>
     <string name="summary_scope_unread">Unread</string>
     <string name="summary_scope_last_n">Recent messages</string>
     <plurals name="summary_scope_last_n_format">

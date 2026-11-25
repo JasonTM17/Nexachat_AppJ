@@ -25,6 +25,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 
 @Component
 public final class LlmClient {
@@ -153,17 +154,31 @@ public final class LlmClient {
      * failure (bad request, auth, malformed output) is rethrown unchanged.
      */
     public LlmCallResult completeWithFallback(Prompt prompt, TargetConfig primary, TargetConfig fallback) {
+        return completeWithFallback(prompt, primary, fallback, null);
+    }
+
+    /**
+     * Same as {@link #completeWithFallback(Prompt, TargetConfig, TargetConfig)}, but
+     * {@code outboundAllowed} is read immediately before every outbound attempt,
+     * including a 5xx retry and the fallback target. A false result cancels that
+     * attempt and does not try another target.
+     */
+    public LlmCallResult completeWithFallback(
+            Prompt prompt, TargetConfig primary, TargetConfig fallback, BooleanSupplier outboundAllowed) {
         if (primary == null) {
             if (fallback == null) {
                 throw unavailable();
             }
-            return completeFallback(prompt, fallback);
+            return completeFallback(prompt, fallback, outboundAllowed);
         }
         try {
-            return toResult(completeWithTarget(prompt, primary), primary, false);
+            return toResult(completeWithTarget(prompt, primary, outboundAllowed), primary, false);
         } catch (SummaryProviderException exception) {
+            if (exception.fallbackReason() == SummaryFallbackReason.NO_CONSENT) {
+                throw exception;
+            }
             if (exception.isRetryable() && fallback != null) {
-                return completeFallback(prompt, fallback);
+                return completeFallback(prompt, fallback, outboundAllowed);
             }
             throw exception;
         }
@@ -178,7 +193,11 @@ public final class LlmClient {
     }
 
     LlmCallResult completeWithTargetResult(Prompt prompt, TargetConfig target) {
-        return toResult(completeWithTarget(prompt, target), target, false);
+        return completeWithTargetResult(prompt, target, null);
+    }
+
+    LlmCallResult completeWithTargetResult(Prompt prompt, TargetConfig target, BooleanSupplier outboundAllowed) {
+        return toResult(completeWithTarget(prompt, target, outboundAllowed), target, false);
     }
 
     public LlmCallResult completeTextWithTargetResult(String systemMessage, String userMessage, TargetConfig target) {
@@ -199,6 +218,10 @@ public final class LlmClient {
     }
 
     public LlmCompletion completeWithTarget(Prompt prompt, TargetConfig target) {
+        return completeWithTarget(prompt, target, null);
+    }
+
+    public LlmCompletion completeWithTarget(Prompt prompt, TargetConfig target, BooleanSupplier outboundAllowed) {
         if (target == null || target.endpoint() == null || target.model() == null) {
             throw unavailable();
         }
@@ -215,6 +238,9 @@ public final class LlmClient {
             long remaining = deadline - System.nanoTime();
             if (remaining <= 0) {
                 throw timeout();
+            }
+            if (outboundAllowed != null && !outboundAllowed.getAsBoolean()) {
+                throw new SummaryProviderException(SummaryFallbackReason.NO_CONSENT);
             }
             String key = target.apiKey() == null ? "" : target.apiKey().trim();
             if (key.isEmpty()) {
@@ -435,7 +461,7 @@ public final class LlmClient {
                 fallbackUsed);
     }
 
-    private LlmCallResult completeFallback(Prompt prompt, TargetConfig fallback) {
-        return toResult(completeWithTarget(prompt, fallback), fallback, true);
+    private LlmCallResult completeFallback(Prompt prompt, TargetConfig fallback, BooleanSupplier outboundAllowed) {
+        return toResult(completeWithTarget(prompt, fallback, outboundAllowed), fallback, true);
     }
 }

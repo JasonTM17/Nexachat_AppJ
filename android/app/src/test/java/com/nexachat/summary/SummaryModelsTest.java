@@ -1,6 +1,7 @@
 package com.nexachat.summary;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
@@ -53,6 +54,24 @@ public final class SummaryModelsTest {
         assertEquals("2026-11-17", response.getPeriod().getDate());
         assertEquals("Asia/Ho_Chi_Minh", response.getPeriod().getTimeZone());
         assertTrue(response.getPeriod().isTimeZoneDefaulted());
+        assertNull(response.getProvider());
+        assertFalse(response.isContextOmitted());
+    }
+
+    @Test
+    public void responseModelKeepsTheExternalProviderAndOmittedContext() throws Exception {
+        String json = "{\"summaryId\":\"summary-1\",\"conversationId\":\"conversation-1\","
+                + "\"generatedBy\":\"LLM\",\"provider\":\"fallback\",\"contextOmitted\":true,\"cached\":false}";
+
+        SummaryResponse response = new Moshi.Builder().build()
+                .adapter(SummaryResponse.class)
+                .fromJson(json);
+
+        assertNotNull(response);
+        assertEquals("LLM", response.getGeneratedBy());
+        assertEquals("fallback", response.getProvider());
+        assertTrue(response.isContextOmitted());
+        assertFalse(response.isCached());
     }
 
     @Test

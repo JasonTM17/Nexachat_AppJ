@@ -25,6 +25,8 @@ public final class SummaryResponse {
     private final SummaryScope scope;
     private final Integer limit;
     private final SummaryPeriod period;
+    private final String provider;
+    private final boolean contextOmitted;
 
     SummaryResponse() {
         this(null, null, 0L, 0L, 0, SummaryLanguage.AUTO, null, null, null,
@@ -77,6 +79,35 @@ public final class SummaryResponse {
             SummaryScope scope,
             Integer limit,
             SummaryPeriod period) {
+        this(summaryId, conversationId, fromSeq, toSeq, messageCount, language, generatedBy, model,
+                fallbackReason, cached, createdAt, overview, keyPoints, decisions, actionItems,
+                questions, topics, participants, scope, limit, period, null, false);
+    }
+
+    public SummaryResponse(
+            String summaryId,
+            String conversationId,
+            long fromSeq,
+            long toSeq,
+            int messageCount,
+            SummaryLanguage language,
+            String generatedBy,
+            String model,
+            String fallbackReason,
+            boolean cached,
+            String createdAt,
+            String overview,
+            List<SummaryItem> keyPoints,
+            List<SummaryItem> decisions,
+            List<SummaryActionItem> actionItems,
+            List<SummaryItem> questions,
+            List<String> topics,
+            List<SummaryParticipant> participants,
+            SummaryScope scope,
+            Integer limit,
+            SummaryPeriod period,
+            String provider,
+            boolean contextOmitted) {
         this.summaryId = summaryId;
         this.conversationId = conversationId;
         this.fromSeq = fromSeq;
@@ -98,6 +129,8 @@ public final class SummaryResponse {
         this.scope = scope;
         this.limit = limit;
         this.period = period;
+        this.provider = provider;
+        this.contextOmitted = contextOmitted;
     }
 
     public String getSummaryId() {
@@ -187,10 +220,20 @@ public final class SummaryResponse {
         return period;
     }
 
+    /** {@code primary}, {@code fallback}, or null when the local engine or a secondary model answered. */
+    public String getProvider() {
+        return provider;
+    }
+
+    /** True when an external summary left out messages whose authors opted out. */
+    public boolean isContextOmitted() {
+        return contextOmitted;
+    }
+
     public SummaryResponse asCached() {
         return new SummaryResponse(summaryId, conversationId, fromSeq, toSeq, messageCount,
                 language, generatedBy, model, fallbackReason, true, createdAt, overview,
                 keyPoints, decisions, actionItems, questions, topics, participants,
-                scope, limit, period);
+                scope, limit, period, provider, contextOmitted);
     }
 }

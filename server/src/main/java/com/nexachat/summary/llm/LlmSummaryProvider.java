@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 
 @Component
 public final class LlmSummaryProvider implements SummaryProvider {
@@ -127,9 +128,11 @@ public final class LlmSummaryProvider implements SummaryProvider {
         boolean primaryAttempted = false;
         boolean breakerRecorded = false;
         try {
-            // Re-check at the moment the external prompt is built: consent and
-            // opt-out changes committed after request start must win the race.
-            if (!isConsentedCaller()) {
+            // Re-read consent before the prompt is built and again immediately
+            // before every outbound attempt, including a fallback or local-server
+            // model. A revocation cancels the next call and is not a provider failure.
+            BooleanSupplier outboundAllowed = this::isConsentedCaller;
+            if (!outboundAllowed.getAsBoolean()) {
                 throw new SummaryProviderException(SummaryFallbackReason.NO_CONSENT);
             }
             Prompt prompt = promptBuilder.build(externalWindow, language, properties.getMaxInputChars());
@@ -138,22 +141,23 @@ public final class LlmSummaryProvider implements SummaryProvider {
             boolean primaryFailed = false;
             try {
                 primaryAttempted = breakerAllows;
-                completion = client.completeWithFallback(prompt, breakerAllows ? primary : null, fallback);
+                completion = client.completeWithFallback(
+                        prompt, breakerAllows ? primary : null, fallback, outboundAllowed);
                 usedTarget = completion.fallbackUsed() ? fallback : primary;
                 primaryFailed = breakerAllows && completion.fallbackUsed();
             } catch (SummaryProviderException ex) {
-                primaryFailed = breakerAllows;
-                if (secondary == null) {
+                if (ex.fallbackReason() == SummaryFallbackReason.NO_CONSENT || secondary == null) {
                     throw ex;
                 }
-                completion = client.completeWithTargetResult(prompt, secondary);
+                primaryFailed = breakerAllows;
+                completion = client.completeWithTargetResult(prompt, secondary, outboundAllowed);
                 usedTarget = secondary;
             } catch (RuntimeException ex) {
                 primaryFailed = breakerAllows;
                 if (secondary == null) {
                     throw ex;
                 }
-                completion = client.completeWithTargetResult(prompt, secondary);
+                completion = client.completeWithTargetResult(prompt, secondary, outboundAllowed);
                 usedTarget = secondary;
             }
 
@@ -170,7 +174,8 @@ public final class LlmSummaryProvider implements SummaryProvider {
                     : (usedTarget == primary ? "primary" : null);
             return new ProviderResult(result.content(), result.language(), result.model(), provider);
         } catch (SummaryProviderException exception) {
-            if (primaryAttempted && !breakerRecorded) {
+            if (exception.fallbackReason() != SummaryFallbackReason.NO_CONSENT
+                    && primaryAttempted && !breakerRecorded) {
                 circuitBreaker.recordFailure();
             }
             throw exception;
