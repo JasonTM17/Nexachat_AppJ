@@ -22,6 +22,8 @@ Server + Android release. See
 - Server: non-interrogative narrow prompts require retrieval evidence before
   answering, preventing unsupported inference from imperative/declarative
   prompts.
+- Server: concurrent LLM answer generation is fairly bounded with configurable
+  concurrency/wait settings and a separate rejection metric.
 - Tests: multilingual negative RAG benchmark catches hallucination and
   unsupported-answer regressions.
 - Ops: `keep-warm.yml` passes `GH_REPO` to `gh issue` commands so production
