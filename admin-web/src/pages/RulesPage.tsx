@@ -137,9 +137,6 @@ export default function RulesPage() {
           pattern: form.patternType === 'CARD' ? undefined : form.pattern,
           locale: form.locale || undefined,
           description: form.description || undefined,
-          // The production server explicitly ignores unknown JSON fields, so
-          // this audit justification is accepted even though RuleRequest does
-          // not consume it yet.
           reason,
         },
       });
