@@ -432,8 +432,10 @@
     <string name="ask_retry">Thử lại</string>
     <string name="ask_close_accessibility">Đóng hỏi đáp</string>
     <string name="ask_loading">Đang tìm câu trả lời…</string>
-    <string name="ask_not_found">Không tìm thấy tin nhắn phù hợp.</string>
+    <string name="ask_not_found">Không đủ ngữ cảnh để trả lời.</string>
     <string name="ask_error_generic">Chưa trả lời được. Hãy thử lại.</string>
+    <string name="ask_error_offline">Không có kết nối. Hãy kiểm tra mạng và thử lại.</string>
+    <string name="ask_e2ee_unavailable">Hỏi đáp AI không khả dụng trong trò chuyện được mã hóa.</string>
     <string name="ask_chat_unavailable">Cuộc trò chuyện không còn khả dụng.</string>
     <string name="ask_invalid_question">Nhập câu hỏi từ 1 đến 500 ký tự.</string>
     <string name="ask_consent_title">Bật AI để trả lời?</string>
