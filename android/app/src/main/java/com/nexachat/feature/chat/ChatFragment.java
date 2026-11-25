@@ -2635,7 +2635,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     private void attachAskListener(@NonNull AskBottomSheetFragment sheet) {
         sheet.setListener(target -> {
             if (viewModel != null) {
-                viewModel.jumpToMessage(target.getMessageId());
+                viewModel.jumpToMessage(target.getMessageId(), target.getSeq());
             }
         });
     }

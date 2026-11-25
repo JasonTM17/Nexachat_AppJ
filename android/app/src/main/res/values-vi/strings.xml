@@ -573,6 +573,7 @@
     <string name="poll_delete_confirm">Xóa bình chọn này?</string>
     <string name="poll_create_title">Bình chọn mới</string>
     <string name="poll_question">Câu hỏi</string>
+    <string name="poll_option_default">Phương án bình chọn</string>
     <string name="poll_option_hint">Phương án %1$d</string>
     <string name="poll_add_option">Thêm phương án</string>
     <string name="poll_remove_option">Xóa phương án</string>

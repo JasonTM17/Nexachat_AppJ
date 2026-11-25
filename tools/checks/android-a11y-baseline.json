@@ -147,15 +147,6 @@
       "message": "maxLines=4 on message/title/error text may clip at large font"
     },
     {
-      "rule": "A5",
-      "severity": "WARN",
-      "file": "layout/item_poll_option_input.xml",
-      "line": 16,
-      "element_id": "@+id/optionInput",
-      "tag": "com.google.android.material.textfield.TextInputEditText",
-      "message": "EditText missing hint, labelFor, autofillHints, or TextInputLayout parent label"
-    },
-    {
       "rule": "A6",
       "severity": "WARN",
       "file": "layout/item_reminder.xml",

@@ -232,7 +232,7 @@ public class AskService {
         // before this member's admission, so a late or returning member always recomputes.
         boolean sharedCacheVisible = !retrievalService.hasContentBeforeAdmission(conversationId, admittedFrom);
         RagEmbeddingService.EmbeddingOutcome questionEmbedding =
-                embeddingService.embedQuestion(question, consented);
+                embeddingService.embedQuestion(userId, question, consented);
 
         if (consented && sharedCacheVisible) {
             Optional<RagQuestionCache.CachedAsk> exact = questionCache.findExact(
@@ -265,7 +265,7 @@ public class AskService {
         boolean lookupLike = isLookupLike(question);
         boolean requiresAnswerEvidence = lookupLike && !isBroadAggregationQuestion(question);
         RetrievalResult retrieval = retrievalService.retrieve(
-                conversationId, question, language, consented, admittedFrom, requiresAnswerEvidence);
+                conversationId, userId, question, language, consented, admittedFrom, requiresAnswerEvidence);
         if (retrieval.isEmpty()
                 || retrieval.bestScore() < properties.getRetrieval().getNotFoundThreshold()) {
             stats.recordNotFound();

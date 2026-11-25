@@ -85,6 +85,10 @@ public interface MessageDao {
     @Query("DELETE FROM messages WHERE conversationId = :conversationId")
     Completable deleteForConversation(String conversationId);
 
+    /** Evicts isolated older-jump rows below the contiguous tail floor on reopen. */
+    @Query("DELETE FROM messages WHERE conversationId = :conversationId AND seq < :floorSeq")
+    Completable deleteBelowSeq(String conversationId, long floorSeq);
+
     /** Synchronous variant for {@code AppDatabase.runInTransaction} bodies (issue #184). */
     @Query("DELETE FROM messages WHERE conversationId = :conversationId")
     void deleteForConversationInTransaction(String conversationId);

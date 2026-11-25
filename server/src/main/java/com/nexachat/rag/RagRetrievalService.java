@@ -63,6 +63,13 @@ public class RagRetrievalService {
     public RetrievalResult retrieve(
             UUID conversationId, String question, SummaryLanguage language, boolean consented,
             java.time.Instant admittedFrom, boolean requireAnswerEvidence) {
+        return retrieve(conversationId, null, question, language, consented, admittedFrom, requireAnswerEvidence);
+    }
+
+    /** User-aware overload so external embedding calls re-check live requester consent. */
+    public RetrievalResult retrieve(
+            UUID conversationId, UUID userId, String question, SummaryLanguage language, boolean consented,
+            java.time.Instant admittedFrom, boolean requireAnswerEvidence) {
         RagProperties.Retrieval config = properties.getRetrieval();
         List<RagMessage> recent = index.recentMessages(
                 conversationId, config.getMaxCandidateMessages(), admittedFrom);
@@ -86,7 +93,7 @@ public class RagRetrievalService {
         List<RagMessage> vectorCandidates = List.copyOf(vectorCandidateMap.values());
 
         RagEmbeddingService.RetrievalEmbeddings embedded = embeddings.embedForRetrieval(
-                question, vectorCandidates, properties.getIndex().getLazyLimit(), consented);
+                userId, question, vectorCandidates, properties.getIndex().getLazyLimit(), consented);
         if (requireAnswerEvidence && !hasAnswerEvidence(
                 question, language, lexicalCandidates, vectorCandidates, embedded, config)) {
             return RetrievalResult.empty();

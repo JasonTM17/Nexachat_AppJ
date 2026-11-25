@@ -753,6 +753,21 @@ public final class ChatViewModelTest {
     }
 
     @Test
+    public void jumpToMessageWithSeqDelegatesToTargetedLoader() {
+        when(messageRepository.loadUntilLoaded(CONVERSATION_ID, "m-15", 15L, MessageRepository.MAX_JUMP_PAGES))
+                .thenReturn(Single.just(MessageJump.Found.INSTANCE));
+        AtomicReference<ChatSingleLiveEvent.Event<String>> event = new AtomicReference<>();
+        androidx.lifecycle.Observer<ChatSingleLiveEvent.Event<String>> observer = event::set;
+        viewModel.getJumpTargets().observeForever(observer);
+
+        viewModel.jumpToMessage("m-15", 15L);
+
+        assertEquals("m-15", event.get().consume());
+        verify(messageRepository).loadUntilLoaded(CONVERSATION_ID, "m-15", 15L, MessageRepository.MAX_JUMP_PAGES);
+        viewModel.getJumpTargets().removeObserver(observer);
+    }
+
+    @Test
     public void jumpToMessageReportsGoneTarget() {
         when(messageRepository.loadUntilLoaded(anyString(), anyString(), anyInt()))
                 .thenReturn(Single.just(MessageJump.NotFound.INSTANCE));

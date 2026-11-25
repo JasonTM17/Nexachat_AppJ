@@ -177,6 +177,13 @@ public class MessageRepositoryTest {
         when(messageDao.deleteAll()).thenAnswer(call -> {
             messages.clear(); messageChanges.onNext(messageChanges.getValue() + 1); return Completable.complete();
         });
+        when(messageDao.deleteBelowSeq(anyString(), anyLong())).thenAnswer(call -> {
+            String cid = call.getArgument(0);
+            long floor = call.getArgument(1);
+            messages.values().removeIf(row -> cid.equals(row.getConversationId()) && row.getSeq() < floor);
+            messageChanges.onNext(messageChanges.getValue() + 1);
+            return Completable.complete();
+        });
 
         when(outboxDao.insert(any())).thenAnswer(call -> {
             OutboxEntity row = call.getArgument(0); outbox.put(row.getClientMessageId(), row); syncOutbox();
@@ -2492,6 +2499,53 @@ public class MessageRepositoryTest {
         MessageJump jump = await(repository.loadUntilLoaded(CONVERSATION_ID, "m-old"));
         assertTrue(jump instanceof MessageJump.Failed);
         assertTrue(((MessageJump.Failed) jump).getError() instanceof ApiError.Network);
+    }
+
+    @Test public void loadUntilLoadedWithTargetSeqPagesContiguouslyAtMaxPageSizeInsideHorizon() {
+        await(messageDao.upsert(stored("m-500", 500L)));
+        when(messageApi.getMessages(CONVERSATION_ID, 500L, null, MessageApi.MAX_PAGE_SIZE))
+                .thenReturn(responseCall(Response.success(page(true, storedDto("m-120", 120L)))));
+
+        assertEquals(MessageJump.Found, await(repository.loadUntilLoaded(CONVERSATION_ID, "m-120", 120L, 20)));
+        verify(messageApi).getMessages(CONVERSATION_ID, 500L, null, MessageApi.MAX_PAGE_SIZE);
+    }
+
+    @Test public void loadUntilLoadedWithTargetSeqBeyondHorizonJumpsDirectlyAndCleansOnReopen() {
+        await(messageDao.upsert(stored("m-5000", 5000L)));
+        java.util.concurrent.atomic.AtomicLong recordedFloor = new java.util.concurrent.atomic.AtomicLong();
+        when(tokenStore.recordHistoryJumpFloorIfAbsent(eqConversation(), anyLong())).thenAnswer(call -> {
+            recordedFloor.compareAndSet(0L, call.getArgument(1));
+            return Completable.complete();
+        });
+        when(tokenStore.consumeHistoryJumpFloor(eqConversation()))
+                .thenAnswer(call -> Single.just(recordedFloor.getAndSet(0L)));
+        when(messageApi.getMessages(CONVERSATION_ID, 15L + MessageRepository.JUMP_ANCHOR_LOOKAHEAD,
+                null, MessageApi.DEFAULT_PAGE_SIZE))
+                .thenReturn(responseCall(Response.success(page(true, storedDto("m-15", 15L)))));
+        when(messageApi.getMessages(CONVERSATION_ID, null, 5000L, MessageApi.DEFAULT_PAGE_SIZE))
+                .thenReturn(responseCall(Response.success(page(false))));
+        when(messageApi.getPins(CONVERSATION_ID)).thenReturn(responseCall(Response.success(body("[]"))));
+
+        assertEquals(MessageJump.Found, await(repository.loadUntilLoaded(CONVERSATION_ID, "m-15", 15L, 20)));
+        assertTrue(messages.containsKey("m-15"));
+        assertEquals(5000L, recordedFloor.get());
+
+        await(repository.openConversation(CONVERSATION_ID));
+        assertFalse(messages.containsKey("m-15"));
+        assertTrue(messages.containsKey("m-5000"));
+    }
+
+    @Test public void loadUntilLoadedWithTargetSeqInsideLoadedRangeFetchesCenteredWithoutBackwardScan() {
+        await(messageDao.upsert(stored("m-10", 10L)));
+        await(messageDao.upsert(stored("m-30", 30L)));
+        when(messageApi.getMessages(CONVERSATION_ID, 20L + MessageRepository.JUMP_ANCHOR_LOOKAHEAD,
+                null, MessageApi.DEFAULT_PAGE_SIZE))
+                .thenReturn(responseCall(Response.success(page(true, storedDto("m-20", 20L)))));
+
+        assertEquals(MessageJump.Found, await(repository.loadUntilLoaded(CONVERSATION_ID, "m-20", 20L, 20)));
+        verify(messageApi, times(0)).getMessages(CONVERSATION_ID, 10L, null, MessageApi.DEFAULT_PAGE_SIZE);
+        verify(messageApi).getMessages(CONVERSATION_ID, 20L + MessageRepository.JUMP_ANCHOR_LOOKAHEAD,
+                null, MessageApi.DEFAULT_PAGE_SIZE);
     }
 
     private void syncOutbox() {
