@@ -108,9 +108,11 @@ answerable. The default gate requires all essential question terms to co-occur i
 one candidate. Query scaffolding is ignored, and bounded prefix/edit-distance
 matching covers simple inflections and long-token typos. Vector cosine at least
 0.60 can support a fuzzy-matched candidate, but cannot substitute for
-compositional term evidence. Broad aggregation prompts such as summaries and
-action-item lists bypass that lookup evidence requirement because the whole
-recent context is their subject. These thresholds are operator-tunable and
+compositional term evidence. Broad aggregation or explicit multi-message synthesis prompts such as
+summaries, recaps, action-item lists, and corpus-scoped requests for other
+relevant milestones bypass that lookup evidence requirement because the whole
+recent context is their subject. Narrow composite lookups do not bypass it merely because they are phrased
+as imperatives. These thresholds are operator-tunable and
 require labeled evaluation before being treated as production calibration.
 
 ## Consent and privacy
