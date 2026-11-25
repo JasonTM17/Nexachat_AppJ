@@ -70,6 +70,14 @@ class RagBenchmarkEvaluationTest {
             "Tóm tắt những gì chúng ta đã quyết định.",
             "Liệt kê các việc cần làm.",
             "Cho tìm tổng quan về kế hoạch."};
+    private static final String[] EN_NEGATIVE_LOOKUP = {
+            "What is the satellite launch deadline?",
+            "Where is the cryptocurrency treasury report?",
+            "When is the underwater robotics demonstration?"};
+    private static final String[] VI_NEGATIVE_LOOKUP = {
+            "Hạn chót phóng vệ tinh là khi nào?",
+            "Kho lưu trữ tiền điện tử ở đâu?",
+            "Buổi trình diễn robot dưới nước diễn ra khi nào?"};
 
     @Test
     void benchmarkMeetsRetrievalAndCostTargets() {
@@ -77,12 +85,15 @@ class RagBenchmarkEvaluationTest {
         RagRetrievalService retrieval = RagTestSupport.retrieval(corpus.index(), new RagProperties());
 
         RetrievalMetrics retrievalMetrics = evaluateRetrieval(corpus, retrieval);
-        RouterMetrics routerMetrics = evaluateRouter(corpus);
+        AskService askService = newAskService(corpus);
+        RouterMetrics routerMetrics = evaluateRouter(corpus, askService);
+        NegativeMetrics negativeMetrics = evaluateNegativeQuestions(corpus, askService);
 
         System.out.printf(
                 "rag-eval: conversations=%d messages=%d lookupQuestions=%d "
                         + "recall@3=%.3f recall@5=%.3f mrr=%.3f citationValidity=%.3f "
-                        + "zeroLlm=%.1f%% meanInputChars=%.1f baselineChars=%.1f reduction=%.1f%%%n",
+                        + "zeroLlm=%.1f%% meanInputChars=%.1f baselineChars=%.1f reduction=%.1f%% "
+                        + "negativeQuestions=%d negativeNotFound=%.3f negativeLlm=%d negativeCitations=%d%n",
                 CONVERSATION_COUNT,
                 CONVERSATION_COUNT * MESSAGES_PER_CONVERSATION,
                 corpus.lookupQuestions().size(),
@@ -93,15 +104,23 @@ class RagBenchmarkEvaluationTest {
                 routerMetrics.zeroLlmRatio() * 100.0,
                 routerMetrics.meanInputChars(),
                 routerMetrics.meanBaselineChars(),
-                routerMetrics.reductionPercent());
+                routerMetrics.reductionPercent(),
+                corpus.negativeQuestions().size(),
+                negativeMetrics.notFoundRatio(),
+                negativeMetrics.llmCalls(),
+                negativeMetrics.citationCount());
 
         assertThat(corpus.lookupQuestions().size()).isGreaterThanOrEqualTo(150);
+        assertThat(corpus.negativeQuestions().size()).isGreaterThanOrEqualTo(96);
         assertThat(retrievalMetrics.recallAt5()).isGreaterThanOrEqualTo(MIN_RECALL_AT_5);
         assertThat(retrievalMetrics.recallAt3()).isGreaterThanOrEqualTo(MIN_RECALL_AT_3);
         assertThat(retrievalMetrics.citationValidity()).isEqualTo(1.0);
         assertThat(routerMetrics.zeroLlmRatio()).isGreaterThanOrEqualTo(MIN_ZERO_LLM_RATIO);
         assertThat(routerMetrics.meanInputChars())
                 .isLessThanOrEqualTo(routerMetrics.meanBaselineChars() * MAX_INPUT_CHAR_RATIO);
+        assertThat(negativeMetrics.notFoundRatio()).isEqualTo(1.0);
+        assertThat(negativeMetrics.llmCalls()).isZero();
+        assertThat(negativeMetrics.citationCount()).isZero();
     }
 
     private RetrievalMetrics evaluateRetrieval(SyntheticCorpus corpus, RagRetrievalService retrieval) {
@@ -147,7 +166,7 @@ class RagBenchmarkEvaluationTest {
                 totalCitations == 0 ? 1.0 : (double) validCitations / totalCitations);
     }
 
-    private RouterMetrics evaluateRouter(SyntheticCorpus corpus) {
+    private AskService newAskService(SyntheticCorpus corpus) {
         InMemoryRagMessageIndex index = corpus.index();
         RagProperties properties = new RagProperties();
         RagStats stats = new RagStats();
@@ -178,11 +197,13 @@ class RagBenchmarkEvaluationTest {
             return new RagLlmAnswer("Synthetic answer.", context.get(0).messageIds());
         });
 
-        AskService service = new AskService(
+        return new AskService(
                 rateLimiter, conversationRepository, memberRepository, consentRepository,
                 embeddings, retrieval, questionCache, llmAnswerService, properties, stats,
                 Clock.systemUTC());
+    }
 
+    private RouterMetrics evaluateRouter(SyntheticCorpus corpus, AskService service) {
         UUID userId = UUID.randomUUID();
         int llmCalls = 0;
         int zeroLlm = 0;
@@ -222,6 +243,29 @@ class RagBenchmarkEvaluationTest {
                 allCited.isEmpty() ? 1.0 : (double) citedValid.size() / allCited.size());
     }
 
+    private NegativeMetrics evaluateNegativeQuestions(SyntheticCorpus corpus, AskService service) {
+        UUID userId = UUID.randomUUID();
+        int notFound = 0;
+        int llmCalls = 0;
+        int citationCount = 0;
+        for (BenchmarkQuestion question : corpus.negativeQuestions()) {
+            AskResponse response = service.ask(question.conversationId(), userId,
+                    new AskRequest(question.question(), question.language()));
+            if (response.mode() == AskMode.NOT_FOUND) {
+                notFound++;
+            }
+            if (response.mode() == AskMode.LLM) {
+                llmCalls++;
+            }
+            citationCount += response.citations().size();
+        }
+        int total = corpus.negativeQuestions().size();
+        return new NegativeMetrics((double) notFound / total, llmCalls, citationCount);
+    }
+
+    private record NegativeMetrics(double notFoundRatio, int llmCalls, int citationCount) {
+    }
+
     private record RetrievalMetrics(
             double recallAt3, double recallAt5, double mrr, double citationValidity) {
     }
@@ -246,6 +290,7 @@ class RagBenchmarkEvaluationTest {
         private final InMemoryRagMessageIndex index = new InMemoryRagMessageIndex();
         private final List<LookupQuestion> lookupQuestions = new ArrayList<>();
         private final List<BenchmarkQuestion> questions = new ArrayList<>();
+        private final List<BenchmarkQuestion> negativeQuestions = new ArrayList<>();
         private final Map<UUID, Set<UUID>> messageIds = new HashMap<>();
         private final Map<UUID, Integer> baselineChars = new HashMap<>();
 
@@ -303,6 +348,11 @@ class RagBenchmarkEvaluationTest {
                     questions.add(new BenchmarkQuestion(conversationId, question,
                             vietnamese ? SummaryLanguage.VI : SummaryLanguage.EN));
                 }
+                String[] negativePrompts = vietnamese ? VI_NEGATIVE_LOOKUP : EN_NEGATIVE_LOOKUP;
+                for (String question : negativePrompts) {
+                    negativeQuestions.add(new BenchmarkQuestion(conversationId, question,
+                            vietnamese ? SummaryLanguage.VI : SummaryLanguage.EN));
+                }
                 messageIds.put(conversationId, ids);
                 baselineChars.put(conversationId, baseline);
             }
@@ -319,6 +369,10 @@ class RagBenchmarkEvaluationTest {
 
         List<BenchmarkQuestion> questions() {
             return questions;
+        }
+
+        List<BenchmarkQuestion> negativeQuestions() {
+            return negativeQuestions;
         }
 
         Map<UUID, Set<UUID>> messageIds() {

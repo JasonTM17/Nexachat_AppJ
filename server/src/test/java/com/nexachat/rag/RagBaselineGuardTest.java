@@ -19,7 +19,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Recorded baseline (PR #205, verbatim):
  * recall@3=1.000 recall@5=1.000 mrr=1.000 citationValidity=1.000
  * zeroLlm=70.0% meanInputChars=1640.6 reduction=79.4%
- * (32 conversations, 6400 messages, 192 lookup questions).
+ * (32 conversations, 6400 messages, 192 lookup questions). The same run also
+ * gates 96 English/Vietnamese no-answer lookups at 100% NOT_FOUND.
  */
 class RagBaselineGuardTest {
 
@@ -43,8 +44,12 @@ class RagBaselineGuardTest {
         RagBenchmarkEvaluationTest benchmark = new RagBenchmarkEvaluationTest();
         Object retrievalMetrics = invoke(benchmark, "evaluateRetrieval",
                 new Class<?>[] {corpusType, RagRetrievalService.class}, corpus, retrieval);
-        Object routerMetrics = invoke(benchmark, "evaluateRouter",
+        Object askService = invoke(benchmark, "newAskService",
                 new Class<?>[] {corpusType}, corpus);
+        Object routerMetrics = invoke(benchmark, "evaluateRouter",
+                new Class<?>[] {corpusType, AskService.class}, corpus, askService);
+        Object negativeMetrics = invoke(benchmark, "evaluateNegativeQuestions",
+                new Class<?>[] {corpusType, AskService.class}, corpus, askService);
 
         double recallAt3 = metric(retrievalMetrics, "recallAt3");
         double recallAt5 = metric(retrievalMetrics, "recallAt5");
@@ -54,18 +59,22 @@ class RagBaselineGuardTest {
         double meanInputChars = metric(routerMetrics, "meanInputChars");
         double meanBaselineChars = metric(routerMetrics, "meanBaselineChars");
         double reductionPercent = metric(routerMetrics, "reductionPercent");
+        double negativeNotFoundRatio = metric(negativeMetrics, "notFoundRatio");
 
         @SuppressWarnings("unchecked")
         List<Object> lookupQuestions = (List<Object>) invoke(corpus, "lookupQuestions");
         @SuppressWarnings("unchecked")
         Map<UUID, Set<UUID>> messageIds = (Map<UUID, Set<UUID>>) invoke(corpus, "messageIds");
+        @SuppressWarnings("unchecked")
+        List<Object> negativeQuestions = (List<Object>) invoke(corpus, "negativeQuestions");
         int conversations = messageIds.size();
         int messages = messageIds.values().stream().mapToInt(Set::size).sum();
 
         System.out.printf(
                 "rag-eval: conversations=%d messages=%d lookupQuestions=%d "
                         + "recall@3=%.3f recall@5=%.3f mrr=%.3f citationValidity=%.3f "
-                        + "zeroLlm=%.1f%% meanInputChars=%.1f baselineChars=%.1f reduction=%.1f%%%n",
+                        + "zeroLlm=%.1f%% meanInputChars=%.1f baselineChars=%.1f reduction=%.1f%% "
+                        + "negativeQuestions=%d negativeNotFound=%.3f%n",
                 conversations,
                 messages,
                 lookupQuestions.size(),
@@ -76,7 +85,9 @@ class RagBaselineGuardTest {
                 zeroLlmRatio * 100.0,
                 meanInputChars,
                 meanBaselineChars,
-                reductionPercent);
+                reductionPercent,
+                negativeQuestions.size(),
+                negativeNotFoundRatio);
 
         assertThat(lookupQuestions.size()).isGreaterThanOrEqualTo(MIN_LOOKUP_QUESTIONS);
         assertThat(recallAt3).isGreaterThanOrEqualTo(BASELINE_RECALL_AT_3);
@@ -85,6 +96,8 @@ class RagBaselineGuardTest {
         assertThat(citationValidity).isEqualTo(BASELINE_CITATION_VALIDITY);
         assertThat(zeroLlmRatio).isGreaterThanOrEqualTo(MIN_ZERO_LLM_RATIO);
         assertThat(reductionPercent).isGreaterThanOrEqualTo(MIN_REDUCTION_PERCENT);
+        assertThat(negativeQuestions.size()).isGreaterThanOrEqualTo(96);
+        assertThat(negativeNotFoundRatio).isEqualTo(1.0);
     }
 
     private static Object invokeStatic(Class<?> type, String name) throws Exception {
