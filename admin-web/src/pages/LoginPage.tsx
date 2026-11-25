@@ -47,20 +47,35 @@ export default function LoginPage() {
 
   return (
     <div className="login-page">
-      <div className="card login-card">
-        <div className="login-head">
-          <h1>{t('app.name')}</h1>
-          <select
-            className="select"
-            aria-label={t('lang.label')}
-            value={lang}
-            onChange={(e) => setLang(e.target.value as 'en' | 'vi')}
-          >
-            <option value="en">EN</option>
-            <option value="vi">VI</option>
-          </select>
-        </div>
-        <div className="sub">{t('login.title')}</div>
+      <div className="login-shell">
+        <aside className="login-brand-panel" aria-label={t('app.name')}>
+          <div className="login-brand-lockup">
+            <span className="login-brand-mark" aria-hidden="true">N</span>
+            <span className="login-brand-name">{t('app.name')}</span>
+          </div>
+          <div className="login-brand-copy">
+            <p className="login-eyebrow">{t('login.eyebrow')}</p>
+            <p className="login-headline">{t('login.headline')}</p>
+          </div>
+          <p className="login-brand-footer">{t('login.restricted')}</p>
+        </aside>
+        <main className="login-form-panel">
+          <div className="login-form">
+            <div className="login-form-header">
+              <div>
+                <h1>{t('login.title')}</h1>
+                <p>{t('login.hint')}</p>
+              </div>
+              <select
+                className="select lang-select"
+                aria-label={t('lang.label')}
+                value={lang}
+                onChange={(e) => setLang(e.target.value as 'en' | 'vi')}
+              >
+                <option value="en">EN</option>
+                <option value="vi">VI</option>
+              </select>
+            </div>
         <form onSubmit={submit} aria-busy={busy}>
           {sessionExpired && (
             <div className="form-error" role="status">
@@ -82,7 +97,6 @@ export default function LoginPage() {
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               required
-              autoFocus
               disabled={busy}
             />
           </div>
@@ -99,15 +113,12 @@ export default function LoginPage() {
               disabled={busy}
             />
           </div>
-          <button
-            className="btn primary"
-            type="submit"
-            disabled={busy}
-            style={{ width: '100%' }}
-          >
+          <button className="btn primary login-submit" type="submit" disabled={busy}>
             {busy ? t('common.loading') : t('login.submit')}
           </button>
         </form>
+          </div>
+        </main>
       </div>
     </div>
   );
