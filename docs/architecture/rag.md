@@ -122,6 +122,10 @@ cache are scoped by the same identity.
   with account-level AI consent and is replayed only when every cited message
   still exists, is not deleted, its content hash matches, and its author has
   not opted out of AI processing in that conversation.
+- Recalling a message purges the conversation's cached ask answers and deletes
+  that message's stored vectors for every embedding model in the same
+  transaction. Editing a message likewise deletes its stale vectors so they
+  can be rebuilt only from the current text.
 - Vectors are never exposed by any API. `GET /api/v1/rag/stats` returns
   aggregate counters only. This endpoint is operator telemetry restricted
   to authorized administrator phone numbers (`NEXACHAT_ADMIN_PHONES`);
