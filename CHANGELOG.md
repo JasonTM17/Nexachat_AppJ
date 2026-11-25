@@ -6,6 +6,33 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.22] - 2026-11-25
+
+Server + Android release. See
+[docs/release-notes/v1.2.22.md](docs/release-notes/v1.2.22.md).
+
+### Added
+- Server: lookup answerability evidence gate (`lexical-answer-min-coverage`
+  and `vector-answer-threshold`) requires lexical term coverage or calibrated
+  vector support before lookup questions reach extractive or LLM answering.
+- Server: OpenAI-compatible array input and Gemini `batchEmbedContents`
+  batching with shape fallback, outage non-multiplication, and bounded
+  external lazy indexing (`external-lazy-limit`, default 32) keyed per
+  `(message_id, model)` (migration `V48`).
+
+### Fixed
+- Server: immediate `message_embeddings` purge across all models when a
+  message is recalled, expires, or is edited; valid LLM abstentions are
+  treated as healthy output instead of triggering retryable fallback.
+- Android: clarify Ask offline/E2EE failure copy; deduplicate Ask status
+  message mapping; guard `WebRtcMediaEngine.switchCamera()` and marshal
+  `onCameraUnavailable` onto the main thread (`postToMain`); label
+  whole-row settings switch containers including `amoledBlackRow` (`#254`,
+  56/56 `accessibility-sweep` pass on API 36).
+- Docs & ops: Harden `keep-warm.yml` (`set -euo pipefail` + auto-close
+  recovery), trim redundant `/admin` Vercel headers, align `render.yaml`,
+  runbooks, and `V48` schema references.
+
 ## [1.2.21] - 2026-11-24
 
 Server + Android release. See

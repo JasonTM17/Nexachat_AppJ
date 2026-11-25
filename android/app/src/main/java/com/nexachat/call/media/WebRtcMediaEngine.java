@@ -278,8 +278,13 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
     public void switchCamera() {
         long callGeneration = generation.get();
         mediaExecutor.execute(() -> {
-            if (isActive(callGeneration) && videoCapturer instanceof CameraVideoCapturer) {
+            if (!isActive(callGeneration) || !cameraOn || !(videoCapturer instanceof CameraVideoCapturer)) {
+                return;
+            }
+            try {
                 ((CameraVideoCapturer) videoCapturer).switchCamera(null);
+            } catch (RuntimeException switchFailure) {
+                markCameraUnavailable(callGeneration);
             }
         });
     }
@@ -379,7 +384,7 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
                     MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO,
                     new RtpTransceiver.RtpTransceiverInit(
                             RtpTransceiver.RtpTransceiverDirection.RECV_ONLY));
-            markCameraUnavailable();
+            markCameraUnavailable(callGeneration);
             return;
         }
         surfaceTextureHelper = SurfaceTextureHelper.create(
@@ -412,14 +417,14 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
                     @Override public void onCameraError(String errorDescription) {
                         mediaExecutor.execute(() -> {
                             if (!isActive(callGeneration)) return;
-                            markCameraUnavailable();
+                            markCameraUnavailable(callGeneration);
                         });
                     }
 
                     @Override public void onCameraDisconnected() {
                         mediaExecutor.execute(() -> {
                             if (!isActive(callGeneration)) return;
-                            markCameraUnavailable();
+                            markCameraUnavailable(callGeneration);
                         });
                     }
 
@@ -449,20 +454,21 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
     /** Runs on mediaExecutor. */
     private void startCapture() {
         if (videoCapturer == null) return;
+        long callGeneration = generation.get();
         try {
             videoCapturer.startCapture(
                     VIDEO_CAPTURE_WIDTH, VIDEO_CAPTURE_HEIGHT, VIDEO_CAPTURE_FPS);
         } catch (RuntimeException captureFailure) {
-            markCameraUnavailable();
+            markCameraUnavailable(callGeneration);
         }
     }
 
     /** Runs on mediaExecutor: turns the camera off and tells the session it is gone. */
-    private void markCameraUnavailable() {
+    private void markCameraUnavailable(long callGeneration) {
         cameraOn = false;
         if (localVideoTrack != null) localVideoTrack.setEnabled(false);
         Listener current = listener;
-        if (current != null) current.onCameraUnavailable();
+        if (current != null) postToMain(callGeneration, current, current::onCameraUnavailable);
     }
 
     /** Runs on mediaExecutor. */

@@ -173,3 +173,37 @@ services:
         value: https://www.googleapis.com/oauth2/v3/certs
       - key: NEXACHAT_GOOGLE_NONCE_TTL_SECONDS
         value: "300"
+
+      # ---- Staff admin console ---------------------------------------------
+      - key: NEXACHAT_ADMIN_EMAILS
+        sync: false
+      - key: NEXACHAT_ADMIN_PHONES
+        sync: false
+
+      # ---- AI Summary & RAG Q&A (consent-gated, off by default) ------------
+      - key: NEXACHAT_SUMMARY_LLM_ENABLED
+        value: "false"
+      - key: NEXACHAT_SUMMARY_LLM_BASE_URL
+        value: https://generativelanguage.googleapis.com/v1beta/openai
+      - key: NEXACHAT_SUMMARY_LLM_MODEL
+        value: gemini-3.1-flash-lite
+      - key: NEXACHAT_SUMMARY_LLM_API_KEY
+        sync: false
+      - key: NEXACHAT_SUMMARY_LLM_FALLBACK_ENABLED
+        value: "false"
+      - key: NEXACHAT_SUMMARY_LLM_FALLBACK_BASE_URL
+        value: https://api.deepseek.com
+      - key: NEXACHAT_SUMMARY_LLM_FALLBACK_MODEL
+        value: deepseek-flash
+      - key: NEXACHAT_SUMMARY_LLM_FALLBACK_API_KEY
+        sync: false
+      - key: NEXACHAT_RAG_ENABLED
+        value: "true"
+      - key: NEXACHAT_RAG_EMBEDDING_PROVIDER
+        value: lexical
+
+      # ---- Retention (safe dry-run defaults) -------------------------------
+      - key: NEXACHAT_RETENTION_ENABLED
+        value: "false"
+      - key: NEXACHAT_RETENTION_DRY_RUN
+        value: "true"
