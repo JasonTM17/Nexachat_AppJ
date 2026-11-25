@@ -106,6 +106,60 @@ public final class CallManagerRoamingTest {
     }
 
     @Test
+    public void reconnectAsAnswererDoesNotRestartIceAndInviteGlare() {
+        // Callee role: accept an incoming call to ACTIVE, then roam. Only the
+        // original offerer may restart ICE — if both peers fire offers after a
+        // correlated reconnect, the glare teardown kills a healthy call.
+        signaling.emit(new CallEvent(CallEvent.Type.CALL_INVITE, "CALL_INVITE", "call-roam-1",
+                "conversation-1", "peer-1", null, null, null, null, null));
+        scheduler.runCurrent();
+        manager.accept("call-roam-1");
+        scheduler.runCurrent();
+        media.listener.onConnected();
+        scheduler.runCurrent();
+        assertEquals(CallState.ACTIVE, manager.currentSessionForTest().getState());
+
+        signaling.disconnect();
+        scheduler.runCurrent();
+        scheduler.advanceBy(5_000L);
+        signaling.connect();
+        scheduler.runCurrent();
+
+        assertEquals(CallState.ACTIVE, manager.currentSessionForTest().getState());
+        assertEquals(0, media.restartIceCount);
+    }
+
+    @Test
+    public void signalingDropDuringConnectingGetsTheSameReconnectGrace() {
+        // ICE is still being set up in CONNECTING and the engine has its own
+        // 35s connect timeout — a brief STOMP blip must not kill the call.
+        manager.startOutgoing("conversation-1", "peer-1", "Peer");
+        scheduler.runCurrent();
+        signaling.emit(new CallEvent(CallEvent.Type.CALL_ACCEPTED, "CALL_ACCEPTED", "call-roam-1",
+                "conversation-1", null, null, null, null, null, null));
+        scheduler.runCurrent();
+        assertEquals(CallState.CONNECTING, manager.currentSessionForTest().getState());
+
+        signaling.disconnect();
+        scheduler.runCurrent();
+        assertEquals(CallState.RECONNECTING_NETWORK, manager.currentSessionForTest().getState());
+
+        scheduler.advanceBy(5_000L);
+        signaling.connect();
+        scheduler.runCurrent();
+
+        // Resume into CONNECTING (not ACTIVE — media never connected), no ICE
+        // restart: the initial negotiation is still in flight.
+        assertEquals(CallState.CONNECTING, manager.currentSessionForTest().getState());
+        assertEquals(0, media.restartIceCount);
+
+        // And the media path can still complete afterwards.
+        media.listener.onConnected();
+        scheduler.runCurrent();
+        assertEquals(CallState.ACTIVE, manager.currentSessionForTest().getState());
+    }
+
+    @Test
     public void reconnectGraceTimerExpiresEndsCall() {
         establishActiveCall();
 

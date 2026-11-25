@@ -96,6 +96,8 @@ public final class CallManager implements AutoCloseable {
     private Cancellable reconnectGraceTimer;
     private boolean mediaStarted;
     private boolean mediaStartPending;
+    private boolean mediaStartedAsCaller;
+    private CallState reconnectResumeState;
     private boolean closed;
 
     /** Creates a manager backed by the app's authenticated call transport and REST API. */
@@ -838,8 +840,8 @@ public final class CallManager implements AutoCloseable {
     }
 
     private void handleCallError(CallEvent event) {
-        // The shared /user/queue/errors envelope currently carries no callId.
-        // Do not let a delayed error from an earlier SEND end a newer call.
+        // Errors without a callId never reach this client (dropped upstream);
+        // a delayed error from an earlier SEND must not end a newer call.
         if (!matches(event.getCallId())) return;
         CallError error = CallError.fromServerCode(event.getErrorCode());
         notifyError(error);
@@ -975,6 +977,7 @@ public final class CallManager implements AutoCloseable {
                 }
             });
             mediaStarted = true;
+            mediaStartedAsCaller = isCaller;
             mediaEngine.setMuted(currentSession.isMuted());
             mediaEngine.setSpeaker(currentSession.isSpeakerOn());
             mediaEngine.setCameraEnabled(currentSession.isCameraOn());
@@ -1020,7 +1023,11 @@ public final class CallManager implements AutoCloseable {
     }
 
     private void handleSignalingDisconnected() {
-        if (currentSession.getState() == CallState.ACTIVE) {
+        CallState droppedState = currentSession.getState();
+        if (droppedState == CallState.ACTIVE || droppedState == CallState.CONNECTING) {
+            // CONNECTING is mid-ICE-setup with its own engine timeout; a brief
+            // transport blip must not kill a call that would connect a second later.
+            reconnectResumeState = droppedState;
             transition(CallState.RECONNECTING_NETWORK, null, currentSession.getAnsweredAtMs());
             cancelReconnectGraceTimer();
             reconnectGraceTimer = scheduler.schedule(() -> {
@@ -1037,8 +1044,10 @@ public final class CallManager implements AutoCloseable {
     private void handleSignalingConnected() {
         if (currentSession.getState() == CallState.RECONNECTING_NETWORK) {
             cancelReconnectGraceTimer();
-            transition(CallState.ACTIVE, null, currentSession.getAnsweredAtMs());
-            if (mediaEngine != null) {
+            CallState resumeState = reconnectResumeState == CallState.CONNECTING
+                    ? CallState.CONNECTING : CallState.ACTIVE;
+            transition(resumeState, null, currentSession.getAnsweredAtMs());
+            if (resumeState == CallState.ACTIVE && mediaEngine != null && mediaStartedAsCaller) {
                 mediaEngine.restartIce();
             }
             List<CallSignal> queuedRemote = new ArrayList<>(pendingRemoteSignals);
@@ -1244,6 +1253,8 @@ public final class CallManager implements AutoCloseable {
     private void stopMedia() {
         boolean wasStarted = mediaStarted;
         mediaStarted = false;
+        mediaStartedAsCaller = false;
+        reconnectResumeState = null;
         mediaStartPending = false;
         if (!wasStarted || mediaEngine == null) {
             return;

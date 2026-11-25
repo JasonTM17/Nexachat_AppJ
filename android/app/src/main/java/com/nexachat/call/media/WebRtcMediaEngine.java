@@ -188,6 +188,8 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
                         if (remoteDescription.type == SessionDescription.Type.OFFER) {
                             stopIncomingVideoForVoiceAnswer();
                             createDescription(callGeneration, false);
+                        } else if (remoteDescription.type == SessionDescription.Type.ANSWER) {
+                            stopCaptureIfPeerDeclinedVideo(callGeneration);
                         }
                     });
                 }
@@ -218,6 +220,32 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
             }
         } catch (RuntimeException ignored) {
             // Keep the audio call; the extra video stream is only wasted bandwidth.
+        }
+    }
+
+    /**
+     * Caller side of an answer-as-voice call: the answer carries the video section
+     * as inactive, which leaves the negotiated transceiver direction INACTIVE. Without
+     * reacting to that the caller would keep the capturer and preview running for the
+     * whole call even though the peer never receives a single frame. Stop capturing
+     * and surface the camera-unavailable event so the session drops the camera state.
+     * Runs on mediaExecutor; inspection failures never fail the call.
+     */
+    private void stopCaptureIfPeerDeclinedVideo(long callGeneration) {
+        if (peerConnection == null || activeMediaType != CallMediaType.VIDEO || !cameraOn) return;
+        try {
+            for (RtpTransceiver transceiver : peerConnection.getTransceivers()) {
+                if (transceiver.getMediaType() != MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO) {
+                    continue;
+                }
+                if (transceiver.getCurrentDirection() == RtpTransceiver.RtpTransceiverDirection.INACTIVE) {
+                    stopCapture();
+                    markCameraUnavailable(callGeneration);
+                }
+                return;
+            }
+        } catch (RuntimeException ignored) {
+            // Direction inspection is best-effort; keep the call regardless.
         }
     }
 
@@ -264,6 +292,14 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
         long callGeneration = generation.get();
         mediaExecutor.execute(() -> {
             if (!isActive(callGeneration)) return;
+            if (enabled && videoCapturer == null) {
+                // No capturer exists (no camera device, permission or HAL loss):
+                // nothing can ever stream — keep the engine honest instead of
+                // letting the session claim "camera on". markCameraUnavailable
+                // resets cameraOn and re-fires the event for the UI.
+                markCameraUnavailable(callGeneration);
+                return;
+            }
             if (localVideoTrack != null) localVideoTrack.setEnabled(enabled);
             if (videoCapturer == null) return;
             if (enabled) {
