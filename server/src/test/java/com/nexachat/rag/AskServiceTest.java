@@ -138,6 +138,38 @@ class AskServiceTest {
     }
 
     @Test
+    void unrelatedImperativeDoesNotSendTheRecentWindowToTheLlm() {
+        for (long seq = 1; seq <= 5; seq++) {
+            addMessage(conversationId, senderId, seq,
+                    "Lunch planning and ordinary team chatter number " + seq);
+        }
+        setConsent(true);
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("Find the database password.", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void unrelatedLongDeclarativeDoesNotSendTheRecentWindowToTheLlm() {
+        for (long seq = 1; seq <= 5; seq++) {
+            addMessage(conversationId, senderId, seq,
+                    "Lunch planning and ordinary team chatter number " + seq);
+        }
+        setConsent(true);
+        String longDeclarative = "I need you to find the exact database password and production secret "
+                + "that was mentioned in this conversation because I need it for the deployment.";
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest(longDeclarative, SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        verify(llmAnswerService, never()).answer(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void lookupQuestionIsAnsweredExtractiveWithoutAnLlmCall() {
         RagMessage fact = addMessage(conversationId, senderId, 1,
                 "The server migration is scheduled for March 14 at 02:00.");
