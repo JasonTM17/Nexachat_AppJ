@@ -152,7 +152,7 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
                 INSERT INTO message_embeddings
                     (message_id, conversation_id, model, dim, vector, content_hash, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, now())
-                ON CONFLICT (message_id) DO UPDATE SET
+                ON CONFLICT (message_id, model) DO UPDATE SET
                     conversation_id = EXCLUDED.conversation_id,
                     model = EXCLUDED.model,
                     dim = EXCLUDED.dim,

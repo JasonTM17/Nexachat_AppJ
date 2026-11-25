@@ -68,8 +68,9 @@ is read from `NEXACHAT_RAG_EMBEDDING_API_KEY`, falling back to
 `NEXACHAT_SUMMARY_LLM_API_KEY`. It is only placed in the request header and is
 never logged, serialized or echoed in an exception.
 
-Vectors are stored per message in `message_embeddings` (Flyway V9) with the
-provider identity in `model`; for an external provider that identity includes
+Vectors are stored per `(message, model)` in `message_embeddings` (Flyway V9,
+key widened by V48) with the provider identity in `model`; for an external
+provider that identity includes
 the configured model (`openai-compatible:<model>`). Only vectors whose `model`
 matches the provider used for the current request are read, so a lexical
 fallback never mixes spaces with an external index, and changing
