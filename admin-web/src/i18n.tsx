@@ -24,6 +24,12 @@ export const STRINGS = {
     'nav.system': 'System',
     'nav.logout': 'Sign out',
     'nav.primary': 'Primary navigation',
+
+    'login.title': 'Admin sign in',
+    'login.eyebrow': 'Staff console',
+    'login.headline': 'Moderation, operations, and system health in one place.',
+    'login.restricted': 'Restricted to authorized staff',
+    'login.hint': 'Use your staff email or phone number.',
     'nav.skip': 'Skip to content',
     'page.overview': 'Signups, activity, and the open alert queue.',
     'page.users': 'Find an account, then suspend, restore, or review it.',
@@ -35,6 +41,7 @@ export const STRINGS = {
     'login.welcome': 'Welcome back',
     'login.subtitle': 'Sign in with an admin account to continue.',
     'login.foot': 'Authorized staff only.',
+
     'login.phone': 'Email or phone',
     'login.password': 'Password',
     'login.submit': 'Sign in',
@@ -272,6 +279,12 @@ export const STRINGS = {
     'nav.system': 'Hệ thống',
     'nav.logout': 'Đăng xuất',
     'nav.primary': 'Điều hướng chính',
+
+    'login.title': 'Đăng nhập quản trị',
+    'login.eyebrow': 'Khu vực nhân viên',
+    'login.headline': 'Kiểm duyệt, vận hành và sức khỏe hệ thống trong một bảng điều khiển.',
+    'login.restricted': 'Chỉ dành cho nhân viên được ủy quyền',
+    'login.hint': 'Dùng email hoặc số điện thoại nhân viên của bạn.',
     'nav.skip': 'Bỏ qua, tới nội dung',
     'page.overview': 'Đăng ký, hoạt động, và hàng cảnh báo đang mở.',
     'page.users': 'Tìm tài khoản, rồi đình chỉ, khôi phục hoặc xem chi tiết.',
@@ -283,6 +296,7 @@ export const STRINGS = {
     'login.welcome': 'Chào mừng trở lại',
     'login.subtitle': 'Đăng nhập bằng tài khoản quản trị để tiếp tục.',
     'login.foot': 'Chỉ dành cho nhân viên được ủy quyền.',
+
     'login.phone': 'Email hoặc số điện thoại',
     'login.password': 'Mật khẩu',
     'login.submit': 'Đăng nhập',
