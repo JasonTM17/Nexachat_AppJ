@@ -35,34 +35,47 @@ public final class RagOutputValidator {
     }
 
     public RagLlmAnswer validate(String rawOutput, RagPrompt prompt) {
+        Validation validation = validateDetailed(rawOutput, prompt);
+        return validation.status() == Status.ANSWER ? validation.answer() : null;
+    }
+
+    /**
+     * Classifies provider output. A protocol-valid null answer is a successful
+     * abstention, not malformed output, so callers must not count it as provider
+     * or circuit-breaker failure evidence.
+     */
+    public Validation validateDetailed(String rawOutput, RagPrompt prompt) {
         if (rawOutput == null || rawOutput.isBlank() || rawOutput.length() > MAX_OUTPUT_CHARS) {
-            return null;
+            return Validation.invalid();
         }
         JsonNode root;
         try {
             root = objectMapper.readTree(rawOutput);
         } catch (JsonProcessingException | RuntimeException exception) {
-            return null;
+            return Validation.invalid();
         }
         if (root == null || !root.isObject()) {
-            return null;
+            return Validation.invalid();
         }
         JsonNode answerNode = root.get("answer");
         if (answerNode == null || !(answerNode.isNull() || answerNode.isTextual())) {
-            return null;
-        }
-        String answer = answerNode.isNull() ? null : cleanText(answerNode.textValue());
-        if (answer == null || answer.isBlank()) {
-            return null;
+            return Validation.invalid();
         }
         JsonNode citationsNode = root.get("citations");
         if (citationsNode == null || !citationsNode.isArray() || citationsNode.size() > MAX_CITATIONS) {
-            return null;
+            return Validation.invalid();
+        }
+        if (answerNode.isNull()) {
+            return citationsNode.isEmpty() ? Validation.abstain() : Validation.invalid();
+        }
+        String answer = cleanText(answerNode.textValue());
+        if (answer == null || answer.isBlank()) {
+            return Validation.invalid();
         }
         Set<UUID> citationIds = new LinkedHashSet<>();
         for (JsonNode citation : citationsNode) {
             if (!citation.isIntegralNumber() || !citation.canConvertToInt()) {
-                return null;
+                return Validation.invalid();
             }
             List<UUID> mapped = prompt.messageIdsByIndex().get(citation.intValue());
             if (mapped != null) {
@@ -70,12 +83,32 @@ public final class RagOutputValidator {
             }
         }
         if (citationIds.isEmpty()) {
-            return null;
+            return Validation.invalid();
         }
         if (!LanguageCheck.matches(answer, prompt.language())) {
-            return null;
+            return Validation.invalid();
         }
-        return new RagLlmAnswer(answer, List.copyOf(citationIds));
+        return Validation.answer(new RagLlmAnswer(answer, List.copyOf(citationIds)));
+    }
+
+    public enum Status {
+        ANSWER,
+        ABSTAIN,
+        INVALID
+    }
+
+    public record Validation(Status status, RagLlmAnswer answer) {
+        private static Validation answer(RagLlmAnswer answer) {
+            return new Validation(Status.ANSWER, answer);
+        }
+
+        private static Validation abstain() {
+            return new Validation(Status.ABSTAIN, null);
+        }
+
+        private static Validation invalid() {
+            return new Validation(Status.INVALID, null);
+        }
     }
 
     private static String cleanText(String input) {

@@ -39,7 +39,20 @@ class RagOutputValidatorTest {
     void rejectsMalformedJsonAndMissingFields() {
         assertThat(validator.validate("not json", prompt)).isNull();
         assertThat(validator.validate("{\"citations\":[1]}", prompt)).isNull();
-        assertThat(validator.validate("{\"answer\":null,\"citations\":[]}", prompt)).isNull();
+        assertThat(validator.validate("{\"answer\":null,\"citations\":[1]}", prompt)).isNull();
+    }
+
+    @Test
+    void distinguishesAValidAbstentionFromInvalidOutput() {
+        RagOutputValidator.Validation validation = validator.validateDetailed(
+                "{\"answer\":null,\"citations\":[]}", prompt);
+
+        assertThat(validation.status()).isEqualTo(RagOutputValidator.Status.ABSTAIN);
+        assertThat(validation.answer()).isNull();
+        assertThat(validator.validateDetailed("not json", prompt).status())
+                .isEqualTo(RagOutputValidator.Status.INVALID);
+        assertThat(validator.validateDetailed("{\"answer\":\"   \",\"citations\":[1]}", prompt).status())
+                .isEqualTo(RagOutputValidator.Status.INVALID);
     }
 
     @Test

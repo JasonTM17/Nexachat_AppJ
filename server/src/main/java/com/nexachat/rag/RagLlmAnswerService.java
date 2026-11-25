@@ -142,12 +142,13 @@ public class RagLlmAnswerService {
                 completion = llmClient.completeTextWithTargetResult(
                         prompt.systemMessage(), prompt.userMessage(), secondary);
             }
-            RagLlmAnswer answer = outputValidator.validate(completion.content(), prompt);
+            RagOutputValidator.Validation validation = outputValidator.validateDetailed(completion.content(), prompt);
             // Validate before recording: a primary that answers 200 with an
             // unusable body is a failing primary, not a healthy one — the
             // breaker must open on it and the failure stat must count it,
-            // exactly like the summary lane treats bad output.
-            if (answer == null) {
+            // exactly like the summary lane treats bad output. A protocol-valid
+            // abstention is successful provider behavior and must not poison the breaker.
+            if (validation.status() == RagOutputValidator.Status.INVALID) {
                 if (primaryUsed || primaryFailed) {
                     circuitBreaker.recordFailure();
                     breakerRecorded = true;
@@ -162,6 +163,10 @@ public class RagLlmAnswerService {
                 circuitBreaker.recordFailure();
                 breakerRecorded = true;
             }
+            if (validation.status() == RagOutputValidator.Status.ABSTAIN) {
+                return null;
+            }
+            RagLlmAnswer answer = validation.answer();
             String provider = fallbackUsed ? "fallback" : (primaryUsed ? "primary" : null);
             return new RagLlmAnswer(answer.answer(), answer.citationIds(), provider);
         } catch (RuntimeException exception) {

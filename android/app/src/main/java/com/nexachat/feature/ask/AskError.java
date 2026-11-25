@@ -7,5 +7,6 @@ public enum AskError {
     RATE_LIMITED,
     CONSENT_REQUIRED,
     NETWORK,
+    E2EE_UNAVAILABLE,
     UNKNOWN
 }

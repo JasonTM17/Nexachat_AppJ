@@ -435,8 +435,10 @@
     <string name="ask_retry">Retry</string>
     <string name="ask_close_accessibility">Close ask this chat</string>
     <string name="ask_loading">Searching this chat…</string>
-    <string name="ask_not_found">No matching message was found.</string>
+    <string name="ask_not_found">Not enough context was found to answer.</string>
     <string name="ask_error_generic">Could not get an answer. Try again.</string>
+    <string name="ask_error_offline">No connection. Check your network and try again.</string>
+    <string name="ask_e2ee_unavailable">Ask is unavailable in encrypted chats.</string>
     <string name="ask_chat_unavailable">This chat is no longer available.</string>
     <string name="ask_invalid_question">Enter a question with 1–500 characters.</string>
     <string name="ask_consent_title">Use AI to answer?</string>
