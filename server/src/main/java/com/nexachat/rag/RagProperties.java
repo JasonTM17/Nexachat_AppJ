@@ -17,6 +17,7 @@ public class RagProperties {
     private final Retrieval retrieval = new Retrieval();
     private final Index index = new Index();
     private final Ask ask = new Ask();
+    private final Llm llm = new Llm();
 
     public boolean isEnabled() {
         return enabled;
@@ -40,6 +41,10 @@ public class RagProperties {
 
     public Ask getAsk() {
         return ask;
+    }
+
+    public Llm getLlm() {
+        return llm;
     }
 
     public static class Embedding {
@@ -314,6 +319,29 @@ public class RagProperties {
 
         public void setBackfillIntervalMs(long backfillIntervalMs) {
             this.backfillIntervalMs = backfillIntervalMs;
+        }
+    }
+
+    public static class Llm {
+        /** Maximum simultaneous answer-generation calls across all users in this JVM. */
+        private int maxConcurrent = 8;
+        /** Maximum time a request waits for an answer-generation permit before degrading. */
+        private long bulkheadWaitMs = 500;
+
+        public int getMaxConcurrent() {
+            return maxConcurrent;
+        }
+
+        public void setMaxConcurrent(int maxConcurrent) {
+            this.maxConcurrent = Math.clamp(maxConcurrent, 1, 256);
+        }
+
+        public long getBulkheadWaitMs() {
+            return bulkheadWaitMs;
+        }
+
+        public void setBulkheadWaitMs(long bulkheadWaitMs) {
+            this.bulkheadWaitMs = Math.clamp(bulkheadWaitMs, 0L, 10_000L);
         }
     }
 

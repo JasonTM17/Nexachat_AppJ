@@ -2,6 +2,7 @@ package com.nexachat.rag;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.common.FakeOpenAiServer;
+import com.nexachat.summary.ConversationAiOptOuts;
 import com.nexachat.summary.SummaryConsentRepository;
 import com.nexachat.summary.SummaryLanguage;
 import com.nexachat.summary.llm.CircuitBreaker;
@@ -14,12 +15,17 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -348,6 +354,78 @@ class RagLlmAnswerServiceFallbackTest {
             executor.shutdownNow();
         }
         assertThat(fallback.requestCount()).isPositive();
+    }
+
+    @Test
+    void bulkheadRejectsSaturationWithoutCountingProviderFailure() throws Exception {
+        startServers();
+        CountDownLatch primaryEntered = new CountDownLatch(1);
+        CountDownLatch releasePrimary = new CountDownLatch(1);
+        primary.handle((exchange, body, authorization) -> {
+            primaryEntered.countDown();
+            try {
+                if (!releasePrimary.await(5, TimeUnit.SECONDS)) {
+                    throw new java.io.IOException("timed out waiting for test release");
+                }
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new java.io.IOException(exception);
+            }
+            FakeOpenAiServer.respond(exchange, 200, FakeOpenAiServer.jsonResponse(
+                    "{\"answer\":\"The migration is scheduled for March 14.\",\"citations\":[1]}"));
+        });
+        RagProperties ragProperties = new RagProperties();
+        ragProperties.getLlm().setMaxConcurrent(1);
+        ragProperties.getLlm().setBulkheadWaitMs(25);
+        SummaryConsentRepository consentRepository = mock(SummaryConsentRepository.class);
+        when(consentRepository.isConsented(userId)).thenReturn(true);
+        service = new RagLlmAnswerService(client, new RagPromptBuilder(new ObjectMapper(), new com.nexachat.summary.llm.Redactor()),
+                new RagOutputValidator(new ObjectMapper()), circuitBreaker, consentRepository, stats,
+                ConversationAiOptOuts.none(), ragProperties);
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<RagLlmAnswer> first = executor.submit(() -> answer("When is the migration?"));
+            assertThat(primaryEntered.await(5, TimeUnit.SECONDS)).isTrue();
+
+            RagLlmAnswer rejected = answer("When is the migration?");
+
+            assertThat(rejected).isNull();
+            assertThat(stats.snapshot().llmBulkheadRejections()).isEqualTo(1);
+            assertThat(stats.snapshot().llmFailures()).isZero();
+            releasePrimary.countDown();
+            assertThat(first.get(10, TimeUnit.SECONDS)).isNotNull();
+        } finally {
+            releasePrimary.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void promptBuilderFailurePropagatesReleasesThePermitAndDoesNotCountProviderFailure() throws Exception {
+        startServers();
+        RagProperties ragProperties = new RagProperties();
+        ragProperties.getLlm().setMaxConcurrent(1);
+        ragProperties.getLlm().setBulkheadWaitMs(25);
+        RagPromptBuilder throwingPromptBuilder = mock(RagPromptBuilder.class);
+        when(throwingPromptBuilder.build(anyString(), any(SummaryLanguage.class), anyList(), anyList()))
+                .thenThrow(new IllegalStateException("prompt boom"));
+        SummaryConsentRepository consentRepository = mock(SummaryConsentRepository.class);
+        when(consentRepository.isConsented(userId)).thenReturn(true);
+        service = new RagLlmAnswerService(client, throwingPromptBuilder,
+                new RagOutputValidator(new ObjectMapper()), circuitBreaker, consentRepository, stats,
+                ConversationAiOptOuts.none(), ragProperties);
+
+        assertThatThrownBy(() -> answer("When is the migration?"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("prompt boom");
+        assertThatThrownBy(() -> answer("When is the migration?"))
+                .as("a second call must not block behind a leaked permit")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("prompt boom");
+
+        assertThat(stats.snapshot().llmBulkheadRejections()).isZero();
+        assertThat(stats.snapshot().llmFailures()).isZero();
     }
 
     private void startServers() throws Exception {
