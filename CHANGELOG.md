@@ -6,6 +6,94 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.26] - 2026-11-25
+
+Android release focused on immersive in-call controls. See
+[docs/release-notes/v1.2.26.md](docs/release-notes/v1.2.26.md).
+
+### Added
+- Android: during live video calls the control row auto-hides after a few
+  seconds without touches and any tap reveals it again — the immersive
+  WhatsApp/Google Meet/FaceTime pattern. The revealing tap never triggers a
+  hidden button, controls use INVISIBLE rather than GONE so the layout never
+  jumps, and voice calls plus ringing/terminal phases always keep controls.
+
+
+## [1.2.25] - 2026-11-25
+
+Android + server release focused on 1-to-1 voice/video calling. See
+[docs/release-notes/v1.2.25.md](docs/release-notes/v1.2.25.md).
+
+### Changed
+- Android: in-call controls are now circular icon-only buttons in the style of
+  WhatsApp/Google Meet/FaceTime — no more labels breaking on narrow screens;
+  accessibility descriptions unchanged.
+- Android: the reconnecting state renders a live "Reconnecting…" model with
+  full controls (EN/VI) instead of a false terminal "Ended" screen, and
+  back-press no longer finishes a live call.
+
+### Fixed
+- Server + Android: server call-error frames now carry call attribution
+  end-to-end — mid-call blocks end the media session instead of hanging it,
+  and rejected INVITEs no longer ring into phantom sessions.
+- Android: only the original offerer restarts ICE after a simultaneous
+  reconnect, removing the SDP glare that tore down healthy calls.
+- Android: a signaling drop during CONNECTING shares the reconnect grace
+  instead of killing the call; stranded media starts are re-driven on resume
+  and media that connected during the blip resumes straight into ACTIVE.
+- Android: answering video as voice-only stops the caller's capture and
+  preview, and re-enabling the camera on a dead video m-line no longer shows
+  a lying camera-on state.
+- Server: a startup reconciler closes call rows orphaned by a restart into
+  constraint-valid terminal states, filtered by boot time.
+
+## [1.2.24] - 2026-11-25
+
+Server + Android + admin-web release. See
+[docs/release-notes/v1.2.24.md](docs/release-notes/v1.2.24.md).
+
+### Added
+- Android: a one-line provenance note under the summary header explains how a
+  summary was produced — saved copy, backup model, external AI off or
+  unavailable, or messages omitted by sender opt-out (EN/VI).
+- Server: additive typed Ask outcome metadata — `notFoundReason`,
+  `degradationReason`, `retryable`, `retryAfterSeconds`, provenance and
+  extraction details; deep-history evidence loads through bounded sequence
+  windows.
+- Admin web: RAG health panel on the System page backed by the new
+  admin-guarded `GET /api/v1/admin/rag/stats`; SVG navigation icons, a shared
+  theme toggle, skip-to-content link, per-page blurbs and operator display
+  name (EN/VI).
+- Site: stable `nexachat-latest.apk` download asset with checksum, guarded by
+  a `site/check.py` regression gate.
+
+### Fixed
+- Server: compositional RAG lookup questions require term evidence for every
+  essential component, closing wrong-answer holes such as
+  "satellite deployment window" while legitimate scoped multi-message
+  synthesis still answers.
+- Server: end-to-end Ask deadline returns retryable TIMEOUT instead of false
+  NOT_FOUND; the post-edit/recall context race recomputes once or reports
+  CONTEXT_CHANGED; extractive answers are minimal spans with citation
+  precision improvements.
+- Server: AI summary consent is re-read immediately before every outbound
+  call — retries, cloud fallback and the local-server model — so a mid-flight
+  revocation cancels the next call without counting as a provider failure.
+- Server: sharper summary prompts — settled-vs-open overviews, non-repeating
+  key points, stricter decision/action-item/question criteria and more
+  natural Vietnamese output.
+- Android: Ask threads stop re-inflating per keystroke and survive sheet
+  dismissal in-session; the Local chip no longer revokes account-wide AI
+  consent; consent-save failures surface a snackbar; action-item checkbox
+  state survives rebinds/rotation; out-of-window citations jump via
+  seq-aware paging.
+- Admin web: operations remediation — working deep links, honest 5xx labels,
+  polling queues with manual refresh, correct modal focus trapping, mobile
+  table columns, confirm-on-unhide, success toasts and contextual empty
+  states.
+- Site: bilingual pages render one language at a time; web account deletion
+  splits independent VI/EN forms.
+
 ## [1.2.23] - 2026-11-25
 
 Server + Android release. See
