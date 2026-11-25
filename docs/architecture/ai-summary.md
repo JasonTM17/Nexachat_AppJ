@@ -89,7 +89,7 @@ Limits: 10 requests/min and 60/day per user.
 
 `GET /api/v1/users/me/settings` returns `showPresence`, `showSeen` and `aiSummaryConsent` as booleans; `showPresence` and `showSeen` default to `true`, and `aiSummaryConsent` defaults to `false`. `PATCH` accepts any of the three fields independently; an omitted field keeps its current value, and an empty object is rejected.
 
-Provider selection uses the persisted `users.ai_summary_consent` value. The LLM adapter checks that value again immediately before its outbound request, so consent revoked after provider selection still prevents the external call.
+Provider selection uses the persisted `users.ai_summary_consent` value. The LLM adapter checks that value again immediately before every outbound request, including a 5xx retry, the cloud fallback, and the local-server model. A revocation cancels the next call and is not counted as a provider failure. A request already on the wire may still finish.
 
 **Per-conversation opt-out.** Any member can stop their own messages from
 being summarized by an external LLM in one conversation:
@@ -101,9 +101,9 @@ GET    /api/v1/conversations/{id}/ai-opt-out   -> 200 {"conversationId": "...", 
 ```
 
 The endpoints are member-only and idempotent, and the state is always scoped to
-the caller; another member's choice is never exposed. The LLM provider re-reads
-the opt-out rows and the caller's persisted consent immediately before building
-the external prompt, so a change committed after the request started still
+the caller; another member's choice is never exposed. The LLM provider re-reads the opt-out rows immediately before building the
+external prompt, and re-reads the caller's persisted consent immediately before
+each outbound call, so a change committed after the request started still
 applies. The external input excludes messages authored by opted-out members;
 the built-in local extractive engine may still quote them because no text
 leaves the server. An external summary cache entry that cites an opted-out
@@ -169,7 +169,8 @@ Safety behaviour:
 - No outbound call is made unless a usable cloud key or enabled local-server model
   is configured, the relevant tier is enabled, and the requesting user has
   `aiSummaryConsent = true`. The provider re-checks the persisted consent
-  immediately before the call. The local-server tier sends the same filtered prompt
+  immediately before each outbound call, including the fallback and the
+  local-server model. The local-server tier sends the same filtered prompt
   to its configured `nexachat.summary.llm.local-base-url`, which must stay inside
   the deployment's trust boundary.
 - Message text is redacted before sending (phone numbers, emails, URL paths and

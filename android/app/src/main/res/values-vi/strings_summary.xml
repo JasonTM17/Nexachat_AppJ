@@ -7,6 +7,13 @@
     <string name="summary_title">Tóm tắt trò chuyện</string>
     <string name="summary_badge_local">Cục bộ</string>
     <string name="summary_badge_ai">AI</string>
+    <string name="summary_note_cached">Tóm tắt đã lưu</string>
+    <string name="summary_note_fallback_model">Viết bằng mô hình AI dự phòng.</string>
+    <string name="summary_note_no_consent">AI bên ngoài đang tắt, nên tóm tắt này được lấy từ tin nhắn.</string>
+    <string name="summary_note_llm_disabled">AI bên ngoài chưa sẵn sàng, nên tóm tắt này được lấy từ tin nhắn.</string>
+    <string name="summary_note_llm_unavailable">AI bên ngoài không trả lời, nên tóm tắt này được lấy từ tin nhắn.</string>
+    <string name="summary_note_no_external_context">Không có tin nhắn nào trong phạm vi này được phép gửi cho AI bên ngoài.</string>
+    <string name="summary_note_context_omitted">Một số tin nhắn không được gửi cho AI vì người gửi đã tắt.</string>
     <string name="summary_scope_unread">Chưa đọc</string>
     <string name="summary_scope_last_n">N tin gần nhất</string>
     <string name="summary_scope_last_n_format">%1$d tin gần nhất</string>
