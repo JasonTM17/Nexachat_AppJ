@@ -224,7 +224,8 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
             Chip chip = filterChip(context);
             chip.setTag(choice);
             chip.setText(String.valueOf(choice));
-            chip.setContentDescription(getString(R.string.summary_scope_last_n_format, choice));
+            chip.setContentDescription(getResources().getQuantityString(
+                R.plurals.summary_scope_last_n_format, choice, choice));
             chip.setOnClickListener(v -> {
                 if (!(v.getTag() instanceof Integer count)) {
                     return;
@@ -470,9 +471,10 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
     @NonNull
     private String resultHeader(@NonNull SummaryResponse summary) {
         SummaryScope scope = summary.getScope() == null ? SummaryScope.UNREAD : summary.getScope();
+        int limitCount = summary.getLimit() == null ? selectedLimit : summary.getLimit();
         String scopeLabel = scope == SummaryScope.LAST_N
-                ? getString(R.string.summary_scope_last_n_format,
-                        summary.getLimit() == null ? selectedLimit : summary.getLimit())
+                ? getResources().getQuantityString(R.plurals.summary_scope_last_n_format,
+                        limitCount, limitCount)
                 : scopeLabel(scope);
         SummaryPeriod period = summary.getPeriod();
         String dateLabel = period == null

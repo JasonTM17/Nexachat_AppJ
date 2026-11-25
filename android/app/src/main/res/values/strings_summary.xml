@@ -10,7 +10,10 @@
     <string name="summary_badge_ai">AI</string>
     <string name="summary_scope_unread">Unread</string>
     <string name="summary_scope_last_n">Recent messages</string>
-    <string name="summary_scope_last_n_format">%1$d recent messages</string>
+    <plurals name="summary_scope_last_n_format">
+        <item quantity="one">%1$d recent message</item>
+        <item quantity="other">%1$d recent messages</item>
+    </plurals>
     <string name="summary_scope_today">Today</string>
     <string name="summary_section_overview">Overview</string>
     <string name="summary_section_key_points">Key points</string>

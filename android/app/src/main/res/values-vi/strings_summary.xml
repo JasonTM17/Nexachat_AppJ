@@ -9,7 +9,9 @@
     <string name="summary_badge_ai">AI</string>
     <string name="summary_scope_unread">Chưa đọc</string>
     <string name="summary_scope_last_n">Tin nhắn gần đây</string>
-    <string name="summary_scope_last_n_format">%1$d tin nhắn gần đây</string>
+    <plurals name="summary_scope_last_n_format">
+        <item quantity="other">%1$d tin nhắn gần đây</item>
+    </plurals>
     <string name="summary_scope_today">Hôm nay</string>
     <string name="summary_section_overview">Tổng quan</string>
     <string name="summary_section_key_points">Ý chính</string>
