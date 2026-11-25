@@ -36,10 +36,8 @@ import com.nexachat.summary.SummaryUiState;
 import com.nexachat.summary.SummaryViewModel;
 import dagger.hilt.android.AndroidEntryPoint;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import javax.inject.Inject;
 
 /**
@@ -48,12 +46,8 @@ import javax.inject.Inject;
 @AndroidEntryPoint
 public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
 
-    public interface OnCitationClickListener {
-        void onCitationClick(@NonNull String messageId);
-    }
-
     public interface Listener {
-        void onJumpToMessage(@NonNull String messageId);
+        void onJumpToMessage(@NonNull String messageId, @Nullable Long seq);
 
         void onShareIntoChat(@NonNull String shareText);
     }
@@ -71,14 +65,12 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
     private SummaryViewModel viewModel;
     @Nullable
     private Listener listener;
-    @Nullable
-    private OnCitationClickListener citationListener;
     private final Map<String, Long> messageSeqMap = new HashMap<>();
     private final Map<String, String> messageSenderMap = new HashMap<>();
     private final Map<String, Long> messageTimeMap = new HashMap<>();
-    private final Set<String> localMessageIds = new HashSet<>();
     private boolean preferAiMode;
     private boolean userOverrodeMode;
+    private boolean consentSavePending;
     private int selectedLimit = SummaryViewModel.DEFAULT_LAST_N;
 
     @NonNull
@@ -94,20 +86,13 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         listener = value;
     }
 
-    public void setOnCitationClickListener(@Nullable OnCitationClickListener value) {
-        citationListener = value;
-    }
-
     public void setCitationContext(
             @NonNull Map<String, Long> seqMap,
-            @NonNull Set<String> messageIds,
             @NonNull Map<String, String> senders,
             @NonNull Map<String, Long> times
     ) {
         messageSeqMap.clear();
         messageSeqMap.putAll(seqMap);
-        localMessageIds.clear();
-        localMessageIds.addAll(messageIds);
         messageSenderMap.clear();
         messageSenderMap.putAll(senders);
         messageTimeMap.clear();
@@ -145,6 +130,7 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
             updateModeSelection();
         });
         viewModel.state().observe(getViewLifecycleOwner(), this::render);
+        consentRepository.error().observe(getViewLifecycleOwner(), this::onConsentError);
         SummaryUiState restored = viewModel.state().getValue();
         if (restored != null && restored.getLimit() != null) {
             selectedLimit = restored.getLimit();
@@ -189,12 +175,10 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
             return;
         }
         messageSeqMap.clear();
-        localMessageIds.clear();
         messageSenderMap.clear();
         messageTimeMap.clear();
         for (int i = 0; i < ids.length; i++) {
             messageSeqMap.put(ids[i], seqs[i]);
-            localMessageIds.add(ids[i]);
             if (senders != null && senders.length == ids.length && senders[i] != null) {
                 messageSenderMap.put(ids[i], senders[i]);
             }
@@ -240,7 +224,8 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
             Chip chip = filterChip(context);
             chip.setTag(choice);
             chip.setText(String.valueOf(choice));
-            chip.setContentDescription(getString(R.string.summary_scope_last_n_format, choice));
+            chip.setContentDescription(getResources().getQuantityString(
+                R.plurals.summary_scope_last_n_format, choice, choice));
             chip.setOnClickListener(v -> {
                 if (!(v.getTag() instanceof Integer count)) {
                     return;
@@ -271,7 +256,13 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         binding.summaryModeAi.setOnClickListener(v -> selectMode(true));
         binding.summaryConsentConfirm.setOnClickListener(v -> {
             updateConsentCard(false);
-            consentRepository.setConsent(true, () -> viewModel.refresh());
+            consentSavePending = true;
+            consentRepository.setConsent(true, () -> {
+                consentSavePending = false;
+                if (viewModel != null) {
+                    viewModel.refresh();
+                }
+            });
         });
         binding.summaryConsentDismiss.setOnClickListener(v -> {
             preferAiMode = false;
@@ -293,12 +284,13 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
             viewModel.refresh();
         } else {
             updateConsentCard(false);
-            Boolean consent = consentRepository.aiSummaryConsent().getValue();
-            if (Boolean.TRUE.equals(consent)) {
-                consentRepository.setConsent(false, () -> viewModel.refresh());
-            } else {
-                viewModel.refresh();
-            }
+            // The Local chip is a per-sheet engine preference, never an account-wide
+            // consent revocation: writing consent false here silently flipped the
+            // account-level setting and dropped the whole summary cache. The server
+            // still derives the engine from account consent and window complexity
+            // (local-first routing), so with consent granted a complex window may
+            // remain AI-generated; the result header badge always names what ran.
+            viewModel.refresh();
         }
     }
 
@@ -314,6 +306,25 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         if (binding != null) {
             binding.summaryConsentCard.setVisibility(visible ? View.VISIBLE : View.GONE);
         }
+    }
+
+    /**
+     * Mirrors the ask sheet: a failed consent write rolls back to the last confirmed
+     * value, so the user must hear about it and get the consent card back to retry.
+     * Refresh errors also publish here, so the pending flag gates the snackbar to
+     * failures of a save this sheet actually started.
+     */
+    private void onConsentError(@Nullable SummaryError error) {
+        if (!consentSavePending || error == null) {
+            return;
+        }
+        consentSavePending = false;
+        if (binding == null) {
+            return;
+        }
+        updateConsentCard(true);
+        Snackbar.make(binding.getRoot(), R.string.settings_consent_update_failed,
+                Snackbar.LENGTH_LONG).show();
     }
 
     private void applyFooterInsets() {
@@ -442,10 +453,10 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
             SummarySheetContentBinder binder = new SummarySheetContentBinder(
                     requireContext(),
                     messageSeqMap,
-                    localMessageIds,
                     messageSenderMap,
                     messageTimeMap,
-                    messageId -> handleCitationClick(messageId)
+                    viewModel.actionItemChecks(),
+                    (messageId, seq) -> handleCitationClick(messageId, seq)
             );
             binder.bind(binding.summaryContent, state.getSummary());
         }
@@ -460,9 +471,10 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
     @NonNull
     private String resultHeader(@NonNull SummaryResponse summary) {
         SummaryScope scope = summary.getScope() == null ? SummaryScope.UNREAD : summary.getScope();
+        int limitCount = summary.getLimit() == null ? selectedLimit : summary.getLimit();
         String scopeLabel = scope == SummaryScope.LAST_N
-                ? getString(R.string.summary_scope_last_n_format,
-                        summary.getLimit() == null ? selectedLimit : summary.getLimit())
+                ? getResources().getQuantityString(R.plurals.summary_scope_last_n_format,
+                        limitCount, limitCount)
                 : scopeLabel(scope);
         SummaryPeriod period = summary.getPeriod();
         String dateLabel = period == null
@@ -478,12 +490,10 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         return SummaryHeaderText.format(scopeLabel, dateLabel, zone, processor);
     }
 
-    private void handleCitationClick(@NonNull String messageId) {
+    private void handleCitationClick(@NonNull String messageId, @Nullable Long seq) {
         dismissSheet();
-        if (citationListener != null) {
-            citationListener.onCitationClick(messageId);
-        } else if (listener != null) {
-            listener.onJumpToMessage(messageId);
+        if (listener != null) {
+            listener.onJumpToMessage(messageId, seq);
         }
     }
 
@@ -588,7 +598,7 @@ public final class SummaryBottomSheetFragment extends NexaBottomSheetFragment {
         args.putLongArray(ARG_MESSAGE_SEQS, seqs);
         args.putStringArray(ARG_MESSAGE_SENDERS, senderArray);
         args.putLongArray(ARG_MESSAGE_TIMES, timeArray);
-        setCitationContext(seqMap, new HashSet<>(seqMap.keySet()), senders, times);
+        setCitationContext(seqMap, senders, times);
     }
 
     /** Footer labels stack when intrinsic widths plus margins no longer fit the sheet. */

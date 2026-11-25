@@ -25,6 +25,7 @@ import com.nexachat.databinding.ItemAskTurnBinding;
 import com.nexachat.summary.AiConsentRepository;
 import com.nexachat.summary.SummaryError;
 import dagger.hilt.android.AndroidEntryPoint;
+import java.util.ArrayList;
 import java.util.List;
 import javax.inject.Inject;
 
@@ -49,6 +50,8 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
     private boolean consentSavePending;
     private boolean suggestionsBound;
     private int renderedTurnCount;
+    /** References of the turns currently inflated in the thread; compared by identity. */
+    private final List<AskTurn> renderedTurnRefs = new ArrayList<>();
 
     @NonNull
     public static AskBottomSheetFragment newInstance(@NonNull String conversationId) {
@@ -193,6 +196,13 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
     }
 
     private void renderTurns(@NonNull List<AskTurn> turns) {
+        // Draft-only emissions (every keystroke) reuse the same immutable turn instances,
+        // so an element-wise identity match means the inflated thread is already correct.
+        if (sameTurnElements(renderedTurnRefs, turns)) {
+            return;
+        }
+        renderedTurnRefs.clear();
+        renderedTurnRefs.addAll(turns);
         binding.askThread.removeAllViews();
         LayoutInflater inflater = LayoutInflater.from(requireContext());
         for (AskTurn turn : turns) {
@@ -229,6 +239,19 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
             }
             binding.askThread.addView(item.getRoot());
         }
+    }
+
+    private static boolean sameTurnElements(
+            @NonNull List<AskTurn> rendered, @NonNull List<AskTurn> next) {
+        if (rendered.size() != next.size()) {
+            return false;
+        }
+        for (int index = 0; index < rendered.size(); index++) {
+            if (rendered.get(index) != next.get(index)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Nullable
@@ -306,7 +329,7 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
         consentDialogShowing = true;
         consentDialog = new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.ask_consent_title)
-                .setMessage(R.string.dialog_ai_consent_message)
+                .setMessage(R.string.ask_consent_message)
                 .setNegativeButton(R.string.dialog_ai_consent_dismiss,
                         (dialog, which) -> {
                             consentDialogShowing = false;
@@ -403,6 +426,7 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
             consentDialog = null;
         }
         suggestionsBound = false;
+        renderedTurnRefs.clear();
         binding = null;
         super.onDestroyView();
     }

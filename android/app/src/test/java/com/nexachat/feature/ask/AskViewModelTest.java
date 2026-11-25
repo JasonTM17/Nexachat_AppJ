@@ -236,6 +236,90 @@ public final class AskViewModelTest {
     }
 
     @Test
+    public void closedThreadIsRestoredWhenTheSheetReopensForTheSameConversation() {
+        FakeAskApi api = new FakeAskApi();
+        SessionEvents sessions = new SessionEvents();
+        AskThreadStore store = new AskThreadStore(sessions);
+        AskViewModel first = new AskViewModel(conversationHandle(), new AskRepository(api),
+                store, Runnable::run, sessions);
+        first.updateDraft("When is the migration?");
+        first.submit();
+        api.lastCall().succeed(response("Friday.", "LLM"));
+        assertEquals(1, first.state().getValue().getTurns().size());
+
+        first.close();
+        assertTrue(first.state().getValue().getTurns().isEmpty());
+
+        AskViewModel reopened = new AskViewModel(conversationHandle(), new AskRepository(api),
+                store, Runnable::run, sessions);
+        assertEquals(1, reopened.state().getValue().getTurns().size());
+        assertEquals("When is the migration?",
+                reopened.state().getValue().getTurns().get(0).getQuestion());
+        assertEquals(AskUiState.Status.ANSWER, reopened.state().getValue().getStatus());
+    }
+
+    @Test
+    public void retainedThreadIsKeyedByConversation() {
+        FakeAskApi api = new FakeAskApi();
+        SessionEvents sessions = new SessionEvents();
+        AskThreadStore store = new AskThreadStore(sessions);
+        AskViewModel first = new AskViewModel(conversationHandle(), new AskRepository(api),
+                store, Runnable::run, sessions);
+        first.updateDraft("When is the migration?");
+        first.submit();
+        api.lastCall().succeed(response("Friday.", "LLM"));
+        first.close();
+
+        AskViewModel other = new AskViewModel(
+                new SavedStateHandle(Map.of(AskViewModel.ARG_CONVERSATION_ID, "conversation-2")),
+                new AskRepository(api), store, Runnable::run, sessions);
+        assertTrue(other.state().getValue().getTurns().isEmpty());
+        assertEquals(AskUiState.Status.IDLE, other.state().getValue().getStatus());
+    }
+
+    @Test
+    public void logoutWipesRetainedThreads() {
+        FakeAskApi api = new FakeAskApi();
+        SessionEvents sessions = new SessionEvents();
+        AskThreadStore store = new AskThreadStore(sessions);
+        AskViewModel first = new AskViewModel(conversationHandle(), new AskRepository(api),
+                store, Runnable::run, sessions);
+        first.updateDraft("Private question");
+        first.submit();
+        api.lastCall().succeed(response("Private answer", "LLM"));
+        first.close();
+
+        sessions.emitLoggedOut();
+
+        AskViewModel reopened = new AskViewModel(conversationHandle(), new AskRepository(api),
+                store, Runnable::run, sessions);
+        assertTrue(reopened.state().getValue().getTurns().isEmpty());
+        assertEquals("", reopened.state().getValue().getDraft());
+    }
+
+    @Test
+    public void closeDropsATrailingConsentTurnButKeepsTheQuestionAsDraft() {
+        FakeAskApi api = new FakeAskApi();
+        SessionEvents sessions = new SessionEvents();
+        AskThreadStore store = new AskThreadStore(sessions);
+        AskViewModel first = new AskViewModel(conversationHandle(), new AskRepository(api),
+                store, Runnable::run, sessions);
+        first.updateDraft("Question?");
+        first.submit();
+        api.lastCall().fail(403, "{\"error\":{\"code\":\"AI_SUMMARY_CONSENT_REQUIRED\"}}");
+        assertEquals(AskUiState.Status.CONSENT_REQUIRED, first.state().getValue().getStatus());
+
+        first.close();
+
+        AskViewModel reopened = new AskViewModel(conversationHandle(), new AskRepository(api),
+                store, Runnable::run, sessions);
+        assertTrue("a dangling consent turn would reopen a dialog that cannot retry",
+                reopened.state().getValue().getTurns().isEmpty());
+        assertEquals(AskUiState.Status.IDLE, reopened.state().getValue().getStatus());
+        assertEquals("Question?", reopened.state().getValue().getDraft());
+    }
+
+    @Test
     public void idleEmptySheetShowsSuggestions() {
         AskViewModel viewModel = createViewModel(new FakeAskApi(), new SessionEvents());
         assertTrue(viewModel.state().getValue().suggestionsVisible());
@@ -244,30 +328,45 @@ public final class AskViewModelTest {
     }
 
     @Test
-    public void queuedSuccessCannotReplaceTheThreadAfterCancelOrDraftEdit() {
-        for (boolean edit : new boolean[] {false, true}) {
-            FakeAskApi api = new FakeAskApi();
-            QueuedExecutor main = new QueuedExecutor();
-            AskViewModel viewModel = new AskViewModel(conversationHandle(), new AskRepository(api),
-                    main, new SessionEvents());
-            viewModel.submitSuggestion("First question?");
-            api.lastCall().succeed(response("First answer", "LLM"));
-            main.drain();
-            viewModel.submitSuggestion("Second question?");
-            api.lastCall().succeed(response("Obsolete answer", "LLM"));
-            if (edit) {
-                viewModel.updateDraft("Edited draft");
-            } else {
-                viewModel.cancel();
-            }
+    public void queuedSuccessCannotReplaceTheThreadAfterCancel() {
+        FakeAskApi api = new FakeAskApi();
+        QueuedExecutor main = new QueuedExecutor();
+        AskViewModel viewModel = new AskViewModel(conversationHandle(), new AskRepository(api),
+                new AskThreadStore(new SessionEvents()), main, new SessionEvents());
+        viewModel.submitSuggestion("First question?");
+        api.lastCall().succeed(response("First answer", "LLM"));
+        main.drain();
+        viewModel.submitSuggestion("Second question?");
+        api.lastCall().succeed(response("Obsolete answer", "LLM"));
+        viewModel.cancel();
 
-            main.drain();
+        main.drain();
 
-            assertEquals(1, viewModel.state().getValue().getTurns().size());
-            assertEquals("First answer", viewModel.state().getValue().getResponse().getAnswer());
-            assertEquals(edit ? "Edited draft" : "Second question?",
-                    viewModel.state().getValue().getDraft());
-        }
+        assertEquals(1, viewModel.state().getValue().getTurns().size());
+        assertEquals("First answer", viewModel.state().getValue().getResponse().getAnswer());
+        assertEquals("Second question?", viewModel.state().getValue().getDraft());
+    }
+
+    @Test
+    public void draftEditDuringLoadingKeepsTheInFlightAnswer() {
+        FakeAskApi api = new FakeAskApi();
+        QueuedExecutor main = new QueuedExecutor();
+        AskViewModel viewModel = new AskViewModel(conversationHandle(), new AskRepository(api),
+                new AskThreadStore(new SessionEvents()), main, new SessionEvents());
+        viewModel.submitSuggestion("First question?");
+        api.lastCall().succeed(response("First answer", "LLM"));
+        main.drain();
+        viewModel.submitSuggestion("Second question?");
+        api.lastCall().succeed(response("Second answer", "LLM"));
+        // Typing must not cancel the in-flight request: the answer is still appended.
+        viewModel.updateDraft("Edited draft");
+
+        main.drain();
+
+        assertEquals(2, viewModel.state().getValue().getTurns().size());
+        assertEquals("Second answer", viewModel.state().getValue().getResponse().getAnswer());
+        assertEquals("the edited draft survives because it no longer matches the question",
+                "Edited draft", viewModel.state().getValue().getDraft());
     }
 
     @Test
@@ -276,7 +375,7 @@ public final class AskViewModelTest {
             FakeAskApi api = new FakeAskApi();
             QueuedExecutor main = new QueuedExecutor();
             AskViewModel viewModel = new AskViewModel(conversationHandle(), new AskRepository(api),
-                    main, new SessionEvents());
+                    new AskThreadStore(new SessionEvents()), main, new SessionEvents());
             ViewModelStore store = new ViewModelStore();
             store.put("ask", viewModel);
             viewModel.submitSuggestion("Private question?");
@@ -301,7 +400,7 @@ public final class AskViewModelTest {
         QueuedExecutor main = new QueuedExecutor();
         SessionEvents sessions = new SessionEvents();
         AskViewModel viewModel = new AskViewModel(conversationHandle(), new AskRepository(api),
-                main, sessions);
+                new AskThreadStore(sessions), main, sessions);
         AtomicInteger answersShown = new AtomicInteger();
         viewModel.state().observeForever(value -> {
             if (value.getStatus() == AskUiState.Status.ANSWER) {
@@ -323,8 +422,8 @@ public final class AskViewModelTest {
         FakeAskApi api = new FakeAskApi();
         QueuedExecutor main = new QueuedExecutor();
         SavedStateHandle saved = conversationHandle();
-        AskViewModel viewModel = new AskViewModel(saved, new AskRepository(api), main,
-                new SessionEvents());
+        AskViewModel viewModel = new AskViewModel(saved, new AskRepository(api),
+                new AskThreadStore(new SessionEvents()), main, new SessionEvents());
         viewModel.submitSuggestion("First chat question?");
         api.lastCall().succeed(response("First chat answer", "LLM"));
         main.drain();
@@ -374,7 +473,8 @@ public final class AskViewModelTest {
     private static AskViewModel createViewModel(FakeAskApi api, SessionEvents sessionEvents) {
         SavedStateHandle savedStateHandle = new SavedStateHandle(
                 Map.of(AskViewModel.ARG_CONVERSATION_ID, "conversation-1"));
-        return new AskViewModel(savedStateHandle, new AskRepository(api), Runnable::run, sessionEvents);
+        return new AskViewModel(savedStateHandle, new AskRepository(api),
+                new AskThreadStore(sessionEvents), Runnable::run, sessionEvents);
     }
 
     private static AskResponse response(String answer, String mode) {
