@@ -254,6 +254,12 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
                 if (error == AskError.CONSENT_REQUIRED) {
                     yield getString(R.string.ask_consent_required);
                 }
+                if (error == AskError.NETWORK) {
+                    yield getString(R.string.ask_error_offline);
+                }
+                if (error == AskError.E2EE_UNAVAILABLE) {
+                    yield getString(R.string.ask_e2ee_unavailable);
+                }
                 yield getString(R.string.ask_error_generic);
             }
             case ANSWER -> null;
@@ -281,6 +287,12 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
         }
         if (error == AskError.CONSENT_REQUIRED) {
             return getString(R.string.ask_consent_required);
+        }
+        if (error == AskError.NETWORK) {
+            return getString(R.string.ask_error_offline);
+        }
+        if (error == AskError.E2EE_UNAVAILABLE) {
+            return getString(R.string.ask_e2ee_unavailable);
         }
         return getString(R.string.ask_error_generic);
     }
