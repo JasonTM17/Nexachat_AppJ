@@ -50,7 +50,20 @@ export default function LoginPage() {
       <div className="login-shell">
         <aside className="login-brand-panel" aria-label={t('app.name')}>
           <div className="login-brand-lockup">
-            <span className="login-brand-mark" aria-hidden="true">N</span>
+            <svg
+              className="login-brand-mark"
+              viewBox="0 0 32 32"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <rect width="32" height="32" rx="8" fill="#733F68" />
+              <g transform="translate(6.08 6.08) scale(0.184)">
+                <path
+                  fill="#FFFCFF"
+                  d="M24 20H36L64 60V20H80V84H66L40 47V72L24 84Z"
+                />
+              </g>
+            </svg>
             <span className="login-brand-name">{t('app.name')}</span>
           </div>
           <div className="login-brand-copy">
@@ -62,10 +75,7 @@ export default function LoginPage() {
         <main className="login-form-panel">
           <div className="login-form">
             <div className="login-form-header">
-              <div>
-                <h1>{t('login.title')}</h1>
-                <p>{t('login.hint')}</p>
-              </div>
+              <h1>{t('login.title')}</h1>
               <select
                 className="select lang-select"
                 aria-label={t('lang.label')}
@@ -76,47 +86,50 @@ export default function LoginPage() {
                 <option value="vi">VI</option>
               </select>
             </div>
-        <form onSubmit={submit} aria-busy={busy}>
-          {sessionExpired && (
-            <div className="form-error" role="status">
-              {t('login.notice.sessionExpired')}
-            </div>
-          )}
-          {error && (
-            <div className="form-error" role="alert">
-              {error}
-            </div>
-          )}
-          <div className="field">
-            <label htmlFor="identifier">{t('login.phone')}</label>
-            <input
-              id="identifier"
-              className="input"
-              type="text"
-              autoComplete="username"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              required
-              disabled={busy}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="password">{t('login.password')}</label>
-            <input
-              id="password"
-              className="input"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              disabled={busy}
-            />
-          </div>
-          <button className="btn primary login-submit" type="submit" disabled={busy}>
-            {busy ? t('common.loading') : t('login.submit')}
-          </button>
-        </form>
+            <p className="login-hint">{t('login.hint')}</p>
+            <form onSubmit={submit} aria-busy={busy}>
+              {sessionExpired && (
+                <div className="form-notice" role="status">
+                  {t('login.notice.sessionExpired')}
+                </div>
+              )}
+              {error && (
+                <div className="form-error" role="alert">
+                  {error}
+                </div>
+              )}
+              <div className="field">
+                <label htmlFor="identifier">{t('login.phone')}</label>
+                <input
+                  id="identifier"
+                  className="input"
+                  type="text"
+                  autoComplete="username"
+                  enterKeyHint="next"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
+                  required
+                  disabled={busy}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="password">{t('login.password')}</label>
+                <input
+                  id="password"
+                  className="input"
+                  type="password"
+                  autoComplete="current-password"
+                  enterKeyHint="go"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={busy}
+                />
+              </div>
+              <button className="btn primary login-submit" type="submit" disabled={busy}>
+                {busy ? t('common.loading') : t('login.submit')}
+              </button>
+            </form>
           </div>
         </main>
       </div>

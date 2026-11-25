@@ -25,6 +25,7 @@
   /* Input boundaries must clear the WCAG 1.4.11 3:1 non-text floor against
      the field surface: plum-300 on #ffffff = 3.52:1 (old --border was 1.43:1). */
   --input-border: #a97a9d;
+  --input-border-hover: #8d5a81;
   --primary: #733f68;
   --on-primary: #ffffff;
   --primary-hover: #643b59;
@@ -58,6 +59,7 @@
   --border: #4d3a4d;
   /* plum-300 on the dark surface #2a1f2b = 4.48:1 (old --border was 1.53:1). */
   --input-border: #a97a9d;
+  --input-border-hover: #d4b3cc;
   --primary: #e5aed9;
   --on-primary: #43203c;
   --primary-hover: #f0c4e6;
@@ -514,6 +516,7 @@ a.kpi-link:hover { border-color: var(--plum-300); }
   font-weight: 800;
   font-size: 20px;
   letter-spacing: -0.03em;
+  filter: drop-shadow(0 4px 10px rgba(42, 16, 36, 0.18));
 }
 
 .login-brand-name {
@@ -576,7 +579,7 @@ a.kpi-link:hover { border-color: var(--plum-300); }
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
-  margin-bottom: 28px;
+  margin-bottom: 8px;
 }
 
 .login-form-header h1 {
@@ -588,11 +591,11 @@ a.kpi-link:hover { border-color: var(--plum-300); }
   text-wrap: balance;
 }
 
-.login-form-header p {
-  margin: 8px 0 0;
+.login-hint {
+  margin: 0 0 24px;
   color: var(--text-2);
   font-size: 14px;
-  max-width: 30ch;
+  max-width: 36ch;
 }
 
 .lang-select {
@@ -614,7 +617,42 @@ a.kpi-link:hover { border-color: var(--plum-300); }
   min-height: 3rem;
   padding: 10px 14px;
   font-size: 15px;
-  background: var(--surface);
+  background: var(--surface-2);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.login-form .input:hover:not(:disabled):not(:focus) {
+  border-color: var(--input-border-hover);
+}
+
+.login-form .input:-webkit-autofill {
+  -webkit-box-shadow: inset 0 0 0 1000px var(--surface-2);
+  -webkit-text-fill-color: var(--text);
+}
+
+.login-form .input:-webkit-autofill:focus {
+  -webkit-box-shadow: inset 0 0 0 1000px var(--surface-2), var(--focus);
+}
+
+.login-form .form-error,
+.login-form .form-notice {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border-left: 3px solid transparent;
+  line-height: 1.45;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.login-form .form-error {
+  background: var(--danger-container);
+  border-left-color: var(--danger);
+}
+
+.login-form .form-notice {
+  background: var(--warn-container);
+  border-left-color: #c77f1f;
+  color: var(--warn-text);
 }
 
 .login-submit {
@@ -622,6 +660,37 @@ a.kpi-link:hover { border-color: var(--plum-300); }
   min-height: 3rem;
   margin-top: 4px;
   font-size: 14px;
+  letter-spacing: 0.01em;
+  background: linear-gradient(180deg, #7c4570 0%, #6a385f 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 1px 2px rgba(42, 16, 36, 0.25),
+    0 8px 20px rgba(115, 63, 104, 0.3);
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+.login-submit:hover:not(:disabled) {
+  background: linear-gradient(180deg, #854e78 0%, #6a385f 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 2px 3px rgba(42, 16, 36, 0.25),
+    0 10px 24px rgba(115, 63, 104, 0.36);
+}
+
+[data-theme='dark'] .login-submit {
+  background: linear-gradient(180deg, #eeb9e1 0%, #dda2d0 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 8px 20px rgba(229, 174, 217, 0.18);
+}
+
+[data-theme='dark'] .login-submit:hover:not(:disabled) {
+  background: linear-gradient(180deg, #f4c9e8 0%, #e0a8d4 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 2px 3px rgba(0, 0, 0, 0.4),
+    0 10px 24px rgba(229, 174, 217, 0.24);
 }
 
 .form-error { color: var(--danger); font-size: 13px; margin-bottom: 12px; }
