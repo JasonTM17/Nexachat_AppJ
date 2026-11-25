@@ -54,6 +54,8 @@ describe('Layout', () => {
     renderLayout('/overview');
     await screen.findByText('overview-page');
     await waitFor(() => expect(document.title).toBe('Overview · NexaChat Admin'));
+    expect(screen.getByText('Signups, activity, and the open alert queue.')).toBeTruthy();
+    expect(screen.getByText('Root')).toBeTruthy();
   });
 
   it('updates the document title when the route changes', async () => {

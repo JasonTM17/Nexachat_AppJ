@@ -4,6 +4,7 @@ import { useSession } from '../auth';
 import { useI18n } from '../i18n';
 import { ApiException } from '../api';
 import type { StringKey } from '../i18n';
+import { ThemeToggle } from '../components/ThemeToggle';
 
 export default function LoginPage() {
   const { t, lang, setLang } = useI18n();
@@ -50,17 +51,21 @@ export default function LoginPage() {
       <div className="card login-card">
         <div className="login-head">
           <h1>{t('app.name')}</h1>
-          <select
-            className="select"
-            aria-label={t('lang.label')}
-            value={lang}
-            onChange={(e) => setLang(e.target.value as 'en' | 'vi')}
-          >
-            <option value="en">EN</option>
-            <option value="vi">VI</option>
-          </select>
+          <div className="login-tools">
+            <select
+              className="select lang-select"
+              aria-label={t('lang.label')}
+              value={lang}
+              onChange={(e) => setLang(e.target.value as 'en' | 'vi')}
+            >
+              <option value="en">EN</option>
+              <option value="vi">VI</option>
+            </select>
+            <ThemeToggle />
+          </div>
         </div>
         <div className="sub">{t('login.title')}</div>
+        <p className="login-hint">{t('login.hint')}</p>
         <form onSubmit={submit} aria-busy={busy}>
           {sessionExpired && (
             <div className="form-error" role="status">
@@ -99,12 +104,7 @@ export default function LoginPage() {
               disabled={busy}
             />
           </div>
-          <button
-            className="btn primary"
-            type="submit"
-            disabled={busy}
-            style={{ width: '100%' }}
-          >
+          <button className="btn primary btn-block" type="submit" disabled={busy}>
             {busy ? t('common.loading') : t('login.submit')}
           </button>
         </form>
