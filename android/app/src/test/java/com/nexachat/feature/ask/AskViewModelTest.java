@@ -328,30 +328,45 @@ public final class AskViewModelTest {
     }
 
     @Test
-    public void queuedSuccessCannotReplaceTheThreadAfterCancelOrDraftEdit() {
-        for (boolean edit : new boolean[] {false, true}) {
-            FakeAskApi api = new FakeAskApi();
-            QueuedExecutor main = new QueuedExecutor();
-            AskViewModel viewModel = new AskViewModel(conversationHandle(), new AskRepository(api),
-                    new AskThreadStore(new SessionEvents()), main, new SessionEvents());
-            viewModel.submitSuggestion("First question?");
-            api.lastCall().succeed(response("First answer", "LLM"));
-            main.drain();
-            viewModel.submitSuggestion("Second question?");
-            api.lastCall().succeed(response("Obsolete answer", "LLM"));
-            if (edit) {
-                viewModel.updateDraft("Edited draft");
-            } else {
-                viewModel.cancel();
-            }
+    public void queuedSuccessCannotReplaceTheThreadAfterCancel() {
+        FakeAskApi api = new FakeAskApi();
+        QueuedExecutor main = new QueuedExecutor();
+        AskViewModel viewModel = new AskViewModel(conversationHandle(), new AskRepository(api),
+                new AskThreadStore(new SessionEvents()), main, new SessionEvents());
+        viewModel.submitSuggestion("First question?");
+        api.lastCall().succeed(response("First answer", "LLM"));
+        main.drain();
+        viewModel.submitSuggestion("Second question?");
+        api.lastCall().succeed(response("Obsolete answer", "LLM"));
+        viewModel.cancel();
 
-            main.drain();
+        main.drain();
 
-            assertEquals(1, viewModel.state().getValue().getTurns().size());
-            assertEquals("First answer", viewModel.state().getValue().getResponse().getAnswer());
-            assertEquals(edit ? "Edited draft" : "Second question?",
-                    viewModel.state().getValue().getDraft());
-        }
+        assertEquals(1, viewModel.state().getValue().getTurns().size());
+        assertEquals("First answer", viewModel.state().getValue().getResponse().getAnswer());
+        assertEquals("Second question?", viewModel.state().getValue().getDraft());
+    }
+
+    @Test
+    public void draftEditDuringLoadingKeepsTheInFlightAnswer() {
+        FakeAskApi api = new FakeAskApi();
+        QueuedExecutor main = new QueuedExecutor();
+        AskViewModel viewModel = new AskViewModel(conversationHandle(), new AskRepository(api),
+                new AskThreadStore(new SessionEvents()), main, new SessionEvents());
+        viewModel.submitSuggestion("First question?");
+        api.lastCall().succeed(response("First answer", "LLM"));
+        main.drain();
+        viewModel.submitSuggestion("Second question?");
+        api.lastCall().succeed(response("Second answer", "LLM"));
+        // Typing must not cancel the in-flight request: the answer is still appended.
+        viewModel.updateDraft("Edited draft");
+
+        main.drain();
+
+        assertEquals(2, viewModel.state().getValue().getTurns().size());
+        assertEquals("Second answer", viewModel.state().getValue().getResponse().getAnswer());
+        assertEquals("the edited draft survives because it no longer matches the question",
+                "Edited draft", viewModel.state().getValue().getDraft());
     }
 
     @Test

@@ -78,11 +78,10 @@ public final class AskViewModel extends ViewModel {
         }
         draft = next;
         pendingConsentQuestion = null;
-        AskUiState current = state.getValue();
-        if (current != null && current.getStatus() == AskUiState.Status.LOADING) {
-            requestGeneration++;
-            cancelActiveRequest();
-        }
+        // Typing must not cancel an in-flight answer: the input is disabled while
+        // loading, so this path never ran in production anyway, and a completed
+        // answer is appended without touching the draft (it is only cleared when
+        // the user left it unchanged).
         publishTurns(false);
     }
 
