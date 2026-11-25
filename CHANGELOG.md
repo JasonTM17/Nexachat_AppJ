@@ -6,6 +6,34 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.25] - 2026-11-25
+
+Android + server release focused on 1-to-1 voice/video calling. See
+[docs/release-notes/v1.2.25.md](docs/release-notes/v1.2.25.md).
+
+### Changed
+- Android: in-call controls are now circular icon-only buttons in the style of
+  WhatsApp/Google Meet/FaceTime — no more labels breaking on narrow screens;
+  accessibility descriptions unchanged.
+- Android: the reconnecting state renders a live "Reconnecting…" model with
+  full controls (EN/VI) instead of a false terminal "Ended" screen, and
+  back-press no longer finishes a live call.
+
+### Fixed
+- Server + Android: server call-error frames now carry call attribution
+  end-to-end — mid-call blocks end the media session instead of hanging it,
+  and rejected INVITEs no longer ring into phantom sessions.
+- Android: only the original offerer restarts ICE after a simultaneous
+  reconnect, removing the SDP glare that tore down healthy calls.
+- Android: a signaling drop during CONNECTING shares the reconnect grace
+  instead of killing the call; stranded media starts are re-driven on resume
+  and media that connected during the blip resumes straight into ACTIVE.
+- Android: answering video as voice-only stops the caller's capture and
+  preview, and re-enabling the camera on a dead video m-line no longer shows
+  a lying camera-on state.
+- Server: a startup reconciler closes call rows orphaned by a restart into
+  constraint-valid terminal states, filtered by boot time.
+
 ## [1.2.24] - 2026-11-25
 
 Server + Android + admin-web release. See

@@ -41,7 +41,7 @@ optional Firebase and AI-provider integrations, both off by default.
 
 **Calls**
 
-- 1-to-1 WebRTC voice calls, STOMP signaling, localized call log, FCM call invites
+- 1-to-1 WebRTC voice and video calls, STOMP signaling, localized call log, FCM call invites
 
 **Feed & streaks**
 

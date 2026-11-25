@@ -41,7 +41,7 @@ Firebase và nhà cung cấp AI tùy chọn, mặc định đều tắt.
 
 **Cuộc gọi**
 
-- Gọi thoại 1-1 bằng WebRTC, báo hiệu qua STOMP, nhật ký cuộc gọi đã bản địa hóa, mời gọi qua FCM
+- Gọi thoại và gọi video 1-1 bằng WebRTC, báo hiệu qua STOMP, nhật ký cuộc gọi đã bản địa hóa, mời gọi qua FCM
 
 **Bảng tin & chuỗi ngày**
 
