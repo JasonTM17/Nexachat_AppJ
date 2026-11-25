@@ -309,11 +309,15 @@ test.describe('feed moderation', () => {
     ]);
   });
 
-  test('unhide restores a hidden post without a dialog', async ({ page }) => {
+  test('unhide restores a hidden post after confirmation', async ({ page }) => {
     const mock = await mockAdmin(page);
     await page.goto('/feed');
 
     await row(page, HIDDEN_TEXT).getByRole('button', { name: 'Unhide' }).click();
+    await page
+      .getByRole('alertdialog', { name: 'Unhide' })
+      .getByRole('button', { name: 'Confirm' })
+      .click();
 
     const hidden = row(page, HIDDEN_TEXT);
     await expect(hidden.getByRole('cell', { name: 'Visible', exact: true })).toBeVisible();
@@ -392,7 +396,7 @@ test.describe('feed moderation', () => {
       .getByRole('alertdialog', { name: 'Mark reviewed' })
       .getByRole('button', { name: 'Confirm' })
       .click();
-    await expect(page.getByRole('alert')).toContainText('Something went wrong');
+    await expect(page.getByRole('alert').first()).toContainText('Server error 500');
     await expect(row(page, SPAM_TEXT)).toBeVisible();
   });
 
@@ -400,7 +404,7 @@ test.describe('feed moderation', () => {
     await mockAdmin(page, { reports: [] });
     await page.goto('/feed');
 
-    await expect(page.getByText('Nothing here')).toBeVisible();
+    await expect(page.getByText('No open reports')).toBeVisible();
     await expect(page.getByRole('table')).toHaveCount(0);
   });
 
