@@ -99,6 +99,24 @@ class RagLlmAnswerServiceFallbackTest {
     }
 
     @Test
+    void validPrimaryAbstentionDoesNotCountAsProviderFailure() throws Exception {
+        startServers();
+        primary.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 200,
+                FakeOpenAiServer.jsonResponse("{\"answer\":null,\"citations\":[]}")));
+
+        for (int index = 0; index < 5; index++) {
+            RagLlmAnswer answer = answer("What unrelated fact was never mentioned?");
+            assertThat(answer).isNull();
+        }
+
+        assertThat(circuitBreaker.allowRequest())
+                .as("a valid abstention is healthy provider behavior")
+                .isTrue();
+        assertThat(stats.snapshot().llmFailures()).isZero();
+        assertThat(primary.requestCount()).isEqualTo(5);
+    }
+
+    @Test
     void primaryAuthFailureDoesNotFallBackAndReturnsNull() throws Exception {
         startServers();
         primary.handle((exchange, body, authorization) -> FakeOpenAiServer.respond(exchange, 401, "bad key"));
