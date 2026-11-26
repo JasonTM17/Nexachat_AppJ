@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
+from xml.etree import ElementTree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -2875,6 +2876,7 @@ class SummaryAskExecutorTest(unittest.TestCase):
             self.ask_answered = False
             self.ask_errors = False   # failure variant: send surfaces NOT_FOUND text
             self.fact_visible = False
+            self.returned_to_latest = False
 
         def tree(self):
             N = SummaryAskExecutorTest.Node
@@ -2884,9 +2886,9 @@ class SummaryAskExecutorTest(unittest.TestCase):
             # Only the tail of the list is "rendered"; the seeded fact (index 0)
             # stays off-screen until a citation jump lands on it.
             live = self.store.live()
-            visible = live[-5:]
+            visible = live[:5] if self.fact_visible else live[-5:]
             if self.fact_visible:
-                visible = live[:1] + [m for m in visible if m not in live[:1]]
+                nodes.append(N(desc="Scroll to bottom", rid="scrollDownFab"))
             for msg in visible:
                 text = "This message was deleted" if msg["deletedAt"] else msg["content"]
                 nodes.append(N(text=text, rid="messageBody"))
@@ -2898,10 +2900,10 @@ class SummaryAskExecutorTest(unittest.TestCase):
             if self.summary_open:
                 nodes.append(N(rid="summarySheetRoot", box=(0, 60, 320, 640)))
                 nodes.append(N(text="Conversation summary", rid="summaryTitle"))
-                for scope in ("Unread", "Last N", "Today"):
+                for scope in ("Unread", "Recent messages", "Today"):
                     nodes.append(N(text=scope, rid="summaryScopeChip"))
                 if self.summary_scope == "LAST_N":
-                    nodes.append(N(text="Last 50 · Local", rid="summaryResultHeader"))
+                    nodes.append(N(text="50 recent messages · Local", rid="summaryResultHeader"))
                     nodes.append(N(text="Key points from the conversation",
                                    rid="summaryBulletText"))
                     nodes.append(N(text="↗ Binh · 9:00 AM", rid="citationChip"))
@@ -2925,7 +2927,7 @@ class SummaryAskExecutorTest(unittest.TestCase):
                     nodes.append(N(text=fact["content"],
                                    desc="Open message: " + fact["content"],
                                    rid="citationButton"))
-                    nodes.append(N(text="From a message", rid="askModeBadge"))
+                    nodes.append(N(text="Quoted from chat", rid="askModeBadge"))
             return nodes
 
     class Device:
@@ -2953,10 +2955,15 @@ class SummaryAskExecutorTest(unittest.TestCase):
                     w.ask_open = True
                 return
             if w.summary_open:
-                if node.text == "Last N":
+                if node.text == "Recent messages":
                     w.summary_scope = "LAST_N"
                 elif rid.endswith("/citationChip"):
-                    w.summary_open = False  # real jump lands on an unread row
+                    w.summary_open = False
+                    w.fact_visible = True
+                return
+            if rid.endswith("/scrollDownFab"):
+                w.fact_visible = False
+                w.returned_to_latest = True
                 return
             if w.ask_open:
                 if rid.endswith("/askQuestion"):
@@ -3066,6 +3073,7 @@ class SummaryAskExecutorTest(unittest.TestCase):
             if path.endswith("/summary"):
                 return R(200, {
                     "summaryId": "sum-1", "conversationId": self.direct_id,
+                    "scope": (body or {}).get("scope"), "limit": (body or {}).get("limit"),
                     "generatedBy": "LOCAL", "cached": False, "contextOmitted": False,
                     "messageCount": len(self.store.live()), "keyPoints": ["point"],
                     "decisions": [], "actionItems": [], "questions": [],
@@ -3127,6 +3135,20 @@ class SummaryAskExecutorTest(unittest.TestCase):
         }
         return store, world, client, context, session
 
+    def test_runner_labels_match_android_in_both_locales(self):
+        res = journeys.ROOT / "android" / "app" / "src" / "main" / "res"
+        for index, locale in enumerate(("values", "values-vi")):
+            with self.subTest(locale=locale):
+                summary = ElementTree.parse(res / locale / "strings_summary.xml")
+                ask = ElementTree.parse(res / locale / "strings.xml")
+                self.assertEqual(journeys._SUMMARY_SCOPE_LAST_N[index],
+                                 summary.findtext("./string[@name='summary_scope_last_n']"))
+                count = summary.findtext("./plurals[@name='summary_scope_last_n_format']/item[@quantity='other']")
+                self.assertEqual(journeys._SUMMARY_RECENT_HEADER[index],
+                                 count.replace("%1$d", str(journeys._SUMMARY_RECENT_LIMIT)))
+                self.assertEqual(journeys._ASK_MODE_BADGE[index],
+                                 ask.findtext("./string[@name='ask_from_message']"))
+
     def test_executor_drives_summary_ask_citation_jump_and_opt_out(self):
         store, world, client, context, session = self._fixture()
         with mock.patch.object(journeys, "_assert_device_account_an"), \
@@ -3134,10 +3156,13 @@ class SummaryAskExecutorTest(unittest.TestCase):
             result = journeys.run_summary_ask(journeys.ROW_BY_ID["summary-ask"], context)
 
         self.assertIn("LOCAL", result["summary"])
+        self.assertEqual((result["summary_rest"]["scope"], result["summary_rest"]["limit"]), ("LAST_N", 50))
         self.assertIn("EXTRACTIVE", result["ask_answer"])
         self.assertEqual(result["ask_rest_verify"],
                          "CACHE replay cites the seeded message id and seq")
         self.assertIn("cited messageBody", result["citation_jump"])
+        self.assertFalse(result["fact_visible_before_jump"])
+        self.assertTrue(world.returned_to_latest)
         # The whole flow ran: consent was enabled, the fact+fillers were seeded,
         # the opt-out round-trip asked three times (verify/omitted/restored).
         self.assertTrue(world.fact_visible)       # ask citation jump rendered the fact
