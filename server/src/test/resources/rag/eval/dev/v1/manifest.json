@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "split": "dev",
+  "seed": 26112601,
+  "conversations": [
+    {
+      "id": "lantern-workshop",
+      "messages": [
+        {"id": "lantern-venue", "speaker": "Mai", "text": "Địa điểm làm lồng đèn chuyển sang Nhà văn hóa An Bình. Mình đã sửa lại sau khi bên trường báo trùng lịch.", "edited": true},
+        {"id": "lantern-time", "speaker": "Cáo", "text": "Giờ tập trung làm lồng đèn là 14:30 thứ Bảy. Cáo mang giấy màu tới trước."},
+        {"id": "lantern-material", "speaker": "Thu", "text": "Vật liệu làm lồng đèn cần giấy kiếng vàng, keo sữa và khung tre. Đừng mua pin thêm."}
+      ]
+    },
+    {
+      "id": "flood-drill",
+      "fillerCount": 240,
+      "messages": [
+        {"id": "flood-map", "speaker": "Nam", "text": "Bản đồ sơ tán nằm trong thư mục Cẩm nang Sông Xanh. Lưu bản ngoại tuyến trước buổi diễn tập."},
+        {"id": "flood-assembly", "speaker": "Mơ", "text": "Điểm tập kết sơ tán là Cổng Mộc Lan, phía sau sân bóng."},
+        {"id": "flood-batteries", "speaker": "Nam", "text": "Pin dự phòng cho bộ đàm để trong tủ màu cam ở phòng trực."}
+      ]
+    },
+    {
+      "id": "museum-team",
+      "messages": [
+        {"id": "museum-label", "speaker": "Sal", "text": "The accession label for the museum sculpture is MN-47. Please use the revised label on the packing slip.", "edited": true},
+        {"id": "museum-courier", "speaker": "Kit", "text": "The museum courier pickup is at 09:15 on Thursday. I will be at the door."},
+        {"id": "museum-entry", "speaker": "Inez", "text": "Use the Alder loading entrance for the sculpture crates. The main entrance is too narrow."},
+        {"id": "museum-note", "speaker": "Tern", "text": "The volunteer locker combination is 7308. I am keeping it in this thread only.", "optedOut": true}
+      ]
+    },
+    {
+      "id": "museum-shop",
+      "messages": [
+        {"id": "shop-poster", "speaker": "Ellis", "text": "The sculpture poster stockroom is in the Cedar Annex, next to the shop."},
+        {"id": "shop-stickers", "speaker": "Addie", "text": "The museum shop sticker shipment is arriving by bicycle. I counted four boxes."},
+        {"id": "shop-shelf", "speaker": "Ellis", "text": "The museum shop catalogue inventory is on shelf F12."}
+      ]
+    }
+  ],
+  "questions": [
+    {"id": "dev-lantern-site", "conversation": "lantern-workshop", "language": "VI", "category": "EDITED", "text": "Địa điểm làm lồng đèn ở đâu?", "gold": ["lantern-venue"], "answerContains": "Nhà văn hóa An Bình"},
+    {"id": "dev-lantern-clock", "conversation": "lantern-workshop", "language": "VI", "category": "NICKNAME", "text": "Cáo nhắn giờ tập trung làm lồng đèn là mấy giờ?", "gold": ["lantern-time"], "answerContains": "14:30"},
+    {"id": "dev-lantern-supplies", "conversation": "lantern-workshop", "language": "VI", "category": "UNACCENTED", "text": "Vat lieu lam long den can gi?", "gold": ["lantern-material"], "answerContains": "giấy kiếng vàng"},
+    {"id": "dev-flood-map", "conversation": "flood-drill", "language": "VI", "category": "LONG_HISTORY", "text": "Bản đồ sơ tán nằm trong thư mục nào?", "gold": ["flood-map"], "answerContains": "Cẩm nang Sông Xanh"},
+    {"id": "dev-flood-assembly", "conversation": "flood-drill", "language": "VI", "category": "LONG_HISTORY", "text": "Điểm tập kết sơ tán ở đâu?", "gold": ["flood-assembly"], "answerContains": "Cổng Mộc Lan"},
+    {"id": "dev-flood-radio", "conversation": "flood-drill", "language": "VI", "category": "LOOKUP", "text": "Pin dự phòng cho bộ đàm để ở đâu?", "gold": ["flood-batteries"], "answerContains": "tủ màu cam"},
+    {"id": "dev-museum-label", "conversation": "museum-team", "language": "EN", "category": "EDITED", "text": "What is the accession label for the museum sculpture?", "gold": ["museum-label"], "answerContains": "MN-47"},
+    {"id": "dev-museum-courier", "conversation": "museum-team", "language": "EN", "category": "LOOKUP", "text": "When is the museum courier pickup?", "gold": ["museum-courier"], "answerContains": "09:15"},
+    {"id": "dev-museum-entry", "conversation": "museum-team", "language": "EN", "category": "LOOKUP", "text": "Which loading entrance should we use for the sculpture crates?", "gold": ["museum-entry"], "answerContains": "Alder"},
+    {"id": "dev-shop-poster", "conversation": "museum-shop", "language": "EN", "category": "LOOKUP", "text": "Where is the sculpture poster stockroom?", "gold": ["shop-poster"], "answerContains": "Cedar Annex"},
+    {"id": "dev-shop-shelf", "conversation": "museum-shop", "language": "EN", "category": "LOOKUP", "text": "Where is the museum shop catalogue inventory?", "gold": ["shop-shelf"], "answerContains": "F12"},
+    {"id": "dev-museum-foreign-fact", "conversation": "museum-team", "language": "EN", "category": "DISTRACTOR", "text": "Where is the poster stockroom?", "gold": []},
+    {"id": "dev-lantern-foreign-fact", "conversation": "lantern-workshop", "language": "VI", "category": "DISTRACTOR", "text": "Bản đồ sơ tán nằm ở đâu?", "gold": []},
+    {"id": "dev-lantern-vague", "conversation": "lantern-workshop", "language": "VI", "category": "AMBIGUOUS", "text": "Cái đó thì sao nhỉ?", "gold": []},
+    {"id": "dev-museum-vague", "conversation": "museum-team", "language": "EN", "category": "AMBIGUOUS", "text": "Can you tell me more about it?", "gold": []},
+    {"id": "dev-flood-missing", "conversation": "flood-drill", "language": "VI", "category": "UNSUPPORTED", "text": "Hợp đồng bảo hiểm xe buýt hết hạn ngày nào?", "gold": []},
+    {"id": "dev-museum-private", "conversation": "museum-team", "language": "EN", "category": "OPTED_OUT", "text": "What is the volunteer locker combination?", "gold": []}
+  ]
+}
