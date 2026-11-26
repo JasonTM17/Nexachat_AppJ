@@ -28,6 +28,9 @@ import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
+import android.view.accessibility.AccessibilityManager;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -41,6 +44,7 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
+import androidx.core.view.OneShotPreDrawListener;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.NavController;
@@ -67,6 +71,7 @@ import com.nexachat.data.ContactsRepository;
 import com.nexachat.data.ConversationSummary;
 import com.nexachat.data.DeliveryStatus;
 import com.nexachat.data.GroupMember;
+import com.nexachat.data.MessageJump;
 import com.nexachat.databinding.FragmentChatBinding;
 import com.nexachat.feature.chat.ui.MessageActionListener;
 import com.nexachat.feature.chat.voice.VoiceRecorder;
@@ -129,6 +134,9 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     private static final String PREFS_LOCATION_PERMISSION = "chat_location_permission";
     private static final String KEY_LOCATION_REQUESTED = "location_requested";
     private static final String ARG_CONVERSATION_ID = "conversationId";
+    private static final String ARG_ASK_OPENER_ID = "askOpenerId";
+    private static final String SAVED_CITATION_ID = "pendingCitationId";
+    private static final String SAVED_CITATION_SEQ = "pendingCitationSeq";
     private static final long STREAK_REFRESH_DELAY_MS = 1500L;
     private static final String ARG_ARCHIVE_JUMP_MESSAGE_ID = "archiveJumpMessageId";
     private static final int MENU_ASK = 1;
@@ -174,6 +182,8 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
     @Nullable private String lastProbedBlockPeerId;
     private String conversationId = "";
     private String pulsingMessageId;
+    @Nullable private ChatViewModel.CitationJumpResult pendingCitationFocus;
+    private final Runnable citationFocusDeadline = this::finishPendingCitationOrRetry;
     @Nullable private Snackbar jumpProgressSnackbar;
     private MentionDraft composerMentionDraft = MentionDraft.empty("");
     private MentionDraft.Query mentionQuery;
@@ -295,6 +305,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         // Fragment scope: the schedule sheet and the scheduled list sheet are
         // child fragments and share this store through requireParentFragment().
         scheduledViewModel = new ViewModelProvider(this).get(ScheduledMessagesViewModel.class);
+        binding.loadingState.setLabel(getString(R.string.chat_loading_messages));
         configureList();
         configureMentionPicker();
         configureToolbar();
@@ -323,6 +334,20 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         if (archiveJumpMessageId != null && !archiveJumpMessageId.isBlank()) {
             getArguments().remove(ARG_ARCHIVE_JUMP_MESSAGE_ID);
             viewModel.jumpToMessage(archiveJumpMessageId);
+        } else if (savedInstanceState != null) {
+            String citationId = savedInstanceState.getString(SAVED_CITATION_ID);
+            if (citationId != null) {
+                viewModel.jumpToCitation(citationId, savedInstanceState.getLong(SAVED_CITATION_SEQ));
+            }
+        }
+    }
+
+    @Override public void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (pendingCitationFocus != null) {
+            outState.putString(SAVED_CITATION_ID, pendingCitationFocus.messageId());
+            Long seq = pendingCitationFocus.seq();
+            if (seq != null) outState.putLong(SAVED_CITATION_SEQ, seq);
         }
     }
 
@@ -375,7 +400,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                 binding.chatToolbarActions);
         binding.callButton.setOnClickListener(v -> startVoiceCall());
         binding.videoCallButton.setOnClickListener(v -> startVideoCall());
-        binding.askButton.setOnClickListener(v -> showAsk());
+        binding.askButton.setOnClickListener(v -> showAsk(v.getId()));
         binding.moreButton.setOnClickListener(v -> showMoreOptions());
         binding.unblockPeerButton.setOnClickListener(v -> viewModel.unblockPeer());
         binding.closeChatSearch.setOnClickListener(v -> setSearchOpen(false));
@@ -1310,7 +1335,14 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         viewModel.getJumpTargets().observe(getViewLifecycleOwner(), raw -> {
             String id = raw == null ? null : raw.consume();
             if (id != null) {
+                cancelPendingCitationFocus();
                 jumpToLoadedMessage(id);
+            }
+        });
+        viewModel.getCitationJumps().observe(getViewLifecycleOwner(), raw -> {
+            ChatViewModel.CitationJumpResult jump = raw == null ? null : raw.consume();
+            if (jump != null) {
+                renderCitationJump(jump);
             }
         });
         viewModel.getJumpInFlight().observe(getViewLifecycleOwner(), inFlight -> {
@@ -1810,6 +1842,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
             } else {
                 updateUnreadDividerReached(layoutManager);
             }
+            scrollToPendingCitation();
         });
     }
 
@@ -1943,7 +1976,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
 
     private void clearSearchPresentation() {
         binding.chatError.setVisibility(View.GONE);
-        binding.loadingState.setLabel(null);
+        binding.loadingState.setLabel(getString(R.string.chat_loading_messages));
     }
 
     private void renderSearchResults() {
@@ -2035,8 +2068,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
                     }
                 });
                 binding.messageList.postDelayed(() -> {
-                    pulsingMessageId = null;
-                    if (binding != null && adapter != null) submitMessages(state.getMessages());
+                    clearMessagePulse(messageId);
                 }, 1200L);
                 return;
             }
@@ -2044,6 +2076,126 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         pulsingMessageId = messageId;
         submitMessages(state.getMessages());
         binding.messageList.post(() -> jumpToLoadedMessage(messageId, attempt + 1));
+    }
+
+    private void renderCitationJump(@NonNull ChatViewModel.CitationJumpResult jump) {
+        if (binding == null) return;
+        cancelPendingCitationFocus();
+        if (jump.result() != MessageJump.Found.INSTANCE) {
+            showCitationJumpFeedback(jump, jump.result() == MessageJump.NotFound.INSTANCE);
+            return;
+        }
+        ChatMessage knownSource = resolveOriginal(jump.messageId());
+        if (knownSource != null && knownSource.isDeleted()) {
+            showCitationJumpFeedback(jump, true);
+            return;
+        }
+        pendingCitationFocus = jump;
+        pulsingMessageId = jump.messageId();
+        binding.messageList.postDelayed(citationFocusDeadline, 2500L);
+        if (searchOpen) {
+            setSearchOpen(false);
+        } else {
+            submitMessages(state.getMessages());
+        }
+        scrollToPendingCitation();
+    }
+
+    private void scrollToPendingCitation() {
+        if (binding == null || adapter == null || pendingCitationFocus == null || searchOpen) return;
+        ChatViewModel.CitationJumpResult jump = pendingCitationFocus;
+        int position = citationPosition(jump.messageId());
+        if (position == RecyclerView.NO_POSITION || finishIfCitationWasRecalled(position, jump)) return;
+        RecyclerView list = binding.messageList;
+        if (!(list.getLayoutManager() instanceof LinearLayoutManager manager)) return;
+
+        list.stopScroll();
+        manager.scrollToPositionWithOffset(position, 0);
+        OneShotPreDrawListener.add(list, () -> focusAttachedCitation(list, jump));
+    }
+
+    private int citationPosition(String messageId) {
+        List<MessageListItem> items = adapter.getCurrentList();
+        for (int index = 0; index < items.size(); index++) {
+            ChatMessage message = items.get(index).getMessage();
+            if (message != null && messageId.equals(message.getId())) return index;
+        }
+        return RecyclerView.NO_POSITION;
+    }
+
+    private boolean focusAttachedCitation(@NonNull RecyclerView list,
+            @NonNull ChatViewModel.CitationJumpResult jump) {
+        if (binding == null || binding.messageList != list || adapter == null
+                || pendingCitationFocus != jump || searchOpen || !list.hasWindowFocus()) return false;
+        int position = citationPosition(jump.messageId());
+        if (position == RecyclerView.NO_POSITION) return false;
+        if (finishIfCitationWasRecalled(position, jump)) return true;
+        RecyclerView.ViewHolder holder = list.findViewHolderForAdapterPosition(position);
+        if (holder == null || !holder.itemView.isShown() || !focusChatView(holder.itemView)) return false;
+        clearPendingCitationFocus();
+        list.postDelayed(() -> {
+            if (binding != null && binding.messageList == list) clearMessagePulse(jump.messageId());
+        }, 1200L);
+        return true;
+    }
+
+    private boolean finishIfCitationWasRecalled(int position,
+            @NonNull ChatViewModel.CitationJumpResult jump) {
+        ChatMessage source = adapter.getCurrentList().get(position).getMessage();
+        ChatMessage latest = resolveOriginal(jump.messageId());
+        // Room retains the tombstone for timeline continuity, so paging can still report Found.
+        if ((source == null || !source.isDeleted()) && (latest == null || !latest.isDeleted())) return false;
+        cancelPendingCitationFocus();
+        showCitationJumpFeedback(jump, true);
+        return true;
+    }
+
+    private void clearPendingCitationFocus() {
+        if (binding != null) binding.messageList.removeCallbacks(citationFocusDeadline);
+        pendingCitationFocus = null;
+    }
+
+    private void cancelPendingCitationFocus() {
+        ChatViewModel.CitationJumpResult jump = pendingCitationFocus;
+        clearPendingCitationFocus();
+        if (jump != null) clearMessagePulse(jump.messageId());
+    }
+
+    private void finishPendingCitationOrRetry() {
+        ChatViewModel.CitationJumpResult jump = pendingCitationFocus;
+        if (binding != null && jump != null && !focusAttachedCitation(binding.messageList, jump)) {
+            clearPendingCitationFocus();
+            clearMessagePulse(jump.messageId());
+            if (!searchOpen) showCitationJumpFeedback(jump, false);
+        }
+    }
+
+    private void clearMessagePulse(String messageId) {
+        if (!messageId.equals(pulsingMessageId)) return;
+        pulsingMessageId = null;
+        if (binding != null && adapter != null && !searchOpen) submitMessages(state.getMessages());
+    }
+
+    private void showCitationJumpFeedback(@NonNull ChatViewModel.CitationJumpResult jump,
+            boolean unavailable) {
+        if (binding == null) return;
+        Snackbar feedback = anchoredSnackbar(binding.getRoot(),
+                unavailable ? R.string.ask_source_unavailable : R.string.ask_source_load_failed,
+                Snackbar.LENGTH_LONG);
+        if (!unavailable) {
+            feedback.setAction(R.string.action_retry,
+                    view -> viewModel.jumpToCitation(jump.messageId(), jump.seq()));
+        }
+        feedback.show();
+    }
+
+    private static boolean focusChatView(@NonNull View view) {
+        AccessibilityManager accessibility = view.getContext().getSystemService(AccessibilityManager.class);
+        if (accessibility != null && accessibility.isTouchExplorationEnabled()) {
+            return view.isAccessibilityFocused() || view.performAccessibilityAction(
+                    AccessibilityNodeInfo.AccessibilityAction.ACTION_ACCESSIBILITY_FOCUS.getId(), null);
+        }
+        return view.isInTouchMode() || view.requestFocus();
     }
 
     private void showMoreOptions() {
@@ -2122,7 +2274,7 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
 
     private void onChatMenuItemSelected(int action, ChatMenuPolicy.Flags flags) {
         if (action == MENU_ASK) {
-            showAsk();
+            showAsk(R.id.moreButton);
         } else if (action == MENU_SEARCH) {
             setSearchOpen(true);
         } else if (action == MENU_INFO) {
@@ -2651,20 +2803,52 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         }
     }
 
-    private void showAsk() {
+    private void showAsk(int openerId) {
         if (getChildFragmentManager().isStateSaved()
                 || getChildFragmentManager().findFragmentByTag("ask_sheet") != null) {
             return;
         }
         AskBottomSheetFragment sheet = AskBottomSheetFragment.newInstance(conversationId);
+        sheet.requireArguments().putInt(ARG_ASK_OPENER_ID, openerId);
         attachAskListener(sheet);
         sheet.show(getChildFragmentManager(), "ask_sheet");
     }
 
     private void attachAskListener(@NonNull AskBottomSheetFragment sheet) {
         sheet.setListener(target -> {
-            if (viewModel != null) {
-                viewModel.jumpToMessage(target.getMessageId(), target.getSeq());
+            if (binding == null || viewModel == null) return;
+            if (target != null) {
+                viewModel.jumpToCitation(target.getMessageId(), target.getSeq());
+                return;
+            }
+            int openerId = sheet.requireArguments().getInt(ARG_ASK_OPENER_ID, R.id.askButton);
+            View opener = binding.getRoot().findViewById(openerId);
+            restoreAskOpenerFocus(opener != null && opener.isShown() ? opener : binding.moreButton);
+        });
+    }
+
+    private void restoreAskOpenerFocus(@NonNull View opener) {
+        FragmentChatBinding dismissedFrom = binding;
+        opener.post(() -> {
+            if (binding != dismissedFrom || !opener.isShown()) return;
+            if (opener.hasWindowFocus()) {
+                focusChatView(opener);
+                return;
+            }
+            ViewTreeObserver observer = opener.getViewTreeObserver();
+            ViewTreeObserver.OnWindowFocusChangeListener listener =
+                    new ViewTreeObserver.OnWindowFocusChangeListener() {
+                        @Override public void onWindowFocusChanged(boolean hasFocus) {
+                            if (!hasFocus) return;
+                            if (observer.isAlive()) observer.removeOnWindowFocusChangeListener(this);
+                            if (binding == dismissedFrom && opener.isShown()) focusChatView(opener);
+                        }
+                    };
+            if (observer.isAlive()) {
+                observer.addOnWindowFocusChangeListener(listener);
+                opener.postDelayed(() -> {
+                    if (observer.isAlive()) observer.removeOnWindowFocusChangeListener(listener);
+                }, 2500L);
             }
         });
     }
@@ -2988,8 +3172,10 @@ public final class ChatFragment extends androidx.fragment.app.Fragment
         voiceStopWhenStarted = false;
         voiceSendWhenStarted = false;
         if (binding != null) {
+            clearPendingCitationFocus();
             binding.messageList.setAdapter(null);
         }
+        pulsingMessageId = null;
         adapter = null;
         binding = null;
         jumpProgressSnackbar = null;

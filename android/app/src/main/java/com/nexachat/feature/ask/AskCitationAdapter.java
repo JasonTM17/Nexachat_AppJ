@@ -56,10 +56,12 @@ public final class AskCitationAdapter
         AskCitation citation = getItem(position);
         String snippet = citation.getSnippet() == null ? "" : citation.getSnippet();
         AskCitationJump target = AskCitationJump.from(citation);
-        holder.binding.citationButton.setText(snippet);
+        String sourceNumber = Integer.toString(position + 1);
+        holder.binding.citationButton.setText(holder.itemView.getContext().getString(
+                R.string.ask_citation_label, sourceNumber, snippet));
         holder.binding.citationButton.setContentDescription(
-                holder.binding.getRoot().getContext().getString(
-                        R.string.ask_citation_accessibility, snippet));
+                holder.itemView.getContext().getString(
+                        R.string.ask_citation_accessibility, sourceNumber, snippet));
         holder.binding.citationButton.setEnabled(target != null);
         holder.binding.citationButton.setOnClickListener(view -> {
             if (target != null) {

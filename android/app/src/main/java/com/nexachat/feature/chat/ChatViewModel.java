@@ -49,6 +49,7 @@ import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.disposables.SerialDisposable;
+import io.reactivex.rxjava3.functions.Consumer;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import io.reactivex.rxjava3.subjects.PublishSubject;
 import io.reactivex.rxjava3.subjects.Subject;
@@ -150,6 +151,8 @@ public final class ChatViewModel extends ViewModel {
     @Nullable private ExecutorService voiceStartExecutor;
     private boolean voiceRetainedForConfigChange;
     private final ChatSingleLiveEvent<String> jumpTargets = new ChatSingleLiveEvent<>();
+    private final ChatSingleLiveEvent<CitationJumpResult> citationJumps = new ChatSingleLiveEvent<>();
+    private long messageJumpRequest;
     private final MutableLiveData<Boolean> jumpInFlight = new MutableLiveData<>(false);
     private final AtomicLong jumpInFlightCount = new AtomicLong();
     private final CompositeDisposable disposables = new CompositeDisposable();
@@ -523,6 +526,12 @@ public final class ChatViewModel extends ViewModel {
 
     public ChatSingleLiveEvent<String> getJumpTargets() {
         return jumpTargets;
+    }
+
+    record CitationJumpResult(@NonNull String messageId, @Nullable Long seq, @NonNull MessageJump result) {}
+
+    ChatSingleLiveEvent<CitationJumpResult> getCitationJumps() {
+        return citationJumps;
     }
 
     /** True while a jump target outside the loaded window is still being paged in. */
@@ -1515,6 +1524,28 @@ public final class ChatViewModel extends ViewModel {
      * {@link #getJumpInFlight()} reports them while they load.
      */
     public void jumpToMessage(String messageId, @Nullable Long targetSeq) {
+        loadMessageJump(messageId, targetSeq, jump -> {
+            if (jump == MessageJump.Found.INSTANCE) {
+                jumpTargets.emit(messageId);
+            } else if (jump == MessageJump.NotFound.INSTANCE) {
+                updateUiState(state -> state.withError(new ApiError.Unknown(ERROR_MESSAGE_GONE)));
+            } else if (jump instanceof MessageJump.Failed failed) {
+                updateUiState(state -> state.withError(failed.getError()));
+            }
+        }, this::surfaceStreamFailure);
+    }
+
+    /** Reports Ask source outcomes separately from timeline errors. */
+    void jumpToCitation(@NonNull String messageId, @Nullable Long targetSeq) {
+        Consumer<MessageJump> report = result ->
+                citationJumps.emit(new CitationJumpResult(messageId, targetSeq, result));
+        loadMessageJump(messageId, targetSeq, report,
+                failure -> report.accept(new MessageJump.Failed(toApiError(failure))));
+    }
+
+    private void loadMessageJump(String messageId, @Nullable Long targetSeq,
+            Consumer<MessageJump> onResult, Consumer<Throwable> onFailure) {
+        long request = ++messageJumpRequest;
         Single<MessageJump> loader = targetSeq != null && targetSeq > 0L
                 ? messageRepository.loadUntilLoaded(
                         conversationId, messageId, targetSeq, MessageRepository.MAX_JUMP_PAGES)
@@ -1533,15 +1564,13 @@ public final class ChatViewModel extends ViewModel {
                         jumpInFlight.setValue(false);
                     }
                 })
-                .subscribe(jump -> {
-                    if (jump == MessageJump.Found.INSTANCE) {
-                        jumpTargets.emit(messageId);
-                    } else if (jump == MessageJump.NotFound.INSTANCE) {
-                        updateUiState(state -> state.withError(new ApiError.Unknown(ERROR_MESSAGE_GONE)));
-                    } else if (jump instanceof MessageJump.Failed failed) {
-                        updateUiState(state -> state.withError(failed.getError()));
-                    }
-                }, this::surfaceStreamFailure));
+                .subscribe(
+                        result -> {
+                            if (request == messageJumpRequest) onResult.accept(result);
+                        },
+                        failure -> {
+                            if (request == messageJumpRequest) onFailure.accept(failure);
+                        }));
     }
 
     private boolean isMessageInWindow(String messageId) {

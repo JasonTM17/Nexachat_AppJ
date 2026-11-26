@@ -45,6 +45,8 @@
     <!-- Inbox -->
     <string name="inbox_title">Chats</string>
     <string name="inbox_empty">No conversations yet</string>
+    <string name="inbox_loading_conversations">Loading conversations…</string>
+    <string name="inbox_network_retry">Could not load conversations. Try again when you’re online.</string>
     <string name="inbox_empty_hint">Tap New chat to find someone on NexaChat.</string>
     <string name="inbox_empty_unread">No unread chats</string>
     <string name="inbox_empty_groups">No group chats</string>
@@ -169,6 +171,7 @@
     <!-- Chat placeholder -->
     <string name="chat_title">Chat</string>
     <string name="chat_empty">No messages yet</string>
+    <string name="chat_loading_messages">Loading messages…</string>
     <string name="chat_empty_hint">Say hello to start the conversation.</string>
     <string name="a11y_open_chat_actions">Message actions</string>
 
@@ -429,6 +432,10 @@
     <string name="ask_suggestion_when">When is this happening?</string>
     <string name="ask_suggestion_who">Who is involved?</string>
     <string name="ask_suggestion_next">What is the next step?</string>
+    <string name="ask_starter_decisions">Decisions</string>
+    <string name="ask_starter_timing">Timing</string>
+    <string name="ask_starter_people">People</string>
+    <string name="ask_starter_next_steps">Next step</string>
     <string name="ask_follow_up_hint">Ask a follow-up</string>
     <string name="ask_question_hint">Question</string>
     <string name="ask_send">Ask</string>
@@ -436,7 +443,7 @@
     <string name="ask_retry">Retry</string>
     <string name="ask_close_accessibility">Close ask this chat</string>
     <string name="ask_loading">Searching this chat…</string>
-    <string name="ask_not_found">Not enough context was found to answer.</string>
+    <string name="ask_not_found">No answer was found in this chat. Try a more specific question.</string>
     <string name="ask_error_generic">Could not get an answer. Try again.</string>
     <string name="ask_error_offline">No connection. Check your network and try again.</string>
     <string name="ask_e2ee_unavailable">Ask is unavailable in encrypted chats.</string>
@@ -453,7 +460,10 @@
     <string name="ask_question_counter">Question: %1$d/500</string>
     <string name="ask_from_message">Quoted from chat</string>
     <string name="ask_citations_label">Sources</string>
-    <string name="ask_citation_accessibility">Open message: %1$s</string>
+    <string name="ask_citation_label">Source %1$s · %2$s</string>
+    <string name="ask_citation_accessibility">Source %1$s. Open message: %2$s</string>
+    <string name="ask_source_unavailable">The source message is unavailable. Your Ask history is still here.</string>
+    <string name="ask_source_load_failed">Could not open the source message. Try again.</string>
     <string name="ask_context_omitted">Some messages in this chat were not included.</string>
     <string name="mention_all_picker">@all · Everyone</string>
     <string name="mention_person_picker">Mention %1$s</string>
