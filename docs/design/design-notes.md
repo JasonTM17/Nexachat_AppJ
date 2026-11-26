@@ -78,6 +78,7 @@ Animations stay restrained (roughly 150ms fades/slides) and respect the system a
 |---|---|---|
 | **Inbox** | `feature/inbox/InboxFragment.java` | Distinct People vs Account icons, relative times (`ChatUiRules.resolveRelativeTimeLabel`), unread pill badge, vector empty state illustration `ic_empty_chat`, `@dimen/max_content_width` tablet centering. |
 | **Chat** | `feature/chat/ChatFragment.java`, `ChatInteractionsViews.java` | Consecutive message grouping, asymmetric bubble shapes (`ChatUiRules` / `ChatBubbleRules`), localized date separators ("Hôm nay", "Hôm qua", "dd/MM"), pill-shaped input field, animated send affordance, scroll-to-bottom FAB. |
+| **Ask** | `feature/ask/AskBottomSheetFragment.java`, `AskCitationAdapter.java`, `res/layout/bottom_sheet_ask_chat.xml` | The sheet keeps the question and answer thread. The Chat timeline resolves the numbered source by message ID and moves focus once the row is laid out. |
 | **Contacts** | `feature/contacts/ContactsFragment.java` | Distinct deterministic avatars, clean user rows, add-by-phone bottom sheet, contact details sheet with alias editing. |
 | **Group Detail** | `feature/group/GroupDetailFragment.java` | Calm tonal Admin role chip (`colorSecondaryContainer`), neutral member remove icon, red destructive leave action, `@dimen/max_content_width` centered width. |
 | **Profile** | `feature/profile/ProfileFragment.java` | Grouped settings sections ("Account", "Session"), 80dp avatar with edit badge, `SettingsRowView` with leading icons and chevrons, destructive sign-out rows. Account card: recovery email plus a two-row sign-in methods card (Google email with link/unlink, phone row hidden when null); inline error for `LAST_SIGN_IN_METHOD` / wrong password only. |
@@ -85,6 +86,17 @@ Animations stay restrained (roughly 150ms fades/slides) and respect the system a
 | **Complete profile (Google signup)** | `feature/auth/CompleteProfileFragment.java`, `CompleteProfileViewModel.java`, `res/layout/fragment_complete_profile.xml` | One-time screen after `POST /auth/google` returns `201` / `newAccount:true`: `ic_logo_mark` hero, 96dp `AvatarView` initials, editable display name (1–60, patch only when changed), read-only verified email row with Google chip, filled Continue to inbox; back also lands in inbox. Login/Register place the outlined Google button above the `hoặc` divider; `GOOGLE_EMAIL_IN_USE` uses the two-line inline error container with `accessibilityLiveRegion="polite"`. |
 | **Search** | `feature/contacts/UserSearchFragment.java` | Search bar with pill shape, RxJava-debounced search results with deterministic avatars. |
 | **Language Settings** | `feature/profile/LanguageSettingsFragment.java` | Radio selection for System Default, Tiếng Việt, and English, instant locale updating via `LocaleManager`. |
+
+### File ownership for Inbox, Chat and Ask
+
+| Area | Current location | Placement for related changes |
+| --- | --- | --- |
+| Android UI and navigation | `android/app/src/main/java/com/nexachat/feature/{inbox,chat,ask}/` and `android/app/src/main/res/` | Keep Inbox rendering and recovery under `inbox`, the question thread under `ask`, and history, source navigation and focus under `chat`. Add Android strings in both `values` and `values-vi`. Put checks in the matching feature package under `src/test` or `src/androidTest`. |
+| Inbox read API | `server/src/main/java/com/nexachat/conversation/` | Keep the four read paths and their shared `InboxService.toEntries` mapping in `conversation`. Controller and service characterization belong under `server/src/test/java/com/nexachat/conversation/`. |
+| Ask and retrieval evaluation | `server/src/main/java/com/nexachat/rag/` | Keep evaluation code under `server/src/test/java/com/nexachat/rag/`. Put versioned fixtures in `server/src/test/resources/rag/eval/{dev,holdout}/`. |
+| Tools and evidence | `tools/checks/`, `tools/e2e/` and `tools/rag-eval/` | Keep reusable checks in their existing directories. Store run output, device captures, local configuration and task plans outside the application checkout. |
+
+The first pass adds tests and fixtures in their owning directories. Characterize behavior before moving an existing file. Move one file at a time, then run the owning feature's checks and the Markdown link check. [Accessibility checks](../quality/a11y-critical-screens.md) · [RAG evaluation](../../tools/rag-eval/README.md)
 
 ---
 
