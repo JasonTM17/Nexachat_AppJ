@@ -223,6 +223,10 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <systemPropertiesFile>${project.basedir}/src/test/resources/hermetic-test.properties</systemPropertiesFile>
+                    <excludes>
+                        <exclude>**/*$*</exclude>
+                        <exclude>**/RagHoldoutSliceEvaluationTest.java</exclude>
+                    </excludes>
                 </configuration>
             </plugin>
             <plugin>

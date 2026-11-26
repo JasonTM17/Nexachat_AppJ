@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "split": "holdout",
+  "seed": 26112602,
+  "conversations": [
+    {
+      "id": "seed-library",
+      "messages": [
+        {"id": "seed-handoff", "speaker": "Én", "text": "Điểm giao hạt giống dời sang Trạm Văn Hòa. Mình đã cập nhật địa chỉ trên giấy hẹn.", "edited": true},
+        {"id": "seed-storage", "speaker": "Én", "text": "Khay hạt giống cất trong Tủ Vân Sam; mấy túi chống ẩm cùng ngăn."},
+        {"id": "seed-forms", "speaker": "Đào", "text": "Mẫu đăng ký mượn hạt giống tên là Phiếu Mầm. Nhớ ghi số lượng lúc nhận."}
+      ]
+    },
+    {
+      "id": "rooftop-radio",
+      "fillerCount": 260,
+      "messages": [
+        {"id": "radio-permit", "speaker": "Reed", "text": "Our rooftop radio antenna permit is RFA-64. Use that permit number when asking for access."},
+        {"id": "radio-ignition", "speaker": "June", "text": "The rooftop radio battery test begins at 06:40 next Monday."},
+        {"id": "radio-cable", "speaker": "Ames", "text": "The rooftop antenna cable is an RG-58 coax. The blue spool is labelled with the size."},
+        {"id": "radio-note", "speaker": "Gale", "text": "The private volunteer pager code is GL-613. Keep that in this channel only.", "optedOut": true}
+      ]
+    },
+    {
+      "id": "theater-costumes",
+      "messages": [
+        {"id": "theater-return", "speaker": "Vy", "text": "Hạn trả áo choàng sân khấu là tối Chủ nhật. Mình đã sửa lịch mượn trên bảng nhóm.", "edited": true},
+        {"id": "theater-locker", "speaker": "Sa", "text": "Áo choàng sân khấu cất trong tủ Màu Chàm ở sau phông."},
+        {"id": "theater-shoes", "speaker": "Vy", "text": "Giày múa để trong giỏ mây dưới bục. Lấy đúng đôi có dây xanh."}
+      ]
+    },
+    {
+      "id": "rooftop-garden",
+      "messages": [
+        {"id": "garden-antenna", "speaker": "Bo", "text": "The irrigation sensor antenna bracket uses an M5 bolt. The spare is clipped on the red tray."},
+        {"id": "garden-timer", "speaker": "Elle", "text": "The rooftop irrigation timer audit is at 07:25 next Tuesday."},
+        {"id": "garden-hose", "speaker": "Bo", "text": "The greenhouse hose coupler size is a half inch. Bring a washer with the replacement."}
+      ]
+    }
+  ],
+  "questions": [
+    {"id": "hold-seed-handoff", "conversation": "seed-library", "language": "VI", "category": "EDITED", "text": "Điểm giao hạt giống chuyển đi đâu?", "gold": ["seed-handoff"], "answerContains": "Trạm Văn Hòa"},
+    {"id": "hold-seed-storage", "conversation": "seed-library", "language": "VI", "category": "NICKNAME", "text": "Én dặn cất khay hạt giống ở đâu?", "gold": ["seed-storage"], "answerContains": "Tủ Vân Sam"},
+    {"id": "hold-seed-forms", "conversation": "seed-library", "language": "VI", "category": "UNACCENTED", "text": "Mau dang ky muon hat giong ten gi?", "gold": ["seed-forms"], "answerContains": "Phiếu Mầm"},
+    {"id": "hold-radio-permit", "conversation": "rooftop-radio", "language": "EN", "category": "LONG_HISTORY", "text": "What is the rooftop radio antenna permit number?", "gold": ["radio-permit"], "answerContains": "RFA-64"},
+    {"id": "hold-radio-test", "conversation": "rooftop-radio", "language": "EN", "category": "LONG_HISTORY", "text": "When does the rooftop radio battery test begin?", "gold": ["radio-ignition"], "answerContains": "06:40"},
+    {"id": "hold-radio-cable", "conversation": "rooftop-radio", "language": "EN", "category": "LOOKUP", "text": "Which cable does the rooftop antenna use?", "gold": ["radio-cable"], "answerContains": "RG-58"},
+    {"id": "hold-theater-return", "conversation": "theater-costumes", "language": "VI", "category": "EDITED", "text": "Hạn trả áo choàng sân khấu là khi nào?", "gold": ["theater-return"], "answerContains": "Chủ nhật"},
+    {"id": "hold-theater-locker", "conversation": "theater-costumes", "language": "VI", "category": "LOOKUP", "text": "Áo choàng sân khấu cất trong tủ nào?", "gold": ["theater-locker"], "answerContains": "Màu Chàm"},
+    {"id": "hold-garden-bolt", "conversation": "rooftop-garden", "language": "EN", "category": "LOOKUP", "text": "Which bolt fits the irrigation sensor antenna bracket?", "gold": ["garden-antenna"], "answerContains": "M5"},
+    {"id": "hold-garden-hose", "conversation": "rooftop-garden", "language": "EN", "category": "LOOKUP", "text": "What is the greenhouse hose coupler size?", "gold": ["garden-hose"], "answerContains": "half inch"},
+    {"id": "hold-radio-foreign-fact", "conversation": "rooftop-radio", "language": "EN", "category": "DISTRACTOR", "text": "When is the irrigation timer audit?", "gold": []},
+    {"id": "hold-seed-foreign-fact", "conversation": "seed-library", "language": "VI", "category": "DISTRACTOR", "text": "Hạn trả áo choàng sân khấu là ngày nào?", "gold": []},
+    {"id": "hold-theater-vague", "conversation": "theater-costumes", "language": "VI", "category": "AMBIGUOUS", "text": "Cái gì ấy bạn?", "gold": []},
+    {"id": "hold-garden-missing", "conversation": "rooftop-garden", "language": "EN", "category": "UNSUPPORTED", "text": "Which ferry pier sells overnight passes?", "gold": []},
+    {"id": "hold-radio-private", "conversation": "rooftop-radio", "language": "EN", "category": "OPTED_OUT", "text": "What is the private volunteer pager code?", "gold": []}
+  ]
+}
