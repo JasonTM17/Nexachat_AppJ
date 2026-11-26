@@ -1,6 +1,8 @@
 package com.nexachat.conversation;
 
 import com.nexachat.common.dto.JwtPrincipal;
+import com.nexachat.common.error.ApiErrorCode;
+import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.dto.InboxEntry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,8 +15,10 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -88,6 +92,45 @@ class ConversationInboxControllerTest {
                 new JwtPrincipal(userId), 20, null, false);
 
         assertThat(response.getBody()).isSameAs(body);
+        assertThat(response.getHeaders().getFirst("X-Next-Cursor")).isNull();
         verify(inboxService).listInbox(userId, 20, null, false);
+    }
+
+    @Test
+    void labelWithoutPaginationKeepsListShapeAndArchiveFilter() {
+        UUID label = UUID.randomUUID();
+        List<InboxEntry> body = entries();
+        when(inboxService.listInbox(userId, true, label)).thenReturn(body);
+
+        ResponseEntity<List<InboxEntry>> response = controller.inbox(
+                new JwtPrincipal(userId), null, null, true, label);
+
+        assertThat(response.getBody()).isSameAs(body);
+        assertThat(response.getHeaders()).doesNotContainKey("X-Next-Cursor");
+        verify(inboxService).listInbox(userId, true, label);
+    }
+
+    @Test
+    void labelWithCursorOnlyStaysOnLabeledPagedPath() {
+        UUID label = UUID.randomUUID();
+        List<InboxEntry> body = entries();
+        when(inboxService.listInbox(userId, null, "next-in", true, label))
+                .thenReturn(new InboxService.InboxPage(body, "next-out"));
+
+        ResponseEntity<List<InboxEntry>> response = controller.inbox(
+                new JwtPrincipal(userId), null, "next-in", true, label);
+
+        assertThat(response.getBody()).isSameAs(body);
+        assertThat(response.getHeaders().getFirst("X-Next-Cursor")).isEqualTo("next-out");
+        verify(inboxService).listInbox(userId, null, "next-in", true, label);
+    }
+
+    @Test
+    void callerIsRequiredBeforeDispatchingInboxRead() {
+        ApiException failure = catchThrowableOfType(() ->
+                controller.inbox(null, 5, "cursor", true, UUID.randomUUID()), ApiException.class);
+
+        assertThat(failure.getCode()).isEqualTo(ApiErrorCode.UNAUTHORIZED);
+        verifyNoInteractions(inboxService);
     }
 }

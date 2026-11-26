@@ -1,5 +1,7 @@
 package com.nexachat.conversation;
 
+import com.nexachat.common.error.ApiErrorCode;
+import com.nexachat.common.error.ApiException;
 import com.nexachat.conversation.dto.InboxConversationRow;
 import com.nexachat.conversation.dto.InboxEntry;
 import com.nexachat.conversation.dto.InboxMemberView;
@@ -22,9 +24,11 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -376,5 +380,69 @@ class InboxServiceTest {
 
         verify(memberRepository).findInboxConversations(userId, false);
         verify(memberRepository).countUnreadByConversation(userId, List.of(conversationId));
+    }
+
+    @Test
+    void labeledLegacyListProjectsOnlyOwnedArchivedBatchInReturnedOrder() {
+        UUID label = UUID.randomUUID();
+        UUID older = UUID.randomUUID();
+        List<UUID> ordered = List.of(conversationId, older);
+        when(memberRepository.findInboxConversationsByLabel(userId, true, label))
+                .thenReturn(List.of(
+                        row(conversationId, 40L, false, null, true),
+                        row(older, 39L, false, null, true)));
+        when(memberRepository.countUnreadByConversation(userId, ordered))
+                .thenReturn(List.of(new UnreadCountRow(older, 3L)));
+
+        List<InboxEntry> entries = inboxService.listInbox(userId, true, label);
+
+        assertThat(entries).extracting(InboxEntry::id).containsExactlyElementsOf(ordered);
+        assertThat(entries).extracting(InboxEntry::archived).containsExactly(true, true);
+        assertThat(entries).extracting(InboxEntry::unreadCount).containsExactly(0L, 3L);
+        verify(memberRepository).findInboxMemberViews(ordered);
+        verify(memberRepository).countUnreadByConversation(userId, ordered);
+        verify(presenceService).peerPresence(userId, ordered);
+        verifyNoInteractions(messageRepository);
+    }
+
+    @Test
+    void labeledPageKeepsFilterAndCursorAndProjectsOnlyPageRows() {
+        UUID label = UUID.randomUUID();
+        UUID secondId = UUID.randomUUID();
+        Instant created = Instant.parse("2026-01-02T03:04:05Z");
+        PageRequest querySize = PageRequest.of(0, 2);
+        when(memberRepository.findInboxConversationsPageByLabel(
+                userId, null, null, null, null, true, label, querySize))
+                .thenReturn(List.of(row(conversationId, 42L, false, null, true),
+                        row(secondId, 42L, false, null, true)));
+        when(memberRepository.findInboxConversationsPageByLabel(
+                userId, false, 42L, created, conversationId, true, label, querySize))
+                .thenReturn(List.of(row(secondId, 42L, false, null, true)));
+
+        InboxService.InboxPage first = inboxService.listInbox(userId, 1, null, true, label);
+        String encodedCursor = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
+                ("v2|0|42|" + created + "|" + conversationId)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThat(first.nextCursor()).isEqualTo(encodedCursor);
+        assertThat(first.items()).extracting(InboxEntry::id).containsExactly(conversationId);
+
+        InboxService.InboxPage second = inboxService.listInbox(
+                userId, 1, first.nextCursor(), true, label);
+        assertThat(second.items()).extracting(InboxEntry::id).containsExactly(secondId);
+        assertThat(second.nextCursor()).isNull();
+        verify(memberRepository).findInboxMemberViews(List.of(conversationId));
+        verify(memberRepository).findInboxMemberViews(List.of(secondId));
+        verify(memberRepository).countUnreadByConversation(userId, List.of(conversationId));
+        verify(memberRepository).countUnreadByConversation(userId, List.of(secondId));
+    }
+
+    @Test
+    void invalidCursorFailsBeforeLookingUpAConversation() {
+        ApiException failure = catchThrowableOfType(() ->
+                inboxService.listInbox(userId, 10, "invalid cursor", true, UUID.randomUUID()),
+                ApiException.class);
+
+        assertThat(failure.getCode()).isEqualTo(ApiErrorCode.VALIDATION_FAILED);
+        verifyNoInteractions(memberRepository, messageRepository, presenceService);
     }
 }
