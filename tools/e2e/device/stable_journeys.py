@@ -468,15 +468,15 @@ ROWS: tuple[JourneyRow, ...] = (
                        "An is signed in on the device; aiSummaryConsent is fixture-enabled and restored",
                        "The local extractive engines are enabled (no LLM provider keys required)"),
         steps=("Seed a unique lookup fact plus fillers as Binh and mark the conversation read as An",
-               "Open the summary sheet from the chat overflow, switch to Last N and read the LOCAL summary",
-               "Tap a summary citation chip, then drive Ask this chat: type the fact question, read the "
-               "extractive answer, tap the Sources chip and land on the cited message",
+               "Open the summary sheet from the chat overflow, select Recent messages and read the LOCAL summary",
+               "Tap a summary citation chip, return to the latest messages, then use Ask this chat to "
+               "answer the fact question and open its cited message",
                "Verify the ask through peer REST cache replay and exercise the ai-opt-out exclusion "
                "round-trip as Binh"),
         assertions=("The summary sheet renders LOCAL engine sections and a jumpable citation chip; the "
                     "chip tap dismisses the sheet through the real jump listener",
                     "Ask this chat answers EXTRACTIVE quoting the seeded fact with a Sources chip",
-                    "The citation tap dismisses the sheet and renders the cited messageBody",
+                    "The citation tap dismisses the sheet and brings the previously off-screen message into view",
                     "Peer REST replays the same question as CACHE citing the seeded message id",
                     "Binh ai-opt-out drops the fact citation (contextOmitted) and opt back in restores it"),
         captures=("summary-ask-*.png", "ui-tree.txt", "logcat.txt",
@@ -685,10 +685,12 @@ HELPER_CALLS = {
         {"helper": "adb_ui.Device.tap_node", "target": "resource-id moreButton"},
         {"helper": "adb_ui.Device.tap_node", "target": "text Summarize conversation",
          "opens": "resource-id summarySheetRoot"},
-        {"helper": "adb_ui.Device.tap_node", "target": "summary scope chip Last N",
-         "assert": "resource-id summaryResultHeader/summaryBulletText render the LOCAL summary"},
+        {"helper": "adb_ui.Device.tap_node", "target": "summary scope chip Recent messages or Tin nhắn gần đây",
+         "assert": "summaryResultHeader/summaryBulletText render the LOCAL summary for the recent 50 messages"},
         {"helper": "adb_ui.Device.tap_node", "target": "resource-id citationChip (↗ …)",
          "assert": "summary sheet dismisses through the citation jump listener"},
+        {"helper": "adb_ui.Device.tap_node", "target": "resource-id scrollDownFab when away from latest",
+         "assert": "latest message is visible; Ask's seeded source is off-screen"},
         {"helper": "adb_ui.Device.tap_node", "target": "text Ask this chat",
          "opens": "resource-id askSheetRoot"},
         {"helper": "adb_ui.Device.type_text", "target": "resource-id askQuestion",
@@ -2168,16 +2170,19 @@ def run_chat_interactions(row: JourneyRow, context: dict[str, Any]) -> dict[str,
 # --- summary-ask ---------------------------------------------------------------
 # Conversation summary sheet + Ask this chat on the seeded An↔Binh direct.
 # The summary's scope chips are rendered client-side; the deterministic path is
-# "Last N" (UNREAD depends on the peer-read watermark). Ask uses a lookup-style
+# LAST_N, displayed as "Recent messages" (UNREAD depends on the read watermark). Ask uses a lookup-style
 # question against a seeded unique fact, so the local extractive engine answers
 # deterministically and cites the fact message itself.
 _SUMMARY_MENU_ITEM = ("Summarize conversation", "Tóm tắt trò chuyện")
-_SUMMARY_SCOPE_LAST_N = ("Last N", "N tin gần nhất")
+_SUMMARY_SCOPE_LAST_N = ("Recent messages", "Tin nhắn gần đây")
+_SUMMARY_RECENT_LIMIT = 50
+_SUMMARY_RECENT_HEADER = (f"{_SUMMARY_RECENT_LIMIT} recent messages",
+                          f"{_SUMMARY_RECENT_LIMIT} tin nhắn gần đây")
 _SUMMARY_LOCAL_BADGE = ("Local", "Cục bộ")
 _SUMMARY_CHIP_PREFIX = "↗"  # summary_citation_chip "↗ <label>" is the jumpable form
 _SUMMARY_CHIP_UNAVAILABLE = ("Unavailable", "Không khả dụng")
 _ASK_MENU_ITEM = ("Ask this chat", "Hỏi trong trò chuyện")
-_ASK_MODE_BADGE = ("From a message", "Từ tin nhắn")
+_ASK_MODE_BADGE = ("Quoted from chat", "Trích từ trò chuyện")
 _ASK_CONSENT_TITLE = ("Use AI to answer?", "Bật AI để trả lời?")
 _ASK_CONSENT_CONFIRM = ("Agree", "Đồng ý")
 _ASK_FILLER_COUNT = 14  # pushes the fact bubble off the initial viewport
@@ -2275,7 +2280,7 @@ def _ask_cited_ids(payload: dict[str, Any]) -> list[str]:
 
 
 def _wait_summary_ready(context: dict[str, Any]) -> Any:
-    """Wait for the summary sheet's READY body; report the last visible error.
+    """Wait for the recent-messages READY body; report the last visible error.
 
     Bullet rows render inside `summarySheetScroll`; uiautomator prunes the
     rows sitting below the sheet's inner viewport, so a valid summary with
@@ -2292,7 +2297,8 @@ def _wait_summary_ready(context: dict[str, Any]) -> Any:
                    if _rid_ends(node, "summaryBulletText") and _node_visible(node)]
         header = next((node for node in nodes
                        if _rid_ends(node, "summaryResultHeader")
-                       and node.text.strip() and _node_visible(node)), None)
+                       and node.text.strip().startswith(_SUMMARY_RECENT_HEADER)
+                       and _node_visible(node)), None)
         # Scrolling to expose bullets expands the sheet and slides the header
         # above the viewport — header and bullets are never co-visible on a
         # filled sheet. Latch the header at first sight (the collapsed sheet
@@ -2307,7 +2313,7 @@ def _wait_summary_ready(context: dict[str, Any]) -> Any:
         last_error = error.text.strip() if error is not None else last_error
         if time.monotonic() >= deadline:
             detail = f" (error card: {last_error!r})" if last_error else ""
-            raise ProductFailure(f"the LOCAL summary did not render its content{detail}")
+            raise ProductFailure(f"the recent-messages summary did not render its header and content{detail}")
         scroll = next((node for node in nodes
                        if _rid_ends(node, "summarySheetScroll")), None)
         if scroll is not None:
@@ -2476,8 +2482,9 @@ def run_summary_ask(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
         )
         last_n = _wait_ui_node(
             context,
-            lambda node: node.text.strip() in _SUMMARY_SCOPE_LAST_N and node.clickable,
-            "the summary scope chips did not offer Last N",
+            lambda node: node.text.strip() in _SUMMARY_SCOPE_LAST_N
+            and node.clickable and _node_visible(node),
+            "the summary scope chips did not offer Recent messages (LAST_N)",
         )
         ui.tap_node(last_n)
         header = _wait_summary_ready(context)
@@ -2503,11 +2510,13 @@ def run_summary_ask(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
         summary_verify = _call_minute_retry(lambda: recorder.post(
             f"/api/v1/conversations/{conversation_id}/summary",
             token=an["accessToken"],
-            body={"scope": "LAST_N", "limit": 50, "refresh": False},
+            body={"scope": "LAST_N", "limit": _SUMMARY_RECENT_LIMIT, "refresh": False},
         ))
         if summary_verify.status != 200:
             raise ProductFailure(f"peer REST summary returned HTTP {summary_verify.status}")
         summary_body = dict(summary_verify.json() or {})
+        if summary_body.get("scope") != "LAST_N" or summary_body.get("limit") != _SUMMARY_RECENT_LIMIT:
+            raise ProductFailure("peer REST summary did not return the requested LAST_N window")
         if summary_body.get("generatedBy") != "LOCAL":
             raise ProductFailure(
                 f"peer REST summary was not produced by the LOCAL engine: "
@@ -2516,9 +2525,30 @@ def run_summary_ask(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
             raise ProductFailure("peer REST summary covered fewer than 5 messages")
 
         # --- ask this chat -------------------------------------------------
+        # Summary may have just jumped to the same message that Ask will cite.
+        # Return to the latest message so a later successful assertion proves a jump.
+        latest_text = f"sj-ask filler {_ASK_FILLER_COUNT - 1} {tag}"
+
+        def visible_message(node: Any, text: str) -> bool:
+            return _rid_ends(node, "messageBody") and node.text.strip() == text and _node_visible(node)
+
+        if not any(visible_message(node, latest_text) for node in _ui_nodes(context)):
+            latest = _wait_ui_node(
+                context,
+                lambda node: _rid_ends(node, "scrollDownFab") and node.clickable and _node_visible(node),
+                "the chat did not offer a return to the latest messages after the summary jump",
+            )
+            ui.tap_node(latest)
+            _wait_ui_node(
+                context,
+                lambda node: visible_message(node, latest_text),
+                "the last seeded message did not enter the viewport",
+            )
         fact_visible_before = any(
-            _rid_ends(node, "messageBody") and code in (node.text or "")
-            for node in _ui_nodes(context))
+            visible_message(node, fact_content) for node in _ui_nodes(context))
+        if fact_visible_before:
+            raise EnvironmentFailure("the Ask source was already visible at the latest messages")
+        ui.screenshot(str(row_dir / "summary-ask-before-ask.png"))
         _open_chat_overflow(context, _ASK_MENU_ITEM)
         _wait_ui_node(
             context,
@@ -2552,7 +2582,7 @@ def run_summary_ask(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
                       and node.text.strip() in _ASK_MODE_BADGE
                       and _node_visible(node)), None)
         if badge is None:
-            raise ProductFailure("the EXTRACTIVE 'From a message' badge did not render")
+            raise ProductFailure("the EXTRACTIVE 'Quoted from chat' badge did not render")
         ui.screenshot(str(row_dir / "summary-ask-answer.png"))
 
         # Peer REST verify: the same question must now replay the device ask's
@@ -2580,7 +2610,7 @@ def run_summary_ask(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
         )
         _wait_ui_node(
             context,
-            lambda node: _rid_ends(node, "messageBody") and code in (node.text or ""),
+            lambda node: visible_message(node, fact_content),
             "the cited message did not render after the ask citation jump",
         )
         ui.screenshot(str(row_dir / "summary-ask-jump.png"))
@@ -2614,6 +2644,7 @@ def run_summary_ask(row: JourneyRow, context: dict[str, Any]) -> dict[str, Any]:
             "summary_header": header_text,
             "summary_chip": chip_label,
             "summary_rest": {"generatedBy": summary_body.get("generatedBy"),
+                             "scope": summary_body.get("scope"), "limit": summary_body.get("limit"),
                              "cached": summary_body.get("cached"),
                              "messageCount": summary_body.get("messageCount")},
             "ask_answer": "EXTRACTIVE badge + answer quotes the seeded fact",
