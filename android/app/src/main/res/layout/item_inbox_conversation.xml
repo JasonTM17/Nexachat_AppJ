@@ -26,7 +26,6 @@
         android:layout_marginStart="@dimen/space_inset"
         android:layout_marginEnd="@dimen/space_sm"
         android:ellipsize="end"
-        android:maxLines="1"
         android:textAppearance="@style/TextAppearance.NexaChat.InboxTitle"
         android:textColor="?attr/colorOnSurface"
         app:layout_constraintEnd_toStartOf="@id/time"
@@ -59,8 +58,8 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
+        android:layout_marginEnd="@dimen/space_xs"
         android:ellipsize="end"
-        android:maxLines="1"
         android:textAppearance="?attr/textAppearanceBodyMedium"
         android:textColor="?attr/colorOnSurfaceVariant"
         app:layout_constraintEnd_toStartOf="@id/trailingBadges"
@@ -130,13 +129,13 @@
         app:layout_constraintTop_toBottomOf="@id/preview"
         app:singleLine="false" />
 
-    <!-- The divider sits one gap below the tallest of avatar, preview and chips, at any font scale. -->
+    <!-- Include the header when the row has no preview, and when the title wraps. -->
     <androidx.constraintlayout.widget.Barrier
         android:id="@+id/rowContentBottom"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         app:barrierDirection="bottom"
-        app:constraint_referenced_ids="avatar,preview,labelChips,trailingBadges" />
+        app:constraint_referenced_ids="avatar,title,time,preview,labelChips,trailingBadges" />
 
     <View
         android:layout_width="0dp"

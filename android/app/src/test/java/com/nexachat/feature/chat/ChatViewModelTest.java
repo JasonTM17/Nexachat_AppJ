@@ -41,6 +41,7 @@ import io.reactivex.rxjava3.processors.PublishProcessor;
 import io.reactivex.rxjava3.schedulers.TestScheduler;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import io.reactivex.rxjava3.subjects.CompletableSubject;
+import io.reactivex.rxjava3.subjects.SingleSubject;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -781,6 +782,90 @@ public final class ChatViewModelTest {
                 .thenReturn(Single.just(new MessageJump.Failed(new ApiError.Network("down"))));
         viewModel.jumpToMessage("m-old");
         assertEquals(new ApiError.Network("down"), state().getError());
+    }
+
+    @Test
+    public void citationOutcomesAreSeparateFromTimelineAndPreserveTheComposerDraft() {
+        MessageJump missing = MessageJump.NotFound.INSTANCE;
+        MessageJump failure = new MessageJump.Failed(new ApiError.Network("offline"));
+        when(messageRepository.loadUntilLoaded(CONVERSATION_ID, "m-source", 15L,
+                MessageRepository.MAX_JUMP_PAGES))
+                .thenReturn(Single.just(missing), Single.just(failure),
+                        Single.just(MessageJump.Found.INSTANCE));
+        List<ChatViewModel.CitationJumpResult> results = new ArrayList<>();
+        androidx.lifecycle.Observer<ChatSingleLiveEvent.Event<ChatViewModel.CitationJumpResult>>
+                observer = event -> results.add(event.consume());
+        viewModel.getCitationJumps().observeForever(observer);
+        viewModel.onInputChange("A composer draft");
+        ApiError originalError = state().getError();
+
+        viewModel.jumpToCitation("m-source", 15L);
+        viewModel.jumpToCitation("m-source", 15L);
+        viewModel.jumpToCitation("m-source", 15L);
+
+        assertEquals(List.of(
+                new ChatViewModel.CitationJumpResult("m-source", 15L, missing),
+                new ChatViewModel.CitationJumpResult("m-source", 15L, failure),
+                new ChatViewModel.CitationJumpResult("m-source", 15L, MessageJump.Found.INSTANCE)),
+                results);
+        assertEquals(originalError, state().getError());
+        assertEquals("A composer draft", state().getInput());
+        assertEquals(Boolean.FALSE, viewModel.getJumpInFlight().getValue());
+        verify(messageRepository, times(3)).loadUntilLoaded(
+                CONVERSATION_ID, "m-source", 15L, MessageRepository.MAX_JUMP_PAGES);
+        viewModel.getCitationJumps().removeObserver(observer);
+    }
+
+    @Test
+    public void lateCitationResultDoesNotReplaceTheNewerSource() {
+        SingleSubject<MessageJump> oldSource = SingleSubject.create();
+        when(messageRepository.loadUntilLoaded(CONVERSATION_ID, "old", 3L,
+                MessageRepository.MAX_JUMP_PAGES)).thenReturn(oldSource);
+        when(messageRepository.loadUntilLoaded(CONVERSATION_ID, "new", 4L,
+                MessageRepository.MAX_JUMP_PAGES))
+                .thenReturn(Single.just(MessageJump.Found.INSTANCE));
+        List<ChatViewModel.CitationJumpResult> results = new ArrayList<>();
+        androidx.lifecycle.Observer<ChatSingleLiveEvent.Event<ChatViewModel.CitationJumpResult>>
+                observer = event -> results.add(event.consume());
+        viewModel.getCitationJumps().observeForever(observer);
+
+        viewModel.jumpToCitation("old", 3L);
+        assertEquals(Boolean.TRUE, viewModel.getJumpInFlight().getValue());
+        viewModel.jumpToCitation("new", 4L);
+        oldSource.onSuccess(MessageJump.NotFound.INSTANCE);
+
+        assertEquals(List.of(new ChatViewModel.CitationJumpResult(
+                "new", 4L, MessageJump.Found.INSTANCE)), results);
+        assertEquals(Boolean.FALSE, viewModel.getJumpInFlight().getValue());
+        viewModel.getCitationJumps().removeObserver(observer);
+    }
+
+    @Test
+    public void lateTimelineJumpCannotReplaceANewerAskSource() {
+        SingleSubject<MessageJump> timeline = SingleSubject.create();
+        when(messageRepository.loadUntilLoaded(CONVERSATION_ID, "old-pin",
+                MessageRepository.MAX_JUMP_PAGES)).thenReturn(timeline);
+        when(messageRepository.loadUntilLoaded(CONVERSATION_ID, "source", 4L,
+                MessageRepository.MAX_JUMP_PAGES))
+                .thenReturn(Single.just(MessageJump.Found.INSTANCE));
+        AtomicInteger timelineResults = new AtomicInteger();
+        AtomicReference<ChatViewModel.CitationJumpResult> opened = new AtomicReference<>();
+        androidx.lifecycle.Observer<ChatSingleLiveEvent.Event<String>> timelineObserver =
+                event -> timelineResults.incrementAndGet();
+        androidx.lifecycle.Observer<ChatSingleLiveEvent.Event<ChatViewModel.CitationJumpResult>>
+                sourceObserver = event -> opened.set(event.consume());
+        viewModel.getJumpTargets().observeForever(timelineObserver);
+        viewModel.getCitationJumps().observeForever(sourceObserver);
+
+        viewModel.jumpToMessage("old-pin");
+        viewModel.jumpToCitation("source", 4L);
+        timeline.onSuccess(MessageJump.Found.INSTANCE);
+
+        assertEquals(0, timelineResults.get());
+        assertEquals(new ChatViewModel.CitationJumpResult(
+                "source", 4L, MessageJump.Found.INSTANCE), opened.get());
+        viewModel.getJumpTargets().removeObserver(timelineObserver);
+        viewModel.getCitationJumps().removeObserver(sourceObserver);
     }
 
     @Test

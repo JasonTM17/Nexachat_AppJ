@@ -2,8 +2,10 @@ package com.nexachat.feature.ask;
 
 import android.app.Dialog;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.os.Bundle;
 import android.text.Editable;
+import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -33,7 +35,7 @@ import javax.inject.Inject;
 @AndroidEntryPoint
 public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBottomSheetFragment {
     public interface Listener {
-        void onJumpToMessage(@NonNull AskCitationJump target);
+        void onDismissed(@Nullable AskCitationJump target);
     }
 
     private static final String ARG_CONVERSATION_ID = AskViewModel.ARG_CONVERSATION_ID;
@@ -50,6 +52,8 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
     private boolean consentSavePending;
     private boolean suggestionsBound;
     private int renderedTurnCount;
+    private boolean renderingLoading;
+    @Nullable private AskCitationJump selectedSource;
     /** References of the turns currently inflated in the thread; compared by identity. */
     private final List<AskTurn> renderedTurnRefs = new ArrayList<>();
 
@@ -119,13 +123,13 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
         }
         suggestionsBound = true;
         LayoutInflater inflater = LayoutInflater.from(requireContext());
-        for (int labelRes : AskSuggestions.LABELS) {
+        for (AskSuggestions.Suggestion suggestion : AskSuggestions.STARTERS) {
             Chip chip = (Chip) inflater.inflate(
                     R.layout.item_ask_suggestion, binding.askSuggestions, false);
-            chip.setText(getString(labelRes));
+            chip.setText(suggestion.label());
             chip.setOnClickListener(ignored -> {
                 if (viewModel != null) {
-                    viewModel.submitSuggestion(chip.getText().toString());
+                    viewModel.submitSuggestion(getString(suggestion.question()));
                 }
             });
             binding.askSuggestions.addView(chip);
@@ -175,16 +179,19 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
         int previousTurnCount = renderedTurnCount;
         renderTurns(state.getTurns());
         renderedTurnCount = state.getTurns().size();
-        if (renderedTurnCount > previousTurnCount) {
+        if (renderedTurnCount > previousTurnCount || (loading && !renderingLoading)) {
             NestedScrollView scroll = binding.askContentScroll;
             scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
         }
+        renderingLoading = loading;
 
-        boolean showStatus = state.getStatus() == AskUiState.Status.NOT_FOUND;
-        binding.askStatusMessage.setVisibility(showStatus ? View.VISIBLE : View.GONE);
-        if (showStatus) {
-            binding.askStatusMessage.setText(statusMessage(state));
+        AskTurn lastTurn = state.lastTurn();
+        CharSequence status = !loading && lastTurn != null && hasInlineStatus(lastTurn)
+                ? turnStatusMessage(lastTurn) : null;
+        if (status != null && !TextUtils.equals(binding.askStatusMessage.getText(), status)) {
+            binding.askStatusMessage.setText(status);
         }
+        binding.askStatusMessage.setVisibility(status == null ? View.GONE : View.VISIBLE);
         boolean retryVisible = state.getStatus() == AskUiState.Status.ERROR
                 || state.getStatus() == AskUiState.Status.RATE_LIMITED;
         binding.askRetry.setVisibility(retryVisible ? View.VISIBLE : View.GONE);
@@ -205,7 +212,8 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
         renderedTurnRefs.addAll(turns);
         binding.askThread.removeAllViews();
         LayoutInflater inflater = LayoutInflater.from(requireContext());
-        for (AskTurn turn : turns) {
+        for (int index = 0; index < turns.size(); index++) {
+            AskTurn turn = turns.get(index);
             ItemAskTurnBinding item = ItemAskTurnBinding.inflate(inflater, binding.askThread, false);
             item.askTurnQuestion.setText(turn.getQuestion());
             boolean answerVisible = turn.getStatus() == AskTurn.Status.ANSWER
@@ -231,7 +239,9 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
                 item.askModeBadge.setVisibility(View.GONE);
                 item.askCitationsLabel.setVisibility(View.GONE);
                 item.askTurnCitations.setVisibility(View.GONE);
-                CharSequence status = turnStatusMessage(turn);
+                // The current status appears once, in the live region above Retry.
+                CharSequence status = index == turns.size() - 1 && hasInlineStatus(turn)
+                        ? null : turnStatusMessage(turn);
                 item.askTurnStatus.setVisibility(status == null ? View.GONE : View.VISIBLE);
                 if (status != null) {
                     item.askTurnStatus.setText(status);
@@ -267,14 +277,11 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
                 turn.getError());
     }
 
-    @NonNull
-    private CharSequence statusMessage(@NonNull AskUiState state) {
-        return resolveStatusMessage(
-                state.getStatus() == AskUiState.Status.NOT_FOUND,
-                state.getStatus() == AskUiState.Status.RATE_LIMITED,
-                state.getStatus() == AskUiState.Status.CONSENT_REQUIRED,
-                state.getRetryAfterSeconds(),
-                state.getError());
+    private static boolean hasInlineStatus(@NonNull AskTurn turn) {
+        return switch (turn.getStatus()) {
+            case NOT_FOUND, ERROR, RATE_LIMITED -> true;
+            default -> false;
+        };
     }
 
     @NonNull
@@ -375,23 +382,11 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
     }
 
     private void handleCitationClick(@NonNull AskCitationJump target) {
-        if (viewModel != null) {
-            viewModel.close();
-        }
+        selectedSource = target;
         dismiss();
-        if (listener != null) {
-            listener.onJumpToMessage(target);
-        }
     }
 
     private void dismissSheet() {
-        if (viewModel != null) {
-            viewModel.close();
-        }
-        if (consentDialog != null) {
-            consentDialog.dismiss();
-            consentDialog = null;
-        }
         dismiss();
     }
 
@@ -412,11 +407,20 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
     }
 
     @Override
-    public void onCancel(@NonNull android.content.DialogInterface dialog) {
-        if (viewModel != null) {
+    public void onDismiss(@NonNull DialogInterface dialog) {
+        // DialogFragment also dispatches onDismiss while tearing down its view.
+        // Preserve the live model across configuration changes.
+        boolean userDismissal = binding != null && isAdded()
+                && !requireActivity().isChangingConfigurations();
+        AskCitationJump source = selectedSource;
+        selectedSource = null;
+        if (userDismissal && viewModel != null) {
             viewModel.close();
         }
-        super.onCancel(dialog);
+        super.onDismiss(dialog);
+        if (userDismissal && listener != null) {
+            listener.onDismissed(source);
+        }
     }
 
     @Override
@@ -426,6 +430,9 @@ public final class AskBottomSheetFragment extends com.nexachat.feature.ui.NexaBo
             consentDialog = null;
         }
         suggestionsBound = false;
+        renderingLoading = false;
+        renderedTurnCount = 0;
+        selectedSource = null;
         renderedTurnRefs.clear();
         binding = null;
         super.onDestroyView();

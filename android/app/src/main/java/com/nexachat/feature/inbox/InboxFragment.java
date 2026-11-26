@@ -106,6 +106,8 @@ public final class InboxFragment extends Fragment {
         profileViewModel = new ViewModelProvider(requireActivity()).get(ProfileViewModel.class);
         labelViewModel.load();
 
+        binding.loadingState.setLabel(getString(R.string.inbox_loading_conversations));
+        fitInboxToolbar();
         binding.inboxUserAvatar.setContentDescription(getString(R.string.profile_title));
         binding.inboxUserAvatar.setOnlineStatus(null);
         binding.inboxUserAvatar.setOnClickListener(
@@ -524,7 +526,7 @@ public final class InboxFragment extends Fragment {
         binding.emptyState.setVisibility(showEmpty ? View.VISIBLE : View.GONE);
         binding.errorState.setVisibility(showError ? View.VISIBLE : View.GONE);
         if (showRefreshError) {
-            int message = ChatErrorIds.messageId(state.getError());
+            int message = inboxErrorMessage(state.getError());
             String text = getString(message);
             if (!TextUtils.equals(binding.inboxRefreshErrorMessage.getText(), text)) {
                 binding.inboxRefreshErrorMessage.setText(text);
@@ -560,10 +562,15 @@ public final class InboxFragment extends Fragment {
         if (labelFilterError) {
             binding.errorState.setMessage(getString(LabelText.errorMessage(lastLabelState.getFilterError())));
         } else if (showError && error != null) {
-            binding.errorState.setMessage(getString(ChatErrorIds.messageId(error)));
+            binding.errorState.setMessage(getString(inboxErrorMessage(error)));
         }
         if (showList) showPaginationError(state);
         else lastPaginationErrorMessageId = 0;
+    }
+
+    private static int inboxErrorMessage(ApiError error) {
+        return error instanceof ApiError.Network
+                ? R.string.inbox_network_retry : ChatErrorIds.messageId(error);
     }
 
     private void submitRowsPreservingPosition(@NonNull List<ConversationSummary> rows) {
@@ -839,6 +846,28 @@ public final class InboxFragment extends Fragment {
             params.width = widthPx;
             group.setLayoutParams(params);
         }
+    }
+
+    /** Keeps the brand on one line when the actions can take their own row. */
+    private void fitInboxToolbar() {
+        FragmentInboxBinding current = binding;
+        LinearLayout content = current.inboxToolbarContent;
+        content.addOnLayoutChangeListener((view, left, top, right, bottom,
+                oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (binding != current) return;
+            TextView title = current.inboxBrandTitle;
+            LinearLayout.LayoutParams titleParams = (LinearLayout.LayoutParams) title.getLayoutParams();
+            int brandWidth = current.inboxBrandMark.getMeasuredWidth() + titleParams.getMarginStart()
+                    + (int) Math.ceil(Layout.getDesiredWidth(title.getText(), title.getPaint()));
+            boolean stack = brandWidth + current.inboxToolbarActions.getMeasuredWidth() > right - left;
+            int orientation = stack ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL;
+            if (content.getOrientation() == orientation) return;
+            content.setOrientation(orientation);
+            LinearLayout.LayoutParams brand = (LinearLayout.LayoutParams) current.inboxBrand.getLayoutParams();
+            brand.width = stack ? ViewGroup.LayoutParams.MATCH_PARENT : 0;
+            brand.weight = stack ? 0f : 1f;
+            current.inboxBrand.setLayoutParams(brand);
+        });
     }
 
     /**

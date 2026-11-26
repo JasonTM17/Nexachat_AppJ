@@ -54,6 +54,27 @@ public final class AskViewModelTest {
     }
 
     @Test
+    public void retryAfterNetworkFailureUsesTheSameQuestionAndKeepsTheThread() {
+        FakeAskApi api = new FakeAskApi();
+        AskViewModel viewModel = createViewModel(api, new SessionEvents());
+        viewModel.submitSuggestion("When is the migration?");
+        api.lastCall().fail(new java.io.IOException("offline"));
+
+        AskUiState failed = viewModel.state().getValue();
+        assertEquals(AskUiState.Status.ERROR, failed.getStatus());
+        assertEquals(AskError.NETWORK, failed.getError());
+        assertEquals("When is the migration?", failed.getDraft());
+        viewModel.retry();
+        assertEquals("When is the migration?", api.request.getQuestion());
+        api.lastCall().succeed(response("Friday.", "EXTRACTIVE"));
+
+        AskUiState answered = viewModel.state().getValue();
+        assertEquals(AskUiState.Status.ANSWER, answered.getStatus());
+        assertEquals("Friday.", answered.getResponse().getAnswer());
+        assertEquals(1, answered.getTurns().size());
+    }
+
+    @Test
     public void followUpKeepsPreviousAnswerAndSendsPriorTurns() {
         FakeAskApi api = new FakeAskApi();
         AskViewModel viewModel = createViewModel(api, new SessionEvents());
