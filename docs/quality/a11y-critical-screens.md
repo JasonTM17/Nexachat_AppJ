@@ -135,6 +135,12 @@ Expected order: `inboxBrandTitle` heading → `inboxPublicButton` →
 banner row (when shown) → `conversationList` rows → `createGroupFab` as the
 natural next node after the last row (bottom-end FAB).
 
+The toolbar places its actions on a second row when the brand heading requires
+more room. The row adapter uses two lines for the title and preview at larger
+font scales, with the divider below the tallest part of the row.
+Cold loading announces “Loading conversations”. A refresh failure leaves the list
+available with an inline Retry action.
+
 | id | Type | Expected accessible name (source) |
 | --- | --- | --- |
 | `inboxPublicButton` | ImageButton | "Public feed" (`feed_entry_cd`, `strings_feed.xml:4`) |
@@ -325,12 +331,13 @@ applies) → result area → bottom action row.
 
 ### 4.10 Ask sheet — `AskBottomSheetFragment` (`bottom_sheet_ask_chat.xml`)
 
-Expected order: `askTitle` → `askClose` → status area (skeleton + live
-`askLoadingLabel`, or `askStatusMessage` live region, or `askRetry`) →
-`askAnswerCard` (`askModeBadge` then selectable `askAnswer` text) →
-`askContextOmitted` (when trimmed) → `askCitationsLabel` → `askCitations`
-citation rows → composer: `askQuestion` + `askSend` → `askCounter` (when the
-500-char budget is shown) → `askCancel` (when offered).
+Expected order is `askTitle`, `askClose`, and the thread. An answered turn
+contains the question, optional `askModeBadge`, selectable `askAnswer`,
+and numbered source buttons. The current loading or terminal status has one
+live text region. Retry follows an eligible error. The context-omission note
+appears when applicable, then the question editor, Ask, counter and Cancel.
+Starter chips expose short topic names in both languages. Activating a chip
+sends the corresponding full question.
 
 | id | Type | Expected accessible name (source) |
 | --- | --- | --- |
@@ -340,8 +347,14 @@ citation rows → composer: `askQuestion` + `askSend` → `askCounter` (when the
 | `askRetry` | Text button | "Retry" (`ask_retry`) |
 | `askAnswer` | selectable TextView | answer body (text-selectable semantics) |
 | `askQuestionLayout` / `askQuestion` | TextInputLayout + EditText | "Question" (hint `ask_question_hint`; VI "Câu hỏi"; `maxLength=500`) |
-| `askSend` | MaterialButton | "Ask" (`ask_send`) — disabled while loading (`AskBottomSheetFragment.java:138`) |
-| `askCitations` rows | citation list | citation chips made of sender + excerpt, merged per row |
+| `askSend` | MaterialButton | "Ask" (`ask_send`), disabled while loading |
+| `citationButton` | MaterialButton | “Source 1. Open message…” plus the excerpt, with the ordinal in VI and EN |
+
+After a source tap, verify that the sheet dismisses and the exact message row
+takes focus once the row is laid out. Test a nearby source, a source reached
+through history, and a recalled source. A recalled or missing source shows an
+unavailable message. A failed load offers Retry. The Ask thread and Chat
+composer draft are available on return.
 
 ### 4.11 Call screen — `CallActivity` (`activity_call.xml`, `layout-land/activity_call.xml`)
 
