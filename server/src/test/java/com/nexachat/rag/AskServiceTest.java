@@ -623,6 +623,65 @@ class AskServiceTest {
         assertThat(response.citations()).isEmpty();
     }
 
+    @Test
+    void politeNamedDateQuestionDoesNotCiteTheDayOfAReferenceEvent() {
+        addNamedMessage(conversationId, senderId, 1, "Thu Ngân",
+                "Hạn gửi ảnh mẫu nằm sau buổi kiểm định ngày 15/8.");
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Thu Ngân, hạn gửi ảnh mẫu là ngày nào ạ?", SummaryLanguage.AUTO));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "Thu Ngân | Theo lời của Thu Ngân thì buổi lấy mẫu là ngày nào ạ?",
+            "An Thì Khuê | Theo lời của An Thì Khuê, buổi lấy mẫu là ngày nào ạ?",
+            "An Thì Khuê | Theo lời của An Thì Khuê thì buổi lấy mẫu là ngày nào ạ?"
+    })
+    void vietnameseConnectorsPreserveTheExactNamedAuthor(String person, String question) {
+        RagMessage fact = addNamedMessage(conversationId, senderId, 1, person, "Buổi lấy mẫu là 18/8.");
+        addNamedMessage(conversationId, UUID.randomUUID(), 2, "Trúc Vân",
+                "Theo lời của " + person + " thì buổi lấy mẫu là ngày 19/8.");
+        addNamedMessage(conversationId, UUID.randomUUID(), 3, "An", "Buổi lấy mẫu là ngày 17/8.");
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(question, SummaryLanguage.AUTO));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).isEqualTo(fact.content());
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @Test
+    void vietnameseConnectorCannotCiteSomeoneQuotingTheNamedPerson() {
+        addNamedMessage(conversationId, senderId, 1, "Thu Ngân", "Tôi chưa ấn định hạn gửi ảnh mẫu.");
+        addNamedMessage(conversationId, UUID.randomUUID(), 2, "Trúc Vân",
+                "Theo lời của Thu Ngân thì hạn gửi ảnh mẫu là ngày 20/8.");
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Thu Ngân thì hạn gửi ảnh mẫu là ngày nào?", SummaryLanguage.AUTO));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @Test
+    void multipleVietnameseConnectorsDoNotChooseBetweenTwoEligibleNames() {
+        addNamedMessage(conversationId, senderId, 1, "Thu Ngân", "Hạn nộp là ngày 14/8.");
+        addNamedMessage(conversationId, UUID.randomUUID(), 2, "Thu Ngân thì về ảnh mẫu", "Hạn nộp là ngày 18/8.");
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Thu Ngân thì về ảnh mẫu thì hạn nộp là ngày nào ạ?", SummaryLanguage.AUTO));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+        assertThat(response.citations()).isEmpty();
+    }
+
     @ParameterizedTest
     @CsvSource(value = {"9/5|sau", "20 tháng Sáu|trước"}, delimiter = '|')
     void namedSpeakerDateLookupKeepsAnExplicitDateBeforeARelativeQualification(String date, String relation) {
