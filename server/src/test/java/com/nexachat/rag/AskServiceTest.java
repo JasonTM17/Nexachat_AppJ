@@ -595,13 +595,15 @@ class AskServiceTest {
 
     @ParameterizedTest
     @CsvSource(delimiter = '|', value = {
-            "According to Neri, what is the greenhouse entry code? | The greenhouse entry code is ORBIT-636. | ORBIT-636",
-            "What is the greenhouse entry code? | The greenhouse entry code is RX39 for the next 12 days. | RX39"
+            "EN | According to Neri, what is the greenhouse entry code? | The greenhouse entry code is ORBIT-636. | ORBIT-636",
+            "EN | What is the greenhouse entry code? | The greenhouse entry code is RX39 for the next 12 days. | RX39",
+            "VI | Mã nhận hàng của kho Hoa Lan là gì? | Mã nhận hàng của kho Hoa Lan là HX-921, cần dùng trước cuối ca. | HX-921"
     })
-    void anAlphanumericIdentifierIsNotReducedToAnUnrelatedNumber(String question, String text, String identifier) {
+    void anAlphanumericIdentifierIsNotReducedToAnUnrelatedNumber(
+            SummaryLanguage language, String question, String text, String identifier) {
         RagMessage fact = addNamedMessage(conversationId, senderId, 1, "Neri", text);
 
-        AskResponse response = service.ask(conversationId, userId, new AskRequest(question, SummaryLanguage.EN));
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(question, language));
 
         assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
         assertThat(response.answer()).contains(identifier);

@@ -31,11 +31,13 @@ final class RagExtractiveAnswerer {
     private static final Pattern NUMBER = Pattern.compile(
             "(?<![\\p{L}\\p{N}])\\p{Nd}+(?:[.,:/-]\\p{Nd}+)*(?![\\p{L}\\p{N}])");
     private static final String IDENTIFIER_LABEL = "(?:codes?|pin|mã|ma so|serial number|tracking number)";
-    private static final Pattern IDENTIFIER_REQUEST = Pattern.compile("(?iu)\\b" + IDENTIFIER_LABEL + "\\b");
+    private static final Pattern IDENTIFIER_REQUEST = Pattern.compile("\\b" + IDENTIFIER_LABEL + "\\b",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS);
     private static final Pattern IDENTIFIER_TOKEN = Pattern.compile("[\\p{L}\\p{M}\\p{Nd}_-]+");
-    private static final Pattern LABELLED_IDENTIFIER = Pattern.compile("(?iu)\\b" + IDENTIFIER_LABEL + "\\b"
+    private static final Pattern LABELLED_IDENTIFIER = Pattern.compile("\\b" + IDENTIFIER_LABEL + "\\b"
             + "(?:\\s+(?:[\\p{L}\\p{M}]+\\s+){0,8}?(?:is|was|là|la)\\s+|\\s*[:=]\\s*|\\s+)"
-            + "([\\p{L}\\p{M}\\p{Nd}][\\p{L}\\p{M}\\p{Nd}_-]*)");
+            + "([\\p{L}\\p{M}\\p{Nd}][\\p{L}\\p{M}\\p{Nd}_-]*)",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS);
     private static final List<String> EN_INFLECTION_SUFFIXES = List.of("s", "es", "d", "ed", "ing");
     private static final Pattern TENTATIVE_EVIDENCE = Pattern.compile(
             "(?iu)(?<![\\p{L}\\p{N}])(?:maybe|perhaps|tentatively|might|could|let['’]s"
