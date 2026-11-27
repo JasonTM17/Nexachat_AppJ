@@ -43,12 +43,22 @@ final class SummaryTestServer implements AutoCloseable {
     }
 
     static void respond(HttpExchange exchange, int status, String body) throws IOException {
+        respond(exchange, status, body, null);
+    }
+
+    static void redirect(HttpExchange exchange, String location) throws IOException {
+        respond(exchange, 307, "", location);
+    }
+
+    private static void respond(HttpExchange exchange, int status, String body,
+            String location) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         String statusText = statusText(status);
         OutputStream output = exchange.socket.getOutputStream();
         output.write(("HTTP/1.1 " + status + " " + statusText + "\r\n"
                 + "Content-Type: application/json; charset=utf-8\r\n"
                 + "Content-Length: " + bytes.length + "\r\n"
+                + (location == null ? "" : "Location: " + location + "\r\n")
                 + "Connection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
         output.write(bytes);
         output.flush();

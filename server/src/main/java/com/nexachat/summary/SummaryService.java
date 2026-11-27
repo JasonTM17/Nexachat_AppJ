@@ -171,6 +171,15 @@ public class SummaryService {
 
     /** The HTTP writer retains these authorization facts through JSON serialization. */
     SummaryExecution summarizeForResponse(UUID conversationId, UUID userId, SummaryRequest request) {
+        return summarizeForResponse(conversationId, userId, request, false);
+    }
+
+    SummaryExecution summarizeLocallyForResponse(UUID conversationId, UUID userId, SummaryRequest request) {
+        return summarizeForResponse(conversationId, userId, request, true);
+    }
+
+    private SummaryExecution summarizeForResponse(UUID conversationId, UUID userId, SummaryRequest request,
+            boolean localOnly) {
         // Reject a garbage zone before it costs a rate-limit token.
         SummaryPeriods.resolveZone(request.timeZone());
         rateLimiter.consume(userId);
@@ -184,7 +193,9 @@ public class SummaryService {
 
         // Bind the complete prompt exclusion context, including uncited overview sources.
         Set<UUID> optedOut = Set.copyOf(aiOptOuts.optedOutUserIds(conversationId));
-        PreparedSummaryProvider prepared = providerSelector.prepare(readContext.aiSummaryConsent(), window, request.refresh());
+        PreparedSummaryProvider prepared = localOnly
+                ? providerSelector.prepareLocal()
+                : providerSelector.prepare(readContext.aiSummaryConsent(), window, request.refresh());
         if (request.refresh()) {
             // An explicit refresh always regenerates: it neither replays nor waits on a flight.
             GeneratePreparation gen = preparedForGenerate(userId, readContext, prepared, window, true);

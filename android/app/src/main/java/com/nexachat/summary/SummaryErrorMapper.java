@@ -7,6 +7,10 @@ final class SummaryErrorMapper {
     private SummaryErrorMapper() { }
 
     static SummaryError fromHttp(int status, String errorBody) {
+        return fromHttp(status, errorBody, false);
+    }
+
+    static SummaryError fromHttp(int status, String errorBody, boolean localOnly) {
         String code = ErrorResponse.errorCodeOf(errorBody);
         if (status == 429 || "RATE_LIMITED".equals(code)) {
             return SummaryError.RATE_LIMITED;
@@ -22,6 +26,11 @@ final class SummaryErrorMapper {
         }
         if ("TOO_FEW_MESSAGES".equals(code) || "TOO_FEW".equals(code)) {
             return SummaryError.TOO_FEW;
+        }
+        boolean redirect = status >= 300 && status < 400;
+        boolean routeMissing = status == 404 && !"CONVERSATION_NOT_FOUND".equals(code);
+        if (localOnly && (redirect || routeMissing)) {
+            return SummaryError.LOCAL_MODE_UNAVAILABLE;
         }
         return SummaryError.UNKNOWN;
     }

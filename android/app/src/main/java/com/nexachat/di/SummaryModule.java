@@ -4,6 +4,8 @@ import com.nexachat.summary.AiConsentApi;
 import com.nexachat.summary.AiConsentRepository;
 import com.nexachat.summary.SummaryApi;
 import com.nexachat.summary.SummaryRepository;
+import com.nexachat.summary.SummaryRequest;
+import com.nexachat.summary.SummaryResponse;
 import com.nexachat.core.network.SessionEvents;
 import com.nexachat.feature.ask.AskApi;
 import com.nexachat.feature.ask.AskRepository;
@@ -16,6 +18,8 @@ import dagger.hilt.components.SingletonComponent;
 import java.util.concurrent.Executor;
 import javax.inject.Named;
 import javax.inject.Singleton;
+import okhttp3.OkHttpClient;
+import retrofit2.Call;
 import retrofit2.Retrofit;
 
 /** Hilt bindings for the Java summary data layer. */
@@ -34,8 +38,24 @@ public final class SummaryModule {
 
     @Provides
     @Singleton
-    public static SummaryApi provideSummaryApi(Retrofit retrofit) {
-        return retrofit.create(SummaryApi.class);
+    public static SummaryApi provideSummaryApi(Retrofit retrofit, OkHttpClient client) {
+        SummaryApi automatic = retrofit.create(SummaryApi.class);
+        // A redirect can preserve a POST and turn the local route into an ordinary summary.
+        SummaryApi local = retrofit.newBuilder()
+                .client(client.newBuilder().followRedirects(false).build())
+                .build()
+                .create(SummaryApi.class);
+        return new SummaryApi() {
+            @Override
+            public Call<SummaryResponse> summarize(String conversationId, SummaryRequest request) {
+                return automatic.summarize(conversationId, request);
+            }
+
+            @Override
+            public Call<SummaryResponse> summarizeLocally(String conversationId, SummaryRequest request) {
+                return local.summarizeLocally(conversationId, request);
+            }
+        };
     }
 
     @Provides

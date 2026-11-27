@@ -58,6 +58,53 @@ public final class SummaryRepositoryTest {
     }
 
     @Test
+    public void localRequestsRejectLegacyResultsAndDoNotFallBackOnAnOlderServer() throws Exception {
+        AtomicInteger localCalls = new AtomicInteger();
+        AtomicInteger legacyCalls = new AtomicInteger();
+        try (SummaryTestServer server = new SummaryTestServer(exchange -> {
+            if ("/api/v1/conversations/conversation-1/summary/local".equals(
+                    exchange.getRequestURI().getPath())) {
+                switch (localCalls.incrementAndGet()) {
+                    case 1 -> SummaryTestServer.respond(exchange, 404,
+                            "{\"error\":{\"code\":\"NOT_FOUND\"}}");
+                    case 2 -> SummaryTestServer.redirect(exchange,
+                            "/api/v1/conversations/conversation-1/summary");
+                    case 3 -> SummaryTestServer.respond(exchange, 200, responseJson("wrong-engine", false)
+                            .replace("\"generatedBy\":\"LOCAL\"", "\"generatedBy\":\"LLM\""));
+                    default -> SummaryTestServer.respond(exchange, 200, responseJson("local-result", false));
+                }
+            } else {
+                legacyCalls.incrementAndGet();
+                SummaryTestServer.respond(exchange, 200, responseJson("legacy-ai", false)
+                        .replace("\"generatedBy\":\"LOCAL\"", "\"generatedBy\":\"LLM\""));
+            }
+        })) {
+            SummaryRepository repository = new SummaryRepository(api(server.baseUrl()));
+            assertEquals("legacy-ai", request(repository, "conversation-1", unread())
+                    .response.get().getSummaryId());
+
+            for (int attempt = 0; attempt < 3; attempt++) {
+                ResultCapture local = new ResultCapture();
+                repository.requestLocally("conversation-1", unread(), local);
+                await(local.completed);
+                assertEquals(SummaryError.LOCAL_MODE_UNAVAILABLE, local.error.get());
+                assertNull(local.response.get());
+            }
+            assertFalse(repository.findCachedLocalById("conversation-1", unread(), "legacy-ai").isPresent());
+            assertFalse(repository.findCachedLocalById("conversation-1", unread(), "wrong-engine").isPresent());
+
+            ResultCapture local = new ResultCapture();
+            repository.requestLocally("conversation-1", unread(), local);
+            await(local.completed);
+            assertEquals("local-result", local.response.get().getSummaryId());
+            assertTrue(repository.findCachedLocalById("conversation-1", unread(), "local-result").isPresent());
+            assertTrue(repository.findCachedById("conversation-1", unread(), "legacy-ai").isPresent());
+            assertEquals(1, legacyCalls.get());
+            assertEquals(4, localCalls.get());
+        }
+    }
+
+    @Test
     public void mapsServerErrorCodesToStableSummaryErrors() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         try (SummaryTestServer server = new SummaryTestServer(exchange -> {
@@ -428,12 +475,23 @@ public final class SummaryRepositoryTest {
 
     static final class ControlledApi implements SummaryApi {
         final List<ControlledCall> calls = new ArrayList<>();
+        final List<Boolean> localCalls = new ArrayList<>();
         private boolean enqueueFailure;
 
         @Override
         public Call<SummaryResponse> summarize(String id, SummaryRequest request) {
+            return recordCall(false);
+        }
+
+        @Override
+        public Call<SummaryResponse> summarizeLocally(String id, SummaryRequest request) {
+            return recordCall(true);
+        }
+
+        private Call<SummaryResponse> recordCall(boolean localOnly) {
             ControlledCall call = new ControlledCall(enqueueFailure);
             calls.add(call);
+            localCalls.add(localOnly);
             return call;
         }
     }
@@ -518,12 +576,13 @@ public final class SummaryRepositoryTest {
 
     static SummaryApi api(String baseUrl) {
         Moshi moshi = new Moshi.Builder().build();
-        return new Retrofit.Builder()
+        OkHttpClient client = new OkHttpClient();
+        Retrofit retrofit = new Retrofit.Builder()
                 .baseUrl(baseUrl)
-                .client(new OkHttpClient())
+                .client(client)
                 .addConverterFactory(MoshiConverterFactory.create(moshi))
-                .build()
-                .create(SummaryApi.class);
+                .build();
+        return SummaryModule.provideSummaryApi(retrofit, client);
     }
 
     static String responseJson(String summaryId, boolean cached) {

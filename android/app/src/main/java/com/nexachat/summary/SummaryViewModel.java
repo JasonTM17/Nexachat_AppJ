@@ -10,6 +10,7 @@ import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.TimeZone;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -18,14 +19,17 @@ import java.util.function.LongSupplier;
 import javax.inject.Inject;
 import javax.inject.Named;
 
-/** Rotation-safe request state; only the selected scope, count and summary id are saved. */
+/** Rotation-safe request state; saves the selected mode, scope, count and summary id. */
 @HiltViewModel
 public final class SummaryViewModel extends ViewModel {
+    public enum Mode { AUTOMATIC, LOCAL, AI }
+
     public static final String ARG_CONVERSATION_ID = "conversationId";
     public static final int DEFAULT_LAST_N = 50;
     private static final String KEY_SCOPE = "summary_scope";
     private static final String KEY_LIMIT = "summary_limit";
     private static final String KEY_SUMMARY_ID = "summary_last_id";
+    private static final String KEY_MODE = "summary_mode";
 
     private final SavedStateHandle savedStateHandle;
     private final SummaryRepository repository;
@@ -35,6 +39,7 @@ public final class SummaryViewModel extends ViewModel {
 
     private SummaryScope lastScope;
     private Integer lastLimit;
+    private Mode mode;
     private String boundConversationId;
     // Checkbox state of the rendered action items, keyed by action key. Living on the
     // ViewModel keeps it across rebinds and rotation; the sheet's death drops it, so a
@@ -69,6 +74,7 @@ public final class SummaryViewModel extends ViewModel {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.lastScope = restoredScope();
         this.lastLimit = restoredLimit(this.lastScope);
+        this.mode = restoredMode();
         this.boundConversationId = savedStateHandle.get(ARG_CONVERSATION_ID);
         this.boundCacheEpoch = repository.cacheEpoch();
         this.state = new MutableLiveData<>(restoreState());
@@ -103,6 +109,20 @@ public final class SummaryViewModel extends ViewModel {
         if (scope != null) {
             start(scope, lastLimit, true);
         }
+    }
+
+    public Mode mode() {
+        return mode;
+    }
+
+    public void refreshWithMode(Mode selection) {
+        Objects.requireNonNull(selection, "selection");
+        if (mode != selection) {
+            savedStateHandle.remove(KEY_SUMMARY_ID);
+            mode = selection;
+            savedStateHandle.set(KEY_MODE, selection.name());
+        }
+        refresh();
     }
 
     /**
@@ -193,33 +213,35 @@ public final class SummaryViewModel extends ViewModel {
         }
         SummaryRequest request = requestFor(scope, limit, refresh, zoneFallback);
         AtomicBoolean completed = new AtomicBoolean();
-        SummaryRepository.Cancellable handle = repository.request(conversationId, request,
-                new SummaryRepository.Callback() {
-                    @Override
-                    public void onSuccess(SummaryResponse response) {
-                        publish(token, conversationId, () -> {
-                            completed.set(true);
-                            activeRequest = null;
-                            applyState(SummaryUiState.ready(scope, limit, response));
-                        });
-                    }
-
-                    @Override
-                    public void onError(SummaryError error) {
-                        publish(token, conversationId, () -> {
-                            completed.set(true);
-                            activeRequest = null;
-                            if (error == SummaryError.INVALID_TIME_ZONE && !zoneFallback) {
-                                start(scope, limit, refresh, true);
-                                return;
-                            }
-                            applyState(SummaryUiState.error(scope, limit,
-                                    error == SummaryError.INVALID_TIME_ZONE
-                                            ? SummaryError.UNKNOWN : error,
-                                    lastSummaryId));
-                        });
-                    }
+        SummaryRepository.Callback callback = new SummaryRepository.Callback() {
+            @Override
+            public void onSuccess(SummaryResponse response) {
+                publish(token, conversationId, () -> {
+                    completed.set(true);
+                    activeRequest = null;
+                    applyState(SummaryUiState.ready(scope, limit, response));
                 });
+            }
+
+            @Override
+            public void onError(SummaryError error) {
+                publish(token, conversationId, () -> {
+                    completed.set(true);
+                    activeRequest = null;
+                    if (error == SummaryError.INVALID_TIME_ZONE && !zoneFallback) {
+                        start(scope, limit, refresh, true);
+                        return;
+                    }
+                    applyState(SummaryUiState.error(scope, limit,
+                            error == SummaryError.INVALID_TIME_ZONE
+                                    ? SummaryError.UNKNOWN : error,
+                            lastSummaryId));
+                });
+            }
+        };
+        SummaryRepository.Cancellable handle = mode == Mode.LOCAL
+                ? repository.requestLocally(conversationId, request, callback)
+                : repository.request(conversationId, request, callback);
         if (isCurrent(token, conversationId) && !completed.get()) {
             activeRequest = handle;
         } else {
@@ -295,7 +317,11 @@ public final class SummaryViewModel extends ViewModel {
         String summaryId = savedStateHandle.get(KEY_SUMMARY_ID);
         SummaryScope scope = restoredScope();
         Integer limit = restoredLimit(scope);
-        return repository.findCachedById(conversationId, requestFor(scope, limit, false), summaryId)
+        SummaryRequest request = requestFor(scope, limit, false);
+        Optional<SummaryResponse> cached = mode == Mode.LOCAL
+                ? repository.findCachedLocalById(conversationId, request, summaryId)
+                : repository.findCachedById(conversationId, request, summaryId);
+        return cached
                 .map(summary -> SummaryUiState.ready(scope, limit, summary))
                 .orElseGet(() -> SummaryUiState.idle(scope, limit, summaryId));
     }
@@ -310,6 +336,18 @@ public final class SummaryViewModel extends ViewModel {
         } catch (IllegalArgumentException ignored) {
             return SummaryScope.UNREAD;
         }
+    }
+
+    private Mode restoredMode() {
+        String value = savedStateHandle.get(KEY_MODE);
+        if (value != null) {
+            try {
+                return Mode.valueOf(value);
+            } catch (IllegalArgumentException ignored) {
+                // Treat saved values from earlier app versions as the default mode.
+            }
+        }
+        return Mode.AUTOMATIC;
     }
 
     private Integer restoredLimit(SummaryScope scope) {

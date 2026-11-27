@@ -35,10 +35,27 @@ public class SummaryController {
             @PathVariable UUID conversationId,
             @Valid @RequestBody SummaryRequest request,
             HttpServletResponse response) throws IOException {
+        writeSummary(principal, conversationId, request, false, response);
+    }
+
+    @PostMapping("/{conversationId}/summary/local")
+    public void summarizeLocally(
+            @AuthenticationPrincipal JwtPrincipal principal,
+            @PathVariable UUID conversationId,
+            @Valid @RequestBody SummaryRequest request,
+            HttpServletResponse response) throws IOException {
+        writeSummary(principal, conversationId, request, true, response);
+    }
+
+    private void writeSummary(JwtPrincipal principal, UUID conversationId, SummaryRequest request,
+            boolean localOnly, HttpServletResponse response) throws IOException {
         if (principal == null) {
             throw ApiException.of(ApiErrorCode.UNAUTHORIZED, "Authentication required");
         }
-        SummaryExecution execution = summaryService.summarizeForResponse(conversationId, principal.userId(), request);
-        responseWriter.write(principal.userId(), execution, response);
+        UUID userId = principal.userId();
+        SummaryExecution execution = localOnly
+                ? summaryService.summarizeLocallyForResponse(conversationId, userId, request)
+                : summaryService.summarizeForResponse(conversationId, userId, request);
+        responseWriter.write(userId, execution, response);
     }
 }
