@@ -584,6 +584,18 @@ class FocusOrderTest(unittest.TestCase):
         self.assertEqual(findings[0]["issue"], "focus_off_screen")
         self.assertEqual(findings[0]["screen"], [1080, 2400])
 
+    def test_auto_screen_uses_the_absolute_dialog_bounds(self):
+        nodes = [
+            N(bounds="[34,308][366,572]"),
+            N(**{"resource-id": "com.nexachat.debug:id/done"}, focusable="true",
+              bounds="[278,510][342,558]"),
+            N(**{"resource-id": "com.nexachat.debug:id/outsideDialog"}, focusable="true",
+              bounds="[40,583][90,630]"),
+        ]
+        findings = oracle.focus_order_issues(nodes, screen="auto")
+        self.assertEqual([(finding["issue"], finding["rid"]) for finding in findings],
+                         [("focus_off_screen", "outsideDialog")])
+
     def test_below_fold_child_of_a_scrollable_is_reachable(self):
         nodes = [
             N(**{"resource-id": "com.nexachat.debug:id/list",

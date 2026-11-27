@@ -714,7 +714,10 @@ def focus_order_issues(nodes: list[Any], *, screen: Any = None,
       docs/quality/a11y-critical-screens.md.
     """
     resolved = _resolve_screen(nodes, screen)
-    screen_box = (0, 0, *resolved) if resolved is not None else None
+    screen_box = None
+    if resolved is not None:
+        # Dialog hierarchies can start below and to the right of the display origin.
+        screen_box = node_box(nodes[0]) if isinstance(screen, str) else (0, 0, *resolved)
     findings: list[dict[str, Any]] = []
 
     scrollable_boxes: list[tuple[int, int, int, int]] = []

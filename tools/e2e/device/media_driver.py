@@ -90,6 +90,7 @@ DEFAULT_DEVICE_DIR = "/sdcard/Download"
 # answer PickVisualMedia. None of them are app surfaces.
 PICKER_PACKAGES = (
     "com.android.documentsui",
+    "com.google.android.documentsui",
     "com.google.android.providers.media.module",
     "com.google.android.photopicker",
     "com.android.providers.media",
@@ -98,7 +99,8 @@ PICKER_PACKAGES = (
 _SHA256SUM_RE = re.compile(r"^\s*([0-9a-fA-F]{64})\s+\S")
 _COMPONENT_RE = re.compile(
     r"(?:topResumedActivity|mResumedActivity|ResumedActivity)"
-    r"[=:]?\s*ComponentInfo\{([^}]+)\}"
+    r"[=:]?\s*(?:ComponentInfo\{|ActivityRecord\{\S+\s+u\d+\s+)"
+    r"([^\s}]+)"
 )
 
 
@@ -214,8 +216,7 @@ def remove_device_file(adb: Any, remote_path: str) -> None:
 def resumed_activity_component(dumpsys_text: str) -> str | None:
     """The resumed activity component from an ``activity activities`` dump.
 
-    Matches both the API 33+ ``topResumedActivity=ComponentInfo{pkg/cls}``
-    spelling and the older ``mResumedActivity=ComponentInfo{...}``.
+    Accepts both ComponentInfo and ActivityRecord formats.
     """
     match = _COMPONENT_RE.search(dumpsys_text or "")
     return match.group(1).strip() if match else None
