@@ -54,6 +54,7 @@ public final class RagPromptBuilder {
         ArrayNode messages = payload.putArray("messages");
         Map<Integer, List<UUID>> messageIdsByIndex = new LinkedHashMap<>();
         Map<Integer, String> quoteSources = new LinkedHashMap<>();
+        boolean attributedDate = speakerQuote && RagExtractiveAnswerer.asksForVietnameseDate(question, language);
         for (RagContextItem item : context) {
             ObjectNode node = messages.addObject();
             node.put("i", item.index());
@@ -62,7 +63,8 @@ public final class RagPromptBuilder {
             node.put("text", text);
             messageIdsByIndex.put(item.index(), item.messageIds());
             if (speakerQuote) {
-                quoteSources.put(item.index(), text);
+                quoteSources.put(item.index(), attributedDate
+                        ? String.join("\n", RagExtractiveAnswerer.attributedStatements(text, true)) : text);
             }
         }
         if (priorTurns != null && !priorTurns.isEmpty()) {
