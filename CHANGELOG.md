@@ -6,6 +6,16 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.28] - 2026-11-27
+
+Android release focused on call recovery, offline chat, and navigating to
+message sources. See [the release notes](docs/release-notes/v1.2.28.md).
+
+### Changed
+
+- The peer name and video call duration appear at the top of the screen,
+  leaving the center clear for video.
+
 ### Fixed
 
 - Android restores incoming video rendering in one-to-one calls and recovers
@@ -1456,7 +1466,8 @@ First tagged release (`v1.0.0`).
 - Architecture diagrams, REST/STOMP contracts, security notes, operations
   guide and UI design documentation.
 
-[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.15...HEAD
+[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.28...HEAD
+[1.2.28]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.26...v1.2.28
 [1.2.15]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.14...v1.2.15
 [1.2.14]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.13...v1.2.14
 [1.2.13]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.12...v1.2.13
