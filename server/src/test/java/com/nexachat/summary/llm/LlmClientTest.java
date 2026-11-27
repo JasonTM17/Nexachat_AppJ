@@ -11,10 +11,12 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -72,6 +74,30 @@ class LlmClientTest {
 
         assertThat(client.complete(prompt())).isEqualTo("{\"ok\":true}");
         assertThat(requests).hasValue(2);
+    }
+
+    @Test
+    void consentRevokedDuringFirstResponseBlocksRetryAndFallback() throws Exception {
+        AtomicBoolean consented = new AtomicBoolean(true);
+        AtomicInteger requests = new AtomicInteger();
+        AtomicInteger authorizationChecks = new AtomicInteger();
+        startServer(exchange -> {
+            requests.incrementAndGet();
+            consented.set(false);
+            respond(exchange, 503, "fixture failure after revocation");
+        });
+        LlmProperties settings = properties(5_000);
+        client = new LlmClient(settings, new ObjectMapper());
+        var target = new LlmClient.TargetConfig(URI.create(settings.getBaseUrl() + "/chat/completions"),
+                settings.getApiKey(), settings.getModel(), settings.getTimeoutMs(), 128);
+
+        assertThatThrownBy(() -> client.completeWithFallback(prompt(), target, target, () -> {
+            authorizationChecks.incrementAndGet();
+            return consented.get();
+        })).isInstanceOf(SummaryProviderException.class)
+                .extracting("fallbackReason").isEqualTo(SummaryFallbackReason.NO_CONSENT);
+        assertThat(authorizationChecks).hasValue(2);
+        assertThat(requests).hasValue(1);
     }
 
     @Test
