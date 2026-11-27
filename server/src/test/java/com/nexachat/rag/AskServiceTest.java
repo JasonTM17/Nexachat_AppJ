@@ -637,6 +637,153 @@ class AskServiceTest {
         assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
     }
 
+    @ParameterizedTest
+    @CsvSource({"6/8", "21 tháng Chín", "mười hai tháng Tám", "06-08-2027", "Thứ Sáu"})
+    void namedSpeakerDateLookupDoesNotRequireTheDateQuestionWordInAnExplicitAnswer(String date) {
+        String text = "Hạn nộp phiếu khảo sát là " + date + ".";
+        RagMessage fact = addNamedMessage(conversationId, senderId, 1, "Mộc An", text);
+        addNamedMessage(conversationId, UUID.randomUUID(), 2, "Thanh Lâm",
+                "Hạn nộp phiếu khảo sát là ngày 14/8.");
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Mộc An, hạn nộp phiếu khảo sát là ngày nào?", SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).isEqualTo(text);
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "Hạn nộp phiếu khảo sát sẽ công bố riêng, còn ngày duyệt là 6/8. | ",
+            "Hạn nộp phiếu khảo sát là 6/8. | Hạn nộp phiếu khảo sát là ngày 8/8.",
+            "Hạn nộp phiếu khảo sát là 6/8, hạn nộp phiếu khảo sát là ngày 8/8. | ",
+            "Hạn nộp phiếu khảo sát là ngày 31/4. | ",
+            "Hạn nộp phiếu khảo sát có thể là ngày 6/8. | "
+    })
+    void namedSpeakerDateLookupRejectsAnUnrelatedOrConflictingDate(String first, String second) {
+        addNamedMessage(conversationId, senderId, 1, "Mộc An", first);
+        if (second != null) {
+            addNamedMessage(conversationId, senderId, 2, "Mộc An", second);
+        }
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Mộc An, hạn nộp phiếu khảo sát là ngày nào?", SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @Test
+    void namedSpeakerDateLookupTreatsEquivalentDateFormatsAsOneClaim() {
+        RagMessage first = addNamedMessage(conversationId, senderId, 1, "Mộc An", "Hạn nộp phiếu khảo sát là ngày 06/08.");
+        RagMessage second = addNamedMessage(conversationId, senderId, 2, "Mộc An", "Hạn nộp phiếu khảo sát là sáu tháng Tám.");
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Mộc An, hạn nộp phiếu khảo sát là ngày nào?", SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.citations()).singleElement().satisfies(citation ->
+                assertThat(citation.messageId()).isIn(first.id(), second.id()));
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "hạn nộp phiếu khảo sát | Hạn nộp phiếu khảo sát đã chốt ngày 6/8.",
+            "hạn nộp phiếu khảo sát | Hạn nộp phiếu khảo sát được ấn định vào ngày 06.08.",
+            "buổi tham quan | Buổi tham quan sẽ diễn ra vào ngày sáu tháng Tám.",
+            "hạn nộp biên bản | Tôi xác nhận rằng hạn nộp biên bản là ngày 12/5.",
+            "chuyến khảo sát | Thông báo: ngày diễn ra chuyến khảo sát là ngày 8/9.",
+            "buổi trưng bày | Buổi trưng bày sẽ được tổ chức vào ngày 1/3.",
+            "buổi trưng bày | Bản tin ghi buổi trưng bày là ngày 12/5."
+    })
+    void namedSpeakerDateLookupKeepsAnExplicitDateInOrdinarySchedulingStatements(String event, String statement) {
+        RagMessage fact = addNamedMessage(conversationId, senderId, 1, "Mộc An", statement);
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Mộc An, " + event + " là ngày nào?", SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).isEqualTo(statement);
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "Thông báo: ngày kết thúc chuyến khảo sát là ngày 9/9.",
+            "Tôi xác nhận rằng ngày tập dượt là 6/9; lịch chuyến khảo sát sẽ báo sau.",
+            "Buổi diễn tập của chuyến khảo sát là ngày 12/5; lịch chuyến khảo sát sẽ thông báo sau."
+    })
+    void namedSpeakerDateLookupDoesNotSubstituteAnotherDateAfterAnAnnouncement(String statement) {
+        addNamedMessage(conversationId, senderId, 1, "Mộc An", statement);
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Mộc An, chuyến khảo sát là ngày nào?", SummaryLanguage.AUTO));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "Buổi kiểm kê kho là ngày 14/7, nhóm mình còn chờ xác nhận cuối cùng.",
+            "Buổi kiểm kê kho từng nhắc ngày 14/7, nhưng nhóm còn đợi thông báo chính thức về lịch kiểm kê."
+    })
+    void namedSpeakerDateLookupWaitsForFinalConfirmationOfTheDate(String statement) {
+        addNamedMessage(conversationId, senderId, 1, "Mộc An", statement);
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Mộc An, buổi kiểm kê kho là ngày nào?", SummaryLanguage.AUTO));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @Test
+    void namedSpeakerDateLookupCanCiteAConfirmedDateWithLogisticsStillPending() {
+        String statement = "Buổi kiểm kê kho là ngày 14/7, còn nhóm chờ thông báo chính thức về chỗ đỗ xe.";
+        RagMessage fact = addNamedMessage(conversationId, senderId, 1, "Mộc An", statement);
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Mộc An, buổi kiểm kê kho là ngày nào?", SummaryLanguage.AUTO));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).isEqualTo(statement);
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @Test
+    void namedSpeakerDateLookupDoesNotUseADecimalWithNoDateMarker() {
+        addNamedMessage(conversationId, senderId, 1, "Mộc An", "Điểm khảo sát là 6.8.");
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Mộc An, điểm khảo sát là ngày nào?", SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @Test
+    void namedSpeakerDateLookupDoesNotDiscardASentenceWithConflictingDatesBeforeRanking() {
+        addNamedMessage(conversationId, senderId, 1, "Mộc An", "Hạn nộp phiếu khảo sát là 6/8.");
+        addNamedMessage(conversationId, senderId, 2, "Mộc An",
+                "Hạn nộp phiếu khảo sát là 8/8, hạn nộp phiếu khảo sát là 9/8.");
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Mộc An, hạn nộp phiếu khảo sát là ngày nào?", SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @Test
+    void namedSpeakerDateLookupRequiresAnEventLabel() {
+        assertThat(RagVietnameseDateLookup.parse("\u0301 là ngày nào?", SummaryLanguage.VI, true)).isNull();
+    }
+
     @Test
     void unresolvedAlphanumericCodesDoNotChooseOneSupportingSentence() {
         addNamedMessage(conversationId, senderId, 1, "Neri", "The greenhouse entry code is ORBIT-636.");

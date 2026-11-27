@@ -55,6 +55,7 @@ public final class RagPromptBuilder {
         Map<Integer, List<UUID>> messageIdsByIndex = new LinkedHashMap<>();
         Map<Integer, String> quoteSources = new LinkedHashMap<>();
         boolean attributedDate = speakerQuote && RagExtractiveAnswerer.asksForVietnameseDate(question, language);
+        RagVietnameseDateLookup dateLookup = RagVietnameseDateLookup.parse(question, language, speakerQuote);
         for (RagContextItem item : context) {
             ObjectNode node = messages.addObject();
             node.put("i", item.index());
@@ -64,7 +65,7 @@ public final class RagPromptBuilder {
             messageIdsByIndex.put(item.index(), item.messageIds());
             if (speakerQuote) {
                 quoteSources.put(item.index(), attributedDate
-                        ? String.join("\n", RagExtractiveAnswerer.attributedStatements(text, true)) : text);
+                        ? String.join("\n", RagExtractiveAnswerer.attributedStatements(text, true, dateLookup)) : text);
             }
         }
         if (priorTurns != null && !priorTurns.isEmpty()) {
