@@ -6,32 +6,60 @@ import org.w3c.dom.NodeList;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.nio.file.*;
 import java.util.*;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /** Contrast against the actual fixed dark call surface in both app themes. */
 public final class CallContrastContractTest {
     @Test public void materialMuteAndSpeakerTintIsExplicitAndContrasting() throws Exception {
+        var builder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
         for (String dir : new String[]{"layout", "layout-land"}) {
             Path layout = Path.of("src/main/res", dir, "activity_call.xml");
-            if (!Files.exists(layout)) continue;
-            NodeList buttons = DocumentBuilderFactory.newInstance().newDocumentBuilder()
-                    .parse(layout.toFile()).getElementsByTagName("com.google.android.material.button.MaterialButton");
-            int checked = 0;
-            for (int i = 0; i < buttons.getLength(); i++) {
-                Element button = (Element) buttons.item(i);
-                String id = button.getAttribute("android:id");
-                if (!id.equals("@+id/call_mute") && !id.equals("@+id/call_speaker")) continue;
-                String tint = button.getAttribute("app:backgroundTint");
-                assertTrue(dir + " " + id + " must override Material's theme tint", tint.startsWith("@color/"));
-                for (boolean night : new boolean[]{false, true}) {
-                    Map<String, String> colors = new HashMap<>();
-                    load(colors, "values");
-                    if (night) load(colors, "values-night");
-                    check(colors, "call_icon_on_control", tint.substring(7), 4.5);
+            NodeList includes = builder.parse(layout.toFile()).getElementsByTagName("include");
+            int controls = 0;
+            for (int i = 0; i < includes.getLength(); i++) {
+                if (((Element) includes.item(i)).getAttribute("layout").equals("@layout/view_call_controls")) {
+                    controls++;
                 }
-                checked++;
             }
-            assertTrue(dir + " must retain both call controls", checked == 2);
+            assertEquals(dir + " must include the call controls once", 1, controls);
+        }
+
+        Path controlsLayout = Path.of("src/main/res/layout/view_call_controls.xml");
+        NodeList buttons = builder.parse(controlsLayout.toFile())
+                .getElementsByTagName("com.google.android.material.button.MaterialButton");
+        Set<String> expected = Set.of("@+id/call_mute", "@+id/call_speaker");
+        Set<String> checked = new HashSet<>();
+        for (int i = 0; i < buttons.getLength(); i++) {
+            Element button = (Element) buttons.item(i);
+            String id = button.getAttribute("android:id");
+            if (!expected.contains(id)) continue;
+            assertTrue("duplicate control " + id, checked.add(id));
+            assertEquals("@style/Widget.NexaChat.CallControl", button.getAttribute("style"));
+            assertTrue(id + " uses the tested style tint", button.getAttribute("app:backgroundTint").isEmpty());
+            assertTrue(id + " uses the tested style icon tint", button.getAttribute("app:iconTint").isEmpty());
+        }
+        assertEquals(expected, checked);
+
+        Path stylesPath = Path.of("src/main/res/values/styles_call.xml");
+        NodeList styles = builder.parse(stylesPath.toFile()).getElementsByTagName("style");
+        Map<String, String> callStyle = new HashMap<>();
+        for (int i = 0; i < styles.getLength(); i++) {
+            Element style = (Element) styles.item(i);
+            if (!style.getAttribute("name").equals("Widget.NexaChat.CallControl")) continue;
+            NodeList items = style.getElementsByTagName("item");
+            for (int j = 0; j < items.getLength(); j++) {
+                Element item = (Element) items.item(j);
+                callStyle.put(item.getAttribute("name"), item.getTextContent().trim());
+            }
+        }
+        assertEquals("@color/call_icon_on_control", callStyle.get("iconTint"));
+        assertEquals("@color/call_control_background", callStyle.get("backgroundTint"));
+        for (boolean night : new boolean[]{false, true}) {
+            Map<String, String> colors = new HashMap<>();
+            load(colors, "values");
+            if (night) load(colors, "values-night");
+            check(colors, "call_icon_on_control", "call_control_background", 4.5);
         }
     }
 
@@ -64,12 +92,14 @@ public final class CallContrastContractTest {
             check(colors, "call_icon_on_control", "call_accept_background", 4.5);
             check(colors, "call_icon_on_control", "call_decline_background", 4.5);
             check(colors, "call_icon_on_control", "call_end_background", 4.5);
+            check(colors, "call_icon_on_control", "call_camera_switch_fill", 4.5);
         }
     }
 
     @Test public void callButtonsDeclareTintInTheAppNamespace() throws Exception {
         for (String layout : new String[]{"layout/activity_call.xml",
-                "layout-land/activity_call.xml", "layout/activity_incoming_call.xml"}) {
+                "layout-land/activity_call.xml", "layout/activity_incoming_call.xml",
+                "layout/view_call_controls.xml"}) {
             Path path = Path.of("src/main/res", layout);
             if (!Files.exists(path)) continue;
             NodeList buttons = DocumentBuilderFactory.newInstance().newDocumentBuilder()

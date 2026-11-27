@@ -6,6 +6,19 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.29] - 2026-11-27
+
+See [the Android release notes](docs/release-notes/v1.2.29.md).
+
+### Changed
+
+- In an active video call, the peer name, duration, and action row hide together
+  after a short pause. The first tap brings them back. Reconnection keeps the
+  actions available, including Hang up.
+- The video action row has a dedicated front/rear camera button next to the
+  camera on/off button. The preview mirrors the front camera and shows the
+  rear camera in its natural orientation.
+
 ## [1.2.28] - 2026-11-27
 
 Android release focused on call recovery, offline chat, and navigating to
@@ -1466,7 +1479,8 @@ First tagged release (`v1.0.0`).
 - Architecture diagrams, REST/STOMP contracts, security notes, operations
   guide and UI design documentation.
 
-[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.28...HEAD
+[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.29...HEAD
+[1.2.29]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.26...v1.2.29
 [1.2.28]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.26...v1.2.28
 [1.2.15]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.14...v1.2.15
 [1.2.14]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.13...v1.2.14

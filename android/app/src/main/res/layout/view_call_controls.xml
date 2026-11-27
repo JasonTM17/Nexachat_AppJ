@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/call_controls_row"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:gravity="center"
+    android:orientation="horizontal">
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/call_mute"
+        style="@style/Widget.NexaChat.CallControl"
+        android:contentDescription="@string/call_mute"
+        app:icon="@drawable/ic_mic" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/call_speaker"
+        style="@style/Widget.NexaChat.CallControl"
+        android:contentDescription="@string/call_speaker"
+        app:icon="@drawable/ic_volume_down" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/call_camera"
+        style="@style/Widget.NexaChat.CallControl"
+        android:contentDescription="@string/call_camera_off"
+        android:visibility="gone"
+        app:icon="@drawable/ic_videocam" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/call_camera_switch"
+        style="@style/Widget.NexaChat.CallControl"
+        android:contentDescription="@string/call_switch_to_back_camera"
+        android:visibility="gone"
+        app:backgroundTint="@color/call_camera_switch_background"
+        app:icon="@drawable/ic_switch_camera" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/call_hang_up"
+        style="@style/Widget.NexaChat.CallControl"
+        android:layout_width="@dimen/call_hang_up_size"
+        android:layout_height="@dimen/call_hang_up_size"
+        android:contentDescription="@string/call_hang_up"
+        app:backgroundTint="@color/call_end_background"
+        app:icon="@drawable/ic_call_end"
+        app:iconSize="28dp" />
+</LinearLayout>

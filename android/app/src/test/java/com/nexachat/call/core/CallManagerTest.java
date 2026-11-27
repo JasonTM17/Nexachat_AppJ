@@ -646,7 +646,7 @@ public final class CallManagerTest {
         scheduler.runCurrent();
 
         manager.setCallVideoListener(new CallManager.CallVideoListener() {
-            @Override public void onLocalVideoTrack(Object track) { }
+            @Override public void onLocalVideoTrack(Object track, boolean frontFacing) { }
             @Override public void onRemoteVideoTrack(Object track) { }
         });
         scheduler.runCurrent();
@@ -661,7 +661,7 @@ public final class CallManagerTest {
         scheduler.runCurrent();
 
         manager.setCallVideoListener(new CallManager.CallVideoListener() {
-            @Override public void onLocalVideoTrack(Object track) { }
+            @Override public void onLocalVideoTrack(Object track, boolean frontFacing) { }
             @Override public void onRemoteVideoTrack(Object track) { }
         });
         scheduler.runCurrent();

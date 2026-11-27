@@ -53,7 +53,7 @@ public final class CallManager implements AutoCloseable {
 
     /** Receives engine video tracks on the main thread so the call UI can attach sinks. */
     public interface CallVideoListener {
-        void onLocalVideoTrack(@Nullable Object videoTrack);
+        void onLocalVideoTrack(@Nullable Object videoTrack, boolean frontFacing);
         void onRemoteVideoTrack(@Nullable Object videoTrack);
     }
 
@@ -965,10 +965,10 @@ public final class CallManager implements AutoCloseable {
                 }
 
                 @Override
-                public void onLocalVideoTrack(Object videoTrack) {
+                public void onLocalVideoTrack(Object videoTrack, boolean frontFacing) {
                     postToMain(() -> {
                         CallVideoListener listener = videoListener;
-                        if (listener != null) listener.onLocalVideoTrack(videoTrack);
+                        if (listener != null) listener.onLocalVideoTrack(videoTrack, frontFacing);
                     });
                 }
 

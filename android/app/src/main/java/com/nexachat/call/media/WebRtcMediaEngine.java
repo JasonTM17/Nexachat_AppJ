@@ -85,6 +85,9 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
     private EglBase eglBase;
     private SurfaceTextureHelper surfaceTextureHelper;
     private VideoCapturer videoCapturer;
+    private CameraEnumerator cameraDevices;
+    private boolean frontFacingCamera = true;
+    private boolean cameraSwitchInProgress;
     private VideoSource localVideoSource;
     private VideoTrack localVideoTrack;
     private VideoTrack remoteVideoTrack;
@@ -124,6 +127,8 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
             activeGeneration = callGeneration;
             activeMediaType = requestedMediaType;
             cameraOn = requestedMediaType == CallMediaType.VIDEO;
+            frontFacingCamera = true;
+            cameraSwitchInProgress = false;
             listener = callListener;
             failedGeneration = -1L;
             connectedReported = false;
@@ -328,15 +333,43 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
     public void switchCamera() {
         long callGeneration = generation.get();
         mediaExecutor.execute(() -> {
-            if (!isActive(callGeneration) || !cameraOn || !(videoCapturer instanceof CameraVideoCapturer)) {
+            if (!isActive(callGeneration) || !cameraOn || cameraSwitchInProgress
+                    || !(videoCapturer instanceof CameraVideoCapturer capturer)) {
                 return;
             }
             try {
-                ((CameraVideoCapturer) videoCapturer).switchCamera(null);
+                String target = oppositeCameraName(cameraDevices, frontFacingCamera);
+                if (target == null) return;
+                cameraSwitchInProgress = true;
+                capturer.switchCamera(new CameraVideoCapturer.CameraSwitchHandler() {
+                    @Override public void onCameraSwitchDone(boolean isFrontCamera) {
+                        mediaExecutor.execute(() -> {
+                            if (!isActive(callGeneration)) return;
+                            cameraSwitchInProgress = false;
+                            frontFacingCamera = isFrontCamera;
+                            publishLocalVideoTrack(callGeneration);
+                        });
+                    }
+
+                    @Override public void onCameraSwitchError(String errorDescription) {
+                        mediaExecutor.execute(() -> {
+                            if (isActive(callGeneration)) cameraSwitchInProgress = false;
+                        });
+                    }
+                }, target);
             } catch (RuntimeException switchFailure) {
+                cameraSwitchInProgress = false;
                 markCameraUnavailable(callGeneration);
             }
         });
+    }
+
+    static String oppositeCameraName(CameraEnumerator devices, boolean fromFrontCamera) {
+        if (devices == null) return null;
+        for (String name : devices.getDeviceNames()) {
+            if (fromFrontCamera ? devices.isBackFacing(name) : devices.isFrontFacing(name)) return name;
+        }
+        return null;
     }
 
     @Override
@@ -354,8 +387,9 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
             if (current == null) return;
             VideoTrack local = localVideoTrack;
             VideoTrack remote = remoteVideoTrack;
+            boolean frontFacing = frontFacingCamera;
             postToMain(callGeneration, current, () -> {
-                current.onLocalVideoTrack(local);
+                current.onLocalVideoTrack(local, frontFacing);
                 current.onRemoteVideoTrack(remote);
             });
         });
@@ -447,10 +481,16 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
         localVideoTrack.setEnabled(cameraOn);
         peerConnection.addTrack(localVideoTrack, Collections.singletonList(VIDEO_STREAM_ID));
         if (cameraOn) startCapture();
+        publishLocalVideoTrack(callGeneration);
+    }
+
+    /** Runs on mediaExecutor after a track is created or its camera changes. */
+    private void publishLocalVideoTrack(long callGeneration) {
         Listener current = listener;
         if (current != null) {
             VideoTrack track = localVideoTrack;
-            postToMain(callGeneration, current, () -> current.onLocalVideoTrack(track));
+            boolean frontFacing = frontFacingCamera;
+            postToMain(callGeneration, current, () -> current.onLocalVideoTrack(track, frontFacing));
         }
     }
 
@@ -489,12 +529,20 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
             for (String name : names) {
                 if (devices.isFrontFacing(name)) {
                     VideoCapturer capturer = devices.createCapturer(name, eventsHandler);
-                    if (capturer != null) return capturer;
+                    if (capturer != null) {
+                        cameraDevices = devices;
+                        return capturer;
+                    }
                 }
             }
             for (String name : names) {
+                boolean frontFacing = devices.isFrontFacing(name);
                 VideoCapturer capturer = devices.createCapturer(name, eventsHandler);
-                if (capturer != null) return capturer;
+                if (capturer != null) {
+                    cameraDevices = devices;
+                    frontFacingCamera = frontFacing;
+                    return capturer;
+                }
             }
         } catch (RuntimeException | LinkageError ignored) {
             // A broken camera HAL leaves the call voice-only.
@@ -835,6 +883,7 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
             }
             videoCapturer = null;
         }
+        cameraDevices = null;
         if (localVideoSource != null) {
             localVideoSource.dispose();
             localVideoSource = null;
