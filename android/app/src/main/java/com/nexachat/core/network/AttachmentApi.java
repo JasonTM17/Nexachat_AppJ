@@ -11,6 +11,7 @@ import retrofit2.http.Multipart;
 import retrofit2.http.POST;
 import retrofit2.http.Part;
 import retrofit2.http.Path;
+import retrofit2.http.Tag;
 
 /**
  * {@code /api/v1/attachments} endpoints. Upload is multipart part name {@code file} ({@code
@@ -26,6 +27,14 @@ public interface AttachmentApi {
             @Part MultipartBody.Part file,
             @Part("duration") @Nullable RequestBody duration,
             @Part("blurHash") @Nullable RequestBody blurHash);
+
+    @Multipart
+    @POST("api/v1/attachments")
+    Call<AttachmentDto> upload(
+            @Part MultipartBody.Part file,
+            @Part("duration") @Nullable RequestBody duration,
+            @Part("blurHash") @Nullable RequestBody blurHash,
+            @Tag SessionBoundRequest session);
 
     /** Raw bytes; the server sets a sniffed Content-Type. */
     @GET("api/v1/attachments/{id}/content")

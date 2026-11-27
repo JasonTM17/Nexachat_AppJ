@@ -15,7 +15,7 @@ import com.nexachat.core.network.stomp.RealtimeSession;
 import com.nexachat.core.storage.RecallWindowConfig;
 import com.nexachat.core.storage.TokenStore;
 import com.nexachat.data.AttachmentRepository;
-import com.nexachat.data.AttachmentUploadEvent;
+import com.nexachat.data.AttachmentSendTicket;
 import com.nexachat.data.ChatMessage;
 import com.nexachat.data.ComposerDraftRepository;
 import com.nexachat.data.ConversationRepository;
@@ -23,7 +23,6 @@ import com.nexachat.data.ConversationSummary;
 import com.nexachat.data.DeliveryStatus;
 import com.nexachat.data.GroupDetail;
 import com.nexachat.data.GroupMember;
-import com.nexachat.data.LocalAttachment;
 import com.nexachat.data.MessageJump;
 import com.nexachat.data.MessageRepository;
 import com.nexachat.data.MessageSearchResult;
@@ -84,8 +83,6 @@ public final class ChatViewModelTest {
 
     private static final String CONVERSATION_ID = "c-1";
     private static final String TARGET_CONVERSATION_ID = "c-target";
-    private static final AttachmentDto ATTACHMENT =
-            new AttachmentDto("att-1", "pic.png", "image/png", 12L);
 
     @Rule
     public final TestRule instantTaskExecutorRule = new InstantTaskExecutorRule();
@@ -171,14 +168,10 @@ public final class ChatViewModelTest {
                         new GroupMember("me-1", "Me", null, null, GroupMember.ROLE_ADMIN),
                         new GroupMember("u-2", "Lan", null, null, "MEMBER"))))));
 
-        when(attachmentRepository.describe(any(Uri.class))).thenAnswer(invocation -> {
-            Uri picked = invocation.getArgument(0);
-            return Single.just(new LocalAttachment(picked, "pic.png", "image/png", 12L, "IMAGE"));
-        });
-        when(attachmentRepository.upload(any(Uri.class), nullable(String.class)))
-                .thenReturn(Flowable.just(
-                        new AttachmentUploadEvent.Progress(0.4f),
-                        new AttachmentUploadEvent.Uploaded(ATTACHMENT)));
+        when(uri.getLastPathSegment()).thenReturn("pic.png");
+        when(messageRepository.queueAttachment(anyString(), any(), nullable(Long.class),
+                nullable(String.class), any())).thenReturn(Completable.complete());
+        when(messageRepository.cancelAttachmentStaging(any())).thenReturn(Single.just(true));
         when(attachmentRepository.downloadToCache(anyString(), nullable(String.class)))
                 .thenReturn(Single.just(Result.failure(new ApiError.Network("down"))));
         when(conversationRepository.conversationFlow(anyString())).thenReturn(conversationFlow);
@@ -591,68 +584,53 @@ public final class ChatViewModelTest {
     }
 
     @Test
-    public void sendAttachmentsStagesPendingRowThenSendsWithAttachmentIds() {
+    public void selectedAttachmentIsPassedToTheDurableQueue() {
         viewModel.sendAttachments(List.of(uri));
 
-        verifySend(messageRepository, CONVERSATION_ID, "pic.png", null,
-                "IMAGE", List.of(ATTACHMENT), 1);
+        verify(messageRepository).queueAttachment(eq(CONVERSATION_ID), eq(uri),
+                eq(null), eq(null), any(AttachmentSendTicket.class));
         assertTrue(state().getPendingAttachments().isEmpty());
     }
 
     @Test
-    public void recordedVoiceDurationIsPassedThroughTheUpload() {
+    public void recordedVoiceDurationIsPassedThroughTheDurableQueue() {
         long durationMs = 3_200L;
-        AttachmentDto audio = new AttachmentDto(
-                "att-audio", null, "voice.m4a", "audio/mp4", 23_730L,
-                null, null, durationMs, "/api/v1/files/voice.m4a");
-        when(attachmentRepository.describe(uri)).thenReturn(Single.just(
-                new LocalAttachment(uri, "voice.m4a", "audio/mp4", 23_730L, "AUDIO")));
-        when(attachmentRepository.upload(uri, "audio/mp4", durationMs)).thenReturn(Flowable.just(
-                new AttachmentUploadEvent.Uploaded(audio)));
-
         viewModel.sendAttachments(List.of(uri), durationMs);
 
-        verify(attachmentRepository).upload(uri, "audio/mp4", durationMs);
-        verifySend(messageRepository, CONVERSATION_ID, "voice.m4a", null,
-                "AUDIO", List.of(audio), 1);
+        verify(messageRepository).queueAttachment(eq(CONVERSATION_ID), eq(uri),
+                eq(durationMs), eq(null), any(AttachmentSendTicket.class));
     }
 
     @Test
-    public void serverSniffedVideoMimeWinsWhenPickerCannotIdentifyUri() {
-        AttachmentDto video = new AttachmentDto("att-video", "clip.mp4", "video/mp4", 4L);
-        when(attachmentRepository.describe(uri)).thenReturn(Single.just(
-                new LocalAttachment(uri, "clip.mp4", null, 4L, "FILE")));
-        when(attachmentRepository.upload(uri, null)).thenReturn(Flowable.just(
-                new AttachmentUploadEvent.Uploaded(video)));
-
+    public void unidentifiedPickerFileIsPassedToTheQueue() {
+        when(uri.getLastPathSegment()).thenReturn(null);
         viewModel.sendAttachments(List.of(uri));
 
-        verifySend(messageRepository, CONVERSATION_ID, "clip.mp4", null,
-                "VIDEO", List.of(video), 1);
+        verify(messageRepository).queueAttachment(eq(CONVERSATION_ID), eq(uri),
+                eq(null), eq(null), any(AttachmentSendTicket.class));
     }
 
     @Test
-    public void inFlightUploadShowsPendingRowWithProgress() {
-        when(attachmentRepository.upload(any(Uri.class), nullable(String.class)))
-                .thenReturn(Flowable.concat(
-                        Flowable.just(new AttachmentUploadEvent.Progress(0.3f)),
-                        Flowable.never()));
+    public void preparingFileShowsPendingRowUntilAcceptance() {
+        var staged = io.reactivex.rxjava3.subjects.CompletableSubject.create();
+        when(messageRepository.queueAttachment(anyString(), any(), nullable(Long.class),
+                nullable(String.class), any())).thenReturn(staged);
 
         viewModel.sendAttachments(List.of(uri));
 
         PendingAttachment row = state().getPendingAttachments().get(0);
         assertEquals(PendingAttachment.PendingState.UPLOADING, row.getState());
-        assertEquals(0.3f, row.getProgress(), 0.0001f);
         assertEquals("pic.png", row.getDisplayName());
         verify(messageRepository, never()).send(anyString(), any(), any(), anyString(), any());
+        staged.onComplete();
+        assertTrue(state().getPendingAttachments().isEmpty());
     }
 
     @Test
     public void failedUploadMarksRowFailedAndNeverSends() {
-        when(attachmentRepository.upload(any(Uri.class), nullable(String.class)))
-                .thenReturn(Flowable.just(
-                        new AttachmentUploadEvent.Progress(0.2f),
-                        new AttachmentUploadEvent.Failed(new ApiError.Network("down"))));
+        when(messageRepository.queueAttachment(anyString(), any(), nullable(Long.class),
+                nullable(String.class), any()))
+                .thenReturn(Completable.error(new java.io.IOException("unreadable fixture")));
 
         viewModel.sendAttachments(List.of(uri));
 
@@ -663,16 +641,34 @@ public final class ChatViewModelTest {
 
     @Test
     public void removeXDropsPendingRowAndCancelsUpload() {
-        when(attachmentRepository.upload(any(Uri.class), nullable(String.class)))
-                .thenReturn(Flowable.concat(
-                        Flowable.just(new AttachmentUploadEvent.Progress(0.1f)),
-                        Flowable.never()));
+        var staged = io.reactivex.rxjava3.subjects.CompletableSubject.create();
+        when(messageRepository.queueAttachment(anyString(), any(), nullable(Long.class),
+                nullable(String.class), any())).thenReturn(staged);
         viewModel.sendAttachments(List.of(uri));
         String localId = state().getPendingAttachments().get(0).getLocalId();
 
         viewModel.removePendingAttachment(localId);
 
         assertTrue(state().getPendingAttachments().isEmpty());
+        assertFalse(staged.hasObservers());
+        var ticket = org.mockito.ArgumentCaptor.forClass(AttachmentSendTicket.class);
+        verify(messageRepository).cancelAttachmentStaging(ticket.capture());
+        assertEquals(localId, ticket.getValue().id());
+    }
+
+    @Test
+    public void cancelRefusalKeepsThePendingFileVisible() {
+        var staged = io.reactivex.rxjava3.subjects.CompletableSubject.create();
+        when(messageRepository.queueAttachment(anyString(), any(), nullable(Long.class),
+                nullable(String.class), any())).thenReturn(staged);
+        when(messageRepository.cancelAttachmentStaging(any())).thenReturn(Single.just(false));
+        viewModel.sendAttachments(List.of(uri));
+        String localId = state().getPendingAttachments().get(0).getLocalId();
+
+        viewModel.removePendingAttachment(localId);
+
+        assertTrue(staged.hasObservers());
+        assertEquals(localId, state().getPendingAttachments().get(0).getLocalId());
     }
 
     @Test
@@ -1160,13 +1156,36 @@ public final class ChatViewModelTest {
     }
 
     @Test
+    public void reconnectRetriesFailedInitialHistoryOnceWithCachedMessagesVisible() {
+        isOpenFlow.onNext(false);
+        messagesFlow.onNext(List.of(message("cached", 1L, true)));
+        when(messageRepository.refreshHistory(CONVERSATION_ID, null))
+                .thenReturn(Single.just(Result.failure(new ApiError.Network("down"))),
+                        Single.just(new Result.Success<>(new MessagePageDto())));
+        Mockito.clearInvocations(messageRepository);
+        ChatViewModel failedVm = newViewModel(
+                new SavedStateHandle(Map.of("conversationId", CONVERSATION_ID)));
+        assertEquals(ChatViewModel.ErrorOperation.INITIAL_HISTORY,
+                failedVm.getUiState().getValue().getChatError().getOperation());
+
+        restReachabilityFlow.onNext(true);
+        isOpenFlow.onNext(true);
+
+        verify(messageRepository, times(2)).refreshHistory(CONVERSATION_ID, null);
+        assertTrue(failedVm.getUiState().getValue().isConnected());
+        assertNull(failedVm.getUiState().getValue().getError());
+    }
+
+    @Test
     public void olderPageInlineRetryReusesTheFailedSequenceWhenMessagesChange() {
+        isOpenFlow.onNext(false);
         messagesFlow.onNext(List.of(message("m-8", 8L, true)));
         when(messageRepository.refreshHistory(CONVERSATION_ID, 8L))
                 .thenReturn(Single.just(Result.failure(new ApiError.Network("down"))),
                         Single.just(new Result.Success<>(new MessagePageDto())));
 
         viewModel.loadOlder();
+        restReachabilityFlow.onNext(true);
 
         assertEquals(ChatViewModel.ErrorOperation.OLDER_PAGE,
                 state().getChatError().getOperation());

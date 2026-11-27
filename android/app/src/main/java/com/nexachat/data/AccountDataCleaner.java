@@ -1,6 +1,7 @@
 package com.nexachat.data;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import com.nexachat.core.database.AppDatabase;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
@@ -10,6 +11,7 @@ import java.util.concurrent.CancellationException;
 import java.util.Objects;
 import java.util.function.Supplier;
 import javax.inject.Inject;
+import javax.inject.Provider;
 import javax.inject.Singleton;
 
 /** Serializes local Room cleanup at logout and explicit account login boundaries. */
@@ -19,6 +21,7 @@ public final class AccountDataCleaner {
     private final AppDatabase database;
     private final Supplier<Completable> cancelOutbox;
     private final Runnable scheduleOutbox;
+    @Nullable private final Provider<AttachmentRepository> attachments;
     private static final long NO_ATTEMPT = Long.MIN_VALUE;
 
     private final SessionOperationTracker operationTracker;
@@ -28,12 +31,14 @@ public final class AccountDataCleaner {
     public AccountDataCleaner(
             @NonNull AppDatabase database,
             @NonNull OfflineOutboxScheduler outboxScheduler,
-            @NonNull SessionOperationTracker operationTracker) {
+            @NonNull SessionOperationTracker operationTracker,
+            @NonNull Provider<AttachmentRepository> attachments) {
         this.database = Objects.requireNonNull(database, "database");
         OfflineOutboxScheduler scheduler = Objects.requireNonNull(outboxScheduler, "outboxScheduler");
         this.cancelOutbox = scheduler::cancelPending;
         this.scheduleOutbox = scheduler::schedule;
         this.operationTracker = Objects.requireNonNull(operationTracker, "operationTracker");
+        this.attachments = Objects.requireNonNull(attachments, "attachments");
     }
 
     AccountDataCleaner(
@@ -44,6 +49,7 @@ public final class AccountDataCleaner {
         this.operationTracker = Objects.requireNonNull(operationTracker, "operationTracker");
         this.cancelOutbox = Objects.requireNonNull(cancelOutbox, "cancelOutbox");
         this.scheduleOutbox = () -> {};
+        this.attachments = null;
     }
 
     /** Binds ownerless v12 message rows only to the identity of a stored startup session. */
@@ -146,6 +152,7 @@ public final class AccountDataCleaner {
                     .andThen(Completable.fromAction(() -> {
                         if (clearOutbox) database.clearAllTables();
                         else database.clearAccountDataPreservingOutbox();
+                        if (attachments != null) attachments.get().pruneStagedUploads(database.outboxDao());
                     }))
                     .andThen(Completable.defer(() -> activateSession
                             ? sealUnassignedLegacyOutboxOwners()

@@ -1,5 +1,6 @@
 package com.nexachat.data;
 
+import android.net.Uri;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.nexachat.core.common.ApiError;
@@ -23,10 +24,14 @@ import com.nexachat.core.database.PinDao;
 import com.nexachat.core.database.PinnedMessageEntity;
 import com.nexachat.core.database.ReactionDao;
 import com.nexachat.core.network.ApiResult;
+import com.nexachat.core.network.E2eeApi;
 import com.nexachat.core.network.MessageApi;
 import com.nexachat.core.network.NetworkMonitor;
 import com.nexachat.core.network.SessionEvents;
+import com.nexachat.core.network.SessionBoundRequest;
+import com.nexachat.core.network.TokenRefresher;
 import com.nexachat.core.network.dto.AttachmentDto;
+import com.nexachat.core.network.dto.E2eeDeviceDtos.ConversationE2eeDto;
 import com.nexachat.core.network.dto.E2eeDeviceDtos.MemberDeviceDto;
 import com.nexachat.core.network.dto.EditMessageRequest;
 import com.nexachat.core.network.dto.MessageDto;
@@ -58,6 +63,7 @@ import io.reactivex.rxjava3.processors.BehaviorProcessor;
 import io.reactivex.rxjava3.processors.PublishProcessor;
 import io.reactivex.rxjava3.processors.FlowableProcessor;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import io.reactivex.rxjava3.subjects.SingleSubject;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -68,6 +74,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -182,6 +189,8 @@ public final class MessageRepository {
      */
     private final ConcurrentHashMap<String, String> keysetPauseNotified = new ConcurrentHashMap<>();
     private final AtomicLong lastOutboxCreatedAt = new AtomicLong();
+    private final OutboxWriteQueue outboxWrites = new OutboxWriteQueue();
+    private final Map<String, AttachmentSendTicket> attachmentTickets = new ConcurrentHashMap<>();
     private final FlowableProcessor<TypingEvent> typingEvents = PublishProcessor.<TypingEvent>create().toSerialized();
     private final FlowableProcessor<ReadEvent> readEvents = PublishProcessor.<ReadEvent>create().toSerialized();
     /** Emits whether the most recent REST response reached the server. */
@@ -192,6 +201,9 @@ public final class MessageRepository {
     @Nullable private volatile Disposable rateLimitRetry;
     @Nullable private volatile TokenUser tokenToUser;
     @Nullable private final SyncEngine syncEngine;
+    @Nullable private final AttachmentRepository attachmentRepository;
+    @Nullable private final E2eeApi mediaEligibilityApi;
+    @Nullable private final TokenRefresher tokenRefresher;
 
     @Inject
     public MessageRepository(MessageApi messageApi, MessageDao messageDao,
@@ -202,12 +214,13 @@ public final class MessageRepository {
             OfflineOutboxScheduler offlineOutboxScheduler,
             SessionOperationTracker operationTracker, NetworkMonitor networkMonitor,
             EphemeralStateRouter ephemeralRouter, E2eeSession e2eeSession,
-            KeysetTrustStore keysetTrustStore) {
+            KeysetTrustStore keysetTrustStore, AttachmentRepository attachmentRepository,
+            E2eeApi mediaEligibilityApi, TokenRefresher tokenRefresher) {
         this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
                 session, tokenStore, sessionEvents, moshi, Schedulers.computation(),
                 appDatabase, offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
                 operationTracker, networkMonitor, ephemeralRouter, syncEngine, e2eeSession,
-                keysetTrustStore);
+                keysetTrustStore, attachmentRepository, mediaEligibilityApi, tokenRefresher);
     }
 
     /** Package constructor lets deterministic Rx tests control the rate-limit clock. */
@@ -318,6 +331,27 @@ public final class MessageRepository {
             SessionOperationTracker operationTracker, @Nullable NetworkMonitor networkMonitor,
             @Nullable EphemeralStateRouter ephemeralRouter, @Nullable SyncEngine syncEngine,
             @Nullable E2eeSession e2eeSession, @Nullable KeysetTrustStore keysetTrustStore) {
+        this(messageApi, messageDao, conversationDao, outboxDao, reactionDao, pinDao,
+                session, tokenStore, sessionEvents, moshi, timerScheduler, appDatabase,
+                offlineOutboxDao, offlineActionApi, offlineOutboxScheduler,
+                operationTracker, networkMonitor, ephemeralRouter, syncEngine, e2eeSession,
+                keysetTrustStore, null, null, null);
+    }
+
+    private MessageRepository(MessageApi messageApi, MessageDao messageDao,
+            ConversationDao conversationDao, OutboxDao outboxDao, ReactionDao reactionDao,
+            PinDao pinDao, RealtimeSession session, TokenStore tokenStore,
+            SessionEvents sessionEvents, Moshi moshi, Scheduler timerScheduler,
+            AppDatabase appDatabase, OfflineOutboxDao offlineOutboxDao,
+            OfflineActionApi offlineActionApi, @Nullable OfflineOutboxScheduler offlineOutboxScheduler,
+            SessionOperationTracker operationTracker, @Nullable NetworkMonitor networkMonitor,
+            @Nullable EphemeralStateRouter ephemeralRouter, @Nullable SyncEngine syncEngine,
+            @Nullable E2eeSession e2eeSession, @Nullable KeysetTrustStore keysetTrustStore,
+            @Nullable AttachmentRepository attachmentRepository, @Nullable E2eeApi mediaEligibilityApi,
+            @Nullable TokenRefresher tokenRefresher) {
+        this.attachmentRepository = attachmentRepository;
+        this.mediaEligibilityApi = mediaEligibilityApi;
+        this.tokenRefresher = tokenRefresher;
         this.e2eeSession = e2eeSession;
         this.keysetTrustStore = keysetTrustStore;
         this.messageApi = messageApi;
@@ -1078,7 +1112,11 @@ public final class MessageRepository {
         if (removedConversations.contains(conversationId)) {
             return operationTracker.track(Completable.fromAction(this::emitNotMember));
         }
-        return operationTracker.track(currentUserId()
+        return operationTracker.track(Completable.defer(() -> {
+            AtomicReference<OutboxEntity> accepted = new AtomicReference<>();
+            SessionBoundRequest bound = tokenRefresher == null
+                    ? null : new SessionBoundRequest(tokenRefresher.sessionEpoch());
+            Completable write = ownerOf(bound)
                 .switchIfEmpty(Maybe.error(new IllegalStateException("No active account")))
                 .flatMapCompletable(ownerUserId -> nextOutboxCreatedAt(ownerUserId)
                         .flatMapCompletable(createdAt -> {
@@ -1091,10 +1129,99 @@ public final class MessageRepository {
                                     conversationId, type, content, replyToId, OutboxState.SENDING,
                                     createdAt, attachmentsJson, MessageMentionCodec.encode(mentions),
                                     mentionAll, ownerUserId);
-                            return outboxDao.insert(entry).andThen(Completable.fromAction(() -> {
+                            Completable save = bound == null ? outboxDao.insert(entry)
+                                    : Completable.fromAction(() -> {
+                                        if (!tokenRefresher.runIfSessionCurrent(bound.epoch(),
+                                                () -> outboxDao.insertNew(entry))) {
+                                            throw new CancellationException("Account changed");
+                                        }
+                                    });
+                            return save.andThen(Completable.fromAction(() -> {
+                                accepted.set(entry);
                                 if (offlineOutboxScheduler != null) offlineOutboxScheduler.schedule();
-                            })).andThen(dispatchOutbox(entry));
-                        })).subscribeOn(Schedulers.io()));
+                            }));
+                        })).subscribeOn(Schedulers.io());
+            return outboxWrites.enqueue(conversationId, write)
+                    .andThen(Completable.defer(() -> currentUserId().flatMapCompletable(current ->
+                            dispatchWhenReady(accepted.get(), current, false))));
+        }));
+    }
+
+    /** Accepts a selected file only after its encrypted copy and outbox row are durable. */
+    public Completable queueAttachment(String conversationId, Uri uri, @Nullable Long durationMs,
+            @Nullable String replyToId, AttachmentSendTicket ticket) {
+        return operationTracker.track(Completable.defer(() -> {
+            if (attachmentRepository == null) {
+                return Completable.error(new IllegalStateException("Attachment staging unavailable"));
+            }
+            String id = ticket.id();
+            attachmentTickets.put(id, ticket);
+            SessionBoundRequest bound = new SessionBoundRequest(tokenRefresher.sessionEpoch());
+            Completable write = ownerOf(bound)
+                    .switchIfEmpty(Maybe.error(new CancellationException("No active account")))
+                    .flatMapCompletable(owner ->
+                            nextOutboxCreatedAt(owner).flatMapCompletable(createdAt ->
+                                    attachmentRepository.stageUpload(uri, owner, id, metadata -> {
+                                        String name = metadata.getDisplayName() == null
+                                                ? "attachment" : metadata.getDisplayName();
+                                        String mime = attachmentRepository.resolveMime(metadata.getMimeType(), null);
+                                        String payload = anyAdapter.toJson(Map.of(
+                                                "mime", mime, "durationMs", durationMs == null ? -1 : durationMs));
+                                        OutboxEntity row = new OutboxEntity(id, conversationId,
+                                                metadata.getType(), name, replyToId, OutboxState.WAITING_UPLOAD,
+                                                createdAt, payload, "[]", false, owner);
+                                        acceptStagedAttachment(row, bound, ticket);
+                                    })))
+                    .subscribeOn(Schedulers.io());
+            return outboxWrites.enqueue(conversationId, write);
+        }));
+    }
+
+    private void acceptStagedAttachment(OutboxEntity row, SessionBoundRequest bound,
+            AttachmentSendTicket ticket) {
+        boolean accepted = tokenRefresher.runIfSessionCurrent(bound.epoch(), () -> {
+            if (removedConversations.contains(row.getConversationId())) {
+                throw new CancellationException("Conversation membership ended");
+            }
+            ticket.accept(row.getOwnerUserId(), () -> outboxDao.insertNew(row));
+        });
+        if (!accepted) throw new CancellationException("Account changed");
+        // Schedule even if the picker UI has gone away.
+        offlineOutboxScheduler.schedule();
+    }
+
+    public void finishAttachmentStaging(AttachmentSendTicket ticket) {
+        if (!ticket.isCancelled()) attachmentTickets.remove(ticket.id(), ticket);
+    }
+
+    public Single<Boolean> cancelAttachmentStaging(AttachmentSendTicket ticket) {
+        if (!ticket.cancel()) return Single.just(false);
+        SingleSubject<Boolean> result = SingleSubject.create();
+        Completable.fromAction(() -> {
+            String owner = ticket.owner();
+            if (owner != null) {
+                outboxDao.deleteInTransaction(ticket.id(), owner);
+                discardStagedUpload(owner, ticket.id());
+                offlineOutboxScheduler.schedule();
+            }
+            attachmentTickets.remove(ticket.id(), ticket);
+        }).subscribeOn(Schedulers.io()).subscribe(() -> result.onSuccess(true), result::onError);
+        return result.hide();
+    }
+
+    private Maybe<String> ownerOf(@Nullable SessionBoundRequest bound) {
+        return bound == null ? currentUserId() : tokenStore.readTokensForSession(bound.epoch())
+                .flatMap(tokens -> Maybe.fromCallable(() -> TimeAndJwt.userIdFromJwt(
+                        tokens.getAccessToken(), moshi)));
+    }
+
+    private Single<SessionBoundRequest> boundSession(String owner) {
+        return tokenStore.readSessionSnapshot().flatMapMaybe(snapshot ->
+                        tokenStore.readTokensForSession(snapshot.getEpoch())
+                                .filter(tokens -> owner.equals(TimeAndJwt.userIdFromJwt(
+                                        tokens.getAccessToken(), moshi)))
+                                .map(tokens -> new SessionBoundRequest(snapshot.getEpoch())))
+                .switchIfEmpty(Single.error(new CancellationException("Account changed")));
     }
 
     /** Stable FIFO key despite same-millisecond sends or a wall-clock setback. */
@@ -1123,12 +1250,30 @@ public final class MessageRepository {
                                         .andThen(Completable.fromAction(this::emitNotMember));
                             }
                             return nextOutboxCreatedAt(ownerUserId).flatMapCompletable(createdAt -> {
+                                String state = switch (old.getState()) {
+                                    case OutboxState.FAILED_UPLOAD -> OutboxState.WAITING_UPLOAD;
+                                    case OutboxState.FAILED_UPLOAD_SEND -> OutboxState.UPLOAD_READY;
+                                    default -> OutboxState.SENDING;
+                                };
                                 OutboxEntity queued = new OutboxEntity(old.getClientMessageId(),
                                         old.getConversationId(), old.getType(), old.getContent(),
-                                        old.getReplyToId(), OutboxState.SENDING, createdAt,
+                                        old.getReplyToId(), state, createdAt,
                                         old.getAttachmentsJson(), old.getMentionsJson(),
                                         old.isMentionAll(), ownerUserId);
-                                return outboxDao.insert(queued).andThen(flushOutbox());
+                                Completable requeue;
+                                if (OutboxState.WAITING_UPLOAD.equals(state)
+                                        || OutboxState.UPLOAD_READY.equals(state)) {
+                                    requeue = boundSession(ownerUserId).flatMapCompletable(bound ->
+                                            Completable.fromAction(() -> tokenRefresher.runIfSessionCurrent(
+                                                    bound.epoch(), () -> outboxDao.requeueUpload(
+                                                            old.getClientMessageId(), ownerUserId,
+                                                            old.getState(), state, createdAt))));
+                                } else {
+                                    requeue = outboxDao.insert(queued);
+                                }
+                                return requeue.andThen(Completable.fromAction(() -> {
+                                    if (offlineOutboxScheduler != null) offlineOutboxScheduler.schedule();
+                                })).andThen(flushOutbox());
                             });
                         })).subscribeOn(Schedulers.io()));
     }
@@ -1140,20 +1285,154 @@ public final class MessageRepository {
 
     /** Uses REST acknowledgements so WorkManager can retry uncertain sends with backoff. */
     public Completable flushOutboxForWorker() {
-        return flushOutbox(true);
+        if (attachmentRepository == null) return flushOutbox(true);
+        return Completable.fromAction(() -> attachmentRepository.pruneStagedUploads(outboxDao))
+                .subscribeOn(Schedulers.io()).andThen(flushOutbox(true));
     }
 
     private Completable flushOutbox(boolean workerAttempt) {
         return operationTracker.track(currentUserId().flatMapCompletable(ownerUserId ->
                 outboxDao.pendingList(ownerUserId).flatMapCompletable(entries ->
                         Flowable.fromIterable(entries).concatMapCompletable(entry ->
-                                dispatchOutbox(entry, ownerUserId, workerAttempt)))))
+                                dispatchWhenReady(entry, ownerUserId, workerAttempt)))))
                 .subscribeOn(Schedulers.io());
     }
 
-    private Completable dispatchOutbox(OutboxEntity entry) {
-        return currentUserId().flatMapCompletable(ownerUserId ->
-                dispatchOutbox(entry, ownerUserId, false));
+    private Completable dispatchWhenReady(OutboxEntity entry, String owner, boolean workerAttempt) {
+        if (!owner.equals(entry.getOwnerUserId())) return Completable.complete();
+        if (attachmentRepository == null) return dispatchOutbox(entry, owner, workerAttempt);
+        return outboxDao.hasEarlierUpload(owner, entry.getConversationId(), entry.getCreatedAt())
+                .flatMapCompletable(blocked -> {
+                    if (blocked) return Completable.complete();
+                    if (OutboxState.WAITING_UPLOAD.equals(entry.getState())
+                            || OutboxState.UPLOAD_READY.equals(entry.getState())) {
+                        if (!workerAttempt) return Completable.fromAction(offlineOutboxScheduler::schedule);
+                        return outboxDao.byId(entry.getClientMessageId(), owner)
+                                .filter(current -> entry.getState().equals(current.getState()))
+                                .flatMapCompletable(current -> boundSession(owner)
+                                        .flatMapCompletable(bound -> {
+                                            AttachmentSendTicket ticket = attachmentTickets.get(current.getClientMessageId());
+                                            return ticket == null || ticket.claim()
+                                                    ? dispatchUpload(current, bound) : Completable.complete();
+                                        }));
+                    }
+                    return dispatchOutbox(entry, owner, workerAttempt);
+                });
+    }
+
+    private Completable dispatchUpload(OutboxEntity row, SessionBoundRequest bound) {
+        String conversationId = row.getConversationId();
+        return call(mediaEligibilityApi.getE2ee(conversationId, bound))
+                .flatMapCompletable(eligibility -> {
+                    if (eligibility instanceof Result.Success<?> success) {
+                        if (((ConversationE2eeDto) success.getValue()).isEnabled()) {
+                            return failStagedUpload(row, bound, new ApiError.Unknown(ERROR_E2EE_MEDIA_UNSUPPORTED));
+                        }
+                    } else {
+                        ApiError error = ((Result.Failure<?>) eligibility).getError();
+                        // The server checks membership before returning this code for groups.
+                        if (!(error instanceof ApiError.Unknown unknown)
+                                || !"E2EE_UNSUPPORTED_CONVERSATION".equals(unknown.getCode())) {
+                            return failStagedUpload(row, bound, error);
+                        }
+                    }
+                    return keysetTrustBlocksPlaintext(row.getOwnerUserId(), conversationId)
+                            .flatMapCompletable(blocked -> blocked
+                                    ? failStagedUpload(row, bound,
+                                            new ApiError.Unknown(ERROR_E2EE_DOWNGRADE_BLOCKED))
+                                    : OutboxState.UPLOAD_READY.equals(row.getState())
+                                            ? sendUploadedAttachment(row, bound) : uploadStagedFile(row, bound));
+                });
+    }
+
+    private Completable uploadStagedFile(OutboxEntity row, SessionBoundRequest bound) {
+        return Completable.defer(() -> {
+            Object data;
+            try {
+                data = anyAdapter.fromJson(row.getAttachmentsJson());
+            } catch (IOException | com.squareup.moshi.JsonDataException invalid) {
+                return failStagedUpload(row, bound, new ApiError.Unknown(AttachmentRepository.ERROR_UNREADABLE));
+            }
+            if (!(data instanceof Map<?, ?> fields) || !(fields.get("mime") instanceof String mime)) {
+                return failStagedUpload(row, bound, new ApiError.Unknown(AttachmentRepository.ERROR_UNREADABLE));
+            }
+            Long duration = fields.get("durationMs") instanceof Number number && number.longValue() >= 0
+                    ? number.longValue() : null;
+            String id = row.getClientMessageId();
+            String owner = row.getOwnerUserId();
+            return attachmentRepository.uploadStaged(owner, id, row.getContent(), mime, duration, bound)
+                    .filter(event -> !(event instanceof AttachmentUploadEvent.Progress))
+                    .firstOrError()
+                    .flatMapCompletable(event -> {
+                        if (event instanceof AttachmentUploadEvent.Failed failed) {
+                            return failStagedUpload(row, bound, failed.getError());
+                        }
+                        AttachmentDto attachment = ((AttachmentUploadEvent.Uploaded) event).getAttachment();
+                        AtomicBoolean promoted = new AtomicBoolean();
+                        tokenRefresher.runIfSessionCurrent(bound.epoch(), () -> promoted.set(
+                                outboxDao.markUploadReady(id, owner,
+                                        AttachmentDto.messageTypeForMime(attachment.getMimeType()),
+                                        attachmentsAdapter.toJson(List.of(attachment))) == 1));
+                        if (!promoted.get()) return Completable.complete();
+                        discardStagedUpload(owner, id);
+                        return outboxDao.byId(id, owner)
+                                .flatMapCompletable(ready -> sendUploadedAttachment(ready, bound));
+                    });
+        });
+    }
+
+    private Completable sendUploadedAttachment(OutboxEntity row, SessionBoundRequest bound) {
+        return outboxDao.byId(row.getClientMessageId(), row.getOwnerUserId())
+                .filter(current -> OutboxState.UPLOAD_READY.equals(current.getState()))
+                .flatMapCompletable(current -> sendCurrentUploadedAttachment(current, bound));
+    }
+
+    private Completable sendCurrentUploadedAttachment(OutboxEntity row, SessionBoundRequest bound) {
+        String conversationId = row.getConversationId();
+        SendMessageRequest request = new SendMessageRequest(row.getClientMessageId(), row.getType(),
+                row.getContent(), row.getReplyToId(), attachmentIds(row), List.of(), false);
+        return call(messageApi.sendMessage(conversationId, request, bound)).flatMapCompletable(result -> {
+            if (result instanceof Result.Success<?> success) {
+                return syncEngine.applyServerMessage((MessageDto) success.getValue(),
+                        conversationId, bound.epoch());
+            }
+            return failStagedUpload(row, bound, ((Result.Failure<?>) result).getError());
+        });
+    }
+
+    private Completable failStagedUpload(OutboxEntity row, SessionBoundRequest bound, ApiError error) {
+        if (error instanceof ApiError.Network || error instanceof ApiError.RateLimited
+                || error instanceof ApiError.Unknown unknown && unknown.getHttpStatus() >= 500) {
+            return Completable.error(new IOException("Attachment delivery will retry"));
+        }
+        String id = row.getClientMessageId();
+        String owner = row.getOwnerUserId();
+        boolean removed = error instanceof ApiError.Unknown unknown
+                && (ERROR_NOT_MEMBER.equals(unknown.getCode())
+                        || ERROR_CONVERSATION_NOT_FOUND.equals(unknown.getCode()));
+        return Completable.fromAction(() -> {
+            boolean applied = tokenRefresher.runIfSessionCurrent(bound.epoch(), () -> {
+                if (removed) {
+                    outboxDao.deleteInTransaction(id, owner);
+                } else if (OutboxState.WAITING_UPLOAD.equals(row.getState())) {
+                    outboxDao.failUpload(id, owner);
+                } else {
+                    outboxDao.failUploadedSend(id, owner);
+                }
+                interactionEvents.onNext(error);
+            });
+            if (applied && removed) {
+                discardStagedUpload(owner, id);
+            }
+        });
+    }
+
+    private void discardStagedUpload(String owner, String id) {
+        try {
+            attachmentRepository.discardStagedUpload(owner, id);
+        } catch (IOException failure) {
+            // Unreferenced files are also collected when the worker resumes.
+        }
     }
 
     private Completable dispatchOutbox(
@@ -1729,8 +2008,11 @@ public final class MessageRepository {
                     if (update.isSelfRemoval(userId)) {
                         removedConversations.add(conversationId);
                         activeConversation.compareAndSet(conversationId, null);
-                        return userId == null ? Completable.complete()
-                                : outboxDao.deleteForConversation(conversationId, userId);
+                        if (userId == null) return Completable.complete();
+                        Completable deleted = outboxDao.deleteForConversation(conversationId, userId);
+                        return attachmentRepository == null ? deleted : deleted.andThen(
+                                Completable.fromAction(() -> attachmentRepository.pruneStagedUploads(outboxDao))
+                                        .subscribeOn(Schedulers.io()));
                     }
                     if (userId != null && update.getMemberIds().contains(userId)) {
                         removedConversations.remove(conversationId);
@@ -2332,9 +2614,14 @@ public final class MessageRepository {
 
     private ChatMessage toChatMessage(OutboxEntity row) {
         boolean pausedRefusal = OutboxState.FAILED_PAUSED.equals(row.getState());
+        boolean awaitingUpload = OutboxState.WAITING_UPLOAD.equals(row.getState())
+                || OutboxState.FAILED_UPLOAD.equals(row.getState());
         return new ChatMessage(row.getClientMessageId(), row.getConversationId(), null, "", null,
-                row.getType(), row.getContent(), row.getReplyToId(), null, null, row.getCreatedAt(),
+                awaitingUpload ? MessageDto.TYPE_TEXT : row.getType(), row.getContent(), row.getReplyToId(),
+                null, null, row.getCreatedAt(),
                 row.getClientMessageId(), pausedRefusal || OutboxState.FAILED.equals(row.getState())
+                        || OutboxState.FAILED_UPLOAD.equals(row.getState())
+                        || OutboxState.FAILED_UPLOAD_SEND.equals(row.getState())
                         ? DeliveryStatus.FAILED : DeliveryStatus.SENDING,
                 true, attachments(row.getAttachmentsJson()), Collections.emptyList(), null, null,
                 MessageMentionCodec.decode(row.getMentionsJson()), row.isMentionAll(),

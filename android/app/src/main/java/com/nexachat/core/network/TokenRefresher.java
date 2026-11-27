@@ -15,6 +15,7 @@ import com.nexachat.core.storage.Tokens;
 import com.nexachat.data.AccountDataCleaner;
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.disposables.Disposable;
@@ -244,6 +245,20 @@ public final class TokenRefresher {
         return refreshIfNeeded(failedAccessToken).blockingGet().orElse(null);
     }
 
+    /** Retries deferred work only under the same durable login epoch. */
+    @Nullable
+    public String refreshIfNeededBlocking(long expectedEpoch, @Nullable String failedAccessToken) {
+        TokenRefreshOutcome outcome = singleFlight(expectedEpoch,
+                epoch -> conditionalOperation(epoch, failedAccessToken,
+                        tokenStore.readTokensForSession(epoch))).blockingGet();
+        if (!(outcome instanceof TokenRefreshOutcome.FreshToken) || !isSessionCurrent(expectedEpoch)) {
+            return null;
+        }
+        // A replacement session can persist before it publishes its in-memory epoch.
+        return tokenStore.readTokensForSession(expectedEpoch)
+                .map(Tokens::getAccessToken).blockingGet();
+    }
+
     /** Called when a new login or register persists credentials. */
     public void onSessionEstablished(long newEpoch) {
         synchronized (lock) {
@@ -415,14 +430,19 @@ public final class TokenRefresher {
 
     private Single<TokenRefreshOutcome> singleFlight(
             java.util.function.LongFunction<Single<TokenRefreshOutcome>> operation) {
+        return singleFlight(null, operation);
+    }
+
+    private Single<TokenRefreshOutcome> singleFlight(@Nullable Long expectedEpoch,
+            java.util.function.LongFunction<Single<TokenRefreshOutcome>> operation) {
         ensureBootstrap();
         final long capturedEpoch;
         final long flightId = System.nanoTime();
         synchronized (lock) {
-            if (!admissionOpen) {
+            capturedEpoch = sessionEpoch.get();
+            if (!admissionOpen || (expectedEpoch != null && expectedEpoch != capturedEpoch)) {
                 return Single.just(TokenRefreshOutcome.NoRefreshToken.INSTANCE);
             }
-            capturedEpoch = sessionEpoch.get();
             if (inFlight != null && inFlight.epoch == capturedEpoch) {
                 return fenceDelivery(inFlight.shared, capturedEpoch);
             }
@@ -450,7 +470,12 @@ public final class TokenRefresher {
 
     private Single<TokenRefreshOutcome> conditionalOperation(
             long capturedEpoch, @Nullable String failedAccessToken) {
-        return tokenStore.readTokens().flatMapSingle(tokens -> {
+        return conditionalOperation(capturedEpoch, failedAccessToken, tokenStore.readTokens());
+    }
+
+    private Single<TokenRefreshOutcome> conditionalOperation(long capturedEpoch,
+            @Nullable String failedAccessToken, Maybe<Tokens> credentials) {
+        return credentials.flatMapSingle(tokens -> {
             if (!isSessionCurrent(capturedEpoch)) {
                 return Single.just((TokenRefreshOutcome) TokenRefreshOutcome.NoRefreshToken.INSTANCE);
             }

@@ -10,6 +10,7 @@ import retrofit2.http.DELETE;
 import retrofit2.http.GET;
 import retrofit2.http.PUT;
 import retrofit2.http.Path;
+import retrofit2.http.Tag;
 
 /** E2EE device registry and direct-conversation toggle endpoints. */
 public interface E2eeApi {
@@ -27,6 +28,10 @@ public interface E2eeApi {
     /** Current E2EE flag plus every member's active devices. */
     @GET("api/v1/conversations/{id}/e2ee")
     Call<ConversationE2eeDto> getE2ee(@Path("id") String conversationId);
+
+    @GET("api/v1/conversations/{id}/e2ee")
+    Call<ConversationE2eeDto> getE2ee(
+            @Path("id") String conversationId, @Tag SessionBoundRequest session);
 
     /** Toggles E2EE on a DIRECT conversation; enabling needs all members keyed. */
     @PUT("api/v1/conversations/{id}/e2ee")
