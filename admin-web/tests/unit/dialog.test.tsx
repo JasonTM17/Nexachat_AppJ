@@ -59,7 +59,7 @@ describe('ConfirmDialog focus', () => {
     render(<I18nProvider><Example /></I18nProvider>);
     const opener = screen.getByRole('button', { name: 'Open user' });
     await user.click(opener);
-    const suspend = screen.getByRole('button', { name: 'Suspend', exact: true });
+    const suspend = screen.getByRole('button', { name: /^Suspend$/ });
     await user.click(suspend);
     expect(screen.getByLabelText(/Reason/)).toHaveFocus();
 
