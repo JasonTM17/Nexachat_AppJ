@@ -21,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
@@ -287,8 +288,9 @@ class AskApiIT {
                 .andExpect(jsonPath("$.usage.llmCalls").value(0));
     }
 
-    @Test
-    void olderPolicyCacheCannotReplayOneSideOfAConflictingCount() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"ask-grounding-v2:", "ask-grounding-v3:"})
+    void olderPolicyCacheCannotReplayOneSideOfAConflictingCount(String policy) throws Exception {
         grantAiConsent(caller);
         String firstClaim = "The Juniper hall can seat 48 people.";
         TestMessage first = addMessage(peer.getId(), firstClaim);
@@ -305,7 +307,7 @@ class AskApiIT {
         assertThat(questionCache.saveIfConsentSnapshotMatches(caller.getId(), consentRepository.snapshot(caller.getId()),
                 conversationId, embedding.id(), key, embedding.embed(question), cached)).isTrue();
         assertThat(questionCache.findExact(conversationId, embedding.id(), key)).isPresent();
-        String previousPolicy = RagHashes.sha256("ask-grounding-v2:" + embedding.id());
+        String previousPolicy = RagHashes.sha256(policy + embedding.id());
         assertThat(jdbcTemplate.update("UPDATE rag_ask_cache SET model = ? WHERE conversation_id = ? AND question_hash = ?",
                 previousPolicy, conversationId, key)).isEqualTo(1);
 
@@ -321,6 +323,56 @@ class AskApiIT {
         }
         assertThat(jdbcTemplate.queryForList("SELECT model FROM rag_ask_cache WHERE conversation_id = ?",
                 String.class, conversationId)).containsExactly(previousPolicy);
+    }
+
+    @Test
+    void namedAskRechecksTheCurrentSpeakerBeforePublishingAReply() throws Exception {
+        grantAiConsent(caller);
+        TestMessage fact = addMessage(peer.getId(), "The lighthouse gate code is 3842.");
+        var original = new AskRequest("According to Ask peer, what is the lighthouse gate code?", SummaryLanguage.EN);
+        AskExecution inFlight = askService.askForResponse(conversationId, caller.getId(), original);
+        assertThat(inFlight.response().mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(inFlight.response().citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+        jdbcTemplate.update("UPDATE users SET display_name = ? WHERE id = ?", "Élin", peer.getId());
+
+        MockHttpServletResponse stale = new MockHttpServletResponse();
+        responseWriter.write(caller.getId(), inFlight, stale);
+        assertThat(stale.getContentAsString()).doesNotContain("3842");
+        assertThat(objectMapper.readTree(stale.getContentAsByteArray()).path("notFoundReason").asText())
+                .isEqualTo("CONTEXT_CHANGED");
+
+        postAsk(caller, objectMapper.writeValueAsString(original)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.mode").value("NOT_FOUND"));
+        var renamed = new AskRequest("According to E\u0301lin, what is the lighthouse gate code?", SummaryLanguage.EN);
+        postAsk(caller, objectMapper.writeValueAsString(renamed)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.mode").value("EXTRACTIVE"))
+                .andExpect(jsonPath("$.answer").value("3842"))
+                .andExpect(jsonPath("$.citations[0].messageId").value(fact.id().toString()));
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM rag_ask_cache WHERE conversation_id = ?",
+                Integer.class, conversationId)).isZero();
+    }
+
+    @Test
+    void namedAskResolvesOnlyAdmittedNonOptedOutSenders() throws Exception {
+        jdbcTemplate.update("UPDATE users SET display_name = ? WHERE id = ?", "Uyên", peer.getId());
+        jdbcTemplate.update("UPDATE users SET display_name = ? WHERE id = ?", "Uye\u0302n", outsider.getId());
+        addMember(outsider.getId());
+        TestMessage first = addMessage(peer.getId(), "Mã cổng Hải Đăng là 3842.");
+        TestMessage second = addMessage(outsider.getId(), "Mã cổng Hải Đăng là 5278.");
+        String request = objectMapper.writeValueAsString(new AskRequest("Theo lời của Uyên, mã cổng Hải Đăng là gì?", SummaryLanguage.VI));
+        postAsk(caller, request).andExpect(status().isOk()).andExpect(jsonPath("$.mode").value("NOT_FOUND"));
+
+        OffsetDateTime originalTime = jdbcTemplate.queryForObject("SELECT created_at FROM messages WHERE id = ?",
+                (row, number) -> row.getObject(1, OffsetDateTime.class), second.id());
+        jdbcTemplate.update("UPDATE messages SET created_at = ? WHERE id = ?", originalTime.minusDays(1), second.id());
+        postAsk(caller, request).andExpect(status().isOk())
+                .andExpect(jsonPath("$.citations[0].messageId").value(first.id().toString()));
+        jdbcTemplate.update("UPDATE messages SET created_at = ? WHERE id = ?", originalTime, second.id());
+        jdbcTemplate.update("INSERT INTO conversation_ai_opt_outs (conversation_id, user_id) VALUES (?, ?)",
+                conversationId, outsider.getId());
+        postAsk(caller, request).andExpect(status().isOk())
+                .andExpect(jsonPath("$.mode").value("EXTRACTIVE"))
+                .andExpect(jsonPath("$.citations[0].messageId").value(first.id().toString()));
     }
 
     @Test

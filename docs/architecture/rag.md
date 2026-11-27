@@ -119,6 +119,8 @@ full question-term coverage and comparable values return `NO_EVIDENCE`
 without sending the prompt to the answer provider. Counts use the requested
 unit. Approximate quantities and lower bounds may agree with a different exact
 count, and an upper bound is comparable when the question asks for a maximum.
+For a code with letters and digits, the extractor keeps the supporting sentence
+so a numeric suffix or nearby duration cannot stand in for the complete code.
 Broad aggregation or explicit multi-message synthesis prompts such as
 summaries, recaps, action-item lists, and corpus-scoped requests for other
 relevant milestones bypass that lookup evidence requirement because the whole
@@ -129,6 +131,17 @@ require labeled evaluation before being treated as production calibration.
 Answer cache keys include the grounding policy and embedding identity. After a
 policy change, old rows expire through normal retention and are skipped by both
 exact and semantic replay. Stored message vectors retain their embedding identity.
+
+Explicit attribution such as `According to <name>, …` or
+`Theo lời của <tên>, …` selects one eligible sender using the display name and
+the reader's admission boundary. No match or multiple eligible senders return
+`NO_EVIDENCE`. Ask ranks only that sender's messages for the rest of the
+question. The attribution name is resolved before prompt construction.
+With consent, the answer provider receives complete messages from the selected
+sender and may return one complete source sentence with its single citation.
+The server checks the quote against the redacted text actually sent. Named
+lookups bypass the answer cache and recheck attribution before publication
+because a profile rename can leave the message revision unchanged.
 
 ## Consent and privacy
 

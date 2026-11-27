@@ -70,6 +70,10 @@ public final class RagOutputValidator {
         if (answerNode.isNull()) {
             return citationsNode.isEmpty() ? Validation.abstain() : Validation.invalid();
         }
+        boolean speakerQuote = !prompt.quoteSources().isEmpty();
+        if (speakerQuote && !isSpeakerQuote(answerNode.textValue(), citationsNode, prompt)) {
+            return Validation.invalid();
+        }
         CleanedText cleaned = cleanText(answerNode.textValue());
         String answer = cleaned.text();
         if (answer == null || answer.isBlank()) {
@@ -88,10 +92,20 @@ public final class RagOutputValidator {
         if (citationIds.isEmpty()) {
             return Validation.invalid();
         }
-        if (!LanguageCheck.matches(answer, prompt.language())) {
+        if (!speakerQuote && !LanguageCheck.matches(answer, prompt.language())) {
             return Validation.invalid();
         }
         return Validation.answer(new RagLlmAnswer(answer, List.copyOf(citationIds)), cleaned.sensitiveContentRedacted());
+    }
+
+    private static boolean isSpeakerQuote(String answer, JsonNode citations, RagPrompt prompt) {
+        if (citations.size() != 1 || !citations.get(0).isIntegralNumber() || !citations.get(0).canConvertToInt()) {
+            return false;
+        }
+        int index = citations.get(0).asInt();
+        String source = prompt.quoteSources().get(index);
+        return source != null && prompt.messageIdsByIndex().getOrDefault(index, List.of()).size() == 1
+                && RagExtractiveAnswerer.attributedStatements(source).contains(answer.strip());
     }
 
     public enum Status {

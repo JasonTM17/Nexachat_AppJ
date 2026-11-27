@@ -83,10 +83,16 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
 
     @Override
     public List<RagMessage> recentMessages(UUID conversationId, int limit) {
-        String sql = "SELECT " + MESSAGE_COLUMNS + MESSAGE_WHERE
-                + " ORDER BY m.seq DESC LIMIT ?";
-        List<RagMessage> newestFirst = jdbcTemplate.query(
-                sql, MESSAGE_MAPPER, conversationId, Math.max(1, limit));
+        return recentMessagesBySpeaker(conversationId, null, limit, null);
+    }
+
+    @Override
+    public List<RagMessage> recentMessagesBySpeaker(UUID conversationId, UUID senderId, int limit, Instant admittedFrom) {
+        StringBuilder sql = new StringBuilder("SELECT " + MESSAGE_COLUMNS + MESSAGE_WHERE);
+        List<Object> parameters = scopedMessageParameters(sql, conversationId, admittedFrom, senderId);
+        sql.append(" ORDER BY m.seq DESC LIMIT ?");
+        parameters.add(Math.max(1, limit));
+        List<RagMessage> newestFirst = jdbcTemplate.query(sql.toString(), MESSAGE_MAPPER, parameters.toArray());
         List<RagMessage> ordered = new ArrayList<>(newestFirst);
         java.util.Collections.reverse(ordered);
         return List.copyOf(ordered);
@@ -100,16 +106,17 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
     @Override
     public List<RagMessage> lexicalCandidates(
             UUID conversationId, List<String> terms, int limit, Instant admittedFrom) {
+        return lexicalCandidatesBySpeaker(conversationId, null, terms, limit, admittedFrom);
+    }
+
+    @Override
+    public List<RagMessage> lexicalCandidatesBySpeaker(
+            UUID conversationId, UUID senderId, List<String> terms, int limit, Instant admittedFrom) {
         if (terms == null || terms.isEmpty()) {
             return List.of();
         }
         StringBuilder sql = new StringBuilder("SELECT " + MESSAGE_COLUMNS + MESSAGE_WHERE);
-        List<Object> parameters = new ArrayList<>();
-        parameters.add(conversationId);
-        if (admittedFrom != null) {
-            sql.append(" AND m.created_at >= ?");
-            parameters.add(OffsetDateTime.ofInstant(admittedFrom, ZoneOffset.UTC));
-        }
+        List<Object> parameters = scopedMessageParameters(sql, conversationId, admittedFrom, senderId);
         sql.append(" AND (");
         for (int index = 0; index < terms.size(); index++) {
             if (index > 0) {
@@ -121,6 +128,30 @@ public class JdbcRagMessageIndex implements RagMessageIndex {
         sql.append(") ORDER BY m.seq DESC LIMIT ?");
         parameters.add(Math.max(1, limit));
         return List.copyOf(jdbcTemplate.query(sql.toString(), MESSAGE_MAPPER, parameters.toArray()));
+    }
+
+    @Override
+    public List<UUID> findEligibleSpeakerIds(UUID conversationId, Instant admittedFrom, String displayName) {
+        StringBuilder sql = new StringBuilder("SELECT DISTINCT m.sender_id " + MESSAGE_WHERE);
+        List<Object> parameters = scopedMessageParameters(sql, conversationId, admittedFrom, null);
+        sql.append(" AND normalize(lower(btrim(u.display_name)), NFC) = normalize(lower(btrim(?)), NFC) LIMIT 2");
+        parameters.add(displayName);
+        return jdbcTemplate.query(sql.toString(), (row, number) -> row.getObject(1, UUID.class), parameters.toArray());
+    }
+
+    private static List<Object> scopedMessageParameters(
+            StringBuilder sql, UUID conversationId, Instant admittedFrom, UUID senderId) {
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(conversationId);
+        if (admittedFrom != null) {
+            sql.append(" AND m.created_at >= ?");
+            parameters.add(OffsetDateTime.ofInstant(admittedFrom, ZoneOffset.UTC));
+        }
+        if (senderId != null) {
+            sql.append(" AND m.sender_id = ?");
+            parameters.add(senderId);
+        }
+        return parameters;
     }
 
     @Override

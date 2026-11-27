@@ -8,6 +8,7 @@ import com.nexachat.summary.engine.SummarySignals;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -77,13 +78,38 @@ public class RagRetrievalService {
     public RetrievalResult retrieve(
             UUID conversationId, UUID userId, String question, SummaryLanguage language, boolean consented,
             java.time.Instant admittedFrom, boolean requireAnswerEvidence, AskDeadline deadline) {
+        return retrieve(conversationId, userId, question, language, consented, admittedFrom,
+                requireAnswerEvidence, deadline, null);
+    }
+
+    UUID findSpeaker(UUID conversationId, Instant admittedFrom, String name) {
+        List<UUID> candidates = index.findEligibleSpeakerIds(conversationId, admittedFrom, name);
+        return candidates.size() == 1 ? candidates.getFirst() : null;
+    }
+
+    boolean speakerUnchanged(UUID conversationId, AskSpeakerLookup.Binding binding) {
+        return binding.senderId().equals(findSpeaker(conversationId, binding.admittedFrom(), binding.name()));
+    }
+
+    RetrievalResult retrieveForSpeaker(
+            UUID conversationId, UUID userId, String question, SummaryLanguage language, boolean consented,
+            AskSpeakerLookup.Binding speaker, AskDeadline deadline) {
+        return retrieve(conversationId, userId, question, language, consented, speaker.admittedFrom(),
+                true, deadline, speaker.senderId());
+    }
+
+    private RetrievalResult retrieve(
+            UUID conversationId, UUID userId, String question, SummaryLanguage language, boolean consented,
+            Instant admittedFrom, boolean requireAnswerEvidence, AskDeadline deadline, UUID senderId) {
         check(deadline);
         RagProperties.Retrieval config = properties.getRetrieval();
-        List<RagMessage> recent = index.recentMessages(
-                conversationId, config.getMaxCandidateMessages(), admittedFrom);
+        List<RagMessage> recent = senderId == null
+                ? index.recentMessages(conversationId, config.getMaxCandidateMessages(), admittedFrom)
+                : index.recentMessagesBySpeaker(conversationId, senderId, config.getMaxCandidateMessages(), admittedFrom);
         List<String> terms = RagQuestionTerms.extract(question, language, config.getLexicalTermLimit());
-        List<RagMessage> lexicalCandidates = index.lexicalCandidates(
-                conversationId, terms, config.getLexicalCandidateLimit(), admittedFrom);
+        List<RagMessage> lexicalCandidates = senderId == null
+                ? index.lexicalCandidates(conversationId, terms, config.getLexicalCandidateLimit(), admittedFrom)
+                : index.lexicalCandidatesBySpeaker(conversationId, senderId, terms, config.getLexicalCandidateLimit(), admittedFrom);
         boolean optedOutEvidenceOverlap = requireAnswerEvidence
                 ? index.hasOptedOutLexicalCandidates(conversationId, terms, admittedFrom)
                 : index.hasOptedOutMessages(conversationId, admittedFrom);
@@ -110,7 +136,7 @@ public class RagRetrievalService {
                 userId, question, vectorCandidates, inlineEmbeddingBudget, consented, deadline);
         check(deadline);
         if (requireAnswerEvidence && !hasAnswerEvidence(
-                question, language, lexicalCandidates, vectorCandidates, embedded, config)) {
+                question, language, lexicalCandidates, vectorCandidates, embedded, config, senderId != null)) {
             return empty(optedOutEvidenceOverlap);
         }
 
@@ -141,8 +167,11 @@ public class RagRetrievalService {
         }
 
         check(deadline);
-        RagContextBuilder.ContextResult contextResult = RagContextBuilder.build(
-                ranked, recent, index, config, admittedFrom);
+        // Named lookups need complete, separately citable statements by just that speaker.
+        // Unrestricted neighbors or reply parents would defeat that boundary.
+        RagContextBuilder.ContextResult contextResult = senderId == null
+                ? RagContextBuilder.build(ranked, recent, index, config, admittedFrom)
+                : RagContextBuilder.buildSpeakerContext(ranked, recent, config, admittedFrom);
         check(deadline);
         return new RetrievalResult(
                 ranked,
@@ -176,7 +205,8 @@ public class RagRetrievalService {
             List<RagMessage> lexicalCandidates,
             List<RagMessage> vectorCandidates,
             RagEmbeddingService.RetrievalEmbeddings embedded,
-            RagProperties.Retrieval config) {
+            RagProperties.Retrieval config,
+            boolean namedSpeaker) {
         List<String> questionTerms = RagQuestionTerms.answerTerms(question, language, config.getLexicalTermLimit());
         if (questionTerms.isEmpty()) {
             return false;
@@ -188,10 +218,10 @@ public class RagRetrievalService {
         boolean needsSettledEvidence = RagExtractiveAnswerer.needsSettledEvidence(question, language);
         double requiredCoverage = config.getLexicalAnswerMinCoverage();
         for (RagMessage candidate : vectorCandidates) {
-            boolean covered = needsSettledEvidence
-                    ? RagExtractiveAnswerer.settledStatements(candidate.content()).stream()
-                            .anyMatch(text -> hasCoverage(text, language, questionTerms, requiredCoverage))
-                    : hasCoverage(candidate.content(), language, questionTerms, requiredCoverage);
+            List<String> statements = namedSpeaker ? RagExtractiveAnswerer.attributedStatements(candidate.content())
+                    : needsSettledEvidence ? RagExtractiveAnswerer.settledStatements(candidate.content())
+                    : List.of(candidate.content());
+            boolean covered = statements.stream().anyMatch(text -> hasCoverage(text, language, questionTerms, requiredCoverage));
             if (!covered) {
                 continue;
             }

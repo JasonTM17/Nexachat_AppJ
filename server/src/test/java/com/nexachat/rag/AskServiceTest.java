@@ -575,6 +575,129 @@ class AskServiceTest {
         assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
     }
 
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "EN | According to Élin, what is the lighthouse gate code? | Élin | The lighthouse gate code is 3842. | The lighthouse gate code is 5278.",
+            "VI | Theo chính lời của Uyên, mã cổng Hải Đăng là gì? | Uyên | Mã cổng Hải Đăng là 3842. | Mã cổng Hải Đăng là 5278."
+    })
+    void explicitSpeakerLookupUsesOnlyTheNamedAuthorsEvidence(
+            SummaryLanguage language, String question, String name, String source, String distractor) {
+        RagMessage fact = addNamedMessage(conversationId, senderId, 1, name, source);
+        addNamedMessage(conversationId, UUID.randomUUID(), 2, "Pavo", distractor);
+
+        AskResponse answer = service.ask(conversationId, userId, new AskRequest(question, language));
+
+        assertThat(answer.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(answer.answer()).isEqualTo("3842");
+        assertThat(answer.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+        verify(llmAnswerService, never()).answerDetailed(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+            "According to Neri, what is the greenhouse entry code? | The greenhouse entry code is ORBIT-636. | ORBIT-636",
+            "What is the greenhouse entry code? | The greenhouse entry code is RX39 for the next 12 days. | RX39"
+    })
+    void anAlphanumericIdentifierIsNotReducedToAnUnrelatedNumber(String question, String text, String identifier) {
+        RagMessage fact = addNamedMessage(conversationId, senderId, 1, "Neri", text);
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(question, SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).contains(identifier);
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @Test
+    void unresolvedAlphanumericCodesDoNotChooseOneSupportingSentence() {
+        addNamedMessage(conversationId, senderId, 1, "Neri", "The greenhouse entry code is ORBIT-636.");
+        addNamedMessage(conversationId, senderId, 2, "Neri", "The greenhouse entry code is POLAR-271.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("According to Neri, what is the greenhouse entry code?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @Test
+    void matchingNumericCodesWithDifferentNodeLabelsStillAgree() {
+        RagMessage first = addNamedMessage(conversationId, senderId, 1, "Neri",
+                "The greenhouse entry code is 3842 for node CRATE-4.");
+        RagMessage second = addNamedMessage(conversationId, senderId, 2, "Neri",
+                "The greenhouse entry code is 3842 for node CRATE-5.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("According to Neri, what is the greenhouse entry code?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).isEqualTo("3842");
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsAnyOf(first.id(), second.id());
+    }
+
+    @Test
+    void duplicateSpeakerNamesStayAmbiguousOutsideThePromptBudget() {
+        properties.getRetrieval().setMaxContextChars(55);
+        addNamedMessage(conversationId, senderId, 1, "Élin", "The lighthouse gate code is 3842.");
+        addNamedMessage(conversationId, UUID.randomUUID(), 2, "E\u0301lin", "The lighthouse gate code is 5278.");
+        setConsent(true);
+
+        AskResponse answer = service.ask(conversationId, userId,
+                new AskRequest("According to Élin, what is the lighthouse gate code?", SummaryLanguage.EN));
+
+        assertThat(answer.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(answer.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+        assertThat(answer.citations()).isEmpty();
+        verify(questionCache, never()).findExact(any(), any(), any());
+    }
+
+    @Test
+    void aSecondHandClaimDoesNotSettleAQuestionForTheNamedSpeaker() {
+        addNamedMessage(conversationId, senderId, 1, "Miren", "I haven't confirmed the lighthouse gate code yet.");
+        addNamedMessage(conversationId, UUID.randomUUID(), 2, "Tess", "Miren told me the lighthouse gate code is 5278.");
+
+        AskResponse answer = service.ask(conversationId, userId,
+                new AskRequest("According to Miren, what is the lighthouse gate code?", SummaryLanguage.EN));
+
+        assertThat(answer.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(answer.answer()).isNull();
+        assertThat(answer.citations()).isEmpty();
+    }
+
+    @Test
+    void namedProviderReceivesOnlyCompleteStatementsFromTheBoundAuthor() {
+        properties.getRetrieval().setMaxContextChars(125);
+        properties.getRetrieval().setExtractiveThreshold(2.0);
+        String claim = "The approved rover test site is Juniper Hall.";
+        RagMessage fact = addNamedMessage(conversationId, senderId, 2, "Miren", claim);
+        RagMessage competing = addNamedMessage(conversationId, UUID.randomUUID(), 3, "Tess",
+                "The approved rover test site is Falcon Hall.");
+        addNamedMessage(conversationId, senderId, 1, "Miren", "Earlier draft. " + "Planning notes. ".repeat(20));
+        setConsent(true);
+        when(llmAnswerService.answerSpeakerQuote(eq(userId), eq(conversationId),
+                eq("what is the approved rover test site?"), eq(SummaryLanguage.EN), any(), any(), any()))
+                .thenAnswer(call -> {
+                    List<RagContextItem> context = call.getArgument(4);
+                    assertThat(context).extracting(RagContextItem::text).containsExactly(claim);
+                    assertThat(context.getFirst().messageIds()).containsExactly(fact.id());
+                    return RagLlmOutcome.answer(new RagLlmAnswer(claim, List.of(fact.id())), false);
+                })
+                .thenReturn(RagLlmOutcome.answer(new RagLlmAnswer(competing.content(), List.of(competing.id())), false));
+        var request = new AskRequest("According to Miren, what is the approved rover test site?", SummaryLanguage.EN,
+                List.of(new AskPriorTurn("What is the previous test site?", "Falcon Hall.")));
+
+        AskResponse good = service.ask(conversationId, userId, request);
+        AskResponse unsupported = service.ask(conversationId, userId, request);
+
+        assertThat(good.mode()).isEqualTo(AskMode.LLM);
+        assertThat(good.answer()).isEqualTo(claim);
+        assertThat(good.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+        assertThat(unsupported.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(unsupported.citations()).isEmpty();
+        verify(questionCache, never()).findExact(any(), any(), any());
+        verify(questionCache, never()).saveIfConsentSnapshotMatches(any(), any(), any(), any(), any(), any(), any());
+    }
+
     @Test
     void anExactCacheKeyKeepsVietnameseWordsWithDifferentAccentsSeparate() {
         String diagram = AskService.hashInput("Cho mình xem sơ đồ", List.of());
@@ -876,8 +999,12 @@ class AskServiceTest {
     }
 
     private RagMessage addMessage(UUID conversationId, UUID senderId, long seq, String content) {
+        return addNamedMessage(conversationId, senderId, seq, "User", content);
+    }
+
+    private RagMessage addNamedMessage(UUID conversationId, UUID senderId, long seq, String name, String content) {
         RagMessage message = RagTestSupport.message(conversationId, UUID.randomUUID(), seq,
-                senderId, "User", content);
+                senderId, name, content);
         index.add(message);
         return message;
     }

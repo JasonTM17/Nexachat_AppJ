@@ -2,6 +2,7 @@ package com.nexachat.rag;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nexachat.summary.SummaryLanguage;
+import com.nexachat.summary.llm.Redactor;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -70,5 +71,27 @@ class RagOutputValidatorTest {
 
         assertThat(answer).isNotNull();
         assertThat(answer.citationIds()).containsExactly(messageId);
+    }
+
+    @Test
+    void speakerQuoteMustMatchACompleteSettledSentenceInOneSentSource() throws Exception {
+        ObjectMapper json = new ObjectMapper();
+        var builder = new RagPromptBuilder(json, new Redactor());
+        String settled = "The maintenance slot is March 14 at 02:00.";
+        String unsettled = "I have not confirmed the maintenance slot.";
+        String original = "My test address is qa@example.invalid.";
+        var context = new RagContextItem(1, List.of(messageId), 2, "U1", unsettled + " " + settled + " " + original);
+        RagPrompt speakerPrompt = builder.buildSpeakerQuote("What is the maintenance slot?", SummaryLanguage.EN, List.of(context));
+
+        RagLlmAnswer verified = validator.validate(json.writeValueAsString(Map.of("answer", settled, "citations", List.of(1))), speakerPrompt);
+        assertThat(verified).isNotNull();
+        assertThat(verified.citationIds()).containsExactly(messageId);
+        assertThat(speakerPrompt.userMessage()).doesNotContain("qa@example.invalid", "priorTurns");
+        for (String invalid : List.of("March 14", unsettled, original, settled.replace("March 14", "March 15"))) {
+            String raw = json.writeValueAsString(Map.of("answer", invalid, "citations", List.of(1)));
+            assertThat(validator.validateDetailed(raw, speakerPrompt).status()).isEqualTo(RagOutputValidator.Status.INVALID);
+        }
+        String fabricatedCitation = json.writeValueAsString(Map.of("answer", settled, "citations", List.of(1, 8)));
+        assertThat(validator.validateDetailed(fabricatedCitation, speakerPrompt).status()).isEqualTo(RagOutputValidator.Status.INVALID);
     }
 }

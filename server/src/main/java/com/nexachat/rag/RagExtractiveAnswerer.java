@@ -30,6 +30,12 @@ final class RagExtractiveAnswerer {
             "(?<![\\p{L}\\p{N}])\\+?\\p{Nd}[\\p{Nd}(). -]{4,}\\p{Nd}(?![\\p{L}\\p{N}])");
     private static final Pattern NUMBER = Pattern.compile(
             "(?<![\\p{L}\\p{N}])\\p{Nd}+(?:[.,:/-]\\p{Nd}+)*(?![\\p{L}\\p{N}])");
+    private static final String IDENTIFIER_LABEL = "(?:codes?|pin|mã|ma so|serial number|tracking number)";
+    private static final Pattern IDENTIFIER_REQUEST = Pattern.compile("(?iu)\\b" + IDENTIFIER_LABEL + "\\b");
+    private static final Pattern IDENTIFIER_TOKEN = Pattern.compile("[\\p{L}\\p{M}\\p{Nd}_-]+");
+    private static final Pattern LABELLED_IDENTIFIER = Pattern.compile("(?iu)\\b" + IDENTIFIER_LABEL + "\\b"
+            + "(?:\\s+(?:[\\p{L}\\p{M}]+\\s+){0,8}?(?:is|was|là|la)\\s+|\\s*[:=]\\s*|\\s+)"
+            + "([\\p{L}\\p{M}\\p{Nd}][\\p{L}\\p{M}\\p{Nd}_-]*)");
     private static final List<String> EN_INFLECTION_SUFFIXES = List.of("s", "es", "d", "ed", "ing");
     private static final Pattern TENTATIVE_EVIDENCE = Pattern.compile(
             "(?iu)(?<![\\p{L}\\p{N}])(?:maybe|perhaps|tentatively|might|could|let['’]s"
@@ -51,6 +57,11 @@ final class RagExtractiveAnswerer {
     private static final Pattern CONDITIONAL_CUE = Pattern.compile(
             "(?iu)(?<![\\p{L}\\p{N}])(?:if|unless|pending|proposed|nếu|neu|dự kiến|du kien)"
                     + "(?![\\p{L}\\p{N}])");
+    private static final Pattern UNSET_ATTRIBUTED_FACT = Pattern.compile(
+            "(?iu)\\b(?:undecided|unknown|not (?:yet )?(?:set|fixed|decided|confirmed|assigned|chosen|scheduled)"
+                    + "|(?:have|has)n['’]t (?:yet )?(?:set|fixed|decided|confirmed|assigned|chosen|scheduled)"
+                    + "|chưa (?:chốt|ấn định|xác nhận|biết|chọn)|không rõ"
+                    + "|chua (?:chot|an dinh|xac nhan|biet|chon)|khong ro)\\b");
 
     private RagExtractiveAnswerer() {
     }
@@ -65,6 +76,7 @@ final class RagExtractiveAnswerer {
         String unit = quantityQuestion.find() ? quantityQuestion.group(1) : null;
         boolean asksForMaximum = MAXIMUM_QUANTITY.matcher(foldedQuestion).find();
         Set<ValueType> types = unit == null ? requestedValueTypes(question) : Set.of();
+        boolean identifierLookup = isIdentifierLookup(question, types);
         if (unit == null && types.isEmpty()) {
             return false;
         }
@@ -88,7 +100,7 @@ final class RagExtractiveAnswerer {
                             || VALUE_NEGATION.matcher(clause).find()) {
                         continue;
                     }
-                    ClaimValue value = claimValue(clause, types, unit, asksForMaximum, language);
+                    ClaimValue value = claimValue(clause, types, unit, asksForMaximum, language, identifierLookup);
                     if (value == null) {
                         continue;
                     }
@@ -103,9 +115,10 @@ final class RagExtractiveAnswerer {
     }
 
     private static ClaimValue claimValue(
-            String clause, Set<ValueType> types, String unit, boolean asksForMaximum, SummaryLanguage language) {
+            String clause, Set<ValueType> types, String unit, boolean asksForMaximum, SummaryLanguage language,
+            boolean identifierLookup) {
         if (unit == null) {
-            ExactMatch exact = findExactValue(types, clause, new Span(0, clause.length()));
+            ExactMatch exact = findClaimValue(clause, types, new Span(0, clause.length()), identifierLookup);
             return exact == null ? null : new ClaimValue(exact.type(), exact.value());
         }
         String folded = RagQuestionNormalizer.normalize(clause);
@@ -141,26 +154,37 @@ final class RagExtractiveAnswerer {
             List<String> terms,
             RagMessage message,
             int maxAnswerCodePoints) {
+        return extract(question, language, terms, message, maxAnswerCodePoints, false);
+    }
+
+    static Result extract(String question, SummaryLanguage language, List<String> terms, RagMessage message,
+                          int maxAnswerCodePoints, boolean namedSpeaker) {
         if (message == null || message.content().isBlank() || terms.isEmpty()) {
             return null;
         }
         String content = message.content();
         boolean needsSettledEvidence = needsSettledEvidence(question, language);
         Set<ValueType> requestedTypes = requestedValueTypes(question);
+        boolean identifierLookup = isIdentifierLookup(question, requestedTypes);
         Span best = null;
         ExactMatch exact = null;
         int bestMatches = 0;
         boolean conflictingValues = false;
         for (Span sentence : sentences(content)) {
             String text = content.substring(sentence.start(), sentence.end());
-            if (!isEvidenceSentence(text, needsSettledEvidence)) {
+            if (namedSpeaker ? !isAttributedStatement(text) : !isEvidenceSentence(text, needsSettledEvidence)) {
                 continue;
             }
             int matches = matchedTermCount(text, terms, language);
             if (matches == 0 || matches < bestMatches) {
                 continue;
             }
-            ExactMatch value = findExactValue(requestedTypes, content, sentence);
+            // Mixed identifiers stay in the sentence. A digit suffix or a nearby duration
+            // can otherwise masquerade as the requested whole code.
+            ExactMatch value = findClaimValue(content, requestedTypes, sentence, identifierLookup);
+            if (value != null && identifierLookup && value.value().codePoints().anyMatch(Character::isLetter)) {
+                value = null;
+            }
             if (matches > bestMatches) {
                 best = sentence;
                 bestMatches = matches;
@@ -196,6 +220,9 @@ final class RagExtractiveAnswerer {
 
         String sentence = content.substring(best.start(), best.end());
         boolean truncated = codePoints(sentence) > maxAnswerCodePoints;
+        if (namedSpeaker && truncated) {
+            return null;
+        }
         int answerStart = best.start();
         int answerEnd = best.end();
         String answer = sentence;
@@ -227,6 +254,17 @@ final class RagExtractiveAnswerer {
                 .map(span -> content.substring(span.start(), span.end()))
                 .filter(text -> isEvidenceSentence(text, true))
                 .toList();
+    }
+
+    static List<String> attributedStatements(String content) {
+        return sentences(content).stream().map(span -> content.substring(span.start(), span.end()))
+                .filter(RagExtractiveAnswerer::isAttributedStatement).toList();
+    }
+
+    private static boolean isAttributedStatement(String text) {
+        return isEvidenceSentence(text, true)
+                && !CONDITIONAL_CUE.matcher(text).find()
+                && !UNSET_ATTRIBUTED_FACT.matcher(text).find();
     }
 
     private static boolean isEvidenceSentence(String text, boolean needsSettledEvidence) {
@@ -282,6 +320,38 @@ final class RagExtractiveAnswerer {
             }
         }
         return match;
+    }
+
+    private static boolean isIdentifierLookup(String question, Set<ValueType> types) {
+        return types.contains(ValueType.NUMBER) && IDENTIFIER_REQUEST.matcher(Tokenizer.nfc(question)).find();
+    }
+
+    private static ExactMatch findClaimValue(String content, Set<ValueType> types, Span sentence, boolean identifierLookup) {
+        if (identifierLookup && IDENTIFIER_TOKEN.matcher(content).region(sentence.start(), sentence.end()).results()
+                .map(match -> match.group()).anyMatch(value -> value.codePoints().anyMatch(Character::isLetter)
+                        && value.codePoints().anyMatch(Character::isDigit))) {
+            return findLabelledIdentifier(content, sentence);
+        }
+        return findExactValue(types, content, sentence);
+    }
+
+    private static ExactMatch findLabelledIdentifier(String content, Span sentence) {
+        if (VALUE_NEGATION.matcher(content).region(sentence.start(), sentence.end()).find()) {
+            return null;
+        }
+        Matcher matcher = LABELLED_IDENTIFIER.matcher(content).region(sentence.start(), sentence.end());
+        ExactMatch found = null;
+        while (matcher.find()) {
+            String value = matcher.group(1);
+            if (!value.codePoints().anyMatch(Character::isDigit)) {
+                continue;
+            }
+            if (found != null && !found.value().equals(value)) {
+                return null;
+            }
+            found = new ExactMatch(ValueType.NUMBER, value, matcher.start(1), matcher.end(1));
+        }
+        return found;
     }
 
     private static Set<ValueType> requestedValueTypes(String question) {
