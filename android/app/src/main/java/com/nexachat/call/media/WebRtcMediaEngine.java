@@ -70,6 +70,7 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
         thread.setDaemon(true);
         return thread;
     });
+    private final IceRecoveryWatchdog iceRecoveryWatchdog = new IceRecoveryWatchdog(mediaExecutor);
     private final AtomicLong generation = new AtomicLong();
 
     private volatile boolean muted;
@@ -99,8 +100,6 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
     private boolean audioFocusHeld;
     private AudioFocusRequest audioFocusRequest;
     private AudioManager.OnAudioFocusChangeListener legacyAudioFocusListener;
-    private PeerConnection.IceConnectionState lastIceState = PeerConnection.IceConnectionState.NEW;
-    private ScheduledFuture<?> disconnectTimeout;
     private ScheduledFuture<?> connectTimeout;
     private final List<IceCandidate> pendingRemoteIce = new ArrayList<>();
 
@@ -131,7 +130,6 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
             remoteDescriptionSet = false;
             focusMuted = false;
             pendingRemoteIce.clear();
-            lastIceState = PeerConnection.IceConnectionState.NEW;
             try {
                 PeerConnectionFactory factory = getFactory();
                 enterCommunicationMode(callGeneration);
@@ -796,8 +794,7 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
     }
 
     private void releasePeerResources() {
-        if (disconnectTimeout != null) disconnectTimeout.cancel(false);
-        disconnectTimeout = null;
+        iceRecoveryWatchdog.cancel();
         if (connectTimeout != null) connectTimeout.cancel(false);
         connectTimeout = null;
         if (peerConnection != null) {
@@ -916,24 +913,10 @@ public final class WebRtcMediaEngine implements CallMediaEngine {
             try {
                 mediaExecutor.execute(() -> {
                     if (!isActive(callGeneration)) return;
-                    lastIceState = state;
-                    if (disconnectTimeout != null) {
-                        disconnectTimeout.cancel(false);
-                        disconnectTimeout = null;
-                    }
-                    if (state == PeerConnection.IceConnectionState.CONNECTED
-                            || state == PeerConnection.IceConnectionState.COMPLETED) {
-                        reportConnected(callGeneration);
-                    } else if (state == PeerConnection.IceConnectionState.DISCONNECTED) {
-                        disconnectTimeout = mediaExecutor.schedule(() -> {
-                            if (isActive(callGeneration)
-                                    && lastIceState == PeerConnection.IceConnectionState.DISCONNECTED) {
-                                reportFailure(callGeneration);
-                            }
-                        }, 15L, TimeUnit.SECONDS);
-                    } else if (state == PeerConnection.IceConnectionState.FAILED) {
-                        reportFailure(callGeneration);
-                    }
+                    iceRecoveryWatchdog.onState(state, connectedReported,
+                            () -> reportConnected(callGeneration), () -> {
+                                if (isActive(callGeneration)) reportFailure(callGeneration);
+                            });
                 });
             } catch (RuntimeException ignored) {
                 // Executor is shutting down with the application process.

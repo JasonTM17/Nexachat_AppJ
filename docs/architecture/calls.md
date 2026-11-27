@@ -201,6 +201,9 @@ negotiated by the Android client; signaling does not carry audio bytes.
   initiates an ICE restart when its signaling connection reopens.
   Losing validated connectivity cancels the old STOMP socket, and the call
   buffers candidates while signaling reconnects.
+- Once media connects, Android allows up to 30 seconds from the first ICE
+  disruption for it to recover. A native `FAILED` or `CHECKING` state during
+  renegotiation keeps the same deadline. Successful ICE recovery cancels it.
 - Video media (camera capture, local preview, remote rendering, camera
   toggle/switch) is implemented in the Android engine and UI; it has not been
   verified between two real Android devices. The signaling-to-media path
