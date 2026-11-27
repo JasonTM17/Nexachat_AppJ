@@ -24,19 +24,6 @@ import java.util.UUID;
 @Profile("!test")
 public class RagRetrievalService {
 
-    /** Query-only scaffolding terms. They form the question but are not evidence about an entity. */
-    private static final Set<String> EN_QUERY_SCAFFOLD_TERMS = Set.of(
-            "about", "tell", "find", "explain", "need", "detail", "details", "remind",
-            "give", "show", "please", "exact", "exactly", "how", "much", "many",
-            "decide", "decided", "describe", "want", "know");
-    private static final Set<String> VI_QUERY_SCAFFOLD_TERMS = Set.of(
-            "gi", "nao", "biet", "giup", "xin", "can", "muon");
-    private static final List<List<String>> VI_QUERY_SCAFFOLD_PHRASES = List.of(
-            List.of("giai", "thich"), List.of("tim", "kiem"), List.of("tim", "hieu"),
-            List.of("tim", "cach"), List.of("bao", "nhieu"), List.of("chi", "tiet"),
-            List.of("vui", "long"), List.of("the", "nao"), List.of("khi", "nao"),
-            List.of("goi", "y"));
-
     private final RagMessageIndex index;
     private final RagEmbeddingService embeddings;
     private final RagProperties properties;
@@ -187,7 +174,7 @@ public class RagRetrievalService {
             List<RagMessage> vectorCandidates,
             RagEmbeddingService.RetrievalEmbeddings embedded,
             RagProperties.Retrieval config) {
-        List<String> questionTerms = essentialQuestionTerms(question, language, config);
+        List<String> questionTerms = RagQuestionTerms.answerTerms(question, language, config.getLexicalTermLimit());
         if (questionTerms.isEmpty()) {
             return false;
         }
@@ -195,16 +182,14 @@ public class RagRetrievalService {
         for (RagMessage candidate : lexicalCandidates) {
             lexicalCandidateIds.add(candidate.id());
         }
+        boolean needsSettledEvidence = RagExtractiveAnswerer.needsSettledEvidence(question, language);
+        double requiredCoverage = config.getLexicalAnswerMinCoverage();
         for (RagMessage candidate : vectorCandidates) {
-            Set<String> messageTerms = new HashSet<>(RagQuestionTerms.contentTerms(candidate.content(), language));
-            int matched = 0;
-            for (String term : questionTerms) {
-                if (containsMatchingTerm(messageTerms, term)) {
-                    matched++;
-                }
-            }
-            double coverage = (double) matched / questionTerms.size();
-            if (coverage + 0.0000001 < config.getLexicalAnswerMinCoverage()) {
+            boolean covered = needsSettledEvidence
+                    ? RagExtractiveAnswerer.settledStatements(candidate.content()).stream()
+                            .anyMatch(text -> hasCoverage(text, language, questionTerms, requiredCoverage))
+                    : hasCoverage(candidate.content(), language, questionTerms, requiredCoverage);
+            if (!covered) {
                 continue;
             }
             if (lexicalCandidateIds.contains(candidate.id())
@@ -215,36 +200,16 @@ public class RagRetrievalService {
         return false;
     }
 
-    private static List<String> essentialQuestionTerms(
-            String question, SummaryLanguage language, RagProperties.Retrieval config) {
-        String normalized = " " + RagQuestionNormalizer.normalize(question) + " ";
-        Set<String> scaffoldPhraseTokens = new HashSet<>();
-        if (language == SummaryLanguage.VI) {
-            for (List<String> phrase : VI_QUERY_SCAFFOLD_PHRASES) {
-                if (normalized.contains(" " + String.join(" ", phrase) + " ")) {
-                    scaffoldPhraseTokens.addAll(phrase);
-                }
+    private static boolean hasCoverage(
+            String text, SummaryLanguage language, List<String> questionTerms, double requiredCoverage) {
+        Set<String> messageTerms = new HashSet<>(RagQuestionTerms.contentTerms(text, language));
+        int matched = 0;
+        for (String term : questionTerms) {
+            if (containsMatchingTerm(messageTerms, term)) {
+                matched++;
             }
         }
-        List<String> extracted = RagQuestionTerms.extract(question, language, config.getLexicalTermLimit());
-        List<String> essential = new java.util.ArrayList<>();
-        for (int index = 0; index < extracted.size(); index++) {
-            String term = extracted.get(index);
-            if (language != SummaryLanguage.VI && EN_QUERY_SCAFFOLD_TERMS.contains(term)
-                    || scaffoldPhraseTokens.contains(term)) {
-                continue;
-            }
-            if (language == SummaryLanguage.VI && VI_QUERY_SCAFFOLD_TERMS.contains(term)) {
-                continue;
-            }
-            if (language == SummaryLanguage.VI && index == 0 && "tim".equals(term)) {
-                continue;
-            }
-            if (!essential.contains(term)) {
-                essential.add(term);
-            }
-        }
-        return essential;
+        return (double) matched / questionTerms.size() + 0.0000001 >= requiredCoverage;
     }
 
     private static double vectorCosine(

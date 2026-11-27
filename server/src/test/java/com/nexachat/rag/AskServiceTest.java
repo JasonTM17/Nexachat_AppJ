@@ -11,6 +11,8 @@ import com.nexachat.summary.SummaryLanguage;
 import com.nexachat.summary.llm.Redactor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.time.Clock;
 import java.util.List;
@@ -289,6 +291,263 @@ class AskServiceTest {
     }
 
     @Test
+    void vietnameseLocationCueDoesNotRequireTheAnswerToQuoteTheQuestion() {
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "Nhà kho đạo cụ nằm sau hội trường.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("Nhà kho đạo cụ ở đâu?", SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).contains("sau hội trường");
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @Test
+    void englishQuestionModalDoesNotRequireTheAnswerToQuoteTheQuestion() {
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "Orchestra members gather by the north entrance.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("Where should orchestra members gather?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).contains("north entrance");
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @Test
+    void locationCueDoesNotRemoveVietnameseSubjectWordsWithDifferentAccents() {
+        addMessage(conversationId, senderId, 1, "Quầy ghi danh nằm cạnh phố Huế.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("Quầy ghi danh ở đầu phố nào?", SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @Test
+    void vietnameseDiagramQuestionDoesNotExtractAnUnrelatedNumber() {
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "Sân khấu có 24 ghế. Bản sơ đồ sân khấu nằm trong thư mục Đạo Cụ.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("Bản sơ đồ sân khấu nằm trong thư mục nào?", SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).contains("thư mục Đạo Cụ").doesNotContain("24");
+        assertThat(response.extraction().kind()).isEqualTo("EVIDENCE_SPAN");
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @Test
+    void exactValueComesFromTheSentenceThatSupportsTheLookup() {
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "There are 24 seats at the pavilion. The pavilion code is 5839.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("What is the pavilion code?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).isEqualTo("5839");
+        assertThat(response.extraction().valueType()).isEqualTo("NUMBER");
+        int start = response.extraction().startOffset();
+        int end = response.extraction().endOffset();
+        assertThat(fact.content().substring(start, end)).isEqualTo(response.answer());
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @Test
+    void typedValueFromDecoyCannotUseAnotherMessageToSatisfyTheEvidenceGate() {
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "The pavilion code has not been assigned.");
+        addMessage(conversationId, senderId, 2, "The pavilion has 24 seats.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("What is the pavilion code?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).contains("has not been assigned").doesNotContain("24");
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @Test
+    void askingForAnInstructionDoesNotTreatAnOpenProposalAsTheDecision() {
+        addMessage(conversationId, senderId, 1, "Let's board the ferry at Pine Dock.");
+        addMessage(conversationId, senderId, 2, "Pine Dock is unavailable this week.");
+        addMessage(conversationId, senderId, 3, "Maybe we could board the ferry at Cedar Dock next month?");
+        setConsent(true);
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("Where should we board the ferry?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+        assertThat(response.answer()).isNull();
+        assertThat(response.citations()).isEmpty();
+        verify(llmAnswerService, never()).answerDetailed(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void anUnansweredQuestionInTheConversationIsNotExtractedAsItsOwnAnswer() {
+        addMessage(conversationId, senderId, 1, "Where is the orchestra entrance?");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("Where is the orchestra entrance?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.answer()).isNull();
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @Test
+    void theLocationOfAVietnameseCodeKeepsItsLocationInTheAnswer() {
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "Mã sân tập in trên nhãn 3142 ở ngăn tủ bên trái.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("Mã sân tập ở đâu?", SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).contains("ngăn tủ bên trái");
+        assertThat(response.extraction().kind()).isEqualTo("EVIDENCE_SPAN");
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @Test
+    void aTentativeVietnameseLocationDoesNotRouteToTheProvider() {
+        addMessage(conversationId, senderId, 1, "Có lẽ mã sân tập in trên nhãn 3142.");
+        setConsent(true);
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("Mã sân tập ở đâu?", SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+        assertThat(response.answer()).isNull();
+        assertThat(response.citations()).isEmpty();
+        verify(llmAnswerService, never()).answerDetailed(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void theLocationOfAnEnglishCodeKeepsItsLocationInTheAnswer() {
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "The studio code is printed beneath label 3142 near the supply shelf.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("Where is the studio code printed?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).contains("near the supply shelf");
+        assertThat(response.extraction().kind()).isEqualTo("EVIDENCE_SPAN");
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @Test
+    void rejectedNumericValueKeepsTheNegationInItsAnswer() {
+        RagMessage fact = addMessage(conversationId, senderId, 1, "The studio code is not 3142.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("What is the studio code?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).isEqualTo(fact.content());
+        assertThat(response.extraction().kind()).isEqualTo("EVIDENCE_SPAN");
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @Test
+    void competingValuesWithEqualEvidenceDoNotProduceAnArbitraryExactAnswer() {
+        addMessage(conversationId, senderId, 1,
+                "The old studio code was 3142. The new studio code is 5879.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("What is the studio code?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.answer()).isNull();
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @Test
+    void competingValuesInSeparateMessagesAlsoDoNotProduceAnArbitraryExactAnswer() {
+        addMessage(conversationId, senderId, 1, "The old studio code was 3142.");
+        addMessage(conversationId, senderId, 2, "The new studio code is 5879.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("What is the studio code?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.answer()).isNull();
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @Test
+    void aSpecificQueryStillSelectsOneOfThePreviouslyAmbiguousValues() {
+        RagMessage fact = addMessage(conversationId, senderId, 1,
+                "The old studio code was 3142. The new studio code is 5879.");
+
+        AskResponse response = service.ask(conversationId, userId,
+                new AskRequest("What is the new studio code?", SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).isEqualTo("5879");
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @Test
+    void anExactCacheKeyKeepsVietnameseWordsWithDifferentAccentsSeparate() {
+        String diagram = AskService.hashInput("Cho mình xem sơ đồ", List.of());
+        String number = AskService.hashInput("Cho mình xem số đồ", List.of());
+
+        assertThat(diagram).isNotEqualTo(number);
+        assertThat(diagram).isEqualTo(AskService.hashInput(
+                java.text.Normalizer.normalize("  CHO MÌNH XEM SƠ  ĐỒ  ", java.text.Normalizer.Form.NFD),
+                List.of()));
+    }
+
+    @Test
+    void aFactLookupDoesNotReplayAHighSimilarityAnswerToADifferentQuestion() {
+        String question = "What is the studio code?";
+        RagMessage unrelated = addMessage(conversationId, senderId, 1, "The studio seat count is 24.");
+        RagMessage fact = addMessage(conversationId, senderId, 2, "The studio code is 5839.");
+        setConsent(true);
+        RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(
+                "24", List.of(new RagCitation(unrelated.id(), unrelated.seq(), unrelated.content())),
+                "EXTRACTIVE", List.of(unrelated.id()), "hash", SummaryLanguage.EN, 1);
+        RagEmbeddingService.EmbeddingOutcome similar = embeddings.embedQuestion(question, false);
+        when(questionCache.findCandidates(any(), any())).thenReturn(List.of(
+                new RagQuestionCache.CachedQuestion(cached, similar.vector(), "different-question")));
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(question, SummaryLanguage.EN));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).isEqualTo("5839");
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "Số điện thoại kho đạo cụ là gì?, Số điện thoại kho đạo cụ là 020 7946 0958., 020 7946 0958, PHONE",
+            "Mã kho đạo cụ là gì?, Mã kho đạo cụ là 4519., 4519, NUMBER",
+            "Link kho đạo cụ là gì?, Link kho đạo cụ là https://example.com/props., https://example.com/props, URL"
+    })
+    void explicitVietnameseValueLookupKeepsItsTypeAndSource(String question, String content, String value, String type) {
+        RagMessage fact = addMessage(conversationId, senderId, 1, content);
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(question, SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).isEqualTo(value);
+        assertThat(response.extraction().valueType()).isEqualTo(type);
+        assertThat(fact.content().substring(response.extraction().startOffset(), response.extraction().endOffset()))
+                .isEqualTo(value);
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @Test
     void providerFailureCanDegradeOnlyThroughIndependentHighConfidenceExtraction() {
         RagMessage fact = addMessage(conversationId, senderId, 1,
                 "The migration date is March 14 and the rollout review is complete.");
@@ -369,7 +628,7 @@ class AskServiceTest {
                 embeddingService, retrieval, questionCache, llmAnswerService, properties, stats,
                 Clock.systemUTC());
 
-        modelAwareService.ask(conversationId, userId, new AskRequest("Hello?", null));
+        modelAwareService.ask(conversationId, userId, new AskRequest("Summarize the venue handover.", SummaryLanguage.EN));
 
         verify(questionCache).findExact(eq(conversationId),
                 eq("openai-compatible:gemini-embedding-001"), any());
@@ -470,24 +729,26 @@ class AskServiceTest {
 
     @Test
     void semanticCacheEntryInDifferentLanguageIsNotReplayed() {
-        String question = "When is the server migration scheduled?";
+        String question = "Summarize the scheduled server migration.";
         RagMessage fact = addMessage(conversationId, senderId, 1,
                 "The server migration is scheduled for March 14 at 02:00.");
         RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(
                 "La migration est le 14 mars.",
                 List.of(new RagCitation(fact.id(), 1, fact.content())),
-                "EXTRACTIVE", List.of(fact.id()), "hash", SummaryLanguage.VI, 1);
+                "LLM", List.of(fact.id()), "hash", SummaryLanguage.VI, 1);
         setConsent(true);
         RagEmbeddingService.EmbeddingOutcome embedding = embeddings.embedQuestion(question, false);
         when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.empty());
         when(questionCache.findCandidates(any(), any())).thenReturn(List.of(
                 new RagQuestionCache.CachedQuestion(cached, embedding.vector(), "other-question")));
+        when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(RagLlmOutcome.providerError(false));
 
         AskResponse response = service.ask(conversationId, userId,
                 new AskRequest(question, SummaryLanguage.EN));
 
-        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
-        assertThat(response.answer()).contains("March 14");
+        assertThat(response.mode()).isNotEqualTo(AskMode.CACHE);
+        verify(questionCache).findCandidates(eq(conversationId), any());
     }
 
     @Test
@@ -508,7 +769,7 @@ class AskServiceTest {
 
     @Test
     void priorTurnsSkipSemanticCacheAndChangeTheQuestionHash() {
-        String question = "What about Tuesday?";
+        String question = "Summarize the Tuesday discussion.";
         RagMessage fact = addMessage(conversationId, senderId, 1,
                 "The server migration is scheduled for March 14 at 02:00.");
         RagQuestionCache.CachedAsk cached = new RagQuestionCache.CachedAsk(
@@ -520,6 +781,8 @@ class AskServiceTest {
         when(questionCache.findExact(any(), any(), any())).thenReturn(Optional.empty());
         when(questionCache.findCandidates(any(), any())).thenReturn(List.of(
                 new RagQuestionCache.CachedQuestion(cached, embedding.vector(), "other-question")));
+        when(llmAnswerService.answerDetailed(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(RagLlmOutcome.providerError(false));
 
         AskResponse response = service.ask(conversationId, userId,
                 new AskRequest(question, SummaryLanguage.EN,

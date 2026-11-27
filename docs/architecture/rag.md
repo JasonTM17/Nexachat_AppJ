@@ -10,7 +10,7 @@ four modes:
 
 | Mode | Meaning | LLM call |
 |---|---|---|
-| `CACHE` | The exact normalized question was already answered, or a cached question is semantically identical and its cited messages are unchanged | no |
+| `CACHE` | The same normalized question was already answered, or an aggregation request matches a cached LLM response and its cited messages are unchanged | no |
 | `NOT_FOUND` | The best retrieval score is below the answerability threshold | no |
 | `EXTRACTIVE` | A lookup-like question is answered by one high-scoring message, returned verbatim with its citation | no |
 | `LLM` | The retrieved, redacted, budgeted context is sent to the configured LLM | yes (only with consent) |
@@ -108,12 +108,21 @@ answerable. The default gate requires all essential question terms to co-occur i
 one candidate. Query scaffolding is ignored, and bounded prefix/edit-distance
 matching covers simple inflections and long-token typos. Vector cosine at least
 0.60 can support a fuzzy-matched candidate, but cannot substitute for
-compositional term evidence. Broad aggregation or explicit multi-message synthesis prompts such as
+compositional term evidence. A local extractive answer needs support in its own
+sentence. Lookups for locations, times and settled plans require declarative
+evidence. The extractor keeps the full supporting sentence for a location
+lookup or a negated value, and abstains from choosing a single value when
+equally supported sentences or candidate sources give different values. Broad aggregation or
+explicit multi-message synthesis prompts such as
 summaries, recaps, action-item lists, and corpus-scoped requests for other
 relevant milestones bypass that lookup evidence requirement because the whole
 recent context is their subject. Narrow composite lookups do not bypass it merely because they are phrased
 as imperatives. These thresholds are operator-tunable and
 require labeled evaluation before being treated as production calibration.
+
+Answer cache keys include the grounding policy and embedding identity. After a
+policy change, old rows expire through normal retention and are skipped by both
+exact and semantic replay. Stored message vectors retain their embedding identity.
 
 ## Consent and privacy
 
@@ -172,8 +181,8 @@ require labeled evaluation before being treated as production calibration.
 
 | Control | Default |
 |---|---|
-| Exact question cache | 24 h TTL |
-| Semantic cache | cosine ≥ 0.92, same model, cited messages unchanged |
+| Exact question cache | 24 h TTL. Case and whitespace are normalized, while accents and punctuation are preserved. |
+| Semantic cache | Aggregation requests without prior turns, cached LLM result, cosine ≥ 0.92, same model, cited messages unchanged |
 | Answerability gate | lookup-like questions require raw lexical or vector evidence, then fused score < 0.18 → `NOT_FOUND` |
 | Extractive gate | lookup-like question and fused score ≥ 0.62 |
 | Context budget | 3,000 characters |
