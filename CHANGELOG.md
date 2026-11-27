@@ -6,6 +6,22 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.30] - 2026-11-28
+
+See [the Android release notes](docs/release-notes/v1.2.30.md).
+
+### Fixed
+
+- Ask grounds answers in source messages and abstains when conflicting facts
+  remain unresolved. Citations still open the original message.
+- Summary honors the explicit Local mode and preserves it when refreshing or
+  changing the time range.
+- Manual message translation allows more time for a slow response and shows a
+  timeout message that allows retrying.
+- Web Admin fits the moderation feed on narrow screens, restores keyboard focus
+  when dialogs close, and clears incomplete sign-in sessions when staff
+  verification fails.
+
 ## [1.2.29] - 2026-11-27
 
 See [the Android release notes](docs/release-notes/v1.2.29.md).
@@ -1479,7 +1495,8 @@ First tagged release (`v1.0.0`).
 - Architecture diagrams, REST/STOMP contracts, security notes, operations
   guide and UI design documentation.
 
-[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.29...HEAD
+[Unreleased]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.30...HEAD
+[1.2.30]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.29...v1.2.30
 [1.2.29]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.26...v1.2.29
 [1.2.28]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.26...v1.2.28
 [1.2.15]: https://github.com/JasonTM17/Nexachat_AppJ/compare/v1.2.14...v1.2.15
