@@ -595,6 +595,8 @@ class FocusOrderTest(unittest.TestCase):
         findings = oracle.focus_order_issues(nodes, screen="auto")
         self.assertEqual([(finding["issue"], finding["rid"]) for finding in findings],
                          [("focus_off_screen", "outsideDialog")])
+        report = oracle.summarize_findings(nodes, screen="auto", layout_dir=None)
+        self.assertEqual(report["checks"]["focus_order_issues"]["findings"], findings)
 
     def test_below_fold_child_of_a_scrollable_is_reachable(self):
         nodes = [

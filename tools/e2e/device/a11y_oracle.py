@@ -817,7 +817,7 @@ def summarize_findings(nodes: list[Any], *, min_dp: float = DEFAULT_MIN_DP,
             "screen": list(resolved) if resolved is not None else None,
             "expected_order": list(expected_order) if expected_order else None,
             "findings": focus_order_issues(
-                nodes, screen=resolved, expected_order=expected_order
+                nodes, screen=screen, expected_order=expected_order
             ),
         },
     }
