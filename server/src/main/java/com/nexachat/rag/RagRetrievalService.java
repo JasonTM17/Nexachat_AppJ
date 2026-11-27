@@ -216,9 +216,11 @@ public class RagRetrievalService {
             lexicalCandidateIds.add(candidate.id());
         }
         boolean needsSettledEvidence = RagExtractiveAnswerer.needsSettledEvidence(question, language);
+        boolean attributedDate = namedSpeaker && RagExtractiveAnswerer.asksForVietnameseDate(question, language);
         double requiredCoverage = config.getLexicalAnswerMinCoverage();
         for (RagMessage candidate : vectorCandidates) {
-            List<String> statements = namedSpeaker ? RagExtractiveAnswerer.attributedStatements(candidate.content())
+            List<String> statements = namedSpeaker
+                    ? RagExtractiveAnswerer.attributedStatements(candidate.content(), attributedDate)
                     : needsSettledEvidence ? RagExtractiveAnswerer.settledStatements(candidate.content())
                     : List.of(candidate.content());
             boolean covered = statements.stream().anyMatch(text -> hasCoverage(text, language, questionTerms, requiredCoverage));

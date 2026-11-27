@@ -64,6 +64,18 @@ final class RagExtractiveAnswerer {
                     + "|(?:have|has)n['’]t (?:yet )?(?:set|fixed|decided|confirmed|assigned|chosen|scheduled)"
                     + "|chưa (?:chốt|ấn định|xác nhận|biết|chọn)|không rõ"
                     + "|chua (?:chot|an dinh|xac nhan|biet|chon)|khong ro)\\b");
+    private static final int VI_GRAMMAR_FLAGS = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS;
+    private static final Pattern VI_DATE_REQUEST = Pattern.compile(
+            "\\b(?:(?:ngày|ngay)\\s+(?:nào|nao|mấy|may)|(?:hôm|hom)\\s+(?:nào|nao))\\s*[?!]*\\z",
+            VI_GRAMMAR_FLAGS);
+    private static final Pattern VI_RELATIVE_EVENT = Pattern.compile(
+            "\\b(?:trước|truoc|sau)\\s+(?:buổi|buoi|khi|lúc|luc|ngày|ngay|hôm|hom)\\b",
+            VI_GRAMMAR_FLAGS);
+    private static final Pattern VI_DIRECT_DATE = Pattern.compile(
+            "(?:\\b(?:là|la|vào|vao)\\s+|:\\s*)(?:(?:ngày|ngay)\\s+)?"
+                    + "(?:\\p{Nd}{1,2}(?:[/.-]\\p{Nd}{1,2}|\\s+(?:tháng|thang)\\s+[\\p{L}\\p{Nd}]+)"
+                    + "|(?:thứ|thu)\\s+(?:hai|ba|tư|tu|năm|nam|sáu|sau|bảy|bay)|chủ\\s+nhật|chu\\s+nhat)\\b",
+            VI_GRAMMAR_FLAGS);
 
     private RagExtractiveAnswerer() {
     }
@@ -166,6 +178,7 @@ final class RagExtractiveAnswerer {
         }
         String content = message.content();
         boolean needsSettledEvidence = needsSettledEvidence(question, language);
+        boolean attributedDate = namedSpeaker && asksForVietnameseDate(question, language);
         Set<ValueType> requestedTypes = requestedValueTypes(question);
         boolean identifierLookup = isIdentifierLookup(question, requestedTypes);
         Span best = null;
@@ -174,7 +187,8 @@ final class RagExtractiveAnswerer {
         boolean conflictingValues = false;
         for (Span sentence : sentences(content)) {
             String text = content.substring(sentence.start(), sentence.end());
-            if (namedSpeaker ? !isAttributedStatement(text) : !isEvidenceSentence(text, needsSettledEvidence)) {
+            if (namedSpeaker ? !isAttributedStatement(text, attributedDate)
+                    : !isEvidenceSentence(text, needsSettledEvidence)) {
                 continue;
             }
             int matches = matchedTermCount(text, terms, language);
@@ -259,14 +273,30 @@ final class RagExtractiveAnswerer {
     }
 
     static List<String> attributedStatements(String content) {
-        return sentences(content).stream().map(span -> content.substring(span.start(), span.end()))
-                .filter(RagExtractiveAnswerer::isAttributedStatement).toList();
+        return attributedStatements(content, false);
     }
 
-    private static boolean isAttributedStatement(String text) {
+    static List<String> attributedStatements(String content, boolean attributedDate) {
+        return sentences(content).stream().map(span -> content.substring(span.start(), span.end()))
+                .filter(text -> isAttributedStatement(text, attributedDate)).toList();
+    }
+
+    static boolean asksForVietnameseDate(String question, SummaryLanguage language) {
+        return language == SummaryLanguage.VI && VI_DATE_REQUEST.matcher(Tokenizer.nfc(question)).find();
+    }
+
+    private static boolean isAttributedStatement(String text, boolean attributedDate) {
         return isEvidenceSentence(text, true)
                 && !CONDITIONAL_CUE.matcher(text).find()
-                && !UNSET_ATTRIBUTED_FACT.matcher(text).find();
+                && !UNSET_ATTRIBUTED_FACT.matcher(text).find()
+                && (!attributedDate || !onlyDatesARelativeEvent(text));
+    }
+
+    private static boolean onlyDatesARelativeEvent(String text) {
+        Matcher relativeEvent = VI_RELATIVE_EVENT.matcher(text);
+        // A date in the reference event cannot date the requested action. An explicit date
+        // before the relative phrase remains usable, with the qualification in the quote.
+        return relativeEvent.find() && !VI_DIRECT_DATE.matcher(text).region(0, relativeEvent.start()).find();
     }
 
     private static boolean isEvidenceSentence(String text, boolean needsSettledEvidence) {

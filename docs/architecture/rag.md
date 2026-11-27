@@ -139,9 +139,12 @@ the reader's admission boundary. No match or multiple eligible senders return
 question. The attribution name is resolved before prompt construction.
 With consent, the answer provider receives complete messages from the selected
 sender and may return one complete source sentence with its single citation.
-The server checks the quote against the redacted text actually sent. Named
-lookups bypass the answer cache and recheck attribution before publication
-because a profile rename can leave the message revision unchanged.
+The server checks the quote against the redacted text actually sent. For a named
+Vietnamese date lookup, the server rejects a date attached only to a reference
+event introduced by `trước` or `sau`. A date stated explicitly before the
+reference can remain in its full supporting quote. Named lookups bypass the
+answer cache and recheck attribution before publication because a profile
+rename can leave the message revision unchanged.
 
 ## Consent and privacy
 

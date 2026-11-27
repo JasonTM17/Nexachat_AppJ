@@ -94,4 +94,24 @@ class RagOutputValidatorTest {
         String fabricatedCitation = json.writeValueAsString(Map.of("answer", settled, "citations", List.of(1, 8)));
         assertThat(validator.validateDetailed(fabricatedCitation, speakerPrompt).status()).isEqualTo(RagOutputValidator.Status.INVALID);
     }
+
+    @Test
+    void speakerDateQuoteRejectsADateOnlyAttachedToAnotherEvent() throws Exception {
+        ObjectMapper json = new ObjectMapper();
+        var builder = new RagPromptBuilder(json, new Redactor());
+        String relative = "Hạn gửi bản thảo nằm sau buổi hướng dẫn ngày 7/5.";
+        String explicit = "Hạn gửi bản thảo là ngày 9/5, sau buổi hướng dẫn.";
+        var context = new RagContextItem(1, List.of(messageId), 2, "U1", relative + " " + explicit);
+        RagPrompt prompt = builder.buildSpeakerQuote("Hạn gửi bản thảo là ngày nào?",
+                SummaryLanguage.VI, List.of(context));
+
+        String rejected = json.writeValueAsString(Map.of("answer", relative, "citations", List.of(1)));
+        assertThat(validator.validateDetailed(rejected, prompt).status()).isEqualTo(RagOutputValidator.Status.INVALID);
+        String accepted = json.writeValueAsString(Map.of("answer", explicit, "citations", List.of(1)));
+        assertThat(validator.validate(accepted, prompt)).isNotNull();
+        var relativeOnly = new RagContextItem(1, List.of(messageId), 2, "U1", relative);
+        RagPrompt noQuote = builder.buildSpeakerQuote("Hạn gửi bản thảo là ngày nào?",
+                SummaryLanguage.VI, List.of(relativeOnly));
+        assertThat(validator.validateDetailed(rejected, noQuote).status()).isEqualTo(RagOutputValidator.Status.INVALID);
+    }
 }

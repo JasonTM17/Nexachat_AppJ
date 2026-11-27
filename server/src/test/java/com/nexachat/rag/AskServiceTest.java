@@ -611,6 +611,33 @@ class AskServiceTest {
     }
 
     @Test
+    void namedSpeakerDateLookupAbstainsWhenTheOnlyDateBelongsToAnotherEvent() {
+        addNamedMessage(conversationId, senderId, 1, "Bích Hải",
+                "Hạn gửi bản thảo nằm sau buổi hướng dẫn ngày 7/5.");
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Bích Hải, hạn gửi bản thảo là ngày nào?", SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.NOT_FOUND);
+        assertThat(response.notFoundReason()).isEqualTo(AskReason.NO_EVIDENCE);
+        assertThat(response.citations()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @CsvSource(value = {"9/5|sau", "20 tháng Sáu|trước"}, delimiter = '|')
+    void namedSpeakerDateLookupKeepsAnExplicitDateBeforeARelativeQualification(String date, String relation) {
+        String text = "Hạn gửi bản thảo là ngày " + date + ", " + relation + " buổi hướng dẫn.";
+        RagMessage fact = addNamedMessage(conversationId, senderId, 1, "Bích Hải", text);
+
+        AskResponse response = service.ask(conversationId, userId, new AskRequest(
+                "Theo lời của Bích Hải, hạn gửi bản thảo là ngày nào?", SummaryLanguage.VI));
+
+        assertThat(response.mode()).isEqualTo(AskMode.EXTRACTIVE);
+        assertThat(response.answer()).isEqualTo(text);
+        assertThat(response.citations()).extracting(RagCitation::messageId).containsExactly(fact.id());
+    }
+
+    @Test
     void unresolvedAlphanumericCodesDoNotChooseOneSupportingSentence() {
         addNamedMessage(conversationId, senderId, 1, "Neri", "The greenhouse entry code is ORBIT-636.");
         addNamedMessage(conversationId, senderId, 2, "Neri", "The greenhouse entry code is POLAR-271.");
