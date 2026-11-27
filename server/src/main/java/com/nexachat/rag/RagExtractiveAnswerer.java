@@ -4,7 +4,6 @@ import com.nexachat.summary.SummaryLanguage;
 import com.nexachat.summary.engine.Tokenizer;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -29,6 +28,13 @@ final class RagExtractiveAnswerer {
             "(?<![\\p{L}\\p{N}])\\+?\\p{Nd}[\\p{Nd}(). -]{4,}\\p{Nd}(?![\\p{L}\\p{N}])");
     private static final Pattern NUMBER = Pattern.compile(
             "(?<![\\p{L}\\p{N}])\\p{Nd}+(?:[.,:/-]\\p{Nd}+)*(?![\\p{L}\\p{N}])");
+    private static final List<String> EN_INFLECTION_SUFFIXES = List.of("s", "es", "d", "ed", "ing");
+    private static final Pattern TENTATIVE_EVIDENCE = Pattern.compile(
+            "(?iu)(?<![\\p{L}\\p{N}])(?:maybe|perhaps|tentatively|might|could|let['’]s"
+                    + "|có lẽ|hình như|chưa chắc|có thể|co le|hinh nhu|chua chac|co the)(?![\\p{L}\\p{N}])");
+    private static final Pattern VALUE_NEGATION = Pattern.compile(
+            "(?iu)(?<![\\p{L}\\p{N}])(?:not|isn['’]t|aren['’]t|wasn['’]t|no longer"
+                    + "|không phải|không còn|khong phai|khong con)(?![\\p{L}\\p{N}])");
 
     private RagExtractiveAnswerer() {
     }
@@ -36,18 +42,51 @@ final class RagExtractiveAnswerer {
     static Result extract(
             String question,
             SummaryLanguage language,
+            List<String> terms,
             RagMessage message,
             int maxAnswerCodePoints) {
-        if (message == null || message.content() == null || message.content().isBlank()) {
+        if (message == null || message.content().isBlank() || terms.isEmpty()) {
             return null;
         }
         String content = message.content();
-        List<String> terms = RagQuestionTerms.extract(question, language, 12).stream()
-                .filter(term -> !isRequestCue(term))
-                .distinct()
-                .toList();
-        double coverage = termCoverage(content, terms);
-        ExactMatch exact = findExactValue(question, content);
+        boolean needsSettledEvidence = needsSettledEvidence(question, language);
+        Set<ValueType> requestedTypes = requestedValueTypes(question);
+        Span best = null;
+        ExactMatch exact = null;
+        int bestMatches = 0;
+        boolean conflictingValues = false;
+        for (Span sentence : sentences(content)) {
+            String text = content.substring(sentence.start(), sentence.end());
+            if (!isEvidenceSentence(text, needsSettledEvidence)) {
+                continue;
+            }
+            int matches = matchedTermCount(text, terms, language);
+            if (matches == 0 || matches < bestMatches) {
+                continue;
+            }
+            ExactMatch value = findExactValue(requestedTypes, content, sentence);
+            if (matches > bestMatches) {
+                best = sentence;
+                bestMatches = matches;
+                exact = value;
+                conflictingValues = false;
+            } else if (value != null) {
+                if (exact == null) {
+                    best = sentence;
+                    exact = value;
+                } else if (exact.type() != value.type() || !exact.value().equals(value.value())) {
+                    conflictingValues = true;
+                }
+            }
+        }
+        if (best == null) {
+            return null;
+        }
+
+        double coverage = (double) bestMatches / terms.size();
+        if (conflictingValues) {
+            return new Result(null, null, false, coverage, true);
+        }
         if (exact != null) {
             String value = exact.value();
             return new Result(
@@ -55,22 +94,8 @@ final class RagExtractiveAnswerer {
                     new AskExtraction("EXACT_VALUE", message.id(), exact.start(), exact.end(),
                             codePoints(value) > maxAnswerCodePoints, exact.type().name()),
                     true,
-                    coverage);
-        }
-
-        List<Span> sentences = sentences(content);
-        Span best = null;
-        int bestMatches = 0;
-        for (Span sentence : sentences) {
-            String text = content.substring(sentence.start(), sentence.end());
-            int matches = matchedTermCount(text, terms);
-            if (matches > bestMatches) {
-                best = sentence;
-                bestMatches = matches;
-            }
-        }
-        if (best == null || bestMatches == 0) {
-            return null;
+                    coverage,
+                    false);
         }
 
         String sentence = content.substring(best.start(), best.end());
@@ -91,13 +116,26 @@ final class RagExtractiveAnswerer {
                 answer,
                 new AskExtraction("EVIDENCE_SPAN", message.id(), answerStart, answerEnd, truncated, null),
                 false,
-                coverage);
+                coverage,
+                false);
     }
 
-    private static boolean isRequestCue(String term) {
-        return Set.of(
-                "find", "tell", "show", "what", "when", "where", "who", "which", "how",
-                "tim", "cho", "biet", "cai", "gi", "khi", "nao", "dau", "ai").contains(term);
+    static boolean needsSettledEvidence(String question, SummaryLanguage language) {
+        return RagQuestionTerms.hasVietnamesePlaceOrTimeCue(question)
+                || language != SummaryLanguage.VI
+                && containsAnyWord(Tokenizer.foldForMatching(question), "should", "where", "when");
+    }
+
+    static List<String> settledStatements(String content) {
+        return sentences(content).stream()
+                .map(span -> content.substring(span.start(), span.end()))
+                .filter(text -> isEvidenceSentence(text, true))
+                .toList();
+    }
+
+    private static boolean isEvidenceSentence(String text, boolean needsSettledEvidence) {
+        return !text.endsWith("?")
+                && (!needsSettledEvidence || !TENTATIVE_EVIDENCE.matcher(Tokenizer.nfc(text)).find());
     }
 
     static boolean isFactoidRequest(String question) {
@@ -110,12 +148,11 @@ final class RagExtractiveAnswerer {
                 || !requestedValueTypes(question).isEmpty();
     }
 
-    private static ExactMatch findExactValue(String question, String content) {
-        Set<ValueType> requested = requestedValueTypes(question);
-        if (requested.isEmpty()) {
+    private static ExactMatch findExactValue(Set<ValueType> requested, String content, Span sentence) {
+        if (requested.isEmpty() || VALUE_NEGATION.matcher(content).region(sentence.start(), sentence.end()).find()) {
             return null;
         }
-        List<ExactMatch> matches = new ArrayList<>();
+        ExactMatch match = null;
         for (ValueType type : requested) {
             Pattern pattern = switch (type) {
                 case EMAIL -> EMAIL;
@@ -123,7 +160,7 @@ final class RagExtractiveAnswerer {
                 case URL -> URL;
                 case NUMBER -> NUMBER;
             };
-            Matcher matcher = pattern.matcher(content);
+            Matcher matcher = pattern.matcher(content).region(sentence.start(), sentence.end());
             while (matcher.find()) {
                 int end = matcher.end();
                 while (end > matcher.start() && ".,;:!?)]} ".indexOf(content.charAt(end - 1)) >= 0) {
@@ -139,19 +176,24 @@ final class RagExtractiveAnswerer {
                         continue;
                     }
                 }
-                if (!value.isBlank()) {
-                    matches.add(new ExactMatch(type, value, matcher.start(), end));
+                if (match != null && !match.value().equals(value)) {
+                    // A single scalar would discard the distinction between values in this sentence.
+                    return null;
+                }
+                if (match == null) {
+                    match = new ExactMatch(type, value, matcher.start(), end);
                 }
             }
         }
-        return matches.stream()
-                .min(Comparator.comparingInt(ExactMatch::start)
-                        .thenComparingInt(match -> match.type().ordinal()))
-                .orElse(null);
+        return match;
     }
 
     private static Set<ValueType> requestedValueTypes(String question) {
         String folded = Tokenizer.foldForMatching(question);
+        if (RagQuestionTerms.hasVietnamesePlaceOrTimeCue(question)
+                || containsAnyWord(folded, "where", "when", "who", "why")) {
+            return Set.of();
+        }
         Set<ValueType> types = new LinkedHashSet<>();
         if (containsAnyWord(folded, "phone", "telephone", "mobile", "sdt")
                 || folded.contains("dien thoai") || folded.contains("so dien thoai")) {
@@ -160,15 +202,17 @@ final class RagExtractiveAnswerer {
         if (containsAnyWord(folded, "email", "e-mail", "mail")) {
             types.add(ValueType.EMAIL);
         }
-        if (folded.contains("lien he") || containsAnyWord(folded, "contact")) {
-            types.add(ValueType.PHONE);
-            types.add(ValueType.EMAIL);
-        }
         if (containsAnyWord(folded, "url", "link", "website", "domain")
                 || folded.contains("web site") || folded.contains("duong dan")) {
             types.add(ValueType.URL);
         }
-        if (containsAnyWord(folded, "number", "code", "version", "amount", "budget", "price", "cost", "so", "ma")) {
+        if (types.isEmpty() && (folded.contains("lien he") || containsAnyWord(folded, "contact"))) {
+            types.add(ValueType.PHONE);
+            types.add(ValueType.EMAIL);
+        }
+        String original = Tokenizer.nfc(question).toLowerCase(Locale.ROOT);
+        if (types.isEmpty() && (containsAnyWord(folded, "number", "code", "version", "amount", "budget", "price", "cost")
+                || containsAnyWord(original, "số", "mã", "ma so", "so luong"))) {
             types.add(ValueType.NUMBER);
         }
         return types;
@@ -194,25 +238,29 @@ final class RagExtractiveAnswerer {
         return false;
     }
 
-    private static double termCoverage(String content, List<String> terms) {
-        if (terms.isEmpty()) {
-            return 0.0;
-        }
-        return (double) matchedTermCount(content, terms) / terms.size();
-    }
-
-    private static int matchedTermCount(String text, List<String> terms) {
-        if (text == null || text.isBlank() || terms == null || terms.isEmpty()) {
-            return 0;
-        }
-        String folded = Tokenizer.foldForMatching(text);
+    private static int matchedTermCount(String text, List<String> terms, SummaryLanguage language) {
+        Set<String> tokens = new LinkedHashSet<>(RagQuestionTerms.contentTerms(text, language));
         int matched = 0;
-        for (String term : new LinkedHashSet<>(terms)) {
-            if (!term.isBlank() && folded.contains(term)) {
+        for (String term : terms) {
+            if (tokens.contains(term) || language != SummaryLanguage.VI && matchesInflection(tokens, term)) {
                 matched++;
             }
         }
         return matched;
+    }
+
+    private static boolean matchesInflection(Set<String> tokens, String term) {
+        if (term.length() < 4) {
+            return false;
+        }
+        for (String suffix : EN_INFLECTION_SUFFIXES) {
+            if (tokens.contains(term + suffix)
+                    || term.length() >= 4 + suffix.length() && term.endsWith(suffix)
+                    && tokens.contains(term.substring(0, term.length() - suffix.length()))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static List<Span> sentences(String content) {
@@ -313,6 +361,7 @@ final class RagExtractiveAnswerer {
         }
     }
 
-    record Result(String answer, AskExtraction extraction, boolean exactValue, double coverage) {
+    record Result(String answer, AskExtraction extraction, boolean exactValue, double coverage,
+                  boolean conflictingValues) {
     }
 }

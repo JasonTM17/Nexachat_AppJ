@@ -48,9 +48,9 @@ public final class AskPriorTurns {
             if (builder.length() > 0) {
                 builder.append('\n');
             }
-            builder.append(RagQuestionNormalizer.normalize(turn.question()))
+            builder.append(RagHashes.sha256(RagQuestionNormalizer.normalizeForCache(turn.question())))
                     .append('=')
-                    .append(RagQuestionNormalizer.normalize(turn.answer()));
+                    .append(RagHashes.sha256(RagQuestionNormalizer.normalizeForCache(turn.answer())));
         }
         return builder.toString();
     }

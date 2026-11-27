@@ -32,6 +32,7 @@ public class RagQuestionCache {
 
     private static final int SEMANTIC_SCAN_LIMIT = 200;
     private static final String CONVERSATION_LOCK_PREFIX = "rag-question-cache:";
+    private static final String ANSWER_POLICY = "ask-grounding-v2:";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -63,7 +64,7 @@ public class RagQuestionCache {
                 """,
                 statement -> {
                     statement.setObject(1, conversationId);
-                    statement.setString(2, model);
+                    statement.setString(2, storageModel(model));
                     statement.setString(3, questionHash);
                     statement.setObject(4, now());
                 },
@@ -84,7 +85,7 @@ public class RagQuestionCache {
                 """,
                 statement -> {
                     statement.setObject(1, conversationId);
-                    statement.setString(2, model);
+                    statement.setString(2, storageModel(model));
                     statement.setObject(3, now());
                     statement.setInt(4, SEMANTIC_SCAN_LIMIT);
                 },
@@ -209,7 +210,7 @@ public class RagQuestionCache {
                 """,
                 statement -> {
                     statement.setObject(1, conversationId);
-                    statement.setString(2, model);
+                    statement.setString(2, storageModel(model));
                     statement.setString(3, questionHash);
                     statement.setBytes(4, VectorCodec.encode(questionVector));
                     statement.setString(5, ask.language().name());
@@ -289,6 +290,11 @@ public class RagQuestionCache {
                 payload.provenance(),
                 payload.sensitiveContentRedacted() != null && payload.sensitiveContentRedacted(),
                 payload.extraction());
+    }
+
+    private static String storageModel(String embeddingModel) {
+        // Version answer replay independently of the embedding store and fit the existing 64-character key.
+        return RagHashes.sha256(ANSWER_POLICY + embeddingModel);
     }
 
     public record CachedAsk(

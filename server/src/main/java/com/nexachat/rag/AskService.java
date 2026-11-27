@@ -322,6 +322,7 @@ public class AskService {
         boolean sharedCacheVisible = !retrievalService.hasContentBeforeAdmission(conversationId, admittedFrom);
         RagEmbeddingService.EmbeddingOutcome questionEmbedding =
                 embeddingService.embedQuestion(userId, question, consented, deadline);
+        boolean requiresAnswerEvidence = !isBroadAggregationQuestion(question);
 
         if (consented && sharedCacheVisible) {
             Optional<RagQuestionCache.CachedAsk> exact = questionCache.findExact(
@@ -335,10 +336,11 @@ public class AskService {
             }
 
             double semanticThreshold = properties.getRetrieval().getSemanticCacheThreshold();
-            if (priorTurns.isEmpty()) {
+            if (!requiresAnswerEvidence && priorTurns.isEmpty()) {
                 for (RagQuestionCache.CachedQuestion candidate : questionCache.findCandidates(
                         conversationId, questionEmbedding.model())) {
-                    if (VectorCodec.cosine(questionEmbedding.vector(), candidate.vector()) >= semanticThreshold
+                    if (AskMode.LLM.name().equals(candidate.ask().mode())
+                            && VectorCodec.cosine(questionEmbedding.vector(), candidate.vector()) >= semanticThreshold
                             && candidate.ask().expectedContentVersion() == context.revision()
                             && candidate.ask().language() == language
                             && questionCache.citationsValid(candidate.ask().citedIds(), candidate.ask().citedHash())) {
@@ -350,7 +352,6 @@ public class AskService {
         }
 
         boolean lookupLike = isLookupLike(question);
-        boolean requiresAnswerEvidence = !isBroadAggregationQuestion(question);
         check(deadline);
         RetrievalResult retrieval = retrievalService.retrieve(
                 conversationId, userId, question, language, consented, admittedFrom,
@@ -457,24 +458,35 @@ public class AskService {
 
     private ExtractiveSelection selectExtractive(
             String question, SummaryLanguage language, RetrievalResult retrieval) {
+        RagProperties.Retrieval config = properties.getRetrieval();
+        List<String> terms = RagQuestionTerms.answerTerms(question, language, config.getLexicalTermLimit());
         ExtractiveSelection firstSpan = null;
+        ExtractiveSelection exact = null;
         int limit = Math.min(3, retrieval.ranked().size());
         for (int index = 0; index < limit; index++) {
             RagMessage candidate = retrieval.ranked().get(index).message();
             RagExtractiveAnswerer.Result result = RagExtractiveAnswerer.extract(
-                    question, language, candidate, EXTRACTIVE_ANSWER_MAX_CHARS);
-            if (result == null) {
+                    question, language, terms, candidate, EXTRACTIVE_ANSWER_MAX_CHARS);
+            if (result == null || result.coverage() < config.getLexicalAnswerMinCoverage()) {
                 continue;
+            }
+            if (result.conflictingValues()) {
+                return null;
             }
             ExtractiveSelection selection = new ExtractiveSelection(candidate, result);
             if (result.exactValue()) {
-                return selection;
-            }
-            if (firstSpan == null) {
+                if (exact != null && (!exact.result().answer().equals(result.answer())
+                        || !exact.result().extraction().valueType().equals(result.extraction().valueType()))) {
+                    return null;
+                }
+                if (exact == null) {
+                    exact = selection;
+                }
+            } else if (firstSpan == null) {
                 firstSpan = selection;
             }
         }
-        return firstSpan;
+        return exact == null ? firstSpan : exact;
     }
 
     private AskResponse answerExtractive(
@@ -831,7 +843,7 @@ public class AskService {
     }
 
     static String hashInput(String question, List<AskPriorTurn> priorTurns) {
-        String normalized = RagQuestionNormalizer.normalize(question);
+        String normalized = RagQuestionNormalizer.normalizeForCache(question);
         String fingerprint = AskPriorTurns.fingerprint(priorTurns);
         if (fingerprint.isEmpty()) {
             return normalized;
