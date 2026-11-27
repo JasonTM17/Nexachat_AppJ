@@ -25,8 +25,9 @@ final class AiRequestTimeoutInterceptor implements Interceptor {
                 && path.length == 6
                 && "api".equals(path[1])
                 && "v1".equals(path[2])
-                && "conversations".equals(path[3])
                 && !path[4].isEmpty()
-                && ("summary".equals(path[5]) || "ask".equals(path[5]));
+                && (("conversations".equals(path[3])
+                        && ("summary".equals(path[5]) || "ask".equals(path[5])))
+                    || ("messages".equals(path[3]) && "translate".equals(path[5])));
     }
 }

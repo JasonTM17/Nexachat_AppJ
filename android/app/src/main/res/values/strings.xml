@@ -823,7 +823,8 @@
     <string name="translation_failed">Translation failed</string>
     <string name="translation_failed_retry_cd">Translation failed. Activate to retry.</string>
     <string name="translation_error_generic">Could not translate. Try again.</string>
-    <string name="translation_error_offline">You are offline. Check your connection.</string>
+    <string name="translation_error_offline">Could not connect to translate. Check your connection and try again.</string>
+    <string name="translation_error_timeout">Translation is taking too long. Try again.</string>
     <string name="translation_error_rate_limited">Too many translations. Try again later.</string>
     <string name="translate_auto_title">Auto-translate</string>
     <string name="translate_target_language_title">Translate to</string>

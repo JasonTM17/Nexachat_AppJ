@@ -23,7 +23,7 @@ public final class AiRequestTimeoutTest {
     @Rule public final TemporaryFolder temporaryFolder = new TemporaryFolder();
 
     @Test
-    public void onlySummaryAndAskPostsGetTheModelChainReadBudget() throws IOException {
+    public void onlySummaryAskAndSingleTranslationPostsGetTheModelChainReadBudget() throws IOException {
         Context context = mock(Context.class);
         when(context.getCacheDir()).thenReturn(temporaryFolder.newFolder());
         AuthInterceptor auth = mock(AuthInterceptor.class);
@@ -41,14 +41,37 @@ public final class AiRequestTimeoutTest {
                         .build();
             }).build();
             String conversation = "/api/v1/conversations/7b0c1f5e-1111-2222-3333-444455556666";
+            String translation = "/api/v1/messages/7b0c1f5e-1111-2222-3333-444455556666/translate";
             assertReadTimeout(server, client, conversation + "/summary", true, 130);
             assertReadTimeout(server, client, conversation + "/ask", true, 130);
+            assertReadTimeout(server, client, translation, true, 130);
+            assertReadTimeout(server, client, translation, false, 15);
+            assertReadTimeout(server, client, conversation + "/translate-batch", true, 15);
             assertReadTimeout(server, client, conversation + "/summary", false, 15);
             assertReadTimeout(server, client, conversation + "/messages", true, 15);
             assertReadTimeout(server, client, conversation + "/nested/ask", true, 15);
         } finally {
             if (base.cache() != null) {
                 base.cache().close();
+            }
+        }
+    }
+
+    @Test
+    public void singleTranslationReadsAResponsePastTheClientDefaultTimeout() throws IOException {
+        try (MockWebServer server = new MockWebServer()) {
+            server.start();
+            server.enqueue(new MockResponse().setHeadersDelay(350, TimeUnit.MILLISECONDS).setBody("translated"));
+            OkHttpClient client = new OkHttpClient.Builder()
+                    .readTimeout(100, TimeUnit.MILLISECONDS)
+                    .addInterceptor(new AiRequestTimeoutInterceptor())
+                    .build();
+            Request request = new Request.Builder()
+                    .url(server.url("/api/v1/messages/7b0c1f5e-1111-2222-3333-444455556666/translate"))
+                    .post(RequestBody.create(new byte[0]))
+                    .build();
+            try (Response response = client.newCall(request).execute()) {
+                assertEquals("translated", response.body().string());
             }
         }
     }

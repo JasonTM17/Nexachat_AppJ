@@ -19,6 +19,7 @@ import com.nexachat.core.network.dto.TranslationGlossaryDto;
 import com.nexachat.core.network.dto.UpdateTranslatePrefsRequest;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -80,7 +81,8 @@ public final class TranslationRepository {
 
     private Single<Result<TranslateResponseDto>> remoteTranslate(
             @NonNull MessageEntity entity, long version, String targetLang) {
-        return call(api.translate(entity.getId(), new TranslateRequest(targetLang)))
+        return ApiResult.safeApiCall(api.translate(entity.getId(), new TranslateRequest(targetLang)))
+                .map(TranslationRepository::singleTranslationResult)
                 .flatMap(result -> {
                     TranslateResponseDto dto = successOf(result);
                     if (dto == null || dto.getText() == null) {
@@ -92,6 +94,13 @@ public final class TranslationRepository {
                             dto.getText(), System.currentTimeMillis());
                     return translationDao.upsert(row).andThen(Single.just(result));
                 });
+    }
+
+    private static Result<TranslateResponseDto> singleTranslationResult(ApiResult<TranslateResponseDto> result) {
+        if (result instanceof ApiResult.NetworkError<?> error && error.getCause() instanceof SocketTimeoutException) {
+            return Result.failure(ApiError.Timeout.INSTANCE);
+        }
+        return toDomain(result);
     }
 
     /**

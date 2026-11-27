@@ -98,6 +98,10 @@ keys on `(messageId, changeVersion, targetLang)`; cache reads join against
 `messages.changeVersion` so edited messages never surface stale rows, and
 the ViewModel drops in-memory state when content changes or messages vanish.
 
+Android gives a manual translation the same 130-second read budget as the
+other single AI calls. If the request times out, the message bubble offers
+Retry with a timeout-specific notice.
+
 ## Rate limits and batching
 
 Per-user token buckets: `rate-limit-per-minute` (30) and

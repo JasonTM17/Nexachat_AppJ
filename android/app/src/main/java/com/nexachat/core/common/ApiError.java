@@ -8,8 +8,7 @@ import java.util.Objects;
  * envelope ({@code {"error":{"code":…}}}). UI maps each variant to a string
  * resource and never parses {@code message}.
  *
- * <p>The three codeless variants are singletons. {@link #equals} for those is
- * type-based so each codeless variant retains singleton-style equality.
+ * <p>Codeless variants have type-based equality.
  */
 public sealed interface ApiError
         permits ApiError.InvalidCredentials,
@@ -18,6 +17,7 @@ public sealed interface ApiError
                 ApiError.InvalidOrExpiredCode,
                 ApiError.RateLimited,
                 ApiError.Network,
+                ApiError.Timeout,
                 ApiError.MailUnavailable,
                 ApiError.EmailAlreadyInUse,
                 ApiError.RecoveryEmailInvalid,
@@ -229,6 +229,11 @@ public sealed interface ApiError
         public String toString() {
             return "SessionExpired";
         }
+    }
+
+    /** The request reached its transport time limit. */
+    record Timeout() implements ApiError {
+        public static final Timeout INSTANCE = new Timeout();
     }
 
     /** Transport failure — no HTTP response at all. */
