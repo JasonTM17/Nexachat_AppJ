@@ -57,8 +57,8 @@ mark, and the notification icon.
 
 ## 2. Build, check and sign the Android artifact
 
-Run this local build before §4 tags the release and the GitHub workflow
-publishes the APK.
+Run this local build before tagging the release in §4. The tag triggers the
+GitHub workflow that signs the APK and AAB for distribution.
 
 ```bash
 # Optional: confirm the Firebase client file is present for this build
@@ -87,7 +87,7 @@ python tools/checks/check-release-r8-mapping.py
   version code of the last published release.
 - The tag-triggered release workflow builds a signed Play upload bundle next
   to the APK (`nexachat-vX.Y.Z.aab` + `.sha256`), verifies its signer against
-  `site/.well-known/assetlinks.json` and attaches both to the GitHub Release.
+  `site/.well-known/assetlinks.json` and uploads both in the signed workflow artifact.
   The local `tools/release/sign-release.sh` still produces only the APK.
 
 ## 3. Roll out the database migration and server
@@ -179,16 +179,23 @@ Follow the verified sequence:
   git tag -a v<MAJOR>.<MINOR>.<PATCH> -m 'NexaChat v<MAJOR>.<MINOR>.<PATCH>'
   git push origin v<MAJOR>.<MINOR>.<PATCH>
   ```
-- [ ] **10. Release workflow publishes APK** — Confirm the GitHub Actions release
-  workflow (`.github/workflows/android-release.yml`) triggers on the tag push and
-  publishes the signed APK and `.sha256` asset to GitHub Releases.
-- [ ] **11. Verify APK** — Download the published release assets and verify:
-  - Checksum: `sha256sum -c app-release.apk.sha256`
-  - Signer: `apksigner verify --print-certs app-release.apk`
-  - `versionCode` and `versionName`: `aapt dump badging app-release.apk | grep -E "versionCode|versionName"`
+- [ ] **10. Release workflow signs the assets** — Confirm the GitHub Actions release
+  workflow (`.github/workflows/android-release.yml`) succeeds on the exact tagged
+  commit. Download the signed APK, AAB and checksums from the workflow artifact.
+- [ ] **11. Verify signed files** — From the artifact directory, run
+  `sha256sum -c nexachat-vX.Y.Z.apk.sha256 nexachat-vX.Y.Z.aab.sha256 nexachat-latest.apk.sha256`.
+  Use `cmp nexachat-vX.Y.Z.apk nexachat-latest.apk` to match the stable alias.
+  Verify the APK with `apksigner verify --print-certs nexachat-vX.Y.Z.apk`
+  and the AAB with `jarsigner -verify nexachat-vX.Y.Z.aab`. Compare both signer
+  fingerprints to App Links. Confirm the APK package `com.nexachat`,
+  `versionCode` and `versionName` using `aapt dump badging nexachat-vX.Y.Z.apk`.
 - [ ] **12. Device publication gate** — Verify direct install on a physical
-  device (`adb install -r app-release.apk`) or proceed through the Google Play
+  device (`adb install -r nexachat-vX.Y.Z.apk`) or proceed through the Google Play
   Console track release.
+- [ ] **13. Publish GitHub Release** — Use the repository owner's authenticated
+  GitHub CLI to publish the three verified files and their three checksum files
+  with the release notes. Confirm the published asset names, digests and Release
+  author. [Android release workflow](android-release.md)
 
 ## 5. Server image
 

@@ -6,6 +6,19 @@ All notable changes to NexaChat are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Android restores incoming video rendering in one-to-one calls and recovers
+  remote video when connectivity returns.
+- Chat preserves pending attachments and drafts across app restarts. It sends
+  queued attachments in order after reconnecting and clears the history retry
+  banner once history loads successfully.
+- Ask and Summary citations navigate to the source message, with accessibility
+  focus restored after the jump. The inbox fits larger text.
+- The server rejects revoked access tokens across REST and realtime and checks
+  current conversation membership before sending push notifications. New
+  regression coverage checks member-only attachment downloads.
+
 ## [1.2.26] - 2026-11-25
 
 Android release focused on immersive in-call controls. See

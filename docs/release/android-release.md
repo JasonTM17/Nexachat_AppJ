@@ -1,9 +1,10 @@
 # Android APK release
 
-The `Android APK Release` workflow builds on a `vMAJOR.MINOR.PATCH` tag and
-publishes the signed APK plus its SHA-256 file to that GitHub Release. It can
-also be started manually with an existing tag. The tag supplies Android's
-`versionName` and `versionCode` through `tools/release/release-version.sh`.
+The `Android APK Release` workflow builds and signs the APK and AAB from a
+`vMAJOR.MINOR.PATCH` tag on `main`. It stores the signed files and SHA-256
+checksums as a workflow artifact. The repository owner verifies the artifact
+and publishes it to GitHub Releases. The tag supplies Android's `versionName`
+and `versionCode` through `tools/release/release-version.sh`.
 
 ## Prepare the signing key once
 
@@ -88,10 +89,10 @@ In the repository, open **Settings → Secrets and variables → Actions** and a
 
 Before adding these secrets, protect the `v*` tag pattern so only release
 maintainers can create tags, require review for release-workflow changes on
-`main`, and configure the `android-release` environment with required reviewers
-and allowed refs limited to `main` and protected `v*` tags. The release job
-waits for that environment approval. Start manual runs from `main`; runs
-dispatched from other refs are skipped.
+`main`, and restrict the `android-release` environment to protected `v*` tags.
+The release job waits for any approval configured on the environment. For a
+manual run, select the release tag as the workflow ref and enter the same tag
+in the input.
 
 In Git Bash, load the keystore secret without printing its contents:
 
@@ -115,15 +116,47 @@ git tag -a v1.2.3 -m 'NexaChat v1.2.3'
 git push origin v1.2.3
 ```
 
-The workflow runs for tags beginning with `v`. To rerun for an existing tag,
-open **Actions → Android APK Release → Run workflow** and enter the tag.
-Download `nexachat-v1.2.3.apk` and `nexachat-v1.2.3.apk.sha256` from the release.
+The workflow runs for tags beginning with `v`. A new manual run may use a tag
+that already contains this artifact-upload workflow. Select that tag as the
+workflow ref and supply the same case-sensitive tag in the `tag` input. Older
+tags carry their original workflow and can publish Release assets directly.
+Under the repository owner's GitHub login, verify that the successful signing
+run's head SHA matches the commit the remote tag resolves to, then download its
+signed artifact.
+
+```powershell
+$tag = 'v1.2.3'
+$runId = '<successful Android APK Release run ID>'
+gh run view $runId --json headSha,headBranch,status,conclusion,url
+git ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}"
+gh run download $runId --name "nexachat-$tag-signed" --dir '.\signed-release'
+```
+
+Verify the signed APK package, version and certificate using `aapt` and
+`apksigner`. Verify the AAB using `jarsigner` and match its signer to the APK.
+Check the supplied SHA-256 for each file. The stable APK alias must have the
+same bytes as the versioned APK.
 
 On Windows, compare the downloaded APK with its checksum file:
 
 ```powershell
-$apk = '.\nexachat-v1.2.3.apk'
+$apk = '.\signed-release\nexachat-v1.2.3.apk'
 $expected = (Get-Content "$apk.sha256" -Raw) -split '\s+' | Select-Object -First 1
 $actual = (Get-FileHash $apk -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actual -ne $expected) { throw 'APK SHA-256 mismatch' }
+```
+
+Complete the device publication gate in the [release checklist](release-checklist.md).
+Publish the six verified files from the workflow artifact using the repository
+owner's authenticated GitHub CLI and the release notes for the tag. Check the
+remote tag commit again before publishing.
+
+```powershell
+$assetDir = '.\signed-release'
+$assets = @(
+    "$assetDir\nexachat-$tag.apk", "$assetDir\nexachat-$tag.apk.sha256",
+    "$assetDir\nexachat-$tag.aab", "$assetDir\nexachat-$tag.aab.sha256",
+    "$assetDir\nexachat-latest.apk", "$assetDir\nexachat-latest.apk.sha256"
+)
+gh release create $tag @assets --verify-tag --notes-file "docs/release-notes/$tag.md"
 ```
