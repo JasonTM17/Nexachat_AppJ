@@ -126,7 +126,7 @@ public final class CallManagerRoamingTest {
     }
 
     @Test
-    public void reconnectAsAnswererDoesNotRestartIceAndInviteGlare() {
+    public void establishedAnswererSurvivesDelayedSignalingReconnectWithoutStartingAnOffer() {
         // Callee role: accept an incoming call to ACTIVE, then roam. Only the
         // original offerer may restart ICE — if both peers fire offers after a
         // correlated reconnect, the glare teardown kills a healthy call.
@@ -141,16 +141,19 @@ public final class CallManagerRoamingTest {
 
         signaling.disconnect();
         scheduler.runCurrent();
-        scheduler.advanceBy(5_000L);
+        // The Samsung/AVD trace reopened the answerer's socket 19.1s after losing signaling.
+        scheduler.advanceBy(20_000L);
+        assertEquals(CallState.RECONNECTING_NETWORK, manager.currentSessionForTest().getState());
         signaling.connect();
         scheduler.runCurrent();
 
         assertEquals(CallState.ACTIVE, manager.currentSessionForTest().getState());
+        assertEquals("call-roam-1", manager.currentSessionForTest().getCallId());
         assertEquals(0, media.restartIceCount);
     }
 
     @Test
-    public void signalingDropDuringConnectingGetsTheSameReconnectGrace() {
+    public void signalingDropDuringConnectingResumesInitialNegotiation() {
         // ICE is still being set up in CONNECTING and the engine has its own
         // 35s connect timeout — a brief STOMP blip must not kill the call.
         manager.startOutgoing("conversation-1", "peer-1", "Peer");
@@ -273,15 +276,36 @@ public final class CallManagerRoamingTest {
     }
 
     @Test
-    public void reconnectGraceTimerExpiresEndsCall() {
+    public void connectingSignalingGraceRemainsFifteenSeconds() {
+        manager.startOutgoing("conversation-1", "peer-1", "Peer");
+        scheduler.runCurrent();
+        signaling.emit(new CallEvent(CallEvent.Type.CALL_ACCEPTED, "CALL_ACCEPTED", "call-roam-1",
+                "conversation-1", null, null, null, null, null, null));
+        scheduler.runCurrent();
+        assertEquals(CallState.CONNECTING, manager.currentSessionForTest().getState());
+        signaling.disconnect();
+        scheduler.runCurrent();
+        scheduler.advanceBy(14_999L);
+        assertEquals(CallState.RECONNECTING_NETWORK, manager.currentSessionForTest().getState());
+        scheduler.advanceBy(1L);
+        assertEquals(CallState.ENDED, manager.currentSessionForTest().getState());
+        assertEquals(CallEndReason.FAILED, manager.currentSessionForTest().getEndReason());
+    }
+
+    @Test
+    public void activeSignalingGraceExpiresOnceAfterThirtySeconds() {
         establishActiveCall();
 
         signaling.disconnect();
         scheduler.runCurrent();
         assertEquals(CallState.RECONNECTING_NETWORK, manager.currentSessionForTest().getState());
 
-        // Advance past 15 seconds grace period
-        scheduler.advanceBy(16_000L);
+        scheduler.advanceBy(20_000L);
+        signaling.disconnect();
+        scheduler.runCurrent();
+        scheduler.advanceBy(9_999L);
+        assertEquals(CallState.RECONNECTING_NETWORK, manager.currentSessionForTest().getState());
+        scheduler.advanceBy(1L);
 
         assertEquals(CallState.ENDED, manager.currentSessionForTest().getState());
         assertEquals(CallEndReason.FAILED, manager.currentSessionForTest().getEndReason());

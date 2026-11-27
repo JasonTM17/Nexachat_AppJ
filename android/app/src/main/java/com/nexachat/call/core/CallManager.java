@@ -36,6 +36,8 @@ public final class CallManager implements AutoCloseable {
     private static final long RING_TIMEOUT_MS = TimeUnit.SECONDS.toMillis(50);
     private static final long PUSH_INVITE_GRACE_MS = TimeUnit.SECONDS.toMillis(15);
     private static final long PUSH_REPLAY_WINDOW_MS = TimeUnit.SECONDS.toMillis(60);
+    private static final long CONNECTING_SIGNALING_GRACE_MS = TimeUnit.SECONDS.toMillis(15);
+    private static final long ACTIVE_SIGNALING_GRACE_MS = TimeUnit.SECONDS.toMillis(30);
     private static final int MAX_TERMINAL_CALL_IDS = 256;
     /**
      * How long a terminal signal stays parked when the transport cannot take it. Past the
@@ -1040,11 +1042,15 @@ public final class CallManager implements AutoCloseable {
             reconnectResumeState = droppedState;
             transition(CallState.RECONNECTING_NETWORK, null, currentSession.getAnsweredAtMs());
             cancelReconnectGraceTimer();
+            // An established call can keep media alive through Android's validated-network
+            // handoff. Let signaling return within the established ICE recovery window.
+            long graceMs = droppedState == CallState.ACTIVE
+                    ? ACTIVE_SIGNALING_GRACE_MS : CONNECTING_SIGNALING_GRACE_MS;
             reconnectGraceTimer = scheduler.schedule(() -> {
                 if (currentSession.getState() == CallState.RECONNECTING_NETWORK) {
                     finishLocal(CallEndReason.FAILED, new CallError(CallError.Code.NETWORK));
                 }
-            }, 15_000L);
+            }, graceMs);
         } else if (isCallInProgress(currentSession.getState())
                 && currentSession.getState() != CallState.RECONNECTING_NETWORK) {
             finishLocal(CallEndReason.FAILED, new CallError(CallError.Code.NETWORK));
